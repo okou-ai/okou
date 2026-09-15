@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { CronCleanupSandboxesResponse } from "@okouai/api-contracts/contracts/cron";
 import {
@@ -39,6 +39,7 @@ import {
   holdRunOutputProjectionLockFixture,
   insertPendingInlineDeliveryCallbackFixture,
   readRunCallbackFixture,
+  readHistoryBlobReferenceCountFixture,
 } from "../../../test-fixtures/run-deletion";
 import {
   deleteUsagePricingRows,
@@ -239,6 +240,7 @@ async function insertRunFixture(args?: {
   readonly completedAt?: Date | null;
   readonly cancellationRecoveryCompleted?: boolean;
   readonly threadless?: boolean;
+  readonly checkpointReady?: boolean;
   readonly triggerSource?: TriggerSource;
   readonly userId?: string;
   readonly orgId?: string;
@@ -259,6 +261,7 @@ async function insertRunFixture(args?: {
         : (args.completedAt?.toISOString() ?? null),
     cancellation_recovery_completed: args?.cancellationRecoveryCompleted,
     threadless: args?.threadless,
+    checkpoint_ready: args?.checkpointReady,
     trigger_source: args?.triggerSource,
     user_id: args?.userId,
     org_id: args?.orgId,
@@ -769,6 +772,45 @@ describe("sandbox cleanup", () => {
       });
     },
   );
+
+  it("releases a checkpoint history reference through the bounded threadless sweep", async () => {
+    mockNow(THREADLESS_TEST_NOW_MS);
+    const fixture = await trackRun(
+      insertRunFixture({
+        status: "failed",
+        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
+        completedAt: new Date(
+          THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
+        ),
+        threadless: true,
+        checkpointReady: true,
+      }),
+    );
+    const hash = createHash("sha256")
+      .update(`bdd session history ${fixture.runId}`)
+      .digest("hex");
+    await webhooks.requestAgentCheckpoint(
+      {
+        runId: fixture.runId,
+        cliAgentType: "claude-code",
+        cliAgentSessionId: fixture.runId,
+        cliAgentSessionHistoryHash: hash,
+      },
+      {
+        authorization: `Bearer ${generateSandboxToken(fixture.userId, fixture.runId, fixture.orgId)}`,
+      },
+      [200],
+    );
+    // The maintenance clock/eligibility fixture and exact ledger inspection
+    // are infrastructure-only; checkpoint persistence and the sweep are real.
+    await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(1);
+    const response = await cleanupRegisteredFixtures();
+    expect(response.body.threadlessRuns.deleted).toBe(1);
+    await expect(findRun(fixture.runId)).resolves.toBeNull();
+    await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
+    await cleanupRegisteredFixtures();
+    await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
+  });
 
   it("waits through the quiet window and deletes at its exact boundary", async () => {
     const completedAt = new Date(THREADLESS_TEST_NOW_MS);

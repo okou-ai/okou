@@ -2126,6 +2126,7 @@
       "createFailed": "साझा बातचीत नहीं बनाई जा सकी। फिर से कोशिश करें।",
       "deselectGroup": "संदेश समूह का चयन हटाएँ",
       "linkCopied": "लिंक कॉपी हो गया",
+      "publicDescription": "चुने गए संदेश और उनके अटैचमेंट सार्वजनिक होंगे।",
       "selectedCount_one": "{{count}} चुना गया",
       "selectedCount_other": "{{count}} चुने गए",
       "selectGroup": "संदेश समूह चुनें",
@@ -2383,7 +2384,8 @@
         "browseStyles": "सभी शैलियाँ देखें",
         "browseTemplates": "सभी टेम्पलेट देखें",
         "image": "चित्र शैलियाँ",
-        "nextTemplates": "अगले टेम्पलेट",
+        "nextPage": "अगला पृष्ठ",
+        "previousPage": "पिछला पृष्ठ",
         "video": "वीडियो टेम्पलेट",
         "website": "वेबसाइट टेम्पलेट"
       },
@@ -2498,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2514,7 +2515,6 @@
         "selectedCount_one": "{{count}} चुना गया",
         "selectedCount_other": "{{count}} चुने गए",
         "summary": "{{output}} · तरीके {{methodCount}} · चार्ट {{chartCount}}",
-        "title": "विज़ुअलाइज़ेशन",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -5656,10 +5656,8 @@
         "loadError": "मॉडल लोड करने में असमर्थ.",
         "loading": "मॉडल लोड हो रहे हैं...",
         "menu": {
-          "adjustSettings": "{{model}} की सेटिंग समायोजित करें",
           "backToModels": "मॉडल पर वापस जाएँ",
-          "changeModel": "{{category}} मॉडल बदलें, {{model}}",
-          "chatSettings": "चैट सेटिंग"
+          "changeModel": "{{category}} मॉडल बदलें, {{model}}"
         },
         "models": "मॉडल",
         "noConfiguredModels": "कोई कॉन्फ़िगर मॉडल नहीं",
@@ -6161,6 +6159,9 @@
     "chooseFile": "फ़ाइल चुनें",
     "choosePrivateKeyFile": "निजी कुंजी की फ़ाइल चुनें",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access SSH टनल स्थापित नहीं कर सका। प्रकाशित होस्टनाम और Tunnel रूटिंग जाँचें।",
+      "accessRejected": "Cloudflare Access ने कनेक्शन अस्वीकार कर दिया। सर्विस टोकन और ऐप्लिकेशन की Service Auth नीति जाँचें।",
+      "accessTlsFailure": "Cloudflare Access से सुरक्षित कनेक्शन सत्यापित नहीं हो सका। होस्टनाम और TLS प्रमाणपत्र जाँचें।",
       "attention_one": "{{count}} SSH होस्ट पर ध्यान देने की ज़रूरत है",
       "attention_other": "{{count}} SSH होस्ट पर ध्यान देने की ज़रूरत है",
       "authenticationFailed": "SSH प्रमाणीकरण विफल हुआ। उपयोगकर्ता नाम, निजी कुंजी या पासवर्ड और सर्वर की अनुमति जांचें। क्रेडेंशियल संपादित करें या इस होस्ट के लिए दूसरा चुनें।",

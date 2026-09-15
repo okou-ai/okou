@@ -197,6 +197,8 @@ async function seedRunForAction(
       userId,
       orgId,
       sessionId: session.id,
+      storageMounts:
+        readOptionalBoolean(body, "checkpoint_ready") === true ? [] : null,
       status,
       prompt: readOptionalString(body, "prompt") ?? "cleanup sandboxes test",
       sandboxId:

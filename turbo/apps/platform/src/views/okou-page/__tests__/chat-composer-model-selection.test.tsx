@@ -124,6 +124,30 @@ async function modelPicker(name: string): Promise<HTMLElement> {
   return await screen.findByRole("combobox", { name });
 }
 
+/**
+ * Effort and Fast live on the composer now, so every test reaches them the way
+ * a user does: through the control beside the model, not through a page inside
+ * the model picker.
+ */
+async function openEffortPanel(): Promise<HTMLElement> {
+  await waitFor(() => {
+    expect(effortTrigger()).toBeVisible();
+  });
+  click(effortTrigger());
+  return await screen.findByRole("dialog");
+}
+
+/** The composer's effort control, named for the level it currently carries. */
+function effortTrigger(): HTMLElement {
+  const trigger = queryAllByRoleFast("button").find((candidate) => {
+    return candidate.getAttribute("aria-label")?.startsWith("Effort, ");
+  });
+  if (!trigger) {
+    throw new Error("Effort control was not visible");
+  }
+  return trigger;
+}
+
 async function readyComposer(): Promise<HTMLElement> {
   const composer = await screen.findByRole("textbox", { name: "Message" });
   expect(composer).toBeVisible();
@@ -193,7 +217,7 @@ async function openCodexExecutionChat(): Promise<void> {
   await readyComposer();
 }
 
-test("Show and dismiss Fast Codex speed and credit guidance on hover", async () => {
+async function openMixedProviderFastMenu() {
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-6-astra", "gpt-5.6-sol"], "gpt-6-astra");
   context.mocks.data.orgModelPolicies([
@@ -213,6 +237,11 @@ test("Show and dismiss Fast Codex speed and credit guidance on hover", async () 
   });
   await readyComposer();
   await user.click(await modelPicker("GPT 6 Astra"));
+  return user;
+}
+
+test("Show and dismiss Fast Codex ChatGPT usage guidance on hover", async () => {
+  const user = await openMixedProviderFastMenu();
   const fastOption = await screen.findByRole("option", {
     name: "GPT 6 Astra Fast",
   });
@@ -226,6 +255,10 @@ test("Show and dismiss Fast Codex speed and credit guidance on hover", async () 
       screen.queryByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
     ).not.toBeInTheDocument();
   });
+});
+
+test("Show Fast Codex Okou credit guidance on hover", async () => {
+  const user = await openMixedProviderFastMenu();
   await user.hover(screen.getByRole("option", { name: "GPT 5.6 Sol Fast" }));
   await expect(
     screen.findByText("Fast · Up to 2.5× model speed · 2× Okou model credits"),
@@ -660,10 +693,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
   expect(
     buttonNamed("Change Chat model, GPT 5.6 Luna", updated),
   ).toHaveTextContent("Standard");
-  click(buttonNamed("Adjust GPT 5.6 Luna settings", updated));
-  const settings = await screen.findByRole("region", {
-    name: "Chat settings",
-  });
+  const settings = await openEffortPanel();
   // The row carries Fast's speed and cost in the bolt's tooltip rather than as
   // a second line of small print under the label.
   await user.hover(within(settings).getByText("Fast"));
@@ -673,12 +703,8 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.6 Luna Fast"));
   const models = await screen.findByRole("region", { name: "Models" });
   expect(
     buttonNamed("Change Chat model, GPT 5.6 Luna", models),
@@ -688,10 +714,9 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     name: "Chat models",
   });
   click(buttonNamed("GPT 5.6 Luna", sameModelList));
-  const selected = await screen.findByRole("region", { name: "Models" });
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
-  click(buttonNamed("Adjust GPT 5.6 Luna settings", selected));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await user.keyboard("{Escape}");
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
 });
 
@@ -707,49 +732,37 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
     },
   });
   await readyComposer();
-  click(await findButton("GPT 5.6 Sol"));
-  let overview = await screen.findByRole("region", { name: "Models" });
-  click(buttonNamed("Adjust GPT 5.6 Sol settings", overview));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await openEffortPanel();
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
   await user.keyboard("{Escape}");
-  overview = await screen.findByRole("region", { name: "Models" });
+  // The picker is a separate surface now, and it reflects the change the
+  // composer made.
+  click(await findButton("GPT 5.6 Sol Fast"));
+  let overview = await screen.findByRole("region", { name: "Models" });
   expect(
     buttonNamed("Change Chat model, GPT 5.6 Sol", overview),
   ).toHaveTextContent("Fast");
-  click(buttonNamed("Adjust GPT 5.6 Sol settings", overview));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await user.keyboard("{Escape}");
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).not.toBeChecked();
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.6 Sol"));
   overview = await screen.findByRole("region", { name: "Models" });
   click(buttonNamed("Change Chat model, GPT 5.6 Sol", overview));
   const list = await screen.findByRole("region", { name: "Chat models" });
   click(buttonNamed("GPT 5.6 Luna", list));
   await expect(findButton("GPT 5.6 Luna")).resolves.toBeVisible();
-  overview = screen.getByRole("region", { name: "Models" });
-  click(buttonNamed("Change Chat model, GPT 5.6 Luna", overview));
-  await screen.findByRole("region", { name: "Chat models" });
-  await user.keyboard("{Escape}");
-  await screen.findByRole("region", { name: "Models" });
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(
       screen.queryByRole("region", { name: "Models" }),
     ).not.toBeInTheDocument();
   });
-  click(await findButton("GPT 5.6 Luna"));
-  overview = await screen.findByRole("region", { name: "Models" });
-  click(buttonNamed("Adjust GPT 5.6 Luna settings", overview));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).not.toBeChecked();
 });
 
@@ -810,32 +823,26 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
   const composer = await readyComposer();
   click(await findButton("GPT 5.6 Sol"));
   const overview = await screen.findByRole("region", { name: "Models" });
-  const modelButton = buttonNamed("Change Chat model, GPT 5.6 Sol", overview);
-  const settingsButton = buttonNamed("Adjust GPT 5.6 Sol settings", overview);
-  expect(modelButton).toHaveFocus();
-  await user.keyboard("{ArrowDown}");
-  expect(settingsButton).toHaveFocus();
-  await user.keyboard("{Enter}");
-  const settings = await screen.findByRole("region", { name: "Chat settings" });
+  expect(buttonNamed("Change Chat model, GPT 5.6 Sol", overview)).toHaveFocus();
+  // The picker carries models only; effort and Fast are reached from the
+  // composer, so the walk continues there.
+  await user.keyboard("{Escape}");
+  const settings = await openEffortPanel();
   // Fast's speed and credit cost live in the bolt's tooltip, so the bolt is a
-  // stop of its own: what a pointer reads on hover a keyboard reads on focus.
-  await user.keyboard("{ArrowDown}");
+  // stop of its own: the panel opens on it, which is how a keyboard user meets
+  // the cost before the switch that applies it.
   expect(within(settings).getByText("Fast").closest("button")).toHaveFocus();
-  await user.keyboard("{ArrowDown}");
-  expect(screen.getByRole("switch", { name: "Fast" })).toHaveFocus();
+  const fastSwitch = screen.getByRole("switch", { name: "Fast" });
+  fastSwitch.focus();
   await user.keyboard(" ");
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
   await user.click(composer);
   await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Chat settings" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  click(await findButton("GPT 5.6 Sol Fast"));
-  const reopened = await screen.findByRole("region", { name: "Models" });
-  click(buttonNamed("Adjust GPT 5.6 Sol settings", reopened));
-  await screen.findByRole("region", { name: "Chat settings" });
+  // Dismissing the panel keeps the choice.
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
 });
 
@@ -968,12 +975,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   });
   const composer = await readyComposer();
   click(await findButton("GPT 5.6 Sol"));
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
     name: "Effort",
   });
@@ -1031,12 +1033,7 @@ test("Select the default effort on an existing thread without changing Fast", as
   });
   await readyChat();
   click(await findButton("GPT 5.6 Sol Fast"));
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
     name: "Effort",
   });
@@ -1077,13 +1074,7 @@ test("Keep independent effort selections when changing models", async () => {
     },
   });
   await readyComposer();
-  click(await findButton("Claude Sonnet 5"));
-  click(
-    buttonNamed(
-      "Adjust Claude Sonnet 5 settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   let slider = await screen.findByRole("slider", { name: "Effort" });
   expect(slider).toHaveAttribute("aria-valuetext", "High");
   slider.focus();
@@ -1097,17 +1088,11 @@ test("Keep independent effort selections when changing models", async () => {
   });
   // The composer names the effort too, so scope this to the settings page.
   expect(
-    within(screen.getByRole("region", { name: "Chat settings" })).getByText(
-      "Extra",
-    ),
+    within(screen.getByRole("dialog")).getByText("Extra"),
   ).toBeInTheDocument();
   expect(screen.queryByText("ultracode")).not.toBeInTheDocument();
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("Claude Sonnet 5"));
   await expect(
     screen.findByRole("region", { name: "Models" }),
   ).resolves.toHaveTextContent("Extra");
@@ -1123,12 +1108,7 @@ test("Keep independent effort selections when changing models", async () => {
       await screen.findByRole("region", { name: "Chat models" }),
     ),
   );
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   slider = await screen.findByRole("slider", { name: "Effort" });
   expect(slider).toHaveAttribute("aria-valuetext", "Max");
   slider.focus();
@@ -1136,12 +1116,8 @@ test("Keep independent effort selections when changing models", async () => {
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
   });
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.6 Sol"));
   click(
     buttonNamed(
       "Change Chat model, GPT 5.6 Sol",
@@ -1154,12 +1130,7 @@ test("Keep independent effort selections when changing models", async () => {
       await screen.findByRole("region", { name: "Chat models" }),
     ),
   );
-  click(
-    buttonNamed(
-      "Adjust GPT 5.5 settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   slider = await screen.findByRole("slider", { name: "Effort" });
   expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   slider.focus();
@@ -1167,12 +1138,8 @@ test("Keep independent effort selections when changing models", async () => {
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   });
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.5"));
   click(
     buttonNamed(
       "Change Chat model, GPT 5.5",
@@ -1185,12 +1152,7 @@ test("Keep independent effort selections when changing models", async () => {
       await screen.findByRole("region", { name: "Chat models" }),
     ),
   );
-  click(
-    buttonNamed(
-      "Adjust Claude Sonnet 5 settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   await expect(
     screen.findByRole("slider", { name: "Effort" }),
   ).resolves.toHaveAttribute("aria-valuetext", "Extra");
@@ -1268,14 +1230,7 @@ test("Show the Pi fallback without overwriting a saved native preference", async
     },
   });
   await readyChat();
-  click(await findButton("GPT 5.6 Sol"));
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
-  const settings = await screen.findByRole("region", { name: "Chat settings" });
+  const settings = await openEffortPanel();
   const slider = await screen.findByRole("slider", {
     name: "Effort",
   });
@@ -1322,12 +1277,7 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
       await screen.findByRole("region", { name: "Chat models" }),
     ),
   );
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   await expect(
     screen.findByRole("slider", { name: "Effort" }),
   ).resolves.toHaveAttribute("aria-valuetext", "Max");
@@ -1366,12 +1316,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
   });
   await readyChat();
   click(await findButton("Claude Sonnet 5"));
-  click(
-    buttonNamed(
-      "Adjust Claude Sonnet 5 settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
     name: "Effort",
   });
@@ -1407,7 +1352,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
   }
 });
 
-test("Adjust effort and Fast from the desktop flyout with keyboard controls", async () => {
+test("Adjust effort and Fast with keyboard controls on a desktop layout", async () => {
   const user = userEvent.setup({ delay: null });
   context.mocks.browser.matchMedia((query) => {
     return query === "(min-width: 640px)";
@@ -1425,9 +1370,8 @@ test("Adjust effort and Fast from the desktop flyout with keyboard controls", as
     },
   });
   await readyComposer();
-  click(await findButton("GPT 5.6 Sol"));
-  await screen.findByRole("listbox", { name: "Chat models" });
-  click(await findButton("Adjust GPT 5.6 Sol settings"));
+  // The control is the composer's own, so the flyout has nothing to do with it.
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
     name: "Effort",
   });
@@ -1448,15 +1392,21 @@ test("Adjust effort and Fast from the desktop flyout with keyboard controls", as
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
   expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
-  const settings = screen.getByRole("region", { name: "Chat settings" });
   slider.focus();
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
-  click(buttonNamed("Back to models", settings));
-  await screen.findByRole("listbox", { name: "Chat models" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  // The flyout is still reachable on its own.
+  click(await findButton("GPT 5.6 Sol Fast"));
+  await expect(
+    screen.findByRole("listbox", { name: "Chat models" }),
+  ).resolves.toBeVisible();
 });
 
 test.each([
@@ -1515,12 +1465,7 @@ test.each([
     await readyChat();
     const label = getCanonicalModelDisplayName(model);
     click(await findButton(label));
-    click(
-      buttonNamed(
-        `Adjust ${label} settings`,
-        await screen.findByRole("region", { name: "Models" }),
-      ),
-    );
+    await openEffortPanel();
     const slider = await screen.findByRole("slider", {
       name: "Effort",
     });

@@ -269,6 +269,18 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/conversation-history-deletion.service.ts"],
+    rules: {
+      // One content-free aggregate per committed lifecycle deletion, never on
+      // rollback/no-op. Debug is dropped by Axiom; this receipt establishes
+      // actual forward accounting activity for #33973 production acceptance.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Conversation history deletion committed"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/codex-reset-credit-expiry.service.ts"],
     rules: {
       // One demand-driven aggregate per minute, not per-read diagnostics.

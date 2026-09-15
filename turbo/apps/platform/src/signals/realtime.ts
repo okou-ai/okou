@@ -1,5 +1,8 @@
 import { command, state, type Command } from "ccstate";
-import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import {
+  platformRealtimeTokenContract,
+  sessionOutputChannelName,
+} from "@okouai/api-contracts/contracts/realtime";
 import type {
   ChannelOptions,
   ChannelStateChange,
@@ -124,7 +127,7 @@ interface RealtimeSubscriptionChannel {
   readonly unsubscribe: (
     topic: string | null,
     callback: ChannelCallback,
-  ) => void;
+  ) => void | Promise<void>;
 }
 
 interface RealtimeSession {
@@ -135,6 +138,7 @@ interface RealtimeSession {
 type RealtimeChannelScope = SharedDatabaseRealtimeScope;
 
 interface RealtimeSessionChannels {
+  readonly "run-output": RealtimeSubscriptionChannel;
   readonly credential: RealtimeSubscriptionChannel;
   readonly user: RealtimeSubscriptionChannel;
   readonly org: RealtimeSubscriptionChannel;
@@ -329,9 +333,15 @@ async function subscribeChannel(
 ): Promise<void> {
   signal.throwIfAborted();
 
+  let cleanup: Promise<PromiseSettledResult<void>[]> | undefined;
   const unsubscribeChannel = () => {
+    if (cleanup) {
+      return;
+    }
     signal.removeEventListener("abort", unsubscribeChannel);
-    channel.unsubscribe(topic, callback);
+    cleanup = Promise.allSettled([
+      Promise.resolve(channel.unsubscribe(topic, callback)),
+    ]);
   };
   signal.addEventListener("abort", unsubscribeChannel, { once: true });
 
@@ -345,12 +355,24 @@ async function subscribeChannel(
     }
   };
 
-  await onRejection(() => {
-    return channel.subscribe(topic, callback, handleResync, signal);
-  }, unsubscribeChannel);
-  signal.throwIfAborted();
-  live = true;
-  await withCleanup(run(), unsubscribeChannel);
+  await withCleanup(
+    (async () => {
+      await channel.subscribe(topic, callback, handleResync, signal);
+      signal.throwIfAborted();
+      live = true;
+      await run();
+    })(),
+    async () => {
+      unsubscribeChannel();
+      const results = await cleanup;
+      const failure = results?.find((result) => {
+        return result.status === "rejected";
+      });
+      if (failure?.status === "rejected") {
+        L.warn("realtime channel cleanup failed", failure.reason);
+      }
+    },
+  );
   signal.throwIfAborted();
 }
 
@@ -783,6 +805,73 @@ function createRealtimeSubscriptionChannel(
   };
 }
 
+/** Dynamic channels share the authenticated connection and release their Ably
+ * attachment when the final local subscriber leaves. */
+function createSessionOutputSubscriptionChannel(
+  ably: AblyRealtime,
+  identity: { userId: string; orgId: string },
+): RealtimeSubscriptionChannel {
+  interface Entry {
+    channel: RealtimeChannel;
+    callbacks: Map<ChannelCallback, (message: InboundMessage) => void>;
+    detaching?: Promise<void>;
+  }
+  const entries = new Map<string, Entry>();
+  return {
+    async subscribe(topic, callback, _onResync, signal) {
+      if (!topic) {
+        throw new Error("Session output requires a run ID");
+      }
+      const name = sessionOutputChannelName(
+        identity.userId,
+        identity.orgId,
+        topic,
+      );
+      let entry = entries.get(name);
+      if (!entry) {
+        entry = { channel: ably.channels.get(name), callbacks: new Map() };
+        entries.set(name, entry);
+      }
+      const listener = (message: InboundMessage) => {
+        callback({ name: message.name ?? null, data: message.data });
+      };
+      entry.callbacks.set(callback, listener);
+      await waitForOperation(Promise.resolve(entry.detaching), signal);
+      signal.throwIfAborted();
+      await waitForOperation(entry.channel.subscribe(topic, listener), signal);
+      await whenChannelAttached(entry.channel, signal);
+    },
+    async unsubscribe(topic, callback) {
+      if (!topic) {
+        return;
+      }
+      const name = sessionOutputChannelName(
+        identity.userId,
+        identity.orgId,
+        topic,
+      );
+      const entry = entries.get(name);
+      const listener = entry?.callbacks.get(callback);
+      if (!entry || !listener) {
+        return;
+      }
+      entry.callbacks.delete(callback);
+      entry.channel.unsubscribe(topic, listener);
+      if (entry.callbacks.size > 0) {
+        return;
+      }
+      entry.detaching ??= entry.channel.detach();
+      await withCleanup(entry.detaching, () => {
+        entry.detaching = undefined;
+      });
+      if (entry.callbacks.size === 0 && entries.get(name) === entry) {
+        ably.channels.release(name);
+        entries.delete(name);
+      }
+    },
+  };
+}
+
 interface ConnectedRealtimeChannels {
   readonly credential: RealtimeChannel;
   readonly user: RealtimeChannel;
@@ -907,6 +996,7 @@ function observeRealtimeChannels(
 }
 
 interface ConnectedRealtimeClient {
+  readonly identity: { userId: string; orgId: string };
   readonly ably: AblyRealtime;
   readonly channels: ConnectedRealtimeChannels;
 }
@@ -1023,7 +1113,7 @@ const connectRealtimeClient$ = command(
       event: "realtime.channel",
       phase: "instant",
     });
-    return { ably, channels };
+    return { ably, channels, identity };
   },
 );
 
@@ -1060,6 +1150,10 @@ const initializeRealtime$ = command(
     );
     signal.throwIfAborted();
     const channels: RealtimeSessionChannels = {
+      "run-output": createSessionOutputSubscriptionChannel(
+        connected.ably,
+        connected.identity,
+      ),
       credential: createRealtimeSubscriptionChannel(
         connected.channels.credential,
         signal,

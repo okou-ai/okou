@@ -9820,14 +9820,15 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
-      {/* Effort sits level with the model rather than two surfaces behind it.
-          A phone's control row has no width to spare, so there it stays inside
-          the model picker's settings page. */}
+      {/* Effort sits level with the model rather than behind it. It is the only
+          way to reach effort and Fast now that the picker's settings page is
+          gone, so it shows at every width; the level's name is one short word,
+          which the row can afford even on a phone. */}
       <ChatEffortTrigger
         value={value}
         onChange={onChange}
         triggerClassName={cn(
-          "hidden text-sm text-muted-foreground sm:inline-flex",
+          "text-sm text-muted-foreground",
           COMPOSER_CONTROL_FOCUS_CLASS,
         )}
       />

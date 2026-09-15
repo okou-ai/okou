@@ -368,7 +368,10 @@ function MobileSidebarMount() {
       <Sidebar isDesktop={false} />
       <div
         data-sidebar-expanded={expanded || undefined}
-        className="okou-pwa-fixed-cover fixed inset-0 z-30 bg-black/40 hidden data-[sidebar-expanded]:max-md:block"
+        // A fixed cover is clipped by the visual viewport, so in a standalone
+        // PWA it stops short of the bottom safe inset. Extending `bottom` by
+        // that inset keeps the scrim painted to the physical screen edge.
+        className="fixed inset-0 z-30 bg-black/40 hidden data-[sidebar-expanded]:max-md:block [@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]"
         aria-label={t(($) => {
           return $.appShell.sidebar.mobile.overlay;
         })}

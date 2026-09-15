@@ -24,6 +24,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { i18n } from "../../i18n/index.ts";
+import { ChatCard } from "./components/chat-card.tsx";
 import type {
   BankingCardUiState,
   BankingSignals,
@@ -343,15 +344,15 @@ export function BankingActionCard({ signals }: { signals: BankingSignals }) {
 
 function BankingActionCardLoading() {
   return (
-    <div
+    <ChatCard
       data-testid="banking-action-card-loading"
       className={cn(
-        "okou-chat-card flex w-full items-center justify-center p-3",
+        "flex w-full items-center justify-center p-3",
         BANKING_COMPACT_CARD_HEIGHT_CLASS,
       )}
     >
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-    </div>
+    </ChatCard>
   );
 }
 
@@ -359,10 +360,10 @@ function BankingActionCardError({ signals }: { signals: BankingSignals }) {
   const refresh = useSet(signals.refresh$);
   const { t } = useTranslation();
   return (
-    <div
+    <ChatCard
       data-testid="banking-action-card-error"
       className={cn(
-        "okou-chat-card flex w-full items-center gap-3 p-3",
+        "flex w-full items-center gap-3 p-3",
         BANKING_COMPACT_CARD_HEIGHT_CLASS,
       )}
     >
@@ -377,7 +378,7 @@ function BankingActionCardError({ signals }: { signals: BankingSignals }) {
           return $.chat.banking.retry;
         })}
       </Button>
-    </div>
+    </ChatCard>
   );
 }
 
@@ -393,10 +394,10 @@ function LoadedBankingActionCard({
     controller.ui.localError === null &&
     (controller.pending || controller.status.connection === null);
   return (
-    <div
+    <ChatCard
       data-testid="banking-action-card"
       className={cn(
-        "okou-chat-card w-full p-3 text-left",
+        "w-full p-3 text-left",
         compact &&
           cn(
             "flex flex-col justify-between gap-3 overflow-hidden @[900px]:flex-row @[900px]:items-center",
@@ -414,7 +415,7 @@ function LoadedBankingActionCard({
       />
       <BankingCardErrorMessage message={controller.ui.localError} />
       <BankingCardContent controller={controller} compact={compact} />
-    </div>
+    </ChatCard>
   );
 }
 

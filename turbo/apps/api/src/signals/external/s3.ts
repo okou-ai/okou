@@ -1,4 +1,6 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
+import { Readable } from "node:stream";
+import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -1261,6 +1263,101 @@ export function copyArtifactShareObject(
     );
   });
 }
+
+function requireReadableBody(body: unknown): Readable {
+  if (!(body instanceof Readable)) {
+    throw new Error("Shared attachment source has no readable body");
+  }
+  return body;
+}
+
+/** Publish independent bytes without changing the source object's access. */
+export const copyPublicArtifactObject$ = command(
+  async (
+    { get },
+    args: {
+      readonly sourceBucket: string;
+      readonly sourceKey: string;
+      readonly key: string;
+      readonly filename: string;
+      readonly contentType: string;
+      readonly size: number;
+      readonly publicBrand: PublicBrand;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
+    const sourceClient = get(s3ClientForBucket(args.sourceBucket));
+    const targetClient = get(s3ClientForBucket(bucket));
+    const source = { Bucket: args.sourceBucket, Key: args.sourceKey };
+    const head = await sourceClient.send(new HeadObjectCommand(source), {
+      abortSignal: signal,
+    });
+    signal.throwIfAborted();
+    if (head.ContentLength !== args.size || !head.ETag) {
+      throw new Error("Shared attachment source changed or has no ETag");
+    }
+    const metadata = {
+      filename: encodeURIComponent(args.filename),
+      "public-brand": args.publicBrand,
+    };
+    await get(
+      publicArtifactWriteRegistration(
+        bucket,
+        {
+          key: args.key,
+          contentType: args.contentType,
+          metadata,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    const target = {
+      Bucket: bucket,
+      Key: args.key,
+      ContentType: args.contentType,
+      CacheControl: IMMUTABLE_CACHE_CONTROL,
+      Metadata: metadata,
+    };
+    if (args.sourceBucket === bucket) {
+      await targetClient.send(
+        new CopyObjectCommand({
+          ...target,
+          CopySource: `${bucket}/${args.sourceKey.split("/").map(encodeURIComponent).join("/")}`,
+          CopySourceIfMatch: head.ETag,
+          MetadataDirective: "REPLACE",
+        }),
+        { abortSignal: signal },
+      );
+      signal.throwIfAborted();
+      return;
+    }
+    // Private and public buckets have separate scoped credentials.
+    await using body = requireReadableBody(
+      (
+        await sourceClient.send(
+          new GetObjectCommand({
+            ...source,
+            IfMatch: head.ETag,
+          }),
+          { abortSignal: signal },
+        )
+      ).Body,
+    );
+    signal.throwIfAborted();
+    await targetClient.send(
+      new PutObjectCommand({
+        ...target,
+        Body: body,
+        ContentLength: args.size,
+        IfNoneMatch: "*",
+      }),
+      { abortSignal: signal },
+    );
+    signal.throwIfAborted();
+  },
+);
 
 /** Read the body and revision validator from the same strongly consistent read. */
 export function readArtifactSharePolicyObject(

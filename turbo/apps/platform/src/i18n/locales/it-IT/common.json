@@ -2171,6 +2171,7 @@
       "createFailed": "Impossibile creare la conversazione condivisa. Riprova.",
       "deselectGroup": "Deseleziona il gruppo di messaggi",
       "linkCopied": "Link copiato",
+      "publicDescription": "I messaggi selezionati e i relativi allegati saranno pubblici.",
       "selectedCount_one": "{{count}} selezionato",
       "selectedCount_many": "{{count}} selezionati",
       "selectedCount_other": "{{count}} selezionati",
@@ -2429,7 +2430,8 @@
         "browseStyles": "Sfoglia tutti gli stili",
         "browseTemplates": "Sfoglia tutti i modelli",
         "image": "Stili immagine",
-        "nextTemplates": "Modelli successivi",
+        "nextPage": "Pagina successiva",
+        "previousPage": "Pagina precedente",
         "video": "Modelli video",
         "website": "Modelli sito web"
       },
@@ -2544,7 +2546,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2560,7 +2561,6 @@
         "selectedCount_one": "{{count}} selezionato",
         "selectedCount_other": "{{count}} selezionati",
         "summary": "{{output}} · Metodi {{methodCount}} · Grafici {{chartCount}}",
-        "title": "Visualizzazione",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -5714,10 +5714,8 @@
         "loadError": "Impossibile caricare i modelli.",
         "loading": "Caricamento modelli...",
         "menu": {
-          "adjustSettings": "Modifica le impostazioni di {{model}}",
           "backToModels": "Torna ai modelli",
-          "changeModel": "Cambia modello di {{category}}, {{model}}",
-          "chatSettings": "Impostazioni della chat"
+          "changeModel": "Cambia modello di {{category}}, {{model}}"
         },
         "models": "Modelli",
         "noConfiguredModels": "Nessun modello configurato",
@@ -6222,6 +6220,9 @@
     "chooseFile": "Scegli file",
     "choosePrivateKeyFile": "Scegli il file della chiave privata",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access non ha stabilito un tunnel SSH. Controlla il nome host pubblicato e l’instradamento del Tunnel.",
+      "accessRejected": "Cloudflare Access ha rifiutato la connessione. Controlla il token di servizio e la policy Service Auth dell’applicazione.",
+      "accessTlsFailure": "Impossibile verificare la connessione sicura a Cloudflare Access. Controlla il nome host e il certificato TLS.",
       "attention_one": "{{count}} host SSH richiede attenzione",
       "attention_many": "{{count}} host SSH richiedono attenzione",
       "attention_other": "{{count}} host SSH richiedono attenzione",

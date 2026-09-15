@@ -445,7 +445,15 @@ const presentationGenerationTemplateRequestSchema = z.object({
 
 /**
  * Talking-avatar parameters. Unrelated to text-to-video despite sharing the
- * "video" envelope, which older bundles rely on to parse newer messages.
+ * "video" envelope.
+ *
+ * What keeps the envelope shared is persisted data, not client parsing: every
+ * selection ever stored in a chat message or draft carries `type: "video"` with
+ * the product encoded in `stylePresetId`, so readers must keep accepting that
+ * shape until those rows are backfilled. Splitting the discriminant is a
+ * cross-version protocol change; see `docs/deployment-compatibility.md` for the
+ * phasing it requires. `generationTemplateKind` in `@okouai/core` owns the
+ * style-preset split so no reader has to re-derive it.
  */
 const avatarGenerationOptionsSchema = z
   .object({
@@ -461,8 +469,15 @@ const videoGenerationTemplateRequestSchema = z.object({
   selection: z.object({
     stylePresetId: z.string().min(1),
     avatarOptions: avatarGenerationOptionsSchema.optional(),
-    // Keep the video envelope readable by previously deployed clients.
-    /** Intro Video selections; the key predates the product name and is persisted with the message. */
+    /**
+     * Intro Video selections. Both the key and `stylePresetId`'s
+     * `"explainer-video"` value predate the product name and are persisted with
+     * the message, so neither can be renamed without a backfill.
+     *
+     * Optional because a draft can hold the selection before its settings are
+     * chosen; classify with `generationTemplateKind` rather than the presence
+     * of this object.
+     */
     explainerOptions: introVideoOptionsSchema.optional(),
 
     /**

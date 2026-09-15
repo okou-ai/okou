@@ -175,6 +175,9 @@ impl Authority {
             .await?;
         let (host, port, username, generation, learned_host_key, auth) = match response {
             ResolveResponse::Unavailable => return Err(FailureReason::Unavailable),
+            // #34080 installs the native carrier. Until then this transport is
+            // unsupported; never forward its token or dial it as Direct SSH.
+            ResolveResponse::ResolvedAccess { .. } => return Err(FailureReason::Unavailable),
             ResolveResponse::Resolved {
                 host,
                 port,

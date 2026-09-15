@@ -13,10 +13,18 @@ import type {
 
 const c = initContract();
 
+export interface SharedMessageAttachment {
+  readonly filename: string;
+  readonly contentType: string;
+  readonly size: number;
+  readonly url: string;
+}
+
 export interface SharedMessage {
   readonly messageIndex: number;
   readonly role: "user" | "assistant";
   readonly content: string;
+  readonly attachments?: readonly SharedMessageAttachment[];
   readonly runIndex?: number;
   readonly runGroupIndex?: number;
 }
@@ -118,6 +126,18 @@ const sharedMessageZodSchema = z
     messageIndex: z.number().int().nonnegative(),
     role: z.enum(["user", "assistant"]),
     content: z.string(),
+    attachments: z
+      .array(
+        z
+          .object({
+            filename: z.string().min(1),
+            contentType: z.string().min(1),
+            size: z.number().int().nonnegative(),
+            url: z.httpUrl(),
+          })
+          .strict(),
+      )
+      .optional(),
     runIndex: z.number().int().nonnegative().optional(),
     runGroupIndex: z.number().int().nonnegative().optional(),
   })

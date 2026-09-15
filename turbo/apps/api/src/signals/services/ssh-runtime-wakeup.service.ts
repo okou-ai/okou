@@ -11,12 +11,14 @@ import { publishSshClientInvalidation } from "./ssh-client-invalidation.service"
 
 const L = logger("SshRuntimeWakeup");
 
-interface SshInvalidationScope {
+type SshInvalidationScope = {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId?: string;
-  readonly connectionId: string | null;
-}
+} & (
+  | { readonly connectionId: string | null; readonly connectionIds?: never }
+  | { readonly connectionIds: readonly string[]; readonly connectionId?: never }
+);
 
 /** Best-effort post-commit eviction. Deleted grants/connections must not filter out Runs. */
 export async function publishSshRuntimeInvalidation(
@@ -24,6 +26,10 @@ export async function publishSshRuntimeInvalidation(
   scope: SshInvalidationScope,
 ): Promise<void> {
   await publishSshClientInvalidation(scope);
+  const connectionIds = scope.connectionIds ?? [scope.connectionId];
+  if (connectionIds.length === 0) {
+    return;
+  }
   const discovery = await settle(
     db
       .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
@@ -55,18 +61,20 @@ export async function publishSshRuntimeInvalidation(
         if (run.runnerGroup === null) {
           return;
         }
-        const published = await settle(
-          publishSshInvalidationToRunnerGroup(run.runnerGroup, {
-            runId: run.runId,
-            connectionId: scope.connectionId,
-          }),
-        );
-        if (!published.ok) {
-          L.warn("Failed to publish SSH invalidation", {
-            ...scope,
-            runId: run.runId,
-            error: published.error,
-          });
+        for (const connectionId of connectionIds) {
+          const published = await settle(
+            publishSshInvalidationToRunnerGroup(run.runnerGroup, {
+              runId: run.runId,
+              connectionId,
+            }),
+          );
+          if (!published.ok) {
+            L.warn("Failed to publish SSH invalidation", {
+              ...scope,
+              runId: run.runId,
+              error: published.error,
+            });
+          }
         }
       }),
     );

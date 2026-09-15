@@ -3,21 +3,14 @@
   "legacyClassTokens": [
     "language-mermaid",
     "okou-app",
-    "okou-chat-card",
-    "okou-chat-frame",
-    "okou-chat-skeleton-reveal",
     "okou-composer",
     "okou-desktop-titlebar-drag-region",
     "okou-fixed-viewport-shell",
     "okou-markdown-card",
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
-    "okou-pwa-fixed-cover",
     "okou-shimmer-text",
     "okou-sidebar-header",
-    "okou-thinking-enter",
-    "okou-thinking-spinner",
-    "okou-thinking-spinner-frame",
     "okou-workspace-bg",
     "owf-diagram",
     "owf-diagram-action",
@@ -90,13 +83,6 @@
         "selector": ".okou-fixed-viewport-shell",
         "property": "padding",
         "value": "var(--sat) var(--sar) var(--sab) var(--sal)",
-        "important": false
-      },
-      {
-        "atRules": ["@media (display-mode:standalone)"],
-        "selector": ".okou-pwa-fixed-cover",
-        "property": "bottom",
-        "value": "calc(-1*var(--sab))",
         "important": false
       },
       {
@@ -283,41 +269,6 @@
       },
       {
         "atRules": [],
-        "selector": ".okou-thinking-enter",
-        "property": "animation",
-        "value": "okou-thinking-in 0.3s ease-out",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-thinking-spinner",
-        "property": "animation-duration",
-        "value": "1.4s",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-thinking-spinner",
-        "property": "will-change",
-        "value": "transform",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-skeleton-reveal",
-        "property": "opacity",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-skeleton-reveal",
-        "property": "animation",
-        "value": "okou-chat-skeleton-reveal 0s 100ms forwards",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-app",
         "property": "--okou-card-radius",
         "value": " 1.25rem",
@@ -419,34 +370,6 @@
         "selector": ".okou-app",
         "property": "--color-sidebar-rail",
         "value": " hsl(var(--sidebar-rail))",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
-        "property": "border",
-        "value": "1px solid hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
-        "property": "border-radius",
-        "value": "var(--okou-chat-card-radius)",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
-        "property": "box-shadow",
-        "value": "var(--okou-chat-card-shadow)",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card",
-        "property": "background-color",
-        "value": "hsl(var(--card))",
         "important": false
       },
       {
@@ -2416,19 +2339,6 @@
       "okou-app": 1,
       "okou-workspace-bg": 1
     },
-    "apps/platform/src/views/okou-page/attachment-chips.tsx": {
-      "okou-chat-card": 4,
-      "okou-chat-frame": 1
-    },
-    "apps/platform/src/views/okou-page/banking-action-card.tsx": {
-      "okou-chat-card": 3
-    },
-    "apps/platform/src/views/okou-page/browser-session-card.tsx": {
-      "okou-chat-card": 3
-    },
-    "apps/platform/src/views/okou-page/chat-body-cards.tsx": {
-      "okou-chat-card": 4
-    },
     "apps/platform/src/views/okou-page/chat-composer.tsx": {
       "okou-app": 1
     },
@@ -2436,12 +2346,7 @@
       "okou-app": 1
     },
     "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-chat-card": 2,
-      "okou-chat-skeleton-reveal": 1,
-      "okou-shimmer-text": 1,
-      "okou-thinking-enter": 3,
-      "okou-thinking-spinner": 1,
-      "okou-thinking-spinner-frame": 1
+      "okou-shimmer-text": 1
     },
     "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx": {
       "okou-app": 1
@@ -2456,9 +2361,6 @@
       "okou-app": 1,
       "okou-workspace-bg": 1
     },
-    "apps/platform/src/views/okou-page/connector-account-action-card.tsx": {
-      "okou-chat-card": 1
-    },
     "apps/platform/src/views/okou-page/directed-shared.tsx": {
       "okou-app": 1
     },
@@ -2472,8 +2374,7 @@
       "okou-app": 2
     },
     "apps/platform/src/views/okou-page/sidebar-layout.tsx": {
-      "okou-app": 1,
-      "okou-pwa-fixed-cover": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/okou-page/sidebar.tsx": {
       "okou-desktop-titlebar-drag-region": 2,

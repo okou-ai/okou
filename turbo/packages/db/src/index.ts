@@ -143,6 +143,7 @@ import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publica
 import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
+import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
   ...accountErasureSchema,
@@ -290,6 +291,7 @@ export const schema = {
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...agentSshAccessSchema,
+  ...cloudflareAccessConfigSchema,
 };
 
 export type DatabaseSchema = typeof schema;

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createSessionOutputStream } from "../external/session-output-stream";
 
 import {
   CANONICAL_WORKING_DIR,
@@ -1061,6 +1062,7 @@ async function apiFirstTurnModelConfig(
         const resolved = await settle(
           resolveModelProviderRuntimeSecretForApi({
             db: args.db,
+            runId: args.activation.runId,
             orgId: args.activation.orgId,
             userId: args.activation.userId,
             key: binding.secretName,
@@ -1148,7 +1150,7 @@ async function validateApiFirstTurnCredentialSources(
     ) {
       throw new PiApiFirstTurnCodexReconnectRequiredError();
     }
-    if (!state.value) {
+    if (!state.value || state.value.needsReconnect) {
       throw piApiFirstTurnError(
         "PI_API_MODEL_CREDENTIAL_INVALID",
         "Pi API first-turn subscription access token is unavailable",
@@ -1168,6 +1170,7 @@ async function validateApiFirstTurnCredentialSources(
     const resolved = await settle(
       resolveModelProviderRuntimeSecretForApi({
         db: args.db,
+        runId: args.activation.runId,
         orgId: args.activation.orgId,
         userId: args.activation.userId,
         key: binding.secretName,
@@ -1304,7 +1307,7 @@ async function acquireApiProviderOwnership(
   finish("success");
 }
 
-function runObservedApiModelTurn(
+async function runObservedApiModelTurn(
   args: ExecuteApiModelTurnArgs,
   providerSignal: AbortSignal,
   lifecycleSignal: AbortSignal,
@@ -1312,7 +1315,16 @@ function runObservedApiModelTurn(
   const langfuseEnabled = isPiLangfuseDebugRunEnvironment(
     args.activation.executionContext.platformEnvironment,
   );
-  return tracePiApiFirstTurn(
+  const textStream = createSessionOutputStream(
+    {
+      userId: args.activation.userId,
+      orgId: args.activation.orgId,
+      threadId: args.commitIdentity.sessionId,
+      runId: args.activation.runId,
+    },
+    providerSignal,
+  );
+  return await tracePiApiFirstTurn(
     {
       enabled: langfuseEnabled,
       runId: args.activation.runId,
@@ -1326,6 +1338,7 @@ function runObservedApiModelTurn(
           args.runtime,
           {
             ownership: args.ownership,
+            textStream,
             providerRequestBoundary: async (
               markProviderRequestMayHaveStarted,
             ) => {
@@ -1341,7 +1354,9 @@ function runObservedApiModelTurn(
       },
     },
     lifecycleSignal,
-  );
+  ).finally(() => {
+    textStream.close();
+  });
 }
 
 async function finalizeObservedApiModelTurn(args: {

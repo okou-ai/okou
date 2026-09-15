@@ -852,6 +852,93 @@
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/34059",
       "mergeCommit": null
+    },
+    {
+      "id": "chat-transcript-card",
+      "family": "chat-and-content",
+      "tokens": ["okou-chat-card", "okou-chat-frame"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/banking-action-card.tsx",
+        "apps/platform/src/views/okou-page/browser-session-card.tsx",
+        "apps/platform/src/views/okou-page/chat-body-cards.tsx",
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx",
+        "apps/platform/src/views/okou-page/connector-account-action-card.tsx",
+        "apps/platform/src/views/okou-page/attachment-chips.tsx"
+      ],
+      "cases": [
+        "chat-transcript-card-light",
+        "chat-transcript-card-dark",
+        "chat-transcript-card-light-retina",
+        "chat-transcript-card-dark-retina",
+        "chat-transcript-card-narrow",
+        "chat-transcript-card-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": []
+    },
+    {
+      "id": "chat-thinking-states",
+      "family": "motion-and-injection",
+      "tokens": [
+        "okou-chat-skeleton-reveal",
+        "okou-thinking-enter",
+        "okou-thinking-spinner",
+        "okou-thinking-spinner-frame"
+      ],
+      "consumers": ["apps/platform/src/views/okou-page/chat-thread-page.tsx"],
+      "cases": [
+        "chat-thinking-light",
+        "chat-thinking-dark",
+        "chat-thinking-light-retina",
+        "chat-thinking-dark-retina",
+        "chat-thinking-narrow",
+        "chat-thinking-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33843",
+      "mergeCommit": null
+    },
+    {
+      "id": "pwa-safe-area-cover",
+      "family": "platform-shell",
+      "tokens": ["okou-pwa-fixed-cover"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar-layout.tsx",
+        "apps/platform/src/views/okou-page/attachment-chips.tsx"
+      ],
+      "cases": [
+        "pwa-safe-area-cover-shell-light",
+        "pwa-safe-area-cover-shell-dark",
+        "pwa-safe-area-cover-scrim-light",
+        "pwa-safe-area-cover-scrim-dark",
+        "pwa-safe-area-cover-lightbox-light",
+        "pwa-safe-area-cover-lightbox-dark",
+        "pwa-safe-area-cover-lightbox-desktop-light",
+        "pwa-safe-area-cover-lightbox-desktop-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "mobile-drawer-safe-area",
+      "family": "platform-shell",
+      "tokens": ["okou-mobile-fixed-safe-area", "okou-mobile-sidebar"],
+      "consumers": ["apps/platform/src/views/okou-page/sidebar.tsx"],
+      "cases": [
+        "pwa-safe-area-cover-shell-light",
+        "pwa-safe-area-cover-shell-dark",
+        "pwa-safe-area-cover-scrim-light",
+        "pwa-safe-area-cover-scrim-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "Both remaining tokens sit on one element, the mobile drawer aside at apps/platform/src/views/okou-page/sidebar.tsx, and draining them needs a design decision about where this shape belongs. okou-mobile-sidebar is isolation isolate plus a six-declaration ::before paint layer plus a standalone-only bottom extension on that layer; okou-mobile-fixed-safe-area is box-sizing and a four-value safe-area padding inside max-width 767px. Spelled as utilities on the consumer that is isolate, before:pointer-events-none, before:absolute, before:inset-0, before:-z-1, before:bg-sidebar, before:content-[\"\"], before:[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))], max-md:box-border and max-md:p-[var(--sat)_var(--sar)_var(--sab)_var(--sal)]. Measured, that takes the element from 288 to 499 characters of class list and from 2 to 6 bracketed arbitrary values, four of them new. The element already carried a 235-character single string before any change. Whether that belongs inline, behind a shared safe-area padding decision, or inside a drawer-surface component is a design call about the token layer, not a mechanical substitution, so no value was chosen here. The mechanics are otherwise clear and unblocked: both legacy rules are unlayered, nothing else on the element sets isolation, ::before, padding or box-sizing, so the utilities would not have to outrank anything and no important marker is needed. max-md is also not an exact restatement of the retired condition. Tailwind emits @media (width < 48rem), so between 767px and 768px of viewport width the padding would newly apply while the retired rule stopped at 767px; the element already gates its whole fixed-drawer geometry on max-md, so the two spellings disagree there today. Nothing about this batch depends on data-desktop-shell, so it is independent of the desktop-titlebar block in the same family.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -874,6 +961,9 @@
     "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
     "../e2e/playwright/style-migration/external-contract-audit-cases.json",
     "../e2e/playwright/style-migration/chat-bubble-cases.json",
-    "../e2e/playwright/style-migration/code-fence-copy-cases.json"
+    "../e2e/playwright/style-migration/code-fence-copy-cases.json",
+    "../e2e/playwright/style-migration/chat-card-cases.json",
+    "../e2e/playwright/style-migration/chat-thinking-cases.json",
+    "../e2e/playwright/style-migration/pwa-safe-area-cover-cases.json"
   ]
 }

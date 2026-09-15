@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.90.2](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.1...guest-agent-v0.90.2) (2026-09-15)
+
+## [0.90.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.0...guest-agent-v0.90.1) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
 ## [0.90.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.10...guest-agent-v0.90.0) (2026-09-14)
 
 

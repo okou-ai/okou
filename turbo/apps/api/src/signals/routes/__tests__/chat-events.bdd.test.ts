@@ -1,3 +1,7 @@
+import {
+  sessionOutputDeltaSchema,
+  type SessionOutputDelta,
+} from "@okouai/api-contracts/contracts/realtime";
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   PI_LANGFUSE_RELAY_MAX_BYTES,
@@ -13147,6 +13151,63 @@ describe("CHAT-02: model-first provider policies", () => {
     });
   }, 90_000);
 
+  it("completes API-first output when transient stream publication fails", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: requireOrgId(actor) },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const answer = "The complete answer survives the streaming outage";
+    server.use(
+      http.post("https://api.openai.com/v1/responses", () => {
+        return new HttpResponse(piResponsesTextSse(answer, 1), {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }),
+    );
+    const failedPublications: SessionOutputDelta[] = [];
+    context.mocks.ably.publish.mockImplementation((_topic, payload) => {
+      const chunk = sessionOutputDeltaSchema.safeParse(payload);
+      if (chunk.success) {
+        failedPublications.push(chunk.data);
+        return Promise.reject(
+          new Error("Session output transport unavailable"),
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "Finish the answer even if its live preview is unavailable",
+      model: "gpt-5.6-terra",
+    });
+    await waitForRunStatus(actor, run.runId, "completed");
+    const thread = await chat.listThreadEvents(actor, run.threadId);
+    const messages = eventBackedContents(thread.events, run.runId);
+    expect(messages).toStrictEqual([
+      expect.objectContaining({ content: answer, sequenceNumber: 0 }),
+    ]);
+    expect(failedPublications).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          runId: run.runId,
+          eventId: messages[0]?.id,
+          chunkIndex: 0,
+          delta: answer,
+        }),
+      ]),
+    );
+    const reread = await chat.listThreadEvents(actor, run.threadId);
+    expect(eventBackedContents(reread.events, run.runId)).toStrictEqual(
+      messages,
+    );
+  });
+
   it("projects citation-free API-first blocks and durable private provenance", async () => {
     const { actor, agentId } = await entitledChatActor();
     if (!actor.orgId) {
@@ -13276,11 +13337,23 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         content: copiedArchiveNotice,
         sequenceNumber: 0,
-        runEventId: "event:0",
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:0$/u),
       },
-      { content: "beta", sequenceNumber: 1, runEventId: "event:1" },
-      { content: "gamma", sequenceNumber: 2, runEventId: "event:2" },
-      { content: "delta", sequenceNumber: 3, runEventId: "event:3" },
+      {
+        content: "beta",
+        sequenceNumber: 1,
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:1$/u),
+      },
+      {
+        content: "gamma",
+        sequenceNumber: 2,
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:2$/u),
+      },
+      {
+        content: "delta",
+        sequenceNumber: 3,
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:3$/u),
+      },
     ]);
   }, 90_000);
 
@@ -17905,6 +17978,43 @@ describe("CHAT-02: model-first provider policies", () => {
       { content: "before parallel tools", sequenceNumber: 0 },
       { content: "after parallel tools", sequenceNumber: 3 },
     ]);
+    await expect
+      .poll(() => {
+        return context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+          return topic === run.runId;
+        }).length;
+      })
+      .toBe(2);
+    const streamed = context.mocks.ably.publish.mock.calls
+      .filter(([topic]) => {
+        return topic === run.runId;
+      })
+      .map(([_topic, payload]) => {
+        return sessionOutputDeltaSchema.parse(payload);
+      });
+    expect(
+      streamed.map((chunk) => {
+        return chunk.delta;
+      }),
+    ).toStrictEqual(["before parallel tools", "after parallel tools"]);
+    expect(
+      streamed.every((chunk) => {
+        return chunk.chunkIndex === 0;
+      }),
+    ).toBeTruthy();
+    expect(projected.events).toStrictEqual(
+      expect.arrayContaining(
+        streamed.map((chunk) => {
+          return expect.objectContaining({
+            id: chunk.eventId,
+            eventType: "output.message",
+            runId: run.runId,
+            runEventId: chunk.runEventId,
+            content: chunk.delta,
+          });
+        }),
+      ),
+    );
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
@@ -21164,6 +21274,360 @@ describe("CHAT-02: run-level model overrides", () => {
     },
     90_000,
   );
+
+  describe("final subscription authority", () => {
+    function observeProviderRequests() {
+      const requests: {
+        body: unknown;
+        authorization: string | null;
+        accountId: string | null;
+      }[] = [];
+      const alternateRequests: string[] = [];
+      server.use(
+        http.post(
+          "https://chatgpt.com/backend-api/codex/responses",
+          async ({ request }) => {
+            requests.push({
+              body: await readCodexRequestJson(request),
+              authorization: request.headers.get("authorization"),
+              accountId: request.headers.get("chatgpt-account-id"),
+            });
+            return nativeCodexSseResponse(
+              piResponsesTextSse(
+                "captured subscription answer",
+                requests.length,
+              ),
+            );
+          },
+        ),
+        http.post(
+          /^https:\/\/(api\.openai\.com|openrouter\.ai|api\.anthropic\.com)\//,
+          ({ request }) => {
+            alternateRequests.push(request.url);
+            return HttpResponse.json(
+              { error: "unexpected alternate provider" },
+              { status: 500 },
+            );
+          },
+        ),
+      );
+      return { requests, alternateRequests };
+    }
+
+    async function prepareHeldSubscription(accountsEnabled = true) {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const identity = `held-subscription-${randomUUID()}`;
+      const captured = await configureSubscriptionPiModel(actor, {
+        accountId: identity,
+        accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
+      });
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
+      });
+      const instructions = await publishPendingPiInstructions(actor, agentId);
+      const thread = await chat.createThread(actor, { agentId });
+      const sdk = await context.mocks.piSdk.controlInitialization(
+        { sessionId: thread.id, instructions, holdInitialization: true },
+        context.signal,
+      );
+      mockPiResourceArchiveDownloads();
+      const objects = mockPiCheckpointObjectStore();
+      const observed = observeProviderRequests();
+      const run = await sendChatRun(actor, {
+        agentId,
+        threadId: thread.id,
+        model: "gpt-5.6-terra",
+        prompt: "preserve final subscription authority",
+        runOptions: { codexServiceTier: "fast" },
+      });
+      await sdk.entered;
+      onTestFinished(async () => {
+        sdk.release();
+        await flushWaitUntilForTest();
+      });
+      expect(observed.requests).toHaveLength(0);
+      return {
+        actor,
+        agentId,
+        runnerGroup,
+        identity,
+        captured,
+        sdk,
+        objects,
+        run,
+        ...observed,
+      };
+    }
+
+    it.each([
+      { change: "ordinary disconnect", accountsEnabled: true },
+      { change: "singleton disconnect", accountsEnabled: false },
+      { change: "different-identity reconnect", accountsEnabled: true },
+    ] as const)(
+      "keeps admitted A through $change with accounts UI $accountsEnabled",
+      async ({ change, accountsEnabled }) => {
+        const f = await prepareHeldSubscription(accountsEnabled);
+        let replacement:
+          | ReturnType<typeof mockCodexDeviceAuthProvider>
+          | undefined;
+        const replacementIdentity = `replacement-${randomUUID()}`;
+        if (change === "different-identity reconnect") {
+          replacement = mockCodexDeviceAuthProvider({
+            tokenScope: "personal",
+            accountId: replacementIdentity,
+            accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
+          });
+          const started = await authDevice.requestCodexStart(
+            f.actor,
+            "personal",
+            [200],
+            {
+              mode: "reconnect",
+              modelProviderId: f.captured.accountSourceId,
+            },
+          );
+          if (started.status !== 200) {
+            throw new Error("Expected replacement authorization to start");
+          }
+          const completed = await authDevice.requestCodexComplete(
+            f.actor,
+            started.body.sessionToken,
+            [200],
+          );
+          if (
+            !("status" in completed.body) ||
+            completed.body.status !== "complete"
+          ) {
+            throw new Error("Expected replacement authorization to complete");
+          }
+          expect(completed.body.provider.id).not.toBe(
+            f.captured.accountSourceId,
+          );
+          const listed = await authDeviceSupport.listPersonalModelProviders(
+            f.actor,
+            [200],
+          );
+          expect(listed.body).toMatchObject({
+            modelProviders: [
+              expect.objectContaining({
+                id: completed.body.provider.id,
+                isActive: true,
+              }),
+            ],
+          });
+          expect(JSON.stringify(listed.body)).not.toContain(
+            f.captured.accountSourceId,
+          );
+        } else if (accountsEnabled) {
+          await authDeviceSupport.deletePersonalModelProviderAccount(
+            f.actor,
+            f.captured.accountSourceId,
+          );
+        } else {
+          await authDeviceSupport.deletePersonalModelProvider(
+            f.actor,
+            "codex-oauth-token",
+            [204],
+          );
+        }
+        if (!replacement) {
+          expect(
+            (await authDeviceSupport.listPersonalModelProviders(f.actor, [200]))
+              .body,
+          ).toMatchObject({ modelProviders: [] });
+        }
+        f.sdk.release();
+        await waitForRunStatus(f.actor, f.run.runId, "completed");
+        await f.sdk.disposed;
+        await flushWaitUntilForTest();
+        expect(f.sdk.disposeCount()).toBe(1);
+        expect(f.requests).toHaveLength(1);
+        expect(f.requests[0]).toMatchObject({
+          authorization: `Bearer ${f.captured.oauth.oauthTokenResponses[0]?.access_token}`,
+          accountId: f.identity,
+          body: {
+            model: "gpt-5.6-terra",
+            service_tier: "priority",
+            stream: true,
+            store: false,
+          },
+        });
+        expect(
+          eventBackedContents(
+            (await chat.listThreadEvents(f.actor, f.run.threadId)).events,
+            f.run.runId,
+          ),
+        ).toContainEqual(
+          expect.objectContaining({ content: "captured subscription answer" }),
+        );
+        await expectNoBuiltInModelUsage(f.run.runId);
+        if (replacement) {
+          const later = await sendChatRun(f.actor, {
+            agentId: f.agentId,
+            model: "gpt-5.6-terra",
+            prompt: "select replacement B in a new run",
+          });
+          expect(later.threadId).not.toBe(f.run.threadId);
+          await waitForRunStatus(f.actor, later.runId, "completed");
+          await flushWaitUntilForTest();
+          expect(f.requests).toHaveLength(2);
+          expect(f.requests[1]).toMatchObject({
+            authorization: `Bearer ${replacement.oauthTokenResponses[0]?.access_token}`,
+            accountId: replacementIdentity,
+            body: { model: "gpt-5.6-terra", stream: true, store: false },
+          });
+          expect(replacement.oauthToken).toHaveLength(1);
+          await expectNoBuiltInModelUsage(later.runId);
+        }
+        expect(f.captured.oauth.oauthToken).toHaveLength(1);
+        expect(f.alternateRequests).toHaveLength(0);
+      },
+      30_000,
+    );
+
+    it.each(["connected invalid_grant", "retained terminal refresh"] as const)(
+      "rejects %s acquired after preparation without refreshing again",
+      async (failure) => {
+        const f = await prepareHeldSubscription();
+        const { claim, sandboxHeaders } = await claimChatRun(
+          f.runnerGroup,
+          f.run.runId,
+        );
+        if (failure === "retained terminal refresh") {
+          await authDeviceSupport.deletePersonalModelProviderAccount(
+            f.actor,
+            f.captured.accountSourceId,
+          );
+        }
+        let refreshAttempts = 0;
+        const firewall = createFirewallApi(context);
+        firewall.mockCodexTokenRefresh(() => {
+          refreshAttempts += 1;
+          return failure === "connected invalid_grant"
+            ? HttpResponse.json({ error: "invalid_grant" }, { status: 400 })
+            : HttpResponse.json(
+                { error: { code: "refresh_token_invalidated" } },
+                { status: 401 },
+              );
+        });
+        const rejected = await firewall.requestFirewallAuth(
+          sandboxHeaders,
+          {
+            encryptedSecrets: z.string().parse(claim.encryptedSecrets),
+            authHeaders: {
+              Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+              "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+            },
+            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMetadataMap:
+              claim.secretConnectorMetadataMap ?? undefined,
+            forceRefresh: true,
+          },
+          [502],
+        );
+        expect(rejected.body).toMatchObject({
+          error: { failureReason: "reconnect_required" },
+        });
+        expect(refreshAttempts).toBe(1);
+        expect(f.requests).toHaveLength(0);
+        f.sdk.release();
+        await waitForRunStatus(f.actor, f.run.runId, "failed");
+        await f.sdk.disposed;
+        await flushWaitUntilForTest();
+        expect(f.sdk.disposeCount()).toBe(1);
+        expect(f.requests).toHaveLength(0);
+        expect(f.alternateRequests).toHaveLength(0);
+        expect(refreshAttempts).toBe(1);
+        expect(f.captured.oauth.oauthToken).toHaveLength(1);
+        expectNoPiApiFirstTurnArtifacts(f.run.runId, f.objects);
+        await expectNoBuiltInModelUsage(f.run.runId);
+        const events = (await chat.listThreadEvents(f.actor, f.run.threadId))
+          .events;
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            eventType: "run.failed",
+            runId: f.run.runId,
+            failureReason: "reconnect_required",
+          }),
+        );
+        expect(eventBackedContents(events, f.run.runId)).toStrictEqual([]);
+        await expect(api.readRun(f.actor, f.run.runId)).resolves.toMatchObject({
+          status: "failed",
+          error: expect.stringContaining("[PI_API_MODEL_CREDENTIAL_INVALID]"),
+        });
+      },
+      30_000,
+    );
+
+    it.each(["cancellation", "membership revocation"] as const)(
+      "honors %s before releasing a retained subscription session",
+      async (revocation) => {
+        const f = await prepareHeldSubscription();
+        await authDeviceSupport.deletePersonalModelProviderAccount(
+          f.actor,
+          f.captured.accountSourceId,
+        );
+        if (revocation === "cancellation") {
+          await cancelChatRun(f.actor, f.run.runId);
+        } else {
+          webhooks.configureClerkWebhookSecret();
+          webhooks.verifyNextClerkWebhook({
+            type: "organizationMembership.deleted",
+            data: {
+              id: `membership-${randomUUID()}`,
+              organization_id: f.actor.orgId,
+              user_id: f.actor.userId,
+            },
+          });
+          await webhooks.requestClerkWebhook("{}", {}, [200]);
+          // The webhook acknowledges before its owned cleanup finishes. Wait
+          // for the external revocation outcome before releasing the SDK.
+          await expect
+            .poll(async () => {
+              const result = await api.requestReadRun(
+                f.actor,
+                f.run.runId,
+                [200, 401, 403, 404],
+              );
+              return result.status === 200
+                ? result.body.status === "cancelled"
+                : true;
+            })
+            .toBe(true);
+        }
+        f.sdk.release();
+        await f.sdk.disposed;
+        await flushWaitUntilForTest();
+        expect(f.sdk.disposeCount()).toBe(1);
+        expect(f.requests).toHaveLength(0);
+        expect(f.alternateRequests).toHaveLength(0);
+        expect(f.captured.oauth.oauthToken).toHaveLength(1);
+        expectNoPiApiFirstTurnArtifacts(f.run.runId, f.objects);
+        await expectNoBuiltInModelUsage(f.run.runId);
+        if (revocation === "cancellation") {
+          await expectPiApiFirstTurnTerminalWithoutOutput(
+            f.actor,
+            f.run,
+            "cancelled",
+          );
+        } else {
+          // A revoked actor may lose read access too; only a successful read
+          // can expose the canonical terminal state. Never infer a fixed denial.
+          const result = await api.requestReadRun(
+            f.actor,
+            f.run.runId,
+            [200, 401, 403, 404],
+          );
+          if (result.status === 200) {
+            expect(result.body).toMatchObject({ status: "cancelled" });
+            expect(result.body.result).toBeFalsy();
+          }
+        }
+      },
+      30_000,
+    );
+  });
 
   it.each(["deleted", "reconnect-required"] as const)(
     "rejects a prepared subscription when its captured account becomes %s",

@@ -101,6 +101,11 @@ test("Share selected message groups as a public conversation snapshot", async ()
 
   await waitFor(() => {
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        "Selected messages and their attachments will be public.",
+      ).length,
+    ).toBeGreaterThan(0);
   });
   const promptGroup = selectableGroupForText(PROMPT);
   const answerGroup = selectableGroupForText(ANSWER);

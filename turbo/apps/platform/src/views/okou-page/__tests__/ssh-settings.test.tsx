@@ -593,6 +593,43 @@ test("Connection warnings explain the failure and recover through notifications 
   expect(screen.getByText("Deployment")).toBeInTheDocument();
 });
 
+test.each([
+  [
+    "access_rejected",
+    "Cloudflare Access rejected the connection. Check the Service Token and the application's Service Auth policy.",
+  ],
+  [
+    "access_tls_failure",
+    "The secure connection to Cloudflare Access could not be verified. Check the hostname and TLS certificate.",
+  ],
+  [
+    "access_protocol_failure",
+    "Cloudflare Access did not establish an SSH tunnel. Check the published hostname and Tunnel routing.",
+  ],
+] as const)(
+  "Access failure %s has its own recovery guidance",
+  async (failureReason, message) => {
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [base] });
+    });
+    context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
+      return respond(200, {
+        observations: [
+          {
+            connectionId: id,
+            generation: 1,
+            observedAt: "2026-09-10T08:00:00.000Z",
+            failureReason,
+          },
+        ],
+      });
+    });
+    await page();
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    expect(getAction("button", "Edit host")).toBeEnabled();
+  },
+);
+
 test.each([404, 500] as const)(
   "Diagnostic read failure (%s) is not a host failure and keeps management available",
   async (status) => {

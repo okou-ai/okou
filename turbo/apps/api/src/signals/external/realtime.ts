@@ -1,8 +1,10 @@
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
-import type {
-  BrowserSessionChangedPayload,
-  UserPreferenceChangedPayload,
+import {
+  sessionOutputChannelName,
+  type BrowserSessionChangedPayload,
+  type SessionOutputDelta,
+  type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
 import type { RunnerPreference } from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
@@ -62,6 +64,7 @@ export async function createPlatformRealtimeToken(
   if (orgId !== undefined) {
     capability[getOrgChannelName(orgId)] = ["subscribe"];
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
+    capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];
   }
   const tokenRequest = await ablyClient().auth.createTokenRequest({
     capability,
@@ -122,6 +125,18 @@ async function publishChatDatabaseSignalNow(
   const client = ablyClient();
   await client.channels.get(channelName).publish(topic, payload);
   L.debug(`Published "${topic}" to ${channelName}`);
+}
+
+export async function publishSessionOutputDelta(
+  target: { readonly userId: string; readonly orgId: string },
+  delta: SessionOutputDelta,
+): Promise<void> {
+  const channelName = sessionOutputChannelName(
+    target.userId,
+    target.orgId,
+    delta.runId,
+  );
+  await ablyClient().channels.get(channelName).publish(delta.runId, delta);
 }
 
 function publishChatDatabaseSignal(

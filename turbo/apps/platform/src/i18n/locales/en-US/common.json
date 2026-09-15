@@ -2126,6 +2126,7 @@
       "createFailed": "Could not create the shared conversation. Try again.",
       "deselectGroup": "Deselect message group",
       "linkCopied": "Link copied",
+      "publicDescription": "Selected messages and their attachments will be public.",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
@@ -2383,7 +2384,8 @@
         "browseStyles": "Browse all styles",
         "browseTemplates": "Browse all templates",
         "image": "Image styles",
-        "nextTemplates": "Next templates",
+        "nextPage": "Next page",
+        "previousPage": "Previous page",
         "video": "Video templates",
         "website": "Website templates"
       },
@@ -2498,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2514,7 +2515,6 @@
         "selectedCount_one": "{{count}} selected",
         "selectedCount_other": "{{count}} selected",
         "summary": "{{output}} · Methods {{methodCount}} · Charts {{chartCount}}",
-        "title": "Visualization",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -5648,10 +5648,8 @@
         "loadError": "Unable to load models.",
         "loading": "Loading models...",
         "menu": {
-          "adjustSettings": "Adjust {{model}} settings",
           "backToModels": "Back to models",
-          "changeModel": "Change {{category}} model, {{model}}",
-          "chatSettings": "Chat settings"
+          "changeModel": "Change {{category}} model, {{model}}"
         },
         "models": "Models",
         "noConfiguredModels": "No configured models",
@@ -6153,6 +6151,9 @@
     "chooseFile": "Choose file",
     "choosePrivateKeyFile": "Choose private key file",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access did not establish an SSH tunnel. Check the published hostname and Tunnel routing.",
+      "accessRejected": "Cloudflare Access rejected the connection. Check the Service Token and the application's Service Auth policy.",
+      "accessTlsFailure": "The secure connection to Cloudflare Access could not be verified. Check the hostname and TLS certificate.",
       "attention_one": "{{count}} SSH host needs attention",
       "attention_other": "{{count}} SSH hosts need attention",
       "authenticationFailed": "SSH authentication failed. Check the selected credential's username, private key or password and the server's authorization. Edit the credential or select another one for this host.",

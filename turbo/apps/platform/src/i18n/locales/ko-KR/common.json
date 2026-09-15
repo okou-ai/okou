@@ -2118,6 +2118,7 @@
       "createFailed": "공유된 대화를 만들지 못했습니다. 다시 시도하세요.",
       "deselectGroup": "메시지 그룹 선택 해제",
       "linkCopied": "링크가 복사되었습니다",
+      "publicDescription": "선택한 메시지와 첨부 파일이 공개됩니다.",
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
       "shareLink": "공유된 대화 링크",
@@ -2374,7 +2375,8 @@
         "browseStyles": "모든 스타일 보기",
         "browseTemplates": "모든 템플릿 보기",
         "image": "이미지 스타일",
-        "nextTemplates": "다음 템플릿",
+        "nextPage": "다음 페이지",
+        "previousPage": "이전 페이지",
         "video": "동영상 템플릿",
         "website": "웹사이트 템플릿"
       },
@@ -2489,7 +2491,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2505,7 +2506,6 @@
         "selectedCount_one": "{{count}}개 선택됨",
         "selectedCount_other": "{{count}}개 선택됨",
         "summary": "{{output}} · 표현 방식 {{methodCount}} · 차트 {{chartCount}}",
-        "title": "시각화",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -5643,10 +5643,8 @@
         "loadError": "모델을 불러올 수 없습니다.",
         "loading": "모델 불러오는 중...",
         "menu": {
-          "adjustSettings": "{{model}} 설정 조정",
           "backToModels": "모델로 돌아가기",
-          "changeModel": "{{category}} 모델 변경, {{model}}",
-          "chatSettings": "채팅 설정"
+          "changeModel": "{{category}} 모델 변경, {{model}}"
         },
         "models": "모델",
         "noConfiguredModels": "구성된 모델 없음",
@@ -6147,6 +6145,9 @@
     "chooseFile": "파일 선택",
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access가 SSH 터널을 설정하지 못했습니다. 게시된 호스트 이름과 Tunnel 라우팅을 확인하세요.",
+      "accessRejected": "Cloudflare Access가 연결을 거부했습니다. 서비스 토큰과 애플리케이션의 Service Auth 정책을 확인하세요.",
+      "accessTlsFailure": "Cloudflare Access와의 보안 연결을 검증할 수 없습니다. 호스트 이름과 TLS 인증서를 확인하세요.",
       "attention_other": "SSH 호스트 {{count}}개에 확인이 필요합니다",
       "authenticationFailed": "SSH 인증에 실패했습니다. 사용자 이름, 개인 키 또는 비밀번호와 서버 권한을 확인하세요. 자격 증명을 편집하거나 이 호스트에 다른 자격 증명을 선택하세요.",
       "credentialResourceLimit": "개인 키가 지원되는 처리 한도를 초과합니다. 지원되는 암호화 설정으로 다시 내보낸 후 자격 증명을 교체하세요.",

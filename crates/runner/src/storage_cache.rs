@@ -1883,6 +1883,7 @@ fn collect_targets(plan: &StoragePlan) -> Vec<CacheTarget> {
 /// case, the caller must keep it paired with this plan and either resolve it
 /// through `populate_cache_with_fresh_delivery` or call
 /// [`FreshArchiveDelivery::cancel_and_drain`] before abandoning the plan.
+/// A preparation builds at most one HTTP client, only for an admitted cache miss.
 pub(crate) async fn prepare_fresh_archive_delivery(
     plan: &StoragePlan,
     home: &HomePaths,
@@ -1907,12 +1908,7 @@ pub(crate) async fn prepare_fresh_archive_delivery(
     let group_count = groups.len();
 
     let prepare_result: RunnerResult<()> = async {
-        let http = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|error| {
-                RunnerError::Internal(format!("build runner-owned archive client: {error}"))
-            })?;
+        let mut http: Option<Client> = None;
 
         let mut scanned = 0;
         for group in groups.into_iter().take(FRESH_DELIVERY_SCAN_LIMIT) {
@@ -1998,7 +1994,20 @@ pub(crate) async fn prepare_fresh_archive_delivery(
             let archive_size = group.archive_size;
             let task_group = group.clone();
             let task_cancel = owner_cancel.clone();
-            let task_http = http.clone();
+            let task_http = match &mut http {
+                Some(http) => http,
+                slot @ None => slot.insert(
+                    Client::builder()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .build()
+                        .map_err(|error| {
+                            RunnerError::Internal(format!(
+                                "build runner-owned archive client: {error}"
+                            ))
+                        })?,
+                ),
+            }
+            .clone();
             let (apply_tx, apply_rx) = oneshot::channel();
             delivery.apply.push(apply_tx);
             delivery.fetches.spawn(async move {
@@ -3901,6 +3910,197 @@ mod tests {
         assert_eq!(
             bounded_outcome_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SCAN_SUFFIX_UNKNOWN),
             0
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn fresh_delivery_only_needs_ca_certificates_for_admitted_misses() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        crate::ca::ensure(&home).await.unwrap();
+        let cert_file = home.ca_dir().join(crate::ca::CA_CERT);
+        let empty_cert_dir = temp.path().join("empty-certs");
+        fs::create_dir(&empty_cert_dir).await.unwrap();
+
+        crate::test_fixtures::ignored_child::run_ignored_child_test(
+            "storage_cache::tests::fresh_delivery_missing_ca_child",
+            ("VM0_TEST_FRESH_DELIVERY_MISSING_CA", "1"),
+            &[
+                ("SSL_CERT_FILE", Some(cert_file.to_str().unwrap())),
+                ("SSL_CERT_DIR", Some(empty_cert_dir.to_str().unwrap())),
+            ],
+            Duration::from_secs(30),
+        )
+        .await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "runs in an isolated process with its own CA certificate files"]
+    async fn fresh_delivery_missing_ca_child() {
+        if !crate::test_fixtures::ignored_child::ignored_child_test_env_guard_enabled((
+            "VM0_TEST_FRESH_DELIVERY_MISSING_CA",
+            "1",
+        )) {
+            return;
+        }
+
+        // Initialize unrelated telemetry before making this child's CA store
+        // unavailable. Changing a private file needs no process-wide env mutation.
+        let mut telemetry = new_telemetry();
+        let server = MockServer::start_async().await;
+        let body = tarball_bytes();
+        let get = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/archive.tar.gz");
+                then.status(200).body(body.clone());
+            })
+            .await;
+        let cert_file = std::env::var_os("SSL_CERT_FILE").unwrap();
+        let certificates = fs::read(&cert_file).await.unwrap();
+        fs::write(&cert_file, b"").await.unwrap();
+
+        for case in ["empty", "warm", "oversized", "lock-busy", "capacity"] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let admission = FreshArchiveDeliveryAdmission::new();
+            let cancel = CancellationToken::new();
+            let storages = (0..if case == "empty" { 0 } else { 2 })
+                .map(|index| {
+                    let name = format!("{case}-{index}");
+                    if case == "warm" {
+                        write_cached_archive(&home, &name, "v1", &body);
+                    }
+                    storage_entry_with_archive_size(
+                        format!("/mnt/{name}"),
+                        server.url("/archive.tar.gz"),
+                        &name,
+                        "v1",
+                        Some(if case == "oversized" {
+                            CACHE_MAX_SIZE + 1
+                        } else {
+                            body.len() as u64
+                        }),
+                    )
+                })
+                .collect();
+            let mut plan = plan_from_entries(storages, Vec::new(), None);
+            let mut writers = Vec::new();
+            if case == "lock-busy" {
+                for index in 0..2 {
+                    writers.push(
+                        lock::acquire(home.storage_lock(&format!("{case}-{index}"), "v1"))
+                            .await
+                            .unwrap(),
+                    );
+                }
+            }
+            let held_capacity = (case == "capacity").then(|| {
+                Arc::clone(&admission.permits)
+                    .try_acquire_many_owned(FRESH_DELIVERY_RUNNER_LIMIT as u32)
+                    .unwrap()
+            });
+
+            let mut delivery =
+                prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
+                    .await
+                    .unwrap_or_else(|error| panic!("{case} should not need a client: {error}"));
+            if case == "warm" {
+                let sandbox = MockSandbox::new("test");
+                let deferred = populate_cache_with_fresh_delivery(
+                    &mut plan,
+                    &sandbox,
+                    &home,
+                    &mut telemetry,
+                    Some(&mut delivery),
+                )
+                .await
+                .unwrap();
+                assert!(deferred.is_none());
+                let batches = sandbox.write_files_calls();
+                let files: Vec<_> = batches.iter().flat_map(|batch| &batch.files).collect();
+                assert_eq!(files.len(), 2);
+                for index in 0..2 {
+                    let path = guest_archive_path(&format!("warm-{index}"), "v1");
+                    assert!(
+                        files
+                            .iter()
+                            .any(|file| file.path == path && file.content == body)
+                    );
+                    assert_eq!(
+                        storage_archive_url(&plan, index),
+                        Some(format!("file://{path}").as_str())
+                    );
+                }
+            }
+            delivery.cancel_and_drain(&mut telemetry).await;
+            drop(held_capacity);
+            drop(writers);
+            assert_eq!(
+                admission.permits.available_permits(),
+                FRESH_DELIVERY_RUNNER_LIMIT,
+                "{case} must not retain capacity"
+            );
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let cancel = CancellationToken::new();
+        let mut plan = fresh_storage_plan_with_archive_size(
+            server.url("/archive.tar.gz"),
+            "cold",
+            "v1",
+            body.len() as u64,
+        );
+        let error =
+            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
+                .await
+                .err()
+                .expect("an admitted miss still requires a valid client");
+        assert!(
+            error
+                .to_string()
+                .contains("build runner-owned archive client")
+        );
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+        assert!(!home.storage_cache_dir("cold", "v1").exists());
+        get.assert_calls_async(0).await;
+
+        // Restoring the CA store makes the same archive eligible again. A leaked
+        // writer lock would skip this fetch; a cached failed client would fail it.
+        fs::write(&cert_file, certificates).await.unwrap();
+        let mut delivery =
+            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
+                .await
+                .unwrap();
+        let sandbox = MockSandbox::new("test");
+        assert!(
+            populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                Some(&mut delivery),
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
+        get.assert_calls_async(1).await;
+        assert_eq!(
+            fs::read(home.storage_cache_dir("cold", "v1").join("archive.tar.gz"))
+                .await
+                .unwrap(),
+            body
+        );
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
         );
     }
 

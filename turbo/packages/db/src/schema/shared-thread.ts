@@ -6,7 +6,10 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import type { SharedThreadMessages } from "@okouai/db/jsonb-contracts/shared-thread";
+import type {
+  SharedThreadMessages,
+  SharedThreadMessageAttachments,
+} from "@okouai/db/jsonb-contracts/shared-thread";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { chatThreads } from "./chat-thread";
@@ -25,6 +28,10 @@ export const sharedThreads = pgTable(
     ),
     title: text("title").notNull(),
     messages: jsonb("messages").$type<SharedThreadMessages>().notNull(),
+    messageAttachments: jsonb("message_attachments")
+      .$type<SharedThreadMessageAttachments>()
+      .default({})
+      .notNull(),
     publicBrand: text("public_brand")
       .$type<PublicBrand>()
       .default("vm0")

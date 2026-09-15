@@ -206,7 +206,8 @@ export interface WorkflowComposerSignals {
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
-  readonly previewSuggestionIndex$: Computed<number>;
+  /** Null while the pointer is not previewing, so keyboard selection leads. */
+  readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
   readonly closeSuggestionMenu$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
@@ -2799,10 +2800,11 @@ export function createWorkflowComposerSignals<
     set(selectedSuggestionIndexState$, index);
     set(previewSuggestionIndexState$, null);
   });
+  // Reported as-is rather than collapsed onto the keyboard index: the panel
+  // needs to know whether the pointer is the one driving, because that decides
+  // whether a row still carries the keyboard mark.
   const previewSuggestionIndex$ = computed((get) => {
-    return (
-      get(previewSuggestionIndexState$) ?? get(selectedSuggestionIndexState$)
-    );
+    return get(previewSuggestionIndexState$);
   });
   const previewSuggestion$ = command(({ set }, index: number | null) => {
     set(previewSuggestionIndexState$, index);

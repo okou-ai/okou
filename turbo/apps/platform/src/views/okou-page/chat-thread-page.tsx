@@ -111,7 +111,7 @@ import {
   messageDocumentToDisplayText,
   messageDocumentToPrompt,
 } from "../../signals/okou-page/user-message-document-codec.ts";
-import { avatarTemplateSelection } from "../../signals/okou-page/avatar-template-selection.ts";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import type {
   ChatThreadWorkflowAutomation,
   WorkflowSchedule,
@@ -301,6 +301,7 @@ import {
   chatThreadContainerElement$,
   setChatKeyboardScrollRoot$,
 } from "../../signals/chat-page/chat-keyboard.ts";
+import { ChatCard } from "./components/chat-card.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
@@ -3662,7 +3663,7 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
           className={cn(
-            "okou-chat-skeleton-reveal",
+            "opacity-0 animate-chat-skeleton-reveal",
             CHAT_THREAD_MESSAGE_LIST_CLASS,
           )}
         >
@@ -3848,6 +3849,11 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                   },
                   { count: selectedCount },
                 )}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.chat.sharing.publicDescription;
+                })}
               </p>
               {createLoadable.state === "hasError" ? (
                 <p className="mt-0.5 text-xs text-destructive">
@@ -4311,14 +4317,14 @@ function ThinkingLoader() {
     <span
       aria-hidden
       data-thinking-loader="spinner"
-      className="okou-thinking-spinner-frame inline-flex size-4 shrink-0 items-center justify-center"
+      className="inline-flex size-4 shrink-0 items-center justify-center"
     >
       <img
         src={thinkingSpinnerImg}
         alt=""
         // The 48px asset has a 4px inset. A 17px canvas makes its visible
         // mark match the perceived size of the 16px line icons.
-        className="okou-thinking-spinner size-[17px] max-w-none shrink-0 animate-spin motion-reduce:animate-none"
+        className="size-[17px] max-w-none shrink-0 animate-spin [animation-duration:1.4s] will-change-transform motion-reduce:animate-none"
       />
     </span>
   );
@@ -4417,7 +4423,7 @@ function WaitingForAssistantResponse({
       <div
         {...thinkingIndicatorProps}
         data-role="assistant-thinking"
-        className="okou-thinking-enter min-w-0"
+        className="animate-thinking-in min-w-0"
       >
         <InlineThinkingRow
           isQueued={isQueued}
@@ -4432,7 +4438,7 @@ function WaitingForAssistantResponse({
     <div
       {...thinkingIndicatorProps}
       data-role="assistant"
-      className="okou-thinking-enter flex flex-col gap-2"
+      className="animate-thinking-in flex flex-col gap-2"
     >
       <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
         <AssistantBubbleAvatar thread={thread} />
@@ -4489,7 +4495,7 @@ function AssistantThinkingStatusRow({
       <div
         {...thinkingIndicatorProps}
         data-role="assistant-thinking"
-        className="okou-thinking-enter min-w-0"
+        className="animate-thinking-in min-w-0"
       >
         {content}
       </div>
@@ -4921,7 +4927,7 @@ function InsufficientCreditsCard() {
   };
 
   return (
-    <div className="okou-chat-card max-w-md px-3 py-3">
+    <ChatCard className="max-w-md px-3 py-3">
       <p className="text-[0.9375rem] font-medium text-foreground">{headline}</p>
       <p className="mt-1 text-sm text-muted-foreground">{helper}</p>
       {!canShowBillingAction ? null : shouldStartProCheckout ? (
@@ -4947,7 +4953,7 @@ function InsufficientCreditsCard() {
           handleCreditClick={handleCreditClick}
         />
       )}
-    </div>
+    </ChatCard>
   );
 }
 
@@ -5091,10 +5097,10 @@ function AssistantErrorCard({
   testId?: string;
 }) {
   return (
-    <div
+    <ChatCard
       role="status"
       data-testid={testId}
-      className="okou-chat-card grid min-h-[88px] w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-3 px-3.5 py-3 text-foreground @[640px]:grid-cols-[auto_minmax(0,1fr)_auto] @[640px]:content-center"
+      className="grid min-h-[88px] w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-3 px-3.5 py-3 text-foreground @[640px]:grid-cols-[auto_minmax(0,1fr)_auto] @[640px]:content-center"
     >
       <Icon
         size={16}
@@ -5107,7 +5113,7 @@ function AssistantErrorCard({
         </div>
       </div>
       {actions}
-    </div>
+    </ChatCard>
   );
 }
 
@@ -5895,34 +5901,43 @@ function generationTemplateTypeLabel(
   if (!value) {
     return null;
   }
-  if (avatarTemplateSelection(value)) {
-    return i18n.t(($) => {
-      return $.artifacts.templates.avatar;
-    });
+  switch (generationTemplateKind(value)) {
+    case "avatar": {
+      return i18n.t(($) => {
+        return $.artifacts.templates.avatar;
+      });
+    }
+    case "intro-video": {
+      return i18n.t(($) => {
+        return $.artifacts.templates.introVideo;
+      });
+    }
+    case "video": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.video;
+      });
+    }
+    case "illustration": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.illustration;
+      });
+    }
+    case "workflow": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.workflow;
+      });
+    }
+    case "website": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.website;
+      });
+    }
+    case "presentation": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.presentation;
+      });
+    }
   }
-  if (value.type === "video") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.video;
-    });
-  }
-  if (value.type === "illustration") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.illustration;
-    });
-  }
-  if (value.type === "workflow") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.workflow;
-    });
-  }
-  if (value.type === "website") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.website;
-    });
-  }
-  return i18n.t(($) => {
-    return $.chat.templates.categories.presentation;
-  });
 }
 
 const annotationIconImgs = {

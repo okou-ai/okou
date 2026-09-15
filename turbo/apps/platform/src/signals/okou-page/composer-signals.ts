@@ -12,7 +12,7 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { INTRO_VIDEO_TEMPLATE_ID } from "@okouai/core/intro-video-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -870,8 +870,7 @@ function createSubmitCurrentInput({
           message?.parts.some((part) => {
             return (
               part.type === "template" &&
-              part.template.type === "video" &&
-              part.template.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID
+              generationTemplateKind(part.template) === "intro-video"
             );
           })
         ) {

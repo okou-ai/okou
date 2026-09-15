@@ -88,19 +88,36 @@ export function createComposerTaskChipsSignals(
       });
     },
   );
-  // The cover shelf pages the same way the idea row does, and for the same
-  // reason: the row is one line, so the only way to reach the rest of the
-  // catalog without leaving the page is to advance it.
+  /**
+   * The rows are a two-way pager, not a shuffle: the last page does not wrap
+   * back to the first, so `‹` and `›` can say truthfully whether there is
+   * anything in that direction. `nextIdeas$` above keeps its wrap because the
+   * workflow row is still a single "more" button rather than a pager.
+   */
+  const stepIdeaPage$ = command(
+    ({ get, set }, task: ComposerIdeaTask, step: number, pageCount: number) => {
+      const pages = get(internalIdeaPages$);
+      set(internalIdeaPages$, {
+        ...pages,
+        [task]: Math.min(Math.max(pages[task] + step, 0), pageCount - 1),
+      });
+    },
+  );
   const internalTemplatePages$ = state({ image: 0, video: 0, website: 0 });
   const templatePages$ = computed((get) => {
     return get(internalTemplatePages$);
   });
-  const nextTemplates$ = command(
-    ({ get, set }, task: ComposerTemplateTask, pageCount: number) => {
+  const stepTemplatePage$ = command(
+    (
+      { get, set },
+      task: ComposerTemplateTask,
+      step: number,
+      pageCount: number,
+    ) => {
       const pages = get(internalTemplatePages$);
       set(internalTemplatePages$, {
         ...pages,
-        [task]: (pages[task] + 1) % pageCount,
+        [task]: Math.min(Math.max(pages[task] + step, 0), pageCount - 1),
       });
     },
   );
@@ -110,8 +127,9 @@ export function createComposerTaskChipsSignals(
     selectTask$,
     ideaPages$,
     nextIdeas$,
+    stepIdeaPage$,
     templatePages$,
-    nextTemplates$,
+    stepTemplatePage$,
     workflows,
     visualization,
   };

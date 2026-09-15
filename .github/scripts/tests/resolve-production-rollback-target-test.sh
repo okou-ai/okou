@@ -44,6 +44,8 @@ case "${1:-}" in
         [ "${MOCK_GOAL_SCHEMA_REPAIR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "669d0befc9a181e44e3f1f9e39093efddabcc0f8" ]; then
       [ "${MOCK_CLIENT_PRODUCT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
+      [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -232,6 +234,19 @@ grep -Fq "669d0befc9a181e44e3f1f9e39093efddabcc0f8" "${tmp_dir}/failure.err" ||
 [ ! -s "${tmp_dir}/failure.out" ] || fail "pre-drop API target must not print resolved targets"
 if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "client_product rejection must precede API and Runner artifact resolution"
+fi
+
+# Targets that still declare morning_brief_default_eligible_at fail before any artifacts.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Target commit predates the org_members_metadata.morning_brief_default_eligible_at drop" \
+  run_resolver "${tmp_dir}/morning-brief-eligibility-floor.output" \
+  MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID=0
+grep -Fq "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" "${tmp_dir}/failure.err" ||
+  fail "morning brief eligibility rejection must identify the drop commit"
+[ ! -s "${tmp_dir}/morning-brief-eligibility-floor.output" ] || fail "pre-drop API target must not publish outputs"
+[ ! -s "${tmp_dir}/failure.out" ] || fail "pre-drop API target must not print resolved targets"
+if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "morning brief eligibility rejection must precede API and Runner artifact resolution"
 fi
 
 release_target_script="${tmp_dir}/resolve-release-target.sh"

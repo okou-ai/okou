@@ -4588,6 +4588,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Picker Default",
     });
+    await runs.grantProEntitlement(actor);
     const status = await bdd.readOnboardingStatus(actor);
     if (!status.defaultAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
@@ -4710,7 +4711,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       integrations.modelPickerSubmission({
         workspaceId: teamId,
         slackUserId,
-        selectedValue: "deepseek-v4.1-flash",
+        selectedValue: "gpt-6-astra",
         channelId: "C_BDD_PICK",
       }),
     );
@@ -4719,13 +4720,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect.objectContaining({
         channel: "C_BDD_PICK",
         user: slackUserId,
-        text: "Switched to *DeepSeek V4.1 Flash* for new Slack threads.",
+        text: "Switched to *GPT 6 Astra* for new Slack threads.",
       }),
     );
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "deepseek-v4.1-flash",
+      selectedModel: "gpt-6-astra",
     });
 
     const replaceModel = await integrations.postSlackInteractive(

@@ -13,7 +13,10 @@ import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { createAgentRun$ } from "./agent-run-create.service";
 import { dispatchRunCallbacks } from "./agent-run-callback.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import {
+  PiMemoryPhase2CredentialError,
+  resolvePiMemoryPhase2Credential,
+} from "./pi-memory-phase2-credential.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   claimPiMemoryPhase2Job,
@@ -183,14 +186,8 @@ const dispatchClaim$ = command(
     if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
       return await failClaim(db, claim, nowDate(), "pi_memory_disabled");
     }
-    const route = await resolveBuiltInModelRuntimeRoute(
-      db,
-      PI_MEMORY_PHASE2_MODEL,
-    );
+    const credential = await resolvePiMemoryPhase2Credential(db, claim, signal);
     signal.throwIfAborted();
-    if (!route) {
-      return await failClaim(db, claim, nowDate(), "model_route_unavailable");
-    }
 
     const selectionDigest = piMemoryPhase2SelectionDigest(claim.selected);
     const maintenance = {
@@ -224,9 +221,14 @@ const dispatchClaim$ = command(
           ],
         },
         apiStartTime: now(),
-        modelProviderType: "built-in",
+        modelProviderType: credential.pin.modelProvider,
+        modelProviderId: credential.pin.modelProviderId ?? undefined,
+        modelProviderCredentialScope:
+          credential.pin.modelProviderCredentialScope,
+        agentRunModelPin: credential.pin,
+        validatePiMemoryPhase2Admission: credential.validate,
         selectedModelOverride: PI_MEMORY_PHASE2_MODEL,
-        builtInModelRuntimeRoute: route,
+        builtInModelRuntimeRoute: credential.route,
         callbacks: [
           {
             internalKind: "pi-memory:phase2",
@@ -264,7 +266,7 @@ const dispatchClaim$ = command(
         },
         validateEnvironmentReferences: false,
         queueOnConcurrencyLimit: true,
-        enforceBuiltInCredits: true,
+        enforceBuiltInCredits: credential.pin.modelProvider === "built-in",
         piExecution: true,
         piMemoryPhase2Maintenance: maintenance,
       },
@@ -311,6 +313,9 @@ export const executePiMemoryPhase2Work$ = command(
     );
     if (dispatched.ok) {
       return dispatched.value;
+    }
+    if (dispatched.error instanceof PiMemoryPhase2CredentialError) {
+      return await failClaim(db, claim, nowDate(), dispatched.error.errorClass);
     }
     log.error("Pi memory maintenance run dispatch failed", {
       memoryStorageId: claim.memoryStorageId,

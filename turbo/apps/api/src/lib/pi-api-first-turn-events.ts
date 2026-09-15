@@ -4,24 +4,35 @@ import type { AgentEvent } from "./event-consumer/verify";
 
 function projectedAssistantBlocks(
   assistant: PiApiFirstTurnResult["assistantMessage"],
-): unknown[] {
-  return assistant.content.flatMap((block): unknown[] => {
-    if (block.type === "text") {
-      const text = block.text.trim();
-      return text ? [{ type: "text", text }] : [];
-    }
-    if (block.type === "toolCall") {
-      return [
-        {
-          type: "tool_use",
-          id: block.id,
-          name: block.name,
-          input: block.arguments,
-        },
-      ];
-    }
-    return [];
-  });
+): { content: unknown; runEventId?: string }[] {
+  return assistant.content.flatMap(
+    (block): { content: unknown; runEventId?: string }[] => {
+      if (block.type === "text") {
+        const text = block.text.trim();
+        return text
+          ? [
+              {
+                content: { type: "text", text },
+                ...(block.runEventId ? { runEventId: block.runEventId } : {}),
+              },
+            ]
+          : [];
+      }
+      if (block.type === "toolCall") {
+        return [
+          {
+            content: {
+              type: "tool_use",
+              id: block.id,
+              name: block.name,
+              input: block.arguments,
+            },
+          },
+        ];
+      }
+      return [];
+    },
+  );
 }
 
 function assistantText(
@@ -47,12 +58,13 @@ export function piApiFirstTurnAssistantEvents(
     return {
       type: "assistant",
       sequenceNumber,
+      ...(block?.runEventId ? { runEventId: block.runEventId } : {}),
       message: {
         id:
           assistant.responseId ??
           `${runId}:${assistant.timestamp}:${assistant.model}`,
         role: "assistant",
-        content: block === null ? [] : [block],
+        content: block === null ? [] : [block.content],
         ...(sequenceNumber === eventBlocks.length - 1 &&
         assistant.memoryCitation
           ? { memoryCitation: assistant.memoryCitation }

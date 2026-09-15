@@ -60,6 +60,7 @@ import {
   withBuiltInModelRuntimeRouteUnavailableForTest,
 } from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
   cronExtractPiMemoryStage1Routes,
@@ -2848,6 +2849,8 @@ describe("Stage 1 background credential availability", () => {
     const runId = sent.body.runId;
     onTestFinished(async () => {
       await runs.requestCancelRun(actor, runId, [200]);
+      // Cancellation schedules chat writes that must settle before fixture deletion.
+      await flushWaitUntilForTest();
     });
     const foregroundState = await runs.readRun(actor, runId);
     expect(foregroundState.status, JSON.stringify(foregroundState)).toBe(

@@ -21,12 +21,16 @@ import type {
   PiObservedServiceTier,
 } from "./api-types";
 import { UnsupportedPiResourceSnapshotError } from "./errors";
+import { createPiApiTextStream } from "./api-text-stream";
 import {
   classifyPiApiProviderFailure,
   projectPiApiModelFailure,
 } from "./api-failure";
 
-function projectAssistantContent(message: AssistantMessage): {
+function projectAssistantContent(
+  message: AssistantMessage,
+  eventIdPrefix?: string,
+): {
   readonly content: PiApiAssistantContent[];
   readonly memoryCitation?: PiApiAssistantMessage["memoryCitation"];
 } {
@@ -36,12 +40,20 @@ function projectAssistantContent(message: AssistantMessage): {
   const projection = projectPiMemoryCitationSegments(textBlocks);
   let textIndex = 0;
   const content = message.content.flatMap(
-    (content): PiApiAssistantContent[] => {
+    (content, contentIndex): PiApiAssistantContent[] => {
       switch (content.type) {
         case "text": {
           const text = projection.visibleSegments[textIndex] ?? "";
           textIndex += 1;
-          return [{ type: "text", text }];
+          return [
+            {
+              type: "text",
+              text,
+              ...(eventIdPrefix
+                ? { runEventId: `${eventIdPrefix}:${contentIndex}` }
+                : {}),
+            },
+          ];
         }
         case "toolCall": {
           return [
@@ -72,8 +84,9 @@ function projectAssistantContent(message: AssistantMessage): {
 export function projectPiApiAssistantMessage(
   message: AssistantMessage,
   responseStatus?: number,
+  eventIdPrefix?: string,
 ): PiApiAssistantMessage {
-  const projection = projectAssistantContent(message);
+  const projection = projectAssistantContent(message, eventIdPrefix);
   const failureReason =
     message.stopReason === "error" &&
     message.api === "openai-codex-responses" &&
@@ -229,11 +242,15 @@ export async function preparePiApiTurn(
           ownership: execution.ownership,
           providerRequestBoundary: execution.providerRequestBoundary,
           onPreparationTiming: args.onPreparationTiming,
+          onEvent: execution.textStream
+            ? createPiApiTextStream(execution.textStream)
+            : undefined,
         });
         return {
           assistantMessage: projectPiApiAssistantMessage(
             turn.assistantMessage,
             turn.responseStatus,
+            execution.textStream?.eventIdPrefix,
           ),
           handoffRequired: turn.handoffRequired,
           observedServiceTier,
