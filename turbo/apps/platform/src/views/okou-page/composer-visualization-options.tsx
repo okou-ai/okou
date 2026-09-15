@@ -165,8 +165,7 @@ function VisualizationChartPicker({
         rail="charts"
         label={copy.preferredCharts}
         gap="gap-2"
-      >
-        {CURATED_VISUALIZATION_CHARTS.map((chart) => {
+        items={CURATED_VISUALIZATION_CHARTS.map((chart) => {
           return (
             <VisualizationChartButton
               key={chart}
@@ -175,7 +174,7 @@ function VisualizationChartPicker({
             />
           );
         })}
-      </ComposerRail>
+      />
     </section>
   );
 }

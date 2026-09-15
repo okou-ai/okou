@@ -4615,11 +4615,22 @@ function PptImportCard({
       <span
         className={cn(
           TEMPLATE_TILE_CAPTION,
-          compact && "flex-col items-stretch gap-0.5",
+          // On a shelf the import tile is one cover among many, so its caption
+          // takes the shelf's metrics rather than the picker dialog's.
+          compact
+            ? "flex-col items-stretch gap-0 px-0 pb-0 pt-0"
+            : "flex-col items-stretch gap-0.5",
         )}
       >
-        <span className={TEMPLATE_TILE_NAME}>{label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className={compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME}>
+          {label}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 truncate text-muted-foreground",
+            compact ? "text-[12px] leading-4" : "text-xs",
+          )}
+        >
           {t(($) => {
             return $.artifacts.templates.importDeckHint;
           })}
@@ -5883,60 +5894,63 @@ export function ComposerPresentationRecommendations({
           <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <ComposerRail signals={signals} rail="templates:presentation" gap="gap-3">
-        <PptImportCard
-          signals={signals}
-          compact
-          className={cn(
-            "group/tile shrink-0 snap-start",
-            PRESENTATION_SHELF_COVER,
-          )}
-          onImported={() => {
-            setMode(null);
-          }}
-        />
-        {imported.map(({ imageBuffers, template }) => {
-          return (
-            <ComposerPresentationSuggestion
-              key={template.id}
-              title={template.title}
-              onSelect={() => {
-                picker.onChange(
-                  toImportedPresentationGenerationTemplate(template),
-                );
-              }}
-            >
-              <ImportedPptImage
-                imageSignals={imageBuffers.card}
-                label=""
-                loading="eager"
-                fetchPriority="high"
-                size={TEMPLATE_CARD_PREVIEW_SIZE}
-                placeholder={<ImageIcon size={24} aria-hidden />}
-                className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-              />
-            </ComposerPresentationSuggestion>
-          );
-        })}
-        {builtIn.map((item) => {
-          return (
-            <ComposerPresentationSuggestion
-              key={item.slug}
-              title={item.title}
-              onSelect={() => {
-                picker.onChange(toPresentationGenerationTemplate(item));
-              }}
-            >
-              <img
-                src={presentationTemplateCardSlideImage(item, 0)}
-                alt=""
-                loading="lazy"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </ComposerPresentationSuggestion>
-          );
-        })}
-      </ComposerRail>
+      <ComposerRail
+        signals={signals}
+        rail="templates:presentation"
+        gap="gap-3"
+        items={[
+          <PptImportCard
+            key="import"
+            signals={signals}
+            compact
+            className={cn("group/tile", PRESENTATION_SHELF_COVER)}
+            onImported={() => {
+              setMode(null);
+            }}
+          />,
+          ...imported.map(({ imageBuffers, template }) => {
+            return (
+              <ComposerPresentationSuggestion
+                key={template.id}
+                title={template.title}
+                onSelect={() => {
+                  picker.onChange(
+                    toImportedPresentationGenerationTemplate(template),
+                  );
+                }}
+              >
+                <ImportedPptImage
+                  imageSignals={imageBuffers.card}
+                  label=""
+                  loading="eager"
+                  fetchPriority="high"
+                  size={TEMPLATE_CARD_PREVIEW_SIZE}
+                  placeholder={<ImageIcon size={24} aria-hidden />}
+                  className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
+                />
+              </ComposerPresentationSuggestion>
+            );
+          }),
+          ...builtIn.map((item) => {
+            return (
+              <ComposerPresentationSuggestion
+                key={item.slug}
+                title={item.title}
+                onSelect={() => {
+                  picker.onChange(toPresentationGenerationTemplate(item));
+                }}
+              >
+                <img
+                  src={presentationTemplateCardSlideImage(item, 0)}
+                  alt=""
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              </ComposerPresentationSuggestion>
+            );
+          }),
+        ]}
+      />
     </div>
   );
 }

@@ -29,7 +29,6 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ComposerPresentationRecommendations } from "./chat-composer.tsx";
 import {
   ComposerRail,
-  RAIL_ITEM,
   RAIL_TILE,
   RAIL_TILE_CAPTION,
 } from "./composer-rail.tsx";
@@ -250,8 +249,11 @@ function ComposerTemplateShelf({
           <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <ComposerRail signals={signals} rail={`templates:${task}`} gap="gap-3">
-        {group.previews.map((preview) => {
+      <ComposerRail
+        signals={signals}
+        rail={`templates:${task}`}
+        gap="gap-3"
+        items={group.previews.map((preview) => {
           return (
             <ComposerTemplateCover
               key={preview.slug}
@@ -265,7 +267,7 @@ function ComposerTemplateShelf({
             />
           );
         })}
-      </ComposerRail>
+      />
     </div>
   );
 }
@@ -307,15 +309,14 @@ function ComposerTaskIdeas({
         return $.chat.taskChips.ideasLabel;
       })}
       gap="gap-2"
-    >
-      {ideas.map((idea, index) => {
+      items={ideas.map((idea, index) => {
         const Icon = icons[index % icons.length]!;
         return (
           <Button
             key={idea.label}
             type="button"
             variant="neutral"
-            className={cn(RAIL_ITEM, "shrink-0")}
+            className="shrink-0"
             onClick={() => {
               insertPrompt(idea.prompt);
               detach(saveDraft(pageSignal), Reason.DomCallback);
@@ -330,7 +331,7 @@ function ComposerTaskIdeas({
           </Button>
         );
       })}
-    </ComposerRail>
+    />
   );
 }
 
@@ -402,24 +403,36 @@ export function ComposerTaskChips({
             })}
         </div>
       )}
-      {selected === "presentation" && (
-        <ComposerPresentationRecommendations signals={signals} />
+      {selected !== null && (
+        // Keyed by the type so switching remounts the panel: a CSS entry runs
+        // on mount, and the rails inside start again from their first item and
+        // their own left edge, which is where a new catalog should begin.
+        <div
+          key={selected}
+          className={cn(
+            "flex min-w-0 flex-col gap-5",
+            "motion-safe:animate-composer-panel-in",
+          )}
+        >
+          {selected === "presentation" && (
+            <ComposerPresentationRecommendations signals={signals} />
+          )}
+          {selected === "workflow" && (
+            <ComposerWorkflowRecommendations signals={signals} />
+          )}
+          {selected === "visualization" && (
+            <ComposerVisualizationOptions signals={signals} />
+          )}
+          {selected !== "presentation" &&
+            selected !== "workflow" &&
+            selected !== "visualization" && (
+              <>
+                <ComposerTaskIdeas signals={signals} task={selected} />
+                <ComposerTemplateShelf signals={signals} task={selected} />
+              </>
+            )}
+        </div>
       )}
-      {selected === "workflow" && (
-        <ComposerWorkflowRecommendations signals={signals} />
-      )}
-      {selected === "visualization" && (
-        <ComposerVisualizationOptions signals={signals} />
-      )}
-      {selected !== null &&
-        selected !== "presentation" &&
-        selected !== "workflow" &&
-        selected !== "visualization" && (
-          <>
-            <ComposerTaskIdeas signals={signals} task={selected} />
-            <ComposerTemplateShelf signals={signals} task={selected} />
-          </>
-        )}
     </section>
   );
 }

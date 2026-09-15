@@ -138,6 +138,18 @@
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
 
+  /* The composer's second level. The panel settles once when a type is picked,
+     then each row's items resolve left to right, which is the order they are
+     read in. Opacity has exactly one owner - the items - so the two do not
+     multiply into a wash. Consumers reach both through `motion-safe:animate-*`,
+     so reduced motion drops the class entirely and the content is simply
+     present. The item entry is `backwards` because it is staggered: without it
+     an item would paint at full opacity during its own delay. Keyframes stay
+     below. */
+  --animate-composer-panel-in: okou-composer-panel-in 220ms ease-out;
+  --animate-composer-rail-item-in: okou-composer-rail-item-in 260ms ease-out
+    backwards;
+
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
@@ -445,6 +457,29 @@ body {
   from {
     opacity: 0;
     transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Transform only. The items inside own the fade, and two nested opacity
+   animations multiply: at 100ms a cover was rendering at 34% with both
+   running, which read as washed out rather than as arriving. */
+@keyframes okou-composer-panel-in {
+  from {
+    transform: translateY(0.375rem);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes okou-composer-rail-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
   }
   to {
     opacity: 1;

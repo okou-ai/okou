@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -19,7 +19,21 @@ const RAIL = cn(
   "flex min-w-0 snap-x snap-mandatory items-start overflow-x-auto scroll-smooth",
   "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
 );
-export const RAIL_ITEM = "snap-start";
+/**
+ * The rail owns each item's frame so that snapping and the entry stagger have
+ * exactly one owner; an item only has to size itself.
+ */
+const RAIL_ITEM_FRAME = "shrink-0 snap-start";
+/**
+ * Items resolve left to right as the row arrives. The delay is capped so a
+ * catalog of eighteen still finishes in about a fifth of a second: past the
+ * first few the eye reads the row as one movement, not as a queue.
+ */
+const RAIL_ITEM_ENTER = cn(
+  "motion-safe:animate-composer-rail-item-in",
+  "[animation-delay:calc(var(--rail-enter-index)*28ms)]",
+);
+const RAIL_ITEM_ENTER_CAP = 7;
 /**
  * Every shelf tile across the types: art in its own box, caption underneath and
  * outside it. `quiet` paints a fill on hover, which on a tile this tall draws a
@@ -27,9 +41,8 @@ export const RAIL_ITEM = "snap-start";
  * the art carries the hover itself.
  */
 export const RAIL_TILE = cn(
-  "group/tile block h-auto shrink-0 rounded-lg p-0 text-left font-normal",
+  "group/tile block h-auto rounded-lg p-0 text-left font-normal",
   "hover:bg-transparent active:bg-transparent",
-  RAIL_ITEM,
 );
 /** The caption sits under the art and outside it, on every type's shelf. */
 export const RAIL_TILE_CAPTION = "mt-2 block truncate text-[12px] leading-4";
@@ -124,7 +137,7 @@ export function ComposerRail({
   rail,
   label,
   gap,
-  children,
+  items,
 }: {
   readonly signals: ComposerSignals;
   /** Identifies this row's travel; one row per task per kind. */
@@ -132,7 +145,8 @@ export function ComposerRail({
   /** Set only when the row is the whole group; a shelf labels its wrapper. */
   readonly label?: string;
   readonly gap: string;
-  readonly children: ReactNode;
+  /** The row's items, in order; the rail frames and staggers each one. */
+  readonly items: readonly ReactNode[];
 }) {
   const travel = useGet(signals.taskChips.railTravel$)[rail];
   const setTravel = useSet(signals.taskChips.setRailTravel$);
@@ -179,7 +193,21 @@ export function ComposerRail({
           };
         }}
       >
-        {children}
+        {items.map((item, index) => {
+          return (
+            <div
+              key={`rail-item-${String(index)}`}
+              className={cn(RAIL_ITEM_FRAME, RAIL_ITEM_ENTER)}
+              style={
+                {
+                  "--rail-enter-index": Math.min(index, RAIL_ITEM_ENTER_CAP),
+                } as CSSProperties
+              }
+            >
+              {item}
+            </div>
+          );
+        })}
       </div>
       {canBack && <ComposerRailPager side="back" />}
       {canForward && <ComposerRailPager side="forward" />}
