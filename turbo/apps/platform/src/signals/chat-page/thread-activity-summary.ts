@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed, type State } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import {
   activitySummaryResponseSchema,
   chatThreadActivitySummaryContract,
@@ -12,10 +12,7 @@ import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setLoop } from "../utils.ts";
-import {
-  registerChatEventChangeHandler$,
-  type ChatEventChangeHandler,
-} from "./chat-event-change-registry.ts";
+import { createActiveRunSubscription } from "./active-run-subscription.ts";
 import { liveRunIdsFromChatEvents } from "./chat-event-state.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
@@ -29,112 +26,42 @@ export interface ThinkingSummaries extends Pick<
   readonly messages: readonly ThinkingMessage[];
 }
 
-interface ThreadActivitySummarySubscription extends ChatEventChangeHandler {
-  readonly chatEvents$: Computed<ChatEvent[]>;
-  readonly currentActiveRunId$: Computed<string | null>;
-  readonly reloadVersion$: State<number>;
-  readonly runId$: State<string | null>;
-  readonly readyRunId$: State<string | null>;
-}
-
-function isThreadActivitySummarySubscription(
-  handler: ChatEventChangeHandler,
-): handler is ThreadActivitySummarySubscription {
-  return handler.command$ === afterThreadActivitySummaryEventsChange$;
-}
-
-const reconcileThreadActivitySummaryDemand$ = command(
-  (
-    { get, set },
-    subscription: ThreadActivitySummarySubscription,
-    signal: AbortSignal,
-  ): boolean => {
-    signal.throwIfAborted();
-    const runId = get(subscription.currentActiveRunId$);
-    if (
-      runId === get(subscription.runId$) &&
-      (runId === null || get(subscription.readyRunId$) === runId)
-    ) {
-      return false;
-    }
-    set(subscription.readyRunId$, null);
-    set(subscription.runId$, runId);
-    return runId !== null;
-  },
-);
-
-const reloadThreadActivitySummaryDemand$ = command(
-  ({ get, set }, subscription: ThreadActivitySummarySubscription): void => {
-    const runId = get(subscription.runId$);
-    if (runId === null || get(subscription.currentActiveRunId$) !== runId) {
-      return;
-    }
-    set(subscription.reloadVersion$, (version) => {
-      return version + 1;
-    });
-    set(subscription.readyRunId$, runId);
-  },
-);
-
-const afterThreadActivitySummaryEventsChange$ = command(
-  (
-    { set },
-    handler: ChatEventChangeHandler,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    signal.throwIfAborted();
-    if (!isThreadActivitySummarySubscription(handler)) {
-      throw new Error("Invalid thread activity summary event handler");
-    }
-    if (set(reconcileThreadActivitySummaryDemand$, handler, signal)) {
-      set(reloadThreadActivitySummaryDemand$, handler);
-    }
-    return Promise.resolve();
-  },
-);
-
-const subscribeThreadActivitySummaries$ = command(
-  async (
-    { set },
-    subscription: ThreadActivitySummarySubscription,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    signal.throwIfAborted();
-    set(
-      registerChatEventChangeHandler$,
-      subscription.chatEvents$,
-      subscription,
-      signal,
-    );
-    set(reconcileThreadActivitySummaryDemand$, subscription, signal);
-    await setLoop(
-      () => {
-        set(reloadThreadActivitySummaryDemand$, subscription);
-        return false;
-      },
-      REQUEST_INTERVAL_MS,
-      signal,
-      { testIntervalMs: 100 },
-    );
-  },
-);
-
 function createThinkingSummaryDemand(
   threadId: string,
   currentActiveRunId$: Computed<string | null>,
   chatEvents$: Computed<ChatEvent[]>,
 ) {
   const reloadVersion$ = state(0);
-  const runId$ = state<string | null>(null);
   const readyRunId$ = state<string | null>(null);
-  const subscription: ThreadActivitySummarySubscription = Object.freeze({
-    command$: afterThreadActivitySummaryEventsChange$,
+  // Refresh the run's summary on its fixed interval for as long as it is the
+  // demand. The guard keeps a thread that is no longer current from reloading
+  // before its own subscription is torn down.
+  const refreshRunSummary$ = command(
+    async ({ get, set }, runId: string, signal: AbortSignal): Promise<void> => {
+      set(readyRunId$, null);
+      await setLoop(
+        () => {
+          if (get(currentActiveRunId$) !== runId) {
+            return false;
+          }
+          set(reloadVersion$, (version) => {
+            return version + 1;
+          });
+          set(readyRunId$, runId);
+          return false;
+        },
+        REQUEST_INTERVAL_MS,
+        signal,
+        { testIntervalMs: 100 },
+      );
+    },
+  );
+  const subscription = createActiveRunSubscription(
     chatEvents$,
     currentActiveRunId$,
-    reloadVersion$,
-    runId$,
-    readyRunId$,
-  });
+    refreshRunSummary$,
+  );
+  const runId$ = subscription.runId$;
   const demandSummaries$ = computed(async (get) => {
     get(reloadVersion$);
     const runId = get(runId$);
@@ -163,7 +90,7 @@ function createThinkingSummaryDemand(
     return data;
   });
 
-  return { demandSummaries$, runId$, subscription };
+  return { demandSummaries$, runId$, subscribe$: subscription.subscribe$ };
 }
 
 export function createThreadActivitySummarySignals(
@@ -199,8 +126,7 @@ export function createThreadActivitySummarySignals(
   );
 
   return {
-    subscribe$: subscribeThreadActivitySummaries$,
-    subscription: demand.subscription,
+    subscribe$: demand.subscribe$,
     enabled$,
     thinkingSummaries$: demand.demandSummaries$,
     thinkingRunId$: demand.runId$,
