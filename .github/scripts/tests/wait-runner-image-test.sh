@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Each case owns REPO; the hosting CI repository must not override it.
+unset GITHUB_REPOSITORY
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WAIT="${SCRIPT_DIR}/wait-runner-image.sh"
 TMPDIR="$(mktemp -d)"
