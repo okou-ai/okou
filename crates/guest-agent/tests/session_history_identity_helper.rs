@@ -895,8 +895,22 @@ fn deny_getrusage(command: &mut Command) {
                 len: filter.len() as u16,
                 filter: filter.as_mut_ptr(),
             };
-            if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
-                || libc::prctl(libc::PR_SET_SECCOMP, libc::SECCOMP_MODE_FILTER, &program) != 0
+            // prctl's variadic numeric arguments have unsigned-long width.
+            let zero: libc::c_ulong = 0;
+            if libc::prctl(
+                libc::PR_SET_NO_NEW_PRIVS,
+                1 as libc::c_ulong,
+                zero,
+                zero,
+                zero,
+            ) != 0
+                || libc::prctl(
+                    libc::PR_SET_SECCOMP,
+                    libc::SECCOMP_MODE_FILTER as libc::c_ulong,
+                    &program,
+                    zero,
+                    zero,
+                ) != 0
             {
                 return Err(std::io::Error::last_os_error());
             }
