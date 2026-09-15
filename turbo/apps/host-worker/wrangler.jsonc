@@ -3,6 +3,7 @@
   "name": "zero-host-worker",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-13",
+  "images": { "binding": "IMAGES" },
   "routes": [
     { "pattern": "a.okou.io/*", "zone_name": "okou.io" },
     {
@@ -35,6 +36,7 @@
   ],
   "env": {
     "test": {
+      "images": { "binding": "IMAGES" },
       "routes": [
         {
           "pattern": "*.sites.vm7.io/*",

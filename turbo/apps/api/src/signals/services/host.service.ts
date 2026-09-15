@@ -564,12 +564,7 @@ function artifactPreviewArgs(
     readonly previewImageUrl: string | null;
   } | null,
 ): RenderArtifactPreviewArgs | null {
-  if (
-    deployment.manifest.access ||
-    !artifactRow ||
-    artifactRow.previewImageUrl ||
-    !deployment.runId
-  ) {
+  if (!artifactRow || artifactRow.previewImageUrl || !deployment.runId) {
     return null;
   }
   return {
@@ -581,6 +576,7 @@ function artifactPreviewArgs(
     contentType: "text/html",
     publicBrand: deployment.publicBrand,
     deploymentId: deployment.id,
+    privateHosted: deployment.manifest.access === "owner-private-v1",
   };
 }
 

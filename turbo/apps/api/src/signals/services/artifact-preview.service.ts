@@ -22,6 +22,7 @@ import {
 } from "./private-artifact-storage.service";
 import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
+import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
 
 const log = logger("artifacts:preview");
 
@@ -91,6 +92,7 @@ export interface RenderArtifactPreviewArgs {
   // Versions the preview key so each deployment gets a fresh, CDN-cache-busting
   // URL instead of overwriting a stale object at a fixed key.
   readonly deploymentId?: string;
+  readonly privateHosted?: boolean;
 }
 
 // Version the preview object by renderer and deployment so both renderer
@@ -334,7 +336,26 @@ const renderAndStoreArtifactPreview$ = command(
           "ARTIFACT_PREVIEW_WAF_SECRET is required when browser rendering is configured",
         );
       }
-      image = await renderArtifactSnapshot(token, wafSecret, args.url, signal);
+      let renderUrl = args.url;
+      if (args.privateHosted) {
+        if (!args.deploymentId) {
+          throw new Error("Private site previews require a deployment");
+        }
+        const preview = await set(
+          createPrivateHostedPreview$,
+          {
+            deploymentId: args.deploymentId,
+            userId: args.userId,
+            orgId: args.orgId,
+          },
+          signal,
+        );
+        if (!preview) {
+          return false;
+        }
+        renderUrl = preview.url;
+      }
+      image = await renderArtifactSnapshot(token, wafSecret, renderUrl, signal);
       filename = previewImageFilename(args.deploymentId);
       contentType = PREVIEW_IMAGE_CONTENT_TYPE;
     }
@@ -344,6 +365,7 @@ const renderAndStoreArtifactPreview$ = command(
     const existing = await get(privateArtifactRecord(privateId));
     signal.throwIfAborted();
     const privatePreview =
+      args.privateHosted === true ||
       existing !== null ||
       (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
     signal.throwIfAborted();
@@ -429,7 +451,10 @@ export const scheduleArtifactPreviewRender$ = command(
             artifactId: args.id,
             url: args.url,
             contentType: args.contentType,
-            error: error instanceof Error ? error.message : String(error),
+            error: (error instanceof Error
+              ? error.message
+              : String(error)
+            ).replace(/pv-[a-f0-9]{48}/gu, "pv-[redacted]"),
           });
         },
       ),

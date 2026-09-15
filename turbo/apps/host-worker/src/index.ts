@@ -2,7 +2,7 @@ import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
   artifactDeliveryRegistrationKey,
-  isArtifactPublicationFilePath,
+  isArtifactDeliveryFilePath,
   type ArtifactDeliveryRecord,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
@@ -13,6 +13,10 @@ import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
+import {
+  serveArtifactThumbnail,
+  type ImagesBinding,
+} from "./artifact-thumbnail";
 
 interface R2ObjectBody {
   readonly size: number;
@@ -32,6 +36,7 @@ interface R2Bucket {
 }
 
 interface Env {
+  readonly IMAGES?: ImagesBinding;
   readonly HOSTED_SITES_BUCKET: R2Bucket;
   readonly PRIVATE_ARTIFACTS_BUCKET?: R2Bucket;
   readonly PUBLIC_ARTIFACTS_BUCKET?: R2Bucket;
@@ -513,7 +518,7 @@ async function serveGrantedArtifactDelivery(
   // Decoding or trimming a different path must not expose share bytes there.
   if (
     fileHost &&
-    !isArtifactPublicationFilePath(
+    !isArtifactDeliveryFilePath(
       `/${artifactFileAlias(new URL(request.url).pathname, env.PUBLIC_ARTIFACT_HOST)}`,
     )
   )
@@ -591,6 +596,7 @@ async function serveArtifactDelivery(
       return privateResponse(notFoundResponse());
     return serveLegacyArtifactFile(
       request,
+      env,
       env.PUBLIC_ARTIFACTS_BUCKET,
       record,
       execution,
@@ -605,10 +611,29 @@ async function serveArtifactDelivery(
 
 async function serveLegacyArtifactFile(
   request: Request,
+  env: Env,
   bucket: R2Bucket,
   file: Extract<ArtifactDeliveryRecord, { kind: "legacy-file" }>,
   execution: ExecutionContext,
 ): Promise<Response> {
+  if (new URL(request.url).searchParams.has("thumbnail")) {
+    const response = await serveArtifactThumbnail(request, {
+      sourceKey: `public:${file.key}`,
+      images: env.IMAGES,
+      readSource: () => {
+        return serveArtifactFile(new Request(request.url), bucket, file);
+      },
+      waitUntil: (promise) => {
+        return execution.waitUntil(promise);
+      },
+    });
+    if (!response.ok) return privateResponse(response);
+    response.headers.set(
+      "Cache-Control",
+      "public, max-age=31536000, immutable",
+    );
+    return response;
+  }
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
   const key = new Request(request.url);
   const ranged = request.headers.has("Range");
@@ -1062,6 +1087,25 @@ async function serveAuthorizedArtifact(
     (pathname !== "/" || request.headers.get("Via")?.includes("image-resizing"))
   )
     return denied();
+  if (
+    target.kind === "file" &&
+    new URL(request.url).searchParams.has("thumbnail")
+  ) {
+    const bucket = env.PRIVATE_ARTIFACTS_BUCKET;
+    if (!bucket) return denied();
+    return privateResponse(
+      await serveArtifactThumbnail(request, {
+        sourceKey: `private:${target.key}`,
+        images: env.IMAGES,
+        readSource: () => {
+          return serveArtifactFile(new Request(request.url), bucket, target);
+        },
+        waitUntil: (promise) => {
+          return execution.waitUntil(promise);
+        },
+      }),
+    );
+  }
   const cacheUrl = new URL(request.url);
   cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? `${target.snapshotId}/${target.id}` : encodeURIComponent(target.key)}${pathname}`;
   cacheUrl.search = `?html=${acceptsHtml(request)}`;

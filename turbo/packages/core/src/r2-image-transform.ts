@@ -1,8 +1,9 @@
-import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
+import { isArtifactDeliveryFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
 
 const R2_IMAGE_TRANSFORM_HOSTS = new Set([
   "cdn.vm0.io",
   "a.okou.io",
+  "files.sites.vm7.io",
   "cdn.okou.io",
   "cdn.vm7.io",
   "static.vm0.io",
@@ -112,12 +113,34 @@ export function r2ImageTransformUrl(
 
   if (
     !R2_IMAGE_TRANSFORM_HOSTS.has(parsed.hostname) ||
-    // Cloudflare's image cache cannot enforce a share's current permissions.
-    (parsed.hostname === "a.okou.io" &&
-      isArtifactPublicationFilePath(parsed.pathname)) ||
     parsed.pathname.startsWith(R2_IMAGE_TRANSFORM_PREFIX)
   ) {
     return url;
+  }
+
+  if (
+    (parsed.hostname === "a.okou.io" ||
+      parsed.hostname === "files.sites.vm7.io") &&
+    isArtifactDeliveryFilePath(parsed.pathname)
+  ) {
+    // Ten-character names span legacy public files and revocable shares. Only
+    // the Worker registry can choose the policy, before reading resized bytes.
+    if (parsed.searchParams.has("thumbnail")) return url;
+    parsed.searchParams.set("thumbnail", "1");
+    for (const name of ["width", "height"] as const) {
+      const value = normalizedDimension(options[name]);
+      if (value !== null)
+        parsed.searchParams.set(
+          name,
+          String(Math.min(2048, Math.max(1, value))),
+        );
+    }
+    parsed.searchParams.set("fit", options.fit ?? "scale-down");
+    parsed.searchParams.set(
+      "quality",
+      String(normalizedQuality(options.quality)),
+    );
+    return parsed.toString();
   }
 
   const directives = r2ImageTransformDirectives(options);

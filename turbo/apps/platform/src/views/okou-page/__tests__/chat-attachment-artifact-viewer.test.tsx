@@ -532,3 +532,58 @@ test("Private HTML previews keep mounted frames stable and resolve again when re
     ).toHaveAttribute("src", `${nextPreview}#slide-2`);
   });
 });
+
+test("A private site card resolves its screenshot and opens the site on click", async () => {
+  const deploymentId = "00000000-0000-4000-8000-000000000019";
+  const screenshotId = "00000000-0000-4000-8000-000000000020";
+  const site = artifactReferencePath(deploymentId, "index.html");
+  const screenshot = artifactReferencePath(screenshotId, "preview.webp");
+  const screenshotUrl =
+    "https://private-files.example/screenshot.webp?signature=owner";
+  const previewUrl = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`![Private report](${site})`)],
+    artifacts: [
+      artifactFile("private-report.html", {
+        id: "private-screenshot",
+        contentType: "text/html",
+        url: site,
+        artifactKind: "hosted-site",
+        previewImageUrl: screenshot,
+      }),
+    ],
+  });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      const isScreenshot =
+        params.reference === screenshot.slice("/artifacts/".length);
+      return respond(200, {
+        url: isScreenshot ? screenshotUrl : previewUrl,
+        filename: isScreenshot ? "preview.webp" : "index.html",
+        contentType: isScreenshot ? "image/webp" : "text/html",
+        target: isScreenshot
+          ? { kind: "file", id: screenshotId }
+          : { kind: "html", id: deploymentId },
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+    },
+  );
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const card = await screen.findByTestId("attachment-preview-html");
+  const thumbnail = await within(card).findByTestId(
+    "attachment-preview-thumbnail",
+  );
+  expect(thumbnail).toHaveAttribute("src", screenshotUrl);
+  fireEvent.load(thumbnail);
+  expect(
+    within(card).queryByTestId("attachment-preview-html-viewport"),
+  ).toBeNull();
+  click(card);
+  await waitFor(() => {
+    expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
+      "src",
+      previewUrl,
+    );
+  });
+});
