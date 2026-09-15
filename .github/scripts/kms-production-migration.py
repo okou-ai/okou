@@ -14,6 +14,12 @@ import sys
 import time
 import urllib.parse
 
+from kms_recovery_verify import (
+    RecoveryVerificationError,
+    target_session,
+    verify_database,
+)
+
 
 SOURCE = "arn:aws:kms:us-west-2:072707626411:key/a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8"
 TARGET = "arn:aws:kms:us-west-2:251964670836:key/e68917e2-5541-4597-b6ef-7e9eb5670947"
@@ -651,14 +657,99 @@ def source_audit():
         (output / "source-audit.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
+def verify_target_production():
+    """Refresh current ciphertext evidence without source credentials or canaries."""
+    output = Path(required_env("RUNNER_TEMP")) / "kms-production-reports"
+    output.mkdir(mode=0o700)
+    report = {
+        "version": 1,
+        "operation": "verify-target",
+        "runId": required_env("GITHUB_RUN_ID"),
+        "commit": required_env("GITHUB_SHA"),
+        "startedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "source": SOURCE,
+        "target": TARGET,
+        "result": "running",
+        "collectionComplete": False,
+        "retirementCleared": False,
+        "productionConfigurationChanged": False,
+        "productionDataChanged": False,
+        "sourceCredentialsRead": False,
+        "sourceCanaryCreated": False,
+        "verificationStarted": False,
+        "kmsCallsMade": False,
+    }
+    try:
+        expected = required_env("EXPECTED_DEPLOYMENT_ID")
+        require(
+            re.fullmatch(r"dpl_[A-Za-z0-9]+", expected),
+            "invalid_expected_deployment",
+        )
+        require(not os.environ.get("CURSOR"), "final_verification_must_not_resume")
+        require(
+            required_env("SECRETS_KMS_KEY_ID") == TARGET
+            and required_env("AWS_REGION") == "us-west-2",
+            "target_runtime_configuration_required",
+        )
+        deployment = production_deployment(expected)
+        report["deployment"] = deployment
+        environment, session = target_session()
+        report["targetSession"] = session
+        # This path explicitly authorizes the uniquely resolved production DB.
+        # Snapshot callers continue to require their own isolated preview.
+        connection = database_url()
+        require(
+            production_deployment(expected) == deployment,
+            "deployment_changed_before_verification",
+        )
+        report["verificationStarted"] = True
+        report["kmsCallsMade"] = None
+        verified = verify_database(
+            urllib.parse.urlsplit(connection), environment, time.monotonic() + 4500
+        )
+        report["verification"] = verified
+        report["kmsCallsMade"] = True
+        require(
+            database_url() == connection,
+            "production_database_connection_changed",
+        )
+        require(
+            production_deployment(expected) == deployment,
+            "deployment_changed_during_verification",
+        )
+        require(
+            datetime.datetime.fromisoformat(session["expiration"])
+            > datetime.datetime.now(datetime.timezone.utc),
+            "target_session_expired_during_verification",
+        )
+        report["collectionComplete"] = True
+        report["result"] = "passed"
+    except BaseException as error:
+        report["result"] = "failed"
+        report["failure"] = (
+            str(error)
+            if isinstance(error, (MigrationError, RecoveryVerificationError))
+            else "unexpected_error"
+        )
+        if isinstance(error, RecoveryVerificationError) and error.diagnostics:
+            report["verificationFailure"] = error.diagnostics
+        raise
+    finally:
+        report["finishedAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        (output / "target-verification.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
+
+
 def main():
     mode = required_env("KMS_OPERATION")
     require(
-        mode in {"verify", "verify-business", "migrate", "source-audit"},
+        mode in {"verify", "verify-target", "verify-business", "migrate", "source-audit"},
         "invalid_operation",
     )
     workflow = {
         "verify": "kms-production-preflight.yml",
+        "verify-target": "kms-production-preflight.yml",
         "verify-business": "kms-production-business-verify.yml",
         "migrate": "kms-production-migrate.yml",
         "source-audit": "kms-production-preflight.yml",
@@ -679,6 +770,9 @@ def main():
         and re.fullmatch(r"[0-9a-f]{40}", required_env("GITHUB_SHA")),
         "invalid_workflow_provenance",
     )
+    if mode == "verify-target":
+        verify_target_production()
+        return
     require(
         re.fullmatch(r"[0-9a-f]{64}", required_env("EXPECTED_BACKUP_SHA256")),
         "invalid_backup_digest",

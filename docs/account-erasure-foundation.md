@@ -56,7 +56,10 @@ The following production callers remain unchanged and do not call this module:
 - API/Runner admission, output callbacks, workflow automation claims, provider
   callbacks, upload issuance/finalization, and telemetry exporters remain unwired.
   Cancellation does not fence `agent-event-consumer-run-output.service.ts`'s
-  retained cancelled-run materialization. Issued upload URLs last 3,600 seconds.
+  retained cancelled-run materialization. Issued PUT/multipart upload URLs currently last **48 hours**
+  (`PRESIGNED_URL_TTL_SECONDS`). The earlier 3,600-second statement was an older
+  source snapshot. Actual issued capability and old-client horizons govern drain;
+  elapsed time alone never proves it.
 - No webhook switch, cron/scheduler, collector/erase adapter registration,
   historical admission, backfill, credentials, or production IAM is added.
 
@@ -66,6 +69,14 @@ or bounded backfill completeness. Broader purge requires accepted A2 billing
 isolation plus the relevant C2/D/E/G2 collectors and terminal proofs. B3/F/UX
 own trustworthy client confirmation and local data cleanup. No local guard
 authorizes deleting live run, usage, allowance, ledger, or other billing anchors.
+
+The [unregistered B2a bridge](account-erasure-decision-journal.md#b2a-unregistered-clerk-bridge)
+now verifies actual Clerk deletion requests, freezes local retry input and
+projects committed journal decisions through this unchanged B1 operation. Its
+current-applicability callback and zero-start reconciliation preserve recovered
+identities and report partial predecessor holes as unresolved. Its internal
+projection result is not a production ACK, complete fence or erasure receipt.
+G2d1b trust/finite lifecycle and B2b2 complete writer/activation gates remain.
 
 ## Persistence and locking
 

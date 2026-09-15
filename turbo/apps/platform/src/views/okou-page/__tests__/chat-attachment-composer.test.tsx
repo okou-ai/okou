@@ -19,6 +19,7 @@ import {
   findNamedButton,
   getNamedButton,
   mockAttachmentChat,
+  mockPrivateUrlSequence,
   queryNamedButton,
 } from "./chat-attachment-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
@@ -333,6 +334,50 @@ test("Composer attachments show a clear upload lifecycle", async () => {
     expect(queryNamedButton("Remove dashboard.png")).toBeNull();
   });
 });
+
+test.each(["uploaded", "restored"] as const)(
+  "%s image drafts use their MIME type for binary storage thumbnails",
+  async (source) => {
+    const originalUrl =
+      `https://${"a".repeat(32)}.r2.cloudflarestorage.com/artifacts/draft-image.bin` +
+      "?X-Amz-Signature=image-signature";
+    const image = draftAttachment("image", {
+      id: "a0000000-0000-4000-a000-000000000085",
+      contentType: "image/jpeg",
+      url: originalUrl,
+    });
+    mockAttachmentChat(
+      context,
+      source === "restored" ? { draft: draftForAttachment(image, "") } : {},
+    );
+    mockPrivateUrlSequence(context, { [image.id]: [originalUrl] });
+    if (source === "uploaded") {
+      context.mocks.upload.success(image);
+    }
+
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+    await screen.findByRole("textbox", { name: "Message" });
+    if (source === "uploaded") {
+      fireEvent.change(composerFileInput(), {
+        target: {
+          files: [new File(["image"], "image", { type: "image/jpeg" })],
+        },
+      });
+    }
+    const openPreview = await findNamedButton("Open image preview for image");
+    await waitFor(() => {
+      expect(openPreview.querySelector("img")).toHaveAttribute(
+        "src",
+        `https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${originalUrl}`,
+      );
+    });
+    click(openPreview);
+    await expect(
+      screen.findByTestId("attachment-lightbox-image"),
+    ).resolves.toHaveAttribute("src", originalUrl);
+  },
+);
 
 test("Saved image annotations return with the draft", async () => {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(

@@ -41,7 +41,7 @@ expired transition validator must be deleted.
   equivalence checks remain in the permanent migration suite.
 
 - `scripts/test-member-invitation-column-retirement.ts` protects migration
-  `1136_retire_legacy_invitation_columns` (#32575): persisted SQL and dependency
+  `1137_retire_legacy_invitation_columns` (#32575): persisted SQL and dependency
   rejection, unchanged canonical values and ordinary constraints/indexes,
   canonical INSERT/UPSERT/SELECT/RETURNING, default lock timeout, retry and
   journal-failure rollback. Keep this validator and the older invitation
@@ -72,7 +72,7 @@ expired transition validator must be deleted.
   `1098_retire_member_invitation_capability` (#32573). It checks removal of
   manual invitation overrides, legacy INSERT/UPSERT/RETURNING statements, and
   current status-only writes observed by old API readers. Migration 1132 removes
-  the derived-status trigger and shipped in API 1.603.1. Migration 1136 removes
+  the derived-status trigger and shipped in API 1.603.1. Migration 1137 removes
   the physical columns; keep this validator until that column transition
   passes its production release gates. The current
   application uses a canonical-only runtime mapping and no longer mirrors the

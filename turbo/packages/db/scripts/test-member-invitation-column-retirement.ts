@@ -27,7 +27,7 @@ const journal = JSON.parse(
   await readFile(join(migrations, "meta/_journal.json"), "utf8"),
 ) as { entries: { idx: number; tag: string; when: number }[] };
 const entry = journal.entries.find((candidate) => {
-  return candidate.tag === "1136_retire_legacy_invitation_columns";
+  return candidate.tag === "1137_retire_legacy_invitation_columns";
 });
 assert.ok(entry);
 const retirement = entry;

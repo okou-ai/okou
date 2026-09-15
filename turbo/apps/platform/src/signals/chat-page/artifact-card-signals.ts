@@ -32,6 +32,7 @@ export type ArtifactKind =
 export interface ArtifactDescriptor {
   readonly filename: string;
   readonly url: string;
+  readonly contentType?: string;
   readonly kind: ArtifactKind;
 }
 
@@ -52,7 +53,9 @@ function createArtifactSignals(
   descriptor: ArtifactDescriptor,
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>,
 ): ArtifactSignals {
-  const preview = createAttachmentPreviewSignals(descriptor.url);
+  const preview = createAttachmentPreviewSignals(descriptor.url, {
+    contentType: descriptor.contentType,
+  });
   const previewImageLoad = createImageLoadSignals();
   const previewImageUrl$ = computed(async (get) => {
     if (descriptor.kind !== "html" && descriptor.kind !== "video") {

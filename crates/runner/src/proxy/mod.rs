@@ -6,17 +6,16 @@
 //! metadata through the proxy registry, and coordinates crash notification,
 //! restart, webhook delivery drain, JSONL log flush, and graceful stop behavior.
 //!
-//! The Rust/Python boundary is intentionally file- and option-based:
+//! The private Rust/Python boundary uses control I/O plus existing files/options:
 //!
 //! - `okou_proxy_registry_path` points the addon at the registry JSON written
 //!   by [`ProxyRegistryHandle`].
 //! - `okou_usage_state_id` identifies the currently running mitmdump/addon
 //!   process. Restart rotates this value so stale addon state from an older
 //!   child is rejected.
-//! - `okou_addon_ready_path` points to a marker the addon writes only after its
-//!   hooks and runner options initialize successfully. Rust requires the
-//!   marker to contain the active usage state before accepting the TCP
-//!   listener as ready.
+//! - `okou_control_socket_dir` selects the private launch directory containing
+//!   `control.sock`. A bounded, correlated `proxy.status` exchange confirms
+//!   initialized handlers for the active generation before the TCP probe.
 //! - `usage-flush-request` is written by Rust before shutdown drain. The addon
 //!   acknowledges in `usage-pending` with the matching usage state, flush
 //!   request id, and pending flow/buffer/report counters.
@@ -48,6 +47,7 @@
 //!
 //! Addon-side details live in `crates/runner/mitm-addon/src/mitm_addon.py`
 //! (mitmproxy hook orchestration),
+//! `crates/runner/mitm-addon/src/runner_control.py` (independent control I/O),
 //! `crates/runner/mitm-addon/src/runner_flush_lifecycle.py` (SIGUSR1 usage
 //! worker and JSONL marker watcher),
 //! `crates/runner/mitm-addon/src/usage/counters.py` (`usage-pending`),
@@ -55,6 +55,7 @@
 //! `crates/runner/mitm-addon/src/jsonl_writer.py` (accepted-write flush
 //! semantics).
 
+mod control;
 mod flush;
 mod managed_process;
 mod process;

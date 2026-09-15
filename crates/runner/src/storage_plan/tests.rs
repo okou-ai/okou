@@ -86,6 +86,36 @@ fn unchanged_storage_reuses_without_guest_work() {
 }
 
 #[test]
+fn decoded_admission_only_selects_non_overlapping_ordinary_downloads() {
+    let source = manifest(
+        vec![
+            storage("/ordinary", "ordinary", "v1", None),
+            storage("/instructions", "instructions", "v1", Some("AGENTS.md")),
+        ],
+        vec![artifact("/artifact", "artifact", "v1", false)],
+    );
+    let plan = build_storage_plan(&source, "/run", None).unwrap();
+    let selected: Vec<_> = plan
+        .cache_candidates()
+        .iter()
+        .filter_map(|candidate| plan.decoded_mount(candidate.handle))
+        .collect();
+    assert_eq!(selected, ["/ordinary"]);
+    for overlap in ["/ordinary/child", "/ordinary/child/../nested", "/"] {
+        let source = manifest(
+            vec![storage("/ordinary", "ordinary", "v1", None)],
+            vec![artifact(overlap, "artifact", "v1", false)],
+        );
+        let plan = build_storage_plan(&source, "/run", None).unwrap();
+        assert!(
+            plan.cache_candidates()
+                .iter()
+                .all(|candidate| plan.decoded_mount(candidate.handle).is_none())
+        );
+    }
+}
+
+#[test]
 fn unchanged_instructions_normalize_in_place() {
     let manifest = manifest(
         vec![storage(

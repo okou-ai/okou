@@ -107,6 +107,38 @@ failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-
 downloads remain required as well. Compilation stays in the existing compile
 job; only its transfer step receives R2 credentials.
 
+Required consumer GETs use `runner-binary-download.sh`: at most three complete
+download attempts, with 1s/2s backoff and a new partial file each time. Cached
+GETs retain their 60s attempt deadline and have a 198s total transfer budget.
+Each fresh manifest/binary GET retains a 120s attempt ceiling and has a 240s
+total budget. The helper reserves the 5s termination grace and shortens later
+attempts to fit the remaining budget. Two fresh GETs therefore consume at most
+480s of transfer time within the cache-index job's existing 10-minute timeout;
+validation and job setup still consume that enclosing budget.
+
+Only these GETs set `AWS_MAX_ATTEMPTS=1` and `AWS_RETRY_MODE=standard`, so the
+helper owns whole-download retries without multiplying SDK request attempts.
+Socket connect/read limits remain 5s/30s. Timeouts (exit 124), throttling,
+temporary service failures and recognized transport interruptions are retried.
+Authorization, configuration, missing artifacts, unknown errors and signal
+exits fail without another attempt. Validation failures are outside the retry
+loop. Exhaustion fails the required job; there is no compile fallback or
+automatic workflow rerun. PUT and cache lookup/publication policies are unchanged.
+
+The helper requests `AWS_CLI_ERROR_FORMAT=json` and classifies service errors
+by code, never provider message text. AWS CLI's general transport exceptions
+remain unstructured, so only known SDK-owned transport prefixes are recognized.
+Unsupported or changed error formats remain unknown rather than guessed.
+Logs contain only fixed operation/target labels, attempt count, elapsed time,
+byte count, exit status and a safe category. Raw provider output stays private
+and is removed with temporary files. SIGINT/SIGTERM/SIGHUP interrupt both
+downloads and backoff, terminate owned work and prevent retry/publication.
+
+References: [AWS CLI retry ownership](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-retries.html),
+[CLI error formatting](https://github.com/aws/aws-cli/blob/v2/awscli/errorhandler.py),
+[post-call streaming output](https://github.com/aws/aws-cli/blob/v2/awscli/customizations/streamingoutputarg.py),
+and [Botocore transport exceptions](https://github.com/boto/botocore/blob/develop/botocore/exceptions.py).
+
 Fresh reference keys omit the attempt number so a consumer-only rerun can read
 an earlier successful producer. The manifest retains the producer attempt.
 References live under `runner-binaries/transports/` and contain only metadata;

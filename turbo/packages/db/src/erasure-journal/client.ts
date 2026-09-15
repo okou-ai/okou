@@ -232,6 +232,29 @@ export function createErasureJournal(
     }
   }
 
+  async function readDecisionByConfirmationRef(
+    confirmationRef: string,
+  ): Promise<ErasureDecision | undefined> {
+    reference(confirmationRef);
+    // A single statement binds the indexed lookup to the actual store head.
+    // A different authority must fail even when this particular event is absent.
+    const [row] = await db
+      .select({ current: head, decision: decisions })
+      .from(head)
+      .leftJoin(decisions, eq(decisions.confirmationRef, confirmationRef))
+      .where(eq(head.slot, 1));
+    if (!row) return undefined; // Installed, initially empty authority.
+    invariant(row.current.authorityId === authorityId, "authority_mismatch");
+    sequence(row.current.committedSequence);
+    if (!row.decision) return undefined;
+    const decision = projection(row.decision, authorityId);
+    invariant(
+      decision.decisionSequence <= row.current.committedSequence,
+      "invalid_watermark",
+    );
+    return decision;
+  }
+
   async function readPage(request: JournalPageRequest) {
     const afterSequence = request.afterSequence;
     const watermark = { ...request.watermark };
@@ -272,6 +295,7 @@ export function createErasureJournal(
 
   return {
     append,
+    readDecisionByConfirmationRef,
     readWatermark,
     readPage,
     close: () => {
