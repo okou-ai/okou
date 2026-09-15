@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { installPreparedDomainLegacyFunctions } from "../../../test-fixtures/prepared-domain-legacy-functions";
 
 import {
   orgCustomConnectors,
@@ -56,38 +57,51 @@ async function createHarness(schema: "retained" | "without-triggers") {
     }
   };
   const initialized = await settle(
-    db.transaction(async (tx) => {
-      await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schemaName)}`);
-      await tx.execute(sql`
+    (async () => {
+      const setupClient = await pool.connect();
+      const created = await settle(
+        drizzle(setupClient).transaction(async (tx) => {
+          await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schemaName)}`);
+          await tx.execute(sql`
         CREATE TABLE org_custom_connectors
         (LIKE public.org_custom_connectors INCLUDING ALL)
       `);
-      await tx.execute(sql`
+          await tx.execute(sql`
         CREATE TABLE org_custom_connector_oauth_configs
         (LIKE public.org_custom_connector_oauth_configs INCLUDING ALL)
       `);
-      // LIKE copies ordinary checks and unique keys, but not foreign keys.
-      await tx.execute(sql`
+          // LIKE copies ordinary checks and unique keys, but not foreign keys.
+          await tx.execute(sql`
         ALTER TABLE org_custom_connector_oauth_configs
         ADD CONSTRAINT fk_org_custom_connector_oauth_configs_connector
         FOREIGN KEY (connector_id, org_id)
         REFERENCES org_custom_connectors (id, org_id) ON DELETE CASCADE
       `);
-      if (schema === "retained") {
-        await tx.execute(sql`
+          if (schema === "retained") {
+            await installPreparedDomainLegacyFunctions(setupClient, [
+              "assert_org_custom_connector_oauth_mode",
+              "enforce_org_custom_connector_oauth_mode",
+            ]);
+            await tx.execute(sql`
           CREATE CONSTRAINT TRIGGER trg_org_custom_connectors_oauth_mode
           AFTER INSERT OR UPDATE ON org_custom_connectors
           DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
-          EXECUTE FUNCTION public.enforce_org_custom_connector_oauth_mode()
+          EXECUTE FUNCTION enforce_org_custom_connector_oauth_mode()
         `);
-        await tx.execute(sql`
+            await tx.execute(sql`
           CREATE CONSTRAINT TRIGGER trg_org_custom_connector_oauth_configs_mode
           AFTER INSERT OR DELETE OR UPDATE ON org_custom_connector_oauth_configs
           DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
-          EXECUTE FUNCTION public.enforce_org_custom_connector_oauth_mode()
+          EXECUTE FUNCTION enforce_org_custom_connector_oauth_mode()
         `);
+          }
+        }),
+      );
+      setupClient.release();
+      if (!created.ok) {
+        throw created.error;
       }
-    }),
+    })(),
   );
   if (!initialized.ok) {
     await destroy();

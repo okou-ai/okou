@@ -365,6 +365,13 @@
       "when": 1789438073752,
       "tag": "1129_conversation_deletion_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 1130,
+      "version": "7",
+      "when": 1789442325117,
+      "tag": "1130_retire_prepared_domain_triggers",
+      "breakpoints": true
     }
   ]
 }

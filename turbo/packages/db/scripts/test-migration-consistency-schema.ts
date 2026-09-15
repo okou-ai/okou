@@ -236,13 +236,6 @@ function databaseErrorCode(error: unknown): string | undefined {
   return typeof error.code === "string" ? error.code : undefined;
 }
 
-function databaseErrorConstraint(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("constraint" in error)) {
-    return undefined;
-  }
-  return typeof error.constraint === "string" ? error.constraint : undefined;
-}
-
 async function expectAppendOnlyUpdateRejected(
   client: Client,
   args: {
@@ -1320,20 +1313,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
-      "CREATE TRIGGER enforce_hosted_deployment_scope_0753 BEFORE INSERT ON public.hosted_deployments FOR EACH ROW EXECUTE FUNCTION enforce_hosted_deployment_scope_0753()",
-    schemaName: "public",
-    tableName: "hosted_deployments",
-    triggerName: "enforce_hosted_deployment_scope_0753",
-  },
-  {
-    definition:
-      "CREATE TRIGGER canonicalize_hosted_site_scope_0753 BEFORE INSERT OR UPDATE OF created_from_run_id, requested_slug, chat_thread_id ON public.hosted_sites FOR EACH ROW EXECUTE FUNCTION canonicalize_hosted_site_scope_0753()",
-    schemaName: "public",
-    tableName: "hosted_sites",
-    triggerName: "canonicalize_hosted_site_scope_0753",
-  },
-  {
-    definition:
       "CREATE TRIGGER hosted_sites_delete_artifact_registry AFTER DELETE ON public.hosted_sites FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('hosted-site')",
     schemaName: "public",
     tableName: "hosted_sites",
@@ -1345,41 +1324,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
     schemaName: "public",
     tableName: "image_artifacts",
     triggerName: "image_artifacts_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE CONSTRAINT TRIGGER trg_org_custom_connector_oauth_configs_mode AFTER INSERT OR DELETE OR UPDATE ON public.org_custom_connector_oauth_configs DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION enforce_org_custom_connector_oauth_mode()",
-    schemaName: "public",
-    tableName: "org_custom_connector_oauth_configs",
-    triggerName: "trg_org_custom_connector_oauth_configs_mode",
-  },
-  {
-    definition:
-      "CREATE CONSTRAINT TRIGGER trg_org_custom_connectors_oauth_mode AFTER INSERT OR UPDATE ON public.org_custom_connectors DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION enforce_org_custom_connector_oauth_mode()",
-    schemaName: "public",
-    tableName: "org_custom_connectors",
-    triggerName: "trg_org_custom_connectors_oauth_mode",
-  },
-  {
-    definition:
-      "CREATE TRIGGER ensure_legacy_org_metadata_plan_entitlement AFTER INSERT ON public.org_metadata FOR EACH ROW EXECUTE FUNCTION ensure_legacy_org_metadata_plan_entitlement()",
-    schemaName: "public",
-    tableName: "org_metadata",
-    triggerName: "ensure_legacy_org_metadata_plan_entitlement",
-  },
-  {
-    definition:
-      "CREATE TRIGGER sync_legacy_org_plan_entitlement_can_buy_credits BEFORE INSERT OR UPDATE OF plan_key ON public.org_plan_entitlements FOR EACH ROW EXECUTE FUNCTION sync_legacy_org_plan_entitlement_can_buy_credits()",
-    schemaName: "public",
-    tableName: "org_plan_entitlements",
-    triggerName: "sync_legacy_org_plan_entitlement_can_buy_credits",
-  },
-  {
-    definition:
-      "CREATE TRIGGER sync_legacy_org_plan_entitlement_member_invitation_allowed BEFORE INSERT OR UPDATE OF status, member_invitation_allowed ON public.org_plan_entitlements FOR EACH ROW EXECUTE FUNCTION sync_legacy_org_plan_entitlement_member_invitation_allowed()",
-    schemaName: "public",
-    tableName: "org_plan_entitlements",
-    triggerName: "sync_legacy_org_plan_entitlement_member_invitation_allowed",
   },
   {
     definition:
@@ -1408,14 +1352,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
     schemaName: "public",
     tableName: "video_artifacts",
     triggerName: "video_artifacts_delete_artifact_registry",
-  },
-  // The current schema still uses this trigger to serialize pending purchases.
-  {
-    definition:
-      "CREATE TRIGGER sync_usage_pack_pending_snapshot_guard_0954 AFTER INSERT OR DELETE OR UPDATE OF org_id, subscription_status ON public.usage_pack_subscriptions FOR EACH ROW EXECUTE FUNCTION sync_usage_pack_pending_snapshot_guard_0954()",
-    schemaName: "public",
-    tableName: "usage_pack_subscriptions",
-    triggerName: "sync_usage_pack_pending_snapshot_guard_0954",
   },
 ] as const satisfies readonly PermanentTrigger[];
 
@@ -1493,28 +1429,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "a6f14e53ce5185c90693c5655a6c712f",
-    functionName: "assert_org_custom_connector_oauth_mode",
-    identityArguments: "target_connector_id uuid, target_org_id text",
-    kind: "f",
-    schemaName: "public",
-  },
-  // The current schema still uses this function to serialize pending purchases.
-  {
-    bodyHash: "ced36d9b55fb6907880d545aa7f36dbe",
-    functionName: "sync_usage_pack_pending_snapshot_guard_0954",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "3506554504d6ccad1b34008dab9a9e9a",
-    functionName: "canonicalize_hosted_site_scope_0753",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
     bodyHash: "7f12cb6026b4e6d6638aaa22e0a93514",
     functionName: "chat_threads_normalize_computer_access",
     identityArguments: "",
@@ -1524,27 +1438,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
   {
     bodyHash: "3879e0228971b9f64e4bf8439ec5df4b",
     functionName: "delete_artifact_registry_entity",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "6f52cca2ad2bdcb63072a8c4269c9b49",
-    functionName: "enforce_hosted_deployment_scope_0753",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "15e3309d90f7237e3b5c28fbf23a439d",
-    functionName: "enforce_org_custom_connector_oauth_mode",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "0b0d44031a51ffc349f0f33cb0df53c3",
-    functionName: "ensure_legacy_org_metadata_plan_entitlement",
     identityArguments: "",
     kind: "f",
     schemaName: "public",
@@ -1566,20 +1459,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
   {
     bodyHash: "519c7504c787a49c4c6bea8a588711fc",
     functionName: "reject_chat_event_source_update",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "daf97695043bdbafd864f7ff7a8f8d5d",
-    functionName: "sync_legacy_org_plan_entitlement_can_buy_credits",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "c3d7d4a52f4ef3f9fd6250cc8a5460fc",
-    functionName: "sync_legacy_org_plan_entitlement_member_invitation_allowed",
     identityArguments: "",
     kind: "f",
     schemaName: "public",
@@ -1835,7 +1714,7 @@ async function validatePermanentArtifactTriggerBehavior(
        )
        VALUES
          ($1, $4, $5, 'permanent-hosted-site', 'permanent-hosted-site',
-          'permanent-hosted-site', NULL, $7, 'vm0'),
+          'permanent-hosted-site', $6, $7, 'vm0'),
          ($2, $4, $5, 'permanent-presentation', 'permanent-presentation',
           'permanent-presentation', NULL, NULL, 'vm0'),
          ($3, $4, $5, 'permanent-scoped-site', 'permanent-scoped-site',
@@ -1850,15 +1729,6 @@ async function validatePermanentArtifactTriggerBehavior(
         fixture.firstRunId,
       ],
     );
-    const canonicalizedSite = await client.query<{ chatThreadId: string }>(
-      `SELECT "chat_thread_id" AS "chatThreadId"
-       FROM "hosted_sites"
-       WHERE "id" = $1`,
-      [fixture.hostedSiteId],
-    );
-    assert.deepEqual(canonicalizedSite.rows, [
-      { chatThreadId: fixture.firstThreadId },
-    ]);
     await client.query(
       `INSERT INTO "image_artifacts" ("id", "file_id") VALUES ($1, $2)`,
       [fixture.imageId, fixture.imageFileId],
@@ -1924,30 +1794,7 @@ async function validatePermanentArtifactTriggerBehavior(
     );
     assert.deepEqual(remainingRegistryRows.rows, []);
 
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "Hosted site belongs to a different chat",
-      query: `INSERT INTO "hosted_deployments" (
-        "site_id", "org_id", "user_id", "run_id", "status", "r2_prefix",
-        "manifest", "manifest_hash", "content_hash", "file_count",
-        "size_bytes", "url", "public_brand"
-      )
-      VALUES (
-        $1, $2, $3, $4, 'uploading', 'permanent-out-of-scope', '{}'::jsonb,
-        repeat('0', 64), repeat('0', 64), 0, 0,
-        'https://out-of-scope.invalid', 'vm0'
-      )`,
-      values: [
-        fixture.scopedSiteId,
-        fixture.orgId,
-        fixture.userId,
-        fixture.secondRunId,
-      ],
-    });
-
-    console.log(
-      "   ✅ Artifact registry cascades, catalog queueing, and hosted deployment scope enforcement work\n",
-    );
+    console.log("   ✅ Artifact registry cascades and catalog queueing work\n");
   } finally {
     await client.query(`DELETE FROM "artifacts" WHERE "org_id" = $1`, [
       fixture.orgId,
@@ -2183,13 +2030,11 @@ async function validatePermanentAgentRunMetadataState(
       FROM "pg_proc"
       WHERE "pronamespace" = 'public'::regnamespace
         AND "proname" IN (
-          'canonicalize_hosted_site_scope_0753',
-          'enforce_hosted_deployment_scope_0753',
           'queue_artifact_catalog_file'
         )
       ORDER BY "proname"
     `);
-    assert.equal(metadataReaders.rows.length, 3);
+    assert.equal(metadataReaders.rows.length, 1);
     for (const reader of metadataReaders.rows) {
       assert.ok(reader.body.includes('FROM "agent_runs"'));
       assert.ok(reader.body.includes('"trigger_source" IS NOT NULL'));
@@ -2577,38 +2422,6 @@ async function validateConnectorCatalogFinalConstraints(
   );
 }
 
-async function expectDeferredDatabaseError(
-  client: Client,
-  args: {
-    readonly code: string;
-    readonly messageIncludes?: string;
-    readonly statements: readonly {
-      readonly query: string;
-      readonly values?: readonly string[];
-    }[];
-  },
-): Promise<void> {
-  await client.query("BEGIN");
-  try {
-    for (const statement of args.statements) {
-      await client.query(
-        statement.query,
-        statement.values ? [...statement.values] : undefined,
-      );
-    }
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    assert.equal(databaseErrorCode(error), args.code);
-    if (args.messageIncludes !== undefined) {
-      assert.ok(error instanceof Error);
-      assert.ok(error.message.includes(args.messageIncludes));
-    }
-    return;
-  }
-  throw new Error(`Expected deferred database error ${args.code}`);
-}
-
 async function validateCustomConnectorOauthModeConstraints(
   dbUrl: string,
 ): Promise<void> {
@@ -2620,7 +2433,6 @@ async function validateCustomConnectorOauthModeConstraints(
     createdBy: "migration-custom-connector-oauth-user",
     manualConnectorId: "72000000-0000-4000-8000-000000000001",
     oauthConnectorId: "72000000-0000-4000-8000-000000000002",
-    invalidOauthConnectorId: "72000000-0000-4000-8000-000000000003",
     automaticConnectorId: "72000000-0000-4000-8000-000000000005",
     automaticAccountId: "72000000-0000-4000-8000-000000000006",
     dcrRegistrationId: "72000000-0000-4000-8000-000000000007",
@@ -2763,71 +2575,6 @@ async function validateCustomConnectorOauthModeConstraints(
       fixture.createdBy,
     ]);
 
-    await expectDeferredDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "custom connector OAuth mode and config do not match",
-      statements: [
-        {
-          query: insertConnector,
-          values: [
-            fixture.invalidOauthConnectorId,
-            fixture.orgId,
-            "_migration_invalid_oauth",
-            "Migration Invalid OAuth Connector",
-            "oauth",
-            fixture.createdBy,
-          ],
-        },
-      ],
-    });
-    await expectDeferredDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "custom connector OAuth mode and config do not match",
-      statements: [
-        {
-          query: insertOauthConfig,
-          values: [fixture.manualConnectorId, fixture.orgId],
-        },
-      ],
-    });
-    await expectDeferredDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "custom connector OAuth mode and config do not match",
-      statements: [
-        {
-          query: `
-            UPDATE "org_custom_connectors"
-            SET "auth_mode" = 'manual'
-            WHERE "id" = $1
-          `,
-          values: [fixture.oauthConnectorId],
-        },
-      ],
-    });
-    await expectDeferredDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "custom connector OAuth mode and config do not match",
-      statements: [
-        {
-          query: `
-            DELETE FROM "org_custom_connector_oauth_configs"
-            WHERE "connector_id" = $1
-          `,
-          values: [fixture.oauthConnectorId],
-        },
-      ],
-    });
-
-    await expectDeferredDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "custom connector OAuth mode and config do not match",
-      statements: [
-        {
-          query: insertOauthConfig,
-          values: [fixture.automaticConnectorId, fixture.orgId],
-        },
-      ],
-    });
     await expectDatabaseError(client, {
       code: "23514",
       query: `
@@ -3531,92 +3278,42 @@ async function validatePermanentUsagePackPendingSnapshotState(
   await client.connect();
   await client.query("BEGIN");
 
-  const firstSubscriptionId = "00000000-0000-4000-8000-000000318961";
-  const replacementSubscriptionId = "00000000-0000-4000-8000-000000318962";
   const orgId = "permanent-usage-pack-pending-snapshot-org";
-
-  const readPendingSnapshotCount = async (): Promise<number> => {
-    const result = await client.query<{ pendingSnapshotCount: number }>(
-      `
-        SELECT "pending_snapshot_count" AS "pendingSnapshotCount"
-        FROM "usage_pack_pending_snapshot_guards"
-        WHERE "org_id" = $1
-      `,
+  try {
+    await client.query(
+      `INSERT INTO usage_pack_pending_snapshot_guards
+      (org_id, pending_snapshot_count) VALUES ($1, 2)`,
       [orgId],
     );
-    assert.equal(result.rows.length, 1);
-    return result.rows[0]!.pendingSnapshotCount;
-  };
-
-  const insertPendingSubscription = async (
-    id: string,
-    status: "checkout_pending" | "purchase_pending",
-  ): Promise<void> => {
-    await client.query(
-      `
-        INSERT INTO "usage_pack_subscriptions" (
-          "id",
-          "org_id",
-          "tier",
-          "stripe_plan_price_id",
-          "stripe_customer_id",
-          "subscription_status"
-        )
-        VALUES ($1, $2, 'pro', 'price_permanent_guard', $3, $4)
-      `,
-      [id, orgId, `customer-${id}`, status],
-    );
-  };
-
-  try {
-    await insertPendingSubscription(firstSubscriptionId, "checkout_pending");
-    assert.equal(await readPendingSnapshotCount(), 1);
-
-    await client.query("SAVEPOINT duplicate_pending_subscription");
-    let duplicateError: unknown;
-    try {
-      await insertPendingSubscription(
-        replacementSubscriptionId,
-        "purchase_pending",
-      );
-    } catch (error) {
-      duplicateError = error;
-    }
-    await client.query("ROLLBACK TO SAVEPOINT duplicate_pending_subscription");
-    await client.query("RELEASE SAVEPOINT duplicate_pending_subscription");
-    assert.equal(databaseErrorCode(duplicateError), "23505");
-    assert.equal(
-      databaseErrorConstraint(duplicateError),
-      "uq_usage_pack_subscriptions_pending_org",
-    );
-
-    await client.query(
-      `
-        UPDATE "usage_pack_subscriptions"
-        SET "subscription_status" = 'checkout_expired'
-        WHERE "id" = $1
-      `,
-      [firstSubscriptionId],
-    );
-    assert.equal(await readPendingSnapshotCount(), 0);
-
-    await insertPendingSubscription(
-      replacementSubscriptionId,
-      "purchase_pending",
-    );
-    assert.equal(await readPendingSnapshotCount(), 1);
-
-    await client.query(
-      `DELETE FROM "usage_pack_subscriptions" WHERE "id" = $1`,
-      [replacementSubscriptionId],
-    );
-    assert.equal(await readPendingSnapshotCount(), 0);
-
+    // Counts above one represent grandfathered purchases. Admission and release
+    // are owned by the API service; the database retains uniqueness and range.
+    await client.query("SAVEPOINT guard_constraint");
+    await expectDatabaseError(client, {
+      code: "23505",
+      query: `INSERT INTO usage_pack_pending_snapshot_guards
+        (org_id, pending_snapshot_count) VALUES ($1, 0)`,
+      values: [orgId],
+    });
+    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+    await client.query("SAVEPOINT guard_constraint");
+    await expectDatabaseError(client, {
+      code: "23514",
+      messageIncludes: "chk_usage_pack_pending_snapshot_guard_count",
+      query: `UPDATE usage_pack_pending_snapshot_guards
+        SET pending_snapshot_count = -1 WHERE org_id = $1`,
+      values: [orgId],
+    });
+    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+    await client.query("SAVEPOINT guard_constraint");
+    await expectDatabaseError(client, {
+      code: "23502",
+      query: `UPDATE usage_pack_pending_snapshot_guards
+        SET pending_snapshot_count = NULL WHERE org_id = $1`,
+      values: [orgId],
+    });
+    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
     console.log(
-      "   ✅ one pending purchase owns the organization snapshot guard",
-    );
-    console.log(
-      "   ✅ competing pending purchases fail until update or delete releases the guard\n",
+      "   ✅ pending guards retain unique organization and nonnegative count constraints\n",
     );
   } finally {
     await client.query("ROLLBACK");
@@ -3713,7 +3410,7 @@ async function main(): Promise<void> {
         "   ✅ Final connector catalog constraints reject invalid state",
       );
       console.log(
-        "   ✅ Custom connector OAuth mode constraints reject mismatched configuration",
+        "   ✅ Custom connector ordinary mode checks, bindings and cascades remain enforced",
       );
       console.log(
         "   ✅ Custom connector skill columns reject mixed version state",
@@ -3724,10 +3421,10 @@ async function main(): Promise<void> {
       );
       console.log("   ✅ Permanent trigger and function inventories match");
       console.log(
-        "   ✅ Usage-pack pending snapshot ownership serializes and releases",
+        "   ✅ Usage-pack pending guards retain uniqueness and count constraints",
       );
       console.log(
-        "   ✅ Permanent artifact triggers preserve cascade, queue, and scope behavior",
+        "   ✅ Permanent artifact triggers preserve cascade and queue behavior",
       );
       console.log(
         "   ✅ Permanent inventory matches API-owned Pi candidate accounting",

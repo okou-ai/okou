@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { installPreparedDomainLegacyFunctions } from "../../../test-fixtures/prepared-domain-legacy-functions";
 
 import {
   usagePackAllocations,
@@ -54,29 +55,41 @@ async function createHarness(retained: boolean) {
     }
   };
   const initialized = await settle(
-    db.transaction(async (tx) => {
-      await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schema)}`);
-      await tx.execute(
-        sql`CREATE TABLE usage_pack_subscriptions (LIKE public.usage_pack_subscriptions INCLUDING ALL)`,
-      );
-      await tx.execute(
-        sql`CREATE TABLE usage_pack_allocations (LIKE public.usage_pack_allocations INCLUDING ALL)`,
-      );
-      await tx.execute(
-        sql`ALTER TABLE usage_pack_allocations ADD FOREIGN KEY (usage_pack_subscription_id) REFERENCES usage_pack_subscriptions (id) ON DELETE CASCADE`,
-      );
-      await tx.execute(
-        sql`CREATE TABLE usage_pack_pending_snapshot_guards (LIKE public.usage_pack_pending_snapshot_guards INCLUDING DEFAULTS INCLUDING CONSTRAINTS)`,
-      );
-      await tx.execute(
-        sql`CREATE UNIQUE INDEX uq_usage_pack_subscriptions_pending_org ON usage_pack_pending_snapshot_guards (org_id)`,
-      );
-      if (retained) {
-        await tx.execute(sql`CREATE TRIGGER sync_usage_pack_pending_snapshot_guard_0954
+    (async () => {
+      const setupClient = await pool.connect();
+      const created = await settle(
+        drizzle(setupClient).transaction(async (tx) => {
+          await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schema)}`);
+          await tx.execute(
+            sql`CREATE TABLE usage_pack_subscriptions (LIKE public.usage_pack_subscriptions INCLUDING ALL)`,
+          );
+          await tx.execute(
+            sql`CREATE TABLE usage_pack_allocations (LIKE public.usage_pack_allocations INCLUDING ALL)`,
+          );
+          await tx.execute(
+            sql`ALTER TABLE usage_pack_allocations ADD FOREIGN KEY (usage_pack_subscription_id) REFERENCES usage_pack_subscriptions (id) ON DELETE CASCADE`,
+          );
+          await tx.execute(
+            sql`CREATE TABLE usage_pack_pending_snapshot_guards (LIKE public.usage_pack_pending_snapshot_guards INCLUDING DEFAULTS INCLUDING CONSTRAINTS)`,
+          );
+          await tx.execute(
+            sql`CREATE UNIQUE INDEX uq_usage_pack_subscriptions_pending_org ON usage_pack_pending_snapshot_guards (org_id)`,
+          );
+          if (retained) {
+            await installPreparedDomainLegacyFunctions(setupClient, [
+              "sync_usage_pack_pending_snapshot_guard_0954",
+            ]);
+            await tx.execute(sql`CREATE TRIGGER sync_usage_pack_pending_snapshot_guard_0954
         AFTER INSERT OR DELETE OR UPDATE OF org_id, subscription_status ON usage_pack_subscriptions
-        FOR EACH ROW EXECUTE FUNCTION public.sync_usage_pack_pending_snapshot_guard_0954()`);
+        FOR EACH ROW EXECUTE FUNCTION sync_usage_pack_pending_snapshot_guard_0954()`);
+          }
+        }),
+      );
+      setupClient.release();
+      if (!created.ok) {
+        throw created.error;
       }
-    }),
+    })(),
   );
   if (!initialized.ok) {
     await destroy();
