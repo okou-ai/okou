@@ -896,12 +896,14 @@ async function recordObservedUsage(
   return recordedUsage;
 }
 
+interface ProcessPreparedWorkArgs {
+  readonly db: Db;
+  readonly prepared: RoutedWork;
+  readonly pricingResolution: UsagePricingResolution;
+}
+
 async function processPreparedWork(
-  args: {
-    readonly db: Db;
-    readonly prepared: RoutedWork;
-    readonly pricingResolution: UsagePricingResolution;
-  },
+  args: ProcessPreparedWorkArgs,
   signal: AbortSignal,
 ): Promise<WorkOutcome> {
   const startedAt = performance.now();
