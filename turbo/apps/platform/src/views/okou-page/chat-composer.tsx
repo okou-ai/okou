@@ -9820,26 +9820,33 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
-      {/* Effort sits level with the model rather than behind it. It is the only
+      {/* Effort and the model are one choice about the next message, so they sit
+          as a pair: no gap between them and 8px of padding each, which leaves
+          16px between the two labels. The row's own gap then separates the pair
+          from the controls that do something else.
+
+          Effort sits level with the model rather than behind it. It is the only
           way to reach effort and Fast now that the picker's settings page is
           gone, so it shows at every width; the level's name is one short word,
           which the row can afford even on a phone. */}
-      <ChatEffortTrigger
-        value={value}
-        onChange={onChange}
-        triggerClassName={cn(
-          "text-sm text-muted-foreground",
-          COMPOSER_CONTROL_FOCUS_CLASS,
-        )}
-      />
-      <ComposerRunModelPickerControl
-        signals={signals}
-        value={value}
-        onChange={onChange}
-        codexFastModeEnabled={codexFastModeEnabled}
-        desktopLayout={desktopLayout}
-        mediaModelPanel={mediaModelPanel}
-      />
+      <div className="flex items-center">
+        <ChatEffortTrigger
+          value={value}
+          onChange={onChange}
+          triggerClassName={cn(
+            "px-2 text-sm text-muted-foreground",
+            COMPOSER_CONTROL_FOCUS_CLASS,
+          )}
+        />
+        <ComposerRunModelPickerControl
+          signals={signals}
+          value={value}
+          onChange={onChange}
+          codexFastModeEnabled={codexFastModeEnabled}
+          desktopLayout={desktopLayout}
+          mediaModelPanel={mediaModelPanel}
+        />
+      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
     </>
   );
