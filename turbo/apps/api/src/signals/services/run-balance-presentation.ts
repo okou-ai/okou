@@ -46,7 +46,7 @@ function publicBalanceEventBody(
         : {}),
     };
   }
-  if (eventType === "assistant" && event.isApiErrorMessage === true) {
+  if (eventType === "assistant" && event.is_api_error_message === true) {
     const message = record(event.message);
     const content = message?.content;
     if (
@@ -62,6 +62,7 @@ function publicBalanceEventBody(
     ) {
       return {
         ...event,
+        error: "model_unavailable",
         message: {
           ...message,
           content: [{ type: "text", text: MODEL_UNAVAILABLE_MESSAGE }],

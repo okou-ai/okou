@@ -4088,8 +4088,10 @@ describe("CHAT-02: failed chat callbacks", () => {
         {
           type: "assistant",
           sequenceNumber: 5,
-          isApiErrorMessage: true,
-          message: { ...text, id: "provider-failure" },
+          // Captured from the pinned Claude Code 2.1.270 stream-json output.
+          is_api_error_message: true,
+          error: "billing_error",
+          message: { ...text, id: "provider-failure", role: "assistant" },
         },
         {
           type: "response.failed",
@@ -4118,12 +4120,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         headers,
         [200],
       );
-      await failChatRun(
-        run.runId,
-        headers,
-        raw,
-        "provider_insufficient_credits",
-      );
+      // The assistant message must be safe before terminal error formatting runs.
       await flushWaitUntilForTest();
       const messages = await chat.listThreadEvents(actor, run.threadId);
       const output = assistantMessages(messages.events).filter((event) => {
@@ -4134,6 +4131,13 @@ describe("CHAT-02: failed chat callbacks", () => {
           return event.content;
         }),
       ).toStrictEqual([raw, visible]);
+      await failChatRun(
+        run.runId,
+        headers,
+        raw,
+        "provider_insufficient_credits",
+      );
+      await flushWaitUntilForTest();
 
       const providerBody = JSON.stringify({
         type: "error",
@@ -4225,8 +4229,10 @@ describe("CHAT-02: failed chat callbacks", () => {
         events[4],
         {
           ...events[5],
+          error: builtIn ? "model_unavailable" : "billing_error",
           message: {
             id: "provider-failure",
+            role: "assistant",
             content: [{ type: "text", text: visible }],
           },
         },
