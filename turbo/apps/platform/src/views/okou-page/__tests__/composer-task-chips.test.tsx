@@ -531,6 +531,12 @@ test.each([
     next: "Put my café menu online",
     prompt: "Build a website that explains my business",
   },
+  {
+    task: "Presentation",
+    first: "Pitch my business to investors",
+    next: "Present my results",
+    prompt: "Create an investor pitch deck for my business",
+  },
 ])(
   "$task ideas rotate without changing the draft and keep what was typed",
   async ({ task, first, next, prompt }) => {
@@ -586,6 +592,15 @@ test.each([
       "Build a website that explains my business, services, and how to contact me. Start with my business details and audience.",
     secondPrompt:
       "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details.",
+  },
+  {
+    task: "Presentation",
+    first: "Pitch my business to investors",
+    second: "Put together a team update",
+    firstPrompt:
+      "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising.",
+    secondPrompt:
+      "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room.",
   },
 ])(
   "A second $task idea rewrites the first prompt instead of stacking one after it",

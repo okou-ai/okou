@@ -1,17 +1,13 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Button, ToggleButton, cn } from "@okouai/ui";
+import { ToggleButton, cn } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   VISUALIZATION_OUTPUTS,
   type VisualizationChart,
   type VisualizationOutput,
 } from "../../signals/okou-page/composer-visualization.ts";
-import {
-  ComposerRail,
-  RAIL_TILE,
-  RAIL_TILE_CAPTION,
-} from "./composer-rail.tsx";
+import { ComposerRail, RAIL_TILE_CAPTION } from "./composer-rail.tsx";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
 
@@ -106,17 +102,29 @@ function VisualizationChartButton({
   const label = copy.charts[chart];
   const selected = charts.includes(chart);
   return (
-    // Built like a cover tile rather than a toggle: art in its own box, caption
-    // under it and outside it, so the row reads the same as every other type's
-    // shelf. The pressed state rides on the box, not on the whole control.
-    <Button
-      type="button"
-      variant="quiet"
-      aria-pressed={selected}
+    /*
+      A persistent pressed state, so the shared toggle owns `aria-pressed`, the
+      focus ring and the disabled appearance. Its own selected treatment is for
+      a control that is itself the surface; here the art box is, and the caption
+      sits outside it the way every other type's shelf tile does. So the outer
+      control is neutralised and the box below carries the state - and only the
+      resting branch is overridden, because overriding both is what erased the
+      selected state the first time.
+    */
+    <ToggleButton
+      selected={selected}
+      layout="tile"
       aria-label={label}
       // The button base clamps any nested icon to `size-4`; this tile's child is
       // a drawing that has to fill its box, not an icon.
-      className={cn(RAIL_TILE, "w-[140px] [&_svg]:size-full")}
+      className={cn(
+        "group/tile w-[140px] border-0 p-0 text-left font-normal",
+        // `bg-transparent` alone leaves the toggle's dark selected fill: a
+        // theme-prefixed utility is a different merge key, so it survives an
+        // unprefixed one and would wash the tile in dark.
+        "bg-transparent dark:bg-transparent",
+        "[&:hover]:bg-transparent [&_svg]:size-full",
+      )}
       onClick={() => {
         toggleChart(chart);
       }}
@@ -141,7 +149,7 @@ function VisualizationChartButton({
       >
         {label}
       </span>
-    </Button>
+    </ToggleButton>
   );
 }
 

@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import type { RailTravel } from "../../signals/okou-page/composer-task-chips.ts";
+import { measureRail } from "../../signals/okou-page/composer-task-chips.ts";
 
 /**
  * A row is a rail, not a set of equal pages. Items pack continuously, so the
@@ -95,18 +95,6 @@ const RAIL_PAGER = cn(
 );
 /** A page is one visible width less an item's worth of overlap for context. */
 const RAIL_PAGE_OVERLAP = 64;
-/** How far the rail can still travel in each direction, right now. */
-function measureRail(element: HTMLElement): RailTravel {
-  // A scroll position is fractional under zoom, so a whole pixel of slack
-  // keeps a rail that is visually at its end from claiming otherwise.
-  const remaining =
-    element.scrollWidth - element.clientWidth - element.scrollLeft;
-  return {
-    canScrollBack: element.scrollLeft > 1,
-    canScrollForward: remaining > 1,
-  };
-}
-
 function ComposerRailPager({ side }: { readonly side: "back" | "forward" }) {
   const { t } = useTranslation();
   const Icon = side === "back" ? ChevronLeft : ChevronRight;
@@ -165,6 +153,9 @@ export function ComposerRail({
 }) {
   const travel = useGet(signals.taskChips.railTravel$)[rail];
   const setTravel = useSet(signals.taskChips.setRailTravel$);
+  // A stable ref: the command owns the row's observers and their teardown, so
+  // a re-render does not detach and rebuild them.
+  const bindRail = useSet(signals.taskChips.bindRail$);
   const canBack = travel?.canScrollBack ?? false;
   const canForward = travel?.canScrollForward ?? false;
   const fade = canBack
@@ -182,30 +173,11 @@ export function ComposerRail({
       aria-label={label}
     >
       <div
-        data-rail=""
+        data-rail={rail}
+        ref={bindRail}
         className={cn(RAIL, gap, fade, RAIL_FADE_OFF)}
         onScroll={(event) => {
           setTravel(rail, measureRail(event.currentTarget));
-        }}
-        ref={(node) => {
-          if (!node) {
-            return;
-          }
-          setTravel(rail, measureRail(node));
-          // The row's own width and its items' widths both decide where the
-          // rail ends, and neither is known until the browser has laid them
-          // out. Watching the rail covers a resized column; watching the
-          // children covers a cover that finishes loading.
-          const observer = new ResizeObserver(() => {
-            setTravel(rail, measureRail(node));
-          });
-          observer.observe(node);
-          for (const child of node.children) {
-            observer.observe(child);
-          }
-          return () => {
-            observer.disconnect();
-          };
         }}
       >
         {items.map((item, index) => {
