@@ -281,6 +281,23 @@ function WorkflowDiagramNode({
   );
 }
 
+function WorkflowDiagramOkouNode() {
+  return (
+    <WorkflowDiagramNode
+      label=""
+      className="top-[45px] left-[277px] w-[72px]"
+      iconClassName="owf-diagram-avatar"
+    >
+      <span
+        className="relative inline-block size-[64px] overflow-hidden"
+        aria-hidden="true"
+      >
+        <WorkflowDiagramOkouAvatar />
+      </span>
+    </WorkflowDiagramNode>
+  );
+}
+
 function WorkflowDiagramAction({
   title,
   description,
@@ -406,18 +423,7 @@ export function WorkflowPreviewDiagram({
             className="top-[34px] left-[94px] w-[82px]"
           />
         ) : null}
-        <WorkflowDiagramNode
-          label=""
-          className="top-[45px] left-[277px] w-[72px]"
-          iconClassName="owf-diagram-avatar"
-        >
-          <span
-            className="relative inline-block size-[64px] overflow-hidden"
-            aria-hidden="true"
-          >
-            <WorkflowDiagramOkouAvatar />
-          </span>
-        </WorkflowDiagramNode>
+        <WorkflowDiagramOkouNode />
         {diagram.destinationConnectorSlug ? (
           <WorkflowDiagramNode
             label={connectorLabel(diagram.destinationConnectorSlug)}
