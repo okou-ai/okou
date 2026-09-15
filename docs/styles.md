@@ -1184,20 +1184,34 @@ channels separately — dropping the migrated bottom extension moves the scrim a
 backdrop boxes without changing a pixel, while dropping their background fills
 changes millions of pixels.
 
-`okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` remain legacy selectors.
-They sit together on the mobile drawer `aside`, and spelling them as utilities
-takes that element from 288 to 499 characters of class list and from two to six
-bracketed arbitrary values. Whether a six-declaration `::before` paint layer and
-a four-value safe-area padding belong inline there, behind a shared safe-area
-decision, or inside a drawer-surface component is a token-layer design call, so
-the batch is recorded `blocked` rather than resolved. The mechanics are
-otherwise clear: both rules are unlayered but nothing else on the element sets
-`isolation`, `::before`, padding or `box-sizing`, so no important marker would be
-needed. One difference would not be exact — Tailwind's `max-md` emits
-`@media (width < 48rem)` while the retired rule stopped at `max-width: 767px`,
-so between 767px and 768px the padding would newly apply. The element already
-gates its whole fixed-drawer geometry on `max-md`, so the two spellings disagree
-there today.
+The `okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` selectors and their
+consumers have been removed. They sat together on the mobile drawer `aside` and
+are now utilities on it, which is the same answer the drawer's own scrim already
+carries: `sidebar-layout.tsx` spells
+`[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]` inline, and so
+does the lightbox overlay. The batch had been recorded `blocked` on a choice
+between inlining, a shared safe-area decision and a drawer-surface component;
+inlining is what the sibling element next to it was already doing.
+
+The `::before` layer exists for exactly one case. The `aside` already carries
+`bg-sidebar`, so that fill is invisible wherever the element's own box is: its
+only visible work is the standalone-PWA extension below, which paints the
+sidebar colour into the home-indicator area while the drawer's content keeps its
+safe-area padding. `isolate` is what keeps the `-z-1` layer inside this element
+instead of letting it fall behind the page.
+
+The four-value padding is `max-md:p-safe`, the utility the browser-session cover
+registered, rather than the four-value bracketed arbitrary value this note
+previously estimated; that is what holds the class list to 458 characters
+instead of 499. Two bracketed values remain, both on the `::before`.
+
+`max-md` is still not an exact restatement of the retired condition. Tailwind
+emits `@media (width < 48rem)` while the rule stopped at `max-width: 767px`, so
+a fractional viewport width strictly between 767px and 768px newly takes the
+padding. Every integer width agrees, measured at 767 and 768; the element
+already gates its whole fixed-drawer geometry on `max-md`, so that width is
+where the two spellings disagree today and aligning them is the smaller
+surprise.
 
 ### The onboarding workflow diagram canvas
 

@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "batch": "mobile-drawer-safe-area",
+  "cases": [
+    {
+      "id": "mobile-drawer-light",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "mobile-drawer-dark",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "mobile-drawer-boundary-light",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 767,
+        "height": 900
+      },
+      "deviceScaleFactor": 1,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "mobile-drawer-boundary-dark",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 767,
+        "height": 900
+      },
+      "deviceScaleFactor": 1,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "mobile-drawer-desktop-light",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "mobile-drawer-desktop-dark",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    }
+  ]
+}

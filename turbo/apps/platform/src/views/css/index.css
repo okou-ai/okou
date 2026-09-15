@@ -393,35 +393,6 @@ body {
   }
 }
 
-@media (max-width: 767px) {
-  /* Fixed mobile surfaces escape the page shell, so their interactive content
-     owns an immutable safe-area boundary. */
-  .okou-mobile-fixed-safe-area {
-    box-sizing: border-box;
-    padding: var(--sat) var(--sar) var(--sab) var(--sal);
-  }
-}
-
-.okou-mobile-sidebar {
-  isolation: isolate;
-}
-
-.okou-mobile-sidebar::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  background-color: hsl(var(--sidebar));
-  content: "";
-  pointer-events: none;
-}
-
-@media (display-mode: standalone) {
-  /* Paint may extend below the viewport without moving drawer content. */
-  .okou-mobile-sidebar::before {
-    bottom: calc(-1 * var(--sab));
-  }
-}
-
 /* Shimmer text effect for active/thinking states. Reached through
    `--animate-shimmer` and `--background-image-shimmer-text` above; the rest of
    the treatment is utilities on `ShimmerText`.
