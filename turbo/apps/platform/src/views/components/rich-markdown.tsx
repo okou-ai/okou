@@ -323,9 +323,11 @@ function MediaParagraphRenderer({
   ...props
 }: ComponentPropsWithoutRef<"p"> & MarkdownNodeProp) {
   // Document cards contain block elements, which cannot live inside a <p>.
+  // The div leaves the renderer's `.wmde-markdown p` rhythm behind with the
+  // paragraph, so it restates that 6px block spacing.
   if (node && containsBlockArtifact(node)) {
     return (
-      <div {...props} data-slot="markdown-card" className="okou-markdown-card">
+      <div {...props} data-slot="markdown-card" className="my-1.5">
         {children}
       </div>
     );
@@ -383,7 +385,7 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
   // consecutive cards sit border-to-border.
   if (data?.card) {
     return (
-      <div data-slot="markdown-card" className="okou-markdown-card">
+      <div data-slot="markdown-card" className="my-1.5">
         <MarkdownCardView card={data.card} />
       </div>
     );
