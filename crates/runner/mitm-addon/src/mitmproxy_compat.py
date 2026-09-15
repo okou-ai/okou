@@ -6,7 +6,7 @@ from mitmproxy.proxy import commands, events, layer
 from mitmproxy.proxy.layers.http import HttpStream
 from mitmproxy.proxy.layers.http._events import RequestHeaders
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
-from mitmproxy.proxy.layers.tcp import TcpErrorHook, TCPLayer, TcpStartHook
+from mitmproxy.proxy.layers.tcp import TcpErrorHook, TCPLayer
 
 import websocket_framing
 
@@ -48,33 +48,25 @@ def _install_tcp_start_kill_bridge() -> None:
         raise RuntimeError("mitmproxy TCPLayer has an incompatible start handler")
 
     def start(self: TCPLayer, _: events.Event) -> layer.CommandGenerator[None]:
+        tcp_flow = self.flow
+        if tcp_flow is None:
+            yield from current_handler(self, _)
+            return
+
         command_generator = current_handler(self, _)
         try:
-            command = next(command_generator)
-            while True:
-                try:
-                    completion: object = yield command
-                except GeneratorExit:
-                    raise
-                except BaseException as error:
-                    command = command_generator.throw(error)
-                else:
-                    if (
-                        isinstance(command, TcpStartHook)
-                        and command.flow.error is not None
-                        and command.flow.error.msg == flow.Error.KILLED_MESSAGE
-                    ):
-                        command_generator.close()
-                        # Layer resumes queued data/close events after this hook. Retire
-                        # the relay first so those events cannot forward or end twice.
-                        self._handle_event = lambda event: self.done(event)
-                        yield commands.CloseConnection(self.context.client)
-                        yield commands.CloseConnection(self.context.server)
-                        yield TcpErrorHook(command.flow)
-                        return
-                    command = command_generator.send(completion)
-        except StopIteration:
-            return
+            # For a non-ignored flow, 12.2.3 first yields TcpStartHook. Its
+            # completion has no reply; the remaining commands use native delegation.
+            yield next(command_generator)
+            if tcp_flow.error is not None and tcp_flow.error.msg == flow.Error.KILLED_MESSAGE:
+                command_generator.close()
+                # Retire the relay before queued events or the error hook resume.
+                self._handle_event = lambda event: self.done(event)
+                yield commands.CloseConnection(self.context.client)
+                yield commands.CloseConnection(self.context.server)
+                yield TcpErrorHook(tcp_flow)
+            else:
+                yield from command_generator
         finally:
             command_generator.close()
 
