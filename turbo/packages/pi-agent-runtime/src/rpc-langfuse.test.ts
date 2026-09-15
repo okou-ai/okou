@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-
 import { describe, expect, it } from "vitest";
 
 import { installLangfuseRuntimeEnvironment } from "./rpc";
@@ -9,6 +7,7 @@ const PARENT = {
   spanId: "2".repeat(16),
   traceFlags: 1,
   sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  sandboxWaitStartedAt: 1_000,
 } as const;
 
 const MANAGED_ENVIRONMENT = [
@@ -18,11 +17,14 @@ const MANAGED_ENVIRONMENT = [
   "LANGFUSE_PI_PARENT_SESSION_ID",
   "LANGFUSE_PI_PARENT_DEPTH",
   "PI_LANGFUSE_CONTINUATION",
+  "OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT",
   "LANGFUSE_PUBLIC_KEY",
   "LANGFUSE_SECRET_KEY",
   "LANGFUSE_BASE_URL",
   "LANGFUSE_USER_ID",
   "LANGFUSE_TRACING_ENVIRONMENT",
+  "OKOU_PI_LANGFUSE_OTLP_ENDPOINT",
+  "OKOU_PI_LANGFUSE_OTLP_TOKEN",
 ] as const;
 
 function withRestoredEnvironment(exercise: () => void): void {
@@ -52,6 +54,7 @@ function installSpoofedParent(): void {
     "ffffffff-ffff-4fff-8fff-ffffffffffff";
   process.env.LANGFUSE_PI_PARENT_DEPTH = "99";
   process.env.PI_LANGFUSE_CONTINUATION = "true";
+  process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT = "999";
 }
 
 describe("Pi Langfuse RPC environment boundary", () => {
@@ -69,6 +72,9 @@ describe("Pi Langfuse RPC environment boundary", () => {
       expect(process.env.LANGFUSE_PI_PARENT_SESSION_ID).toBeUndefined();
       expect(process.env.LANGFUSE_PI_PARENT_DEPTH).toBeUndefined();
       expect(process.env.PI_LANGFUSE_CONTINUATION).toBeUndefined();
+      expect(
+        process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT,
+      ).toBeUndefined();
 
       restore();
       expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe("a".repeat(32));
@@ -90,42 +96,13 @@ describe("Pi Langfuse RPC environment boundary", () => {
       expect(process.env.LANGFUSE_PI_PARENT_SESSION_ID).toBe(PARENT.sessionId);
       expect(process.env.LANGFUSE_PI_PARENT_DEPTH).toBe("0");
       expect(process.env.PI_LANGFUSE_CONTINUATION).toBe("true");
-
-      restore();
-      expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe("a".repeat(32));
-    });
-  });
-
-  it("installs private credentials after exec without exposing them through procfs", () => {
-    withRestoredEnvironment(() => {
-      process.env.OKOU_PI_LANGFUSE_DEBUG_ENABLED = "true";
-      const publicKey = "pk-lf-runtime-only-pr33756";
-      const secretKey = "sk-lf-runtime-only-pr33756";
-      const previousPublicKey = process.env.LANGFUSE_PUBLIC_KEY;
-      const previousSecretKey = process.env.LANGFUSE_SECRET_KEY;
-
-      const restore = installLangfuseRuntimeEnvironment(
-        PARENT,
-        "pending-tool-continuation",
-        {
-          publicKey,
-          secretKey,
-          baseUrl: "https://us.cloud.langfuse.com",
-          userId: "anonymous-user",
-          environment: "internal-debug",
-        },
+      expect(process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT).toBe(
+        String(PARENT.sandboxWaitStartedAt),
       );
-      expect(process.env.LANGFUSE_PUBLIC_KEY).toBe(publicKey);
-      expect(process.env.LANGFUSE_SECRET_KEY).toBe(secretKey);
-      if (process.platform === "linux") {
-        const initialEnvironment = readFileSync("/proc/self/environ", "utf8");
-        expect(initialEnvironment).not.toContain(publicKey);
-        expect(initialEnvironment).not.toContain(secretKey);
-      }
 
       restore();
-      expect(process.env.LANGFUSE_PUBLIC_KEY).toBe(previousPublicKey);
-      expect(process.env.LANGFUSE_SECRET_KEY).toBe(previousSecretKey);
+      expect(process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT).toBe("999");
+      expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe("a".repeat(32));
     });
   });
 
@@ -141,6 +118,34 @@ describe("Pi Langfuse RPC environment boundary", () => {
       expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe(PARENT.traceId);
       expect(process.env.PI_LANGFUSE_CONTINUATION).toBeUndefined();
       restore();
+    });
+  });
+
+  it("isolates relay authentication from ambient connector keys and preserves its parent", () => {
+    withRestoredEnvironment(() => {
+      process.env.OKOU_PI_LANGFUSE_DEBUG_ENABLED = "true";
+      process.env.LANGFUSE_PUBLIC_KEY = "connector-public-key";
+      process.env.LANGFUSE_SECRET_KEY = "connector-secret-key";
+      process.env.LANGFUSE_BASE_URL = "https://connector-project.example";
+      const relay = {
+        endpoint: "https://api.okou.test/traces",
+        token: "run-token",
+      };
+      const restore = installLangfuseRuntimeEnvironment(
+        PARENT,
+        "pending-tool-continuation",
+        { relay },
+      );
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT).toBe(relay.endpoint);
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN).toBe(relay.token);
+      expect(process.env.LANGFUSE_PUBLIC_KEY).toBeUndefined();
+      expect(process.env.LANGFUSE_SECRET_KEY).toBeUndefined();
+      expect(process.env.LANGFUSE_BASE_URL).toBeUndefined();
+      expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe(PARENT.traceId);
+      expect(process.env.LANGFUSE_PI_PARENT_SPAN_ID).toBe(PARENT.spanId);
+      restore();
+      expect(process.env.LANGFUSE_SECRET_KEY).toBe("connector-secret-key");
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN).toBeUndefined();
     });
   });
 });

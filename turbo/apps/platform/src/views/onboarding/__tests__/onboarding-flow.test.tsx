@@ -517,8 +517,12 @@ test("Built-in workflows can start without connector setup", async () => {
   expect(
     within(preview).getByText(/built-in Firecrawl and DataForSEO/u),
   ).toBeVisible();
-  expect(preview.querySelector(".owf-diagram-node-source")).toBeNull();
-  expect(preview.querySelector(".owf-diagram-dot-source")).toBeNull();
+  expect(
+    preview.querySelector('[data-slot="onboarding-diagram-source-node"]'),
+  ).toBeNull();
+  expect(
+    preview.querySelector('[data-slot="onboarding-diagram-source-dot"]'),
+  ).toBeNull();
   expect(preview.querySelector('path[d="M170 81H277"]')).toBeNull();
   expect(
     preview.querySelectorAll('[data-slot="onboarding-okou-avatar"]'),

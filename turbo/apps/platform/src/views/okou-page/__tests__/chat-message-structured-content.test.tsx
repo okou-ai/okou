@@ -455,9 +455,9 @@ test("Sent template references stay inline and read-only", async () => {
 });
 
 test("A sent Intro Video reference is labelled Intro video, not Video", async () => {
-  // Intro Video and creative video share the wire contract's `type: "video"`
-  // and are told apart only by the style preset id, so a chip that reads the
-  // envelope names the wrong product.
+  // The chip names the product, not the envelope: creative video and talking
+  // avatar still share `type: "video"`, so a label derived from the wire type
+  // alone would be wrong for one of them.
   const userMessage = {
     version: 1,
     parts: [
@@ -465,8 +465,8 @@ test("A sent Intro Video reference is labelled Intro video, not Video", async ()
         type: "template",
         titleSnapshot: "Intro video",
         template: {
-          type: "video",
-          selection: { stylePresetId: "explainer-video" },
+          type: "intro-video",
+          selection: {},
         },
       },
       { type: "text", text: "for the launch." },

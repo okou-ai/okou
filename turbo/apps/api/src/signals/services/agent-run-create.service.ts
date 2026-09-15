@@ -216,7 +216,6 @@ import { piModelConfigObservation } from "../../lib/pi-model-config-observation"
 import {
   isPiLangfuseDebugRunEnvironment,
   piLangfuseDebugPlatformEnvironment,
-  piLangfuseDebugSecretEnvironment,
   resolvePiLangfuseDebugConfig,
 } from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
@@ -6615,7 +6614,6 @@ function piLangfuseExecutionEnvironment(args: {
   readonly userId: string;
 }): {
   readonly platformEnvironment?: Readonly<Record<string, string>>;
-  readonly secrets?: Readonly<Record<string, string>>;
 } {
   if (!args.includeOkouTokenSecret || args.piSandbox === undefined) {
     return {};
@@ -6626,10 +6624,8 @@ function piLangfuseExecutionEnvironment(args: {
   }
   return {
     platformEnvironment: piLangfuseDebugPlatformEnvironment({
-      config,
       userId: args.userId,
     }),
-    secrets: piLangfuseDebugSecretEnvironment(config),
   };
 }
 
@@ -6732,7 +6728,7 @@ async function buildStoredExecutionContextDraft(args: {
       vars: args.connectorContext.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets: await encryptPersistentSecretsMap(
-        mergeRecords(executionSecrets.secrets, langfuseEnvironment.secrets) ??
+        executionSecrets.secrets ??
           // Private BYOK maintenance has dynamic references but no Okou token.
           // Firewall auth still needs an encrypted runtime namespace.
           (args.piMemoryPhase2Maintenance ? {} : null),
@@ -10206,10 +10202,12 @@ function skillsRootForRun(
 function isImageRecognitionAvailableForRun(args: {
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly selectedModel: string | undefined;
+  readonly providerType: ModelProviderType | undefined;
 }): boolean {
   return (
     args.includeOkouTokenSecret === true &&
-    getModelImageInputSupport(args.selectedModel) === "unsupported"
+    getModelImageInputSupport(args.selectedModel, args.providerType) ===
+      "unsupported"
   );
 }
 
@@ -10454,6 +10452,9 @@ function prepareRunContext(
           selectedModel:
             runtimeContext.modelProvider?.selectedModel ??
             args.selectedModelOverride,
+          providerType:
+            runtimeContext.modelProvider?.concreteType ??
+            runtimeContext.modelProvider?.type,
         }),
       };
     },

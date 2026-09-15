@@ -2,6 +2,16 @@ import { z } from "zod";
 
 const brandSchema = z.enum(["vm0", "okou"]);
 export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
+  // A separate discriminator makes older Workers reject this delivery instead
+  // of ignoring the shared conversation's additional authorization boundary.
+  z.object({
+    version: z.literal(1),
+    kind: z.literal("thread-resource"),
+    publicBrand: brandSchema,
+    threadId: z.uuid(),
+    publicToken: z.string().regex(/^[a-f0-9]{24}$/u),
+    targetKind: z.enum(["file", "html"]),
+  }),
   z.object({
     version: z.literal(1),
     kind: z.literal("publication"),

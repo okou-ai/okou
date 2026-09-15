@@ -53,6 +53,7 @@ import {
   piLangfuseDebugUserId,
 } from "../../lib/pi-langfuse-debug";
 import {
+  piLangfuseSandboxParent,
   startPiLangfuseOwnershipTransfer,
   tracePiApiFirstTurn,
   type PiApiFirstTurnTraceContext,
@@ -81,7 +82,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import type { AgentEvent } from "../../lib/event-consumer/verify";
 import { logger } from "../../lib/log";
-import { now } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
@@ -1667,6 +1668,14 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
     );
     const manifest = ownershipTransferManifest({
       mode: "sandbox-first",
+      langfuseParent: piLangfuseSandboxParent({
+        enabled: isPiLangfuseDebugRunEnvironment(
+          executionContext.platformEnvironment,
+        ),
+        runId: args.activation.runId,
+        sessionId,
+        sandboxWaitStartedAt: now(),
+      }),
       baseSession: launchConfig.baseSession,
       session: {
         sessionId,
@@ -2091,113 +2100,125 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
   commitProgress: ApiFirstTurnCommitProgress,
   signal: AbortSignal,
 ): Promise<ApiFirstTurnExecutionResult> {
-  return await withApiFirstTurnLifecycle(args, async (tx) => {
-    signal.throwIfAborted();
-    const state = validateApiFirstTurnApiCommit(
-      args,
-      await readApiFirstTurnLifecycleState(tx, args.activation.runId),
-      prepared.commitIdentity,
-      "Pi API first turn lost commit eligibility after the provider request",
-    );
-    // Once any H1 commit side effect can begin, a later timeout must fail
-    // terminally instead of replaying H0 over potentially published state.
-    commitProgress.started = true;
-    const transition = decideApiFirstTurnCommit({
-      pendingTools: prepared.turn.handoffRequired,
-      activeInput: state.activeDeliveryId !== null,
-    });
-
-    await get(
-      putS3Object(
-        env("R2_USER_STORAGES_BUCKET_NAME"),
-        piApiFirstTurnObjectKey(args.activation.runId, "session"),
-        prepared.sessionBytes,
-        "application/x-ndjson",
-        signal,
-      ),
-    );
-    signal.throwIfAborted();
-
-    const blockEvents = piApiFirstTurnAssistantEvents(
-      args.activation.runId,
-      prepared.turn.assistantMessage,
-    );
-    const nextSequenceNumber = blockEvents.length;
-    if (
-      transition.outcome === "transfer" &&
-      nextSequenceNumber < prepared.commitIdentity.sandboxEventSequenceStart
-    ) {
-      throw piApiFirstTurnError(
-        "PI_LAUNCH_CONFIG_INVALID",
-        "Pi API first-turn event boundary precedes the immutable Sandbox boundary",
+  let langfuseTransfer: ReturnType<typeof startPiLangfuseOwnershipTransfer>;
+  return await onRejection(
+    withApiFirstTurnLifecycle(args, async (tx) => {
+      signal.throwIfAborted();
+      const state = validateApiFirstTurnApiCommit(
+        args,
+        await readApiFirstTurnLifecycleState(tx, args.activation.runId),
+        prepared.commitIdentity,
+        "Pi API first turn lost commit eligibility after the provider request",
       );
-    }
-    const events =
-      transition.outcome === "transfer"
-        ? blockEvents
-        : [
-            ...blockEvents,
-            piApiFirstTurnResultEvent(
-              prepared.turn.assistantMessage,
-              prepared.startedAt,
-              nextSequenceNumber,
-              now(),
-            ),
-          ];
-    await set(publishEvents$, { auth: prepared.auth, events }, signal);
-    if (transition.outcome === "transfer") {
-      const langfuseTransfer = startPiLangfuseOwnershipTransfer(
-        prepared.langfuseTraceContext,
-      );
-      const manifest = ownershipTransferManifest({
-        mode: transition.mode,
-        baseSession: prepared.baseSession,
-        session: {
-          sessionId: prepared.sessionId,
-          sha256: prepared.sessionHash,
-          rawSize: prepared.sessionBytes.length,
-        },
-        sandboxEventSequenceStart: nextSequenceNumber,
-        ...(langfuseTransfer
-          ? { langfuseParent: langfuseTransfer.parent }
-          : {}),
+      // Once any H1 commit side effect can begin, a later timeout must fail
+      // terminally instead of replaying H0 over potentially published state.
+      commitProgress.started = true;
+      const transition = decideApiFirstTurnCommit({
+        pendingTools: prepared.turn.handoffRequired,
+        activeInput: state.activeDeliveryId !== null,
       });
-      await onRejection(
-        set(writeManifest$, { runId: args.activation.runId, manifest }, signal),
-        (error) => {
-          langfuseTransfer?.end(error);
-        },
+
+      langfuseTransfer =
+        transition.outcome === "transfer"
+          ? startPiLangfuseOwnershipTransfer(prepared.langfuseTraceContext)
+          : undefined;
+      await get(
+        putS3Object(
+          env("R2_USER_STORAGES_BUCKET_NAME"),
+          piApiFirstTurnObjectKey(args.activation.runId, "session"),
+          prepared.sessionBytes,
+          "application/x-ndjson",
+          signal,
+        ),
       );
-      langfuseTransfer?.end();
+      signal.throwIfAborted();
+
+      const blockEvents = piApiFirstTurnAssistantEvents(
+        args.activation.runId,
+        prepared.turn.assistantMessage,
+      );
+      const nextSequenceNumber = blockEvents.length;
+      if (
+        transition.outcome === "transfer" &&
+        nextSequenceNumber < prepared.commitIdentity.sandboxEventSequenceStart
+      ) {
+        throw piApiFirstTurnError(
+          "PI_LAUNCH_CONFIG_INVALID",
+          "Pi API first-turn event boundary precedes the immutable Sandbox boundary",
+        );
+      }
+      const events =
+        transition.outcome === "transfer"
+          ? blockEvents
+          : [
+              ...blockEvents,
+              piApiFirstTurnResultEvent(
+                prepared.turn.assistantMessage,
+                prepared.startedAt,
+                nextSequenceNumber,
+                now(),
+              ),
+            ];
+      await set(publishEvents$, { auth: prepared.auth, events }, signal);
+      if (transition.outcome === "transfer") {
+        const publicationStartedAt = nowDate();
+        const manifest = ownershipTransferManifest({
+          mode: transition.mode,
+          baseSession: prepared.baseSession,
+          session: {
+            sessionId: prepared.sessionId,
+            sha256: prepared.sessionHash,
+            rawSize: prepared.sessionBytes.length,
+          },
+          sandboxEventSequenceStart: nextSequenceNumber,
+          langfuseParent: piLangfuseSandboxParent({
+            enabled: isPiLangfuseDebugRunEnvironment(
+              args.activation.executionContext.platformEnvironment,
+            ),
+            runId: args.activation.runId,
+            sessionId: prepared.sessionId,
+            sandboxWaitStartedAt: publicationStartedAt.getTime(),
+          }),
+        });
+        await set(
+          writeManifest$,
+          { runId: args.activation.runId, manifest },
+          signal,
+        );
+        langfuseTransfer?.end(undefined, publicationStartedAt);
+        L.debug("Pi API first-turn outcome", {
+          runId: args.activation.runId,
+          ...piApiFirstTurnOutcomeTelemetry(args.activation.executionContext),
+          handoffOwner: "sandbox",
+          outcome: "ownership_transfer",
+          reason: transition.reason,
+          ownershipStage: "provider-may-have-started",
+        });
+        return { outcome: "transferred" };
+      }
+
+      await set(persistCompleteTurnCheckpoint$, args, prepared, signal);
+      const sideEffects = await set(
+        finalizeCompleteTurn$,
+        args,
+        prepared,
+        nextSequenceNumber,
+        signal,
+      );
+      stopPreparedSandbox(args.activation, "completed");
       L.debug("Pi API first-turn outcome", {
         runId: args.activation.runId,
         ...piApiFirstTurnOutcomeTelemetry(args.activation.executionContext),
-        handoffOwner: "sandbox",
-        outcome: "ownership_transfer",
-        reason: transition.reason,
+        outcome: "api_completion",
+        reason: "settled_session",
         ownershipStage: "provider-may-have-started",
       });
-      return { outcome: "transferred" };
-    }
-
-    await set(persistCompleteTurnCheckpoint$, args, prepared, signal);
-    const sideEffects = await set(
-      finalizeCompleteTurn$,
-      args,
-      prepared,
-      nextSequenceNumber,
-      signal,
-    );
-    stopPreparedSandbox(args.activation, "completed");
-    L.debug("Pi API first-turn outcome", {
-      runId: args.activation.runId,
-      ...piApiFirstTurnOutcomeTelemetry(args.activation.executionContext),
-      outcome: "api_completion",
-      reason: "settled_session",
-      ownershipStage: "provider-may-have-started",
-    });
-    return { outcome: "completed", sideEffects };
-  });
+      return { outcome: "completed", sideEffects };
+    }),
+    (error) => {
+      langfuseTransfer?.end(error);
+    },
+  );
 });
 
 // This is an execution-budget decision before API-first resource or history IO.
@@ -2275,6 +2296,14 @@ const publishLargeHistoryTransfer$ = command(
             schemaVersion: 4,
             outcome: "ownership-transfer",
             mode: "sandbox-first",
+            langfuseParent: piLangfuseSandboxParent({
+              enabled: isPiLangfuseDebugRunEnvironment(
+                executionContext.platformEnvironment,
+              ),
+              runId: args.activation.runId,
+              sessionId,
+              sandboxWaitStartedAt: now(),
+            }),
             baseSession: launchConfig.baseSession,
             session: { sessionId, sha256: hash, rawSize: metadata.rawSize },
             history: {

@@ -30,10 +30,7 @@ import {
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
-import {
-  INTRO_VIDEO_TEMPLATE_ID,
-  introVideoInstructionLines,
-} from "@okouai/core/intro-video-template";
+import { introVideoInstructionLines } from "@okouai/core/intro-video-template";
 
 interface PresentationGenerationTemplateInput {
   readonly type: "presentation";
@@ -49,7 +46,6 @@ interface VideoGenerationTemplateInput {
   readonly selection: {
     readonly stylePresetId: string;
     readonly avatarOptions?: AvatarTemplateOptions;
-    readonly explainerOptions?: IntroVideoOptions;
     /** @deprecated Read-only fallback; see readAvatarTemplateOptions. */
     readonly titleSnapshot?: string;
     /** @deprecated Read-only fallback; see readAvatarTemplateOptions. */
@@ -82,9 +78,17 @@ interface WebsiteGenerationTemplateInput {
   };
 }
 
+interface IntroVideoGenerationTemplateInput {
+  readonly type: "intro-video";
+  readonly selection: {
+    readonly options?: IntroVideoOptions;
+  };
+}
+
 type GenerationTemplateInput =
   | PresentationGenerationTemplateInput
   | VideoGenerationTemplateInput
+  | IntroVideoGenerationTemplateInput
   | IllustrationGenerationTemplateInput
   | WorkflowGenerationTemplateInput
   | WebsiteGenerationTemplateInput;
@@ -123,7 +127,10 @@ export function buildGenerationTemplatePrompt(
   }
 
   if (generationTemplate.type === "video") {
-    return buildVideoGenerationTemplatePrompt(
+    return buildVideoGenerationTemplatePrompt(generationTemplate);
+  }
+  if (generationTemplate.type === "intro-video") {
+    return buildIntroVideoGenerationTemplatePrompt(
       generationTemplate,
       options.introVideoEnabled === true,
     );
@@ -358,29 +365,29 @@ function buildWebsiteTemplatePackagePrompt(
   };
 }
 
-function buildVideoGenerationTemplatePrompt(
-  generationTemplate: VideoGenerationTemplateInput,
+function buildIntroVideoGenerationTemplatePrompt(
+  generationTemplate: IntroVideoGenerationTemplateInput,
   introVideoEnabled: boolean,
 ): GenerationTemplatePromptResult {
-  if (generationTemplate.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID) {
-    if (!introVideoEnabled) {
-      return { status: "invalid", message: "Intro video is not available" };
-    }
-    const options = generationTemplate.selection.explainerOptions;
-    if (!options) {
-      return {
-        status: "invalid",
-        message: "Intro video settings are missing",
-      };
-    }
-    return {
-      status: "resolved",
-      prompt: [
-        ...templateFraming("an intro video"),
-        ...introVideoInstructionLines(options),
-      ].join("\n"),
-    };
+  if (!introVideoEnabled) {
+    return { status: "invalid", message: "Intro video is not available" };
   }
+  const options = generationTemplate.selection.options;
+  if (!options) {
+    return { status: "invalid", message: "Intro video settings are missing" };
+  }
+  return {
+    status: "resolved",
+    prompt: [
+      ...templateFraming("an intro video"),
+      ...introVideoInstructionLines(options),
+    ].join("\n"),
+  };
+}
+
+function buildVideoGenerationTemplatePrompt(
+  generationTemplate: VideoGenerationTemplateInput,
+): GenerationTemplatePromptResult {
   const avatarId = parseAvatarTemplateStylePresetId(
     generationTemplate.selection.stylePresetId,
   );

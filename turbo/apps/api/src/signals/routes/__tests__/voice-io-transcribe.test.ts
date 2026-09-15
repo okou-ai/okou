@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { randomUUID } from "node:crypto";
 
 import {
   voiceIoTranscribeContract,
@@ -7,6 +8,12 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
+import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
+import {
+  DEFAULT_VOICE_INPUT_MODEL,
+  type VoiceInputModelId,
+} from "@okouai/api-contracts/contracts/voice-input-models";
 import { userPreferencesRoutes } from "../user-preferences";
 import { voiceIoQuotaRoutes } from "../voice-io-quota";
 import { HttpResponse, http } from "msw";
@@ -22,7 +29,7 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { stubTestVercelRuntimeToken } from "../../../__tests__/env-stub";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
 import { server } from "../../../mocks/server";
@@ -921,6 +928,389 @@ function segmentForm(
 }
 
 describe("POST /api/voice-io/transcribe/segment", () => {
+  it("retains bounded failure evidence without private content or duplicate reports", async () => {
+    // The single redaction check covers the incident's diagnostic contract
+    // through the real endpoint; other cases assert HTTP/recovery behavior.
+    await voiceActor();
+    const secret = "private-voice-content-credential-and-provider-body";
+    const longText = secret.repeat(8);
+    const requestId = randomUUID();
+    const deployment = "a".repeat(40);
+    mockEnv("GIT_COMMIT_SHA", deployment);
+    mockOptionalEnv("OPENROUTER_API_KEY", secret);
+    const output = context.mocks.console.log;
+    onTestFinished(context.mocks.console.capture());
+    const native = (transcript: string, polishedText: string) => {
+      return vertexVoiceResponse(
+        JSON.stringify({ transcript, polishedText, language: "en" }),
+      );
+    };
+    const completion = (content: string, finish = "stop") => {
+      return HttpResponse.json({
+        choices: [
+          {
+            finish_reason: finish,
+            native_finish_reason: secret,
+            message: { content },
+          },
+        ],
+        privateBody: secret,
+      });
+    };
+    const asrUrl = "https://openrouter.ai/api/v1/audio/transcriptions";
+    const asrModel = "qwen/qwen3-asr-1.7b";
+    const cases: readonly {
+      name: string;
+      model: VoiceInputModelId;
+      url: string | RegExp;
+      response: () => Response;
+      previous?: string;
+      status?: 204 | 503;
+      expected?: Readonly<Record<string, unknown>>;
+      reported?: boolean;
+      privateCorrelation?: boolean;
+    }[] = [
+      {
+        name: "segment rate",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return native(longText, "Saved speech.");
+        },
+        previous: secret,
+        expected: {
+          stage: "output_validation",
+          reason: "transcription_rate_exceeded",
+          model: DEFAULT_VOICE_INPUT_MODEL,
+          provider: "vertex",
+          transcript_chars: longText.length,
+        },
+      },
+      {
+        name: "polish rate",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return native(secret, longText);
+        },
+        expected: {
+          stage: "output_validation",
+          reason: "polish_rate_exceeded",
+          polished_chars: longText.length,
+        },
+      },
+      {
+        name: "discarded speech",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return native("[NO_SPEECH]", "[NO_SPEECH]");
+        },
+        previous: secret,
+        expected: {
+          stage: "output_validation",
+          reason: "polish_discarded_speech",
+          previous_transcript_chars: secret.length,
+        },
+      },
+      {
+        name: "stitched overflow",
+        model: asrModel,
+        url: asrUrl,
+        response: () => {
+          return HttpResponse.json({ text: secret });
+        },
+        previous: "x".repeat(VOICE_IO_POLISH_MAX_TEXT_CHARS),
+        expected: {
+          stage: "stitching",
+          reason: "stitched_transcript_too_large",
+        },
+      },
+      {
+        name: "ASR output after successful Google polish",
+        model: asrModel,
+        url: asrUrl,
+        response: () => {
+          return HttpResponse.json({ text: longText });
+        },
+        previous: secret,
+        expected: {
+          stage: "output_validation",
+          reason: "transcription_rate_exceeded",
+          model: asrModel,
+          provider: "openrouter",
+        },
+      },
+      {
+        name: "OpenRouter malformed response",
+        model: "openai/gpt-audio",
+        url: OPENROUTER_URL,
+        response: () => {
+          return new HttpResponse(secret);
+        },
+        expected: {
+          stage: "finalization",
+          reason: "invalid_response",
+          provider: "openrouter",
+        },
+      },
+      {
+        name: "OpenRouter truncated output",
+        model: "openai/gpt-audio",
+        url: OPENROUTER_URL,
+        response: () => {
+          return completion(secret, "length");
+        },
+        expected: { stage: "finalization", reason: "output_truncated" },
+      },
+      {
+        name: "OpenRouter invalid output schema",
+        model: "openai/gpt-audio",
+        url: OPENROUTER_URL,
+        response: () => {
+          return completion(JSON.stringify({ transcript: secret }));
+        },
+        expected: { stage: "finalization", reason: "invalid_output" },
+      },
+      {
+        name: "ASR invalid response",
+        model: "fal-ai/elevenlabs/speech-to-text/scribe-v2",
+        url: "https://fal.run/fal-ai/elevenlabs/speech-to-text/scribe-v2",
+        response: () => {
+          return HttpResponse.json({ text: 42, privateBody: secret });
+        },
+        expected: {
+          stage: "transcription",
+          reason: "invalid_response",
+          provider: "fal",
+        },
+      },
+      {
+        name: "unknown ASR body failure",
+        model: asrModel,
+        url: asrUrl,
+        response: () => {
+          return new HttpResponse(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error(secret));
+              },
+            }),
+          );
+        },
+        expected: { stage: "transcription", reason: "unknown" },
+      },
+      {
+        name: "Google owns rejected output",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return vertexVoiceResponse(secret);
+        },
+        reported: true,
+      },
+      {
+        name: "OpenRouter owns HTTP rejection",
+        model: "openai/gpt-audio",
+        url: OPENROUTER_URL,
+        response: () => {
+          return new HttpResponse(secret, { status: 403 });
+        },
+        reported: true,
+      },
+      {
+        name: "OpenRouter owns permanent completion rejection",
+        model: "openai/gpt-audio",
+        url: OPENROUTER_URL,
+        response: () => {
+          return HttpResponse.json({ error: { code: 402, message: secret } });
+        },
+        reported: true,
+      },
+      {
+        name: "ASR owns HTTP rejection",
+        model: asrModel,
+        url: asrUrl,
+        response: () => {
+          return new HttpResponse(null, { status: 401 });
+        },
+        reported: true,
+      },
+      {
+        name: "private correlation metadata",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return native("[NO_SPEECH]", "[NO_SPEECH]");
+        },
+        previous: secret,
+        expected: {
+          stage: "output_validation",
+          reason: "polish_discarded_speech",
+        },
+        privateCorrelation: true,
+      },
+      {
+        name: "recovery owns exhausted capacity",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return new HttpResponse(secret, {
+            status: 429,
+            headers: { "Retry-After": "60" },
+          });
+        },
+        status: 503,
+        reported: true,
+      },
+      {
+        name: "accepted no speech",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return native("[NO_SPEECH]", "[NO_SPEECH]");
+        },
+        status: 204,
+      },
+    ];
+    for (const scenario of cases) {
+      mockEnv(
+        "GIT_COMMIT_SHA",
+        scenario.privateCorrelation ? secret : deployment,
+      );
+      await accept(
+        preferencesClient().update({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { voiceInputModel: scenario.model },
+        }),
+        [200],
+      );
+      server.use(
+        http.post(scenario.url, () => {
+          return scenario.response();
+        }),
+        http.post(VERTEX_VOICE_URL, () => {
+          return vertexVoiceResponse(
+            JSON.stringify({ polishedText: "Saved speech.", language: "en" }),
+          );
+        }),
+      );
+      const body = segmentForm(
+        [audioFile(1)],
+        scenario.previous ?? "",
+        true,
+        1,
+      );
+      body.set("lastAssistantMessage", secret);
+      body.set(
+        "editorContext",
+        JSON.stringify({
+          before: secret,
+          selected: secret,
+          after: secret,
+        }),
+      );
+      const before = output.mock.calls.length;
+      const headers = {
+        authorization: "Bearer clerk-session",
+        [CLIENT_REQUEST_ID_HEADER]: scenario.privateCorrelation
+          ? secret
+          : requestId,
+      };
+      const response = await client().segment({
+        headers,
+        body,
+      });
+      expect(response.status, scenario.name).toBe(scenario.status ?? 502);
+      const calls = output.mock.calls.slice(before);
+      const records = calls.flatMap(([, fields]) => {
+        return typeof fields === "object" &&
+          fields !== null &&
+          "type" in fields &&
+          fields.type === "voice_transcription_failure"
+          ? [fields]
+          : [];
+      });
+      if (scenario.expected) {
+        expect(records, scenario.name).toHaveLength(1);
+        expect(records[0], scenario.name).toMatchObject({
+          ...scenario.expected,
+          input_model: scenario.model,
+          final: true,
+          has_audio: true,
+          audio_duration_seconds: 1,
+          total_duration_seconds: 1,
+          ...(scenario.privateCorrelation
+            ? {}
+            : {
+                x_client_request_id: requestId,
+                deployment_commit_sha: deployment,
+              }),
+        });
+        if (scenario.privateCorrelation) {
+          expect(records[0]).not.toHaveProperty("x_client_request_id");
+          expect(records[0]).not.toHaveProperty("deployment_commit_sha");
+        }
+        if (scenario.expected.stage === "stitching") {
+          expect(records[0]).not.toHaveProperty("model");
+          expect(records[0]).not.toHaveProperty("provider");
+        }
+      } else {
+        expect(records, scenario.name).toHaveLength(0);
+      }
+      const terminal = calls.filter(([message]) => {
+        return (
+          typeof message === "string" &&
+          /\[(?:VoiceSegment|VertexVoice|OpenRouterVoice|VoiceTranscription|VoiceProvider)\]/u.test(
+            message,
+          )
+        );
+      });
+      expect(terminal, scenario.name).toHaveLength(
+        scenario.expected || scenario.reported ? 1 : 0,
+      );
+      expect(JSON.stringify({ calls, response }), scenario.name).not.toContain(
+        secret,
+      );
+    }
+  });
+
+  it.each(["Error", "AbortError"])(
+    "preserves a transcription failure when the diagnostic sink throws %s",
+    async (name) => {
+      await voiceActor();
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          return vertexVoiceResponse(
+            JSON.stringify({
+              transcript: "[NO_SPEECH]",
+              polishedText: "[NO_SPEECH]",
+              language: "en",
+            }),
+          );
+        }),
+      );
+      context.mocks.console.log.mockImplementation((message) => {
+        if (typeof message === "string" && message.includes("[VoiceSegment]")) {
+          throw new DOMException("Diagnostic sink unavailable", name);
+        }
+      });
+      onTestFinished(context.mocks.console.capture());
+      const response = await accept(
+        client().segment({
+          headers: { authorization: "Bearer clerk-session" },
+          body: segmentForm([audioFile(1)], "Keep recorded speech.", true, 1),
+        }),
+        [502],
+      );
+      expect(response.body.error).toStrictEqual({
+        code: "VOICE_TRANSCRIPTION_FAILED",
+        message:
+          "Voice draft transcription failed to produce a usable response",
+      });
+    },
+  );
+
   it("accepts the 60-minute recording boundary and rejects longer recordings", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     await voiceActor();

@@ -9631,7 +9631,7 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-3",
+    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-2",
     "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center sm:[&>[data-slot=select-value]]:justify-start",
     "[&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
@@ -9820,26 +9820,33 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
-      {/* Effort sits level with the model rather than behind it. It is the only
+      {/* Effort and the model are one choice about the next message, so they sit
+          as a pair: no gap between them and 8px of padding each, which leaves
+          16px between the two labels. The row's own gap then separates the pair
+          from the controls that do something else.
+
+          Effort sits level with the model rather than behind it. It is the only
           way to reach effort and Fast now that the picker's settings page is
           gone, so it shows at every width; the level's name is one short word,
           which the row can afford even on a phone. */}
-      <ChatEffortTrigger
-        value={value}
-        onChange={onChange}
-        triggerClassName={cn(
-          "text-sm text-muted-foreground",
-          COMPOSER_CONTROL_FOCUS_CLASS,
-        )}
-      />
-      <ComposerRunModelPickerControl
-        signals={signals}
-        value={value}
-        onChange={onChange}
-        codexFastModeEnabled={codexFastModeEnabled}
-        desktopLayout={desktopLayout}
-        mediaModelPanel={mediaModelPanel}
-      />
+      <div className="flex items-center">
+        <ChatEffortTrigger
+          value={value}
+          onChange={onChange}
+          triggerClassName={cn(
+            "px-2 text-sm text-muted-foreground",
+            COMPOSER_CONTROL_FOCUS_CLASS,
+          )}
+        />
+        <ComposerRunModelPickerControl
+          signals={signals}
+          value={value}
+          onChange={onChange}
+          codexFastModeEnabled={codexFastModeEnabled}
+          desktopLayout={desktopLayout}
+          mediaModelPanel={mediaModelPanel}
+        />
+      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
     </>
   );
@@ -10069,16 +10076,21 @@ function ComposerModelScopeCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="relative z-0 mx-3 sm:ml-auto sm:mr-4 sm:w-fit sm:max-w-[calc(100%_-_2rem)]">
+    <div className="relative z-0">
       {/* The surface extends one content-height behind the composer. The
           composer stays above it (z-10), while the controls remain fully
-          visible in the half that protrudes below. */}
+          visible in the half that protrudes below. It spans the composer's
+          width and repeats the card's own rounded-3xl, so the only corners it
+          ever shows — the bottom two — continue the card's outline instead of
+          turning inside it. */}
       <div
-        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-xl bg-gray-50"
+        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-3xl bg-gray-50"
         aria-hidden="true"
       />
+      {/* Both ends sit 20px in, matching the text column of the card above:
+          the ghost action already carries 12px of its own padding. */}
       <div
-        className="relative flex flex-wrap items-center gap-2 p-1 pl-3 text-xs sm:flex-nowrap"
+        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs sm:flex-nowrap"
         role="group"
         aria-label={label}
         aria-live="polite"

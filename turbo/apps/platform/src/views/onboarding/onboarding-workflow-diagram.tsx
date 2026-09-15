@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useLastLoadable } from "ccstate-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { OnboardingWorkflow } from "./onboarding-data.ts";
 import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
@@ -229,12 +230,16 @@ function buildWorkflowDiagramModel(
   };
 }
 
+const DIAGRAM_NODE_CLASS =
+  "absolute z-[5] flex w-[94px] flex-col items-center gap-[5px] text-center text-xs font-medium text-foreground";
+
 function WorkflowDiagramNode({
   label,
   connectorSlug,
   connectorSlugs,
   className,
   iconClassName,
+  dataSlot,
   children,
 }: {
   readonly label: string;
@@ -242,18 +247,19 @@ function WorkflowDiagramNode({
   readonly connectorSlugs?: readonly ConnectorSlug[];
   readonly className: string;
   readonly iconClassName?: string;
+  readonly dataSlot?: string;
   readonly children?: ReactNode;
 }) {
   const visibleConnectorSlugs = connectorSlugs?.slice(0, 3) ?? [];
   const hiddenConnectorCount = Math.max((connectorSlugs?.length ?? 0) - 3, 0);
 
   return (
-    <div className={`owf-diagram-node ${className}`}>
+    <div data-slot={dataSlot} className={cn(DIAGRAM_NODE_CLASS, className)}>
       {label ? <span>{label}</span> : null}
       <span className={`owf-diagram-icon-box ${iconClassName ?? ""}`}>
         {children ??
           (visibleConnectorSlugs.length > 1 ? (
-            <span className="owf-diagram-icon-stack">
+            <span className="relative block size-[42px]">
               {visibleConnectorSlugs.map((item) => {
                 return (
                   <span key={item} className="owf-diagram-icon-stack-item">
@@ -275,6 +281,23 @@ function WorkflowDiagramNode({
   );
 }
 
+function WorkflowDiagramOkouNode() {
+  return (
+    <WorkflowDiagramNode
+      label=""
+      className="top-[45px] left-[277px] w-[72px]"
+      iconClassName="owf-diagram-avatar"
+    >
+      <span
+        className="relative inline-block size-[64px] overflow-hidden"
+        aria-hidden="true"
+      >
+        <WorkflowDiagramOkouAvatar />
+      </span>
+    </WorkflowDiagramNode>
+  );
+}
+
 function WorkflowDiagramAction({
   title,
   description,
@@ -286,13 +309,39 @@ function WorkflowDiagramAction({
 }) {
   return (
     <div className={`owf-diagram-action ${className}`}>
-      <span className="owf-diagram-action-copy">
-        <strong>{title}</strong>
-        <span>{description}</span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1 overflow-hidden">
+        <strong className="block truncate text-base font-medium text-foreground">
+          {title}
+        </strong>
+        <span className="line-clamp-2 text-sm text-ellipsis text-muted-foreground">
+          {description}
+        </span>
       </span>
     </div>
   );
 }
+
+/* The canvas keeps `owf-diagram` only as the carrier of the shared coordinate
+   variables its remaining tile and dot rules read; the class contributes no
+   geometry of its own. */
+const DIAGRAM_CANVAS_CLASS =
+  "owf-diagram absolute top-0 left-0 h-[470px] w-[614px] min-h-0 origin-top-left scale-[0.6] self-start overflow-hidden rounded-2xl";
+
+const DIAGRAM_GRID_CLASS =
+  "absolute top-[13px] right-[17px] bottom-[12px] left-[16px] opacity-80 [background-image:radial-gradient(hsl(var(--gray-500)/0.55)_1.5px,transparent_1.5px)] [background-size:34px_34px]";
+
+const DIAGRAM_LINES_CLASS =
+  "pointer-events-none absolute inset-0 z-[1] size-full [&_path]:stroke-[#ed7a44] [&_path]:[stroke-width:2] [&_path]:[stroke-linecap:round] [&_path]:[stroke-linejoin:round]";
+
+/* The gradient and both drop shadows keep their literal values: Tailwind's
+   gradient utilities interpolate in oklab and would not reproduce them. Reduced
+   motion keeps the resting 0.35 opacity, so the animation and the brighter
+   opacity are both `motion-safe:`. */
+const DIAGRAM_BEAM_CLASS =
+  "pointer-events-none absolute top-0 left-0 z-[4] h-[6px] w-[42px] rounded-full opacity-[0.35] [background-image:linear-gradient(90deg,transparent_0%,rgba(255,255,255,0.1)_24%,rgba(255,255,255,0.78)_52%,rgba(255,255,255,0.16)_78%,transparent_100%)] [filter:drop-shadow(0_0_4px_rgba(255,255,255,0.75))_drop-shadow(0_0_8px_rgba(255,255,255,0.35))] [offset-anchor:center] [offset-distance:0%] [offset-rotate:auto] motion-safe:animate-owf-beam-flow motion-safe:opacity-[0.92]";
+
+const DIAGRAM_VERTICAL_CONTROL_CLASS =
+  "pointer-events-none absolute top-[322px] left-[312.5px] z-[3] h-[30px] w-0 before:absolute before:top-[4px] before:bottom-[4px] before:left-[-1px] before:w-[2px] before:rounded-full before:bg-[#ed7a44] before:content-['']";
 
 export function WorkflowPreviewDiagram({
   workflow,
@@ -318,11 +367,11 @@ export function WorkflowPreviewDiagram({
     : "M311.5 112V356";
 
   return (
-    <div className="owf-diagram-wrap">
-      <div className="owf-diagram">
-        <div className="owf-diagram-grid" aria-hidden="true" />
+    <div className="relative mx-auto h-[282px] w-[368.4px] max-w-full">
+      <div className={DIAGRAM_CANVAS_CLASS}>
+        <div className={DIAGRAM_GRID_CLASS} aria-hidden="true" />
         <svg
-          className="owf-diagram-lines"
+          className={DIAGRAM_LINES_CLASS}
           viewBox="0 0 614 470"
           fill="none"
           aria-hidden="true"
@@ -338,12 +387,16 @@ export function WorkflowPreviewDiagram({
           )}
         </svg>
         <span
-          className="owf-diagram-beam"
+          className={DIAGRAM_BEAM_CLASS}
           aria-hidden="true"
           style={{ offsetPath: `path("${beamPath}")` } satisfies CSSProperties}
         />
         {hasSource ? (
-          <span className="owf-diagram-dot-source" aria-hidden="true" />
+          <span
+            data-slot="onboarding-diagram-source-dot"
+            className="owf-diagram-dot-source"
+            aria-hidden="true"
+          />
         ) : null}
         {diagram.destinationConnectorSlug ? (
           <>
@@ -358,7 +411,7 @@ export function WorkflowPreviewDiagram({
           </>
         ) : null}
         <span className="owf-diagram-dot-action-top" aria-hidden="true" />
-        <span className="owf-diagram-vertical-control" aria-hidden="true" />
+        <span className={DIAGRAM_VERTICAL_CONTROL_CLASS} aria-hidden="true" />
         <span className="owf-diagram-dot-action-middle" aria-hidden="true" />
         <span className="owf-diagram-dot-action-bottom" aria-hidden="true" />
         {diagram.sourceConnectorSlugs.length > 0 ? (
@@ -366,23 +419,16 @@ export function WorkflowPreviewDiagram({
             label={diagram.sourceLabel}
             connectorSlug={diagram.sourceConnectorSlugs[0]}
             connectorSlugs={diagram.sourceConnectorSlugs}
-            className="owf-diagram-node-source"
+            dataSlot="onboarding-diagram-source-node"
+            className="top-[34px] left-[94px] w-[82px]"
           />
         ) : null}
-        <WorkflowDiagramNode
-          label=""
-          className="owf-diagram-node-okou"
-          iconClassName="owf-diagram-avatar"
-        >
-          <span className="owf-diagram-okou-icon" aria-hidden="true">
-            <WorkflowDiagramOkouAvatar />
-          </span>
-        </WorkflowDiagramNode>
+        <WorkflowDiagramOkouNode />
         {diagram.destinationConnectorSlug ? (
           <WorkflowDiagramNode
             label={connectorLabel(diagram.destinationConnectorSlug)}
             connectorSlug={diagram.destinationConnectorSlug}
-            className="owf-diagram-node-output"
+            className="top-[32px] left-[455px] w-[61px]"
           />
         ) : null}
         <WorkflowDiagramAction

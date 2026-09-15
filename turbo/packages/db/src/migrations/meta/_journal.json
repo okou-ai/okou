@@ -372,6 +372,13 @@
       "when": 1789441232116,
       "tag": "1130_account_erasure_claim_scale",
       "breakpoints": true
+    },
+    {
+      "idx": 1131,
+      "version": "7",
+      "when": 1789445518994,
+      "tag": "1131_tricky_roland_deschain",
+      "breakpoints": true
     }
   ]
 }

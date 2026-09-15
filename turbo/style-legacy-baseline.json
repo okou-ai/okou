@@ -1,42 +1,27 @@
 {
   "version": 1,
   "legacyClassTokens": [
-    "language-mermaid",
     "okou-app",
     "okou-composer",
-    "okou-desktop-titlebar-drag-region",
     "okou-fixed-viewport-shell",
     "okou-markdown-card",
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
     "okou-shimmer-text",
-    "okou-sidebar-header",
     "okou-workspace-bg",
     "owf-diagram",
     "owf-diagram-action",
-    "owf-diagram-action-copy",
     "owf-diagram-action-one",
     "owf-diagram-action-two",
-    "owf-diagram-beam",
     "owf-diagram-dot-action-bottom",
     "owf-diagram-dot-action-middle",
     "owf-diagram-dot-action-top",
     "owf-diagram-dot-destination-down",
     "owf-diagram-dot-destination-in",
     "owf-diagram-dot-source",
-    "owf-diagram-grid",
     "owf-diagram-icon-box",
-    "owf-diagram-icon-stack",
     "owf-diagram-icon-stack-item",
     "owf-diagram-icon-stack-more",
-    "owf-diagram-lines",
-    "owf-diagram-node",
-    "owf-diagram-node-okou",
-    "owf-diagram-node-output",
-    "owf-diagram-node-source",
-    "owf-diagram-okou-icon",
-    "owf-diagram-vertical-control",
-    "owf-diagram-wrap",
     "toaster",
     "wmde-markdown",
     "wmde-markdown-color"
@@ -153,69 +138,6 @@
         "selector": ".okou-mobile-sidebar::before",
         "property": "bottom",
         "value": "calc(-1*var(--sab))",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-sidebar-header",
-        "property": "padding-top",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
-        "property": "display",
-        "value": "block",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
-        "property": "flex-shrink",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
-        "property": "height",
-        "value": "var(--okou-desktop-titlebar-height)",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
-        "property": "-webkit-app-region",
-        "value": "drag",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg",
-        "property": "position",
-        "value": "relative",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg :where(button,a,input,textarea,select,[role=\"button\"],[role=\"link\"],[role=\"textbox\"],[contenteditable]:not([contenteditable=\"false\"]))",
-        "property": "position",
-        "value": "relative",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg :where(button,a,input,textarea,select,[role=\"button\"],[role=\"link\"],[role=\"textbox\"],[contenteditable]:not([contenteditable=\"false\"]))",
-        "property": "z-index",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": ["@media (min-width:768px)"],
-        "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg :where(button,a,input,textarea,select,[role=\"button\"],[role=\"link\"],[role=\"textbox\"],[contenteditable]:not([contenteditable=\"false\"]))",
-        "property": "-webkit-app-region",
-        "value": "no-drag",
         "important": false
       },
       {
@@ -612,83 +534,6 @@
       },
       {
         "atRules": [],
-        "selector": ".owf-diagram-wrap",
-        "property": "--owf-scale",
-        "value": " 0.6",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-wrap",
-        "property": "position",
-        "value": "relative",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-wrap",
-        "property": "width",
-        "value": "calc(614px*var(--owf-scale))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-wrap",
-        "property": "height",
-        "value": "calc(470px*var(--owf-scale))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-wrap",
-        "property": "max-width",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-wrap",
-        "property": "margin",
-        "value": "0 auto",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "top",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "left",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "transform",
-        "value": "scale(var(--owf-scale))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "transform-origin",
-        "value": "top left",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".owf-diagram",
         "property": "--workflow-dot-size",
         "value": " 8px",
@@ -837,20 +682,6 @@
       {
         "atRules": [],
         "selector": ".owf-diagram",
-        "property": "--workflow-diagram-grid-dot",
-        "value": " hsl(var(--gray-500) / 0.55)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "--workflow-diagram-node-fg",
-        "value": " hsl(var(--foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
         "property": "--workflow-diagram-tile-bg",
         "value": " hsl(var(--card))",
         "important": false
@@ -874,391 +705,6 @@
         "selector": ".owf-diagram",
         "property": "--workflow-diagram-stack-border",
         "value": " hsl(var(--border))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "--workflow-diagram-action-title",
-        "value": " hsl(var(--foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "--workflow-diagram-action-muted",
-        "value": " hsl(var(--muted-foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "width",
-        "value": "614px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "height",
-        "value": "470px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "min-height",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "align-self",
-        "value": "start",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram",
-        "property": "border-radius",
-        "value": "16px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "top",
-        "value": "13px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "right",
-        "value": "17px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "bottom",
-        "value": "12px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "left",
-        "value": "16px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "background-image",
-        "value": "radial-gradient(var(--workflow-diagram-grid-dot) 1.5px,transparent 1.5px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "background-size",
-        "value": "34px 34px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-grid",
-        "property": "opacity",
-        "value": "0.8",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines",
-        "property": "z-index",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines",
-        "property": "inset",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines",
-        "property": "width",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines",
-        "property": "height",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines",
-        "property": "pointer-events",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines path",
-        "property": "stroke",
-        "value": "#ed7a44",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines path",
-        "property": "stroke-width",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines path",
-        "property": "stroke-linecap",
-        "value": "round",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-lines path",
-        "property": "stroke-linejoin",
-        "value": "round",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "z-index",
-        "value": "4",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "top",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "left",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "width",
-        "value": "42px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "height",
-        "value": "6px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "border-radius",
-        "value": "999px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "background",
-        "value": "linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.1) 24%,rgba(255,255,255,0.78) 52%,rgba(255,255,255,0.16) 78%,transparent 100%)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "filter",
-        "value": "drop-shadow(0 0 4px rgba(255,255,255,0.75)) drop-shadow(0 0 8px rgba(255,255,255,0.35))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "offset-anchor",
-        "value": "center",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "offset-distance",
-        "value": "0%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "offset-rotate",
-        "value": "auto",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "opacity",
-        "value": "0.92",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "pointer-events",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-beam",
-        "property": "animation",
-        "value": "owf-beam-flow 2.8s linear infinite",
-        "important": false
-      },
-      {
-        "atRules": ["@media (prefers-reduced-motion:reduce)"],
-        "selector": ".owf-diagram-beam",
-        "property": "animation",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": ["@media (prefers-reduced-motion:reduce)"],
-        "selector": ".owf-diagram-beam",
-        "property": "opacity",
-        "value": "0.35",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "z-index",
-        "value": "5",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "display",
-        "value": "flex",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "width",
-        "value": "94px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "flex-direction",
-        "value": "column",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "align-items",
-        "value": "center",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "gap",
-        "value": "5px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "color",
-        "value": "var(--workflow-diagram-node-fg)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "font-size",
-        "value": "12px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "font-weight",
-        "value": "500",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "line-height",
-        "value": "16px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node",
-        "property": "text-align",
-        "value": "center",
         "important": false
       },
       {
@@ -1357,34 +803,6 @@
         "selector": ".owf-diagram-icon-box img",
         "property": "object-fit",
         "value": "contain",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-icon-stack",
-        "property": "position",
-        "value": "relative",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-icon-stack",
-        "property": "display",
-        "value": "block",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-icon-stack",
-        "property": "width",
-        "value": "42px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-icon-stack",
-        "property": "height",
-        "value": "42px",
         "important": false
       },
       {
@@ -1648,111 +1066,6 @@
       },
       {
         "atRules": [],
-        "selector": ".owf-diagram-okou-icon",
-        "property": "position",
-        "value": "relative",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-okou-icon",
-        "property": "display",
-        "value": "inline-block",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-okou-icon",
-        "property": "width",
-        "value": "64px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-okou-icon",
-        "property": "height",
-        "value": "64px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-okou-icon",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-source",
-        "property": "top",
-        "value": "34px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-source",
-        "property": "left",
-        "value": "94px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-source",
-        "property": "width",
-        "value": "82px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-okou",
-        "property": "top",
-        "value": "45px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-okou",
-        "property": "left",
-        "value": "277px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-okou",
-        "property": "width",
-        "value": "72px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-output",
-        "property": "top",
-        "value": "32px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-output",
-        "property": "left",
-        "value": "455px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-output",
-        "property": "width",
-        "value": "61px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-node-output",
-        "property": "gap",
-        "value": "5px",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".owf-diagram-dot-source,.owf-diagram-dot-destination-in,.owf-diagram-dot-destination-down,.owf-diagram-dot-action-top,.owf-diagram-dot-action-middle,.owf-diagram-dot-action-bottom",
         "property": "position",
         "value": "absolute",
@@ -1907,118 +1220,6 @@
       },
       {
         "atRules": [],
-        "selector": ".owf-diagram-vertical-control",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control",
-        "property": "z-index",
-        "value": "3",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control",
-        "property": "top",
-        "value": "var(--workflow-action-vertical-top-dot-y)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control",
-        "property": "left",
-        "value": "var(--workflow-action-two-center-x)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control",
-        "property": "width",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control",
-        "property": "height",
-        "value": "calc(var(--workflow-action-vertical-bottom-dot-y) - var(--workflow-action-vertical-top-dot-y))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control",
-        "property": "pointer-events",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "top",
-        "value": "calc(var(--workflow-dot-size)/2)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "bottom",
-        "value": "calc(var(--workflow-dot-size)/2)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "left",
-        "value": "-1px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "width",
-        "value": "2px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "border-radius",
-        "value": "999px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "background",
-        "value": "#ed7a44",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::before",
-        "property": "content",
-        "value": "\"\"",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-vertical-control::after",
-        "property": "display",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".owf-diagram-action",
         "property": "position",
         "value": "absolute",
@@ -2152,160 +1353,6 @@
       },
       {
         "atRules": [],
-        "selector": ".owf-diagram-action-copy",
-        "property": "display",
-        "value": "flex",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy",
-        "property": "min-width",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy",
-        "property": "flex",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy",
-        "property": "flex-direction",
-        "value": "column",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy",
-        "property": "gap",
-        "value": "4px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "display",
-        "value": "block",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "color",
-        "value": "var(--workflow-diagram-action-title)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "font-size",
-        "value": "16px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "font-weight",
-        "value": "500",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "line-height",
-        "value": "24px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "text-overflow",
-        "value": "ellipsis",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy strong",
-        "property": "white-space",
-        "value": "nowrap",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "display",
-        "value": "-webkit-box",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "color",
-        "value": "var(--workflow-diagram-action-muted)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "font-size",
-        "value": "14px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "line-height",
-        "value": "20px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "text-overflow",
-        "value": "ellipsis",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "-webkit-box-orient",
-        "value": "vertical",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".owf-diagram-action-copy span",
-        "property": "-webkit-line-clamp",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ":where([data-theme=\"dark\"]) .okou-app .okou-composer",
         "property": "--okou-composer-ring",
         "value": " 38.8 38% 38%",
@@ -2328,9 +1375,6 @@
     "apps/platform/src/views/components/markdown-frame.tsx": {
       "wmde-markdown": 1,
       "wmde-markdown-color": 1
-    },
-    "apps/platform/src/views/components/mermaid-diagram.tsx": {
-      "language-mermaid": 1
     },
     "apps/platform/src/views/components/rich-markdown.tsx": {
       "okou-markdown-card": 2
@@ -2377,10 +1421,8 @@
       "okou-app": 1
     },
     "apps/platform/src/views/okou-page/sidebar.tsx": {
-      "okou-desktop-titlebar-drag-region": 2,
       "okou-mobile-fixed-safe-area": 1,
-      "okou-mobile-sidebar": 1,
-      "okou-sidebar-header": 1
+      "okou-mobile-sidebar": 1
     },
     "apps/platform/src/views/okou-page/unsaved-bar.tsx": {
       "okou-app": 1
@@ -2397,29 +1439,17 @@
     "apps/platform/src/views/onboarding/onboarding-workflow-diagram.tsx": {
       "owf-diagram": 1,
       "owf-diagram-action": 1,
-      "owf-diagram-action-copy": 1,
       "owf-diagram-action-one": 1,
       "owf-diagram-action-two": 1,
-      "owf-diagram-beam": 1,
       "owf-diagram-dot-action-bottom": 1,
       "owf-diagram-dot-action-middle": 1,
       "owf-diagram-dot-action-top": 1,
       "owf-diagram-dot-destination-down": 1,
       "owf-diagram-dot-destination-in": 1,
       "owf-diagram-dot-source": 1,
-      "owf-diagram-grid": 1,
       "owf-diagram-icon-box": 1,
-      "owf-diagram-icon-stack": 1,
       "owf-diagram-icon-stack-item": 1,
-      "owf-diagram-icon-stack-more": 1,
-      "owf-diagram-lines": 1,
-      "owf-diagram-node": 1,
-      "owf-diagram-node-okou": 1,
-      "owf-diagram-node-output": 1,
-      "owf-diagram-node-source": 1,
-      "owf-diagram-okou-icon": 1,
-      "owf-diagram-vertical-control": 1,
-      "owf-diagram-wrap": 1
+      "owf-diagram-icon-stack-more": 1
     },
     "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx": {
       "okou-app": 1,

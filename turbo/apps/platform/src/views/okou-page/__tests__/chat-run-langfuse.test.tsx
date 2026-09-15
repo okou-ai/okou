@@ -18,7 +18,7 @@ import {
 } from "./chat-capability-test-helpers.ts";
 import { publishRunUpdate } from "./chat-run-test-fixtures.ts";
 
-const TRACE_URL = `https://langfuse.example/trace/${FIRST_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
+const TRACE_URL = `https://langfuse.example/project/project-debug/traces/${FIRST_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
 const TRACE_LABEL = "View Langfuse trace";
 const RUN_DETAIL = Object.freeze({
   status: "completed" as const,
@@ -74,7 +74,7 @@ test("Link only the traced run beside Activity even after tracing is switched of
 test("Keep an untraced response usable and link the next traced run", async () => {
   const events = completedConversation("Finished response");
   installCapabilityChat({ events });
-  const nextTraceUrl = `https://langfuse.example/trace/${SECOND_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
+  const nextTraceUrl = `https://langfuse.example/project/project-debug/traces/${SECOND_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
   context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
     return respond(200, {
       ...RUN_DETAIL,

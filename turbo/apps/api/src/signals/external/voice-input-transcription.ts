@@ -7,6 +7,7 @@ import { logger } from "../../lib/log";
 import { readBoundedResponseText, safeJsonParse } from "../utils";
 import type { VoiceAudio } from "./voice-completion-types";
 import { requestVoiceProvider } from "./voice-provider-request";
+import { VoiceResponseError } from "./voice-response-error";
 
 type TranscriptionModel = Extract<VoiceInputModel, { kind: "transcription" }>;
 const ELEVENLABS_MODEL = "fal-ai/elevenlabs/speech-to-text/scribe-v2";
@@ -73,14 +74,18 @@ export async function transcribeVoiceInputAudio(
           source: "http",
           status: response.status,
         });
-        throw new Error("Voice transcription provider rejected the request");
+        throw new VoiceResponseError("http", "provider");
       }
       const body = await readBoundedResponseText(response, MAX_RESPONSE_BYTES);
       signal.throwIfAborted();
       if (body.kind !== "text") {
-        throw new Error("Voice transcription response exceeds the size limit");
+        throw new VoiceResponseError("response_too_large");
       }
-      return transcriptionSchema.parse(safeJsonParse(body.text)).text;
+      const parsed = transcriptionSchema.safeParse(safeJsonParse(body.text));
+      if (!parsed.success) {
+        throw new VoiceResponseError("invalid_response");
+      }
+      return parsed.data.text;
     },
     { provider: elevenLabs ? "fal" : "openrouter", model: model.id },
     signal,

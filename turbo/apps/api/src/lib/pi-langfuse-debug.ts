@@ -13,12 +13,14 @@ const PI_LANGFUSE_DEBUG_ENABLED_ENV = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
 const LANGFUSE_PUBLIC_KEY_ENV = "LANGFUSE_PUBLIC_KEY";
 const LANGFUSE_SECRET_KEY_ENV = "LANGFUSE_SECRET_KEY";
 const LANGFUSE_BASE_URL_ENV = "LANGFUSE_BASE_URL";
+const LANGFUSE_PROJECT_ID_ENV = "LANGFUSE_PROJECT_ID";
 const LANGFUSE_TRACING_ENVIRONMENT_ENV = "LANGFUSE_TRACING_ENVIRONMENT";
 const LANGFUSE_TRACING_ENABLED_ENV = "LANGFUSE_TRACING_ENABLED";
 const LANGFUSE_MEDIA_UPLOAD_ENABLED_ENV = "LANGFUSE_MEDIA_UPLOAD_ENABLED";
 const LANGFUSE_USER_ID_ENV = "LANGFUSE_USER_ID";
 const PI_LANGFUSE_MAX_CHARS_ENV = "PI_LANGFUSE_MAX_CHARS";
 const DEFAULT_LANGFUSE_BASE_URL = "https://us.cloud.langfuse.com";
+const DEFAULT_LANGFUSE_PROJECT_ID = "cmu0bvhcu012gad0drbw8ddts";
 const DEBUG_TRACING_ENVIRONMENT = "internal-debug";
 export const PI_LANGFUSE_MAX_CAPTURED_CHARS = 20_000;
 
@@ -26,6 +28,7 @@ interface PiLangfuseServerConfig {
   readonly publicKey: string;
   readonly secretKey: string;
   readonly baseUrl: string;
+  readonly projectId: string;
 }
 
 function trimmedOptionalEnv(name: string): string | undefined {
@@ -59,7 +62,9 @@ export function readPiLangfuseServerConfig():
     return undefined;
   }
 
-  return { publicKey, secretKey, baseUrl };
+  const projectId =
+    trimmedOptionalEnv(LANGFUSE_PROJECT_ID_ENV) ?? DEFAULT_LANGFUSE_PROJECT_ID;
+  return { publicKey, secretKey, baseUrl, projectId };
 }
 
 /** Resolve the immutable per-run decision from its captured feature context. */
@@ -86,13 +91,12 @@ export function piLangfuseDebugUserId(userId: string): string {
 }
 
 export function piLangfuseDebugPlatformEnvironment(args: {
-  readonly config: PiLangfuseServerConfig;
   readonly userId: string;
 }): Readonly<Record<string, string>> {
   return {
     [PI_LANGFUSE_DEBUG_ENABLED_ENV]: "true",
+    OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
     [LANGFUSE_TRACING_ENABLED_ENV]: "true",
-    [LANGFUSE_BASE_URL_ENV]: args.config.baseUrl,
     [LANGFUSE_TRACING_ENVIRONMENT_ENV]: DEBUG_TRACING_ENVIRONMENT,
     [LANGFUSE_MEDIA_UPLOAD_ENABLED_ENV]: "false",
     [LANGFUSE_USER_ID_ENV]: piLangfuseDebugUserId(args.userId),
@@ -100,17 +104,7 @@ export function piLangfuseDebugPlatformEnvironment(args: {
   };
 }
 
-/** Keep injected credentials in the encrypted claim-time secret set. */
-export function piLangfuseDebugSecretEnvironment(
-  config: PiLangfuseServerConfig,
-): Readonly<Record<string, string>> {
-  return {
-    [LANGFUSE_PUBLIC_KEY_ENV]: config.publicKey,
-    [LANGFUSE_SECRET_KEY_ENV]: config.secretKey,
-  };
-}
-
-/** Select only a complete Langfuse credential pair at a trusted boundary. */
+/** Read legacy queued contexts until their commit-pinned CLIs have drained. */
 export function piLangfuseDebugCredentialsFromEnvironment(
   environment: Readonly<Record<string, string>>,
 ): Readonly<Record<string, string>> | undefined {

@@ -121,6 +121,20 @@ interface ReadSharedThreadMetaRouteTypes extends AnyRouteTypeSlots {
   readonly response: ReadSharedThreadMetaRouteResponse;
 }
 
+interface DeleteSharedThreadRouteTypes extends AnyRouteTypeSlots {
+  readonly serverRequest: ReadSharedThreadRequest & {
+    readonly headers: SharedThreadAuthHeaders;
+  };
+  readonly clientRequest: ReadSharedThreadRequest & {
+    readonly headers?: SharedThreadAuthHeaders;
+  };
+  readonly response:
+    | { readonly status: 204; readonly body: undefined }
+    | ApiErrorRouteResponse<401>
+    | ApiErrorRouteResponse<403>
+    | ApiErrorRouteResponse<404>;
+}
+
 const sharedMessageZodSchema = z
   .object({
     messageIndex: z.number().int().nonnegative(),
@@ -193,6 +207,20 @@ const sharedThreadAuthHeadersSchema: ZodSchema<
 > = authHeadersSchema;
 
 const sharedThreadsRuntimeSpec = {
+  delete: {
+    method: "DELETE",
+    path: "/api/shared-threads/:id",
+    headers: sharedThreadAuthHeadersSchema,
+    pathParams: sharedThreadIdPathParamsSchema,
+    responses: {
+      204: z.undefined(),
+      401: sharedThreadApiErrorSchema,
+      403: sharedThreadApiErrorSchema,
+      404: sharedThreadApiErrorSchema,
+    },
+    summary:
+      "Remove an owned conversation share and revoke all of its resource links",
+  },
   create: {
     method: "POST",
     path: "/api/chat-threads/:threadId/shared-threads",
@@ -229,7 +257,7 @@ const sharedThreadsRuntimeSpec = {
     },
     summary: "Read public metadata for a shared chat snapshot",
   },
-} as const satisfies Record<"create" | "get" | "meta", AppRouteSpec>;
+} as const satisfies Record<"create" | "get" | "meta" | "delete", AppRouteSpec>;
 
 const sharedThreadsRuntimeContract = c.router(sharedThreadsRuntimeSpec);
 
@@ -263,6 +291,18 @@ type ReadSharedThreadMetaRoute = AppRoute<ReadSharedThreadMetaRouteTypes> & {
 };
 
 export type SharedThreadsContract = {
+  readonly delete: AppRoute<DeleteSharedThreadRouteTypes> & {
+    readonly method: "DELETE";
+    readonly path: "/api/shared-threads/:id";
+    readonly headers: ZodSchema<
+      SharedThreadAuthHeaders,
+      SharedThreadAuthHeaders
+    >;
+    readonly pathParams: ZodSchema<
+      SharedThreadIdPathParams,
+      SharedThreadIdPathParams
+    >;
+  };
   readonly create: CreateSharedThreadRoute;
   readonly get: ReadSharedThreadRoute;
   readonly meta: ReadSharedThreadMetaRoute;

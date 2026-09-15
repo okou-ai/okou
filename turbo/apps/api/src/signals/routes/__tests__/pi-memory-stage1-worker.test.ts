@@ -1,3 +1,9 @@
+import {
+  builtinMemoryQuotaCases,
+  seedMemoryQuotaCase,
+} from "../../../test-fixtures/pi-memory-builtin-quota";
+import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   modelProviderConnectionsMainContract,
@@ -44,7 +50,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   seedBuiltInModelKey,
@@ -411,6 +417,7 @@ function createStorageFixture(
     user_id: userId,
   } as const;
   let ownerSwitches: Promise<void> | undefined;
+  let admissionSetup: Promise<void> | undefined;
 
   function enableOwnerPiMemory(): Promise<void> {
     ownerSwitches ??= updateFeatureSwitchesForUser(
@@ -433,6 +440,13 @@ function createStorageFixture(
     >["source"];
   }): Promise<CandidateFixture> {
     return await owner.run(async () => {
+      // Runless background attempts obey the same source plan/credit admission.
+      admissionSetup ??= seedOrgMetadata({
+        orgId,
+        tier: "pro",
+        credits: 100_000,
+      });
+      await admissionSetup;
       if (piMemoryEnabled) {
         await enableOwnerPiMemory();
       }
@@ -2926,3 +2940,265 @@ describe("Stage 1 background credential availability", () => {
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 });
+
+describe("Stage 1 source quota at the model HTTP boundary", () => {
+  it.each(nativeMemoryQuotaCases)(
+    "$name",
+    async ({ payload, raw, status, reason }) => {
+      const storage = createStorageFixture();
+      const native = await codexSource(storage);
+      const candidate = await seedSource(storage, native.binding);
+      const quotaRequests: Headers[] = [];
+      server.use(
+        http.get(
+          "https://chatgpt.com/backend-api/wham/usage",
+          ({ request }) => {
+            quotaRequests.push(request.headers);
+            return new HttpResponse(raw ?? JSON.stringify(payload), {
+              status: status ?? 200,
+              headers: { "content-type": "application/json" },
+            });
+          },
+        ),
+      );
+      const provider = installSourceProvider();
+      const result = await runScoped(storage);
+      expect(quotaRequests).toHaveLength(1);
+      expect(quotaRequests[0]?.get("authorization")).toBe(
+        `Bearer ${native.token}`,
+      );
+      expect(quotaRequests[0]?.get("chatgpt-account-id")).toBe(native.identity);
+      expect(provider.calls).toHaveLength(reason ? 0 : 1);
+      if (reason) {
+        expect(result).toMatchObject({ retryableFailure: 1, succeeded: 0 });
+        await expect(inspect(candidate)).resolves.toMatchObject({
+          status: "retryable_failure",
+          last_error_class: reason,
+          successful_source_history_hash: null,
+        });
+      } else {
+        expect(result).toMatchObject({ succeeded: 1 });
+      }
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("refreshes quota on hourly retries without refilling frozen slots", async () => {
+    const storage = createStorageFixture();
+    const native = await codexSource(storage);
+    const first = await seedSource(storage, native.binding, "first");
+    await seedSource(storage, native.binding, "second");
+
+    let used = 90;
+    let reads = 0;
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        reads++;
+        return HttpResponse.json({
+          rate_limit: { primary_window: { used_percent: used } },
+        });
+      }),
+    );
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      retryableFailure: 2,
+      succeeded: 0,
+    });
+    expect(reads).toBe(2);
+    const third = await seedSource(storage, native.binding, "third");
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(0);
+    // Infrastructure exception: make only an existing frozen slot due, not a new selection.
+    await storage.action({
+      action: "make-retry-due",
+      pi_session_id: first.pi_session_id,
+    });
+    used = 75;
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(reads).toBe(3);
+    expect(provider.calls).toHaveLength(1);
+    expect((await inspect(third))?.successful_source_history_hash).toBeNull();
+  });
+
+  it.each(["disconnect", "feature", "source", "lease", "cancel"])(
+    "fences %s during quota I/O",
+    async (fault) => {
+      const storage = createStorageFixture();
+      const native = await codexSource(storage);
+      const candidate = await seedSource(storage, native.binding);
+      const controller = new AbortController();
+      onTestFinished(() => {
+        return controller.abort();
+      });
+      server.use(
+        http.get("https://chatgpt.com/backend-api/wham/usage", async () => {
+          if (fault === "disconnect") {
+            await disconnectCodex(storage, native.binding.modelProviderId);
+          }
+          if (fault === "feature") {
+            await updateFeatureSwitchesForUser(
+              context,
+              { orgId: storage.org_id, userId: storage.user_id },
+              { [FeatureSwitchKey.PiMemory]: false },
+            );
+          }
+          if (fault === "source") {
+            await storage.action({
+              action: "source-binding",
+              pi_session_id: candidate.pi_session_id,
+              source: { ...native.binding, modelProviderId: randomUUID() },
+            });
+          }
+          if (fault === "lease") {
+            await storage.action({
+              action: "expire-lease",
+              pi_session_id: candidate.pi_session_id,
+            });
+          }
+          if (fault === "cancel") {
+            controller.abort();
+          }
+          return HttpResponse.json({
+            rate_limit: { primary_window: { used_percent: 0 } },
+          });
+        }),
+      );
+      const provider = installSourceProvider();
+      const work = runScoped(storage, undefined, controller.signal);
+      if (fault === "cancel") {
+        await expect(work).rejects.toThrow("Unknown response status 500");
+      } else {
+        await work;
+      }
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      expect(
+        (await inspect(candidate))?.successful_source_history_hash,
+      ).toBeNull();
+    },
+  );
+
+  it.each(["malformed-json", "network", "timeout"])(
+    "allows unknown %s through ordinary source admission",
+    async (fault) => {
+      const storage = createStorageFixture();
+      const native = await codexSource(storage);
+      await seedSource(storage, native.binding);
+      server.use(
+        http.get(
+          "https://chatgpt.com/backend-api/wham/usage",
+          async ({ request }) => {
+            if (fault === "network") {
+              return HttpResponse.error();
+            }
+            if (fault === "timeout") {
+              const deadline = createDeferredPromise<void>(
+                testContext().signal,
+              );
+              if (request.signal.aborted) {
+                deadline.resolve();
+              } else {
+                request.signal.addEventListener(
+                  "abort",
+                  () => {
+                    deadline.resolve();
+                  },
+                  { once: true },
+                );
+              }
+              await deadline.promise;
+            }
+            return new HttpResponse("malformed JSON");
+          },
+        ),
+      );
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls).toHaveLength(1);
+    },
+    10_000, // Includes the real five-second metadata deadline.
+  );
+
+  it("requires ordinary credit admission for genuine runless built-in work", async () => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, {
+      modelProvider: "built-in",
+      modelProviderId: null,
+      modelProviderCredentialScope: null,
+    });
+    await seedOrgMetadata({ orgId: storage.org_id, tier: "pro", credits: 0 });
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      retryableFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    expect((await inspect(candidate))?.last_error_class).toBe(
+      "source_admission_denied",
+    );
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+});
+
+describe("Stage 1 built-in reserves with positive cash", () => {
+  it.each(builtinMemoryQuotaCases)("%s", async (scenario) => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, {
+      modelProvider: "built-in",
+      modelProviderId: null,
+      modelProviderCredentialScope: "org",
+    });
+    const { denied } = await seedMemoryQuotaCase(
+      { orgId: storage.org_id, userId: storage.user_id },
+      new Date(now()),
+      scenario,
+    );
+    const provider = installSourceProvider();
+    const result = await runScoped(storage);
+    expect(result).toMatchObject(
+      denied ? { retryableFailure: 1, succeeded: 0 } : { succeeded: 1 },
+    );
+    expect(provider.calls).toHaveLength(denied ? 0 : 1);
+    if (denied) {
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        last_error_class: "quota_below_threshold",
+        successful_source_history_hash: null,
+      });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    }
+  });
+});
+
+test.each([
+  ...lunaApiKeyRoutes.map((route) => {
+    return route.type;
+  }),
+  "custom-openai-responses",
+] as const)(
+  "stage 1 %s keeps API-key quota unknown despite an exhausted company wallet",
+  async (type) => {
+    const storage = createStorageFixture();
+    const source =
+      type === "custom-openai-responses"
+        ? await gatewaySource(storage)
+        : await apiKeySource(storage, "quota-owned-key", type);
+    await seedSource(storage, source);
+    await seedOrgMetadata({ orgId: storage.org_id, tier: "pro", credits: 0 });
+    await seedMemoryQuotaCase(
+      { orgId: storage.org_id, userId: storage.user_id },
+      nowDate(),
+      "pool-zero",
+    );
+    let metadata = 0;
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        metadata++;
+        return HttpResponse.json({ rate_limit: { allowed: false } });
+      }),
+    );
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(provider.calls).toHaveLength(1);
+    expect(metadata).toBe(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  },
+);
