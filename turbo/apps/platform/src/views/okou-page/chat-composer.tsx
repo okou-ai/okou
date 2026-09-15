@@ -10069,16 +10069,21 @@ function ComposerModelScopeCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="relative z-0 mx-3 sm:ml-auto sm:mr-4 sm:w-fit sm:max-w-[calc(100%_-_2rem)]">
+    <div className="relative z-0">
       {/* The surface extends one content-height behind the composer. The
           composer stays above it (z-10), while the controls remain fully
-          visible in the half that protrudes below. */}
+          visible in the half that protrudes below. It spans the composer's
+          width and repeats the card's own rounded-3xl, so the only corners it
+          ever shows — the bottom two — continue the card's outline instead of
+          turning inside it. */}
       <div
-        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-xl bg-gray-50"
+        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-3xl bg-gray-50"
         aria-hidden="true"
       />
+      {/* Both ends sit 20px in, matching the text column of the card above:
+          the ghost action already carries 12px of its own padding. */}
       <div
-        className="relative flex flex-wrap items-center gap-2 p-1 pl-3 text-xs sm:flex-nowrap"
+        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs sm:flex-nowrap"
         role="group"
         aria-label={label}
         aria-live="polite"
