@@ -1885,7 +1885,7 @@ test.each([
         return HttpResponse.json({ rate_limit: { allowed: false } });
       }),
     );
-    const result = await job.work();
+    const result = await job.work(nowDate());
     expect(result.outcome).toBe("dispatched");
     if (result.outcome !== "dispatched") {
       throw new Error("Expected admitted API-key maintenance");
@@ -2007,7 +2007,7 @@ test("admits native maintenance without asking KMS under the organization admiss
       });
     }),
   );
-  const result = await job.work();
+  const result = await job.work(nowDate());
   expect(result.outcome).toBe("dispatched");
   if (result.outcome !== "dispatched") {
     throw new Error("Expected native maintenance");
