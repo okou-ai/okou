@@ -3,7 +3,11 @@ import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   THREAD_ID,
@@ -33,11 +37,19 @@ async function openAddMenu(editor: HTMLElement): Promise<HTMLElement> {
 }
 
 function menuItemLabels(menu: HTMLElement): string[] {
-  return within(menu)
-    .getAllByRole("menuitem")
-    .map((item) => {
-      return item.textContent?.trim() ?? "";
-    });
+  return queryAllByRoleFast("menuitem", menu).map((item) => {
+    return item.textContent?.trim() ?? "";
+  });
+}
+
+function menuItem(menu: HTMLElement, label: string): HTMLElement {
+  const item = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return candidate.textContent?.trim() === label;
+  });
+  if (!item) {
+    throw new Error(`Expected the ${label} row`);
+  }
+  return item;
 }
 
 test("keeps the separate attach, template and workflow buttons while the add menu is off", async () => {
@@ -55,8 +67,6 @@ test("keeps the separate attach, template and workflow buttons while the add men
 test("collapses those buttons into the add menu's rows", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
-    [FeatureSwitchKey.ComposerCreateCommands]: true,
-    [FeatureSwitchKey.ComposerTaskChips]: true,
   });
   const card = composerCard(editor);
 
@@ -65,27 +75,25 @@ test("collapses those buttons into the add menu's rows", async () => {
   expect(within(card).queryByLabelText("Create workflow")).toBeNull();
 
   const menu = await openAddMenu(editor);
-  expect(menuItemLabels(menu)).toEqual([
+  expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
-    "Presentation",
-    "Video",
-    "Image",
-    "Website",
-    "Visualization",
     "Create workflow",
   ]);
 });
 
-test("offers only what the workspace can start", async () => {
+// The task chips reach a presentation, image, video, website or visualization
+// in one click from directly under the composer, so the menu stays out of that
+// job even where every one of those generations is switched on.
+test("leaves starting a generation to the task chips", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
-    [FeatureSwitchKey.ComposerCreateCommands]: false,
-    [FeatureSwitchKey.ComposerTaskChips]: false,
+    [FeatureSwitchKey.ComposerCreateCommands]: true,
+    [FeatureSwitchKey.ComposerTaskChips]: true,
   });
 
   const menu = await openAddMenu(editor);
-  expect(menuItemLabels(menu)).toEqual([
+  expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
     "Create workflow",
@@ -105,14 +113,14 @@ test("still reaches the template picker with its toolbar button gone", async () 
   }
 
   const menu = await openAddMenu(editor);
-  click(within(menu).getByRole("menuitem", { name: "Template" }));
+  click(menuItem(menu, "Template"));
 
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
-  expect(
-    await screen.findByLabelText(`Select template ${template.title}`),
-  ).toBeVisible();
+  await expect(
+    screen.findByLabelText(`Select template ${template.title}`),
+  ).resolves.toBeVisible();
 });
 
 test("opens the file picker from the attach row", async () => {
@@ -130,7 +138,7 @@ test("opens the file picker from the attach row", async () => {
   });
 
   const menu = await openAddMenu(editor);
-  click(within(menu).getByRole("menuitem", { name: "Attach" }));
+  click(menuItem(menu, "Attach"));
 
   expect(clicks).toBe(1);
 });

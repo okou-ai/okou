@@ -481,7 +481,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ComposerAddMenu]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Collapse the composer toolbar's attach, template and workflow buttons into one plus menu that also starts a presentation, image, video, website or visualization.",
+      "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

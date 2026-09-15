@@ -18,7 +18,6 @@ import {
   ComposerAddMenu,
   type ComposerAddMenuItem,
 } from "./composer-add-menu.tsx";
-import { composerCreateModeName } from "../../signals/okou-page/composer-create.ts";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -71,7 +70,6 @@ import {
   ArrowLeft,
   ArrowUp,
   Bolt,
-  ChartNoAxesCombined,
   Check,
   Clapperboard,
   Download,
@@ -9092,11 +9090,14 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
 }
 
 /**
- * The rows the `+` offers, in the order they answer "what does this message
- * need": something brought in, then something to make. A create row is listed
- * only where that generation is actually available — `create.modes` drops the
- * media the workspace cannot run, and website and visualization exist only
- * with the task chips — so the menu never offers a dead end.
+ * Exactly the three toolbar buttons the `+` replaces, in their old left-to-right
+ * order. The rule is separate because the first two add content to the message
+ * while the third rewrites the draft into a workflow prompt.
+ *
+ * Starting a presentation, image, video, website or visualization deliberately
+ * stays out: the task chips sit directly under the composer and already reach
+ * every one of them in a single click, so a second copy behind the `+` would be
+ * the longer route to the same place.
  */
 function useComposerAddMenuGroups(
   signals: ComposerSignals,
@@ -9104,52 +9105,7 @@ function useComposerAddMenuGroups(
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
   const template = useTemplatePickerTrigger(signals);
-  const createEnabled = useGet(signals.create.enabled$);
-  const selectCreateCommand = useSet(signals.create.selectCommand$);
-  const taskChipsEnabled = useGet(signals.taskChips.enabled$);
-  const selectTask = useSet(signals.taskChips.selectTask$);
   const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
-  const createIcons = {
-    presentation: Presentation,
-    image: ImageIcon,
-    video: Video,
-  } as const;
-  const createRows = createEnabled
-    ? signals.create.modes.map((mode) => {
-        return {
-          id: mode,
-          Icon: createIcons[mode],
-          label: composerCreateModeName(mode),
-          onSelect: () => {
-            selectCreateCommand(mode);
-          },
-        };
-      })
-    : [];
-  const taskRows = taskChipsEnabled
-    ? [
-        {
-          id: "website",
-          Icon: Globe,
-          label: t(($) => {
-            return $.chat.taskChips.tasks.website;
-          }),
-          onSelect: () => {
-            selectTask("website");
-          },
-        },
-        {
-          id: "visualization",
-          Icon: ChartNoAxesCombined,
-          label: t(($) => {
-            return $.chat.taskChips.tasks.visualization;
-          }),
-          onSelect: () => {
-            selectTask("visualization");
-          },
-        },
-      ]
-    : [];
   return [
     [
       {
@@ -9171,8 +9127,6 @@ function useComposerAddMenuGroups(
       },
     ],
     [
-      ...createRows,
-      ...taskRows,
       {
         id: "workflow",
         Icon: Route,

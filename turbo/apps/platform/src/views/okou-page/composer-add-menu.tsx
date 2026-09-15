@@ -23,31 +23,23 @@ export interface ComposerAddMenuItem {
 }
 
 /**
- * The composer toolbar's `+`: one entry point for everything a message can
- * gain, rather than a button per capability. Attaching a file, picking a
- * template and starting a generation were three separate toolbar icons that
- * each answered the same question, and the toolbar had no room left for the
- * next one.
+ * The composer toolbar's `+`: one entry point for what a message can gain,
+ * rather than a button per capability. Attach, template and create workflow
+ * each answered the same question from their own icon, and the toolbar had no
+ * room left for the next one.
  *
- * Rows are single-line on purpose. Eight two-line rows make a pane tall enough
- * to cover the message being written, and every label here is already a noun
- * the product uses elsewhere, so a second line would only restate it.
+ * Rows are single-line on purpose. Every label is already a noun the product
+ * uses elsewhere, so a description line would only restate it.
  */
 export function ComposerAddMenu({
   groups,
 }: {
-  /**
-   * Rendered in order and separated by a rule. A group whose rows are all
-   * unavailable is dropped, so the separator never leads a gap.
-   */
+  /** Rendered in order, separated by a rule. */
   readonly groups: readonly (readonly ComposerAddMenuItem[])[];
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
     return $.chat.composer.add;
-  });
-  const filled = groups.filter((group) => {
-    return group.length > 0;
   });
   return (
     <Popover>
@@ -70,7 +62,7 @@ export function ComposerAddMenu({
         className="w-56 p-1.5"
       >
         <div role="menu" aria-label={label}>
-          {filled.map((group, index) => {
+          {groups.map((group, index) => {
             return (
               <div key={group[0]?.id ?? index}>
                 {index > 0 && <div className="my-1.5 h-px bg-divider" />}
