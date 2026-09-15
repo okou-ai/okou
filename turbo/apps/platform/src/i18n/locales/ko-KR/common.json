@@ -2491,7 +2491,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2507,7 +2506,6 @@
         "selectedCount_one": "{{count}}개 선택됨",
         "selectedCount_other": "{{count}}개 선택됨",
         "summary": "{{output}} · 표현 방식 {{methodCount}} · 차트 {{chartCount}}",
-        "title": "시각화",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

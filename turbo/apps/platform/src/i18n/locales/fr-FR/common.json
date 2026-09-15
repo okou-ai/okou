@@ -2546,7 +2546,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2562,7 +2561,6 @@
         "selectedCount_one": "{{count}} sélectionné",
         "selectedCount_other": "{{count}} sélectionnés",
         "summary": "{{output}} · Méthodes {{methodCount}} · Graphiques {{chartCount}}",
-        "title": "Visualisation",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

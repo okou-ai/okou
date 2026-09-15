@@ -2500,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2516,7 +2515,6 @@
         "selectedCount_one": "{{count}} selected",
         "selectedCount_other": "{{count}} selected",
         "summary": "{{output}} · Methods {{methodCount}} · Charts {{chartCount}}",
-        "title": "Visualization",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

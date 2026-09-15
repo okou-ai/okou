@@ -2500,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2516,7 +2515,6 @@
         "selectedCount_one": "{{count}} चुना गया",
         "selectedCount_other": "{{count}} चुने गए",
         "summary": "{{output}} · तरीके {{methodCount}} · चार्ट {{chartCount}}",
-        "title": "विज़ुअलाइज़ेशन",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
