@@ -7,6 +7,7 @@ mod framing;
 mod harness;
 mod key_wait;
 mod lifecycle;
+mod notifications;
 mod observations;
 mod passwords;
 mod pooling;
@@ -262,7 +263,7 @@ async fn complete_dns_answer_set_is_checked_before_any_connection() {
 
 #[tokio::test]
 async fn canonical_shared_address_policy_is_enforced_at_dispatch() {
-    let h = Harness::new(Reply::default()).await;
+    let mut h = Harness::new(Reply::default()).await;
     let cases: Value = serde_json::from_str(include_str!("../../../../../turbo/packages/connectors/src/__tests__/public-destination-policy-contract.json")).unwrap();
     for case in cases["addressPolicyCases"].as_array().unwrap() {
         let mut credential = h.credential(true);
@@ -279,6 +280,8 @@ async fn canonical_shared_address_policy_is_enforced_at_dispatch() {
             );
         }
         resolve.delete_async().await;
+        // Each case supplies a different authoritative endpoint, not a cache hit.
+        h.restart(h.run).await;
     }
     assert!(h.observed.queries.lock().unwrap().is_empty());
 }

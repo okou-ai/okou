@@ -199,6 +199,8 @@ describe("social download discovery", () => {
     expect(first.body.downloads[0]).toMatchObject({
       status: "provider_failed",
       request: { url: "https://youtu.be/video-20" },
+      requested: { quality: "720p", format: "mp4" },
+      delivered: { quality: null, format: null },
       resumeCommand: null,
       error: { retryable: false, billed: false },
     });

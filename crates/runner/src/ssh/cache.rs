@@ -21,7 +21,6 @@ pub(super) struct Cache {
 
 #[derive(Default)]
 struct State {
-    connected: bool,
     runs: HashMap<RunId, RunEntries>,
 }
 
@@ -112,19 +111,6 @@ impl Cache {
         })
     }
 
-    pub(super) fn connected(&self, connected: bool) {
-        let mut state = self
-            .state
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        state.connected = connected;
-        if !connected {
-            for run in state.runs.values_mut() {
-                run.invalidate(None);
-            }
-        }
-    }
-
     pub(super) fn invalidate(&self, run: RunId, connection: Option<uuid::Uuid>) {
         let mut state = self
             .state
@@ -147,54 +133,43 @@ impl Registration {
             .state
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        let connected = state.connected;
         let run = state
             .runs
             .get_mut(&self.run)
             .filter(|run| Arc::ptr_eq(&run.identity, &self.identity))
             .ok_or(FailureReason::Cancelled)?;
-        let entry = if connected {
-            if let Some(entry) = run.entries.get(&connection) {
-                Some(Arc::clone(entry))
-            } else if let Ok(slot) = Arc::clone(&self.cache.capacity).try_acquire_owned() {
-                let entry = Arc::new(Entry {
-                    value: OnceCell::new(),
-                    cancelled: CancellationToken::new(),
-                    _slot: Some(slot),
-                });
-                run.entries.insert(connection, Arc::clone(&entry));
-                Some(entry)
-            } else {
-                None
-            }
+        let entry = if let Some(entry) = run.entries.get(&connection) {
+            Some(Arc::clone(entry))
+        } else if let Ok(slot) = Arc::clone(&self.cache.capacity).try_acquire_owned() {
+            let entry = Arc::new(Entry {
+                value: OnceCell::new(),
+                cancelled: CancellationToken::new(),
+                _slot: Some(slot),
+            });
+            run.entries.insert(connection, Arc::clone(&entry));
+            Some(entry)
         } else {
             None
         };
         let cached = entry.is_some();
+        let entry = entry.unwrap_or_else(|| {
+            let entry = Arc::new(Entry {
+                value: OnceCell::new(),
+                cancelled: CancellationToken::new(),
+                _slot: None,
+            });
+            // Track overflow before resolution under the same Run identity lock.
+            // Weak watchers own no credentials; live operations and idle transports bound them.
+            run.sessions.retain(|(_, entry)| entry.strong_count() > 0);
+            run.sessions.push((connection, Arc::downgrade(&entry)));
+            entry
+        });
         Ok(Access {
             registration: Arc::clone(self),
             connection,
-            entry: entry.unwrap_or_else(|| {
-                Arc::new(Entry {
-                    value: OnceCell::new(),
-                    cancelled: CancellationToken::new(),
-                    _slot: None,
-                })
-            }),
+            entry,
             cached,
         })
-    }
-
-    /// Retained sessions require notification-backed authority, unlike one-shot exec.
-    pub(super) fn session_access(
-        self: &Arc<Self>,
-        connection: uuid::Uuid,
-    ) -> Result<Access, FailureReason> {
-        let access = self.lookup(connection)?;
-        if !access.retain()? {
-            return Err(FailureReason::Unavailable);
-        }
-        Ok(access)
     }
 
     pub(super) fn close(&self) {
@@ -220,47 +195,6 @@ impl Drop for Registration {
 }
 
 impl Access {
-    /// Register retained authority before resolving credentials, including cache misses.
-    /// Disconnected one-shot requests still resolve afresh and retain no transport.
-    pub(super) fn retain(&self) -> Result<bool, FailureReason> {
-        let mut state = self
-            .registration
-            .cache
-            .state
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
-        if !state.connected {
-            return Ok(false);
-        }
-        let run = state
-            .runs
-            .get_mut(&self.registration.run)
-            .filter(|run| Arc::ptr_eq(&run.identity, &self.registration.identity))
-            .ok_or(FailureReason::Cancelled)?;
-        if self.entry.cancelled.is_cancelled()
-            || (self.cached
-                && !run
-                    .entries
-                    .get(&self.connection)
-                    .is_some_and(|entry| Arc::ptr_eq(entry, &self.entry)))
-        {
-            return Err(FailureReason::ConfigurationChanged);
-        }
-        if !self.cached {
-            // Weak watchers own no credentials; live operations and idle transports bound them.
-            run.sessions.retain(|(_, entry)| entry.strong_count() > 0);
-            if !run
-                .sessions
-                .iter()
-                .any(|(_, entry)| entry.ptr_eq(&Arc::downgrade(&self.entry)))
-            {
-                run.sessions
-                    .push((self.connection, Arc::downgrade(&self.entry)));
-            }
-        }
-        Ok(true)
-    }
-
     pub(super) fn cancelled(&self) -> CancellationToken {
         self.entry.cancelled.clone()
     }

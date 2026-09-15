@@ -21,6 +21,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { settle } from "../utils";
 import { env } from "../../lib/env";
+import { artifactHash } from "../../lib/file-url";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
@@ -482,7 +483,10 @@ export const updateArtifactShare$ = command(
         status: args.audience === "private" ? "revoked" : "active",
         publicToken:
           args.audience === "public"
-            ? (previous?.publicToken ?? randomBytes(12).toString("hex"))
+            ? (previous?.publicToken ??
+              (target.kind === "file"
+                ? artifactHash(randomUUID())
+                : randomBytes(12).toString("hex")))
             : null,
         target,
       });

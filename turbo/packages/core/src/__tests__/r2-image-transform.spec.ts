@@ -77,12 +77,14 @@ describe("r2ImageTransformUrl", () => {
   );
 
   it.each([undefined, "image/png"])(
-    "keeps public shares on their policy-checked URL with MIME %s",
+    "routes public share thumbnails through their policy-checked Worker with MIME %s",
     (contentType) => {
       const url = `https://a.okou.io/${"a".repeat(24)}.png?download=1#preview`;
       expect(
         r2ImageTransformUrl(url, { width: 400, height: 300, contentType }),
-      ).toBe(url);
+      ).toBe(
+        `https://a.okou.io/${"a".repeat(24)}.png?download=1&thumbnail=1&width=400&height=300&fit=scale-down&quality=85#preview`,
+      );
     },
   );
 
@@ -90,7 +92,7 @@ describe("r2ImageTransformUrl", () => {
     expect(
       r2ImageTransformUrl("https://a.okou.io/0123456789.png", { width: 400 }),
     ).toBe(
-      "https://a.okou.io/cdn-cgi/image/width=400,fit=scale-down,format=auto,quality=85,metadata=none/0123456789.png",
+      "https://a.okou.io/0123456789.png?thumbnail=1&width=400&fit=scale-down&quality=85",
     );
   });
 

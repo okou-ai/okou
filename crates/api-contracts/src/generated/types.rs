@@ -2175,9 +2175,12 @@ pub mod webhooks {
                 /// The run reached its execution time limit.
                 #[serde(rename = "execution_timeout")]
                 ExecutionTimeout,
-                /// The provider account lacks credits.
+                /// The vm0 workspace lacks credits.
                 #[serde(rename = "insufficient_credits")]
                 InsufficientCredits,
+                /// The upstream provider account lacks credits.
+                #[serde(rename = "provider_insufficient_credits")]
+                ProviderInsufficientCredits,
                 /// The configured API key is invalid.
                 #[serde(rename = "invalid_api_key")]
                 InvalidApiKey,

@@ -652,6 +652,7 @@ jobs:
         run: node scripts/print-bench-summary.mjs bench-results-p90.json
       - name: Upload bench results
         if: success() || failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: bench-api-results
@@ -685,6 +686,7 @@ jobs:
         run: node scripts/print-bench-summary.mjs bench-results-p90.json
       - name: Upload bench results
         if: success() || failure()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bench-app-results
@@ -2063,6 +2065,7 @@ jobs:
           fi
       - name: Upload Playwright blob report
         if: always() && matrix.project != 'auth-v1'
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-blob-${{ matrix.lane }}
@@ -2102,6 +2105,7 @@ jobs:
           --reporter=html all-blob-reports
       - name: Upload Playwright HTML report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report
@@ -2412,6 +2416,7 @@ jobs:
 
       - name: Upload JUnit XML artifact
         if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: e2e-serial-junit-xml
@@ -3139,6 +3144,7 @@ jobs:
 
       - name: Upload runtime API compatibility report
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: runtime-api-compat-report

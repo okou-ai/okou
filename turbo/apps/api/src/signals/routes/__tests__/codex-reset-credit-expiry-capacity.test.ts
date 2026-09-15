@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -19,8 +19,31 @@ import {
 const context = testContext();
 const fixture = createCodexExpiryFixture(context);
 
+async function forEachOwner(
+  userIds: readonly string[],
+  action: (userId: string) => Promise<void>,
+): Promise<void> {
+  const remainingOwners = userIds.values();
+  const results = await Promise.allSettled(
+    Array.from({ length: 8 }, async () => {
+      for (const userId of remainingOwners) {
+        await action(userId);
+      }
+    }),
+  );
+  // Join every worker before advancing the fixture or restoring a session,
+  // including when an owner's request or assertion fails.
+  for (const result of results) {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+  }
+}
+
 describe("Codex expiry cache capacity", () => {
-  it("evicts old identity entries at bounded capacity", async () => {
+  let prepared: Awaited<ReturnType<typeof prepareOwners>>;
+
+  async function prepareOwners() {
     const remote = upstream();
     const first = await fixture();
     expectExpiry(await first.list(), remote.expiry);
@@ -59,43 +82,39 @@ describe("Codex expiry cache capacity", () => {
     expect(defaults.body.effectiveSwitches).toMatchObject({
       [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
     });
-    // Each API-created owner occupies a connect binding and a legacy binding.
-    // More than 256 bindings must evict the oldest, without time manipulation.
-    // Token-scoped Clerk responses let independent owners prepare concurrently
-    // without racing the shared session mock or creating unrelated organizations.
-    // Keep eight owners in flight without waiting for a whole batch's slowest
-    // request before starting the next owner.
-    const remainingOwners = userIds.values();
-    const preparations = await Promise.allSettled(
-      Array.from({ length: 8 }, async () => {
-        for (const userId of remainingOwners) {
-          const ownerHeaders = { authorization: `Bearer ${userId}` };
-          await accept(
-            providers.upsert({
-              headers: ownerHeaders,
-              body: {
-                type: "codex-oauth-token",
-                authMethod: "auth_json",
-                secrets: { CODEX_AUTH_JSON: credentials().raw },
-              },
-            }),
-            [200, 201],
-          );
-          const listed = await accept(
-            providers.list({ headers: ownerHeaders }),
-            [200],
-          );
-          expectExpiry(listed.body.modelProviders, remote.expiry);
-        }
-      }),
-    );
-    // Join every worker before restoring the first owner's session, including
-    // when another owner's request or expiry assertion fails.
-    for (const preparation of preparations) {
-      if (preparation.status === "rejected") {
-        throw preparation.reason;
-      }
-    }
+    // Establish the real provider records before exercising the reads. These
+    // 129 connect bindings plus the first owner's two bindings fit the cache.
+    await forEachOwner(userIds, async (userId) => {
+      await accept(
+        providers.upsert({
+          headers: { authorization: `Bearer ${userId}` },
+          body: {
+            type: "codex-oauth-token",
+            authMethod: "auth_json",
+            secrets: { CODEX_AUTH_JSON: credentials().raw },
+          },
+        }),
+        [200, 201],
+      );
+    });
+    return { first, remote, userIds, providers };
+  }
+
+  beforeEach(async () => {
+    prepared = await prepareOwners();
+  });
+
+  it("evicts old identity entries at bounded capacity", async () => {
+    const { first, remote, userIds, providers } = prepared;
+    // Each list adds its owner's read binding. Together with the prepared
+    // connect bindings, the reads exceed 256 and evict the oldest identity.
+    await forEachOwner(userIds, async (userId) => {
+      const listed = await accept(
+        providers.list({ headers: { authorization: `Bearer ${userId}` } }),
+        [200],
+      );
+      expectExpiry(listed.body.modelProviders, remote.expiry);
+    });
     const before = remote.detailsCalls;
     remote.expiry = new Date(now() + 7_200_000).toISOString();
     expectExpiry(await first.list(), remote.expiry);

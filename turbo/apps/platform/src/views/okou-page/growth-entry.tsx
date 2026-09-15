@@ -2,6 +2,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Coins, PlusCircle } from "lucide-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
   DropdownMenu,
@@ -21,33 +22,14 @@ import {
   billingStatusAsync$,
   usagePackCreditsAsync$,
 } from "../../signals/okou-page/billing.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
+import { SlackMark } from "./components/slack-mark.tsx";
+import { GetStartedEntry } from "./get-started-entry.tsx";
 
-const slackIconImg = settingsIconAssetUrl("slack");
 const telegramIconImg = settingsIconAssetUrl("telegram");
-
-// The nav rail draws this asset the same way: the artwork carries its own
-// padding, so it is scaled up inside a box the size we actually want.
-//
-// 16px everywhere, because Button and DropdownMenuItem both enforce
-// `[&_svg]:size-4` on their descendants and the marks have to agree with it.
-function SlackMark({ size }: { size: number }) {
-  return (
-    <span
-      className="grid shrink-0 place-items-center"
-      style={{ width: size, height: size }}
-    >
-      <img
-        src={slackIconImg}
-        alt=""
-        className="scale-[2.2]"
-        style={{ width: size, height: size }}
-      />
-    </span>
-  );
-}
 
 /** Whether the org-scoped Slack app is installed. */
 function useSlackInstalled(): boolean | null {
@@ -266,28 +248,34 @@ function CornerHeader({ children }: { children: ReactNode }) {
   );
 }
 
-function AdminGrowthEntryHeader() {
+function AdminGrowthEntry() {
   const slackInstalled = useSlackInstalled();
   if (slackInstalled === null) {
     return null;
   }
-  return (
-    <CornerHeader>
-      <GrowthEntry slackInstalled={slackInstalled} />
-    </CornerHeader>
-  );
+  return <GrowthEntry slackInstalled={slackInstalled} />;
 }
 
 export function GrowthEntryHeader() {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
+  const features = useGet(featureSwitch$);
+  const questsEnabled = features[FeatureSwitchKey.GetStartedQuests];
   return (
     <>
       {/* Match the former in-flow header's 16px + 32px + 8px height. The
           slot exists from the first render so async role and entry resolution
-          cannot move the home content. The admin controls stay absolute. */}
+          cannot move the home content. The corner controls stay absolute. */}
       <div aria-hidden className="hidden h-14 shrink-0 md:block" />
-      {isAdmin ? <AdminGrowthEntryHeader /> : null}
+      {/* Getting started is offered to every role — a member can connect,
+          build, share and check in on their own — while the workspace controls
+          beside it stay admin-only. */}
+      {questsEnabled || isAdmin ? (
+        <CornerHeader>
+          {questsEnabled ? <GetStartedEntry /> : null}
+          {isAdmin ? <AdminGrowthEntry /> : null}
+        </CornerHeader>
+      ) : null}
     </>
   );
 }

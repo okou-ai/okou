@@ -450,14 +450,22 @@ test("Render a generated private image from the authenticated file reference", a
   expect(within(dialog).queryByLabelText(/^share$/i)).not.toBeInTheDocument();
 });
 
-test.each(["https://a.okou.io", "https://files.sites.vm7.io"])(
-  "public CDN images use the file viewer on %s",
-  async (origin) => {
+test.each([
+  ["https://a.okou.io", "a1b2c3d4e5"],
+  ["https://a.okou.io", "a".repeat(24)],
+  ["https://files.sites.vm7.io", "a1b2c3d4e5"],
+  ["https://files.sites.vm7.io", "a".repeat(24)],
+])(
+  "public images use a protected thumbnail and open the original on %s/%s",
+  async (origin, token) => {
     const filename = "shared-image.png";
-    const url = `${origin}/${"a".repeat(24)}.png`;
+    const url = `${origin}/${token}.png`;
     await setupGeneratedFilePreview(filename, "image/png", url);
     const image = await screen.findByAltText(filename);
-    expect(image).toHaveAttribute("src", url);
+    expect(image).toHaveAttribute(
+      "src",
+      `${url}?thumbnail=1&width=800&height=720&fit=scale-down&quality=85`,
+    );
     click(image);
     const dialog = await screen.findByTestId("attachment-lightbox");
     expect(
