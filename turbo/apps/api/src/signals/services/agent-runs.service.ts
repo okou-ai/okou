@@ -349,7 +349,7 @@ export function agentRunById(args: {
       completedAt: run.completedAt?.toISOString(),
       ...(langfuseConfig
         ? {
-            langfuseTraceUrl: `${langfuseConfig.baseUrl}/trace/${run.id.replaceAll("-", "")}`,
+            langfuseTraceUrl: `${langfuseConfig.baseUrl}/project/${encodeURIComponent(langfuseConfig.projectId)}/traces/${run.id.replaceAll("-", "")}`,
           }
         : {}),
     };

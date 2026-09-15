@@ -134,6 +134,10 @@
      keyframes stay below in this stylesheet. */
   --animate-thinking-in: okou-thinking-in 0.3s ease-out;
   --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
+
+  /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
+     reaches this entry through `motion-safe:animate-owf-beam-flow`. */
+  --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
 }
 
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
@@ -161,7 +165,6 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --okou-viewport-height: 100dvh;
-  --okou-desktop-titlebar-height: 48px;
 }
 
 /* The effort bar's handle is a superellipse rather than a rounded rectangle --
@@ -170,7 +173,7 @@
    rather than a radius, so it has to be a clip path, and `clip-path` cuts a
    border off with everything else: the outline is the outer shape showing
    through a 1px inset of the inner one. Both are fixed to the handle's
-   18x40 / 16x38 geometry. */
+   18x36 / 16x34 geometry. */
 :root {
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
@@ -199,32 +202,32 @@
     17.84px 4.33px,
     17.96px 5.55px,
     18px 8.2px,
-    18px 31.8px,
-    17.96px 34.45px,
-    17.84px 35.67px,
-    17.65px 36.61px,
-    17.37px 37.38px,
-    17.01px 38.02px,
-    16.56px 38.56px,
-    16.02px 39.01px,
-    15.38px 39.37px,
-    14.61px 39.65px,
-    13.67px 39.84px,
-    12.45px 39.96px,
-    9.8px 40px,
-    8.2px 40px,
-    5.55px 39.96px,
-    4.33px 39.84px,
-    3.39px 39.65px,
-    2.62px 39.37px,
-    1.98px 39.01px,
-    1.44px 38.56px,
-    0.99px 38.02px,
-    0.63px 37.38px,
-    0.35px 36.61px,
-    0.16px 35.67px,
-    0.04px 34.45px,
-    0px 31.8px
+    18px 27.8px,
+    17.96px 30.45px,
+    17.84px 31.67px,
+    17.65px 32.61px,
+    17.37px 33.38px,
+    17.01px 34.02px,
+    16.56px 34.56px,
+    16.02px 35.01px,
+    15.38px 35.37px,
+    14.61px 35.65px,
+    13.67px 35.84px,
+    12.45px 35.96px,
+    9.8px 36px,
+    8.2px 36px,
+    5.55px 35.96px,
+    4.33px 35.84px,
+    3.39px 35.65px,
+    2.62px 35.37px,
+    1.98px 35.01px,
+    1.44px 34.56px,
+    0.99px 34.02px,
+    0.63px 33.38px,
+    0.35px 32.61px,
+    0.16px 31.67px,
+    0.04px 30.45px,
+    0px 27.8px
   );
   --okou-effort-thumb-body-clip: polygon(
     0px 7.4px,
@@ -253,32 +256,32 @@
     15.86px 3.91px,
     15.96px 5.01px,
     16px 7.4px,
-    16px 30.6px,
-    15.96px 32.99px,
-    15.86px 34.09px,
-    15.68px 34.94px,
-    15.43px 35.63px,
-    15.11px 36.22px,
-    14.7px 36.7px,
-    14.22px 37.11px,
-    13.63px 37.43px,
-    12.94px 37.68px,
-    12.09px 37.86px,
-    10.99px 37.96px,
-    8.6px 38px,
-    7.4px 38px,
-    5.01px 37.96px,
-    3.91px 37.86px,
-    3.06px 37.68px,
-    2.37px 37.43px,
-    1.78px 37.11px,
-    1.3px 36.7px,
-    0.89px 36.22px,
-    0.57px 35.63px,
-    0.32px 34.94px,
-    0.14px 34.09px,
-    0.04px 32.99px,
-    0px 30.6px
+    16px 26.6px,
+    15.96px 28.99px,
+    15.86px 30.09px,
+    15.68px 30.94px,
+    15.43px 31.63px,
+    15.11px 32.22px,
+    14.7px 32.7px,
+    14.22px 33.11px,
+    13.63px 33.43px,
+    12.94px 33.68px,
+    12.09px 33.86px,
+    10.99px 33.96px,
+    8.6px 34px,
+    7.4px 34px,
+    5.01px 33.96px,
+    3.91px 33.86px,
+    3.06px 33.68px,
+    2.37px 33.43px,
+    1.78px 33.11px,
+    1.3px 32.7px,
+    0.89px 32.22px,
+    0.57px 31.63px,
+    0.32px 30.94px,
+    0.14px 30.09px,
+    0.04px 28.99px,
+    0px 26.6px
   );
 }
 
@@ -381,41 +384,6 @@ body {
   /* Paint may extend below the viewport without moving drawer content. */
   .okou-mobile-sidebar::before {
     bottom: calc(-1 * var(--sab));
-  }
-}
-
-@media (min-width: 768px) {
-  .okou-app[data-desktop-shell] .okou-sidebar-header {
-    padding-top: 0;
-  }
-
-  .okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region {
-    display: block;
-    flex-shrink: 0;
-    height: var(--okou-desktop-titlebar-height);
-    -webkit-app-region: drag;
-  }
-
-  .okou-app[data-desktop-shell] .okou-workspace-bg {
-    position: relative;
-  }
-
-  .okou-app[data-desktop-shell]
-    .okou-workspace-bg
-    :where(
-      button,
-      a,
-      input,
-      textarea,
-      select,
-      [role="button"],
-      [role="link"],
-      [role="textbox"],
-      [contenteditable]:not([contenteditable="false"])
-    ) {
-    position: relative;
-    z-index: 2;
-    -webkit-app-region: no-drag;
   }
 }
 
@@ -1294,22 +1262,11 @@ details > summary {
   }
 }
 
-/* Onboarding workflow preview diagram (owf-) */
-.owf-diagram-wrap {
-  --owf-scale: 0.6;
-  position: relative;
-  width: calc(614px * var(--owf-scale));
-  height: calc(470px * var(--owf-scale));
-  max-width: 100%;
-  margin: 0 auto;
-}
-
+/* Onboarding workflow preview diagram (owf-). The canvas keeps only the shared
+   coordinate variables that the remaining tile and dot rules read; its own
+   geometry now lives in Tailwind utilities on the component. The variables
+   retire with their last readers in the tiles batch. */
 .owf-diagram {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: scale(var(--owf-scale));
-  transform-origin: top left;
   --workflow-dot-size: 8px;
   --workflow-top-line-y: 81px;
   --workflow-source-icon-left: 107px;
@@ -1343,104 +1300,16 @@ details > summary {
     var(--workflow-action-one-top) + var(--workflow-action-height)
   );
   --workflow-action-vertical-bottom-dot-y: var(--workflow-action-two-top);
-  --workflow-diagram-grid-dot: hsl(var(--gray-500) / 0.55);
-  --workflow-diagram-node-fg: hsl(var(--foreground));
   --workflow-diagram-tile-bg: hsl(var(--card));
   --workflow-diagram-tile-border: hsl(var(--border));
   --workflow-diagram-tile-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.5);
   --workflow-diagram-stack-border: hsl(var(--border));
-  --workflow-diagram-action-title: hsl(var(--foreground));
-  --workflow-diagram-action-muted: hsl(var(--muted-foreground));
-  width: 614px;
-  height: 470px;
-  min-height: 0;
-  align-self: start;
-  overflow: hidden;
-  border-radius: 16px;
-}
-
-.owf-diagram-grid {
-  position: absolute;
-  top: 13px;
-  right: 17px;
-  bottom: 12px;
-  left: 16px;
-  background-image: radial-gradient(
-    var(--workflow-diagram-grid-dot) 1.5px,
-    transparent 1.5px
-  );
-  background-size: 34px 34px;
-  opacity: 0.8;
-}
-
-.owf-diagram-lines {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.owf-diagram-lines path {
-  stroke: #ed7a44;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.owf-diagram-beam {
-  position: absolute;
-  z-index: 4;
-  top: 0;
-  left: 0;
-  width: 42px;
-  height: 6px;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.1) 24%,
-    rgba(255, 255, 255, 0.78) 52%,
-    rgba(255, 255, 255, 0.16) 78%,
-    transparent 100%
-  );
-  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.75))
-    drop-shadow(0 0 8px rgba(255, 255, 255, 0.35));
-  offset-anchor: center;
-  offset-distance: 0%;
-  offset-rotate: auto;
-  opacity: 0.92;
-  pointer-events: none;
-  animation: owf-beam-flow 2.8s linear infinite;
 }
 
 @keyframes owf-beam-flow {
   to {
     offset-distance: 100%;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .owf-diagram-beam {
-    animation: none;
-    opacity: 0.35;
-  }
-}
-
-.owf-diagram-node {
-  position: absolute;
-  z-index: 5;
-  display: flex;
-  width: 94px;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  color: var(--workflow-diagram-node-fg);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-  text-align: center;
 }
 
 .owf-diagram-icon-box {
@@ -1461,13 +1330,6 @@ details > summary {
   width: 34px;
   height: 34px;
   object-fit: contain;
-}
-
-.owf-diagram-icon-stack {
-  position: relative;
-  display: block;
-  width: 42px;
-  height: 42px;
 }
 
 .owf-diagram-icon-stack-item {
@@ -1528,33 +1390,6 @@ details > summary {
   padding: 4px;
 }
 
-.owf-diagram-okou-icon {
-  position: relative;
-  display: inline-block;
-  width: 64px;
-  height: 64px;
-  overflow: hidden;
-}
-
-.owf-diagram-node-source {
-  top: 34px;
-  left: 94px;
-  width: 82px;
-}
-
-.owf-diagram-node-okou {
-  top: 45px;
-  left: 277px;
-  width: 72px;
-}
-
-.owf-diagram-node-output {
-  top: 32px;
-  left: 455px;
-  width: 61px;
-  gap: 5px;
-}
-
 .owf-diagram-dot-source,
 .owf-diagram-dot-destination-in,
 .owf-diagram-dot-destination-down,
@@ -1603,34 +1438,6 @@ details > summary {
   left: var(--workflow-action-two-center-x);
 }
 
-.owf-diagram-vertical-control {
-  position: absolute;
-  z-index: 3;
-  top: var(--workflow-action-vertical-top-dot-y);
-  left: var(--workflow-action-two-center-x);
-  width: 0;
-  height: calc(
-    var(--workflow-action-vertical-bottom-dot-y) -
-      var(--workflow-action-vertical-top-dot-y)
-  );
-  pointer-events: none;
-}
-
-.owf-diagram-vertical-control::before {
-  position: absolute;
-  top: calc(var(--workflow-dot-size) / 2);
-  bottom: calc(var(--workflow-dot-size) / 2);
-  left: -1px;
-  width: 2px;
-  border-radius: 999px;
-  background: #ed7a44;
-  content: "";
-}
-
-.owf-diagram-vertical-control::after {
-  display: none;
-}
-
 .owf-diagram-action {
   position: absolute;
   z-index: 5;
@@ -1657,37 +1464,6 @@ details > summary {
   top: var(--workflow-action-two-top);
   left: var(--workflow-action-left);
   width: var(--workflow-action-two-width);
-}
-
-.owf-diagram-action-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-  overflow: hidden;
-}
-
-.owf-diagram-action-copy strong {
-  display: block;
-  overflow: hidden;
-  color: var(--workflow-diagram-action-title);
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 24px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.owf-diagram-action-copy span {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--workflow-diagram-action-muted);
-  font-size: 14px;
-  line-height: 20px;
-  text-overflow: ellipsis;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 /* Dark carries the brand hue instead of a lighter neutral. The light ring can

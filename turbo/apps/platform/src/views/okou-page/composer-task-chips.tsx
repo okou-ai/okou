@@ -438,7 +438,7 @@ function ComposerTaskIdeas({
   }[task];
   const page = useGet(signals.taskChips.ideaPages$)[task];
   const stepPage = useSet(signals.taskChips.stepIdeaPage$);
-  const insertPrompt = useSet(signals.editor.selectOrAppendText$);
+  const insertPrompt = useSet(signals.editor.replacePromptText$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
   const icons = IDEA_ICONS[task];

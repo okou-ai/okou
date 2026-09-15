@@ -9631,7 +9631,7 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-3",
+    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-2",
     "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center sm:[&>[data-slot=select-value]]:justify-start",
     "[&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
@@ -9820,26 +9820,33 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
-      {/* Effort sits level with the model rather than behind it. It is the only
+      {/* Effort and the model are one choice about the next message, so they sit
+          as a pair: no gap between them and 8px of padding each, which leaves
+          16px between the two labels. The row's own gap then separates the pair
+          from the controls that do something else.
+
+          Effort sits level with the model rather than behind it. It is the only
           way to reach effort and Fast now that the picker's settings page is
           gone, so it shows at every width; the level's name is one short word,
           which the row can afford even on a phone. */}
-      <ChatEffortTrigger
-        value={value}
-        onChange={onChange}
-        triggerClassName={cn(
-          "text-sm text-muted-foreground",
-          COMPOSER_CONTROL_FOCUS_CLASS,
-        )}
-      />
-      <ComposerRunModelPickerControl
-        signals={signals}
-        value={value}
-        onChange={onChange}
-        codexFastModeEnabled={codexFastModeEnabled}
-        desktopLayout={desktopLayout}
-        mediaModelPanel={mediaModelPanel}
-      />
+      <div className="flex items-center">
+        <ChatEffortTrigger
+          value={value}
+          onChange={onChange}
+          triggerClassName={cn(
+            "px-2 text-sm text-muted-foreground",
+            COMPOSER_CONTROL_FOCUS_CLASS,
+          )}
+        />
+        <ComposerRunModelPickerControl
+          signals={signals}
+          value={value}
+          onChange={onChange}
+          codexFastModeEnabled={codexFastModeEnabled}
+          desktopLayout={desktopLayout}
+          mediaModelPanel={mediaModelPanel}
+        />
+      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
     </>
   );

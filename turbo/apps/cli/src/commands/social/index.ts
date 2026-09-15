@@ -1564,7 +1564,7 @@ const downloadCommand = new Command()
     "--quality <quality>",
     "240p, 360p, 480p, 720p, or 1080p (default: 720p)",
   )
-  .option("--format <format>", "mp4 or m4a (default: mp4)")
+  .option("--format <format>", "mp4, m4a, or mp3 (default: mp4)")
   .option(
     "--resume <download-id>",
     "Resume polling an existing download",
@@ -1699,6 +1699,7 @@ Examples:
   Research:    okou social search "small business" --platform youtube --limit 20 --select title,url --format csv --output research.csv
   Save JSON:   okou social inspect https://www.instagram.com/p/<id>/ --output result.json
   Download:    okou social download https://youtu.be/<id> --max-duration 600 --json
+  MP3 audio:   okou social download https://youtu.be/<id> --max-duration 600 --format mp3 --json
   Find tasks:  okou social downloads --status active --json
   Resume:      okou social download --resume <download-id> --json
 

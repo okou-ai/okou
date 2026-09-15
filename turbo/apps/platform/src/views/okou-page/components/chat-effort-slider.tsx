@@ -7,17 +7,17 @@ const THUMB_WIDTH = "18px";
 const THUMB_INSET = "9px";
 
 /**
- * One mark per interior step. The track's two ends already read as the lowest
+ * One dot per interior step. The track's two ends already read as the lowest
  * and highest step, so a mark drawn on top of them says the same thing twice;
- * the marks that remain divide the whole track evenly.
+ * the dots that remain divide the whole track evenly.
  *
  * `bg-divider` is the usual token for a painted rule, but it resolves to the
  * same value as `--gray-200`, which is this track's own fill -- a mark drawn in
- * it is invisible on the track and reads as a white slash over the texture.
- * These marks sit on the track rather than on a page surface, so they take the
+ * it is invisible on the track and reads as a white speck over the texture.
+ * These dots sit on the track rather than on a page surface, so they take the
  * ramp stop the shared `Slider` already uses for its own ticks.
  *
- * `passed` marks how many steps the handle has gone by. Those marks carry a
+ * `passed` marks how many steps the handle has gone by. Those dots carry a
  * little more weight, because they sit on the heavier fill rather than on the
  * bare track.
  */
@@ -36,7 +36,9 @@ function InteriorTicks({
           <span
             key={index}
             className={cn(
-              "absolute inset-y-0 -ml-px w-px transition-colors duration-200",
+              // A dot rather than a rule: it marks the stop without drawing a
+              // line through the bar, which is what Claude and ChatGPT do.
+              "absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-200",
               passed === undefined
                 ? "bg-gray-400/45"
                 : step <= passed
@@ -104,7 +106,7 @@ export function ChatEffortSlider({
     >
       <SliderPrimitive.Control
         data-at-max={atMax}
-        className="group/effort relative h-9 w-full touch-none select-none"
+        className="group/effort relative h-8 w-full touch-none select-none"
       >
         {/* The aurora, always painted, always underneath. */}
         <div
@@ -166,7 +168,7 @@ export function ChatEffortSlider({
             aria-label={label}
             aria-valuetext={valueText}
             className={cn(
-              "h-10 w-[18px] bg-gray-300 outline-none [clip-path:var(--okou-effort-thumb-clip)] dark:bg-gray-500",
+              "h-9 w-[18px] bg-gray-300 outline-none [clip-path:var(--okou-effort-thumb-clip)] dark:bg-gray-500",
               "drop-shadow-[0_1px_2px_hsl(var(--state-layer)/0.22)]",
               // Quantized values want a magnetic landing rather than a linear
               // one, so the handle overshoots its stop slightly and settles.
@@ -179,7 +181,7 @@ export function ChatEffortSlider({
                 above. */}
             <span
               aria-hidden="true"
-              className="absolute inset-px block h-[38px] w-4 bg-card [clip-path:var(--okou-effort-thumb-body-clip)] dark:bg-gray-700"
+              className="absolute inset-px block h-[34px] w-4 bg-card [clip-path:var(--okou-effort-thumb-body-clip)] dark:bg-gray-700"
             />
           </SliderPrimitive.Thumb>
         </SliderPrimitive.Track>

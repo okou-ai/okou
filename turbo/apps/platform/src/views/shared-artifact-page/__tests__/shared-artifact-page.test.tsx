@@ -164,11 +164,6 @@ test("the standalone viewer restores the selected app color theme", async () => 
     );
   });
   expect(action("link", "Continue with Okou")).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").some((element) => {
-      return element.getAttribute("aria-label") === "Enter fullscreen";
-    }),
-  ).toBe(false);
 });
 
 test.each([

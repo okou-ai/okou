@@ -1478,7 +1478,7 @@ describe("okou social command", () => {
           operation: "download",
           inputs: expect.objectContaining({
             "--format": expect.objectContaining({
-              choices: ["mp4", "m4a"],
+              choices: ["mp4", "m4a", "mp3"],
               default: "mp4",
               required: false,
             }),
@@ -4077,6 +4077,119 @@ describe("okou social command", () => {
     });
   });
 
+  it("creates, polls and discovers an explicit MP3 audio download", async () => {
+    const legacy = completedDownload();
+    const completed = {
+      ...legacy,
+      quality: "1080p",
+      format: "mp3",
+      requested: { quality: "1080p", format: "mp3" },
+      delivered: { quality: null, format: "mp3" },
+      provider: { ...legacy.provider, quality: "1080p", format: "mp3" },
+      artifact: {
+        ...legacy.artifact,
+        filename: "example.mp3",
+        url: "https://artifacts.example/example.mp3",
+        contentType: "audio/mpeg",
+        format: "mp3",
+      },
+    };
+    let requestBody: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/downloads",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json(
+            {
+              ...completed,
+              status: "processing",
+              delivered: { quality: null, format: null },
+              provider: null,
+              billing: null,
+              artifact: null,
+              completedAt: null,
+            },
+            { status: 202 },
+          );
+        },
+      ),
+      http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
+        return HttpResponse.json(completed);
+      }),
+      http.get("http://localhost:3000/api/social/downloads", () => {
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...completed,
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/example",
+                maxDuration: 600,
+                quality: "1080p",
+                format: "mp3",
+              },
+              resumeCommand: `okou social download --resume ${completed.downloadId}`,
+            },
+          ],
+          nextCursor: null,
+        });
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "download",
+      "https://youtu.be/example",
+      "--max-duration",
+      "600",
+      "--format",
+      "mp3",
+      "--quality",
+      "1080p",
+      "--json",
+    ]);
+    expect(requestBody).toStrictEqual({
+      platform: "youtube",
+      url: "https://youtu.be/example",
+      maxDuration: 600,
+      quality: "1080p",
+      format: "mp3",
+    });
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "complete",
+      data: {
+        requested: completed.requested,
+        delivered: completed.delivered,
+        artifact: completed.artifact,
+      },
+      billing: { quantity: 2, creditsCharged: 6 },
+      inlineMarkdownLink:
+        "[example.mp3](<https://artifacts.example/example.mp3>)",
+    });
+    expect(outputRequest()).toStrictEqual({
+      resume: false,
+      maxDuration: 600,
+      quality: "1080p",
+      format: "mp3",
+    });
+    mockConsoleLog.mockClear();
+    await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [
+        {
+          format: "mp3",
+          requested: completed.requested,
+          delivered: completed.delivered,
+          artifact: completed.artifact,
+          resumeCommand: `okou social download --resume ${completed.downloadId}`,
+        },
+      ],
+      nextCommand: null,
+    });
+  });
+
   it.each([
     {
       caseName: "creation",
@@ -4192,6 +4305,7 @@ describe("okou social command", () => {
   it.each([
     {
       platform: "tiktok",
+      requestedFormat: "mp4",
       providerQuality: "576p",
       delivered: { quality: "576p", format: "mp4" },
       filename: "example.mp4",
@@ -4199,24 +4313,41 @@ describe("okou social command", () => {
     },
     {
       platform: "youtube",
+      requestedFormat: "mp4",
+      providerQuality: "720p",
+      delivered: { quality: null, format: "mp3" },
+      filename: "example.mp3",
+      contentType: "audio/mpeg",
+    },
+    {
+      platform: "youtube",
+      requestedFormat: "mp3",
       providerQuality: "720p",
       delivered: { quality: null, format: "mp3" },
       filename: "example.mp3",
       contentType: "audio/mpeg",
     },
   ])(
-    "preserves delivered $delivered.format metadata when resuming",
-    async ({ platform, providerQuality, delivered, filename, contentType }) => {
+    "preserves requested $requestedFormat and delivered $delivered.format metadata when resuming",
+    async ({
+      platform,
+      requestedFormat,
+      providerQuality,
+      delivered,
+      filename,
+      contentType,
+    }) => {
       const legacy = completedDownload();
       const response = {
         ...legacy,
         platform,
-        requested: { quality: "720p", format: "mp4" },
+        format: requestedFormat,
+        requested: { quality: "720p", format: requestedFormat },
         delivered,
         provider: {
           ...legacy.provider,
           quality: providerQuality,
-          format: "mp4",
+          format: requestedFormat,
         },
         artifact: {
           ...legacy.artifact,
@@ -4247,7 +4378,7 @@ describe("okou social command", () => {
       expect(JSON.parse(output()) as unknown).toMatchObject({
         data: {
           quality: "720p",
-          format: "mp4",
+          format: requestedFormat,
           requested: response.requested,
           delivered,
           artifact: { filename, contentType, format: delivered.format },
@@ -4258,7 +4389,7 @@ describe("okou social command", () => {
         resume: true,
         maxDuration: 600,
         quality: "720p",
-        format: "mp4",
+        format: requestedFormat,
       });
     },
   );
@@ -4629,6 +4760,7 @@ describe("okou social command", () => {
     expect(postsHelp).toContain("YouTube channel/playlist");
     expect(postsHelp).toContain("slower; --limit at most 30");
     expect(renderedHelp).toContain("--full-details --limit 30 --json");
+    expect(renderedHelp).toContain("--format mp3 --json");
     expect(renderedHelp).toContain("null, empty, or missing");
     for (const name of ["transcript", "summarize"]) {
       const command = socialCommand.commands.find((candidate) => {
@@ -4665,5 +4797,16 @@ describe("okou social command", () => {
     expect(renderedHelp).toContain("4096 characters");
     expect(renderedHelp).toContain("--prompt adds analysis instructions");
     expect(renderedHelp).toContain("do not enforce strict JSON Schema");
+    const download = socialCommand.commands.find((command) => {
+      return command.name() === "download";
+    });
+    renderedHelp = "";
+    download?.configureOutput({
+      writeOut: (value) => {
+        renderedHelp += value;
+      },
+    });
+    download?.outputHelp();
+    expect(renderedHelp).toContain("mp4, m4a, or mp3");
   });
 });

@@ -10206,10 +10206,12 @@ function skillsRootForRun(
 function isImageRecognitionAvailableForRun(args: {
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly selectedModel: string | undefined;
+  readonly providerType: ModelProviderType | undefined;
 }): boolean {
   return (
     args.includeOkouTokenSecret === true &&
-    getModelImageInputSupport(args.selectedModel) === "unsupported"
+    getModelImageInputSupport(args.selectedModel, args.providerType) ===
+      "unsupported"
   );
 }
 
@@ -10454,6 +10456,9 @@ function prepareRunContext(
           selectedModel:
             runtimeContext.modelProvider?.selectedModel ??
             args.selectedModelOverride,
+          providerType:
+            runtimeContext.modelProvider?.concreteType ??
+            runtimeContext.modelProvider?.type,
         }),
       };
     },

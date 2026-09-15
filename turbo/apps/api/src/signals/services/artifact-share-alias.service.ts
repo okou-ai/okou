@@ -185,7 +185,9 @@ export const prepareArtifactShareAliases$ = command(
     ) {
       next.publicSlug = args.previous.publicSlug;
     }
-    // Keep token aliases readable by existing links and deployed Workers.
+    // Preserve the requested durable token links as names are introduced.
+    // #32492 owns retirement after accounting for old links and Worker readers;
+    // revocation continues to invalidate both names through the same token.
     await set(
       registerArtifactDelivery$,
       {

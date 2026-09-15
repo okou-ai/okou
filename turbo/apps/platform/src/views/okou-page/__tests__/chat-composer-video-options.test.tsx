@@ -4,6 +4,7 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
+  GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { UserModelPreferenceResponse } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -497,7 +498,9 @@ test("Changing a Creative Video style retains settings without reopening the pan
   );
 });
 
-async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
+async function restoreTemplateDraft(
+  template: GenerationTemplateRequest,
+): Promise<HTMLElement> {
   installVideoSubmissionCapture();
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
@@ -508,10 +511,7 @@ async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
           {
             type: "template",
             titleSnapshot: "Saved style",
-            template: {
-              type: "video",
-              selection: { stylePresetId },
-            },
+            template,
           },
         ],
       },
@@ -534,6 +534,10 @@ async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
   return editor;
 }
 
+function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
+  return restoreTemplateDraft({ type: "video", selection: { stylePresetId } });
+}
+
 test("A restored Creative Video draft keeps settings collapsed until requested", async () => {
   await restoreVideoDraft(VIDEO_TEMPLATE_ITEMS[0]!.id);
   expect(
@@ -543,8 +547,8 @@ test("A restored Creative Video draft keeps settings collapsed until requested",
   await expect(openVideoOptions("16:9 · 8s · 720p")).resolves.toBeVisible();
 });
 
-test("A legacy Intro Video draft excludes settings even after choosing Create video", async () => {
-  await restoreVideoDraft("explainer-video");
+test("An Intro Video draft excludes settings even after choosing Create video", async () => {
+  await restoreTemplateDraft({ type: "intro-video", selection: {} });
   const tasks = screen.getByRole("group", { name: "Choose a task" });
   click(fastControl("button", "Video", tasks));
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();

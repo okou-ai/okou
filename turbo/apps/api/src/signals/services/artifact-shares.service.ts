@@ -225,6 +225,8 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
   if (!domain || !scheme) {
     throw new Error("Public HTML delivery is not configured");
   }
+  // Preserve requested durable token links without publishing during reads.
+  // Retire only after #32492 accounts for the remaining old share policies.
   return `${scheme}://${policy.publicSlug ?? policy.publicToken}.${domain}/`;
 }
 

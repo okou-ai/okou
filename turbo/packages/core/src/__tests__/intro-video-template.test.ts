@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
 
 import {
-  INTRO_VIDEO_TEMPLATE_ID,
   introVideoInstructionLines,
   introVideoTemplateOptions,
 } from "../intro-video-template";
@@ -164,13 +163,16 @@ describe("intro video template", () => {
     };
     expect(
       introVideoTemplateOptions({
-        type: "video",
-        selection: {
-          stylePresetId: INTRO_VIDEO_TEMPLATE_ID,
-          explainerOptions: options,
-        },
+        type: "intro-video",
+        selection: { options },
       }),
     ).toBe(options);
+    expect(
+      introVideoTemplateOptions({
+        type: "intro-video",
+        selection: { options: undefined },
+      }),
+    ).toBeUndefined();
     expect(
       introVideoTemplateOptions({
         type: "video",

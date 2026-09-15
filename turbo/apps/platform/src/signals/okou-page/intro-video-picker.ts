@@ -1,9 +1,6 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
-import {
-  INTRO_VIDEO_TEMPLATE_ID,
-  introVideoTemplateOptions,
-} from "@okouai/core/intro-video-template";
+import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { command, computed, state } from "ccstate";
 
 export type IntroVideoPickerTab = "style" | "avatar" | "voice";
@@ -39,10 +36,9 @@ export function createIntroVideoPickerSignals() {
       const voice = get(voice$);
       return style && voice
         ? {
-            type: "video",
+            type: "intro-video",
             selection: {
-              stylePresetId: INTRO_VIDEO_TEMPLATE_ID,
-              explainerOptions: { style, avatar: get(avatar$), voice },
+              options: { style, avatar: get(avatar$), voice },
             },
           }
         : null;

@@ -365,6 +365,13 @@
       "when": 1789438073752,
       "tag": "1129_conversation_deletion_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 1130,
+      "version": "7",
+      "when": 1789441232116,
+      "tag": "1130_account_erasure_claim_scale",
+      "breakpoints": true
     }
   ]
 }

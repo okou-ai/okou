@@ -1,4 +1,5 @@
 import { mockNow } from "../../../lib/time";
+import { artifactDeliveryKey } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -818,6 +819,62 @@ test("public site names stay on the selected version and rotate after revocation
   );
   expect(republished.url).not.toBe(published.url);
 });
+
+test.each([false, true])(
+  "historical public HTML policies name the site only on explicit sharing (alias retained=%s)",
+  async (retainAlias) => {
+    const { owner, org, objects } = await fixture();
+    const actor = createBddApi(context).user({ userId: owner, orgId: org });
+    await createRunsApi(context).grantProEntitlement(actor);
+    const host = createHostMapsBddApi(context);
+    const prepared = await host.prepareHostedSite(actor, {
+      site: `historical-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<h1>Existing report</h1>")],
+    });
+    await host.completeHostedSite(actor, prepared.deploymentId);
+    const target = { kind: "html" as const, id: prepared.deploymentId };
+    const published = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "public" },
+      }),
+      [200],
+    );
+    // Current writers always allocate a name. External storage fixtures model
+    // an older policy, or an older writer dropping the field after allocation.
+    const key = `artifact-shares/okou/${published.body.shareId}.json`;
+    const historical = artifactSharePolicySchema.parse(
+      JSON.parse(objects.get(key)!),
+    );
+    if (!retainAlias) {
+      objects.delete(
+        artifactDeliveryKey("okou", "html", historical.publicSlug!),
+      );
+    }
+    delete historical.publicSlug;
+    objects.set(key, JSON.stringify(historical));
+    const before = new Map(objects);
+    const status = await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [200],
+    );
+    expect(status.body.url).toBe(`https://${historical.publicToken}.okou.app/`);
+    expect(status.body.shortUrl).toBeNull();
+    expect(objects).toStrictEqual(before);
+
+    const updated = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "public" },
+      }),
+      [200],
+    );
+    expect(updated.body.url).toBe(published.body.url);
+    expect(updated.body.shortUrl).toBe(published.body.url);
+  },
+);
 
 test("a historical public site name receives a short collision suffix without overwriting its alias", async () => {
   const { owner, org, objects } = await fixture();

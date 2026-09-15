@@ -658,7 +658,8 @@ export async function claimErasureWork(
               .where(
                 and(
                   eq(work.jobId, jobId),
-                  inArray(work.state, ["pending", "retryable_failure"]),
+                  // Keep the partial-index predicate visible to generic plans.
+                  sql`${work.state} IN ('pending', 'retryable_failure')`,
                 ),
               )
               .orderBy(asc(work.id))
@@ -688,7 +689,8 @@ export async function claimErasureWork(
           eq(work.jobId, jobId),
           eq(work.generation, job.generation),
           eq(work.selectorCaptureRevision, job.captureRevision),
-          inArray(work.state, ["pending", "retryable_failure"]),
+          // Binding these states hides the partial index from generic plans.
+          sql`${work.state} IN ('pending', 'retryable_failure')`,
           lte(work.availableAt, sql`clock_timestamp()`),
           or(
             isNull(work.leaseId),

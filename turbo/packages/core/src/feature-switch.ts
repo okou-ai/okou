@@ -382,13 +382,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use private artifact storage, the Okou viewer, and organization and public sharing.",
     enabled: false,
   },
-  [FeatureSwitchKey.ProgressiveArtifactPreview]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Publish coherent website and HTML presentation previews while the agent continues improving them.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ComposerImageAnnotation]: {
     maintainer: "tongx@okou.ai",
     description:

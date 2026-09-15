@@ -58,6 +58,7 @@ import {
   platformFeishuSecuritySettingsRedirectUrlImg,
   platformFeishuVersionAvailabilityEditImg,
   platformFeishuVersionManagementCreateVersionImg,
+  platformLarkCreateAppForAgentImg,
 } from "../../lib/static-assets.ts";
 import {
   defaultAgentId$,
@@ -101,8 +102,19 @@ import { Link } from "../router/link.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 
 const feishuIconImg = settingsIconAssetUrl("lark");
+const FEISHU_CREATE_GUIDE_IMAGES = {
+  feishu: {
+    src: platformFeishuCreateEnterpriseCustomAppImg,
+    width: 1234,
+    height: 998,
+  },
+  lark: {
+    src: platformLarkCreateAppForAgentImg,
+    width: 1274,
+    height: 1118,
+  },
+} as const;
 const FEISHU_GUIDE_IMAGE_SOURCES = [
-  platformFeishuCreateEnterpriseCustomAppImg,
   platformFeishuAppCreatedCredentialsImg,
   platformFeishuEncryptionStrategyImg,
   platformFeishuSecuritySettingsRedirectUrlImg,
@@ -483,6 +495,7 @@ function FeishuCreateStep() {
   const signal = useGet(pageSignal$);
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
+  const createImage = FEISHU_CREATE_GUIDE_IMAGES[platform];
   const iconFilename = `${brandName.toLowerCase()}-${platform}-app-icon.png`;
 
   return (
@@ -521,9 +534,9 @@ function FeishuCreateStep() {
         </p>
         <div className="mt-4">
           <FeishuGuideImage
-            src={platformFeishuCreateEnterpriseCustomAppImg}
-            width={1234}
-            height={998}
+            src={createImage.src}
+            width={createImage.width}
+            height={createImage.height}
             alt={t(($) => {
               return $.connectors.providerSettings[platform].create.imageAlt;
             })}
@@ -2029,6 +2042,11 @@ function FeishuSetupDialog({
         })}
         initialFocus={false}
       >
+        <link
+          rel="preload"
+          as="image"
+          href={FEISHU_CREATE_GUIDE_IMAGES[platform].src}
+        />
         {FEISHU_GUIDE_IMAGE_SOURCES.map((src) => {
           return <link key={src} rel="preload" as="image" href={src} />;
         })}

@@ -97,6 +97,17 @@ must serve short-reference resolution before Apps begin copying those links.
 Rolling the API back removes short-reference support until it is restored;
 existing legacy organization URLs remain available in the `url` response.
 
+The compatibility scope preserves the explicitly requested existing links;
+`privateArtifacts` being non-GA does not independently require a rollback bridge.
+Issue [#32492](https://github.com/vm0-ai/vm0/issues/32492) owns later retirement:
+the optional response reader can be removed once older APIs leave serving and
+supported rollback targets. The legacy organization `url` projection can be
+removed only after the short-reference App is live and an App minimum version
+excludes earlier bundles. Open pages have no passive expiry. Neither gate is
+closed in this PR. Durable-link readers and aliases remain until a separate
+retirement decision accounts for the stored references; a deployment or App
+floor alone cannot invalidate links already copied by users.
+
 The iframe loading correction spans the App's explicit first-party iframe
 referrer policy and the host Worker's same-origin resource policy. Both must be
 deployed to verify full HTML resource loading against the hosted-domain WAF.
@@ -330,6 +341,39 @@ the original accepted duration and cost, rather than reprice a paid download.
 | New CLI, old API   | Optional response fields allow parsing; output adds explicit requested values and null delivered values. Remove this normalization only when old API targets leave the rollout/rollback window. |
 | Old API, new JSONB | Additive keys do not change existing required values; rollback retains the old API's pre-existing HD validation limitation.                                                                     |
 | New API, old JSONB | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields.                                                                      |
+
+#### Explicit MP3 social downloads
+
+`social download --format mp3` requests audio through the existing download
+lifecycle. MP4 remains the default, M4A remains supported, and both audio
+formats use one provider unit per started minute regardless of video quality.
+The provider's ready format must match the request. Artifact bytes still
+determine the delivered extension and MIME: detected MP3 is `audio/mpeg`, and
+a different detected type is reported truthfully. For unrecognized bytes, the
+filename and MIME are request-derived hints (MP3 uses `audio/mpeg`) while
+`delivered.format` remains null. Sniffing does not validate an entire media file.
+
+MP3 requests become available when the capable API is deployed, using the
+existing authentication, capability, credit and active-task checks. MP3 extends
+values inside existing response and JSONB fields. Older API and CLI schemas
+reject those values, including when listing tasks that contain an MP3 request.
+
+Coordinate MP3-capable serving, reconciling and rollback API artifacts with
+compatible commit-addressed CLI selection and the incompatible queued, active
+and finalizing context drain described above. Upgrade supported external
+callers that may list or resume MP3 tasks. These compatibility conditions must
+be addressed as part of deployment because the new API accepts MP3 immediately.
+
+| Pairing                            | Behavior                                                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API, MP4/M4A jobs     | MP4/M4A requests, polling and discovery retain their existing contract.                                                           |
+| New CLI, old API                   | MP4/M4A keep working. Explicit MP3 is rejected by the old API; never silently substitute a format or resubmit.                    |
+| New API, old JSONB                 | MP4/M4A tasks remain readable/resumable; missing historical delivery metadata stays unknown. No migration or rewrite is required. |
+| MP3-capable CLI/API, new MP3 JSONB | Creation, listing, polling and same-job recovery use the widened format contract.                                                 |
+| Old CLI/API, new MP3 JSONB         | Unsupported; exclude this pairing from supported deployment and rollback combinations once MP3 tasks exist.                       |
+
+After the first MP3 task is created, rollback must retain MP3-capable readers
+for as long as MP3 tasks remain readable or recoverable.
 
 ### Pi Gen1 wire-field retirement
 

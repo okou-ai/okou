@@ -163,7 +163,7 @@ export const socialKitDownloadQualitySchema = z.enum([
   "1080p",
 ]);
 
-export const socialKitDownloadFormatSchema = z.enum(["mp4", "m4a"]);
+export const socialKitDownloadFormatSchema = z.enum(["mp4", "m4a", "mp3"]);
 
 // Delivered resolutions include source renditions such as TikTok's 576p.
 export const socialKitDownloadDeliveredQualitySchema = z
