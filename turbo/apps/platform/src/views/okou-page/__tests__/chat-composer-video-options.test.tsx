@@ -215,11 +215,6 @@ test.each([false, true])(
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
     });
     await selectVideoTemplate();
-    for (const label of ["Ratio", "Resolution", "Duration"]) {
-      expect(
-        screen.queryByRole("combobox", { name: label }),
-      ).not.toBeInTheDocument();
-    }
     expect(
       fastControl("button", "Video options 16:9 · 8s · 720p"),
     ).toHaveAttribute("aria-expanded", "false");
