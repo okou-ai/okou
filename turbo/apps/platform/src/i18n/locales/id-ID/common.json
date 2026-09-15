@@ -2263,6 +2263,40 @@
             "prompt": "Buat gambar untuk situs saya"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Menulis proposal untuk klien",
+            "prompt": "Buat dek proposal klien. Tanyakan tentang kliennya, pekerjaan yang saya usulkan, jadwal, dan harganya."
+          },
+          "companyOverview": {
+            "label": "Menjelaskan apa yang dikerjakan perusahaan saya",
+            "prompt": "Buat dek profil perusahaan. Tanyakan apa yang kami kerjakan, siapa yang kami layani, dan apa yang harus diingat audiens."
+          },
+          "eventTalk": {
+            "label": "Menyiapkan materi bicara untuk acara",
+            "prompt": "Buat dek untuk sesi bicara saya. Tanyakan tentang acaranya, audiensnya, dan satu gagasan yang ingin saya sampaikan."
+          },
+          "pitchDeck": {
+            "label": "Mempresentasikan bisnis ke investor",
+            "prompt": "Buat pitch deck investor untuk bisnis saya. Tanyakan masalahnya, produknya, traksi sejauh ini, dan berapa yang ingin saya galang."
+          },
+          "productIntro": {
+            "label": "Memperkenalkan produk baru",
+            "prompt": "Buat dek yang memperkenalkan produk baru. Tanyakan apa fungsinya, untuk siapa, dan apa yang membuatnya berbeda."
+          },
+          "resultsReadout": {
+            "label": "Mempresentasikan hasil saya",
+            "prompt": "Ubah hasil saya menjadi dek laporan. Tanyakan angkanya, periode yang dicakup, dan keputusan yang didukungnya."
+          },
+          "teamUpdate": {
+            "label": "Menyusun update untuk tim",
+            "prompt": "Buat dek untuk update tim saya. Tanyakan apa yang terjadi periode ini, apa berikutnya, dan siapa audiensnya."
+          },
+          "training": {
+            "label": "Mengajari tim saya sesuatu",
+            "prompt": "Buat dek pelatihan tentang topik yang saya pilih. Tanyakan siapa yang dilatih dan apa yang harus mereka kuasai setelahnya."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Ubah foto menjadi video",

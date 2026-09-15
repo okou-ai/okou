@@ -320,8 +320,6 @@ import {
   AvatarTemplatePickerContent,
   AvatarTemplatePickerToolbar,
 } from "./avatar-template-picker.tsx";
-import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
-import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
 import {
   markVideoPreviewPlaying,
   resetVideoPreview,
@@ -5903,7 +5901,9 @@ export function ComposerPresentationRecommendations({
             key="import"
             signals={signals}
             compact
-            className={cn("group/tile", PRESENTATION_SHELF_COVER)}
+            // A `label` is inline by default, so the shelf width only lands once
+            // the tile is a block.
+            className={cn("group/tile block", PRESENTATION_SHELF_COVER)}
             onImported={() => {
               setMode(null);
             }}
@@ -6894,13 +6894,9 @@ function TemplatePickerButton({
             <Button
               type="button"
               variant="quiet"
-              size={templateMode ? "sm" : "icon-sm"}
+              size="icon-sm"
               iconSize="md"
-              className={
-                templateMode
-                  ? "min-w-0 max-w-[13rem] gap-1 font-normal"
-                  : "shrink-0"
-              }
+              className="shrink-0"
               aria-label={templateLabel}
               aria-pressed={false}
               onPointerEnter={prewarmPicker}
@@ -6914,14 +6910,10 @@ function TemplatePickerButton({
                 });
               }}
             >
-              {templateMode ? (
-                <>
-                  <Plus size={16} className="shrink-0" aria-hidden />
-                  <span className="min-w-0 truncate">{templateLabel}</span>
-                </>
-              ) : (
-                <SwatchBook size={18} aria-hidden="true" />
-              )}
+              {/* The label stays in the tooltip and the accessible name; the
+                  row beside it is all icons, and one worded control in it read
+                  as a different kind of thing. */}
+              <SwatchBook size={18} aria-hidden="true" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
@@ -10910,9 +10902,7 @@ function ComposerFooter({
                 signals={signals}
                 actions={connectorActions}
               />
-              <ComposerPresentationOptions signals={signals} />
             </div>
-            <ComposerVideoOptionsChip signals={signals} />
           </div>
           <div
             className={cn(

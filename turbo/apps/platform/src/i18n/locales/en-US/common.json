@@ -2272,6 +2272,40 @@
             "prompt": "Create a main image for my website. Help me match the image to the business, audience, page layout, and main message."
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Write a proposal for a client",
+            "prompt": "Create a client proposal deck. Ask me about the client, the work I am proposing, the timeline, and the price."
+          },
+          "companyOverview": {
+            "label": "Explain what my company does",
+            "prompt": "Create a company overview deck. Ask me what we do, who we serve, and what the audience should remember."
+          },
+          "eventTalk": {
+            "label": "Prepare a talk for an event",
+            "prompt": "Build a deck for a talk I am giving. Ask me about the event, the audience, and the one idea I want to land."
+          },
+          "pitchDeck": {
+            "label": "Pitch my business to investors",
+            "prompt": "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising."
+          },
+          "productIntro": {
+            "label": "Introduce a new product",
+            "prompt": "Create a deck introducing a new product. Ask me what it does, who it is for, and what makes it different."
+          },
+          "resultsReadout": {
+            "label": "Present my results",
+            "prompt": "Turn my results into a readout deck. Ask me for the numbers, the period they cover, and the decision they support."
+          },
+          "teamUpdate": {
+            "label": "Put together a team update",
+            "prompt": "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room."
+          },
+          "training": {
+            "label": "Teach something to my team",
+            "prompt": "Build a training deck on a topic I choose. Ask me who is being trained and what they should be able to do afterwards."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Turn a photo into a video",

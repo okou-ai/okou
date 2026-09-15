@@ -16,12 +16,18 @@ export type ComposerTask =
   | "workflow"
   | "website"
   | "visualization";
-export type ComposerIdeaTask = Exclude<
-  ComposerTask,
-  "presentation" | "visualization"
+export type ComposerIdeaTask = Exclude<ComposerTask, "visualization">;
+/** The tasks whose ideas render as a prompt row; workflow has its own surface. */
+export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
+/**
+ * The tasks served by the shared cover shelf. Presentation has ideas but not
+ * this shelf: its catalog carries uploaded decks and an import tile, so it
+ * builds its own row.
+ */
+export type ComposerTemplateTask = Exclude<
+  ComposerPromptRowTask,
+  "presentation"
 >;
-/** The idea tasks whose catalog carries cover art, so they get a cover shelf. */
-export type ComposerTemplateTask = Exclude<ComposerIdeaTask, "workflow">;
 
 /** What a row reports after laying out: whether either pager has anywhere to go. */
 export interface RailTravel {
@@ -81,6 +87,7 @@ export function createComposerTaskChipsSignals(
     workflow: 0,
     video: 0,
     website: 0,
+    presentation: 0,
   });
   const ideaPages$ = computed((get) => {
     return get(internalIdeaPages$);

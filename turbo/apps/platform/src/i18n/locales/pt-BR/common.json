@@ -2318,6 +2318,40 @@
             "prompt": "Criar uma imagem para meu site"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Escrever uma proposta para um cliente",
+            "prompt": "Crie uma apresentação de proposta para cliente. Pergunte sobre o cliente, o trabalho proposto, o prazo e o preço."
+          },
+          "companyOverview": {
+            "label": "Explicar o que minha empresa faz",
+            "prompt": "Crie uma apresentação institucional. Pergunte o que fazemos, quem atendemos e o que o público deve lembrar."
+          },
+          "eventTalk": {
+            "label": "Preparar uma palestra para um evento",
+            "prompt": "Crie uma apresentação para uma palestra. Pergunte sobre o evento, o público e a ideia central que quero transmitir."
+          },
+          "pitchDeck": {
+            "label": "Apresentar meu negócio a investidores",
+            "prompt": "Crie um pitch deck para investidores sobre meu negócio. Pergunte sobre o problema, o produto, a tração até agora e quanto quero captar."
+          },
+          "productIntro": {
+            "label": "Apresentar um produto novo",
+            "prompt": "Crie uma apresentação introduzindo um produto novo. Pergunte o que ele faz, para quem é e o que o diferencia."
+          },
+          "resultsReadout": {
+            "label": "Apresentar meus resultados",
+            "prompt": "Transforme meus resultados em uma apresentação de relatório. Pergunte os números, o período coberto e a decisão que sustentam."
+          },
+          "teamUpdate": {
+            "label": "Montar uma atualização para o time",
+            "prompt": "Crie uma apresentação para a atualização do meu time. Pergunte o que aconteceu no período, o que vem a seguir e quem estará presente."
+          },
+          "training": {
+            "label": "Ensinar algo ao meu time",
+            "prompt": "Crie uma apresentação de treinamento sobre um tema que eu escolher. Pergunte quem será treinado e o que deverão saber fazer depois."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Transformar uma foto em vídeo",

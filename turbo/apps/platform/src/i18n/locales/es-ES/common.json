@@ -2318,6 +2318,40 @@
             "prompt": "Crear una imagen para mi web"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Escribir una propuesta para un cliente",
+            "prompt": "Crea una presentación de propuesta para un cliente. Pregúntame por el cliente, el trabajo propuesto, el plazo y el precio."
+          },
+          "companyOverview": {
+            "label": "Explicar a qué se dedica mi empresa",
+            "prompt": "Crea una presentación corporativa. Pregúntame qué hacemos, a quién servimos y qué debería recordar la audiencia."
+          },
+          "eventTalk": {
+            "label": "Preparar una charla para un evento",
+            "prompt": "Crea una presentación para una charla. Pregúntame por el evento, la audiencia y la idea principal que quiero transmitir."
+          },
+          "pitchDeck": {
+            "label": "Presentar mi negocio a inversores",
+            "prompt": "Crea un pitch deck para inversores sobre mi negocio. Pregúntame por el problema, el producto, la tracción y cuánto quiero levantar."
+          },
+          "productIntro": {
+            "label": "Presentar un producto nuevo",
+            "prompt": "Crea una presentación que introduzca un producto nuevo. Pregúntame qué hace, para quién es y qué lo diferencia."
+          },
+          "resultsReadout": {
+            "label": "Presentar mis resultados",
+            "prompt": "Convierte mis resultados en una presentación de informe. Pregúntame por las cifras, el periodo y la decisión que respaldan."
+          },
+          "teamUpdate": {
+            "label": "Preparar una actualización para el equipo",
+            "prompt": "Crea una presentación para la actualización de mi equipo. Pregúntame qué pasó en el periodo, qué viene después y quién estará presente."
+          },
+          "training": {
+            "label": "Enseñar algo a mi equipo",
+            "prompt": "Crea una presentación de formación sobre un tema que yo elija. Pregúntame a quién se forma y qué debería saber hacer después."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Convertir una foto en vídeo",

@@ -2272,6 +2272,40 @@
             "prompt": "Ein Bild für meine Website erstellen"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Ein Angebot für einen Kunden schreiben",
+            "prompt": "Erstelle ein Angebotsdeck für einen Kunden. Frag mich nach dem Kunden, der vorgeschlagenen Arbeit, dem Zeitplan und dem Preis."
+          },
+          "companyOverview": {
+            "label": "Erklären, was mein Unternehmen macht",
+            "prompt": "Erstelle ein Unternehmensprofil-Deck. Frag mich, was wir tun, wen wir bedienen und woran sich das Publikum erinnern soll."
+          },
+          "eventTalk": {
+            "label": "Einen Vortrag für ein Event vorbereiten",
+            "prompt": "Erstelle ein Deck für einen Vortrag. Frag mich nach dem Event, dem Publikum und der einen Idee, die ankommen soll."
+          },
+          "pitchDeck": {
+            "label": "Mein Unternehmen Investoren vorstellen",
+            "prompt": "Erstelle ein Investoren-Pitchdeck für mein Unternehmen. Frag mich nach dem Problem, dem Produkt, den bisherigen Erfolgen und der Finanzierungsrunde."
+          },
+          "productIntro": {
+            "label": "Ein neues Produkt vorstellen",
+            "prompt": "Erstelle ein Deck, das ein neues Produkt vorstellt. Frag mich, was es kann, für wen es ist und was es besonders macht."
+          },
+          "resultsReadout": {
+            "label": "Meine Ergebnisse präsentieren",
+            "prompt": "Mach aus meinen Ergebnissen ein Auswertungsdeck. Frag mich nach den Zahlen, dem Zeitraum und der Entscheidung, die sie stützen."
+          },
+          "teamUpdate": {
+            "label": "Ein Team-Update zusammenstellen",
+            "prompt": "Erstelle ein Deck für mein Team-Update. Frag mich, was in diesem Zeitraum passiert ist, was als Nächstes kommt und wer im Raum sitzt."
+          },
+          "training": {
+            "label": "Meinem Team etwas beibringen",
+            "prompt": "Erstelle ein Schulungsdeck zu einem Thema meiner Wahl. Frag mich, wer geschult wird und was die Teilnehmenden danach können sollen."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Aus einem Foto ein Video machen",

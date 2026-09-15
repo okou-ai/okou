@@ -2318,6 +2318,40 @@
             "prompt": "Créer une image pour mon site"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Rédiger une proposition pour un client",
+            "prompt": "Crée une présentation de proposition client. Demande-moi le client, la mission proposée, le calendrier et le prix."
+          },
+          "companyOverview": {
+            "label": "Expliquer ce que fait mon entreprise",
+            "prompt": "Crée une présentation de l'entreprise. Demande-moi ce que nous faisons, qui nous servons et ce que le public doit retenir."
+          },
+          "eventTalk": {
+            "label": "Préparer une intervention pour un événement",
+            "prompt": "Crée une présentation pour une intervention. Demande-moi l'événement, le public et l'idée unique à faire passer."
+          },
+          "pitchDeck": {
+            "label": "Présenter mon activité à des investisseurs",
+            "prompt": "Crée un pitch deck investisseurs pour mon activité. Demande-moi le problème, le produit, la traction et le montant recherché."
+          },
+          "productIntro": {
+            "label": "Présenter un nouveau produit",
+            "prompt": "Crée une présentation qui introduit un nouveau produit. Demande-moi ce qu'il fait, à qui il s'adresse et ce qui le distingue."
+          },
+          "resultsReadout": {
+            "label": "Présenter mes résultats",
+            "prompt": "Transforme mes résultats en présentation de restitution. Demande-moi les chiffres, la période couverte et la décision qu'ils soutiennent."
+          },
+          "teamUpdate": {
+            "label": "Préparer un point d'étape pour l'équipe",
+            "prompt": "Crée une présentation pour le point d'étape de mon équipe. Demande-moi ce qui s'est passé, ce qui arrive ensuite et qui sera présent."
+          },
+          "training": {
+            "label": "Former mon équipe sur un sujet",
+            "prompt": "Crée une présentation de formation sur un sujet que je choisis. Demande-moi qui est formé et ce qu'ils devront savoir faire ensuite."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Transformer une photo en vidéo",

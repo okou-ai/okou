@@ -21,6 +21,7 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
+  ComposerPromptRowTask,
   ComposerTask,
   ComposerTemplateTask,
 } from "../../signals/okou-page/composer-task-chips.ts";
@@ -49,6 +50,16 @@ const TASK_ICONS = {
   visualization: ChartNoAxesCombined,
 } as const;
 const IDEA_ICONS = {
+  presentation: [
+    Presentation,
+    MessageSquare,
+    Sparkles,
+    FileText,
+    UserRound,
+    ChartNoAxesCombined,
+    Globe,
+    CalendarDays,
+  ],
   image: [
     Image,
     UserRound,
@@ -107,6 +118,16 @@ const VIDEO_IDEAS = [
   "loopingBackground",
   "brandIntro",
   "videoGreeting",
+] as const;
+const PRESENTATION_IDEAS = [
+  "pitchDeck",
+  "teamUpdate",
+  "productIntro",
+  "clientProposal",
+  "training",
+  "resultsReadout",
+  "companyOverview",
+  "eventTalk",
 ] as const;
 const WEBSITE_IDEAS = [
   "businessSite",
@@ -277,7 +298,7 @@ function ComposerTaskIdeas({
   task,
 }: {
   readonly signals: ComposerSignals;
-  readonly task: ComposerTemplateTask;
+  readonly task: ComposerPromptRowTask;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -295,6 +316,9 @@ function ComposerTaskIdeas({
     }),
     website: WEBSITE_IDEAS.map((key) => {
       return copy.website[key];
+    }),
+    presentation: PRESENTATION_IDEAS.map((key) => {
+      return copy.presentation[key];
     }),
   }[task];
   const insertPrompt = useSet(signals.editor.replacePromptText$);
@@ -415,7 +439,10 @@ export function ComposerTaskChips({
           )}
         >
           {selected === "presentation" && (
-            <ComposerPresentationRecommendations signals={signals} />
+            <>
+              <ComposerTaskIdeas signals={signals} task="presentation" />
+              <ComposerPresentationRecommendations signals={signals} />
+            </>
           )}
           {selected === "workflow" && (
             <ComposerWorkflowRecommendations signals={signals} />
