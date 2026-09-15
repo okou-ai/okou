@@ -11,7 +11,10 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it, onTestFinished, test } from "vitest";
-import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
+import {
+  countBlockedPersonalSubscriptionMutationsFixture,
+  countWaitingPersonalSubscriptionMutationsFixture,
+} from "../../../test-fixtures/personal-subscription";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import {
@@ -2454,10 +2457,15 @@ describe("historical writer consumer fences", () => {
 });
 
 describe("historical exact selection and retained-only parent", () => {
-  it.each(["identity-a", "identity-b"])(
-    "resolves a legacy Codex %s write between capture and environment preparation",
-    async (identity) => {
-      const f = await fixture("codex-oauth-token");
+  it.each([
+    ["claude-code-oauth-token", "identity-a"],
+    ["claude-code-oauth-token", "identity-b"],
+    ["codex-oauth-token", "identity-a"],
+    ["codex-oauth-token", "identity-b"],
+  ] as const)(
+    "resolves a legacy %s %s write between capture and environment preparation",
+    async (type, identity) => {
+      const f = await fixture(type);
       await reencryptSubscriptionStoresFixture(f.actor, f.type);
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<Uint8Array>(context.signal);
@@ -2472,7 +2480,7 @@ describe("historical exact selection and retained-only parent", () => {
       });
       // This captured-ID fixture has no queued-input decryption. Its first
       // KMS read proves the independently reencrypted capture bundle while
-      // owning the provider lock. Queue the real old writer behind that lock
+      // owning the provider/credential locks. Queue the real old writer there
       // so environment preparation, not capture, must import its new bundle.
       const admitting = createHistoricalPinnedSubscriptionRunFixture(
         {
@@ -2504,7 +2512,18 @@ describe("historical exact selection and retained-only parent", () => {
           }),
         ]),
       ).resolves.toBe("capture");
-      const writing = writeHistoricalSubscription(f.actor, f.type, identity, 2);
+      historicalClaudeProfiles();
+      const claudeToken = `sk-ant-oat-${identity}-v2`;
+      // Keep Claude's second autocommit pending until preparation finishes.
+      // This exercises its actual secret-first writer without adding an
+      // advisory lock or racing a later metadata write against admission.
+      const writing =
+        type === "claude-code-oauth-token"
+          ? historicalClaudeSecretFirstFixture(f.actor, {
+              accessToken: claudeToken,
+              workspaceName: identity,
+            })
+          : writeHistoricalSubscription(f.actor, type, identity, 2);
       const writerSettled = Promise.allSettled([writing]);
       onTestFinished(async () => {
         if (!release.settled()) {
@@ -2518,7 +2537,7 @@ describe("historical exact selection and retained-only parent", () => {
       const orgId = f.actor.orgId;
       await expect
         .poll(() => {
-          return countWaitingPersonalSubscriptionMutationsFixture({
+          return countBlockedPersonalSubscriptionMutationsFixture({
             orgId,
             userId: f.actor.userId,
             type: f.type,
@@ -2528,6 +2547,9 @@ describe("historical exact selection and retained-only parent", () => {
       release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
       const updated = await writing;
       const result = await admitting;
+      if ("completeProviderWrite" in updated) {
+        await updated.completeProviderWrite();
+      }
       if (identity === "identity-b") {
         expect(result.status).toBe(503);
         expect(result.body).toMatchObject({
@@ -2541,10 +2563,14 @@ describe("historical exact selection and retained-only parent", () => {
       }
       const claim = await f.claim(result.body.runId);
       expect(accountId(claim, f.type)).toBe(f.connected.id);
-      expect(claim.environment?.OPENAI_MODEL).toBe(f.model);
+      const modelEnv =
+        type === "claude-code-oauth-token" ? "ANTHROPIC_MODEL" : "OPENAI_MODEL";
+      expect(claim.environment?.[modelEnv]).toBe(f.model);
       await expect(resolve(claim, f.type)).resolves.toMatchObject({
-        Authorization: `Bearer ${updated.token}`,
-        "ChatGPT-Account-ID": "identity-a",
+        Authorization: `Bearer ${"token" in updated ? updated.token : claudeToken}`,
+        ...(type === "codex-oauth-token"
+          ? { "ChatGPT-Account-ID": "identity-a" }
+          : {}),
       });
     },
   );
