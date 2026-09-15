@@ -213,19 +213,12 @@ function connectedBankingStatus(
   };
 }
 
-test("Connect banking, grant access, continue, and revoke it", async () => {
+test("Connect banking and expose the connected accounts", async () => {
   const sends: CapturedChatSend[] = [];
   const purpose = "Review recent cash-flow activity";
   const continuation = "Continue the banking review";
   let status = emptyBankingStatus();
   const popup = mockOpenedWindow();
-  const savedRequests: {
-    readonly accountIds: string[];
-    readonly agentId: string;
-    readonly duration: "1h" | "24h" | "7d" | "30d";
-    readonly purpose: string;
-  }[] = [];
-  let revokeCount = 0;
   installActionConversation({
     lines: [
       "Banking access is needed for this task.",
@@ -258,24 +251,8 @@ test("Connect banking, grant access, continue, and revoke it", async () => {
       });
     },
   );
-  context.mocks.api(bankingUserContract.saveAgentGrant, ({ body, respond }) => {
-    savedRequests.push(body);
-    status = connectedBankingStatus({
-      status: "active",
-      accountIds: [...body.accountIds],
-      purpose: body.purpose,
-      expiresAt: "2026-08-08T10:00:00.000Z",
-    });
-    return respond(200, status);
-  });
-  context.mocks.api(bankingUserContract.revokeAgentGrant, ({ respond }) => {
-    revokeCount += 1;
-    status = connectedBankingStatus(null);
-    return respond(200, status);
-  });
 
   await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
-
   await readyChat();
   const summary = await screen.findByTestId("banking-action-card");
   expect(within(summary).getByText(purpose)).toBeInTheDocument();
@@ -298,6 +275,47 @@ test("Connect banking, grant access, continue, and revoke it", async () => {
   expect(waitingNotice).toBeVisible();
 
   status = connectedBankingStatus();
+  const account = await within(card).findByRole("checkbox", {
+    name: /Operating account/u,
+  });
+  expect(account).toBeVisible();
+});
+
+test("Grant connected banking access and continue", async () => {
+  const sends: CapturedChatSend[] = [];
+  const purpose = "Review recent cash-flow activity";
+  const continuation = "Continue the banking review";
+  let status = connectedBankingStatus();
+  const savedRequests: {
+    readonly accountIds: string[];
+    readonly agentId: string;
+    readonly duration: "1h" | "24h" | "7d" | "30d";
+    readonly purpose: string;
+  }[] = [];
+  installActionConversation({
+    lines: [
+      "Banking access is needed for this task.",
+      bankingActionUrl({ reason: purpose, callbackPrompt: continuation }),
+    ],
+    sends,
+  });
+  context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(bankingUserContract.saveAgentGrant, ({ body, respond }) => {
+    savedRequests.push(body);
+    status = connectedBankingStatus({
+      status: "active",
+      accountIds: [...body.accountIds],
+      purpose: body.purpose,
+      expiresAt: "2026-08-08T10:00:00.000Z",
+    });
+    return respond(200, status);
+  });
+
+  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
+  await readyChat();
+  const card = await screen.findByTestId("banking-action-card");
   const account = await within(card).findByRole("checkbox", {
     name: /Operating account/u,
   });
@@ -324,6 +342,46 @@ test("Connect banking, grant access, continue, and revoke it", async () => {
       purpose,
     },
   ]);
+  click(getButton("Continue", card));
+  await waitFor(() => {
+    expect(sentPrompts(sends)).toStrictEqual([continuation]);
+  });
+});
+
+test("Revoke active banking access after continuing the conversation", async () => {
+  const sends: CapturedChatSend[] = [];
+  const purpose = "Review recent cash-flow activity";
+  const continuation = "Continue the banking review";
+  let status = connectedBankingStatus({
+    status: "active",
+    accountIds: [BANK_ACCOUNT_ID],
+    purpose,
+    expiresAt: "2026-08-08T10:00:00.000Z",
+  });
+  let revokeCount = 0;
+  installActionConversation({
+    lines: [
+      "Banking access is needed for this task.",
+      bankingActionUrl({ reason: purpose, callbackPrompt: continuation }),
+    ],
+    sends,
+  });
+  context.mocks.api(bankingUserContract.accessRequestStatus, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(bankingUserContract.revokeAgentGrant, ({ respond }) => {
+    revokeCount += 1;
+    status = connectedBankingStatus(null);
+    return respond(200, status);
+  });
+
+  await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
+  await readyChat();
+  const card = await screen.findByTestId("banking-action-card");
+  const activeAccess = await within(card).findByText(
+    "Access active for 1 account",
+  );
+  expect(activeAccess).toBeVisible();
   click(getButton("Continue", card));
   await waitFor(() => {
     expect(sentPrompts(sends)).toStrictEqual([continuation]);
