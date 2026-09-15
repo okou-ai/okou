@@ -157,12 +157,15 @@ test("Agent details that fail to load offer a direct retry", async () => {
     },
   });
 
-  const failure = await screen.findByText("Agent details are unavailable.");
+  const content = await screen.findByRole("main");
+  const failure = await within(content).findByText(
+    "Agent details are unavailable.",
+  );
   expect(failure).toBeVisible();
-  const retry = queryAllByRoleFast("link").find((candidate) => {
+  const retry = queryAllByRoleFast("link", content).find((candidate) => {
     return candidate.textContent?.trim() === "Retry";
   });
-  expect(retry).toBeDefined();
+  expect(retry).toBeVisible();
   expect(retry).toHaveAttribute("href", `/agents/${ARCHIVED_AGENT_ID}`);
 });
 
