@@ -31,7 +31,7 @@ export type ComposerTemplateTask = Exclude<
 >;
 
 /** What a row reports after laying out: whether either pager has anywhere to go. */
-export interface RailTravel {
+interface RailTravel {
   readonly canScrollBack: boolean;
   readonly canScrollForward: boolean;
 }
