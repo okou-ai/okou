@@ -78,6 +78,7 @@ type ComposerEditorSignals = Pick<
   | "insertUserMessage$"
   | "insertText$"
   | "selectOrAppendText$"
+  | "replacePromptText$"
 > & {
   readonly singleLineOnMobile: boolean;
 };
@@ -344,6 +345,7 @@ function composerEditorSignals(
     insertUserMessage$: composer.insertUserMessage$,
     insertText$: composer.insertText$,
     selectOrAppendText$: composer.selectOrAppendText$,
+    replacePromptText$: composer.replacePromptText$,
   };
 }
 
@@ -553,7 +555,7 @@ export function createComposerSignals(
   });
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
-    insertPrompt$: workflowComposer.selectOrAppendText$,
+    insertPrompt$: workflowComposer.replacePromptText$,
     openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
