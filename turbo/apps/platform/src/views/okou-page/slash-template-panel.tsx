@@ -353,6 +353,7 @@ function SlashPanelWorkflowList({
             key={workflow.id}
             id={workflowOptionId(workflow.id)}
             type="button"
+            data-active={markedIndex === index ? "true" : undefined}
             className={cn(
               "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
               markedIndex === index
@@ -404,6 +405,8 @@ export function SlashTemplatePanel({
   // what that row previewed — the pointer is on its way into those covers, and
   // a mark left behind would disagree with wherever it lands next. The keyboard
   // mark comes back once the pointer leaves and the preview follows it again.
+  // Each row publishes the result as `data-active`, so which row is marked is
+  // readable without depending on the utility class that paints it.
   const markedIndex = previewIndex === null ? selectedIndex : -1;
   const previewCategory = categories[previewIndex ?? selectedIndex] ?? null;
   // Narrowed here rather than inside the pane, so the pane has no unreachable
@@ -442,6 +445,7 @@ export function SlashTemplatePanel({
                   id={categoryOptionId(category)}
                   type="button"
                   aria-label={label}
+                  data-active={markedIndex === index ? "true" : undefined}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
                     markedIndex === index

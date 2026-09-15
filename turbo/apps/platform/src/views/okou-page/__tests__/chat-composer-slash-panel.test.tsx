@@ -440,7 +440,7 @@ test("A category row keeps no mark once the pointer is in its covers", async () 
   await openSlashMenu(true);
   const presentation = slashButton("Presentation");
   const website = slashButton("Website");
-  expect(presentation).toHaveClass("bg-state-selected");
+  expect(presentation).toHaveAttribute("data-active", "true");
 
   // Same boundary events as the test above: the pointer walks a category row
   // and then crosses into the covers it previewed, without leaving the panel.
@@ -458,10 +458,10 @@ test("A category row keeps no mark once the pointer is in its covers", async () 
   fireEvent.mouseOver(cover, { relatedTarget: website });
   fireEvent.mouseMove(cover);
 
-  // Neither the row the pointer left nor the row it started on stays filled,
+  // Neither the row the pointer left nor the row it started on stays marked,
   // so the left column never argues with the covers on the right.
-  expect(website).not.toHaveClass("bg-state-selected");
-  expect(presentation).not.toHaveClass("bg-state-selected");
+  expect(website).not.toHaveAttribute("data-active");
+  expect(presentation).not.toHaveAttribute("data-active");
   expect(detailPane()).toHaveAttribute("data-category", "website");
 });
 
@@ -473,12 +473,12 @@ test("The keyboard selection is marked again once the pointer leaves", async () 
 
   await user.hover(website);
   await waitFor(() => {
-    expect(presentation).not.toHaveClass("bg-state-selected");
+    expect(presentation).not.toHaveAttribute("data-active");
   });
 
   await user.unhover(website);
   await waitFor(() => {
-    expect(presentation).toHaveClass("bg-state-selected");
+    expect(presentation).toHaveAttribute("data-active", "true");
   });
   expect(detailPane()).toHaveAttribute("data-category", "slides");
 });
