@@ -3043,6 +3043,7 @@ describe("managed SocialKit route", () => {
       readonly quality?: SocialKitDownloadRequest["quality"];
       readonly format?: SocialKitDownloadRequest["format"];
       readonly deliveredQuality?: string;
+      readonly providerFormat?: string;
       readonly creditsCost?: unknown;
       readonly billed?: boolean;
       readonly durationSeconds?: number;
@@ -3076,7 +3077,7 @@ describe("managed SocialKit route", () => {
             options.creditsCost === undefined ? 8 : options.creditsCost,
           billed: options.billed ?? true,
           quality: options.deliveredQuality ?? quality,
-          format,
+          format: options.providerFormat ?? format,
           title: "Public clip",
         });
       }),
@@ -3125,6 +3126,174 @@ describe("managed SocialKit route", () => {
   }
 
   it.each([
+    { platform: "youtube", url: "https://youtu.be/public-video" },
+    {
+      platform: "tiktok",
+      url: "https://www.tiktok.com/@public/video/1234567890123456789",
+    },
+    {
+      platform: "instagram",
+      url: "https://www.instagram.com/reel/public-video/",
+    },
+    {
+      platform: "facebook",
+      url: "https://www.facebook.com/watch/?v=123456789",
+    },
+  ] as const)(
+    "recovers a paid $platform MP3 task without charging again",
+    async ({ platform, url }) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await bootstrapOnboarding(actor);
+      await setActorCredits(actor, 6);
+      const providerJobId = `provider-mp3-${randomUUID()}`;
+      let providerReady = false;
+      let mediaAvailable = false;
+      const providerRequests: unknown[] = [];
+      const artifactRequests: string[] = [];
+      const uploadedParts: unknown[] = [];
+      const contentTypes: (string | undefined)[] = [];
+      context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
+        { address: "8.8.8.8", family: 4 },
+      ]);
+      server.use(
+        http.post(
+          `${SOCIALKIT_BASE}/v2/${platform}/download`,
+          async ({ request }) => {
+            providerRequests.push(await request.json());
+            return HttpResponse.json({
+              jobId: providerJobId,
+              status: "queued",
+            });
+          },
+        ),
+        http.get(`${SOCIALKIT_BASE}/v2/downloads/${providerJobId}`, () => {
+          return HttpResponse.json(
+            providerReady
+              ? {
+                  jobId: providerJobId,
+                  status: "ready",
+                  platform,
+                  downloadUrl: `https://media.socialkit.test/${mediaAvailable ? "refreshed" : "initial"}`,
+                  durationSeconds: 61,
+                  fileSizeMB: 1,
+                  creditsCost: 2,
+                  billed: true,
+                  quality: "1080p",
+                  format: "mp3",
+                  title: "MP3 clip",
+                }
+              : { jobId: providerJobId, status: "processing" },
+          );
+        }),
+        http.get("https://media.socialkit.test/:link", ({ request }) => {
+          artifactRequests.push(new URL(request.url).pathname);
+          const payload = mediaAvailable
+            ? MPEG_FRAME_PAYLOAD
+            : new Uint8Array(0);
+          return new HttpResponse(payload, {
+            headers: { "content-length": String(payload.byteLength) },
+          });
+        }),
+      );
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({ Contents: [] });
+        }
+        if (command instanceof CreateMultipartUploadCommand) {
+          contentTypes.push(command.input.ContentType);
+          return Promise.resolve({ UploadId: "mp3-upload" });
+        }
+        if (command instanceof UploadPartCommand) {
+          uploadedParts.push(command.input.Body);
+          return Promise.resolve({ ETag: '"mp3-etag"' });
+        }
+        return Promise.resolve({});
+      });
+      const socialClient = client(pricing.resolution)(socialContract);
+      const request = {
+        platform,
+        url,
+        maxDuration: 120,
+        quality: "1080p",
+        format: "mp3",
+      } as const;
+      const created = await accept(
+        socialClient.createDownload({
+          headers: authenticate(actor),
+          body: request,
+        }),
+        [202],
+      );
+      await flushWaitUntilForTest();
+      expect(created.body).toMatchObject({
+        status: "processing",
+        format: "mp3",
+      });
+      await expect(credits(actor)).resolves.toBe(6);
+      const poll = () => {
+        return socialClient.getDownload({
+          headers: authenticate(actor),
+          params: { downloadId: created.body.downloadId },
+        });
+      };
+      providerReady = true;
+      await accept(poll(), [200]);
+      await flushWaitUntilForTest();
+      const failed = await accept(poll(), [200]);
+      await flushWaitUntilForTest();
+      expect(failed.body).toMatchObject({
+        status: "artifact_failed",
+        requested: { quality: "1080p", format: "mp3" },
+        provider: { format: "mp3", creditsCost: 2 },
+        billing: { quantity: 2, creditsCharged: 6 },
+        artifact: null,
+        error: { billed: true, retryable: true },
+      });
+      await expect(credits(actor)).resolves.toBe(0);
+
+      mediaAvailable = true;
+      mockNow(now() + 121_000);
+      await accept(poll(), [200]);
+      await flushWaitUntilForTest();
+      const completed = await accept(poll(), [200]);
+      expect(completed.body).toMatchObject({
+        status: "completed",
+        requested: { quality: "1080p", format: "mp3" },
+        delivered: { quality: null, format: "mp3" },
+        provider: { format: "mp3", creditsCost: 2 },
+        billing: { quantity: 2, creditsCharged: 6 },
+        artifact: {
+          filename: "MP3 clip.mp3",
+          contentType: "audio/mpeg",
+          sizeBytes: MPEG_FRAME_PAYLOAD.byteLength,
+          format: "mp3",
+        },
+      });
+      const listed = await accept(
+        socialClient.listDownloads({ headers: authenticate(actor), query: {} }),
+        [200],
+      );
+      expect(listed.body.downloads).toMatchObject([
+        {
+          ...completed.body,
+          request: { url },
+          resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+        },
+      ]);
+      await accept(poll(), [200]);
+      await expect(credits(actor)).resolves.toBe(0);
+      expect(providerRequests).toStrictEqual([
+        { url, max_duration: 120, quality: "1080p", format: "mp3" },
+      ]);
+      expect(artifactRequests).toStrictEqual(["/initial", "/refreshed"]);
+      expect(contentTypes).toStrictEqual(["audio/mpeg", "audio/mpeg"]);
+      expect(uploadedParts).toStrictEqual([MPEG_FRAME_PAYLOAD]);
+    },
+  );
+
+  it.each([
     {
       caseName: "a 61-second HD video",
       platform: "youtube",
@@ -3140,6 +3309,24 @@ describe("managed SocialKit route", () => {
       quality: "1080p",
       format: "m4a",
       deliveredQuality: "1080p",
+      creditsCost: 2,
+      maximumRetailCredits: 6,
+    },
+    {
+      caseName: "MP3 audio requested with HD quality",
+      platform: "youtube",
+      quality: "1080p",
+      format: "mp3",
+      deliveredQuality: "1080p",
+      creditsCost: 2,
+      maximumRetailCredits: 6,
+    },
+    {
+      caseName: "TikTok MP3 audio requested with HD quality",
+      platform: "tiktok",
+      quality: "1080p",
+      format: "mp3",
+      deliveredQuality: "720p",
       creditsCost: 2,
       maximumRetailCredits: 6,
     },
@@ -3196,9 +3383,12 @@ describe("managed SocialKit route", () => {
       const pricing = await setupConfiguredPricing();
       await bootstrapOnboarding(actor);
       await setActorCredits(actor, maximumRetailCredits);
-      const payload = isoBaseMediaPayload("isom", [
-        options.format === "m4a" ? "soun" : "vide",
-      ]);
+      const payload =
+        options.format === "mp3"
+          ? AUDIO_ONLY_PAYLOAD
+          : isoBaseMediaPayload("isom", [
+              options.format === "m4a" ? "soun" : "vide",
+            ]);
 
       const body = await completeDownloadWithPayload(
         actor,
@@ -3213,7 +3403,7 @@ describe("managed SocialKit route", () => {
         format: options.format,
         requested: { quality: options.quality, format: options.format },
         delivered: {
-          quality: options.format === "m4a" ? null : options.deliveredQuality,
+          quality: options.format === "mp4" ? options.deliveredQuality : null,
           format: options.format,
         },
         provider: {
@@ -3251,6 +3441,13 @@ describe("managed SocialKit route", () => {
     { caseName: "invalid delivered resolution", deliveredQuality: "HD" },
     { caseName: "excessive duration", durationSeconds: 121, creditsCost: 12 },
     { caseName: "HD charge for audio", format: "m4a", creditsCost: 8 },
+    { caseName: "HD charge for MP3 audio", format: "mp3", creditsCost: 8 },
+    {
+      caseName: "MP3 ready metadata declaring M4A",
+      format: "mp3",
+      providerFormat: "m4a",
+      creditsCost: 2,
+    },
     {
       caseName: "HD charge for TikTok delivered below HD",
       platform: "tiktok",
@@ -3288,38 +3485,44 @@ describe("managed SocialKit route", () => {
     await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
 
-  it("returns unknown delivered metadata for a pre-existing completed job", async () => {
-    const actor = createBddApi(context).user();
-    configureProvider();
-    const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
-    const completed = await completeDownloadWithPayload(
-      actor,
-      pricing,
-      isoBaseMediaPayload("isom", ["vide"]),
-      { creditsCost: 2 },
-    );
-    const creditsAfterCompletion = await credits(actor);
-    // Current production writers cannot create the historical JSONB shape.
-    await restoreLegacyDownloadMetadataFixture(completed.downloadId);
+  it.each(["mp4", "m4a"] as const)(
+    "returns unknown delivered metadata for a pre-existing %s job",
+    async (format) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const completed = await completeDownloadWithPayload(
+        actor,
+        pricing,
+        isoBaseMediaPayload("isom", [format === "mp4" ? "vide" : "soun"]),
+        { format, creditsCost: 2 },
+      );
+      const creditsAfterCompletion = await credits(actor);
+      // Current production writers cannot create the historical JSONB shape.
+      await restoreLegacyDownloadMetadataFixture(completed.downloadId);
 
-    const historical = await accept(
-      client(pricing.resolution)(socialContract).getDownload({
-        headers: authenticate(actor),
-        params: { downloadId: completed.downloadId },
-      }),
-      [200],
-    );
+      const historical = await accept(
+        client(pricing.resolution)(socialContract).getDownload({
+          headers: authenticate(actor),
+          params: { downloadId: completed.downloadId },
+        }),
+        [200],
+      );
 
-    expect(historical.body).toMatchObject({
-      status: "completed",
-      requested: { quality: "720p", format: "mp4" },
-      delivered: { quality: null, format: null },
-      billing: { quantity: 2, creditsCharged: 6 },
-      artifact: { filename: "Public clip.mp4", contentType: "video/mp4" },
-    });
-    await expect(credits(actor)).resolves.toBe(creditsAfterCompletion);
-  });
+      expect(historical.body).toMatchObject({
+        status: "completed",
+        requested: { quality: "720p", format },
+        delivered: { quality: null, format: null },
+        billing: { quantity: 2, creditsCharged: 6 },
+        artifact: {
+          filename: `Public clip.${format}`,
+          contentType: format === "mp4" ? "video/mp4" : "audio/mp4",
+        },
+      });
+      await expect(credits(actor)).resolves.toBe(creditsAfterCompletion);
+    },
+  );
 
   it.each([
     {
@@ -3388,29 +3591,66 @@ describe("managed SocialKit route", () => {
     },
   );
 
-  it("keeps the requested format for an unrecognized container", async () => {
+  it("reports detected M4A bytes truthfully for an MP3 request", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
-    const payload = new Uint8Array([
-      0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00,
-    ]);
 
-    const body = await completeDownloadWithPayload(actor, pricing, payload);
+    const body = await completeDownloadWithPayload(
+      actor,
+      pricing,
+      isoBaseMediaPayload("isom", ["soun"]),
+      { format: "mp3", creditsCost: 2 },
+    );
 
     expect(body).toMatchObject({
       status: "completed",
-      delivered: { quality: "720p", format: null },
+      requested: { quality: "720p", format: "mp3" },
+      provider: { format: "mp3" },
+      delivered: { quality: null, format: "m4a" },
       artifact: {
-        filename: "Public clip.mp4",
-        contentType: "video/mp4",
-        sizeBytes: payload.byteLength,
-        format: null,
+        filename: "Public clip.m4a",
+        contentType: "audio/mp4",
+        format: "m4a",
       },
+      billing: { quantity: 2, creditsCharged: 6 },
     });
   });
+
+  it.each([
+    { format: "mp4", contentType: "video/mp4" },
+    { format: "m4a", contentType: "audio/mp4" },
+    { format: "mp3", contentType: "audio/mpeg" },
+  ] as const)(
+    "keeps requested $format hints and unknown delivery for an unrecognized container",
+    async ({ format, contentType }) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const payload = new Uint8Array([
+        0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+      ]);
+
+      const body = await completeDownloadWithPayload(actor, pricing, payload, {
+        format,
+        creditsCost: 2,
+      });
+
+      expect(body).toMatchObject({
+        status: "completed",
+        delivered: { quality: format === "mp4" ? "720p" : null, format: null },
+        artifact: {
+          filename: `Public clip.${format}`,
+          contentType,
+          sizeBytes: payload.byteLength,
+          format: null,
+        },
+      });
+    },
+  );
 
   it.each([
     {

@@ -175,7 +175,12 @@ export const accountErasureWork = pgTable(
         t.itemKey,
         t.generation,
       ),
-      index("account_erasure_work_claim").on(t.jobId, t.availableAt, t.id),
+      index("account_erasure_work_claim")
+        .on(t.jobId, t.availableAt, t.id)
+        .where(sql`${t.state} IN ('pending', 'retryable_failure')`),
+      index("account_erasure_work_deadline")
+        .on(t.jobId, t.id)
+        .where(sql`${t.state} IN ('pending', 'retryable_failure')`),
       foreignKey({
         name: "account_erasure_work_sink_fk",
         columns: [t.jobId, t.sinkId],

@@ -59,6 +59,8 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
 
+// Reveal immediately so hover does not create and remove a temporary opacity
+// layer in the scrolling transcript beside the assistant's SVG icons.
 export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS =
   "flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100";
 

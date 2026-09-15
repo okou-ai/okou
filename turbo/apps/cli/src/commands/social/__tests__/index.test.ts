@@ -1,4 +1,14 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -162,6 +172,9 @@ describe("okou social command", () => {
     vi.stubEnv("OKOU_TOKEN", "test-okou-token");
     for (const command of socialCommand.commands) {
       command.setOptionValue("json", undefined);
+      command.setOptionValue("output", undefined);
+      command.setOptionValue("select", undefined);
+      command.setOptionValue("overwrite", undefined);
       command.setOptionValue("thread", undefined);
       command.setOptionValue("fullDetails", undefined);
       command.setOptionValue("requireViews", undefined);
@@ -208,6 +221,779 @@ describe("okou social command", () => {
   function output(): string {
     return mockConsoleLog.mock.calls.flat().join("\n");
   }
+
+  describe("research export", () => {
+    let directory: string;
+
+    beforeEach(async () => {
+      directory = await mkdtemp(join(tmpdir(), "okou-social-export-"));
+    });
+
+    afterEach(async () => {
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    const commentsArgs = [
+      "node",
+      "okou",
+      "comments",
+      "https://instagram.com/p/example",
+    ];
+
+    function serveRows(rows: readonly unknown[], collection?: Collection) {
+      const requests: unknown[] = [];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requests.push(await request.json());
+            return HttpResponse.json(
+              socialResponse(
+                "instagram_comments",
+                collection ?? {
+                  state: "complete",
+                  itemsReturned: rows.length,
+                },
+                { comments: rows, commentCount: rows.length },
+              ),
+            );
+          },
+        ),
+      );
+      return requests;
+    }
+
+    it("exports ordered JSON fields while preserving context, metadata, null, false, and zero", async () => {
+      const requests = serveRows([
+        {
+          id: "one",
+          author: { name: "作者" },
+          views: null,
+          liked: false,
+          likes: 0,
+          tags: ["a", "b"],
+          extra: "omit",
+        },
+        { id: "two", likes: 1 },
+      ]);
+      const path = join(directory, "results.json");
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--output",
+        path,
+        "--select",
+        "author.name,id,views,liked,likes,tags,missing",
+        "--json",
+      ]);
+      const saved = await readFile(path, "utf8");
+      expect(saved.split("\n")).toHaveLength(2);
+      expect(JSON.parse(saved) as unknown).toMatchObject({
+        kind: "result",
+        status: "complete",
+        operation: "comments",
+        platform: "instagram",
+        data: {
+          items: [
+            {
+              "author.name": "作者",
+              id: "one",
+              views: null,
+              liked: false,
+              likes: 0,
+              tags: ["a", "b"],
+            },
+            { id: "two", likes: 1 },
+          ],
+          context: { commentCount: 2 },
+        },
+        billing: { creditsCharged: 3 },
+        warnings: [],
+      });
+      expect(saved).not.toContain('"extra"');
+      expect(saved).not.toContain('"missing"');
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "export",
+        status: "complete",
+        billing: { creditsCharged: 3 },
+        export: {
+          path,
+          format: "json",
+          visibility: "local",
+          guidance: expect.stringContaining("web upload-file"),
+        },
+      });
+      expect(JSON.parse(output()) as unknown).not.toHaveProperty("data");
+      expect(requests).toHaveLength(1);
+      expect(await readdir(directory)).toEqual(["results.json"]);
+      if (process.platform !== "win32")
+        expect((await stat(path)).mode & 0o777).toBe(0o600);
+    });
+
+    it("writes CSV with ordered columns, quoted Unicode/newlines, nested JSON, and formula protection", async () => {
+      serveRows([
+        {
+          text: '你好,"world"\r\nnext',
+          nested: { ok: true },
+          tags: ["一", "二"],
+          value: null,
+          count: 0,
+          active: false,
+          formula: "=1+1",
+        },
+        {
+          text: "",
+          nested: [1, 2],
+          tags: [],
+          count: -2,
+          active: true,
+          formula: " \t@SUM(A1)",
+        },
+      ]);
+      const path = join(directory, "research.csv");
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--format",
+        "csv",
+        "--output",
+        path,
+        "--select",
+        "text,nested,tags,value,missing,count,active,formula",
+      ]);
+      expect(await readFile(path, "utf8")).toBe(
+        '"text","nested","tags","value","missing","count","active","formula"\r\n' +
+          '"你好,""world""\r\nnext","{""ok"":true}","[""一"",""二""]",null,,0,false,"\'=1+1"\r\n' +
+          '"","[1,2]","[]",,,-2,true,"\' \t@SUM(A1)"\r\n',
+      );
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "export",
+        billing: { creditsCharged: 3 },
+      });
+    });
+
+    it("exports only own properties when a selected name also exists on the prototype", async () => {
+      serveRows([
+        { id: "inherited" },
+        { id: "own", toString: "provider value" },
+      ]);
+      const path = join(directory, "properties.csv");
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--output",
+        path,
+        "--format",
+        "csv",
+        "--select",
+        "toString,id",
+        "--json",
+      ]);
+      expect(await readFile(path, "utf8")).toBe(
+        '"toString","id"\r\n,"inherited"\r\n"provider value","own"\r\n',
+      );
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "export",
+        status: "complete",
+      });
+      expect(errorOutput()).toBe("");
+    });
+
+    it.each(["json", "csv"])(
+      "exports accepted results and accounting after a later page fails (%s)",
+      async (format) => {
+        const requests: unknown[] = [];
+        server.use(
+          http.post(
+            "http://localhost:3000/api/social/request",
+            async ({ request }) => {
+              requests.push(await request.json());
+              if (requests.length === 1)
+                return HttpResponse.json(
+                  socialResponse(
+                    "instagram_comments",
+                    {
+                      state: "more",
+                      itemsReturned: 1,
+                      nextInput: { cursor: "next" },
+                      reportedTotal: 20,
+                    },
+                    {
+                      comments: [
+                        { id: "accepted", text: "saved", extra: "unselected" },
+                      ],
+                    },
+                    2,
+                  ),
+                );
+              return HttpResponse.json(
+                {
+                  error: {
+                    code: "SOCIALKIT_UPSTREAM_ERROR",
+                    message: "Page failed",
+                    reason: "upstream_failure",
+                    retryable: false,
+                  },
+                },
+                { status: 502 },
+              );
+            },
+          ),
+        );
+        const path = join(directory, `partial.${format}`);
+        await socialCommand.parseAsync([
+          ...commentsArgs,
+          "--output",
+          path,
+          "--format",
+          format,
+          "--select",
+          "text,id",
+          "--json",
+        ]);
+        const receipt: unknown = JSON.parse(output());
+        expect(receipt).toMatchObject({
+          kind: "export",
+          status: "partial",
+          collection: {
+            state: "failed",
+            itemsReturned: 1,
+            nextInput: { cursor: "next" },
+          },
+          billing: { quantity: 2, creditsCharged: 6 },
+          progress: { pages: 1, itemsReturned: 1, creditsCharged: 6 },
+          error: { message: "Page failed", retryable: false },
+        });
+        const saved = await readFile(path, "utf8");
+        if (format === "json") {
+          expect(JSON.parse(saved) as unknown).toMatchObject({
+            status: "partial",
+            data: { items: [{ text: "saved", id: "accepted" }] },
+            error: { message: "Page failed" },
+          });
+        } else expect(saved).toBe('"text","id"\r\n"saved","accepted"\r\n');
+        expect(errorOutput()).toContain("Page failed");
+        expect(process.exitCode).toBe(1);
+        expect(mockExit).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(2);
+        expect(mockConsoleLog).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it("exports empty CSV headers while retaining source limitations and exit 2", async () => {
+      serveRows([], {
+        state: "provider_limited",
+        itemsReturned: 0,
+        reason: "provider_ceiling",
+      });
+      const path = join(directory, "empty.csv");
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--format",
+        "csv",
+        "--output",
+        path,
+        "--select",
+        "id,text",
+        "--json",
+      ]);
+      expect(await readFile(path, "utf8")).toBe('"id","text"\r\n');
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "partial",
+        collection: { state: "provider_limited", itemsReturned: 0 },
+        warnings: [expect.objectContaining({ code: expect.any(String) })],
+        billing: { creditsCharged: 3 },
+      });
+      expect(process.exitCode).toBe(2);
+    });
+
+    it.each([
+      ["inspect", "https://instagram.com/p/example", "instagram_stats"],
+      ["transcript", "https://youtu.be/example", "youtube_transcript"],
+      ["summarize", "https://youtu.be/example", "youtube_summarize"],
+    ])(
+      "saves single-result %s JSON without another provider request",
+      async (command, url, tool) => {
+        const requests: unknown[] = [];
+        server.use(
+          http.post(
+            "http://localhost:3000/api/social/request",
+            async ({ request }) => {
+              requests.push(await request.json());
+              return HttpResponse.json({
+                ...socialResponse(tool, null, {
+                  title: "Example",
+                  nested: { value: 0 },
+                  optional: null,
+                }),
+                creditsCharged: 0,
+              });
+            },
+          ),
+        );
+        const path = join(directory, "single.json");
+        await socialCommand.parseAsync([
+          "node",
+          "okou",
+          command,
+          url,
+          "--output",
+          path,
+          "--select",
+          "title,nested.value,optional,missing",
+          ...(command === "summarize"
+            ? ["--fields", '{"title":"Describe the subject"}']
+            : []),
+        ]);
+        expect(
+          JSON.parse(await readFile(path, "utf8")) as unknown,
+        ).toMatchObject({
+          data: { title: "Example", "nested.value": 0, optional: null },
+          collection: null,
+          billing: { quantity: 1, creditsCharged: 0 },
+        });
+        expect(requests).toHaveLength(1);
+        if (command === "summarize")
+          expect(requests[0]).toHaveProperty("input.custom_response", {
+            title: "Describe the subject",
+          });
+      },
+    );
+
+    it("projects stdout JSON without losing metadata or creating a file", async () => {
+      serveRows([{ id: "one", text: "omit" }]);
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--select",
+        "id",
+        "--json",
+      ]);
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "result",
+        data: { items: [{ id: "one" }] },
+        billing: { creditsCharged: 3 },
+      });
+      expect(output()).not.toContain("omit");
+      expect(await readdir(directory)).toEqual([]);
+    });
+
+    it.each([
+      ["posts", "https://www.youtube.com/@example", "youtube_videos"],
+      ["search", "small business", "youtube_search"],
+    ])(
+      "exports normalized %s rows without sending export flags to the API",
+      async (command, target, tool) => {
+        const requests: unknown[] = [];
+        server.use(
+          http.post(
+            "http://localhost:3000/api/social/request",
+            async ({ request }) => {
+              requests.push(await request.json());
+              return HttpResponse.json(
+                socialResponse(
+                  tool,
+                  { state: "complete", itemsReturned: 1 },
+                  {
+                    results: [
+                      { title: "Example", url: "https://youtu.be/example" },
+                    ],
+                    hasMore: false,
+                  },
+                ),
+              );
+            },
+          ),
+        );
+        const path = join(directory, "research.csv");
+        await socialCommand.parseAsync([
+          "node",
+          "okou",
+          command,
+          target,
+          ...(command === "search" ? ["--platform", "youtube"] : []),
+          "--limit",
+          "20",
+          "--select",
+          "title,url",
+          "--format",
+          "csv",
+          "--output",
+          path,
+        ]);
+        expect(await readFile(path, "utf8")).toBe(
+          '"title","url"\r\n"Example","https://youtu.be/example"\r\n',
+        );
+        expect(requests).toEqual([
+          {
+            tool,
+            input:
+              command === "search"
+                ? { query: target, limit: 20 }
+                : { url: target, limit: 20 },
+          },
+        ]);
+      },
+    );
+
+    it("writes a first-page failure envelope with no accepted billing", async () => {
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIALKIT_UPSTREAM_ERROR",
+                message: "Unavailable",
+              },
+            },
+            { status: 502 },
+          );
+        }),
+      );
+      const path = join(directory, "failure.json");
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--output",
+        path,
+        "--select",
+        "id",
+        "--json",
+      ]);
+      expect(JSON.parse(await readFile(path, "utf8")) as unknown).toMatchObject(
+        {
+          status: "error",
+          data: { items: [] },
+          billing: null,
+          progress: { pages: 0, creditsCharged: 0 },
+          error: { message: "Unavailable" },
+        },
+      );
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "export",
+        status: "error",
+        billing: null,
+      });
+      expect(process.exitCode).toBe(1);
+      expect(mockExit).not.toHaveBeenCalled();
+      expect(await readdir(directory)).toEqual(["failure.json"]);
+    });
+
+    it("cleans staging files and keeps an overwrite target after a single-result request failure", async () => {
+      const path = join(directory, "keep.json");
+      await writeFile(path, "original");
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIALKIT_UPSTREAM_ERROR",
+                message: "Unavailable",
+              },
+            },
+            { status: 502 },
+          );
+        }),
+      );
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "inspect",
+          "https://instagram.com/p/example",
+          "--output",
+          path,
+          "--overwrite",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(await readFile(path, "utf8")).toBe("original");
+      expect(await readdir(directory)).toEqual(["keep.json"]);
+      expect(errorOutput()).toContain("Unavailable");
+      expect(output()).toBe("");
+    });
+
+    it("keeps the original default stdout envelope and formatting", async () => {
+      serveRows([{ id: "one", text: "retained" }]);
+      await socialCommand.parseAsync(commentsArgs);
+      const result: unknown = JSON.parse(output());
+      expect(result).toMatchObject({
+        kind: "result",
+        data: {
+          items: [{ id: "one", text: "retained" }],
+          context: { commentCount: 1 },
+        },
+        billing: { creditsCharged: 3 },
+      });
+      expect(output()).toBe(JSON.stringify(result, null, 2));
+      expect(await readdir(directory)).toEqual([]);
+    });
+
+    it.each([
+      ["--format", "yaml"],
+      ["--format", "csv"],
+      ["--overwrite"],
+      ["--select", ""],
+      ["--select", "id,id"],
+      ["--select", "author..name"],
+      ["--select", "items[0]"],
+      ["--select", "__proto__.x"],
+      ["--select", "constructor"],
+      ["--select", "a.b.c.d.e.f.g.h.i"],
+      ["--select", "a".repeat(129)],
+      [
+        "--select",
+        Array.from({ length: 33 }, (_, i) => {
+          return `field${i}`;
+        }).join(","),
+      ],
+      ["--stream", "--format", "json"],
+      ["--stream", "--select", "id"],
+      ["--stream", "--overwrite"],
+    ])(
+      "rejects incompatible/invalid options before provider work: %j",
+      async (...flags) => {
+        const requests = serveRows([]);
+        await expect(
+          socialCommand.parseAsync([...commentsArgs, ...flags, "--json"]),
+        ).rejects.toThrow("process.exit called");
+        expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+          status: "error",
+          error: { kind: "invalid_input" },
+        });
+        expect(requests).toEqual([]);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+
+    it.each(["stream", "missing-columns", "single-csv"])(
+      "rejects file export combination %s before requests or files",
+      async (combination) => {
+        const requests = serveRows([]);
+        const path = join(directory, "results.csv");
+        const args =
+          combination === "single-csv"
+            ? [
+                "node",
+                "okou",
+                "inspect",
+                "https://instagram.com/p/example",
+                "--format",
+                "csv",
+                "--select",
+                "id",
+              ]
+            : [
+                ...commentsArgs,
+                ...(combination === "stream"
+                  ? ["--stream"]
+                  : ["--format", "csv"]),
+              ];
+        await expect(
+          socialCommand.parseAsync([...args, "--output", path, "--json"]),
+        ).rejects.toThrow("process.exit called");
+        expect(requests).toEqual([]);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+
+    it.each(["existing", "directory", "symlink", "missing-parent"])(
+      "rejects %s destinations before billing",
+      async (kind) => {
+        const requests = serveRows([]);
+        const target = join(directory, "target");
+        const path =
+          kind === "missing-parent"
+            ? join(directory, "missing", "out.json")
+            : join(directory, "out.json");
+        if (kind === "existing") await writeFile(path, "keep");
+        if (kind === "directory") await mkdir(path);
+        if (kind === "symlink") {
+          await writeFile(target, "keep");
+          await symlink(target, path);
+        }
+        await expect(
+          socialCommand.parseAsync([
+            ...commentsArgs,
+            "--output",
+            path,
+            ...(kind === "symlink" || kind === "directory"
+              ? ["--overwrite"]
+              : []),
+            "--json",
+          ]),
+        ).rejects.toThrow("process.exit called");
+        expect(errorOutput()).toContain("Cannot prepare --output");
+        expect(requests).toEqual([]);
+        expect(
+          (await readdir(directory)).some((name) => {
+            return name.endsWith(".tmp");
+          }),
+        ).toBe(false);
+        if (kind === "existing" || kind === "symlink")
+          expect(await readFile(path, "utf8")).toBe("keep");
+      },
+    );
+
+    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+      "rejects an unwritable parent before billing",
+      async () => {
+        const requests = serveRows([]);
+        await chmod(directory, 0o500);
+        try {
+          await expect(
+            socialCommand.parseAsync([
+              ...commentsArgs,
+              "--output",
+              join(directory, "out.json"),
+              "--json",
+            ]),
+          ).rejects.toThrow("process.exit called");
+          expect(errorOutput()).toContain("writable parent");
+          expect(requests).toEqual([]);
+        } finally {
+          await chmod(directory, 0o700);
+        }
+      },
+    );
+
+    it("preserves the existing file until an explicit overwrite is ready", async () => {
+      const path = join(directory, "out.json");
+      await writeFile(path, "old content");
+      server.use(
+        http.post("http://localhost:3000/api/social/request", async () => {
+          expect(await readFile(path, "utf8")).toBe("old content");
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              { state: "complete", itemsReturned: 1 },
+              { comments: [{ id: "new" }] },
+            ),
+          );
+        }),
+      );
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--output",
+        path,
+        "--overwrite",
+        "--json",
+      ]);
+      expect(
+        JSON.parse(await readFile(path, "utf8")) as unknown,
+      ).toHaveProperty("data.items", [{ id: "new" }]);
+      expect(await readdir(directory)).toEqual(["out.json"]);
+    });
+
+    it("recovers the full result and billing when another writer claims the destination", async () => {
+      const path = join(directory, "out.csv");
+      const requests: unknown[] = [];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requests.push(await request.json());
+            await writeFile(path, "concurrent writer");
+            return HttpResponse.json(
+              socialResponse(
+                "instagram_comments",
+                { state: "complete", itemsReturned: 1 },
+                { comments: [{ id: "one", text: "recover me" }] },
+              ),
+            );
+          },
+        ),
+      );
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--output",
+        path,
+        "--format",
+        "csv",
+        "--select",
+        "id",
+        "--json",
+      ]);
+      expect(await readFile(path, "utf8")).toBe("concurrent writer");
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "result",
+        data: { items: [{ id: "one", text: "recover me" }] },
+        billing: { creditsCharged: 3 },
+      });
+      expect(errorOutput()).toContain("without repeating the Social request");
+      expect(process.exitCode).toBe(1);
+      expect(mockExit).not.toHaveBeenCalled();
+      expect(requests).toHaveLength(1);
+      expect(await readdir(directory)).toEqual(["out.csv"]);
+    });
+
+    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+      "retains recovered results and both diagnostics when directory access prevents publication and cleanup",
+      async () => {
+        const path = join(directory, "blocked.json");
+        const requests: unknown[] = [];
+        server.use(
+          http.post(
+            "http://localhost:3000/api/social/request",
+            async ({ request }) => {
+              requests.push(await request.json());
+              await chmod(directory, 0o500);
+              return HttpResponse.json(
+                socialResponse(
+                  "instagram_comments",
+                  { state: "complete", itemsReturned: 1 },
+                  { comments: [{ id: "one", text: "retain me" }] },
+                ),
+              );
+            },
+          ),
+        );
+        try {
+          await socialCommand.parseAsync([
+            ...commentsArgs,
+            "--output",
+            path,
+            "--select",
+            "id",
+            "--json",
+          ]);
+          expect(JSON.parse(output()) as unknown).toMatchObject({
+            kind: "result",
+            data: { items: [{ id: "one", text: "retain me" }] },
+            billing: { creditsCharged: 3 },
+          });
+          expect(
+            mockConsoleError.mock.calls.map(([value]) => {
+              return JSON.parse(String(value)) as unknown;
+            }),
+          ).toEqual([
+            {
+              status: "error",
+              error: {
+                kind: "export_cleanup",
+                code: "EXPORT_CLEANUP_FAILED",
+                message: expect.stringContaining(".tmp"),
+                retryable: false,
+              },
+            },
+            expect.objectContaining({
+              error: expect.objectContaining({
+                message: expect.stringContaining(
+                  "without repeating the Social request",
+                ),
+              }),
+            }),
+          ]);
+          expect(process.exitCode).toBe(1);
+          expect(mockExit).not.toHaveBeenCalled();
+          expect(requests).toHaveLength(1);
+          await expect(readFile(path, "utf8")).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+          expect(await readdir(directory)).toEqual([
+            expect.stringMatching(/^\.okou-social-.+\.tmp$/u),
+          ]);
+        } finally {
+          await chmod(directory, 0o700);
+        }
+      },
+    );
+  });
 
   it("discovers a lost task ID and retrieves its artifact through existing resume", async () => {
     const task = completedDownload();
@@ -692,7 +1478,7 @@ describe("okou social command", () => {
           operation: "download",
           inputs: expect.objectContaining({
             "--format": expect.objectContaining({
-              choices: ["mp4", "m4a"],
+              choices: ["mp4", "m4a", "mp3"],
               default: "mp4",
               required: false,
             }),
@@ -3291,6 +4077,119 @@ describe("okou social command", () => {
     });
   });
 
+  it("creates, polls and discovers an explicit MP3 audio download", async () => {
+    const legacy = completedDownload();
+    const completed = {
+      ...legacy,
+      quality: "1080p",
+      format: "mp3",
+      requested: { quality: "1080p", format: "mp3" },
+      delivered: { quality: null, format: "mp3" },
+      provider: { ...legacy.provider, quality: "1080p", format: "mp3" },
+      artifact: {
+        ...legacy.artifact,
+        filename: "example.mp3",
+        url: "https://artifacts.example/example.mp3",
+        contentType: "audio/mpeg",
+        format: "mp3",
+      },
+    };
+    let requestBody: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/downloads",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json(
+            {
+              ...completed,
+              status: "processing",
+              delivered: { quality: null, format: null },
+              provider: null,
+              billing: null,
+              artifact: null,
+              completedAt: null,
+            },
+            { status: 202 },
+          );
+        },
+      ),
+      http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
+        return HttpResponse.json(completed);
+      }),
+      http.get("http://localhost:3000/api/social/downloads", () => {
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...completed,
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/example",
+                maxDuration: 600,
+                quality: "1080p",
+                format: "mp3",
+              },
+              resumeCommand: `okou social download --resume ${completed.downloadId}`,
+            },
+          ],
+          nextCursor: null,
+        });
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "download",
+      "https://youtu.be/example",
+      "--max-duration",
+      "600",
+      "--format",
+      "mp3",
+      "--quality",
+      "1080p",
+      "--json",
+    ]);
+    expect(requestBody).toStrictEqual({
+      platform: "youtube",
+      url: "https://youtu.be/example",
+      maxDuration: 600,
+      quality: "1080p",
+      format: "mp3",
+    });
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "complete",
+      data: {
+        requested: completed.requested,
+        delivered: completed.delivered,
+        artifact: completed.artifact,
+      },
+      billing: { quantity: 2, creditsCharged: 6 },
+      inlineMarkdownLink:
+        "[example.mp3](<https://artifacts.example/example.mp3>)",
+    });
+    expect(outputRequest()).toStrictEqual({
+      resume: false,
+      maxDuration: 600,
+      quality: "1080p",
+      format: "mp3",
+    });
+    mockConsoleLog.mockClear();
+    await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [
+        {
+          format: "mp3",
+          requested: completed.requested,
+          delivered: completed.delivered,
+          artifact: completed.artifact,
+          resumeCommand: `okou social download --resume ${completed.downloadId}`,
+        },
+      ],
+      nextCommand: null,
+    });
+  });
+
   it.each([
     {
       caseName: "creation",
@@ -3406,6 +4305,7 @@ describe("okou social command", () => {
   it.each([
     {
       platform: "tiktok",
+      requestedFormat: "mp4",
       providerQuality: "576p",
       delivered: { quality: "576p", format: "mp4" },
       filename: "example.mp4",
@@ -3413,24 +4313,41 @@ describe("okou social command", () => {
     },
     {
       platform: "youtube",
+      requestedFormat: "mp4",
+      providerQuality: "720p",
+      delivered: { quality: null, format: "mp3" },
+      filename: "example.mp3",
+      contentType: "audio/mpeg",
+    },
+    {
+      platform: "youtube",
+      requestedFormat: "mp3",
       providerQuality: "720p",
       delivered: { quality: null, format: "mp3" },
       filename: "example.mp3",
       contentType: "audio/mpeg",
     },
   ])(
-    "preserves delivered $delivered.format metadata when resuming",
-    async ({ platform, providerQuality, delivered, filename, contentType }) => {
+    "preserves requested $requestedFormat and delivered $delivered.format metadata when resuming",
+    async ({
+      platform,
+      requestedFormat,
+      providerQuality,
+      delivered,
+      filename,
+      contentType,
+    }) => {
       const legacy = completedDownload();
       const response = {
         ...legacy,
         platform,
-        requested: { quality: "720p", format: "mp4" },
+        format: requestedFormat,
+        requested: { quality: "720p", format: requestedFormat },
         delivered,
         provider: {
           ...legacy.provider,
           quality: providerQuality,
-          format: "mp4",
+          format: requestedFormat,
         },
         artifact: {
           ...legacy.artifact,
@@ -3461,7 +4378,7 @@ describe("okou social command", () => {
       expect(JSON.parse(output()) as unknown).toMatchObject({
         data: {
           quality: "720p",
-          format: "mp4",
+          format: requestedFormat,
           requested: response.requested,
           delivered,
           artifact: { filename, contentType, format: delivered.format },
@@ -3472,7 +4389,7 @@ describe("okou social command", () => {
         resume: true,
         maxDuration: 600,
         quality: "720p",
-        format: "mp4",
+        format: requestedFormat,
       });
     },
   );
@@ -3843,6 +4760,7 @@ describe("okou social command", () => {
     expect(postsHelp).toContain("YouTube channel/playlist");
     expect(postsHelp).toContain("slower; --limit at most 30");
     expect(renderedHelp).toContain("--full-details --limit 30 --json");
+    expect(renderedHelp).toContain("--format mp3 --json");
     expect(renderedHelp).toContain("null, empty, or missing");
     for (const name of ["transcript", "summarize"]) {
       const command = socialCommand.commands.find((candidate) => {
@@ -3879,5 +4797,16 @@ describe("okou social command", () => {
     expect(renderedHelp).toContain("4096 characters");
     expect(renderedHelp).toContain("--prompt adds analysis instructions");
     expect(renderedHelp).toContain("do not enforce strict JSON Schema");
+    const download = socialCommand.commands.find((command) => {
+      return command.name() === "download";
+    });
+    renderedHelp = "";
+    download?.configureOutput({
+      writeOut: (value) => {
+        renderedHelp += value;
+      },
+    });
+    download?.outputHelp();
+    expect(renderedHelp).toContain("mp4, m4a, or mp3");
   });
 });

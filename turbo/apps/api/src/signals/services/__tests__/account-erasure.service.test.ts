@@ -1333,6 +1333,158 @@ describe("dormant account erasure persistence", () => {
     );
   });
 
+  it("orders claims by availability then id, caps batches at eight, and delays released retries", async () => {
+    const required = Array.from({ length: 12 }, () => {
+      return sink();
+    });
+    const { job } = await inventory(required);
+    const items = await db.select().from(work).where(eq(work.jobId, job.id));
+    const ids = items
+      .map((item) => {
+        return item.id;
+      })
+      .sort();
+    const earliest = ids.at(-1);
+    if (!earliest) {
+      throw new Error("missing fixture");
+    }
+    await db
+      .update(work)
+      .set({ availableAt: new Date("2020-01-01") })
+      .where(eq(work.jobId, job.id));
+    await db
+      .update(work)
+      .set({ availableAt: new Date("2019-01-01") })
+      .where(eq(work.id, earliest));
+
+    const first = await claimErasureWork(db, job.id, "inventory");
+    expect(
+      first.map((lease) => {
+        return lease.workId;
+      }),
+    ).toStrictEqual([earliest, ...ids.slice(0, 7)]);
+    const second = await claimErasureWork(db, job.id, "inventory");
+    expect(
+      second.map((lease) => {
+        return lease.workId;
+      }),
+    ).toStrictEqual(ids.slice(7, 11));
+    await expect(
+      claimErasureWork(db, job.id, "inventory"),
+    ).resolves.toStrictEqual([]);
+
+    const lease = first[0];
+    const source = required.find((item) => {
+      return item.sinkId === lease?.item.sinkId;
+    });
+    if (!lease || !source) {
+      throw new Error("missing claim");
+    }
+    await executeErasureWork(
+      db,
+      lease,
+      handler(source.collectorVersion, {
+        inventory: () => {
+          return Promise.resolve({
+            outcome: "retryable_failure",
+            errorCode: "verification_failed",
+            requestRef: null,
+          });
+        },
+      }),
+      context.signal,
+    );
+    await expect(
+      claimErasureWork(db, job.id, "inventory"),
+    ).resolves.toStrictEqual([]);
+    // Infrastructure-only clock fixture; the real unresolved write above owns
+    // the retry state and delay, and the claim still uses the database clock.
+    await db
+      .update(work)
+      .set({ availableAt: sql`clock_timestamp() - interval '1 second'` })
+      .where(eq(work.id, lease.workId));
+    const retry = await claimErasureWork(db, job.id, "inventory");
+    expect(retry).toMatchObject([
+      { workId: lease.workId, item: { attemptCount: 2 } },
+    ]);
+    await expect(renewErasureLease(db, lease)).rejects.toThrow("lease_lost");
+  });
+
+  it("expires pending work in bounded id order regardless of availability or a live lease", async () => {
+    const { job } = await inventory(
+      Array.from({ length: 12 }, () => {
+        return sink();
+      }),
+    );
+    const items = await db.select().from(work).where(eq(work.jobId, job.id));
+    const ids = items
+      .map((item) => {
+        return item.id;
+      })
+      .sort();
+    const terminalId = ids[0];
+    if (!terminalId) {
+      throw new Error("missing fixture");
+    }
+    const [, leased] = await claimErasureWork(db, job.id, "inventory", 2);
+    if (!leased) {
+      throw new Error("missing lease");
+    }
+    await db
+      .update(work)
+      .set({
+        state: "capability_unresolved",
+        errorCode: "permission_missing",
+        leaseId: null,
+        leaseExpiresAt: null,
+      })
+      .where(eq(work.id, terminalId));
+    await db
+      .update(work)
+      .set({ availableAt: new Date("2099-01-01") })
+      .where(eq(work.jobId, job.id));
+    await db
+      .update(jobs)
+      .set({ deadlineAt: sql`clock_timestamp() - interval '1 second'` })
+      .where(eq(jobs.id, job.id));
+    await expect(
+      claimErasureWork(db, job.id, "inventory"),
+    ).resolves.toStrictEqual([]);
+    const expired = await db
+      .select()
+      .from(work)
+      .where(
+        and(eq(work.jobId, job.id), eq(work.errorCode, "deadline_exceeded")),
+      );
+    expect(
+      expired
+        .map((item) => {
+          return item.id;
+        })
+        .sort(),
+    ).toStrictEqual(ids.slice(1, 9));
+    expect(
+      expired.every((item) => {
+        return item.leaseId === null && item.leaseExpiresAt === null;
+      }),
+    ).toBeTruthy();
+    await claimErasureWork(db, job.id, "verification");
+    await expect(
+      db
+        .select({ id: work.id })
+        .from(work)
+        .where(
+          and(eq(work.jobId, job.id), eq(work.errorCode, "deadline_exceeded")),
+        ),
+    ).resolves.toHaveLength(11);
+    await expect(
+      db
+        .select({ errorCode: work.errorCode })
+        .from(work)
+        .where(eq(work.id, terminalId)),
+    ).resolves.toStrictEqual([{ errorCode: "permission_missing" }]);
+  });
+
   it("atomically commits multiple pages, exact replay, and item/cursor rollback on conflicting capture", async () => {
     const { job, required } = await inventory();
     const [lease] = await claimErasureWork(db, job.id, "inventory");

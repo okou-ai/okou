@@ -8,8 +8,11 @@ import {
   type ImageRecognitionResponse,
 } from "@okouai/api-contracts/contracts/image-recognition";
 import { command } from "ccstate";
+import { isSpanContextValid, trace } from "@opentelemetry/api";
 
 import { insufficientCredits, notConfigured, notFound } from "../../lib/error";
+import { logger } from "../../lib/log";
+import { now } from "../../lib/time";
 import type { AgentAuthContext } from "../../types/auth";
 import { requestSignal$ } from "../context/hono";
 import {
@@ -19,7 +22,12 @@ import {
   type OpenRouterContentPart,
   type OpenRouterUsage,
 } from "../external/openrouter";
-import { settle } from "../utils";
+import {
+  openRouterFailureReason,
+  type OpenRouterDiagnostics,
+  type OpenRouterFailureReason,
+} from "../external/openrouter-failure";
+import { onRejection, settle } from "../utils";
 import {
   resolveArtifactObject$,
   type ResolvedArtifactObject,
@@ -34,6 +42,17 @@ import { resolveProviderReferenceUrls$ } from "./provider-reference-url.service"
 const IMAGE_RECOGNITION_MODEL = "xiaomi/mimo-v2.5";
 const IMAGE_RECOGNITION_OPERATION = "image-recognition";
 const IMAGE_RECOGNITION_MAX_TOKENS = 8192;
+
+const log = logger("api:image-recognition");
+type RecognitionFailureReason =
+  | OpenRouterFailureReason
+  | "request_cancelled"
+  | "operation_cancelled"
+  | "not_configured"
+  | "output_too_large"
+  | "incomplete_usage"
+  | "no_usage"
+  | "unsettled";
 
 type RecognitionAuth = Extract<AgentAuthContext, { readonly orgId: string }>;
 
@@ -155,9 +174,227 @@ function validateArtifact(artifact: ResolvedArtifactObject | null) {
   return artifact;
 }
 
+async function emitRecognitionFailure(
+  fields: Record<string, unknown>,
+): Promise<void> {
+  // Keep synchronous logger/exporter failures, including AbortError, inside
+  // the promise settled by the recognition boundary.
+  await Promise.resolve(log.warn("Image recognition failed", fields));
+}
+
+function createRecognitionDiagnostics(
+  operationId: string,
+  authenticatedRunId: string | undefined,
+  clientSignal: AbortSignal,
+  signal: AbortSignal,
+) {
+  const diagnostics: OpenRouterDiagnostics & {
+    reason?: RecognitionFailureReason;
+  } = { phase: "configuration" };
+  const startedAt = now();
+  const spanContext = trace.getActiveSpan()?.spanContext();
+  const traceId =
+    spanContext && isSpanContextValid(spanContext)
+      ? spanContext.traceId
+      : undefined;
+  const runId =
+    authenticatedRunId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
+      authenticatedRunId,
+    )
+      ? authenticatedRunId
+      : undefined;
+  const cancellationReason = (error: unknown) => {
+    if (signal.aborted && error === signal.reason) {
+      return "operation_cancelled";
+    }
+    return clientSignal.aborted && error === clientSignal.reason
+      ? "request_cancelled"
+      : undefined;
+  };
+  // Only this boundary emits the event. Awaiting its settled synchronous
+  // write isolates even abort-shaped logger failures; the existing request
+  // middleware owns the asynchronous Axiom flush after this command finishes.
+  const report = (
+    reason: RecognitionFailureReason,
+    response?: {
+      readonly status: number;
+      readonly body: { readonly error: { readonly code: string } };
+    },
+  ) => {
+    const elapsed = now() - startedAt;
+    return emitRecognitionFailure({
+      type: "image_recognition_failure",
+      operation_id: operationId,
+      ...(runId === undefined ? {} : { run_id: runId }),
+      ...(traceId === undefined ? {} : { trace_id: traceId }),
+      phase: diagnostics.phase,
+      reason,
+      ...(diagnostics.detail === undefined
+        ? {}
+        : { detail: diagnostics.detail }),
+      ...(diagnostics.upstreamStatus === undefined
+        ? {}
+        : { upstream_status: diagnostics.upstreamStatus }),
+      ...(diagnostics.finishReason === undefined
+        ? {}
+        : { finish_reason: diagnostics.finishReason }),
+      ...(diagnostics.nativeFinishReason === undefined
+        ? {}
+        : { native_finish_reason: diagnostics.nativeFinishReason }),
+      ...(diagnostics.completionTokens === undefined
+        ? {}
+        : { completion_tokens: diagnostics.completionTokens }),
+      ...(diagnostics.reasoningTokens === undefined
+        ? {}
+        : { reasoning_tokens: diagnostics.reasoningTokens }),
+      ...(response === undefined
+        ? {}
+        : {
+            public_status: response.status,
+            public_code: response.body.error.code,
+          }),
+      ...(Number.isFinite(elapsed)
+        ? {
+            duration_ms: Math.min(
+              Number.MAX_SAFE_INTEGER,
+              Math.max(0, elapsed),
+            ),
+          }
+        : {}),
+      request_aborted: clientSignal.aborted,
+      operation_aborted: signal.aborted,
+    });
+  };
+  const failed = async <
+    T extends {
+      readonly status: number;
+      readonly body: { readonly error: { readonly code: string } };
+    },
+  >(
+    response: T,
+    reason: RecognitionFailureReason,
+  ): Promise<T> => {
+    await Promise.allSettled([report(reason, response)]);
+    return response;
+  };
+  return {
+    diagnostics,
+    failed,
+    cancellationReason,
+    rejected: (error: unknown) => {
+      return Promise.allSettled([
+        report(
+          cancellationReason(error) ??
+            diagnostics.reason ??
+            openRouterFailureReason(error),
+        ),
+      ]);
+    },
+  };
+}
+
+const completeImageRecognition$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: RecognitionAuth;
+      readonly content: readonly OpenRouterContentPart[];
+      readonly operationId: string;
+      readonly attempt: ReturnType<typeof createRecognitionDiagnostics>;
+    },
+    requestSignal: AbortSignal,
+    signal: AbortSignal,
+  ) => {
+    const { diagnostics, failed, cancellationReason } = args.attempt;
+    const generated = await settle(
+      generateTextWithUsage(
+        IMAGE_RECOGNITION_MODEL,
+        [{ role: "user", content: args.content }],
+        IMAGE_RECOGNITION_MAX_TOKENS,
+        { diagnostics },
+        requestSignal,
+      ),
+    );
+    signal.throwIfAborted();
+    if (!generated.ok) {
+      return await failed(
+        providerError(generated.error),
+        cancellationReason(generated.error) ??
+          openRouterFailureReason(generated.error),
+      );
+    }
+    if (generated.value === null) {
+      return await failed(
+        notConfigured("Image recognition is not configured"),
+        "not_configured",
+      );
+    }
+    if (generated.value.text.length > IMAGE_RECOGNITION_MAX_TEXT_CHARS) {
+      return await failed(
+        recognitionError(
+          502,
+          "IMAGE_RECOGNITION_FAILED",
+          "Image recognition returned too much text",
+        ),
+        "output_too_large",
+      );
+    }
+    diagnostics.phase = "usage_validation";
+    if (!hasCompleteRecognitionUsage(generated.value.usage)) {
+      return await failed(
+        recognitionError(
+          502,
+          "MISSING_PROVIDER_USAGE",
+          "Image recognition did not report complete billable usage",
+        ),
+        "incomplete_usage",
+      );
+    }
+
+    // Provider work is complete, so a client disconnect must not skip billing.
+    diagnostics.phase = "settlement";
+    const settlement = await set(
+      recordOpenRouterUsage$,
+      {
+        orgId: args.auth.orgId,
+        userId: args.auth.userId,
+        runId: args.auth.runId,
+        provider: IMAGE_RECOGNITION_MODEL,
+        operation: IMAGE_RECOGNITION_OPERATION,
+        operationId: args.operationId,
+        usage: generated.value.usage,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (settlement.kind === "no-usage") {
+      return await failed(
+        recognitionError(
+          502,
+          "MISSING_PROVIDER_USAGE",
+          "Image recognition did not report billable usage",
+        ),
+        "no_usage",
+      );
+    }
+    if (settlement.kind === "unsettled") {
+      diagnostics.reason = "unsettled";
+      throw new Error("Failed to settle image recognition usage");
+    }
+
+    const body: ImageRecognitionResponse = {
+      text: generated.value.text,
+      metadata: { creditsCharged: settlement.creditsCharged },
+    };
+    return { status: 200 as const, body };
+  },
+);
+
 export const imageRecognition$ = command(
   async ({ get, set }, args: RecognitionArgs, signal: AbortSignal) => {
-    const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
+    const clientSignal = get(requestSignal$);
+    const requestSignal = AbortSignal.any([signal, clientSignal]);
     requestSignal.throwIfAborted();
 
     const resolved = await set(
@@ -226,67 +463,20 @@ export const imageRecognition$ = command(
       { type: "image_url", image_url: { url: providerImageUrl } },
     ];
     const operationId = randomUUID();
-    const generated = await settle(
-      generateTextWithUsage(
-        IMAGE_RECOGNITION_MODEL,
-        [{ role: "user", content }],
-        IMAGE_RECOGNITION_MAX_TOKENS,
-        {},
-        requestSignal,
-      ),
-    );
-    signal.throwIfAborted();
-    if (!generated.ok) {
-      return providerError(generated.error);
-    }
-    if (generated.value === null) {
-      return notConfigured("Image recognition is not configured");
-    }
-    if (generated.value.text.length > IMAGE_RECOGNITION_MAX_TEXT_CHARS) {
-      return recognitionError(
-        502,
-        "IMAGE_RECOGNITION_FAILED",
-        "Image recognition returned too much text",
-      );
-    }
-    if (!hasCompleteRecognitionUsage(generated.value.usage)) {
-      return recognitionError(
-        502,
-        "MISSING_PROVIDER_USAGE",
-        "Image recognition did not report complete billable usage",
-      );
-    }
-
-    // Provider work is complete, so a client disconnect must not skip billing.
-    const settlement = await set(
-      recordOpenRouterUsage$,
-      {
-        orgId: args.auth.orgId,
-        userId: args.auth.userId,
-        runId: args.auth.runId,
-        provider: IMAGE_RECOGNITION_MODEL,
-        operation: IMAGE_RECOGNITION_OPERATION,
-        operationId,
-        usage: generated.value.usage,
-      },
+    const attempt = createRecognitionDiagnostics(
+      operationId,
+      args.auth.runId,
+      clientSignal,
       signal,
     );
-    signal.throwIfAborted();
-    if (settlement.kind === "no-usage") {
-      return recognitionError(
-        502,
-        "MISSING_PROVIDER_USAGE",
-        "Image recognition did not report billable usage",
-      );
-    }
-    if (settlement.kind === "unsettled") {
-      throw new Error("Failed to settle image recognition usage");
-    }
-
-    const body: ImageRecognitionResponse = {
-      text: generated.value.text,
-      metadata: { creditsCharged: settlement.creditsCharged },
-    };
-    return { status: 200 as const, body };
+    return await onRejection(
+      set(
+        completeImageRecognition$,
+        { auth: args.auth, content, operationId, attempt },
+        requestSignal,
+        signal,
+      ),
+      attempt.rejected,
+    );
   },
 );

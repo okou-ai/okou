@@ -1,0 +1,73 @@
+{
+  "baseline": "3ace38cfefa54eb9df33715131a3ee8be1be3c27",
+  "capture": "Drizzle 0.45.2 node-postgres logger during actual claimErasureWork execution; synthetic fixture only",
+  "queries": {
+    "before": {
+      "verification": {
+        "sql": "select \"id\", \"job_id\", \"sink_id\", \"item_key\", \"generation\", \"kind\", \"selector_ciphertext\", \"selector_digest\", \"selector_capture_revision\", \"cursor_ciphertext\", \"cursor_digest\", \"capture_complete\", \"enumeration_ref\", \"state\", \"attempt_count\", \"available_at\", \"lease_id\", \"lease_expires_at\", \"error_code\", \"request_ref\", \"evidence_ref\", \"proof_capture_revision\", \"proof_inventory_revision\", \"proof_boundary_ref\", \"proof_reader_ref\", \"proof_observed_at\" from \"account_erasure_work\" where (\"account_erasure_work\".\"job_id\" = $1 and \"account_erasure_work\".\"generation\" = $2 and \"account_erasure_work\".\"selector_capture_revision\" = $3 and \"account_erasure_work\".\"state\" in ($4, $5) and \"account_erasure_work\".\"available_at\" <= clock_timestamp() and (\"account_erasure_work\".\"lease_id\" is null or \"account_erasure_work\".\"lease_expires_at\" <= clock_timestamp())) order by \"account_erasure_work\".\"available_at\" asc, \"account_erasure_work\".\"id\" asc limit $6 for update skip locked",
+        "params": [
+          "10000000-0000-4000-8000-000000000001",
+          1,
+          1,
+          "pending",
+          "retryable_failure",
+          8
+        ]
+      },
+      "inventory": {
+        "sql": "select \"id\", \"job_id\", \"sink_id\", \"item_key\", \"generation\", \"kind\", \"selector_ciphertext\", \"selector_digest\", \"selector_capture_revision\", \"cursor_ciphertext\", \"cursor_digest\", \"capture_complete\", \"enumeration_ref\", \"state\", \"attempt_count\", \"available_at\", \"lease_id\", \"lease_expires_at\", \"error_code\", \"request_ref\", \"evidence_ref\", \"proof_capture_revision\", \"proof_inventory_revision\", \"proof_boundary_ref\", \"proof_reader_ref\", \"proof_observed_at\" from \"account_erasure_work\" where (\"account_erasure_work\".\"job_id\" = $1 and \"account_erasure_work\".\"generation\" = $2 and \"account_erasure_work\".\"selector_capture_revision\" = $3 and \"account_erasure_work\".\"state\" in ($4, $5) and \"account_erasure_work\".\"available_at\" <= clock_timestamp() and (\"account_erasure_work\".\"lease_id\" is null or \"account_erasure_work\".\"lease_expires_at\" <= clock_timestamp()) and (\"account_erasure_work\".\"kind\" = $6 and \"account_erasure_work\".\"capture_complete\" = $7)) order by \"account_erasure_work\".\"available_at\" asc, \"account_erasure_work\".\"id\" asc limit $8 for update skip locked",
+        "params": [
+          "10000000-0000-4000-8000-000000000001",
+          1,
+          1,
+          "pending",
+          "retryable_failure",
+          "inventory",
+          false,
+          8
+        ]
+      },
+      "deadline": {
+        "sql": "update \"account_erasure_work\" set \"state\" = $1, \"lease_id\" = $2, \"lease_expires_at\" = $3, \"error_code\" = $4 where \"account_erasure_work\".\"id\" in (select \"id\" from \"account_erasure_work\" where (\"account_erasure_work\".\"job_id\" = $5 and \"account_erasure_work\".\"state\" in ($6, $7)) order by \"account_erasure_work\".\"id\" asc limit $8)",
+        "params": [
+          "capability_unresolved",
+          null,
+          null,
+          "deadline_exceeded",
+          "10000000-0000-4000-8000-000000000001",
+          "pending",
+          "retryable_failure",
+          8
+        ]
+      }
+    },
+    "after": {
+      "verification": {
+        "sql": "select \"id\", \"job_id\", \"sink_id\", \"item_key\", \"generation\", \"kind\", \"selector_ciphertext\", \"selector_digest\", \"selector_capture_revision\", \"cursor_ciphertext\", \"cursor_digest\", \"capture_complete\", \"enumeration_ref\", \"state\", \"attempt_count\", \"available_at\", \"lease_id\", \"lease_expires_at\", \"error_code\", \"request_ref\", \"evidence_ref\", \"proof_capture_revision\", \"proof_inventory_revision\", \"proof_boundary_ref\", \"proof_reader_ref\", \"proof_observed_at\" from \"account_erasure_work\" where (\"account_erasure_work\".\"job_id\" = $1 and \"account_erasure_work\".\"generation\" = $2 and \"account_erasure_work\".\"selector_capture_revision\" = $3 and \"account_erasure_work\".\"state\" IN ('pending', 'retryable_failure') and \"account_erasure_work\".\"available_at\" <= clock_timestamp() and (\"account_erasure_work\".\"lease_id\" is null or \"account_erasure_work\".\"lease_expires_at\" <= clock_timestamp())) order by \"account_erasure_work\".\"available_at\" asc, \"account_erasure_work\".\"id\" asc limit $4 for update skip locked",
+        "params": ["10000000-0000-4000-8000-000000000001", 1, 1, 8]
+      },
+      "inventory": {
+        "sql": "select \"id\", \"job_id\", \"sink_id\", \"item_key\", \"generation\", \"kind\", \"selector_ciphertext\", \"selector_digest\", \"selector_capture_revision\", \"cursor_ciphertext\", \"cursor_digest\", \"capture_complete\", \"enumeration_ref\", \"state\", \"attempt_count\", \"available_at\", \"lease_id\", \"lease_expires_at\", \"error_code\", \"request_ref\", \"evidence_ref\", \"proof_capture_revision\", \"proof_inventory_revision\", \"proof_boundary_ref\", \"proof_reader_ref\", \"proof_observed_at\" from \"account_erasure_work\" where (\"account_erasure_work\".\"job_id\" = $1 and \"account_erasure_work\".\"generation\" = $2 and \"account_erasure_work\".\"selector_capture_revision\" = $3 and \"account_erasure_work\".\"state\" IN ('pending', 'retryable_failure') and \"account_erasure_work\".\"available_at\" <= clock_timestamp() and (\"account_erasure_work\".\"lease_id\" is null or \"account_erasure_work\".\"lease_expires_at\" <= clock_timestamp()) and (\"account_erasure_work\".\"kind\" = $4 and \"account_erasure_work\".\"capture_complete\" = $5)) order by \"account_erasure_work\".\"available_at\" asc, \"account_erasure_work\".\"id\" asc limit $6 for update skip locked",
+        "params": [
+          "10000000-0000-4000-8000-000000000001",
+          1,
+          1,
+          "inventory",
+          false,
+          8
+        ]
+      },
+      "deadline": {
+        "sql": "update \"account_erasure_work\" set \"state\" = $1, \"lease_id\" = $2, \"lease_expires_at\" = $3, \"error_code\" = $4 where \"account_erasure_work\".\"id\" in (select \"id\" from \"account_erasure_work\" where (\"account_erasure_work\".\"job_id\" = $5 and \"account_erasure_work\".\"state\" IN ('pending', 'retryable_failure')) order by \"account_erasure_work\".\"id\" asc limit $6)",
+        "params": [
+          "capability_unresolved",
+          null,
+          null,
+          "deadline_exceeded",
+          "10000000-0000-4000-8000-000000000001",
+          8
+        ]
+      }
+    }
+  }
+}

@@ -1372,6 +1372,12 @@ interface StoredArtifactObject {
   readonly sizeBytes: number;
 }
 
+const DOWNLOAD_CONTENT_TYPES = {
+  mp4: "video/mp4",
+  m4a: "audio/mp4",
+  mp3: "audio/mpeg",
+} satisfies Record<SocialKitDownloadRequest["format"], string>;
+
 const materializeSocialKitArtifact$ = command(
   async (
     { set },
@@ -1390,8 +1396,7 @@ const materializeSocialKitArtifact$ = command(
       media?.extension ?? args.job.request.format,
     );
     const contentType =
-      media?.contentType ??
-      (args.job.request.format === "mp4" ? "video/mp4" : "audio/mp4");
+      media?.contentType ?? DOWNLOAD_CONTENT_TYPES[args.job.request.format];
     // The artifact key is derived from the sniffed extension, so the download
     // must already be open before an object stored by an earlier attempt can be
     // looked up. Every retry re-polls the provider and gets a fresh

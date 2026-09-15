@@ -54,7 +54,6 @@ export enum FeatureSwitchKey {
   ReferenceImages = "referenceImages",
   PrivateArtifacts = "privateArtifacts",
   ArtifactViewer = "artifactViewer",
-  ProgressiveArtifactPreview = "progressiveArtifactPreview",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "_multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
