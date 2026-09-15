@@ -678,6 +678,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -728,6 +729,7 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
@@ -786,7 +788,10 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.RefactorModelSelect]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
+    },
   });
   await readyComposer();
   click(await findButton("DeepSeek V4 Flash"));
@@ -806,17 +811,17 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
   await expect(findButton("DeepSeek V4 Flash")).resolves.toBeVisible();
 });
 
+// The pages are the narrow viewport's layout, so this walks them there; the
+// flyout's own keyboard walk is the desktop test below.
 test("Navigate the compact menu by keyboard and retain Fast after dismissal", async () => {
   const user = userEvent.setup({ delay: null });
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 640px)";
-  });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
@@ -889,6 +894,7 @@ test("Offer Fast beside effort on the composer for a Fast-capable model", async 
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -968,6 +974,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -1027,6 +1034,7 @@ test("Select the default effort on an existing thread without changing Fast", as
     path: RUN_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
     },
@@ -1069,6 +1077,7 @@ test("Keep independent effort selections when changing models", async () => {
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -1211,6 +1220,51 @@ test("Use the legacy picker and keep saved effort dormant when refactoring is di
   ).toBeUndefined();
 });
 
+/**
+ * Effort and the model list answer to different switches: effort is a run
+ * setting the composer carries beside the model, so it stays live where the
+ * list is still drawn by the legacy select.
+ */
+test("Keep effort on the composer while the model list stays on the legacy picker", async () => {
+  const user = userEvent.setup({ delay: null });
+  const updates: { reasoningEffort?: string | null }[] = [];
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    onModelSelectionUpdate: (body) => {
+      updates.push(body);
+    },
+  });
+  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      [FeatureSwitchKey.PiLoop]: false,
+    },
+  });
+  await readyChat();
+  await expect(modelPicker("GPT 5.6 Sol")).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("region", { name: "Models" }),
+  ).not.toBeInTheDocument();
+  await openEffortPanel();
+  const slider = await screen.findByRole("slider", { name: "Effort" });
+  expect(slider).toHaveAttribute("aria-valuetext", "High");
+  slider.focus();
+  await user.keyboard("{ArrowRight}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
+  });
+  await waitFor(() => {
+    expect(updates).toContainEqual(
+      expect.objectContaining({ reasoningEffort: "xhigh" }),
+    );
+  });
+});
+
 test("Show the Pi fallback without overwriting a saved native preference", async () => {
   const updates: { reasoningEffort?: string | null }[] = [];
   installRunChat({
@@ -1260,6 +1314,7 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });
@@ -1312,6 +1367,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
     path: RUN_PATH,
     featureSwitches: {
       [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
     },
   });
   await readyChat();

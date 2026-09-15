@@ -278,7 +278,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.RefactorModelSelect]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Use the compact chat, image, and video model picker with Fast mode and chat reasoning effort controls.",
+      "Set Fast mode and chat reasoning effort from the composer's run controls.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
