@@ -628,7 +628,8 @@ existed inside one. Both bubble names also remain in the
 `.okou-app[data-desktop-shell] :where(…)` selection exception, which nothing in
 the repository can activate for the reason the titlebar section below records;
 that block belongs to the `okou-app` batch and is deliberately untouched here,
-so the two class names stay inside it while no element carries them.
+so the two class names stay inside it while no element carries them. That
+selection exception is the last `[data-desktop-shell]` block in the stylesheet.
 
 Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
 the Vite plugin bundles) in Chromium over CDP, across 28 captures — the default
@@ -656,51 +657,82 @@ dropping the blockquote reset changes one observed margin per capture at zero
 pixels, and dropping `border-current` changes three observed border colours per
 capture at zero pixels.
 
-### Desktop titlebar drag region — partially drained
+### Desktop titlebar drag region — drained
 
-The `okou-desktop-no-drag` selector and its consumer have been removed. The
-sidebar header and both drag regions now spell their live treatment as
+The `okou-desktop-no-drag` selector and its consumer were removed first. The
+sidebar header and both drag regions then spelled their live treatment as
 utilities: `pt-1.5` for the header's `padding-top: 0.375rem`, `hidden` for the
 drag regions' `display: none`, and `[-webkit-app-region:no-drag]` for the
 header row. `-webkit-app-region` has no Tailwind utility, and it is a real
 declaration rather than a token decision, so it stays an arbitrary property.
 
-`okou-desktop-titlebar-drag-region` and `okou-sidebar-header` remain legacy
-selectors, and their class names remain on the two elements. The five
-declarations behind `.okou-app[data-desktop-shell]` inside
-`@media (min-width: 768px)` are deliberately left alone, so those class names
-are still the hooks that block selects. **Nothing in the repository sets that
-attribute**: it occurs only in the App stylesheet and in the baseline derived
-from it, so as shipped both drag regions are `display: none` and the header
-keeps its 6px inset. The header's `padding-top: 0` override is dead twice over,
-because its only consumer sits inside the mobile drawer `aside`, which is
-`md:hidden`.
+That left one `@media (min-width: 768px)` block behind
+`.okou-app[data-desktop-shell]` — four rules and nine declarations across
+`okou-sidebar-header`, `okou-desktop-titlebar-drag-region` and
+`okou-workspace-bg` — which has now been deleted outright, together with the
+`--okou-desktop-titlebar-height` variable its only reader used, the
+`okou-sidebar-header` class on the drawer header, and both `aria-hidden` drag
+region divs. `okou-desktop-titlebar-drag-region` and `okou-sidebar-header` are
+retired; `okou-workspace-bg` keeps the fifteen declarations that are unrelated
+to the desktop shell.
 
-Splitting the batch this way is safe precisely because the retired rules and
-the remaining block were both unlayered. An unlayered `display: block` or
-`padding-top: 0` still wins over a utility in `@layer utilities`, so forcing
-`data-desktop-shell` on reproduces the old computed styles exactly —
-`display: block`, `height: 48px`, `-webkit-app-region: drag`, header
-`padding-top: 0px`. Keep that ordering in mind before moving either remaining
-declaration: a replacement utility would not override the block the way the
-block overrides it.
+**Nothing in the repository ever set that attribute.** It occurred only in the
+App stylesheet, in the baseline derived from it, in the migration ledger, and in
+this document; there is no DOM write anywhere in the App, the UI package, the
+Desktop app, the Worker HTML, or a test. So the block never matched an element,
+both drag regions were always `display: none`, and the header always kept its
+6px inset. The header's `padding-top: 0` override was dead twice over, because
+its only consumer sits inside the mobile drawer `aside`, which is `md:hidden`.
+`.okou-workspace-bg`'s `position: relative` was dead three times over: the
+unconditional `.okou-workspace-bg` rule already declares it.
 
-The rest is not obviously abandoned. `buildDesktopWindowChromeOptions` asks
-Electron for `titleBarStyle: "hiddenInset"` with the traffic lights at
-`{ x: 16, y: 18 }` on darwin, which is precisely the layout a 48px drag region
-is written for, so the likelier reading is a live Desktop defect than
-deliberately inert CSS.
-
-Preserving that block verbatim as utilities is also mechanically unavailable.
-Reproducing `.okou-app[data-desktop-shell] &` needs an arbitrary variant that
-spells `okou-app` inside a `className`, and the class-usage scanner counts that
-as a dependency: the attempt fails `style-policy/growth` with `okou-app` usage
+Deleting rather than porting is the right move because there is nothing to
+port. A replacement could only be a condition no element satisfies, and
+reproducing `.okou-app[data-desktop-shell] &` needs an arbitrary variant that
+spells `okou-app` inside a `className`, which the class-usage scanner counts as
+a dependency: that attempt fails `style-policy/growth` with `okou-app` usage
 growing from 0 to 9, and `pnpm lint:style:prune` refuses to authorize it.
-Dropping `.okou-app` from the condition, deleting the block with its two
-`aria-hidden` divs, or restoring the attribute to repair Desktop are all
-product decisions, and each one also constrains `okou-app` and
-`okou-workspace-bg`, which share this family and the same dead attribute.
-Resolve that before draining the last two tokens.
+
+The behaviour the block described is still wanted.
+`buildDesktopWindowChromeOptions` asks Electron for
+`titleBarStyle: "hiddenInset"` with the traffic lights at `{ x: 16, y: 18 }` on
+darwin, which is precisely the layout a 48px drag region is written for, so
+Desktop has a live defect: the window has no drag region at all. That defect,
+and the decision about how to implement it, are tracked in
+[issue #34162](https://github.com/vm0-ai/vm0/issues/34162). This section records
+step one of that issue — remove the code that never ran, at zero rendering
+change. Step two implements dragging for real, and it starts from an empty
+slate rather than from a selector that had been inert since it was written.
+
+Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
+the Vite plugin bundles) in Chromium over CDP. The fixture rebuilds the real
+ancestor chain — the `.okou-app` shell from `sidebar-layout.tsx`, the
+`md:hidden` drawer `aside`, the `hidden md:flex` labelled rail, and the
+`WorkspaceInset` with one element of every kind the retired `:where(…)` row
+selects — and carries `apps/platform/index.html`'s verbatim viewport meta,
+without which mobile emulation lays out at 980px and silently satisfies
+`min-width: 768px`. Twenty-four captures per side: desktop 1440x1000 at device
+scale 1 and 2 and narrow 390x844 at device scale 2, Light and Dark, fine- and
+coarse-pointer media, with `data-desktop-shell` absent and forced on, and
+`:hover` forced on every probe and on every ancestor up to the shell root.
+`GradientColorThemes` is `enabled: false` with no organization allowlist, so the
+default palette is the online-visible result.
+
+On the twelve online-visible captures — the attribute absent, which is the only
+state that has ever shipped — zero changed pixels, zero alpha changes, and zero
+computed-style or geometry differences on every surviving element. The only
+observation differences are the two deleted drag-region divs.
+
+Two negative controls establish that those zeros are not degenerate. Forcing
+`data-desktop-shell` onto the shell root changes 5,813 pixels per desktop
+capture at device scale 1 and 23,015 (Light) / 23,029 (Dark) at device scale 2,
+and moves `padding-top`, `display`, `height`, `flex-shrink`, `position`,
+`z-index` and `-webkit-app-region` on eleven probes — so the harness does reach
+the deleted block. Forcing the attribute cannot move the narrow captures,
+because 390px never satisfies `min-width: 768px`; a second control that drops
+the header's live `pt-1.5` changes those by 7,526 (Light) / 7,521 (Dark) pixels,
+so the narrow captures are sensitive too. An unchanged-code A/A replay is
+byte-identical across all 24 captures, so no rounding budget is claimed.
 
 ### Third-party attribution of borrowed class names
 

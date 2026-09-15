@@ -161,7 +161,6 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --okou-viewport-height: 100dvh;
-  --okou-desktop-titlebar-height: 48px;
 }
 
 /* The effort bar's handle is a superellipse rather than a rounded rectangle --
@@ -381,41 +380,6 @@ body {
   /* Paint may extend below the viewport without moving drawer content. */
   .okou-mobile-sidebar::before {
     bottom: calc(-1 * var(--sab));
-  }
-}
-
-@media (min-width: 768px) {
-  .okou-app[data-desktop-shell] .okou-sidebar-header {
-    padding-top: 0;
-  }
-
-  .okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region {
-    display: block;
-    flex-shrink: 0;
-    height: var(--okou-desktop-titlebar-height);
-    -webkit-app-region: drag;
-  }
-
-  .okou-app[data-desktop-shell] .okou-workspace-bg {
-    position: relative;
-  }
-
-  .okou-app[data-desktop-shell]
-    .okou-workspace-bg
-    :where(
-      button,
-      a,
-      input,
-      textarea,
-      select,
-      [role="button"],
-      [role="link"],
-      [role="textbox"],
-      [contenteditable]:not([contenteditable="false"])
-    ) {
-    position: relative;
-    z-index: 2;
-    -webkit-app-region: no-drag;
   }
 }
 
