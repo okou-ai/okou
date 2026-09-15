@@ -113,11 +113,15 @@ baseline policy remains: events already earned on a browser's first resolved
 sync are historical, and historical recovery uses the offline path. Existing
 transaction IDs and per-action browser deduplication keys are preserved.
 
-The new response fields are optional so older API responses remain readable.
-A new client receiving an old response or a 404 from the new resolver withholds
-the conversion. Old clients still accept the existing request and response
-shapes. Already-open older clients retain their old signup/onboarding/checkout
-JavaScript until refreshed; no force-upgrade floor is changed in this patch.
+Signup and milestone responses always include `googleAdsAccountId`, with `null`
+for unresolved ownership. A paid conversion payload always includes its account
+ID; the payload itself remains optional. The account resolver accepts 200 and
+returns a nullable account decision. Missing fields and a missing resolver are
+outside the supported API contract after the rollout verification below.
+
+Existing App requests remain supported. Already-open older clients retain their
+signup/onboarding/checkout JavaScript until refreshed; this response-contract
+cleanup does not change the App force-upgrade floor.
 
 Historical recovery is a separate controlled operation. Reconcile original
 clicks, event times and prior delivery evidence; preserve the original transaction
@@ -125,3 +129,36 @@ ID and send only to its confirmed account/action. API acceptance is not proof
 that Google ultimately attributed the conversion. Persist the request receipt
 and check the Data Manager processing status. Neither this code change nor a
 browser refresh replays historical conversions automatically.
+
+## API compatibility retirement (#32924)
+
+Verified on 2026-09-15 at 07:14 UTC against main
+`05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`:
+
+- **Producer:** [#32902](https://github.com/vm0-ai/vm0/pull/32902), commit
+  `bb561b8ee07aa5c8ae4bcddfadc633e9900ad550`, introduced the account resolver and
+  the signup, milestone and paid-conversion account fields.
+- **Serving API:** Vercel project `vm0-api` reported production deployment
+  `dpl_i8s7vaEvyqeKFD7m2hTa2W2CAKYW` as `READY` / `PROMOTED`, with commit
+  `caa4352ddba6ef4b1912cbbb7838afb94ac4aa82` (API 1.603.1). Both `api.okou.ai`
+  and `api.vm0.ai` resolved to that deployment.
+  Its [API production deployment](https://github.com/vm0-ai/vm0/actions/runs/34936717500/job/104278924406)
+  succeeded at 06:38:52 UTC, followed by
+  [App promotion](https://github.com/vm0-ai/vm0/actions/runs/34936717500/job/104279671371)
+  at 06:41:24 UTC.
+- **Supported rollback API:** the [current-main rollback workflow](https://github.com/vm0-ai/vm0/blob/05af5a0fe3cdbd9188a9b3d66545bab2dab2a834/.github/workflows/rollback-production.yml#L68)
+  runs the [target resolver](https://github.com/vm0-ai/vm0/blob/05af5a0fe3cdbd9188a9b3d66545bab2dab2a834/.github/scripts/resolve-production-rollback-target.sh#L91),
+  which requires every API target to descend from
+  `PREPARED_DOMAIN_TRIGGER_RELEASE = eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`
+  (API 1.600.1). `git merge-base --is-ancestor` verified producer -> rollback
+  floor -> serving release. Inspection of the floor and serving source confirmed
+  that the resolver exists and every successful signup/milestone response and
+  present paid payload includes the account field.
+
+These serving and enforced rollback boundaries close the new-App -> old-API
+gate. [#34153](https://github.com/vm0-ai/vm0/pull/34153) already removed the App's
+accepted 404; #32924 removes the remaining contract entry, optional account
+fields and absent-field readers. Legitimately optional Clerk first-touch and
+Stripe/organization attribution remain separate input contracts. Unknown-account
+rejection, first-touch precedence, account isolation and delivery deduplication
+remain in force.

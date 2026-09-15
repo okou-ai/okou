@@ -13,9 +13,9 @@ export const apiAttributionHandlers = [
     },
   ),
   mockApi(acquisitionAttributionContract.googleAdsMilestones, ({ respond }) => {
-    return respond(200, { milestones: [] });
+    return respond(200, { milestones: [], googleAdsAccountId: null });
   }),
   mockApi(acquisitionAttributionContract.recordSignup, ({ respond }) => {
-    return respond(200, { recorded: true });
+    return respond(200, { recorded: true, googleAdsAccountId: null });
   }),
 ];
