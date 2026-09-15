@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "batch": "onboarding-diagram",
+  "cases": [
+    {
+      "id": "onboarding-diagram-full-light",
+      "path": "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=file-sentry-crashes-github",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "onboarding-diagram-full-dark",
+      "path": "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=file-sentry-crashes-github",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "onboarding-diagram-full-light-retina",
+      "path": "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=file-sentry-crashes-github",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "onboarding-diagram-full-dark-retina",
+      "path": "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=file-sentry-crashes-github",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "onboarding-diagram-full-narrow",
+      "path": "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=file-sentry-crashes-github",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "onboarding-diagram-full-narrow-dark",
+      "path": "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=file-sentry-crashes-github",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "onboarding-diagram-source-only-light",
+      "path": "/onboarding/workflow-run?choice=workflow&category=everyone&workflow=sort-gmail-draft-replies",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "onboarding-diagram-source-only-dark",
+      "path": "/onboarding/workflow-run?choice=workflow&category=everyone&workflow=sort-gmail-draft-replies",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "onboarding-diagram-no-connector-light",
+      "path": "/onboarding/workflow-run?choice=workflow&category=marketing&workflow=track-keyword-ranks-ahrefs",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "onboarding-diagram-no-connector-dark",
+      "path": "/onboarding/workflow-run?choice=workflow&category=marketing&workflow=track-keyword-ranks-ahrefs",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    }
+  ]
+}

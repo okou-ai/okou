@@ -715,3 +715,46 @@ in this composition and were kept only because the retired rule declared them.
 This is bounded local Chromium evidence against a reconstructed ancestor chain,
 not a deployed-preview capture: it does not certify the Base UI scroll area's
 own DOM, WebKit, native surfaces, or real navigation and virtualization.
+
+## Onboarding workflow diagram family
+
+The `owf-diagram-*` classes are now their own family, `onboarding-diagram`
+(phase 8), instead of sitting inside `motion-and-injection`. Only the travelling
+beam is motion; the other 24 classes are the geometry, positioning and surfaces
+of a fixed-coordinate illustration, so the motion family's replacement contract
+did not describe them and neither did its phase. The family is the largest
+remaining block of debt: 242 of the 324 declarations left in
+`apps/platform/src/views/css/index.css`, 25 of the 39 remaining legacy tokens,
+25 class references in `views/onboarding/onboarding-workflow-diagram.tsx`, and
+two class queries in that view's `__tests__/onboarding-flow.test.tsx`.
+
+`owf-diagram-avatar` is a twenty-sixth class. Its three declarations are frozen
+in `cssAtoms`, but it is absent from `legacyClassTokens`, so its consumption is
+not counted, and it cannot be added: `prunedBaseline()` only filters that array
+and `baselineGrowthErrors()` rejects any token the reference baseline lacks. The
+family records it so the plan is complete; deleting the class is what closes the
+gap.
+
+Two batches split the family by whether a token participates in the border-width
+contract. `onboarding-diagram-canvas` holds the 13 tokens with no border of their
+own — the canvas, grid, connector lines, beam, vertical control, the three node
+positions and the action copy — for 150 declarations.
+`onboarding-diagram-tiles` holds the other 13 and is `blocked` on the decision
+recorded with it.
+
+Tokens that share a DOM element stay in the same batch. The legacy rules are
+unlayered, so a utility written on an element whose sibling class still exists
+would lose to that class: migrating `owf-diagram-avatar` while
+`.owf-diagram-icon-box` still declares `width: 56px` would shrink the box rather
+than resize it. That constraint, not the token's own declarations, is what puts
+the avatar modifier in the blocked batch.
+
+`onboarding-diagram-cases.json` covers the three geometry branches the component
+actually renders, each through the workflow-run preview dialog:
+`file-sentry-crashes-github` draws both nodes, the destination curve and a
+two-icon source stack; `sort-gmail-draft-replies` has one connector, so it draws
+a source with no destination; `track-keyword-ranks-ahrefs` has none, so it draws
+neither and the beam takes its third path. The dialog's open state lives in
+`onboardingUi$` rather than the URL, so these cases still need a runner that
+opens the preview; `planned` and `blocked` batches require no evidence, and no
+runner ships with the family split.
