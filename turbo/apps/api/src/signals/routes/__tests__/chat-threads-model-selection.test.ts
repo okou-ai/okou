@@ -129,7 +129,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       error: { message: "Reasoning effort selection is not enabled" },
     });
     await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     for (const [model, reasoningEffort] of [
       ["claude-sonnet-4-6", "extra"],
@@ -166,7 +166,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
   it("persists independent model efforts and emits single-model patches", async () => {
     const fixture = await seedChatThread("Effort persistence");
     await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     await chat.updateThreadModelSelection(
       fixture.actor,
@@ -187,7 +187,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     });
     // Disabled rollout rejects explicit settings without erasing preferences.
     await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.RefactorModelSelect]: false,
+      [FeatureSwitchKey.Effort]: false,
     });
     const disabledReset = await chat.requestUpdateThreadModelSelection(
       fixture.actor,
@@ -205,7 +205,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       modelSettings: { "claude-sonnet-5": { effort: "high" } },
     });
     await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     await chat.updateThreadModelSelection(
       fixture.actor,
@@ -248,7 +248,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
   it("preserves each model's effort on a model switch", async () => {
     const fixture = await seedChatThread("Effort model switch");
     await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     await chat.updateThreadModelSelection(
       fixture.actor,

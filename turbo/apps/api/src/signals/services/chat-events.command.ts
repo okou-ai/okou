@@ -157,7 +157,10 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
+import {
+  isChatEffortEnabled,
+  isCodexFastModeEnabled,
+} from "@okouai/core/model-feature-switch";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { buildVideoRunOptionsPrompt } from "@okouai/core/video-run-options-prompt";
 import {
@@ -1120,10 +1123,7 @@ async function resolveNormalSendFeatureSwitches(
   const context = await loadUserFeatureSwitchContext(db, orgId, userId);
   return {
     codexFastModeEnabled: isCodexFastModeEnabled(context),
-    reasoningEffortEnabled: isFeatureEnabled(
-      FeatureSwitchKey.RefactorModelSelect,
-      context,
-    ),
+    reasoningEffortEnabled: isChatEffortEnabled(context),
     introVideoEnabled: loadIntroVideoTemplateAccess(templates, context),
     featureSwitchContext: context,
   };

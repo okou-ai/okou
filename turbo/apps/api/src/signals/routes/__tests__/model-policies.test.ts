@@ -1099,10 +1099,7 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it.each([
-    FeatureSwitchKey.CodexFastMode,
-    FeatureSwitchKey.RefactorModelSelect,
-  ])(
+  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
     "stores priority with a GPT 5.6 user model preference with %s",
     async (fastSwitch) => {
       const fixture = await seedFixture();

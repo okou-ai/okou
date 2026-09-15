@@ -343,7 +343,7 @@ describe("AUTH-03 user model preference", () => {
         orgRole: admin.orgRole,
       },
       {
-        [FeatureSwitchKey.RefactorModelSelect]: true,
+        [FeatureSwitchKey.Effort]: true,
       },
     );
     const astra = await cfg.updateModelPreference(admin, {

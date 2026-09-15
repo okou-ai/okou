@@ -683,7 +683,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const { actor, providerId, thread } =
       await createSnapshotCursorScenario("Effort snapshot");
     await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     await api.updateOrgModelPolicies(actor, [
       {
