@@ -125,9 +125,6 @@ function resourceReference(value: string, signal: AbortSignal) {
       return { id: deployment, suffix: new URL(value).hash };
     }
     if (!URL.canParse(value)) {
-      if (value.startsWith("/artifacts/") || value.startsWith("/api/")) {
-        throw new SharedThreadArtifactUnavailable();
-      }
       return null;
     }
     const url = new URL(value);
@@ -298,7 +295,7 @@ function hostedSnapshotCopies(
     readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
     readonly deployment: typeof privateHostedDeployments.$inferSelect;
     readonly target: Extract<SnapshotTarget, { kind: "html" }>;
-    readonly budget: { bytes: number };
+    readonly budget: { sourceBytes: number; outputBytes: number };
     readonly rewrite: (content: string) => Promise<string>;
   },
   signal: AbortSignal,
@@ -319,7 +316,7 @@ function hostedSnapshotCopies(
       ) {
         if (
           entry.size > MAX_TEXT_BYTES ||
-          budget.bytes + entry.size > MAX_TOTAL_TEXT_BYTES
+          budget.sourceBytes + entry.size > MAX_TOTAL_TEXT_BYTES
         ) {
           throw new SharedThreadArtifactUnavailable();
         }
@@ -334,14 +331,21 @@ function hostedSnapshotCopies(
           ),
         );
         signal.throwIfAborted();
-        budget.bytes += original.byteLength;
+        budget.sourceBytes += original.byteLength;
         if (
           original.byteLength > MAX_TEXT_BYTES ||
-          budget.bytes > MAX_TOTAL_TEXT_BYTES
+          budget.sourceBytes > MAX_TOTAL_TEXT_BYTES
         ) {
           throw new SharedThreadArtifactUnavailable();
         }
         const body = Buffer.from(await rewrite(original.toString("utf8")));
+        if (
+          body.byteLength > MAX_TEXT_BYTES ||
+          budget.outputBytes + body.byteLength > MAX_TOTAL_TEXT_BYTES
+        ) {
+          throw new SharedThreadArtifactUnavailable();
+        }
+        budget.outputBytes += body.byteLength;
         target.manifest.files[path] = {
           ...entry,
           size: body.byteLength,
@@ -380,7 +384,7 @@ export const prepareSharedThreadArtifacts$ = command(
   ): Promise<SharedThreadArtifactPlan | null> => {
     const resources = new Map<string, SnapshotResource>();
     const copies: SnapshotCopy[] = [];
-    const budget = { bytes: 0 };
+    const budget = { sourceBytes: 0, outputBytes: 0 };
 
     async function resolve(
       reference: ResourceReference,

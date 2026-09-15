@@ -260,6 +260,77 @@ function sharedThreadMessageColumns(messages: readonly SharedMessage[]) {
   return { messages: persistedMessages, messageAttachments };
 }
 
+type PreparedSharedThreadMessages =
+  | { readonly kind: "attachments-forbidden" }
+  | {
+      readonly kind: "prepared";
+      readonly messages: readonly SharedMessage[];
+      readonly attachmentCopies: ReadonlyMap<
+        string,
+        SharedThreadAttachmentCopy
+      >;
+    };
+
+const prepareSharedThreadMessages$ = command(
+  async (
+    { set },
+    args: CreateSharedThreadArgs,
+    rows: readonly SharedThreadSourceRow[],
+    shareId: string,
+    signal: AbortSignal,
+  ): Promise<PreparedSharedThreadMessages> => {
+    const runIndices = new Map<string, number>();
+    const runGroupIndices = new Map<string, number>();
+    const attachmentCopies = new Map<string, SharedThreadAttachmentCopy>();
+    const messages: SharedMessage[] = [];
+    for (const row of rows) {
+      if (
+        !args.canReadAttachments &&
+        row.userMessage?.parts.some((part) => {
+          return part.type === "file";
+        })
+      ) {
+        return { kind: "attachments-forbidden" };
+      }
+      const content =
+        row.eventType === "output.message"
+          ? row.content
+          : row.userMessage
+            ? projectUserMessageForPublicShare(row.userMessage)
+            : row.content;
+      const attachments = await set(
+        prepareSharedThreadMessageAttachments$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          publicBrand: args.publicBrand,
+          shareId,
+          document: row.eventType === "output.message" ? null : row.userMessage,
+          copies: attachmentCopies,
+        },
+        signal,
+      );
+      if (
+        content === null ||
+        (content.length === 0 && attachments.length === 0)
+      ) {
+        continue;
+      }
+      const runIndex = localIndex(row.runId, runIndices);
+      const runGroupIndex = localIndex(row.runGroupId, runGroupIndices);
+      messages.push({
+        messageIndex: messages.length,
+        role: row.eventType === "output.message" ? "assistant" : "user",
+        content,
+        ...(attachments.length === 0 ? {} : { attachments }),
+        ...(runIndex === undefined ? {} : { runIndex }),
+        ...(runGroupIndex === undefined ? {} : { runGroupIndex }),
+      });
+    }
+    return { kind: "prepared", messages, attachmentCopies };
+  },
+);
+
 const persistSharedThread$ = command(
   async (
     { get, set },
@@ -379,55 +450,18 @@ export const createSharedThread$ = command(
     );
     signal.throwIfAborted();
 
-    const runIndices = new Map<string, number>();
-    const runGroupIndices = new Map<string, number>();
     const shareId = randomUUID();
-    const attachmentCopies = new Map<string, SharedThreadAttachmentCopy>();
-    const messages: SharedMessage[] = [];
-    for (const row of rows) {
-      if (
-        !args.canReadAttachments &&
-        row.userMessage?.parts.some((part) => {
-          return part.type === "file";
-        })
-      ) {
-        return { kind: "attachments-forbidden" };
-      }
-      const content =
-        row.eventType === "output.message"
-          ? row.content
-          : row.userMessage
-            ? projectUserMessageForPublicShare(row.userMessage)
-            : row.content;
-      const attachments = await set(
-        prepareSharedThreadMessageAttachments$,
-        {
-          userId: args.userId,
-          orgId: args.orgId,
-          publicBrand: args.publicBrand,
-          shareId,
-          document: row.eventType === "output.message" ? null : row.userMessage,
-          copies: attachmentCopies,
-        },
-        signal,
-      );
-      if (
-        content === null ||
-        (content.length === 0 && attachments.length === 0)
-      ) {
-        continue;
-      }
-      const runIndex = localIndex(row.runId, runIndices);
-      const runGroupIndex = localIndex(row.runGroupId, runGroupIndices);
-      messages.push({
-        messageIndex: messages.length,
-        role: row.eventType === "output.message" ? "assistant" : "user",
-        content,
-        ...(attachments.length === 0 ? {} : { attachments }),
-        ...(runIndex === undefined ? {} : { runIndex }),
-        ...(runGroupIndex === undefined ? {} : { runGroupIndex }),
-      });
+    const prepared = await set(
+      prepareSharedThreadMessages$,
+      args,
+      rows,
+      shareId,
+      signal,
+    );
+    if (prepared.kind === "attachments-forbidden") {
+      return prepared;
     }
+    const { messages, attachmentCopies } = prepared;
 
     if (messages.length === 0) {
       return { kind: "no-shareable-messages" };

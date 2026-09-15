@@ -372,6 +372,19 @@ test("copies only selected artifacts, rewrites the snapshot, and preserves sourc
   expect(meta.headers.get("cache-control")).toBe("no-store");
 });
 
+test("leaves ordinary relative API paths unchanged", async () => {
+  const f = await fixture();
+  const content = "The client calls /api/users before rendering.";
+  const selection = await f.selection(content);
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  expect(shared.body.messages[0]!.content).toBe(content);
+  expect(f.copies).toStrictEqual([]);
+});
+
 test("copies a complete fixed site and rewrites its managed private dependencies", async () => {
   const f = await fixture();
   const asset = await f.upload();
@@ -426,6 +439,27 @@ test("copies a complete fixed site and rewrites its managed private dependencies
   expect(f.objects.get(`${prefix}/index.html`)?.toString()).not.toContain(
     "/artifacts/",
   );
+});
+
+test("rejects hosted text that exceeds the per-file limit after rewriting", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const reference = file.url.replace(/\.pdf$/u, "");
+  const unit = `${reference} `;
+  const maxTextBytes = 4 * 1024 * 1024;
+  const source = unit.repeat(
+    Math.floor(maxTextBytes / Buffer.byteLength(unit)),
+  );
+  expect(Buffer.byteLength(source)).toBeLessThanOrEqual(maxTextBytes);
+  const site = await f.site([{ path: "/index.html", content: source }]);
+  const selection = await f.selection(site.url);
+  await accept(share(f.actor, selection), [400]);
+  expect(f.copies).toStrictEqual([]);
+  const catalog = await chat.listArtifactCatalog(f.actor, {
+    kind: "shared-thread",
+    chatThreadId: selection.threadId,
+  });
+  expect(catalog.artifacts).toStrictEqual([]);
 });
 
 test("an unavailable authenticated site dependency fails before publishing any resources", async () => {

@@ -1061,7 +1061,7 @@ async function serveAuthorizedArtifact(
   )
     return denied();
   const cacheUrl = new URL(request.url);
-  cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? target.snapshotId : encodeURIComponent(target.key)}${pathname}`;
+  cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? `${target.snapshotId}/${target.id}` : encodeURIComponent(target.key)}${pathname}`;
   cacheUrl.search = `?html=${acceptsHtml(request)}`;
   const key = new Request(cacheUrl);
   // Cache bytes separately from authorization. Delivery applies its browser

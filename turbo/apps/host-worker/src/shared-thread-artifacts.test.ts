@@ -168,6 +168,70 @@ test("one conversation grant delivers fixed file bytes, ranges, and complete sit
   ).toBe("<h1>Snapshot one</h1>");
 });
 
+test("hosted resources in one conversation keep independent content caches", async () => {
+  const f = fixture();
+  const firstTarget = Object.values(f.policy.resources).find((target) => {
+    return target.kind === "html";
+  });
+  if (!firstTarget) {
+    throw new Error("Expected a hosted snapshot target");
+  }
+  const token = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+  const deploymentId = crypto.randomUUID();
+  const siteId = crypto.randomUUID();
+  const content = "<h1>Snapshot two</h1>";
+  const target = {
+    ...firstTarget,
+    id: deploymentId,
+    siteId,
+    manifest: {
+      ...firstTarget.manifest,
+      deploymentId,
+      siteId,
+      publicSlug: "private-source-two",
+      files: {
+        "/index.html": {
+          path: "/index.html",
+          size: content.length,
+          sha256: "html-two",
+          contentType: "text/html",
+        },
+      },
+    },
+  };
+  f.objects.set(
+    f.policyKey,
+    JSON.stringify({
+      ...f.policy,
+      resources: { ...f.policy.resources, [token]: target },
+    }),
+  );
+  f.objects.set(
+    artifactDeliveryKey("okou", "html", token),
+    JSON.stringify({
+      version: 1,
+      kind: "thread-resource",
+      threadId: f.policy.threadId,
+      publicBrand: "okou",
+      publicToken: token,
+      targetKind: "html",
+    }),
+  );
+  f.objects.set(
+    `shared-artifacts/okou/${f.policy.threadId}/${deploymentId}/index.html`,
+    content,
+  );
+
+  expect(await (await fetchWorker(new Request(f.siteUrl), f.env)).text()).toBe(
+    "<h1>Snapshot one</h1>",
+  );
+  expect(
+    await (
+      await fetchWorker(new Request(`https://${token}.okou.app/`), f.env)
+    ).text(),
+  ).toBe(content);
+});
+
 test("revoking the parent denies network requests with warm Worker caches, including ranges and HTML subresources", async () => {
   const f = fixture();
   const urls = [f.fileUrl, f.siteUrl, `${f.siteUrl}assets/style.css`];

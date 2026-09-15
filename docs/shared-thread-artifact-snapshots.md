@@ -6,9 +6,9 @@ artifacts into an independent resource snapshot. The original messages and
 artifact sharing policies are unchanged. The switch remains false by default.
 
 Only the selected messages and their managed static dependencies are included.
-User-uploaded input attachments retain the existing filename-only projection.
-Existing public links and external resources retain their current URLs; this
-feature does not backfill historical data or crawl external websites.
+User-uploaded input attachments retain the existing independent public snapshot
+projection. Existing public links and external resources retain their current
+URLs; this feature does not backfill historical data or crawl external websites.
 
 ## Snapshot and delivery
 

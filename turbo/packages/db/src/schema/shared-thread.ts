@@ -21,8 +21,12 @@ export const sharedThreads = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
-    // Older message-only snapshots have no organization/resource policy.
+    // DB/API rollout: old API writers and existing GA shares omit org_id.
+    // Keep nullable until old rollback targets drain and surviving rows can be
+    // backfilled; the removal is tracked by #32492.
     orgId: text("org_id"),
+    // DB/API rollout: old API writers omit this marker after the migration.
+    // Keep the default through their rollback window; tracked by #32492.
     hasArtifactSnapshot: boolean("has_artifact_snapshot")
       .notNull()
       .default(false),
