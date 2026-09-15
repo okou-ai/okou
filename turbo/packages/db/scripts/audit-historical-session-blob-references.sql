@@ -159,7 +159,7 @@ WITH parameters AS MATERIALIZED (
 )
 SELECT jsonb_build_object(
   'receipt_version', 'historical_session_blob_references_v1',
-  'inventory_revision', '22d0e7c82658704920587dd12c471780a9850684',
+  'inventory_revision', '7247fe035f88b8e5c59d0151c9a1ef44a411a238',
   'scope', 'all public.blobs union all non-null conversation and candidate source hashes',
   'observed_at', p.observed_at,
   'finished_at', clock_timestamp(),

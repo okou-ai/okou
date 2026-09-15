@@ -8,8 +8,11 @@ production execution. A merged tooling PR is not a production audit or repair.
 
 ## Current ownership census
 
-The source census was performed on a full repository checkout after fetch/rebase
-to `main@22d0e7c82658704920587dd12c471780a9850684`. It covers tracked API, DB,
+The source census began on a full repository checkout after fetch/rebase to
+`main@22d0e7c82658704920587dd12c471780a9850684` and was revalidated after integrating
+`main@7247fe035f88b8e5c59d0151c9a1ef44a411a238` to resolve an actual DB package
+conflict with #34224. Its claim-scale command and migration 1130 are preserved.
+The merged delta adds no blob owner or counter writer. The census covers tracked API, DB,
 Runner, guest, contracts, scripts, tests and historical SQL, including imports,
 aliases and callers. GitHub search is not the completeness boundary.
 
@@ -198,14 +201,14 @@ synthetic receipt. Production row widths, cache residency, bloat, active writers
 provider storage and hardware can differ; synthetic timings are not production
 latency or execution evidence.
 
-Measured on local x86_64 PostgreSQL 18.6 at **2026-09-15 04:06 UTC**, with
+Measured on local x86_64 PostgreSQL 18.6 at **2026-09-15 04:20 UTC**, with
 128 MiB shared buffers and the script's exact limits:
 
 | Measurement                             | Result                                                      |
 | --------------------------------------- | ----------------------------------------------------------- |
-| Planning / EXPLAIN ANALYZE execution    | 13.359 ms / 3,751.406 ms                                    |
-| Subsequent ordinary audit statement     | 2,956.232 ms                                                |
-| Top-level shared buffers, hit / read    | 7,696 / 10,067 blocks                                       |
+| Planning / EXPLAIN ANALYZE execution    | 10.581 ms / 3,756.405 ms                                    |
+| Subsequent ordinary audit statement     | 3,111.737 ms                                                |
+| Top-level shared buffers, hit / read    | 7,669 / 10,056 blocks                                       |
 | Top-level temporary I/O, read / written | 18,841 / 14,677 blocks (147.20 / 114.66 MiB at 8 KiB/block) |
 | Largest reported hash memory / batches  | 21,210 KiB / 2                                              |
 | Conversation sort disk space            | 26,600 KiB                                                  |

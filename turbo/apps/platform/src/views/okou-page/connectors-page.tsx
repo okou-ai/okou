@@ -831,154 +831,168 @@ function ConnectorsDirectoryToolbar({
   // category needs a trail, because a category is a place inside the catalog.
   const breadcrumb = customScope ? undefined : active?.label;
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center">
-        <ConnectorsScopeSegment
-          scope={scope}
-          setScope={setScope}
-          badge={badge}
-        />
-      </div>
-      {breadcrumb && (
-        <ConnectorsBreadcrumb
-          label={breadcrumb}
-          onBack={() => {
-            setCategoryFilter(null);
-          }}
-        />
-      )}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 sm:flex-1">
-          <Search
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
-            aria-hidden="true"
-          />
-          <Input
-            type="text"
-            placeholder={t(($) => {
-              return scope === "connected"
-                ? $.connectors.catalog.scope.searchConnected
-                : scope === "custom"
-                  ? $.connectors.catalog.scope.searchCustom
-                  : $.connectors.catalog.search;
-            })}
-            value={search}
-            onChange={(event) => {
-              return setSearch(event.target.value);
-            }}
-            className="pl-9 pr-3"
+    // The controls outlive the header: the title scrolls away and the scope and
+    // the search stay reachable. The negative margins hand back the page's own
+    // top padding and column gap so nothing moves until the page is scrolled,
+    // and the strip under the controls dissolves what passes beneath them
+    // rather than clipping it on a line.
+    // z-30 clears the cards: their access buttons carry `relative z-20` in the
+    // same stacking context, and on a tie the later element in the document
+    // wins, so a z-20 bar would have the card's button painted over it.
+    <div className="sticky top-0 z-30 -mb-6 -mt-3">
+      <div className="flex flex-col gap-3 bg-background pt-3">
+        <div className="flex items-center">
+          <ConnectorsScopeSegment
+            scope={scope}
+            setScope={setScope}
+            badge={badge}
           />
         </div>
-        {scope === "connected" ? (
-          <ConnectorAgentFilterMenu
-            agents={agents}
-            value={connectionFilter}
-            onChange={setConnectionFilter}
+        {breadcrumb && (
+          <ConnectorsBreadcrumb
+            label={breadcrumb}
+            onBack={() => {
+              setCategoryFilter(null);
+            }}
           />
-        ) : scope === "custom" ? (
-          isAdmin && <NewCustomConnectorButton />
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 self-end gap-1.5"
-                aria-label={t(($) => {
-                  return $.connectors.catalog.filters.aria;
-                })}
+        )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 sm:flex-1">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
+              aria-hidden="true"
+            />
+            <Input
+              type="text"
+              placeholder={t(($) => {
+                return scope === "connected"
+                  ? $.connectors.catalog.scope.searchConnected
+                  : scope === "custom"
+                    ? $.connectors.catalog.scope.searchCustom
+                    : $.connectors.catalog.search;
+              })}
+              value={search}
+              onChange={(event) => {
+                return setSearch(event.target.value);
+              }}
+              className="pl-9 pr-3"
+            />
+          </div>
+          {scope === "connected" ? (
+            <ConnectorAgentFilterMenu
+              agents={agents}
+              value={connectionFilter}
+              onChange={setConnectionFilter}
+            />
+          ) : scope === "custom" ? (
+            isAdmin && <NewCustomConnectorButton />
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0 self-end gap-1.5"
+                  aria-label={t(($) => {
+                    return $.connectors.catalog.filters.aria;
+                  })}
+                >
+                  <Filter size={14} aria-hidden="true" />
+                  <span className="max-w-[160px] truncate">
+                    {t(
+                      ($) => {
+                        return $.connectors.catalog.filterWith;
+                      },
+                      {
+                        category:
+                          (customScope
+                            ? t(($) => {
+                                return $.connectors.catalog.directory.custom;
+                              })
+                            : active?.menuLabel) ??
+                          t(($) => {
+                            return $.connectors.catalog.filters.all;
+                          }),
+                      },
+                    )}
+                  </span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
               >
-                <Filter size={14} aria-hidden="true" />
-                <span className="max-w-[160px] truncate">
-                  {t(
-                    ($) => {
-                      return $.connectors.catalog.filterWith;
-                    },
-                    {
-                      category:
-                        (customScope
-                          ? t(($) => {
-                              return $.connectors.catalog.directory.custom;
-                            })
-                          : active?.menuLabel) ??
-                        t(($) => {
-                          return $.connectors.catalog.filters.all;
-                        }),
-                    },
-                  )}
-                </span>
-                <ChevronDown size={14} aria-hidden="true" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
-            >
-              <ConnectorFilterSectionLabel>
-                {t(($) => {
-                  return $.connectors.catalog.directory.browse;
-                })}
-              </ConnectorFilterSectionLabel>
-              <ConnectorFilterOption
-                active={!customScope && categoryFilter === null}
-                onSelect={() => {
-                  setCategoryFilter(null);
-                }}
-              >
-                {t(($) => {
-                  return $.connectors.catalog.filters.all;
-                })}
-              </ConnectorFilterOption>
-              {categories.some((section) => {
-                return section.category === REMOTE_ACCESS_CATEGORY;
-              }) && (
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.directory.browse;
+                  })}
+                </ConnectorFilterSectionLabel>
                 <ConnectorFilterOption
-                  active={categoryFilter === REMOTE_ACCESS_CATEGORY}
+                  active={!customScope && categoryFilter === null}
                   onSelect={() => {
-                    setCategoryFilter(REMOTE_ACCESS_CATEGORY);
+                    setCategoryFilter(null);
                   }}
                 >
                   {t(($) => {
-                    return $.connectors.catalog.remoteAccess;
+                    return $.connectors.catalog.filters.all;
                   })}
                 </ConnectorFilterOption>
-              )}
-              <DropdownMenuSeparator />
-              <ConnectorFilterSectionLabel>
-                {t(($) => {
-                  return $.connectors.catalog.filterCategory;
-                })}
-              </ConnectorFilterSectionLabel>
-              {categories
-                .filter((section) => {
-                  return section.category !== REMOTE_ACCESS_CATEGORY;
-                })
-                .map((section) => {
-                  const total = categoryCounts?.[section.category];
-                  return (
-                    <ConnectorFilterOption
-                      key={section.category}
-                      active={categoryFilter === section.category}
-                      onSelect={() => {
-                        setCategoryFilter(section.category);
-                      }}
-                    >
-                      <span className="min-w-0 truncate">
-                        {section.menuLabel}
-                      </span>
-                      {total !== undefined && (
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
-                          {total}
+                {categories.some((section) => {
+                  return section.category === REMOTE_ACCESS_CATEGORY;
+                }) && (
+                  <ConnectorFilterOption
+                    active={categoryFilter === REMOTE_ACCESS_CATEGORY}
+                    onSelect={() => {
+                      setCategoryFilter(REMOTE_ACCESS_CATEGORY);
+                    }}
+                  >
+                    {t(($) => {
+                      return $.connectors.catalog.remoteAccess;
+                    })}
+                  </ConnectorFilterOption>
+                )}
+                <DropdownMenuSeparator />
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.filterCategory;
+                  })}
+                </ConnectorFilterSectionLabel>
+                {categories
+                  .filter((section) => {
+                    return section.category !== REMOTE_ACCESS_CATEGORY;
+                  })
+                  .map((section) => {
+                    const total = categoryCounts?.[section.category];
+                    return (
+                      <ConnectorFilterOption
+                        key={section.category}
+                        active={categoryFilter === section.category}
+                        onSelect={() => {
+                          setCategoryFilter(section.category);
+                        }}
+                      >
+                        <span className="min-w-0 truncate">
+                          {section.menuLabel}
                         </span>
-                      )}
-                    </ConnectorFilterOption>
-                  );
-                })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+                        {total !== undefined && (
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
+                            {total}
+                          </span>
+                        )}
+                      </ConnectorFilterOption>
+                    );
+                  })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
+      <div
+        aria-hidden="true"
+        className="h-6 bg-gradient-to-b from-background to-transparent"
+      />
     </div>
   );
 }

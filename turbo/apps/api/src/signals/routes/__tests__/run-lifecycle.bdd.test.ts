@@ -1151,40 +1151,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, enabled.runId, [200]);
   });
 
-  it("asks chat runs for a generic progressive artifact preview only while its switch is on", async () => {
-    const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
-    const { actor, agentId } = await entitledRunActor();
-    const promptHeading = "# Progressive Artifact Preview";
-
-    const gatedOff = await api.createRun(actor, {
-      agentId,
-      prompt: "make a launch deck",
-      modelProvider: "anthropic-api-key",
-    });
-    const gatedOffRun = await api.readRun(actor, gatedOff.runId);
-    expect(gatedOffRun.appendSystemPrompt ?? "").not.toContain(promptHeading);
-
-    await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.ProgressiveArtifactPreview]: true,
-    });
-
-    const gatedOn = await api.createRun(actor, {
-      agentId,
-      prompt: "make a launch deck",
-      modelProvider: "anthropic-api-key",
-    });
-    const gatedOnRun = await api.readRun(actor, gatedOn.runId);
-    const appendSystemPrompt = gatedOnRun.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain(promptHeading);
-    expect(appendSystemPrompt).toContain("returned Alias URL");
-    expect(appendSystemPrompt).toContain("still working on it");
-    expect(appendSystemPrompt).toContain("same `--site` slug");
-    expect(appendSystemPrompt).toContain(
-      "Do not report named stages, draft/final labels, or completion percentages",
-    );
-  });
-
   it("claims an exact-empty direct dispatch run without connector scope", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();

@@ -1,0 +1,3 @@
+DROP INDEX "account_erasure_work_claim";--> statement-breakpoint
+CREATE INDEX "account_erasure_work_deadline" ON "account_erasure_work" USING btree ("job_id","id") WHERE "account_erasure_work"."state" IN ('pending', 'retryable_failure');--> statement-breakpoint
+CREATE INDEX "account_erasure_work_claim" ON "account_erasure_work" USING btree ("job_id","available_at","id") WHERE "account_erasure_work"."state" IN ('pending', 'retryable_failure');
