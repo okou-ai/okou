@@ -196,6 +196,7 @@ test.each([
     await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
     await readyChat();
     const card = await screen.findByTestId("permission-action-card");
+    const frame = screen.getByTestId("permission-action-card-shell");
     const confirm = await waitFor(() => {
       return getButton("Confirm", card);
     });
@@ -204,6 +205,8 @@ test.each([
     await expect(
       within(card).findByText("Permissions updated"),
     ).resolves.toBeVisible();
+    expect(screen.getByTestId("permission-action-card-shell")).toBe(frame);
+    expect(frame).toContainElement(card);
     expect(within(card).queryByText(/Expires in/u)?.textContent ?? null).toBe(
       expiryText,
     );

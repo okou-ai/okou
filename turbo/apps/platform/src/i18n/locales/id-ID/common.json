@@ -2990,6 +2990,9 @@
     "workflows": {
       "named": "Alur kerja {{title}}",
       "open": "Buka alur kerja {{title}}"
+    },
+    "cards": {
+      "viewDetails": "Lihat detail"
     }
   },
   "connectors": {

@@ -1,4 +1,3 @@
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { now } from "../../lib/time.ts";
@@ -72,6 +71,7 @@ import {
 } from "../../signals/okou-page/attachment-chips.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
+import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
@@ -352,7 +352,7 @@ function ArtifactCardView({
       : undefined;
 
   if (signals.kind === "image") {
-    return withChatScrollLayout(
+    return (
       <ChatImagePreviewLink
         alt={signals.filename}
         ariaLabel={t(
@@ -373,11 +373,11 @@ function ArtifactCardView({
         resourceUrl$={signals.linkUrl$}
         thumbnailUrl$={signals.thumbnailUrl$}
         url={signals.url}
-      />,
+      />
     );
   }
   if (signals.kind === "video") {
-    return withChatScrollLayout(
+    return (
       <ChatVideoPreviewButton
         resourceUrl$={signals.resourceUrl$}
         ariaLabel={t(
@@ -401,10 +401,10 @@ function ArtifactCardView({
         previewImagePending={previewImagePending}
         previewImageUrl={previewImageUrl}
         videoClassName="h-full w-full object-contain"
-      />,
+      />
     );
   }
-  return withChatScrollLayout(
+  return (
     <AttachmentPreview
       resourceUrl$={signals.resourceUrl$}
       attachment={{
@@ -422,29 +422,32 @@ function ArtifactCardView({
       }}
       previewImageLoad={signals.previewImageLoad}
       text$={signals.text$}
-    />,
+    />
   );
 }
 
-const CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS = "h-[136px] sm:h-[88px]";
+const CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS = "h-[136px] @[640px]:h-[88px]";
 
-function UnavailableActionCard() {
+function UnavailableActionCard({ fillFrame = false }: { fillFrame?: boolean }) {
   const { t } = useTranslation();
   return (
     <ChatCard
       data-testid="unavailable-action-card"
-      className="flex min-h-[88px] w-full items-center gap-3 p-3 text-left"
+      className={cn(
+        "flex w-full items-center gap-3 p-3 text-left",
+        fillFrame ? "h-full" : "h-[88px]",
+      )}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
         <AlertCircle size={22} />
       </div>
       <div className="min-w-0">
-        <div className="text-[0.9375rem] font-medium text-foreground">
+        <div className="truncate text-[0.9375rem] font-medium text-foreground">
           {t(($) => {
             return $.chat.actionUnavailable.title;
           })}
         </div>
-        <div className="mt-0.5 text-sm leading-5 text-muted-foreground">
+        <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
           {t(($) => {
             return $.chat.actionUnavailable.description;
           })}
@@ -458,10 +461,7 @@ function ConnectorActionCardSkeleton() {
   return (
     <Skeleton
       data-testid="connector-action-card-loading"
-      className={cn(
-        "w-full rounded-[var(--okou-card-radius)]",
-        CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS,
-      )}
+      className={cn("h-full w-full rounded-[var(--okou-card-radius)]")}
     />
   );
 }
@@ -483,19 +483,16 @@ function CatalogConnectorActionCard({
     completeLoadable.state === "loading" ||
     activateLoadable.state === "loading";
   if (!catalogItem && catalogItemLoadable.state === "loading") {
-    return withChatScrollLayout(<ConnectorActionCardSkeleton />);
+    return <ConnectorActionCardSkeleton />;
   }
   if (!catalogItem) {
-    return withChatScrollLayout(null);
+    return <UnavailableActionCard fillFrame />;
   }
 
-  return withChatScrollLayout(
+  return (
     <ConnectorCard
       variant="action"
-      className={cn(
-        "justify-between overflow-hidden",
-        CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS,
-      )}
+      className={cn("h-full justify-between")}
       icon={<ConnectorIcon icon={catalogItem.icon} size={22} />}
       label={catalogItem.label}
       description={catalogItem.description}
@@ -508,7 +505,7 @@ function CatalogConnectorActionCard({
       onActivate={() => {
         detach(activate(pageSignal), Reason.DomCallback);
       }}
-    />,
+    />
   );
 }
 
@@ -530,19 +527,16 @@ function CustomConnectorActionCard({
     completeLoadable.state === "loading" ||
     activateLoadable.state === "loading";
   if (!connector && connectorLoadable.state === "loading") {
-    return withChatScrollLayout(<ConnectorActionCardSkeleton />);
+    return <ConnectorActionCardSkeleton />;
   }
   if (!connector) {
-    return withChatScrollLayout(null);
+    return <UnavailableActionCard fillFrame />;
   }
 
-  return withChatScrollLayout(
+  return (
     <ConnectorCard
       variant="action"
-      className={cn(
-        "justify-between overflow-hidden",
-        CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS,
-      )}
+      className={cn("h-full justify-between")}
       icon={
         <CustomConnectorIcon
           id={connector.id}
@@ -561,15 +555,22 @@ function CustomConnectorActionCard({
       onActivate={() => {
         detach(activate(pageSignal), Reason.DomCallback);
       }}
-    />,
+    />
   );
 }
 
 function ConnectorActionCard({ signals }: { signals: ConnectorSignals }) {
-  return signals.kind === "catalog" ? (
-    <CatalogConnectorActionCard signals={signals} />
-  ) : (
-    <CustomConnectorActionCard signals={signals} />
+  return (
+    <div
+      data-testid="connector-action-card-shell"
+      className={cn("w-full", CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS)}
+    >
+      {signals.kind === "catalog" ? (
+        <CatalogConnectorActionCard signals={signals} />
+      ) : (
+        <CustomConnectorActionCard signals={signals} />
+      )}
+    </div>
   );
 }
 
@@ -579,10 +580,10 @@ function ComputerUseAuthorizationCard({
   signals: ComputerUseAuthorizationSignals;
 }) {
   const { t } = useTranslation();
-  return withChatScrollLayout(
+  return (
     <ChatCard
       data-testid="computer-use-authorization-card"
-      className="flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
+      className="flex h-[136px] w-full flex-col justify-between @[640px]:h-[88px] gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center @[640px]:justify-between"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
@@ -605,14 +606,14 @@ function ComputerUseAuthorizationCard({
         href={signals.href}
         target="_blank"
         rel="noreferrer"
-        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-[0.9375rem] font-medium text-foreground transition-colors hover:bg-state-hover sm:w-auto"
+        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-[0.9375rem] font-medium text-foreground transition-colors hover:bg-state-hover @[640px]:w-auto"
       >
         {t(($) => {
           return $.chat.actions.authorize;
         })}
         <ArrowUpRight size={15} />
       </a>
-    </ChatCard>,
+    </ChatCard>
   );
 }
 
@@ -625,10 +626,10 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
     detach(open(pageSignal), Reason.DomCallback);
   };
 
-  return withChatScrollLayout(
+  return (
     <ChatCard
       data-testid="plan-upgrade-card"
-      className="flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
+      className="flex h-[136px] w-full flex-col justify-between @[640px]:h-[88px] gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center @[640px]:justify-between"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
@@ -650,13 +651,13 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
       <Button
         type="button"
         onClick={handleClick}
-        className="w-full shrink-0 sm:w-auto"
+        className="h-9 w-full shrink-0 @[640px]:w-auto"
       >
         {t(($) => {
           return $.chat.billing.comparePlans;
         })}
       </Button>
-    </ChatCard>,
+    </ChatCard>
   );
 }
 
@@ -1180,6 +1181,39 @@ function createPermissionActionHandler(
   };
 }
 
+function permissionActionExpiryText(
+  expiresAt: string | null,
+  expirationAvailable: boolean,
+): string | null {
+  const expiresAtMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  const remainingMs = expiresAtMs - now();
+  const hourCount = Math.round(remainingMs / (60 * 60 * 1000));
+  const dayCount = Math.round(remainingMs / (24 * 60 * 60 * 1000));
+  return !expirationAvailable || !Number.isFinite(expiresAtMs)
+    ? null
+    : remainingMs <= 0
+      ? i18n.t(($) => {
+          return $.chat.permissions.expired;
+        })
+      : hourCount > 24
+        ? i18n.t(
+            ($) => {
+              return $.chat.permissions.expiresInDays;
+            },
+            { count: dayCount },
+          )
+        : hourCount <= 1
+          ? null
+          : i18n.t(
+              ($) => {
+                return $.chat.permissions.expiresInHours;
+              },
+              {
+                count: hourCount,
+              },
+            );
+}
+
 function PermissionActionCardContent({
   signals,
   icon,
@@ -1206,43 +1240,17 @@ function PermissionActionCardContent({
   onClick: () => void;
 }) {
   const { t } = useTranslation();
-  const expiresAtMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
-  const remainingMs = expiresAtMs - now();
-  const hourCount = Math.round(remainingMs / (60 * 60 * 1000));
-  const dayCount = Math.round(remainingMs / (24 * 60 * 60 * 1000));
-  const expiryText =
-    !expirationAvailable || !Number.isFinite(expiresAtMs)
-      ? null
-      : remainingMs <= 0
-        ? t(($) => {
-            return $.chat.permissions.expired;
-          })
-        : hourCount > 24
-          ? t(
-              ($) => {
-                return $.chat.permissions.expiresInDays;
-              },
-              { count: dayCount },
-            )
-          : hourCount <= 1
-            ? null
-            : t(
-                ($) => {
-                  return $.chat.permissions.expiresInHours;
-                },
-                {
-                  count: hourCount,
-                },
-              );
+  const expiryText = permissionActionExpiryText(expiresAt, expirationAvailable);
   const showDurationSelect =
     expirationAvailable &&
     (status.kind === "ready" ||
       status.kind === "saving" ||
       status.kind === "save-error");
   return (
-    <ChatCard
+    <div
       data-testid="permission-action-card"
-      className="flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
+      aria-busy={status.kind === "loading" || status.kind === "saving"}
+      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center @[640px]:justify-between"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
@@ -1270,20 +1278,30 @@ function PermissionActionCardContent({
               },
             )}
           </div>
-          {status.kind !== "loading" && (
-            <PermissionActionInlineStatus status={status} />
-          )}
-          {expiryText && (
-            <div className="mt-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
-              {expiryText}
-            </div>
-          )}
+          <div className="h-5 overflow-hidden">
+            {status.kind !== "loading" && (
+              <PermissionActionInlineStatus status={status} />
+            )}
+          </div>
+          <div className="h-4 truncate text-xs font-medium text-amber-700 dark:text-amber-400">
+            {expiryText}
+          </div>
         </div>
+        <ChatCardDetails compact title={connectorLabel}>
+          <p>
+            {t(($) => $.chat.permissions.actionDescription, {
+              action: actionLabel,
+              permissionName,
+            })}
+          </p>
+          <PermissionActionInlineStatus status={status} />
+          {expiryText && <p>{expiryText}</p>}
+        </ChatCardDetails>
       </div>
       {permissionActionHasControls(status) && (
         <div
           data-testid="permission-action-card-controls"
-          className="flex min-h-9 w-full shrink-0 flex-row items-center gap-2 sm:w-auto"
+          className="flex min-h-9 w-full shrink-0 flex-row items-center gap-2 @[640px]:w-auto"
         >
           {status.kind === "loading" && (
             <PermissionActionInlineStatus status={status} />
@@ -1305,7 +1323,7 @@ function PermissionActionCardContent({
           <PermissionActionButton status={status} onClick={onClick} />
         </div>
       )}
-    </ChatCard>
+    </div>
   );
 }
 
@@ -1362,7 +1380,7 @@ function PermissionActionCardForTarget({
     status: actionState.status,
   });
 
-  return withChatScrollLayout(
+  return (
     <PermissionActionCardContent
       signals={signals}
       icon={permissionMetadata?.icon}
@@ -1391,11 +1409,26 @@ function PermissionActionCardForTarget({
         },
         pageSignal,
       )}
-    />,
+    />
   );
 }
 
 function PermissionActionCard({ signals }: { signals: PermissionSignals }) {
+  return (
+    <ChatCard
+      data-testid="permission-action-card-shell"
+      className="h-[188px] w-full @[640px]:h-[136px]"
+    >
+      <PermissionActionCardState signals={signals} />
+    </ChatCard>
+  );
+}
+
+function PermissionActionCardState({
+  signals,
+}: {
+  signals: PermissionSignals;
+}) {
   const agentLoadable = useLastLoadable(signals.agent$);
   const userGrantsLoadable = useLoadable(signals.grants$);
   const agent = agentLoadable.state === "hasData" ? agentLoadable.data : null;

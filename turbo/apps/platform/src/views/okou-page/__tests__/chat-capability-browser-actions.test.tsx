@@ -233,6 +233,7 @@ test("Keep the unavailable browser card inert when the session cannot be read", 
 
 test("Render a managed browser card from loading to live", async () => {
   const { sessionReady } = await openManagedBrowserChat();
+  const frame = await screen.findByTestId("browser-session-card-shell");
   const renderAppStyles = await createRenderedAppStyles(context.signal);
   const loadingCard = await screen.findByTestId("browser-session-card-loading");
   renderAppStyles(loadingCard);
@@ -240,6 +241,8 @@ test("Render a managed browser card from loading to live", async () => {
 
   sessionReady.resolve();
   const card = await findButton("Open Research browser");
+  expect(screen.getByTestId("browser-session-card-shell")).toBe(frame);
+  expect(frame).toContainElement(card);
   renderAppStyles(card);
   expect(getComputedStyle(card).borderTopWidth).toBe("1px");
   expect(getComputedStyle(card).transitionProperty).toBe(

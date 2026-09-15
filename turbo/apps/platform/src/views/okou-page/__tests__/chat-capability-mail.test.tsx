@@ -292,6 +292,58 @@ test("Reconnect the exact Gmail account required by a persisted mail card", asyn
   ).not.toBeInTheDocument();
 });
 
+test.each([404, 500] as const)(
+  "Keep a mail card through a %s read and retry",
+  async (status) => {
+    const gate = context.mocks.deferred<void>();
+    let available = false;
+    const subject = "Recovered draft";
+    installCapabilityChat({
+      events: completedConversation(mailCard(FIRST_MAIL_ID, subject)),
+    });
+    context.mocks.api(
+      mailContract.getDraft,
+      async ({ respond, withSignal }) => {
+        await withSignal(gate.promise);
+        if (available) {
+          return respond(
+            200,
+            mailResponse(FIRST_MAIL_ID, mailDraft(FIRST_MAIL_ID, { subject })),
+          );
+        }
+        return respond(status, {
+          error: {
+            code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+            message: "Email unavailable",
+          },
+        });
+      },
+    );
+
+    await setupPage({ context, path: RUN_PATH, host: APP_HOST });
+    await readyChat();
+    const frame = await screen.findByTestId("mail-draft-card-shell");
+    expect(
+      within(frame).getByTestId("mail-draft-card-loading"),
+    ).toBeInTheDocument();
+    gate.resolve();
+    await expect(
+      within(frame).findByText("This email is no longer available."),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByTestId("mail-draft-card-shell")).toBe(frame);
+    available = true;
+    click(await findControl("button", "Retry", frame));
+    await expect(
+      within(frame).findByText(subject),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByTestId("mail-draft-card-shell")).toBe(frame);
+    click(await findMailCard(subject));
+    await expect(
+      screen.findByRole("complementary", { name: "Email details" }),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
 test("A rejected Gmail send shows correction guidance and keeps the draft", async () => {
   const subject = "Draft requiring review";
   const draft = mailDraft(FIRST_MAIL_ID, { subject });

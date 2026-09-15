@@ -2990,6 +2990,9 @@
     "workflows": {
       "named": "워크플로 {{title}}",
       "open": "워크플로 {{title}} 열기"
+    },
+    "cards": {
+      "viewDetails": "세부 정보 보기"
     }
   },
   "connectors": {

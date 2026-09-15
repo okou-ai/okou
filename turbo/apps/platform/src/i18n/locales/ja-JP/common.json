@@ -2990,6 +2990,9 @@
     "workflows": {
       "named": "ワークフロー {{title}}",
       "open": "ワークフロー {{title}} を開く"
+    },
+    "cards": {
+      "viewDetails": "詳細を表示"
     }
   },
   "connectors": {

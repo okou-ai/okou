@@ -2999,6 +2999,9 @@
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Open workflow {{title}}"
+    },
+    "cards": {
+      "viewDetails": "View details"
     }
   },
   "connectors": {

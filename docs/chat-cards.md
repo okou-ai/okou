@@ -93,6 +93,19 @@ For preview geometry, follow `AttachmentCardArtwork` and
 the artwork or preview area and place changing content inside it. Reading the
 full document or interacting with a page happens in the existing viewer.
 
+`ChatCardDetails` provides the shared dialog for recovery diagnostics, banking
+account selection and confirmation, permission explanations, and credit
+checkout options. Recovery keeps the original account and current-settings
+notice beside the reset/retry controls in that dialog. Banking keeps its
+connection polling owned by the card even when the dialog is closed. Preserve
+those action and lifecycle owners when adding another state.
+
+Current frame owners are `AssistantErrorContent` (including billing),
+`ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,
+`MailDraftCard`, and `BrowserSessionCard`. Their asynchronous subscriptions live
+inside the sized parent. Browser cards reserve both the 40px header and 16:10
+preview in the parent, independently of the replaceable preview content.
+
 ### No content-size observation or compensating scroll
 
 Do not introduce `ResizeObserver`, DOM-mutation observers, or timer/frame loops
@@ -122,6 +135,26 @@ only CSS classes or final dimensions misses the transient-collapse failure.
 The manual preview regression in
 `e2e/playwright/regressions/connector-card-scroll.ts` provides an existing
 example of browser scroll verification for the persistent-frame pattern.
+
+`e2e/playwright/regressions/chat-card-scroll.ts` covers recovery, connector,
+mail, browser, banking, and permission cards in both engines, at desktop and
+mobile widths, at the bottom and while reading history. Run it against a
+prepared preview thread using private authenticated storage state:
+
+```sh
+cd e2e
+pnpm exec tsx playwright/regressions/chat-card-scroll.ts \
+  <app-origin> <api-origin> <thread-id> <storage-state.json> <output-dir> \
+  recovery 1
+```
+
+The thread must overflow by at least 240px. Choose the appropriate card-family
+argument and count, and use fixtures with ready or unavailable resources as
+needed. The script holds matching GET responses, preserves them unchanged,
+then checks frame identity, geometry, and reading position after release. It
+saves geometry only. Exercise action dialogs and their completed/error states
+in the page integration tests and in preview acceptance as well; this read-only
+loading regression does not authorize or execute those actions.
 
 ## Failure Recovery Classification
 

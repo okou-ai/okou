@@ -227,6 +227,10 @@ test("Let a paid workspace admin buy more credits", async () => {
   await expect(
     screen.findByText("You're out of credits"),
   ).resolves.toBeVisible();
+  const frame = screen.getByTestId("assistant-error-card-shell");
+  expect(queryButton("$100", frame)).not.toBeInTheDocument();
+  click(button("Add credits", frame));
+  await screen.findByRole("dialog", { name: "You're out of credits" });
   for (const amount of ["$100", "$200", "$300"]) {
     expect(button(amount)).toBeVisible();
   }
@@ -247,6 +251,8 @@ test("Let a paid workspace admin buy more credits", async () => {
   const customAmount = screen.getByRole("textbox", {
     name: "Custom dollar amount",
   });
+  expect(screen.getByTestId("assistant-error-card-shell")).toBe(frame);
+  expect(frame).not.toContainElement(customAmount);
   await fill(customAmount, "250");
   click(button("Buy"));
 

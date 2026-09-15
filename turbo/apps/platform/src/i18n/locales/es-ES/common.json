@@ -3045,6 +3045,9 @@
     "workflows": {
       "named": "Flujo de trabajo {{title}}",
       "open": "Abrir flujo de trabajo {{title}}"
+    },
+    "cards": {
+      "viewDetails": "Ver detalles"
     }
   },
   "connectors": {

@@ -1,10 +1,10 @@
-import { ChevronRight, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronRight, Loader2 } from "lucide-react";
 import type {
   MailDraft,
   MailDraftStatus,
 } from "@okouai/api-contracts/contracts/mail";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
-import { cn } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
@@ -119,10 +119,10 @@ function MailDraftCardContent({
           )}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-1.5 self-center">
+      <span className="flex min-w-0 max-w-[45%] shrink-0 items-center gap-1.5 self-center">
         <span
           className={cn(
-            "rounded-full px-2 py-1 text-[11px] font-medium",
+            "truncate rounded-full px-2 py-1 text-[11px] font-medium",
             draft.status === "sent" &&
               "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
             draft.status === "draft" &&
@@ -182,7 +182,7 @@ function DeletedMailDraftCard({
   );
 }
 
-export function MailDraftCard({ signals }: MailDraftCardProps) {
+function MailDraftCardState({ signals }: MailDraftCardProps) {
   const { t } = useTranslation();
   const draftLoadable = useLastLoadable(signals.draft$);
   const selectedMailDraftId = useGet(activeSidebarMailDraftId$);
@@ -196,14 +196,23 @@ export function MailDraftCard({ signals }: MailDraftCardProps) {
     useGmailReconnect(reconnectConnectionId, reloadDraft);
 
   if (draftLoadable.state === "loading") {
-    return (
-      <MailDraftCardShell>
-        <MailDraftCardSkeleton />
-      </MailDraftCardShell>
-    );
+    return <MailDraftCardSkeleton />;
   }
   if (draftLoadable.state === "hasError" || draftLoadable.data === null) {
-    return null;
+    return (
+      <div
+        data-mail-draft-status="unavailable"
+        className="flex h-full items-center gap-3 rounded-[var(--okou-card-radius)] border border-border/70 bg-card px-4 py-3"
+      >
+        <AlertCircle size={20} className="shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 line-clamp-2 text-sm text-muted-foreground">
+          {t(($) => $.chat.mail.unavailable)}
+        </span>
+        <Button type="button" variant="outline" size="sm" onClick={reloadDraft}>
+          {t(($) => $.billing.common.retry)}
+        </Button>
+      </div>
+    );
   }
 
   const draft = draftLoadable.data;
@@ -228,66 +237,68 @@ export function MailDraftCard({ signals }: MailDraftCardProps) {
 
   if (deleted) {
     return (
-      <MailDraftCardShell>
-        <DeletedMailDraftCard
-          draft={draft}
-          gmailIcon={connectorIcon}
-          subject={subject}
-        />
-      </MailDraftCardShell>
+      <DeletedMailDraftCard
+        draft={draft}
+        gmailIcon={connectorIcon}
+        subject={subject}
+      />
     );
   }
 
   if (needsReconnect) {
     return (
-      <MailDraftCardShell>
-        <button
-          type="button"
-          disabled={reconnectDisabled}
-          onClick={reconnect}
-          aria-label={t(
-            ($) => {
-              return $.chat.mail.reconnectToAccess;
-            },
-            {
-              subject,
-            },
-          )}
-          data-mail-draft-card
-          data-mail-draft-status={draft.status}
-          className="flex h-full w-full items-center gap-3 rounded-[var(--okou-card-radius)] border border-border/70 bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
-        >
-          {content}
-        </button>
-      </MailDraftCardShell>
-    );
-  }
-
-  return (
-    <MailDraftCardShell>
       <button
         type="button"
+        disabled={reconnectDisabled}
+        onClick={reconnect}
         aria-label={t(
           ($) => {
-            return $.chat.mail.openEmail;
+            return $.chat.mail.reconnectToAccess;
           },
           {
-            status: statusLabel(draft.status).toLocaleLowerCase(
-              i18n.resolvedLanguage,
-            ),
             subject,
           },
         )}
         data-mail-draft-card
         data-mail-draft-status={draft.status}
-        onClick={openDraft}
-        className={cn(
-          "flex h-full w-full items-center gap-3 rounded-[var(--okou-card-radius)] border bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          selected ? "border-ring/60 bg-muted/20" : "border-border/70",
-        )}
+        className="flex h-full w-full items-center gap-3 rounded-[var(--okou-card-radius)] border border-border/70 bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-wait disabled:opacity-70"
       >
         {content}
       </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={t(
+        ($) => {
+          return $.chat.mail.openEmail;
+        },
+        {
+          status: statusLabel(draft.status).toLocaleLowerCase(
+            i18n.resolvedLanguage,
+          ),
+          subject,
+        },
+      )}
+      data-mail-draft-card
+      data-mail-draft-status={draft.status}
+      onClick={openDraft}
+      className={cn(
+        "flex h-full w-full items-center gap-3 rounded-[var(--okou-card-radius)] border bg-card px-4 py-3 text-left transition-colors hover:bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        selected ? "border-ring/60 bg-muted/20" : "border-border/70",
+      )}
+    >
+      {content}
+    </button>
+  );
+}
+
+export function MailDraftCard({ signals }: MailDraftCardProps) {
+  return (
+    <MailDraftCardShell>
+      <MailDraftCardState signals={signals} />
     </MailDraftCardShell>
   );
 }

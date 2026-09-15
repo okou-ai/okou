@@ -305,6 +305,7 @@ import {
   setChatKeyboardScrollRoot$,
 } from "../../signals/chat-page/chat-keyboard.ts";
 import { ChatCard } from "./components/chat-card.tsx";
+import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
@@ -4722,8 +4723,8 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
 function CreditsAvailableMessage() {
   const { t } = useTranslation();
   return (
-    <div className="max-w-md">
-      <p className="text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
+    <div className="flex h-full flex-col justify-center p-3">
+      <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
         {t(($) => {
           return $.chat.billing.creditsAvailable;
         })}
@@ -4943,9 +4944,15 @@ function InsufficientCreditsCard() {
   };
 
   return (
-    <ChatCard className="max-w-md px-3 py-3">
-      <p className="text-[0.9375rem] font-medium text-foreground">{headline}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{helper}</p>
+    <div className="flex h-full flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+      <div className="min-w-0">
+        <p className="truncate text-[0.9375rem] font-medium text-foreground">
+          {headline}
+        </p>
+        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+          {helper}
+        </p>
+      </div>
       {!canShowBillingAction ? null : shouldStartProCheckout ? (
         <Button
           type="button"
@@ -4953,7 +4960,7 @@ function InsufficientCreditsCard() {
           disabled={checkoutRedirecting}
           variant="default"
           size="sm"
-          className="mt-3 disabled:opacity-60"
+          className="shrink-0 disabled:opacity-60"
         >
           {checkoutRedirecting
             ? t(($) => {
@@ -4964,12 +4971,18 @@ function InsufficientCreditsCard() {
               })}
         </Button>
       ) : (
-        <PaidCreditCheckoutActions
-          preparing={creditCheckoutPreparing}
-          handleCreditClick={handleCreditClick}
-        />
+        <ChatCardDetails
+          title={headline}
+          triggerLabel={t(($) => $.runErrors.actions.addCredits)}
+        >
+          <p>{helper}</p>
+          <PaidCreditCheckoutActions
+            preparing={creditCheckoutPreparing}
+            handleCreditClick={handleCreditClick}
+          />
+        </ChatCardDetails>
       )}
-    </ChatCard>
+    </div>
   );
 }
 
@@ -5041,7 +5054,7 @@ function AssistantRecoveryActions({
   };
 
   return (
-    <div className="col-start-2 row-start-2 flex max-w-full flex-wrap items-center gap-2 @[640px]:col-start-3 @[640px]:row-start-1 @[640px]:ml-auto @[640px]:shrink-0 @[640px]:justify-end @[640px]:self-center">
+    <div className="flex max-w-full flex-wrap items-center gap-2">
       {hasResetAction && (
         <Button
           type="button"
@@ -5103,33 +5116,39 @@ function AssistantErrorCard({
   icon: Icon,
   title,
   description,
+  details,
   actions,
   testId,
 }: {
   icon: LucideIcon;
   title: string;
-  description: ReactNode;
+  description: string;
+  details?: ReactNode;
   actions?: ReactNode;
   testId?: string;
 }) {
   return (
-    <ChatCard
+    <div
       role="status"
       data-testid={testId}
-      className="grid min-h-[88px] w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-3 px-3.5 py-3 text-foreground @[640px]:grid-cols-[auto_minmax(0,1fr)_auto] @[640px]:content-center"
+      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
-      <Icon
-        size={16}
-        className="col-start-1 row-start-1 mt-1 shrink-0 self-start text-brand-text"
-      />
-      <div className="col-start-2 row-start-1 min-w-0">
-        <div className="text-[0.9375rem] font-medium leading-6">{title}</div>
-        <div className="mt-0.5 text-sm leading-5 text-muted-foreground">
-          {description}
+      <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
+        <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
+        <div className="min-w-0">
+          <div className="truncate text-[0.9375rem] font-medium leading-6">
+            {title}
+          </div>
+          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
+            {description}
+          </div>
         </div>
       </div>
-      {actions}
-    </ChatCard>
+      <ChatCardDetails title={title}>
+        {details ?? <p>{description}</p>}
+        {actions}
+      </ChatCardDetails>
+    </div>
   );
 }
 
@@ -5224,7 +5243,8 @@ function AssistantErrorRecoveryCard({
           : Coffee
       }
       title={title}
-      description={
+      description={`${description}${resetText ? ` ${resetText}` : ""}`}
+      details={
         <>
           {`${description}${resetText ? ` ${resetText}` : ""}`}
           {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
@@ -5243,20 +5263,6 @@ function AssistantErrorRecoveryCard({
   );
 }
 
-function AssistantErrorLeadingIcon({ warning = false }: { warning?: boolean }) {
-  return (
-    <span
-      className={cn(
-        CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS,
-        "mt-[3px]",
-        warning && "text-amber-500",
-      )}
-    >
-      <AlertCircle size={16} />
-    </span>
-  );
-}
-
 function AssistantErrorFallback({ error }: { error: string }) {
   const { t } = useTranslation();
   const openSettings = useSet(openSettingsDialogAt$);
@@ -5268,20 +5274,11 @@ function AssistantErrorFallback({ error }: { error: string }) {
 
   if (error.trim().toLowerCase() === "run cancelled") {
     return (
-      <div
-        className="inline-flex items-center gap-2 bg-muted/50 px-3 py-1.5 text-[0.9375rem] text-muted-foreground"
-        style={{
-          border: "var(--border-width-surface) solid hsl(var(--border))",
-          borderRadius: "12px",
-        }}
-      >
-        <Hand size={16} className="shrink-0" />
-        <span>
-          {t(($) => {
-            return $.chat.errors.runCancelled;
-          })}
-        </span>
-      </div>
+      <AssistantErrorCard
+        icon={Hand}
+        title={t(($) => $.chat.errors.runCancelled)}
+        description=""
+      />
     );
   }
 
@@ -5292,28 +5289,32 @@ function AssistantErrorFallback({ error }: { error: string }) {
 
   if (isNoModelProvider) {
     return (
-      <div className="flex items-start gap-0 text-foreground">
-        <AssistantErrorLeadingIcon warning />
-        <span>
-          {t(($) => {
-            return $.chat.errors.noModelProviderPrefix;
-          })}{" "}
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            onClick={() => {
-              detach(openSettings("model", pageSignal), Reason.DomCallback);
-            }}
-          >
+      <AssistantErrorCard
+        icon={AlertCircle}
+        title={t(($) => $.chat.errors.genericTitle)}
+        description={t(($) => $.chat.errors.noModelProviderPrefix)}
+        details={
+          <span>
             {t(($) => {
-              return $.chat.errors.noModelProviderAction;
+              return $.chat.errors.noModelProviderPrefix;
+            })}{" "}
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+              onClick={() => {
+                detach(openSettings("model", pageSignal), Reason.DomCallback);
+              }}
+            >
+              {t(($) => {
+                return $.chat.errors.noModelProviderAction;
+              })}
+            </button>{" "}
+            {t(($) => {
+              return $.chat.errors.noModelProviderSuffix;
             })}
-          </button>{" "}
-          {t(($) => {
-            return $.chat.errors.noModelProviderSuffix;
-          })}
-        </span>
-      </div>
+          </span>
+        }
+      />
     );
   }
 
@@ -5326,22 +5327,26 @@ function AssistantErrorFallback({ error }: { error: string }) {
 
   if (isProviderIncompatible) {
     return (
-      <div className="flex items-start gap-0 text-foreground">
-        <AssistantErrorLeadingIcon warning />
-        <span>
-          {t(($) => {
-            return $.chat.errors.providerIncompatiblePrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
+      <AssistantErrorCard
+        icon={AlertCircle}
+        title={t(($) => $.chat.errors.genericTitle)}
+        description={t(($) => $.chat.errors.providerIncompatiblePrefix)}
+        details={
+          <span>
             {t(($) => {
-              return $.chat.errors.providerIncompatibleAction;
-            })}
-          </Link>
-        </span>
-      </div>
+              return $.chat.errors.providerIncompatiblePrefix;
+            })}{" "}
+            <Link
+              pathname="/"
+              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+            >
+              {t(($) => {
+                return $.chat.errors.providerIncompatibleAction;
+              })}
+            </Link>
+          </span>
+        }
+      />
     );
   }
 
@@ -5353,25 +5358,29 @@ function AssistantErrorFallback({ error }: { error: string }) {
 
   if (isProviderDeleted) {
     return (
-      <div className="flex items-start gap-0 text-foreground">
-        <AssistantErrorLeadingIcon warning />
-        <span>
-          {t(($) => {
-            return $.chat.errors.providerDeletedPrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
+      <AssistantErrorCard
+        icon={AlertCircle}
+        title={t(($) => $.chat.errors.genericTitle)}
+        description={t(($) => $.chat.errors.providerDeletedPrefix)}
+        details={
+          <span>
             {t(($) => {
-              return $.chat.errors.providerDeletedAction;
+              return $.chat.errors.providerDeletedPrefix;
+            })}{" "}
+            <Link
+              pathname="/"
+              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+            >
+              {t(($) => {
+                return $.chat.errors.providerDeletedAction;
+              })}
+            </Link>{" "}
+            {t(($) => {
+              return $.chat.errors.providerDeletedSuffix;
             })}
-          </Link>{" "}
-          {t(($) => {
-            return $.chat.errors.providerDeletedSuffix;
-          })}
-        </span>
-      </div>
+          </span>
+        }
+      />
     );
   }
 
@@ -5381,11 +5390,11 @@ function AssistantErrorFallback({ error }: { error: string }) {
       title={t(($) => {
         return $.chat.errors.genericTitle;
       })}
-      description={
+      description={localizedRunError(error)}
+      details={
         <Markdown
           className="!text-muted-foreground"
           source={localizedRunError(error)}
-          style={{ fontSize: "inherit", lineHeight: "inherit" }}
         />
       }
     />
@@ -5393,6 +5402,25 @@ function AssistantErrorFallback({ error }: { error: string }) {
 }
 
 function AssistantErrorContent({
+  error,
+  eventId,
+  thread,
+}: {
+  error: string;
+  eventId: string;
+  thread: ChatPanelSignals;
+}) {
+  return (
+    <ChatCard
+      data-testid="assistant-error-card-shell"
+      className="h-[136px] w-full @[640px]:h-[88px]"
+    >
+      <AssistantErrorState error={error} eventId={eventId} thread={thread} />
+    </ChatCard>
+  );
+}
+
+function AssistantErrorState({
   error,
   eventId,
   thread,

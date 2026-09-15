@@ -61,6 +61,16 @@ function installRecoverySource(source: NonNullable<GetRunResponse["source"]>) {
   });
 }
 
+async function openRecoveryDetails(): Promise<HTMLElement> {
+  const card = await screen.findByTestId("assistant-error-recovery");
+  const trigger = queryButton("View details", card);
+  if (!trigger) {
+    throw new Error("Recovery details are unavailable");
+  }
+  click(trigger);
+  return screen.findByRole("dialog");
+}
+
 function configureModelPolicies(
   models: readonly SupportedRunModel[],
   options: {
@@ -456,7 +466,7 @@ test("A Codex capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -490,7 +500,7 @@ test("A structured capacity failure offers recovery despite generic provider tex
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(queryButton("Try again", recovery)).toBeVisible();
   expect(recovery).not.toHaveTextContent(providerError);
@@ -769,7 +779,7 @@ test("A Claude Code capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -832,7 +842,7 @@ test("Recover from a personal model account limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Codex limit reached");
   expect(recovery).toHaveTextContent(/resets/iu);
   expect(within(recovery).getByRole("combobox")).toBeVisible();
@@ -863,7 +873,7 @@ test("Recover when a model is at capacity", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   await expect(
@@ -962,6 +972,7 @@ test.each([false, true])(
       },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         "This run used your personal subscription: original-a@example.com.",
@@ -1027,6 +1038,7 @@ test.each(["unknown", "unavailable"] as const)(
       featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         status === "unknown"
@@ -1106,12 +1118,14 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
   });
   await readyChat();
+  await openRecoveryDetails();
   click(await findButton("Reset and try again"));
   await expect(
     screen.findByText("This recovery endpoint is unavailable."),
   ).resolves.toBeInTheDocument();
   expect(settingsResets).toStrictEqual([]);
   expect(sent).toStrictEqual([]);
+  click(await findButton("Close"));
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
 });
 
@@ -1163,12 +1177,22 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   await waitFor(() => {
     expect(reads).toStrictEqual([RUN_A]);
   });
+  const frame = screen.getByTestId("assistant-error-card-shell");
+  expect(
+    within(frame).getByText("This run couldn't finish"),
+  ).toBeInTheDocument();
   detailGate.resolve();
   await expect(
     screen.findByText("Codex limit reached"),
   ).resolves.toBeInTheDocument();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(reads).toStrictEqual([RUN_A]);
+  expect(screen.getByTestId("assistant-error-card-shell")).toBe(frame);
+  await openRecoveryDetails();
+  expect(screen.getByTestId("assistant-error-card-shell")).toBe(frame);
+  expect(
+    queryButton("Try again", await screen.findByRole("dialog")),
+  ).toBeEnabled();
 });
 
 test("Continue a run that reached its execution time limit", async () => {
@@ -1193,7 +1217,7 @@ test("Continue a run that reached its execution time limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1235,7 +1259,7 @@ test("Continue a run classified by a structured execution timeout reason", async
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1302,7 +1326,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   ).resolves.toBeVisible();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(queryButton("Continue")).toBeNull();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   expect(
@@ -1316,6 +1340,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);
   expect(sentModels).toHaveLength(0);
 
+  click(await findButton("Close"));
   await sendText("Try a new instruction with Luna");
 
   await expect(

@@ -2999,6 +2999,9 @@
     "workflows": {
       "named": "वर्कफ़्लो {{title}}",
       "open": "वर्कफ़्लो {{title}} खोलें"
+    },
+    "cards": {
+      "viewDetails": "विवरण देखें"
     }
   },
   "connectors": {
