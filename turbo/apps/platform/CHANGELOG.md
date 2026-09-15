@@ -11,6 +11,32 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.902.0](https://github.com/vm0-ai/vm0/compare/app-v0.901.0...app-v0.902.0) (2026-09-15)
+
+
+### Features
+
+* **platform:** manage cloudflare access in ssh ([#34337](https://github.com/vm0-ai/vm0/issues/34337)) ([ba33b36](https://github.com/vm0-ai/vm0/commit/ba33b361378a00a815a6629fed67cd24dc20d646))
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+
+### Refactoring
+
+* **app:** migrate chat and calendar cancellation ownership ([#34369](https://github.com/vm0-ai/vm0/issues/34369)) ([ef4e6fe](https://github.com/vm0-ai/vm0/commit/ef4e6fe9f70d124d941dff55c2a6d841e487eefc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.1
+    * @okouai/core bumped to 8.666.6
+    * @okouai/ui bumped to 1.9.2
+
 ## [0.901.0](https://github.com/vm0-ai/vm0/compare/app-v0.900.0...app-v0.901.0) (2026-09-15)
 
 

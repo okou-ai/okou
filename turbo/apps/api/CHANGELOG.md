@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.605.1](https://github.com/vm0-ai/vm0/compare/api-v1.605.0...api-v1.605.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+
+### Refactoring
+
+* **db:** retire withdrawn marketing privacy storage ([#34305](https://github.com/vm0-ai/vm0/issues/34305)) ([4ec119c](https://github.com/vm0-ai/vm0/commit/4ec119c31b80b5e985ddaaac26bc407d691a4ca1))
+* require canonical social download response metadata ([#34325](https://github.com/vm0-ai/vm0/issues/34325)) ([ac1c477](https://github.com/vm0-ai/vm0/commit/ac1c4771e1baf6bc766853451e758d01bab919fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.1
+    * @okouai/core bumped to 8.666.6
+    * @okouai/db bumped to 1.262.1
+    * @okouai/pi-agent-runtime bumped to 1.30.10
+
 ## [1.605.0](https://github.com/vm0-ai/vm0/compare/api-v1.604.0...api-v1.605.0) (2026-09-15)
 
 
