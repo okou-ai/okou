@@ -1743,6 +1743,9 @@ describe("actual compute transactions versus the B1 projector", () => {
           sendOutput(shared ? f : peer, 105 + samples.length * 10),
         ]);
         samples.push({ shared, elapsedMs: performance.now() - start });
+        // The response precedes optional consumers; finish their owned work
+        // before test-context cancellation, outside the measured interval.
+        await flushWaitUntilForTest();
       }
       // Finite local observations, with no CI latency or production-throughput claim.
       process.stdout.write(`B2B2_OUTPUT_PAIR_MS ${JSON.stringify(samples)}\n`);
