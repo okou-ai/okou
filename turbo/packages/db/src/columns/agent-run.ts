@@ -105,6 +105,11 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     ),
     modelProvider: varchar("model_provider", { length: 100 }),
     modelProviderId: uuid("model_provider_id"),
+    // Proven upstream identity at admission, never a token/ciphertext hash.
+    // Null historical bindings cannot authorize failed-run account management.
+    modelProviderAccountIdentity: varchar("model_provider_account_identity", {
+      length: 64,
+    }),
     modelProviderCredentialScope: varchar("model_provider_credential_scope", {
       length: 20,
     }),

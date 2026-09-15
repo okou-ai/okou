@@ -27,11 +27,13 @@ import {
  * card slot now carries its own `my-1.5`, which this important declaration
  * outranks from inside the same layer.
  *
- * The blockquote pair is the vendored `blockquote > :first-child` /
- * `:last-child` reset, which is not important and ties the retired rule on
- * specificity. The vendored sheet is emitted before the App's, so the retired
- * rule won that tie and its 8px applied at those edges; flushing them here
- * narrows that spacing rather than restating it. See vm0-ai/vm0#34278.
+ * A quote's own edges are padding, not margin. The blockquote pair keeps the
+ * inner paragraphs' margins from collapsing out through a quote that declares
+ * no block padding and no block border: before #34076 the retired rule's 8px
+ * escaped that way and pushed the whole quote off the frame's own
+ * `> *:first-child` reset, while never once appearing inside the quote —
+ * measured 0px of inset on both sides of that change. `py-2` puts the bubble's
+ * 8px where a quote actually shows it. See vm0-ai/vm0#34278.
  *
  * The card slot is addressed through `data-slot` rather than its class. That
  * started as the shrink-only rule against naming a legacy class inside an
@@ -39,7 +41,7 @@ import {
  * handle the element has.
  */
 const CHAT_BUBBLE_MARKDOWN_CLASS =
-  "[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0! [&_hr]:hidden";
+  "[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote]:py-2! [&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0! [&_hr]:hidden";
 
 interface MarkdownProps {
   readonly source: string;

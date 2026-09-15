@@ -75,6 +75,12 @@ type InsertAssistantEventItem =
       readonly runEventId: string;
     }
   | {
+      readonly eventType: "output.error";
+      readonly runEventSequenceNumber: number;
+      readonly error: string;
+      readonly runEventId: string;
+    }
+  | {
       readonly eventType: "output.thinking";
       readonly runEventSequenceNumber: number;
       readonly thinking: string;
@@ -221,6 +227,14 @@ export async function insertAssistantEventsInTransaction(
           ...eventIdentity,
           eventType: item.eventType,
           content: item.content,
+        };
+      }
+      if (item.eventType === "output.error") {
+        return {
+          ...eventIdentity,
+          eventType: item.eventType,
+          content: null,
+          error: item.error,
         };
       }
       return {

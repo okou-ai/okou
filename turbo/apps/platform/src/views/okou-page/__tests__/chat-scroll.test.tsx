@@ -9,6 +9,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import { createChatLayoutSignals } from "../../../signals/chat-page/chat-layout.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockChatEventRows,
@@ -1120,4 +1121,178 @@ test("Editing the composer preserves the message being read", async () => {
   expect(composer).not.toHaveTextContent("4");
   expect(readingAnchor.getBoundingClientRect().top).toBe(readingTop);
   expect(queryButtonByLabel("Scroll to bottom")).toBeVisible();
+});
+
+function dispatchLayoutTransition(
+  element: HTMLElement,
+  type: "transitionrun" | "transitionend" | "transitioncancel",
+  propertyName: "width" | "flex-basis",
+): void {
+  fireEvent(
+    element,
+    Object.assign(new Event(type, { bubbles: true }), { propertyName }),
+  );
+}
+
+test("Ending an independent layout surface leaves the mounted chat transition running", async () => {
+  // The Router mounts one sidebar shell. Create its second owner through the
+  // production graph to exercise concurrent mounts that routing cannot create.
+  // The real page remains the observable surviving surface.
+  const secondaryLayout = createChatLayoutSignals();
+  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
+  const container = await openConversation(
+    THREAD_IDS.layoutResize,
+    "History answer 8",
+  );
+  const geometry = installChatScrollGeometry(container);
+  const sidebar = screen.getByTestId("chat-thread-sidebar-pane");
+  const secondary = document.createElement("aside");
+  const cleanup = context.store.set(
+    secondaryLayout.transitionOnRef$,
+    secondary,
+  );
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      cleanup?.();
+    },
+    { once: true },
+  );
+  const frames = installQueuedAnimationFrames();
+
+  dispatchLayoutTransition(sidebar, "transitionrun", "width");
+  dispatchLayoutTransition(secondary, "transitionrun", "width");
+  geometry.growBeforeMessages(40);
+  await act(() => {
+    frames.flush();
+  });
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+
+  dispatchLayoutTransition(secondary, "transitionend", "width");
+  cleanup?.();
+  geometry.growBeforeMessages(60);
+  await act(() => {
+    frames.flush();
+  });
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+  dispatchLayoutTransition(sidebar, "transitionend", "width");
+  await act(() => {
+    frames.flush();
+  });
+  const stoppedAt = container.scrollTop;
+  geometry.growBeforeMessages(80);
+  await act(() => {
+    frames.flush();
+  });
+  expect(container.scrollTop).toBe(stoppedAt);
+});
+
+test("Follow overlapping sidebar transitions until the final end or cancellation", async () => {
+  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
+  const container = await openConversation(
+    THREAD_IDS.layoutResize,
+    "History answer 8",
+  );
+  const geometry = installChatScrollGeometry(container);
+  const sidebar = screen.getByTestId("chat-thread-sidebar-pane");
+  const primary = sidebar.parentElement?.firstElementChild;
+  if (!(primary instanceof HTMLElement)) {
+    throw new Error("Expected the primary chat pane");
+  }
+  const frames = installQueuedAnimationFrames();
+
+  dispatchLayoutTransition(primary, "transitionrun", "width");
+  dispatchLayoutTransition(sidebar, "transitionrun", "width");
+  dispatchLayoutTransition(sidebar, "transitionrun", "flex-basis");
+  geometry.growBeforeMessages(40);
+  await act(() => {
+    frames.flush();
+  });
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+
+  dispatchLayoutTransition(sidebar, "transitionend", "width");
+  geometry.growBeforeMessages(60);
+  await act(() => {
+    frames.flush();
+  });
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+
+  dispatchLayoutTransition(sidebar, "transitioncancel", "flex-basis");
+  geometry.growBeforeMessages(70);
+  await act(() => {
+    frames.flush();
+  });
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+  dispatchLayoutTransition(primary, "transitionend", "width");
+  await act(() => {
+    frames.flush();
+  });
+  const stoppedAt = container.scrollTop;
+  geometry.growBeforeMessages(80);
+  await act(() => {
+    frames.flush();
+  });
+  expect(container.scrollTop).toBe(stoppedAt);
+
+  // A later transition gets a new frame lifetime after the cancelled loop.
+  dispatchLayoutTransition(sidebar, "transitionrun", "width");
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+  geometry.growBeforeMessages(100);
+  await act(() => {
+    frames.flush();
+  });
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+  dispatchLayoutTransition(sidebar, "transitionend", "width");
+});
+
+test("Unmount cancels sidebar transition frames and removes transition listeners", async () => {
+  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
+  const container = await openConversation(
+    THREAD_IDS.layoutResize,
+    "History answer 8",
+  );
+  const geometry = installChatScrollGeometry(container);
+  const sidebar = screen.getByTestId("chat-thread-sidebar-pane");
+  const frames = installQueuedAnimationFrames();
+  dispatchLayoutTransition(sidebar, "transitionrun", "width");
+  geometry.growBeforeMessages(40);
+  await act(() => {
+    frames.flush();
+  });
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+
+  const agents = queryAllByRoleFast("link").find((link) => {
+    return link.textContent?.trim() === "Agents";
+  });
+  if (!agents) {
+    throw new Error("Expected the Agents navigation link");
+  }
+  click(agents);
+  await screen.findByRole("heading", { name: "Agents" });
+  const stoppedAt = container.scrollTop;
+  geometry.growBeforeMessages(80);
+  dispatchLayoutTransition(sidebar, "transitionrun", "flex-basis");
+  await act(() => {
+    frames.flush();
+  });
+  expect(container.scrollTop).toBe(stoppedAt);
+  expect(
+    screen.queryByRole("region", { name: "Chat thread" }),
+  ).not.toBeInTheDocument();
 });

@@ -3,7 +3,7 @@ import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { initSentry } from "../../../lib/sentry.ts";
 import {
   context,
@@ -14,6 +14,64 @@ import {
 
 const refreshedContext = testContext();
 const endpoint = "*/api/voice-io/transcribe/segment";
+
+test("Release recording and incremental transcription with the parent page's abort reason", async () => {
+  const resetPage$ = resetSignal();
+  const pageSignal = context.store.set(resetPage$, context.signal);
+  const requested = context.mocks.deferred<AbortSignal>();
+  const cancelled = context.mocks.deferred<void>();
+  const trackStopped = context.mocks.deferred<void>();
+  const disconnected = context.mocks.deferred<void>();
+  const portClosed = context.mocks.deferred<void>();
+  const contextClosed = context.mocks.deferred<void>();
+  context.mocks.browser.voiceInput({
+    rms: 0.12,
+    onPcmCapture: (emit) => {
+      emit(new Float32Array(60 * 16_000).fill(0.25));
+    },
+    onTrackStop: trackStopped.resolve,
+    onPcmDisconnect: disconnected.resolve,
+    onPcmPortClose: portClosed.resolve,
+    onAudioContextClose: () => {
+      if (!contextClosed.settled()) {
+        contextClosed.resolve();
+      }
+    },
+  });
+  installRunChat();
+  context.mocks.http.post(endpoint, async ({ request }) => {
+    request.signal.addEventListener(
+      "abort",
+      () => {
+        cancelled.resolve();
+      },
+      { once: true },
+    );
+    requested.resolve(request.signal);
+    await cancelled.promise;
+    return HttpResponse.error();
+  });
+  await setupPage({
+    context: { ...context, signal: pageSignal },
+    path: RUN_PATH,
+  });
+  click(await findEnabledButton("Voice input"));
+  await findEnabledButton("Stop recording");
+  const requestSignal = await requested.promise;
+
+  context.store.set(resetPage$);
+  await Promise.all([
+    cancelled.promise,
+    trackStopped.promise,
+    disconnected.promise,
+    portClosed.promise,
+    contextClosed.promise,
+  ]);
+  expect(requestSignal.reason).toStrictEqual(pageSignal.reason);
+  expect(
+    screen.queryByText("Voice transcription failed. Try again."),
+  ).not.toBeInTheDocument();
+});
 
 test("Keep transcription pending until server recovery succeeds without reporting an error", async () => {
   const sentry = context.mocks.sentry();
@@ -98,8 +156,8 @@ test("Keep recording after an incremental segment fails and finish in order", as
 });
 
 test("Resume a completed segment after reload without retranscribing its audio", async () => {
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const page = createChildAbortController(context.signal);
+  const resetPage$ = resetSignal();
+  const pageSignal = context.store.set(resetPage$, context.signal);
   const capture = context.mocks.deferred<(samples: Float32Array) => void>();
   const started = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({
@@ -148,7 +206,7 @@ test("Resume a completed segment after reload without retranscribing its audio",
   });
   await setupPage({
     locale: "en-US",
-    context: { ...context, signal: page.signal },
+    context: { ...context, signal: pageSignal },
     path: RUN_PATH,
   });
   click(await findEnabledButton("Voice input"));
@@ -158,7 +216,7 @@ test("Resume a completed segment after reload without retranscribing its audio",
   emit(new Float32Array(5 * 16_000).fill(0.2));
   click(await findEnabledButton("Stop recording"));
   await findEnabledButton("Retry");
-  page.abort(new DOMException("Page reloaded", "AbortError"));
+  context.store.set(resetPage$);
   cleanup();
   vi.mocked(window.history.pushState).mockRestore();
   vi.mocked(window.history.replaceState).mockRestore();
@@ -318,6 +376,8 @@ test("Abort pending transcription when removing a recording after a storage fail
   const capture = context.mocks.deferred<(samples: Float32Array) => void>();
   const started = context.mocks.deferred<void>();
   const aborted = context.mocks.deferred<void>();
+  const staleResponse = context.mocks.deferred<void>();
+  const staleResponseReturned = context.mocks.deferred<void>();
   const errorSpy = vi.spyOn(console, "error");
   const original = errorSpy.getMockImplementation();
   if (!original) {
@@ -353,7 +413,13 @@ test("Abort pending transcription when removing a recording after a storage fail
       );
       started.resolve();
       await aborted.promise;
-      return HttpResponse.error();
+      await staleResponse.promise;
+      staleResponseReturned.resolve();
+      return HttpResponse.json({
+        transcript: "Discarded recording.",
+        polishedText: "Discarded recording.",
+        language: "en",
+      });
     }
     const form = await request.formData();
     expect(JSON.parse(String(form.get("options")))).toMatchObject({
@@ -392,12 +458,18 @@ test("Abort pending transcription when removing a recording after a storage fail
   failingWrite.mockRestore();
   context.mocks.browser.voiceInput({ rms: 0.1 });
   click(await findEnabledButton("Voice input"));
+  await findEnabledButton("Stop recording");
+  staleResponse.resolve();
+  await staleResponseReturned.promise;
   click(await findEnabledButton("Stop recording"));
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
       "Next recording.",
     );
   });
+  expect(
+    screen.getByRole("textbox", { name: "Message" }),
+  ).not.toHaveTextContent("Discarded recording.");
   expect(requests).toBe(2);
   expect(errors).toStrictEqual([
     [

@@ -10,10 +10,6 @@ import { nowDate } from "../../lib/time";
 import { getStripeClient } from "../external/stripe-client";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
-import {
-  impactStripeMetadata$,
-  updateImpactCustomer,
-} from "./impact-attribution.service";
 
 interface GetOrCreateStripeCustomerArgs {
   readonly orgId: string;
@@ -34,9 +30,8 @@ export const getOrCreateStripeCustomer$ = command(
     args: GetOrCreateStripeCustomerArgs,
     signal: AbortSignal,
   ): Promise<string> => {
-    const impactMetadata = await set(impactStripeMetadata$, args.orgId, signal);
     const writeDb = set(writeDb$);
-    return writeDb.transaction(async (tx) => {
+    return await writeDb.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtext('stripe_customer_' || ${args.orgId}))`,
       );
@@ -50,11 +45,6 @@ export const getOrCreateStripeCustomer$ = command(
       signal.throwIfAborted();
 
       if (row?.stripeCustomerId) {
-        await updateImpactCustomer(
-          row.stripeCustomerId,
-          impactMetadata,
-          signal,
-        );
         return row.stripeCustomerId;
       }
 
@@ -70,7 +60,6 @@ export const getOrCreateStripeCustomer$ = command(
         }
       }
       Object.assign(metadata, stripePreviewMetadata());
-      Object.assign(metadata, impactMetadata);
       const customer = await stripe.customers.create({ metadata });
       signal.throwIfAborted();
 

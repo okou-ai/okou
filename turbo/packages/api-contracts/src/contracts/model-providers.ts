@@ -1634,6 +1634,9 @@ export const updateOrgModelPolicySchema = z.object({
 export type UpdateOrgModelPolicy = z.infer<typeof updateOrgModelPolicySchema>;
 
 export const orgModelPoliciesResponseSchema = z.object({
+  // Administrative snapshot only. Optional while older APIs remain reachable.
+  revision: z.string().optional(),
+  writePreconditionRequired: z.boolean().optional(),
   policies: z.array(orgModelPolicySchema),
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
@@ -1644,6 +1647,7 @@ export type OrgModelPoliciesResponse = z.infer<
 >;
 
 export const updateOrgModelPoliciesRequestSchema = z.object({
+  revision: z.string().optional(),
   policies: z.array(updateOrgModelPolicySchema),
 });
 

@@ -3,6 +3,26 @@ import { i18n } from "../i18n/index.ts";
 
 export function localizedSshError(code: string): string | undefined {
   switch (code) {
+    case SSH_ERROR_CODES.ACCESS_UNAVAILABLE: {
+      return i18n.t(($) => {
+        return $.ssh.cloudflare.unavailable;
+      });
+    }
+    case SSH_ERROR_CODES.ACCESS_NOT_FOUND: {
+      return i18n.t(($) => {
+        return $.ssh.cloudflare.missing;
+      });
+    }
+    case SSH_ERROR_CODES.ACCESS_IN_USE: {
+      return i18n.t(($) => {
+        return $.ssh.cloudflare.inUse;
+      });
+    }
+    case SSH_ERROR_CODES.ACCESS_REVISION_CONFLICT: {
+      return i18n.t(($) => {
+        return $.ssh.cloudflare.changed;
+      });
+    }
     case SSH_ERROR_CODES.CREDENTIAL_NOT_FOUND: {
       return i18n.t(($) => {
         return $.ssh.errors.credentialUnavailable;

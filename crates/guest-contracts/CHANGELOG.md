@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.14.7](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.6...guest-contracts-v0.14.7) (2026-09-15)
+
+
+### Bug Fixes
+
+* **pi:** preserve codex rate-limit diagnostics ([#34266](https://github.com/vm0-ai/vm0/issues/34266)) ([48cb88f](https://github.com/vm0-ai/vm0/commit/48cb88fe5c6a70dd6519565211de55b710fee3af))
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
 ## [0.14.6](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.5...guest-contracts-v0.14.6) (2026-09-15)
 
 ## [0.14.5](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.4...guest-contracts-v0.14.5) (2026-09-14)

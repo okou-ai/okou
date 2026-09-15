@@ -116,6 +116,7 @@ test("An existing credential can be reused without entering or reading its secre
       displayName: "Second host",
       host: "second.example.com",
       port: 22,
+      transport: { type: "direct" },
       credential: { id: credential.id },
     },
   ]);
@@ -281,6 +282,7 @@ test.each(["host", "credential"])(
             host: "ssh.example.com",
             port: 22,
             credential: { create: credentialBody },
+            transport: { type: "direct" },
           }
         : credentialBody;
     expect(requests).toStrictEqual([expected, expected]);
@@ -1039,6 +1041,7 @@ test.each(["paste", "file"])(
         displayName: "Deployment",
         host: "ssh.example.com",
         port: 22,
+        transport: { type: "direct" },
         credential: {
           create: {
             name: "Deployment login",
@@ -1067,6 +1070,7 @@ test.each(["paste", "file"])(
       port: 22,
       credential: { id: credential.id },
       expectedGeneration: 1,
+      transport: { type: "direct" },
     });
   },
 );

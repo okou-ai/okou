@@ -883,12 +883,6 @@ export const billingUsagePackMigrationContract = c.router({
     method: "GET",
     path: "/api/billing/usage-pack-migration",
     headers: authHeadersSchema,
-    // New Apps must still opt in when reaching a supported rollback API that
-    // otherwise omits all-Free configuration. Remove after the unconditional
-    // response API is serving and inside the rollback floor (#32575).
-    query: z
-      .object({ supportsFreeMembers: z.literal("true").optional() })
-      .optional(),
     responses: {
       200: usagePackMigrationStateResponseSchema,
       401: apiErrorSchema,

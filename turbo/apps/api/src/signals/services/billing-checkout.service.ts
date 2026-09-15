@@ -1,7 +1,4 @@
-import {
-  marketingImpactEnabled,
-  retireImpactMetadata,
-} from "../../lib/impact-marketing";
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { randomUUID } from "node:crypto";
 
@@ -33,10 +30,6 @@ import {
 } from "../external/stripe-client";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
 import { persistOrgAcquisitionAttribution$ } from "./acquisition-attribution.service";
-import {
-  impactStripeMetadata$,
-  readOrgImpactMetadata,
-} from "./impact-attribution.service";
 import {
   addStripeConcurrencySubscriptionItem$,
   previewStripeConcurrencySubscriptionChange$,
@@ -207,7 +200,6 @@ const creditPurchasePreviewTokenSchema = z.object({
   quantity: z.number().int().positive(),
   credits: z.number().int().positive(),
   amountCents: z.number().int().nonnegative(),
-  impactMetadata: z.record(z.string(), z.string()).optional(),
   currency: z.string().length(3),
   successUrl: z.string().url().optional(),
   cancelUrl: z.string().url().optional(),
@@ -543,7 +535,7 @@ function creditPurchasePayableAmount(invoice: StripeInvoice): number {
 
 export const previewExistingBillingCreditPurchase$ = command(
   async (
-    { get, set },
+    { get },
     args: PreviewExistingBillingCreditPurchaseArgs,
     signal: AbortSignal,
   ): Promise<CreditPurchasePreviewResponse | null> => {
@@ -615,15 +607,6 @@ export const previewExistingBillingCreditPurchase$ = command(
       quantity,
       credits,
       amountCents,
-      ...(!marketingImpactEnabled()
-        ? {
-            impactMetadata: await set(
-              impactStripeMetadata$,
-              args.orgId,
-              signal,
-            ),
-          }
-        : {}),
       currency: invoice.currency,
       successUrl: args.successUrl,
       cancelUrl: args.cancelUrl,
@@ -754,9 +737,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
       creditsAmountMode: "amount_subtotal",
       requestedCreditsAmount: String(preview.credits),
       creditPurchaseId: preview.purchaseId,
-      ...(marketingImpactEnabled()
-        ? { purchaseCreatedAt: purchasePreviewCreatedAt(preview) }
-        : preview.impactMetadata),
+      purchaseCreatedAt: purchasePreviewCreatedAt(preview),
       ...stripePreviewMetadata(),
     };
     const invoice = await stripe.invoices.create(
@@ -835,9 +816,7 @@ function checkoutSessionMetadata(args: {
     orgId: args.orgId,
     tier: args.tier,
     priceId: args.priceId,
-    ...(marketingImpactEnabled()
-      ? { purchaseCreatedAt: args.purchaseCreatedAt ?? nowDate().toISOString() }
-      : {}),
+    purchaseCreatedAt: args.purchaseCreatedAt ?? nowDate().toISOString(),
   };
   for (const [key, value] of Object.entries(
     compatibleGoogleAdsAttribution(
@@ -1487,13 +1466,7 @@ export const createCreditCheckoutSession$ = command(
     const baseMetadata = {
       purpose: "credit_purchase",
       orgId: args.orgId,
-      ...(marketingImpactEnabled()
-        ? {
-            purchaseCreatedAt:
-              args.purchaseCreatedAt ?? nowDate().toISOString(),
-          }
-        : {}),
-      ...(await readOrgImpactMetadata(set(writeDb$), args.orgId, signal)),
+      purchaseCreatedAt: args.purchaseCreatedAt ?? nowDate().toISOString(),
       ...stripePreviewMetadata(),
     };
     const customCreditUnitPriceId = activeCustomCreditUnitPriceId();

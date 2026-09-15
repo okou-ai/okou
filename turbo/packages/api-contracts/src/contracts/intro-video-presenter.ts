@@ -48,6 +48,9 @@ export const introVideoAvatarSchema = z.object({
   groupId: introVideoAvatarGroupIdSchema,
   name: z.string().trim().min(1),
   defaultVoiceId: introVideoVoiceIdSchema,
+  /** The look's own voice, named and auditionable; an older API omits both. */
+  defaultVoiceName: z.string().trim().min(1).max(200).optional(),
+  defaultVoiceSampleUrl: z.url().optional(),
   /** HeyGen look type; a studio look is a cutout, a photo avatar carries its environment. */
   avatarType: introVideoAvatarTypeSchema.optional(),
   previewImageUrl: z.url().optional(),
@@ -99,6 +102,10 @@ export const introVideoVoiceSchema = z.object({
 
 export const introVideoVoicesQuerySchema = z.object({
   token: z.string().trim().min(1).max(2_000).optional(),
+  /**
+   * Requested page size. Voices without an audition sample are left out, so a
+   * page can hold more or fewer voices than requested; follow `nextToken`.
+   */
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
   language: z.string().trim().min(1).max(100).optional(),
   gender: z.enum(["female", "male"]).optional(),

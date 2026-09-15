@@ -227,7 +227,10 @@ async function admitSubjects(
 async function lockOwnership(
   tx: Tx,
   snapshot: RunContentOwnership,
-): Promise<RunStatus> {
+): Promise<{
+  readonly status: RunStatus;
+  readonly modelProvider: string | null;
+}> {
   // Resource composite keys include owner/org. KEY SHARE prevents transfer or
   // deletion without serializing unrelated non-identity resource updates.
   for (const resource of snapshot.resources) {
@@ -252,7 +255,10 @@ async function lockOwnership(
     await lockChatQueueThread(tx, snapshot.thread.chatThreadId);
   }
   const [run] = await tx
-    .select({ status: agentRuns.status })
+    .select({
+      status: agentRuns.status,
+      modelProvider: agentRuns.modelProvider,
+    })
     .from(agentRuns)
     .where(eq(agentRuns.id, snapshot.runId))
     .for("update");
@@ -269,7 +275,10 @@ async function lockOwnership(
     // Roll back before discovering/acquiring any additional subject locks.
     throw new ContentOwnershipRaceError();
   }
-  return runStatusSchema.parse(run.status);
+  return {
+    status: runStatusSchema.parse(run.status),
+    modelProvider: run.modelProvider,
+  };
 }
 
 /** Owns the actual transaction: subjects -> resources -> output -> thread ->
@@ -287,6 +296,7 @@ export async function withRunContentWrite<T>(
     tx: Tx,
     ownership: RunContentOwnership,
     status: RunStatus,
+    modelProvider: string | null,
   ) => Promise<T>,
   signal: AbortSignal,
 ): Promise<
@@ -307,7 +317,7 @@ export async function withRunContentWrite<T>(
           if (!(await admitSubjects(tx, snapshot))) {
             return { outcome: "closed" as const };
           }
-          const status = await lockOwnership(tx, snapshot);
+          const run = await lockOwnership(tx, snapshot);
           signal.throwIfAborted();
           if (
             JSON.stringify(snapshot) !== JSON.stringify(args.ownership) ||
@@ -322,7 +332,12 @@ export async function withRunContentWrite<T>(
           ) {
             throw new Error("Prepared run content ownership no longer matches");
           }
-          const value = await write(tx, snapshot, status);
+          const value = await write(
+            tx,
+            snapshot,
+            run.status,
+            run.modelProvider,
+          );
           signal.throwIfAborted();
           return { outcome: "written" as const, value, ownership: snapshot };
         },

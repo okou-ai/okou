@@ -22,7 +22,6 @@ function client() {
 
 beforeEach(() => {
   mockOptionalEnv("IMPACT_APP_ORIGIN", "https://app.okou.ai");
-  mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
   mockOptionalEnv("MARKETING_ATTRIBUTION_SECRET", secret);
 });
 function authenticatedActor() {
@@ -33,13 +32,8 @@ function authenticatedActor() {
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
   return actor;
 }
-test("disables the handoff until the server cutover is configured", async () => {
-  mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "false");
-  mocks.clerk.session("user_buyer", "org_buyer");
-  const response = await accept(client().handoff({ headers, body: {} }), [200]);
-  expect(response.body).toStrictEqual({ handoff: null });
-});
-test("issues a dedicated short-lived proof without a feature-switch override", async () => {
+
+test("issues a dedicated short-lived identity proof", async () => {
   const actor = authenticatedActor();
   const response = await accept(client().handoff({ headers, body: {} }), [200]);
   expect(response.body.handoff?.iframeUrl).toBe(
@@ -93,18 +87,19 @@ test("ignores cached Apps submitting old Impact query/cookie attribution after c
       },
     ],
   });
+  const cachedSignupBody = {
+    attribution: {},
+    impactAttribution: {
+      clickId: "forged",
+      capturedAt: nowDate().toISOString(),
+    },
+  };
   const response = await accept(
     setupApp({ context, routes: acquisitionAttributionRoutes })(
       acquisitionAttributionContract,
     ).recordSignup({
       headers,
-      body: {
-        attribution: {},
-        impactAttribution: {
-          clickId: "forged",
-          capturedAt: nowDate().toISOString(),
-        },
-      },
+      body: cachedSignupBody,
     }),
     [200],
   );

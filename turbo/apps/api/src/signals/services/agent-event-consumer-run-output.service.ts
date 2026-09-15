@@ -3,6 +3,7 @@ import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
+import { publicAssistantBalanceError } from "./run-balance-presentation";
 
 import type {
   AgentEvent,
@@ -187,6 +188,7 @@ function eventOutputId(event: AgentEvent): string {
 
 function assistantEventItems(args: {
   readonly events: readonly AgentEvent[];
+  readonly modelProvider: string | null;
 }): InsertAssistantEventsInput["items"] {
   const items: InsertAssistantEventsInput["items"][number][] = [];
   const events = [...args.events].sort((left, right) => {
@@ -195,11 +197,16 @@ function assistantEventItems(args: {
   for (const event of events) {
     const messageText = assistantMessageText(event);
     if (messageText !== null) {
+      const balanceError = publicAssistantBalanceError(
+        event,
+        args.modelProvider,
+      );
       items.push({
-        eventType: "output.message",
         runEventSequenceNumber: event.sequenceNumber,
-        content: messageText,
         runEventId: eventOutputId(event),
+        ...(balanceError === undefined
+          ? { eventType: "output.message", content: messageText }
+          : { eventType: "output.error", error: balanceError }),
       });
       continue;
     }
@@ -227,11 +234,15 @@ async function insertRunOutputChatEvents(
   tx: Tx,
   payload: EventConsumerPayload,
   thread: MaterializedChatProjection["thread"],
-  runGroupId: string | undefined,
+  runContext: {
+    readonly runGroupId: string | undefined;
+    readonly modelProvider: string | null;
+  },
   signal: AbortSignal,
 ): Promise<AssistantEventInsertion> {
   const assistantItems = assistantEventItems({
     events: payload.events,
+    modelProvider: runContext.modelProvider,
   });
   return await insertAssistantEventsInTransaction(
     tx,
@@ -241,7 +252,7 @@ async function insertRunOutputChatEvents(
       userId: thread.userId,
       orgId: thread.orgId,
       items: assistantItems,
-      runGroupId,
+      runGroupId: runContext.runGroupId,
     },
     signal,
   );
@@ -298,6 +309,7 @@ async function materializeAdmittedRunOutputEvents(
     readonly latestOutput: OutputCandidate | null;
     readonly citations: readonly EventCitation[];
     readonly runGroupId: string | undefined;
+    readonly modelProvider: string | null;
   },
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
@@ -309,7 +321,7 @@ async function materializeAdmittedRunOutputEvents(
       tx,
       payload,
       thread,
-      args.runGroupId,
+      { runGroupId: args.runGroupId, modelProvider: args.modelProvider },
       signal,
     );
     insertedRowCount = insertion.insertedRowCount;
@@ -410,13 +422,23 @@ async function materializeRunOutputEvents(
   }
   const runGroupId =
     ownership.thread &&
-    assistantEventItems({ events: prepared.payload.events }).length > 0
+    prepared.payload.events.some((event) => {
+      return (
+        assistantMessageText(event) !== null ||
+        codexReasoningText(event) !== null
+      );
+    })
       ? await historicalRunGroupId(writeDb, payload.runId, undefined, signal)
       : undefined;
   const result = await withRunContentWrite(
     writeDb,
     { runId: payload.runId, runOwner: payload.context, ownership },
-    async (tx, ownership, status): Promise<RunOutputMaterializationResult> => {
+    async (
+      tx,
+      ownership,
+      status,
+      modelProvider,
+    ): Promise<RunOutputMaterializationResult> => {
       if (status === "timeout") {
         return { outcome: "ignored-timeout" };
       }
@@ -433,6 +455,7 @@ async function materializeRunOutputEvents(
           latestOutput: prepared.latestOutput,
           citations: prepared.citations,
           runGroupId,
+          modelProvider,
         },
         signal,
       );

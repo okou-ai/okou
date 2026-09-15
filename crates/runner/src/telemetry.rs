@@ -25,6 +25,9 @@ pub(crate) use session_history::{
 
 mod dns_readiness;
 mod session_history;
+mod workspace_session_history;
+
+pub(crate) use workspace_session_history::WorkspaceSessionHistoryTelemetry;
 
 /// How long before we auto-flush pending ops (matching TS: 30s).
 const FLUSH_THRESHOLD: Duration = Duration::from_secs(30);
@@ -278,6 +281,8 @@ struct SandboxOp {
     #[serde(flatten)]
     session_history: Option<SessionHistoryTelemetryFields>,
     #[serde(flatten)]
+    workspace_session_history: Option<WorkspaceSessionHistoryTelemetry>,
+    #[serde(flatten)]
     dns_readiness: Option<dns_readiness::DnsReadinessTelemetryFields>,
 }
 
@@ -459,6 +464,27 @@ impl JobTelemetry {
         }
     }
 
+    /// Record the existing local restore interval with validated payload
+    /// measurements. Only successful restores report completed guest bytes.
+    pub(crate) fn record_workspace_session_history_restore(
+        &mut self,
+        duration: Duration,
+        success: bool,
+        error: Option<&str>,
+        metadata: WorkspaceSessionHistoryTelemetry,
+    ) {
+        let mut op = sandbox_op(
+            "session_history_workspace_cache_guest_restore",
+            duration,
+            success,
+            error,
+            None,
+            None,
+        );
+        op.workspace_session_history = Some(metadata.with_restore_outcome(success));
+        self.push_operation(op);
+    }
+
     pub(crate) async fn upload_oom_evidence(
         &self,
         evidence: &guest_contracts::oom_evidence::OomEvidence,
@@ -605,6 +631,15 @@ impl JobTelemetry {
         self.pending_ops
             .iter()
             .map(|op| (op.action_type.clone(), op.success, op.error.clone()))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_workspace_history_restore_payloads(&self) -> Vec<serde_json::Value> {
+        self.pending_ops
+            .iter()
+            .filter(|op| op.workspace_session_history.is_some())
+            .map(|op| serde_json::to_value(op).expect("serialize workspace restore operation"))
             .collect()
     }
 
@@ -832,6 +867,7 @@ fn sandbox_op_at(
         runner_resource_budget_memory_utilization_bucket: None,
         runner_resource_budget_lease_count_bucket: None,
         session_history: metadata.map(SessionHistoryTelemetryFields::from),
+        workspace_session_history: None,
         dns_readiness: None,
     }
 }
@@ -968,6 +1004,7 @@ mod tests {
             runner_resource_budget_memory_utilization_bucket: None,
             runner_resource_budget_lease_count_bucket: None,
             session_history: None,
+            workspace_session_history: None,
             dns_readiness: None,
         };
         let json = serde_json::to_value(&op).unwrap();
@@ -1194,6 +1231,7 @@ mod tests {
                 runner_resource_budget_memory_utilization_bucket: None,
                 runner_resource_budget_lease_count_bucket: None,
                 session_history: Some(metadata.into()),
+                workspace_session_history: None,
                 dns_readiness: None,
             }],
         };

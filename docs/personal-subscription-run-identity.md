@@ -18,7 +18,84 @@ The policy response optionally adds `memberEffective` with `providerType`, `runt
 
 Legacy member/OAuth policies retain their subscription route and missing-connection guidance until D; B never invents an organization API for them. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the serving-writer drain, historical-context drain, executable rollback floor, D conversion and eventual E cleanup. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
 
+## Launch consumers and policy writes (C)
+
+Member UI and CLI consumers read the optional `memberEffective` projection
+through a separate member adapter. Administrative routing remains unchanged.
+The projection describes a local logical candidate, never a captured account
+or live quota guarantee. Missing projection fields retain the old API/OFF
+interpretation, including missing credentials on an unconverted Subscription
+policy. Failed refreshes retain the last resolved choices and the user's draft,
+selected model, effort, and Fast preference.
+
+Authenticated user/org `modelPoliciesChanged` notices invalidate only the
+cheap policy projection, with baseline and reconnect resync through the shared
+realtime lifecycle. Account and billing actions invalidate that same projection;
+notices contain no account metadata and do not request upstream usage.
+
+Policy GET returns an opaque `revision` over the persisted administrative rows,
+independently of the requesting member. Settings submit that revision with the
+array they actually read. Priority-enabled PUT rejects missing or stale
+preconditions with a refresh/upgrade conflict before lazy seed/default repair
+or policy/preference changes. Unchanged legacy Subscription rows may be saved;
+new or resurrected member routes are rejected. A current admin may still
+intentionally edit, remove, or replace a route. The API-key-create flow reads a
+fresh policy snapshot before constructing its subsequent conditional write.
+
+Replacement and seed/default repair share an organization-local transaction
+advisory lock. Replacement locks organization provider parents, connection
+parents, surfaces, and policy rows before comparing its revision, protecting
+the snapshot against FK deletion through commit. Normal runtime selection does
+not take this lock when no repair is needed. Validation inside the transaction
+uses local data and does not acquire A's credential lifecycle lock or perform
+upstream calls. Existing feature-off Turbo setup PUTs remain supported; C does
+not enable Priority for those callers or change Actions definitions.
+
+The canonical rollback resolver requires accepted B merge
+`8a5e1299b4d26bd114ccec017b84b7a83fb4a164` in addition to all prior floors and
+artifact checks. Before D converts policies, the controller must raise that
+floor to the then-known accepted C merge and close the serving-writer exposure
+window under R1. C neither converts stored policy rows nor activates Priority.
+
 ## Binding and credential ownership
+
+### Failed-run recovery provenance (C)
+
+The nullable `agent_runs.model_provider_account_identity` column records a
+SHA-256 digest of the proven upstream account identity during the existing
+final admission transaction, after its normal account/bundle validation. It
+contains no token, ciphertext, or per-run credential copy. Codex uses its
+upstream account ID; Claude uses its upstream UUID, or the established
+email/workspace identity for older connections. This annotation does not alter
+runtime capture, refresh, retention, or the strict event/execution protocols.
+
+Historical rows and failed preparations remain null. A concrete account ID
+alone cannot prove that an older writer never changed its identity in place;
+there is no guessed deployment date, active-account inference, or backfill.
+The additive owner/org-scoped run GET reports persisted provider/model/scope
+with an unknown, unavailable, or currently connected original account. A
+deleted account keeps its historical source explanation without exposing
+retained credentials or resurrecting its authority. Retired provider enums
+remain readable as unknown, following the existing error-format read boundary.
+
+Only the latest actionable failed run lazily loads this metadata for recovery,
+independently of Debug; trace controls still require Debug. Exact account reads
+and resets require the failed run ID independently of both UI switches, keeping
+the existing singleton reset available while Priority remains off. The original
+settings reset still requires Accounts. Recovery supplies the run ID and concrete account ID, rechecks owner/org/connected state and the
+captured identity, and compares Codex's resolved upstream account ID again
+before consuming a reset credit. The failure-recovery reset uses a distinct
+run-ID path so an older API returns 404 instead of ignoring a new precondition;
+there is no retry through the settings/type reset endpoints. Singleton display IDs remain logical parent
+IDs and are never substituted for the captured account. Explicit continue
+creates a normal new run using current authorized settings.
+
+Deploy the nullable column before the new API. Old APIs ignore the additive
+column and old run-response decoders strip the optional `source` field; new
+clients tolerate its omission with neutral guidance and no inferred reset
+target. R1 still owns closure of old writers and the real historical-context
+drain. The digest provides recovery provenance, not permission to bypass those
+activation gates.
 
 Every newly admitted personal Claude/Codex subscription run captures a concrete `model_provider_accounts.id`, independently of `_multipleSubscriptions`. Capture precedes session/executor preparation. The final admission transaction takes the existing organization admission lock, locks its existing thread/session rows, and then takes the provider auth-state lock. It revalidates the captured connected account and writes the same ID to run metadata/model pin and execution-context model-provider `sourceId`. Removal winning that race produces an explicit subscription admission failure; it never selects a sibling account, organization API key, or other model.
 

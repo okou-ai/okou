@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.666.5](https://github.com/vm0-ai/vm0/compare/core-v8.666.4...core-v8.666.5) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.0
+
+## [8.666.4](https://github.com/vm0-ai/vm0/compare/core-v8.666.3...core-v8.666.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* use mime types for attachment thumbnails ([#34313](https://github.com/vm0-ai/vm0/issues/34313)) ([58685d3](https://github.com/vm0-ai/vm0/commit/58685d3dda2abe907742b0855631a7307098c681))
+
+
+### Refactoring
+
+* drop the retired refactorModelSelect switch ([#34270](https://github.com/vm0-ai/vm0/issues/34270)) ([31d09ce](https://github.com/vm0-ai/vm0/commit/31d09ce890496df0db5fca839e4d1ef24efe35d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.3
+
 ## [8.666.3](https://github.com/vm0-ai/vm0/compare/core-v8.666.2...core-v8.666.3) (2026-09-15)
 
 

@@ -48,6 +48,8 @@ case "${1:-}" in
       [ "${MOCK_PREPARED_DOMAIN_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "8a5e1299b4d26bd114ccec017b84b7a83fb4a164" ]; then
+      [ "${MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -144,6 +146,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -547,6 +550,16 @@ assert_failure "first supported release is eb2f211a9af41450d0d5dad10c0c8ad12fac0
 [ ! -s "${tmp_dir}/prepared-domain-floor.output" ] || fail "unprepared API must not publish outputs"
 if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "prepared writer floor must be checked before artifact resolution"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Target commit predates personal subscription priority" \
+  run_resolver "${tmp_dir}/personal-priority-floor.output" \
+  MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID=0
+grep -q '8a5e1299b4d26bd114ccec017b84b7a83fb4a164' "${tmp_dir}/failure.err" || fail "priority rejection must identify B"
+[ ! -s "${tmp_dir}/personal-priority-floor.output" ] || fail "pre-B target must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "priority rejection must precede artifact resolution"
 fi
 
 echo "resolve-production-rollback-target tests passed"

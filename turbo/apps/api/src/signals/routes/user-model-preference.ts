@@ -1,4 +1,5 @@
 import { command, computed } from "ccstate";
+import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getRunModelAccess,
   RETIRED_RUN_MODEL_MESSAGE,
@@ -61,7 +62,10 @@ function validatePriorityServiceTier(args: {
   if (!args.requested) {
     return undefined;
   }
-  if (!args.configuredPolicy || args.configuredPolicy.routeStatus !== "valid") {
+  if (
+    !args.configuredPolicy ||
+    !isMemberModelPolicyConfigurable(args.configuredPolicy)
+  ) {
     return badRequestMessage("Invalid request");
   }
   if (!args.enabled) {

@@ -424,7 +424,8 @@ def _sign_header_request(
             credentials.session_token,
         )
 
-    signed_headers = set(context.signed_headers)
+    # The session-token header and its signature membership follow resolved credentials.
+    signed_headers = set(context.signed_headers) - {"x-amz-security-token"}
     signed_headers.add("host")
     signed_headers.add("x-amz-date")
     if credentials.session_token:

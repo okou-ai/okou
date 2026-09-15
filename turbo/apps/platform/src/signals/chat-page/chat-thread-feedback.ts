@@ -1,4 +1,4 @@
-import type { prepareChatForwardComposer$ } from "./chat-forward-composer.ts";
+import type { createChatForwardComposerSignals } from "./chat-forward-composer.ts";
 import {
   command,
   computed,
@@ -603,40 +603,56 @@ function createStartFeedback(
   });
 }
 
+interface ForwardComposerRequest {
+  readonly target: ChatForwardTarget;
+  readonly forward: ChatForwardContext;
+  readonly onOptimisticSend: () => void;
+}
+
 function createForwardState(closeSelection$: Command<void, []>) {
   const internalForwardSelection$ = state<ChatForwardSelection | null>(null);
-  const target$ = state<ChatForwardTarget | null>(null);
+  const request$ = state<
+    | (ForwardComposerRequest & {
+        readonly createComposer: typeof createChatForwardComposerSignals;
+      })
+    | null
+  >(null);
+  const preparation$ = computed((get) => {
+    const request = get(request$);
+    return request
+      ? request.createComposer(
+          request.target,
+          request.forward,
+          request.onOptimisticSend,
+        )
+      : null;
+  });
   const resetTarget$ = resetSignal();
   const forwardSelection$ = computed((get) => {
     return get(internalForwardSelection$);
   });
   const forwardTarget$ = computed((get) => {
-    return get(target$);
+    return get(request$)?.target ?? null;
   });
   const resetForwardTarget$ = command(({ set }) => {
     set(resetTarget$);
-    set(target$, null);
+    set(request$, null);
   });
   const prepareForwardComposer$ = command(
     async (
-      { set },
-      prepare$: typeof prepareChatForwardComposer$,
-      request: {
-        readonly target: ChatForwardTarget;
-        readonly forward: ChatForwardContext;
-        readonly onOptimisticSend: () => void;
-      },
+      { get, set },
+      createComposer: typeof createChatForwardComposerSignals,
+      request: ForwardComposerRequest,
       parentSignal: AbortSignal,
     ) => {
+      parentSignal.throwIfAborted();
       const signal = set(resetTarget$, parentSignal);
-      set(target$, request.target);
-      return await set(
-        prepare$,
-        request.target,
-        request.forward,
-        request.onOptimisticSend,
-        signal,
-      );
+      set(request$, { ...request, createComposer });
+      const preparation = get(preparation$);
+      if (!preparation) {
+        throw new Error("Forward target did not derive its composer");
+      }
+      return await set(preparation.prepare$, signal);
     },
   );
   const openForward$ = command(

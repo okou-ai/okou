@@ -11,6 +11,7 @@ import {
 } from "./codex-reset-credit-expiry.service";
 import { logger } from "../../lib/log";
 import { type Db, writeDb$ } from "../external/db";
+import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { tapError } from "../utils";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
@@ -25,6 +26,8 @@ import type {
   SubscriptionUsageMetadata,
   SubscriptionUsageWindowMetadata,
 } from "./model-provider-subscription-usage.types";
+import { personalModelProviderAccountById } from "./model-provider-account.service";
+import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
 const L = logger("model-provider-subscription-usage.service");
 
@@ -113,6 +116,7 @@ async function refreshCodexProvider(
     readonly userId: string;
     readonly provider: ModelProviderResponse;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly expectedAccountIdentity?: string;
   },
   signal: AbortSignal,
 ): Promise<ModelProviderResponse> {
@@ -157,6 +161,17 @@ async function refreshCodexProvider(
   if (!accountId || !accessToken) {
     return args.provider;
   }
+  if (
+    args.expectedAccountIdentity &&
+    personalSubscriptionAccountIdentity({
+      type: args.provider.type,
+      externalAccountId: accountId,
+      accountEmail: null,
+      workspaceName: null,
+    }) !== args.expectedAccountIdentity
+  ) {
+    return args.provider;
+  }
 
   const metadata = await fetchCodexUsageMetadata(
     {
@@ -178,6 +193,7 @@ async function refreshClaudeCodeProvider(
     readonly userId: string;
     readonly provider: ModelProviderResponse;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly expectedAccountIdentity?: string;
   },
   signal: AbortSignal,
 ): Promise<ModelProviderResponse> {
@@ -207,6 +223,21 @@ async function refreshClaudeCodeProvider(
   if (!accessToken) {
     return args.provider;
   }
+  if (args.expectedAccountIdentity) {
+    const account = await personalModelProviderAccountById({
+      db: args.db,
+      orgId: args.orgId,
+      userId: args.userId,
+      id: args.provider.id,
+    });
+    if (
+      !account ||
+      personalSubscriptionAccountIdentity(account) !==
+        args.expectedAccountIdentity
+    ) {
+      return args.provider;
+    }
+  }
 
   const metadata = await fetchClaudeCodeSubscriptionMetadata(
     {
@@ -225,6 +256,7 @@ async function refreshProvider(
     readonly userId: string;
     readonly provider: ModelProviderResponse;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly expectedAccountIdentity?: string;
   },
   signal: AbortSignal,
 ): Promise<ModelProviderResponse> {
@@ -247,6 +279,7 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly result: ModelProviderListResponse;
+      readonly expectedAccountIdentity?: string;
     },
     signal: AbortSignal,
   ): Promise<ModelProviderListResponse> => {
@@ -271,6 +304,7 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
                 userId: args.userId,
                 provider,
                 featureSwitchContext,
+                expectedAccountIdentity: args.expectedAccountIdentity,
               },
               signal,
             ),
@@ -311,6 +345,7 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       readonly userId: string;
       readonly idempotencyKey: string;
       readonly modelProviderAccountId?: string;
+      readonly expectedAccountIdentity?: string;
     },
     signal: AbortSignal,
   ): Promise<
@@ -360,6 +395,17 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
     if (!accountId || !accessToken) {
       return notFound("Resource not found");
     }
+    if (
+      args.expectedAccountIdentity &&
+      personalSubscriptionAccountIdentity({
+        type: "codex-oauth-token",
+        externalAccountId: accountId,
+        accountEmail: null,
+        workspaceName: null,
+      }) !== args.expectedAccountIdentity
+    ) {
+      return notFound("Resource not found");
+    }
 
     const invalidateExpiry = () => {
       invalidateCodexResetCreditExpiry(
@@ -368,7 +414,7 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       );
     };
     invalidateExpiry();
-    return await consumeCodexRateLimitResetCredit(
+    const result = await consumeCodexRateLimitResetCredit(
       {
         accessToken,
         accountId,
@@ -376,5 +422,9 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       },
       signal,
     ).finally(invalidateExpiry);
+    signal.throwIfAborted();
+    await publishPersonalModelProvidersChangedSafely(args.userId);
+    signal.throwIfAborted();
+    return result;
   },
 );

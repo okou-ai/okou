@@ -560,8 +560,6 @@ body {
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
   --okou-chat-card-radius: 0.75rem;
-  /* The composer is the largest surface on the page and leads the radius scale. */
-  --okou-composer-radius: 1.5rem;
   --okou-card-shadow:
     0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025);
   /* A card inside a message is not elevated off the page the way a page-level
@@ -679,39 +677,6 @@ body {
 }
 
 /* Morandi outline buttons */
-
-/* Composer / input card (white, light border — “Just ask” / chat input) */
-.okou-app .okou-composer {
-  --okou-composer-ring: var(--gray-500);
-  background-color: hsl(var(--card));
-  border: 0.7px solid hsl(var(--gray-400));
-  border-radius: var(--okou-composer-radius);
-  box-shadow: var(--okou-card-shadow);
-}
-
-/* Keep the finished border and shadow on their own layer so focus animates
-   through compositor-friendly opacity instead of repainting the card. */
-.okou-app .okou-composer::after {
-  content: "";
-  position: absolute;
-  inset: -0.7px;
-  border: 0.7px solid hsl(var(--okou-composer-ring));
-  border-radius: inherit;
-  box-shadow: var(--okou-composer-focus-veil);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: opacity;
-}
-.okou-app .okou-composer:focus-within::after {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .okou-app .okou-composer::after {
-    transition: none;
-  }
-}
 
 @layer base {
   *,
@@ -1287,17 +1252,6 @@ details > summary {
   }
 }
 
-/* Dark carries the brand hue instead of a lighter neutral. The light ring can
-   stay neutral because there it darkens, and
-   darker-than-the-border already reads as emphasis. Lifting a neutral against a
-   dark card does not: it lands on a bright grey that reads as a white outline
-   rather than as focus, which is what `--ring` means on every other control.
-   Saturation, not lightness, does the work, so the ring stays quieter than the
-   full Amber stop. */
-:where([data-theme="dark"]) .okou-app .okou-composer {
-  --okou-composer-ring: 38.8 38% 38%;
-}
-
 /* Colour themes realigned to the permanent palette's lightness steps. */
 :root[data-gradient-color-themes][data-color-theme] {
   --primary: var(--okou-color-theme-primary);
@@ -1331,6 +1285,10 @@ details > summary {
   --muted: var(--gray-100);
   --accent: var(--okou-color-theme-hue) 24% 96.7%;
   --border: var(--gray-200);
+  /* One step off the gray-200 fill it is drawn on: here `--border` and
+     `--divider` both resolve to that fill, so a rule on a filled surface needs
+     its own stop. See the rule-on-fill note in the styles guide. */
+  --border-on-fill: var(--gray-300);
   --input: var(--card);
   --ring: var(--okou-color-theme-ring);
   /* Halved with the neutral sidebar: this surface now frames the workspace
@@ -1376,6 +1334,7 @@ details > summary {
   --muted: var(--gray-200);
   --accent: var(--okou-color-theme-hue) 12% 26.5%;
   --border: var(--gray-200);
+  --border-on-fill: var(--gray-300); /* see the light note above */
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 14% 12%;

@@ -1,3 +1,4 @@
+import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -247,6 +248,7 @@ import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-s
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
+import { localizedRunError } from "../../lib/run-error.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -2920,13 +2922,18 @@ function ThreadAutomationsSidebarSlot({
   return <HeaderAutomationSidebar thread={thread} onClose={close} />;
 }
 
-export function ChatThreadPage() {
+export function ChatThreadPage({
+  layout,
+}: {
+  readonly layout: ChatLayoutSignals;
+}) {
   const activeThreadSidebar = useGet(activeThreadSidebar$);
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
   return withChatScrollLayout(
     <>
       <ChatThreadSidebarShell
+        layout={layout}
         animateEntry={activeThreadSidebar?.animateEntry ?? true}
         open={activeThreadSidebar !== null}
         sidebar={
@@ -5135,6 +5142,11 @@ function AssistantErrorRecoveryCard({
   const { t } = useTranslation();
   const resetText = assistantRecoveryResetText(recovery);
   const title = (() => {
+    if (recovery.kind === "subscription-error") {
+      return t(($) => {
+        return $.chat.errors.genericTitle;
+      });
+    }
     if (recovery.kind === "execution-timeout") {
       return t(($) => {
         return $.chat.errors.recovery.timeoutTitle;
@@ -5166,21 +5178,42 @@ function AssistantErrorRecoveryCard({
     );
   })();
   const description =
-    recovery.kind === "execution-timeout"
-      ? t(($) => {
-          return $.chat.errors.recovery.timeoutDescription;
-        })
-      : recovery.kind === "usage-limit"
+    recovery.kind === "subscription-error"
+      ? recovery.providerMessage
+      : recovery.kind === "execution-timeout"
         ? t(($) => {
-            return $.chat.errors.recovery.usageDescription;
+            return $.chat.errors.recovery.timeoutDescription;
           })
-        : recovery.kind === "model-unavailable"
+        : recovery.kind === "usage-limit"
           ? t(($) => {
-              return $.chat.errors.recovery.unavailableDescription;
+              return $.chat.errors.recovery.usageDescription;
             })
-          : t(($) => {
-              return $.chat.errors.recovery.capacityDescription;
-            });
+          : recovery.kind === "model-unavailable"
+            ? t(($) => {
+                return $.chat.errors.recovery.unavailableDescription;
+              })
+            : t(($) => {
+                return $.chat.errors.recovery.capacityDescription;
+              });
+  const personalSource = recovery.source?.credentialScope === "member";
+  const sourceDescription = personalSource
+    ? recovery.source?.account.status === "unavailable"
+      ? t(($) => {
+          return $.chat.errors.recovery.originalAccountUnavailable;
+        })
+      : recovery.source?.account.status === "unknown"
+        ? t(($) => {
+            return $.chat.errors.recovery.originalAccountUnknown;
+          })
+        : recovery.accountLabel
+          ? t(
+              ($) => {
+                return $.chat.errors.recovery.originalAccount;
+              },
+              { account: recovery.accountLabel },
+            )
+          : null
+    : null;
 
   return (
     <AssistantErrorCard
@@ -5190,7 +5223,19 @@ function AssistantErrorRecoveryCard({
           : Coffee
       }
       title={title}
-      description={`${description}${resetText ? ` ${resetText}` : ""}`}
+      description={
+        <>
+          {`${description}${resetText ? ` ${resetText}` : ""}`}
+          {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
+          {personalSource && (
+            <p className="mt-1">
+              {t(($) => {
+                return $.chat.errors.recovery.newRunCurrentSettings;
+              })}
+            </p>
+          )}
+        </>
+      }
       actions={<AssistantRecoveryActions recovery={recovery} thread={thread} />}
       testId="assistant-error-recovery"
     />
@@ -5338,7 +5383,7 @@ function AssistantErrorFallback({ error }: { error: string }) {
       description={
         <Markdown
           className="!text-muted-foreground"
-          source={error}
+          source={localizedRunError(error)}
           style={{ fontSize: "inherit", lineHeight: "inherit" }}
         />
       }
@@ -6479,12 +6524,12 @@ function UserMessageFeedbackGroup({
             {showDivider ? (
               <div
                 data-structured-feedback-divider=""
-                className="border-t border-border"
+                className="border-t border-border-on-fill"
               />
             ) : null}
             <blockquote
               data-structured-feedback-quote=""
-              className="border-l-2 border-border pl-3 text-muted-foreground"
+              className="border-l-2 border-border-on-fill pl-3 text-muted-foreground"
             >
               {renderPart.part.quote}
             </blockquote>
