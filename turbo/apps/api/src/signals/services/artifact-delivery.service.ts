@@ -34,7 +34,10 @@ export const registerArtifactDelivery$ = command(
       args.targetKind,
       args.alias,
     );
-    if (record.kind === "publication" && args.targetKind === "html") {
+    if (
+      (record.kind === "publication" || record.kind === "thread-resource") &&
+      args.targetKind === "html"
+    ) {
       const namespace =
         record.publicBrand === "okou" ? "sites/brands/okou" : "sites";
       const legacy = await settle(

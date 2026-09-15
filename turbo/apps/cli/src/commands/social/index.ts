@@ -27,6 +27,7 @@ import {
 
 import {
   callSocialKit,
+  SocialTransportError,
   createSocialKitDownload,
   getSocialKitDownload,
   listSocialKitDownloads,
@@ -44,6 +45,14 @@ import {
   withSocialOutput,
   type SocialExportOptions,
 } from "./output";
+import {
+  checkpointIntent,
+  CollectionCheckpoint,
+  collectionRequestIdentity,
+  newCollectionCheckpoint,
+  requireCheckpointSupport,
+  type SavedCollection,
+} from "./checkpoint";
 import {
   commentsIntent,
   downloadPlatform,
@@ -71,6 +80,7 @@ interface InspectOptions extends SocialExportOptions {
 interface CollectionOptions extends SocialExportOptions {
   readonly limit: number;
   readonly stream?: boolean;
+  readonly checkpoint?: string;
 }
 
 interface PostsOptions extends CollectionOptions {
@@ -145,6 +155,16 @@ interface SocialCollectionOutput {
   readonly nextInput?: SocialCollectionNextInput;
   readonly sourceLimit?: SocialKitCollectionSourceLimit;
   readonly callerLimited?: boolean;
+  readonly bufferedItemsReturned?: number;
+  readonly cumulative?: CollectionProgress;
+  readonly continuation?: {
+    readonly version: 1;
+    readonly path: string;
+    readonly available: boolean;
+    readonly bufferedItems: number;
+    readonly expiresAt: string;
+    readonly resumeCommand?: string;
+  };
 }
 
 interface SocialErrorDetails {
@@ -355,6 +375,18 @@ function structuredError(error: unknown): {
         : undefined;
   const progress =
     error instanceof SocialCollectionError ? error.progress : undefined;
+  if (root instanceof SocialTransportError) {
+    return {
+      status: "error",
+      error: {
+        kind: "transport",
+        code: "TRANSPORT_ERROR",
+        message: root.message,
+        retryable: true,
+      },
+      progress,
+    };
+  }
   if (root instanceof ApiRequestError) {
     return {
       status: "error",
@@ -516,6 +548,14 @@ function humanError(error: unknown): string {
   return root instanceof Error ? root.message : "An unexpected error occurred";
 }
 
+function printSocialError(error: unknown, machineReadable: boolean): void {
+  if (machineReadable) {
+    console.error(JSON.stringify(structuredError(error)));
+  } else {
+    console.error(chalk.red(`✗ ${humanError(error)}`));
+  }
+}
+
 async function runSocialAction(
   machineReadable: boolean,
   action: () => Promise<void>,
@@ -523,11 +563,7 @@ async function runSocialAction(
   try {
     await action();
   } catch (error) {
-    if (machineReadable) {
-      console.error(JSON.stringify(structuredError(error)));
-    } else {
-      console.error(chalk.red(`✗ ${humanError(error)}`));
-    }
+    printSocialError(error, machineReadable);
     if (
       error instanceof SocialCollectionError ||
       error instanceof SocialExportError
@@ -571,18 +607,6 @@ function collectionPage(
       }),
     ),
   };
-}
-
-function requestIdentity(request: SocialKitRequest): string {
-  return JSON.stringify(
-    Object.entries(request.input)
-      .filter(([key]) => {
-        return key !== "limit";
-      })
-      .sort(([left], [right]) => {
-        return left.localeCompare(right);
-      }),
-  );
 }
 
 function requestWithNextPage(
@@ -693,6 +717,9 @@ interface CollectionAccumulator {
   creditsCharged: number;
   reportedTotal?: number;
   nextInput?: SocialCollectionNextInput;
+  bufferedItems?: unknown[];
+  bufferedContext?: Readonly<Record<string, unknown>>;
+  bufferedItemsReturned?: number;
 }
 
 function accumulatorProgress(
@@ -707,13 +734,14 @@ function accumulatorProgress(
   );
 }
 
-function rememberCollectionRequest(accumulator: CollectionAccumulator): void {
-  const identity = requestIdentity(accumulator.request);
+function assertUnseenCollectionRequest(
+  accumulator: CollectionAccumulator,
+): void {
+  const identity = collectionRequestIdentity(accumulator.request);
   if (accumulator.seenRequests.has(identity)) {
     accumulator.nextInput = undefined;
     throw new Error("Okou Social returned a repeated pagination state");
   }
-  accumulator.seenRequests.add(identity);
 }
 
 function appendCollectionPage(
@@ -727,11 +755,15 @@ function appendCollectionPage(
   readonly returnedItems: readonly unknown[];
 } {
   const page = collectionPage(response, resultField);
-  if (accumulator.pages === 0) {
+  if (accumulator.pages === 0 && !accumulator.bufferedItemsReturned) {
     accumulator.context = page.context;
   }
   const remaining = requestedItems - accumulator.itemsReturned;
   const returnedItems = page.items.slice(0, remaining);
+  if (accumulator.bufferedItems) {
+    accumulator.bufferedItems = page.items.slice(returnedItems.length);
+    accumulator.bufferedContext = page.context;
+  }
   accumulator.aggregateItems?.push(...returnedItems);
   accumulator.itemsReturned += returnedItems.length;
   accumulator.pages += 1;
@@ -799,19 +831,16 @@ function terminalCollectionOutput(
   intent: SocialIntent,
   requestedItems: number,
   accumulator: CollectionAccumulator,
-  response: SocialKitResponse,
   metadata: SocialKitCollection,
 ): SocialOutput | undefined {
   const requestSatisfied = accumulator.itemsReturned >= requestedItems;
-  const sourceComplete = metadata.state === "complete";
+  const sourceComplete =
+    metadata.state === "complete" && !accumulator.bufferedItems?.length;
   const providerLimited = metadata.state === "provider_limited";
   if (!requestSatisfied && !sourceComplete && !providerLimited) {
     return undefined;
   }
-  const callerTruncated =
-    accumulator.itemsObserved > accumulator.itemsReturned ||
-    (accumulator.reportedTotal !== undefined &&
-      accumulator.reportedTotal > accumulator.itemsReturned);
+  const callerTruncated = collectionHasTail(accumulator);
   const state = providerLimited
     ? "provider_limited"
     : requestSatisfied && (!sourceComplete || callerTruncated)
@@ -835,7 +864,7 @@ function terminalCollectionOutput(
     ...(metadata.state === "provider_limited" && metadata.sourceLimit
       ? {
           sourceLimit: metadata.sourceLimit,
-          callerLimited: accumulator.itemsObserved > accumulator.itemsReturned,
+          callerLimited: collectionHasTail(accumulator),
         }
       : {}),
   };
@@ -845,10 +874,20 @@ function terminalCollectionOutput(
     requestSatisfied || sourceComplete ? "complete" : "partial",
     collection,
     {
-      category: response.billingCategory,
+      category: "request",
       quantity: accumulator.billingQuantity,
       creditsCharged: accumulator.creditsCharged,
     },
+  );
+}
+
+function collectionHasTail(accumulator: CollectionAccumulator): boolean {
+  if (accumulator.bufferedItems !== undefined)
+    return accumulator.bufferedItems.length > 0;
+  return (
+    accumulator.itemsObserved > accumulator.itemsReturned ||
+    (accumulator.reportedTotal !== undefined &&
+      accumulator.reportedTotal > accumulator.itemsReturned)
   );
 }
 
@@ -892,7 +931,9 @@ function failedCollectionOutput(
     ...collectionOutput(
       intent,
       accumulator,
-      accumulator.pages === 0 ? "error" : "partial",
+      accumulator.pages === 0 && accumulator.itemsReturned === 0
+        ? "error"
+        : "partial",
       {
         state: "failed",
         pages: accumulator.pages,
@@ -904,7 +945,7 @@ function failedCollectionOutput(
           : { reportedTotal: accumulator.reportedTotal }),
         ...(accumulator.nextInput ? { nextInput: accumulator.nextInput } : {}),
       },
-      accumulator.pages === 0
+      accumulator.pages === 0 && !accumulator.bufferedItemsReturned
         ? null
         : {
             category: "request",
@@ -917,10 +958,191 @@ function failedCollectionOutput(
   };
 }
 
+interface CollectionRecovery {
+  readonly file: CollectionCheckpoint;
+  readonly saved: SavedCollection;
+  readonly resumed: boolean;
+  lastPage: SavedCollection["lastPage"];
+  pendingRequest: SocialKitRequest | null;
+}
+
+function collectionAccumulator(
+  intent: SocialIntent,
+  stream: boolean,
+  saved?: SavedCollection,
+): CollectionAccumulator {
+  return {
+    request: saved?.pendingRequest ?? intent.request,
+    context: saved?.context ?? {},
+    seenRequests: new Set(saved?.completedRequests),
+    aggregateItems: stream ? undefined : [],
+    itemsReturned: 0,
+    pages: 0,
+    itemsObserved: 0,
+    billingQuantity: 0,
+    creditsCharged: 0,
+    ...(saved
+      ? {
+          bufferedItems: [...saved.bufferedItems],
+          bufferedContext: saved.context,
+          bufferedItemsReturned: 0,
+          reportedTotal: saved.reportedTotal,
+        }
+      : {}),
+  };
+}
+
+async function finishCollectionOutput(
+  output: SocialOutput,
+  accumulator: CollectionAccumulator,
+  checkpoint?: CollectionRecovery,
+): Promise<SocialOutput> {
+  if (!checkpoint || !output.collection) return output;
+  if (!accumulator.bufferedItems || !accumulator.bufferedContext)
+    throw new Error("Checkpoint accumulator has no item buffer");
+  const previous = checkpoint.saved.progress;
+  const cumulative = progress(
+    previous.pages + accumulator.pages,
+    previous.itemsReturned + accumulator.itemsReturned,
+    previous.itemsObserved + accumulator.itemsObserved,
+    previous.billingQuantity + accumulator.billingQuantity,
+    previous.creditsCharged + accumulator.creditsCharged,
+  );
+  const saved: SavedCollection = {
+    ...checkpoint.saved,
+    pendingRequest: checkpoint.pendingRequest,
+    completedRequests: [...accumulator.seenRequests],
+    bufferedItems: accumulator.bufferedItems,
+    context: accumulator.bufferedContext,
+    lastPage: checkpoint.lastPage,
+    progress: cumulative,
+    reportedTotal: accumulator.reportedTotal,
+  };
+  const available =
+    saved.bufferedItems.length > 0 || saved.pendingRequest !== null;
+  try {
+    await checkpoint.file.save(saved);
+  } catch (error) {
+    const failure = new Error(
+      "Checkpoint could not be saved; accepted output is retained. Inspect output before reusing an older checkpoint",
+      { cause: error },
+    );
+    const details = structuredError(failure).error;
+    throw new SocialCollectionError(
+      details.message,
+      accumulatorProgress(accumulator),
+      {
+        ...output,
+        status:
+          accumulator.pages || accumulator.itemsReturned ? "partial" : "error",
+        collection: { ...output.collection, state: "failed", cumulative },
+        progress: accumulatorProgress(accumulator),
+        error: details,
+      },
+      { cause: failure },
+    );
+  }
+  return {
+    ...output,
+    collection: {
+      ...output.collection,
+      bufferedItemsReturned: accumulator.bufferedItemsReturned,
+      cumulative,
+      continuation: {
+        version: 1,
+        path: checkpoint.file.path,
+        available,
+        bufferedItems: saved.bufferedItems.length,
+        expiresAt: new Date(saved.expiresAt).toISOString(),
+        ...(available
+          ? {
+              resumeCommand: `okou social resume '${checkpoint.file.path.replaceAll("'", "'\\''")}' --limit ${output.collection.requestedItems} --json`,
+            }
+          : {}),
+      },
+    },
+  };
+}
+
+function resumeCollectionBuffer(
+  intent: SocialIntent,
+  requestedItems: number,
+  stream: boolean,
+  accumulator: CollectionAccumulator,
+  checkpoint: CollectionRecovery,
+  hasLimit: boolean,
+): SocialOutput | undefined {
+  if (!accumulator.bufferedItems)
+    throw new Error("Checkpoint accumulator has no item buffer");
+  const items = accumulator.bufferedItems.splice(0, requestedItems);
+  accumulator.itemsReturned = items.length;
+  accumulator.bufferedItemsReturned = items.length;
+  accumulator.aggregateItems?.push(...items);
+  if (stream && items.length > 0) {
+    printJson(
+      {
+        kind: "page",
+        source: "checkpoint",
+        operation: intent.operation,
+        platform: intent.platform,
+        target: intent.target,
+        request: intent.requestMetadata,
+        data: { items, context: accumulator.context },
+        billing: { category: "request", quantity: 0, creditsCharged: 0 },
+      },
+      true,
+    );
+  }
+  if (!checkpoint.lastPage) throw new Error("Checkpoint has no accepted page");
+  const output = terminalCollectionOutput(
+    intent,
+    requestedItems,
+    accumulator,
+    checkpoint.lastPage,
+  );
+  if (output) return output;
+  if (!checkpoint.pendingRequest)
+    throw new Error(
+      "Checkpoint has no usable continuation; start a new collection",
+    );
+  accumulator.request = requestWithNextPage(
+    checkpoint.pendingRequest,
+    {},
+    requestedItems - accumulator.itemsReturned,
+    hasLimit,
+  );
+  accumulator.nextInput =
+    checkpoint.lastPage.state === "more"
+      ? checkpoint.lastPage.nextInput
+      : undefined;
+  return undefined;
+}
+
+function advanceCollectionRequest(
+  accumulator: CollectionAccumulator,
+  metadata: Extract<SocialKitCollection, { readonly state: "more" }>,
+  requestedItems: number,
+  hasLimit: boolean,
+): void {
+  accumulator.request = requestWithNextPage(
+    accumulator.request,
+    metadata.nextInput,
+    Math.max(1, requestedItems - accumulator.itemsReturned),
+    hasLimit,
+  );
+  if (
+    accumulator.seenRequests.has(collectionRequestIdentity(accumulator.request))
+  ) {
+    throw new Error("Okou Social returned a repeated pagination state");
+  }
+  accumulator.nextInput = metadata.nextInput;
+}
+
 async function retrieveCollection(
   intent: SocialIntent,
   requestedItems: number,
   stream: boolean,
+  checkpoint?: CollectionRecovery,
 ): Promise<SocialOutput> {
   const tool = findManagedSocialKitTool(intent.request.tool);
   if (!tool?.collection) {
@@ -928,21 +1150,22 @@ async function retrieveCollection(
       `${intent.operation} is not a collection operation`,
     );
   }
-  const accumulator: CollectionAccumulator = {
-    request: intent.request,
-    context: {},
-    seenRequests: new Set<string>(),
-    aggregateItems: stream ? undefined : [],
-    itemsReturned: 0,
-    pages: 0,
-    itemsObserved: 0,
-    billingQuantity: 0,
-    creditsCharged: 0,
-  };
-
+  const accumulator = collectionAccumulator(intent, stream, checkpoint?.saved);
   try {
+    if (checkpoint?.resumed) {
+      const output = resumeCollectionBuffer(
+        intent,
+        requestedItems,
+        stream,
+        accumulator,
+        checkpoint,
+        tool.maxLimit !== undefined,
+      );
+      if (output)
+        return await finishCollectionOutput(output, accumulator, checkpoint);
+    }
     while (accumulator.pages < MAX_COLLECTION_PAGES) {
-      rememberCollectionRequest(accumulator);
+      assertUnseenCollectionRequest(accumulator);
       const response = await callSocialKit(accumulator.request);
       const metadata = response.collection;
       if (!metadata) {
@@ -955,6 +1178,13 @@ async function retrieveCollection(
         tool.collection.resultField,
         requestedItems,
       );
+      accumulator.seenRequests.add(
+        collectionRequestIdentity(accumulator.request),
+      );
+      if (checkpoint) {
+        checkpoint.lastPage = metadata;
+        checkpoint.pendingRequest = null;
+      }
       accumulator.nextInput = undefined;
       if (stream) {
         printCollectionPage(intent, accumulator, response, metadata, page);
@@ -963,37 +1193,65 @@ async function retrieveCollection(
         intent,
         requestedItems,
         accumulator,
-        response,
         metadata,
       );
-      if (output) {
+      if (output && !checkpoint) {
         return output;
       }
-      if (metadata.state !== "more") {
+      if (metadata.state === "more") {
+        advanceCollectionRequest(
+          accumulator,
+          metadata,
+          requestedItems,
+          tool.maxLimit !== undefined,
+        );
+        if (checkpoint) checkpoint.pendingRequest = accumulator.request;
+      } else if (!output) {
         throw new Error("Okou Social returned an invalid collection state");
       }
-      accumulator.request = requestWithNextPage(
-        accumulator.request,
-        metadata.nextInput,
-        requestedItems - accumulator.itemsReturned,
-        tool.maxLimit !== undefined,
-      );
-      accumulator.nextInput = accumulator.seenRequests.has(
-        requestIdentity(accumulator.request),
-      )
-        ? undefined
-        : metadata.nextInput;
+      if (output)
+        return await finishCollectionOutput(output, accumulator, checkpoint);
     }
-    return safetyLimitOutput(intent, requestedItems, accumulator);
+    return await finishCollectionOutput(
+      safetyLimitOutput(intent, requestedItems, accumulator),
+      accumulator,
+      checkpoint,
+    );
   } catch (error) {
-    const details = structuredError(error).error;
-    throw new SocialCollectionError(
-      details.message,
-      accumulatorProgress(accumulator),
-      failedCollectionOutput(intent, requestedItems, accumulator, details),
-      { cause: error },
+    return failCollection(
+      error,
+      intent,
+      requestedItems,
+      accumulator,
+      checkpoint,
     );
   }
+}
+
+async function failCollection(
+  error: unknown,
+  intent: SocialIntent,
+  requestedItems: number,
+  accumulator: CollectionAccumulator,
+  checkpoint?: CollectionRecovery,
+): Promise<never> {
+  if (error instanceof SocialCollectionError) throw error;
+  const details = structuredError(error).error;
+  if (checkpoint && !details.retryable) {
+    checkpoint.pendingRequest = null;
+    accumulator.nextInput = undefined;
+  }
+  const output = await finishCollectionOutput(
+    failedCollectionOutput(intent, requestedItems, accumulator, details),
+    accumulator,
+    checkpoint,
+  );
+  throw new SocialCollectionError(
+    details.message,
+    accumulatorProgress(accumulator),
+    output,
+    { cause: error },
+  );
 }
 
 async function printIntent(
@@ -1009,10 +1267,14 @@ async function printIntent(
   });
 }
 
-async function printCollectionIntent(
+async function printCollectionResult(
   intent: SocialIntent,
   options: CollectionOptions,
+  checkpoint?: CollectionRecovery,
 ): Promise<void> {
+  if (checkpoint && options.output !== undefined) {
+    await checkpoint.file.assertDistinctOutput(options.output);
+  }
   await withSocialOutput(options, true, async (write) => {
     let output: SocialOutput;
     try {
@@ -1020,6 +1282,7 @@ async function printCollectionIntent(
         intent,
         options.limit,
         options.stream === true,
+        checkpoint,
       );
     } catch (error) {
       if (error instanceof SocialCollectionError) await write(error.output);
@@ -1028,6 +1291,51 @@ async function printCollectionIntent(
     await write(output);
     if (output.status === "partial") process.exitCode = 2;
   });
+}
+
+async function printCollectionIntent(
+  intent: SocialIntent,
+  options: CollectionOptions,
+): Promise<void> {
+  if (options.checkpoint !== undefined) {
+    requireCheckpointSupport(intent);
+    const file = await CollectionCheckpoint.open(options.checkpoint, false);
+    try {
+      await printCollectionResult(intent, options, {
+        file,
+        saved: newCollectionCheckpoint(intent),
+        resumed: false,
+        lastPage: null,
+        pendingRequest: null,
+      });
+    } finally {
+      await closeCollectionCheckpoint(
+        file,
+        options.stream === true || options.json === true,
+      );
+    }
+    return;
+  }
+  await printCollectionResult(intent, options);
+}
+
+async function closeCollectionCheckpoint(
+  file: CollectionCheckpoint,
+  machineReadable: boolean,
+): Promise<void> {
+  try {
+    await file.close();
+  } catch (error) {
+    // Keep any pending partial-result error intact while reporting cleanup failure.
+    printSocialError(
+      new Error(
+        `Checkpoint lock cleanup failed: ${humanError(error)}. Inspect '${file.path}.lock' after the command stops before removing a stale lock.`,
+        { cause: error },
+      ),
+      machineReadable,
+    );
+    process.exitCode = 1;
+  }
 }
 
 function resumeDownloadCommand(downloadId: string): string {
@@ -1275,6 +1583,10 @@ const postsCommand = new Command()
     DEFAULT_COLLECTION_LIMIT,
   )
   .option("--stream", "Stream page records and a final summary as JSON Lines")
+  .option(
+    "--checkpoint <file>",
+    "Save resumable progress to a new local file (reviewed pagination only)",
+  )
   .option("--json", "Print compact JSON")
   .action(async (url: string, options: PostsOptions) => {
     await runSocialAction(
@@ -1313,6 +1625,10 @@ const searchCommand = new Command()
     DEFAULT_COLLECTION_LIMIT,
   )
   .option("--stream", "Stream page records and a final summary as JSON Lines")
+  .option(
+    "--checkpoint <file>",
+    "Save resumable progress to a new local file (reviewed pagination only)",
+  )
   .option("--json", "Print compact JSON")
   .action(async (query: string, options: SearchOptions) => {
     await runSocialAction(
@@ -1345,6 +1661,10 @@ const commentsCommand = new Command()
     DEFAULT_COLLECTION_LIMIT,
   )
   .option("--stream", "Stream page records and a final summary as JSON Lines")
+  .option(
+    "--checkpoint <file>",
+    "Save resumable progress to a new local file (reviewed pagination only)",
+  )
   .option("--json", "Print compact JSON")
   .action(async (url: string, options: CommentsOptions) => {
     await runSocialAction(
@@ -1358,6 +1678,55 @@ const commentsCommand = new Command()
           }),
           options,
         );
+      },
+    );
+  });
+
+const resumeCollectionCommand = new Command()
+  .name("resume")
+  .description(
+    "Continue a saved social collection, emitting its buffered items first",
+  )
+  .argument(
+    "<checkpoint>",
+    "Local checkpoint file from posts, search, or comments",
+  )
+  .option(
+    "--limit <count>",
+    "Maximum additional items to return in this invocation",
+    positiveInteger,
+    DEFAULT_COLLECTION_LIMIT,
+  )
+  .option(
+    "--stream",
+    "Stream buffered/fetched page records and one final summary as JSON Lines",
+  )
+  .option("--json", "Print compact JSON")
+  .addHelpText(
+    "after",
+    "\nRequires the original OKOU_TOKEN and API endpoint; checkpoints expire after 24 hours. The saved target and filters cannot be changed. Buffered items incur no new usage. Failed requests are never retried automatically. Do not reuse copied or interrupted checkpoints without inspecting their output.",
+  )
+  .action(async (path: string, options: CollectionOptions) => {
+    await runSocialAction(
+      options.json === true || options.stream === true,
+      async () => {
+        const file = await CollectionCheckpoint.open(path, true);
+        try {
+          const saved = await file.read();
+          const intent = checkpointIntent(saved, options.limit);
+          await printCollectionResult(intent, options, {
+            file,
+            saved,
+            resumed: true,
+            lastPage: saved.lastPage,
+            pendingRequest: saved.pendingRequest,
+          });
+        } finally {
+          await closeCollectionCheckpoint(
+            file,
+            options.stream === true || options.json === true,
+          );
+        }
       },
     );
   });
@@ -1674,6 +2043,7 @@ export const socialCommand = new Command()
   .addCommand(postsCommand)
   .addCommand(searchCommand)
   .addCommand(commentsCommand)
+  .addCommand(resumeCollectionCommand)
   .addCommand(transcriptCommand)
   .addCommand(summarizeCommand)
   .addCommand(downloadCommand)
@@ -1692,6 +2062,8 @@ Examples:
   Search:      okou social search "product launch" --platform tiktok --limit 20 --json
   Hashtag:     okou social search "#cats" --platform instagram --hashtag --json
   Comments:    okou social comments https://www.tiktok.com/@<user>/video/<id> --limit 20 --json
+  Checkpoint:  okou social comments https://www.instagram.com/p/<id>/ --limit 20 --checkpoint comments.json --json
+  Continue:    okou social resume comments.json --limit 20 --json
   Transcript:  okou social transcript https://youtu.be/<id> --json
   Summary:     okou social summarize https://youtu.be/<id> --json
   Fields:      okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
@@ -1711,6 +2083,9 @@ Notes:
   - Authenticates via OKOU_TOKEN (requires social:read capability) or a CLI token
   - Provider credentials remain on the Okou API server
   - Collection --limit applies to the total returned result, not one provider page
+  - --checkpoint saves reviewed collections; social resume returns up to --limit additional items, buffered items first
+  - Checkpoints require the same OKOU_TOKEN and API endpoint, expire after 24 hours, and are updated in place
+  - Checkpointed output includes cumulative accepted progress/usage; billing describes this invocation only
   - YouTube posts --full-details requests exact dates and descriptions for at most 30 videos; it is slower than the default listing
   - Unavailable publication dates and descriptions remain null, empty, or missing
   - Instagram search accepts up to 100 trimmed characters and exposes one anonymous batch of up to 12 reels

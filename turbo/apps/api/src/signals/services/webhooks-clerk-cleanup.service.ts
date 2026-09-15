@@ -1,5 +1,6 @@
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
+import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -924,6 +925,11 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await set(
+      cleanupSharedThreadArtifacts$,
+      { kind: "organization", orgId },
+      signal,
+    );
     await set(cleanupOrgExternalServices$, db, orgId, signal);
     signal.throwIfAborted();
     await get(deleteOrgS3Data(db, orgId));
@@ -943,6 +949,7 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
     const emptyOrgIds = await emptyOrgIdsAfterDeletingUser(
       db,
       get(clerk$),
@@ -954,6 +961,11 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
+      await set(
+        cleanupSharedThreadArtifacts$,
+        { kind: "organization", orgId },
+        signal,
+      );
       await tapError(
         cancelStripeSubscriptionsForDeletedOrg(db, orgId),
         (error) => {

@@ -58,12 +58,111 @@ validated cursor/page input for the pending request after an accepted page.
 Consumed, invalid, and repeated pagination hints are omitted. A first-page
 failure has no continuation hint; neither do cursorless operations.
 
-This is diagnostic state, not a checkpoint, a collection `--resume` interface,
-or a guarantee that retrying a failed request is safe. In particular, stopping
-at a caller limit can leave fetched-but-unemitted items, and a next cursor alone
-would skip them. Durable checkpoints, owner/context validation, and buffered-tail
-replay are tracked separately in
-[#34030](https://github.com/vm0-ai/vm0/issues/34030).
+This hint alone does not preserve fetched-but-unemitted items and is not a
+guarantee that retrying a failed request is safe. Use the explicit checkpoint
+interface below for recovery across invocations.
+
+## Checkpoints and resume
+
+For operations with reviewed pagination, opt in before collecting:
+
+```bash
+okou social comments https://www.instagram.com/p/example/ --limit 2 --checkpoint comments.json --json
+okou social resume comments.json --limit 10 --json
+```
+
+`posts`, `search`, and `comments` accept `--checkpoint <file>`. Offline
+`okou social capabilities [platform] --json` reports
+`collection.continuation.supported` for each operation/variant. Cursorless and
+single-batch operations reject checkpoint creation before any request. This
+includes Instagram search and the currently cursorless YouTube collections.
+
+`social resume <file>` preserves the saved operation, canonical URL/query,
+platform, and filters. It accepts only output options and a new `--limit`:
+the maximum **additional** items to emit in this invocation, default 10.
+For example, if the provider returned three items and the first command emitted
+two, resume emits the third item before requesting another page. A resume with
+`--limit 1` needs no provider request. The tail remains available even when its
+page already reported source completion. Once it is drained, source completion
+and provider limitations remain terminal.
+
+Initial collection can combine `--checkpoint` with JSON/CSV export or
+`--select`. Selection affects the emitted/exported rows; the checkpoint keeps
+the original buffered items. Use distinct paths for the exported results, the
+checkpoint, and its `.lock` file, including through parent-directory aliases.
+Conflicting paths are rejected before provider work, even with `--overwrite`.
+`social resume` accepts `--json` or `--stream`; save its returned output when
+needed.
+
+Checkpointed terminal records add these fields under `collection`:
+
+| Field                        | Meaning                                                      |
+| ---------------------------- | ------------------------------------------------------------ |
+| `bufferedItemsReturned`      | Previously fetched items emitted in this invocation          |
+| `cumulative`                 | Accepted page/item progress and usage across all invocations |
+| `continuation.version`       | Checkpoint format version, currently 1                       |
+| `continuation.path`          | Absolute path to the saved local file                        |
+| `continuation.available`     | Whether buffered items or a pending page remain              |
+| `continuation.bufferedItems` | Number of fetched items still waiting to be emitted          |
+| `continuation.expiresAt`     | Fixed expiry time of the checkpoint                          |
+| `continuation.resumeCommand` | Next command, present only when continuation is available    |
+
+Existing `collection.pages`, `itemsReturned`, `itemsObserved`, `progress`, and
+top-level `billing` describe the current invocation. Buffered items increase
+`itemsReturned` but not newly observed items or page/usage counts. They were
+already accounted for by the original page, so a buffer-only resume has zero
+new billing. `cumulative.itemsObserved` includes the fetched tail;
+`cumulative.itemsReturned` counts emitted items. All usage remains limited to
+accepted responses, and failed requests can still have unknown charges.
+
+With `--stream`, replay emits a `kind: "page", source: "checkpoint"` record
+with zero billing and no fetched-page number. Newly fetched pages keep their
+existing records. Exactly one metadata-only terminal summary follows. A
+failure after emitting buffered items is partial even if no new page succeeded.
+
+An explicit resume may request a recoverable failed page again. Completed page
+identities remain in the checkpoint and are never requested again during normal
+continuation. Repeated/invalid cursors and permanent cursor rejection stop
+network continuation. The CLI never restarts or retries automatically, and
+cannot guarantee that a saved provider cursor remains usable.
+
+Connection failures, timeouts, and interrupted response transfers retain an
+already saved pending page for explicit resume. They report a retryable
+`TRANSPORT_ERROR` without inventing an HTTP status or assuming that the
+failed request had no provider effects or charges. Invalid responses and
+explicit permanent API errors still stop network continuation.
+
+### File and credential lifetime
+
+Version 1 is a private local file authenticated with a domain-separated HMAC
+bound to the **same `OKOU_TOKEN` and API endpoint**. Credentials are never stored
+in the file. The file includes public results and the caller's query/filters;
+keep it private. Changed credentials, including a new run token, cannot resume
+it. This is recovery between CLI invocations in one credential context.
+
+Checkpoints expire 24 hours after creation; resume does not extend that deadline.
+Altered, expired, incompatible, mismatched-context, and exhausted checkpoints
+fail with guidance before provider I/O. The maximum file size is 16 MiB.
+Provider cursor expiry and token expiry can end recovery sooner.
+
+The destination parent must exist. Initial collection requires a new file;
+resume atomically updates that same file. An exclusive `.lock` file prevents
+concurrent use of the same canonical path. Symbolic links and hard-linked files
+are rejected. Wait for active invocations; remove a stale lock only after
+confirming the command stopped and inspecting its output.
+
+Lock-cleanup failures are reported separately on stderr and set exit code 1.
+They do not replace accepted stdout results or an existing collection failure.
+Machine-readable stderr may contain separate JSON Lines for cleanup and
+collection errors; stdout still contains exactly one terminal record.
+
+Saving a checkpoint is part of handled completion, not a crash-safe output
+transaction. A save failure preserves accepted terminal output and reports an
+error without advertising a new continuation. Inspect that output before
+reusing an older file: it may replay already emitted items. Likewise, copied
+checkpoints, abrupt termination, or output delivery failures cannot guarantee
+exactly-once emission. The terminal file is retained with
+`continuation.available: false` when no recovery remains.
 
 Terminal records cover handled execution failures. Abrupt termination, a killed
 process, or an unusable stdout cannot guarantee a final record. These changes

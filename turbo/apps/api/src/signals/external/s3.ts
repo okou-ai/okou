@@ -430,11 +430,34 @@ export function deleteS3Objects(
   bucket: string,
   keys: readonly string[],
 ): Computed<Promise<void>> {
+  return deleteS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, keys);
+}
+
+export function deleteArtifactSnapshotObjects(
+  bucket: string,
+  keys: readonly string[],
+  hosted: boolean,
+  signal: AbortSignal,
+): Computed<Promise<void>> {
+  return deleteS3ObjectsWithClient(
+    hosted ? hostedSitesS3Client$ : s3ClientForBucket(bucket),
+    bucket,
+    keys,
+    signal,
+  );
+}
+
+function deleteS3ObjectsWithClient(
+  client$: Computed<S3Client>,
+  bucket: string,
+  keys: readonly string[],
+  signal?: AbortSignal,
+): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
     if (keys.length === 0) {
       return;
     }
-    const client = get(s3ClientForBucket(bucket));
+    const client = get(client$);
     // Stop at the first failed batch. Retrying already deleted keys is safe.
     for (
       let offset = 0;
@@ -452,6 +475,7 @@ export function deleteS3Objects(
               }),
           },
         }),
+        signal ? { abortSignal: signal } : undefined,
       );
       if (response.Errors && response.Errors.length > 0) {
         throw new Error(
@@ -709,8 +733,16 @@ async function readS3ObjectBody(
 export function downloadHostedSitesS3Buffer(
   bucket: string,
   key: string,
+  options?: { readonly maxBytes?: number },
+  signal?: AbortSignal,
 ): Computed<Promise<Buffer>> {
-  return downloadS3BufferWithClient(hostedSitesS3Client$, bucket, key);
+  return downloadS3BufferWithClient(
+    hostedSitesS3Client$,
+    bucket,
+    key,
+    { maxBytes: options?.maxBytes },
+    signal,
+  );
 }
 
 /**
@@ -1405,13 +1437,18 @@ export function putHostedSitesS3Object(
   key: string,
   body: string | Buffer,
   contentType: string,
+  signal?: AbortSignal,
 ): Computed<Promise<void>> {
-  return putS3ObjectWithClient(hostedSitesS3Client$, {
-    bucket,
-    key,
-    body,
-    contentType,
-  });
+  return putS3ObjectWithClient(
+    hostedSitesS3Client$,
+    {
+      bucket,
+      key,
+      body,
+      contentType,
+    },
+    signal,
+  );
 }
 
 export function downloadManifest(

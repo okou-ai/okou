@@ -11,6 +11,37 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.898.0](https://github.com/vm0-ai/vm0/compare/app-v0.897.0...app-v0.898.0) (2026-09-15)
+
+
+### Features
+
+* give intro video its own generation template type ([#34221](https://github.com/vm0-ai/vm0/issues/34221)) ([776735a](https://github.com/vm0-ai/vm0/commit/776735a14e2d2c8d3fe482b3c8b92b9dd66f5ce8))
+* **platform:** pin the connectors scope and search while the page scrolls ([#34222](https://github.com/vm0-ai/vm0/issues/34222)) ([f3473d2](https://github.com/vm0-ai/vm0/commit/f3473d28ba2891d67d600b46db3e01dbb147c0a3))
+
+
+### Bug Fixes
+
+* **api:** include the project in langfuse trace links ([#34215](https://github.com/vm0-ai/vm0/issues/34215)) ([fda0a6e](https://github.com/vm0-ai/vm0/commit/fda0a6ef129d7c6edb21452c4f4660e52fc5b63d))
+* **app:** replace the last idea prompt instead of stacking prompts ([#34217](https://github.com/vm0-ai/vm0/issues/34217)) ([5920b1d](https://github.com/vm0-ai/vm0/commit/5920b1d9163798afc0816587fb1b8b83b145aaca))
+* **app:** reveal user message actions without opacity transitions ([#33785](https://github.com/vm0-ai/vm0/issues/33785)) ([634e340](https://github.com/vm0-ai/vm0/commit/634e340c6aff0f30bd0b9ea1ee3d557ce49c51e9))
+* **app:** update lark integration guide creation image ([#34218](https://github.com/vm0-ai/vm0/issues/34218)) ([4af04bf](https://github.com/vm0-ai/vm0/commit/4af04bfc0a597a31d546ddaf9a7757d04c9503cc))
+* **mail:** handle recognized gmail draft-send rejections ([#34210](https://github.com/vm0-ai/vm0/issues/34210)) ([9a09a5c](https://github.com/vm0-ai/vm0/commit/9a09a5c95e02784281bd3f92689f49a85811c1b3))
+* **platform:** mark the effort scale with dots and bring the bar down ([#34216](https://github.com/vm0-ai/vm0/issues/34216)) ([74a9273](https://github.com/vm0-ai/vm0/commit/74a92733f712af438ff868aa39de607a08049e37))
+
+
+### Refactoring
+
+* **platform:** drain the language-mermaid legacy class from the mermaid fence ([#34226](https://github.com/vm0-ai/vm0/issues/34226)) ([7247fe0](https://github.com/vm0-ai/vm0/commit/7247fe035f88b8e5c59d0151c9a1ef44a411a238))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.442.0
+    * @okouai/core bumped to 8.666.0
+
 ## [0.897.0](https://github.com/vm0-ai/vm0/compare/app-v0.896.2...app-v0.897.0) (2026-09-15)
 
 
