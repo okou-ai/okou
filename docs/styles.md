@@ -813,6 +813,7 @@ The hovered fill carries `:not(:active)` because Tailwind decides the order the 
 `.wmde-markdown pre .copied.active` was dead and is gone with the rest. `CopyButton` never adds an `active` class — it swaps icons from React state — so that branch of the selector list never matched. The vendored sheet's own `.copied.active` rules remain, pinned and inert, because nothing carries the class any more. The `--color-copied-active-bg` overrides the App declared for them are removed with it.
 
 Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
+
 ### The standalone PWA fixed cover
 
 The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was
