@@ -1750,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.90.3"
+version = "0.90.4"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3489,7 +3489,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.194.2"
+version = "0.194.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
