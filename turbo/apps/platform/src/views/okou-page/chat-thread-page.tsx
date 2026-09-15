@@ -175,6 +175,7 @@ import {
   type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
+import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
@@ -5528,17 +5529,7 @@ function SelectablePagedGroupRow({
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const toggle = useSet(thread.sharing.toggle$);
   const sharing = phase !== "idle";
-  const displayGroup =
-    sharing && group.role === "assistant"
-      ? {
-          ...group,
-          events: group.events
-            .filter((event) => {
-              return event.eventType === "output.message";
-            })
-            .slice(-1),
-        }
-      : group;
+  const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
     <PagedGroupRow
       group={displayGroup}
