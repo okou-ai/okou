@@ -2430,7 +2430,8 @@
         "browseStyles": "Ver todos los estilos",
         "browseTemplates": "Ver todas las plantillas",
         "image": "Estilos de imagen",
-        "nextTemplates": "Siguientes plantillas",
+        "nextPage": "Página siguiente",
+        "previousPage": "Página anterior",
         "video": "Plantillas de vídeo",
         "website": "Plantillas de sitio web"
       },

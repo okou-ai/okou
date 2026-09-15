@@ -1,8 +1,10 @@
+import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   ArrowUpRight,
+  ChevronLeft,
   CalendarDays,
   ChartNoAxesCombined,
   ChevronRight,
@@ -16,7 +18,7 @@ import {
   Sparkles,
   UserRound,
   Video,
-  Workflow,
+  Route,
 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
@@ -37,7 +39,7 @@ import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendat
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
 const TASK_ICONS = {
-  workflow: Workflow,
+  workflow: Route,
   presentation: Presentation,
   image: Image,
   video: Video,
@@ -135,6 +137,16 @@ const ROW_FADE = cn(
  */
 const ROW_PAGER = "shrink-0";
 /**
+ * Each page is exactly as wide as the rail, so the track can slide by whole
+ * percentages without measuring anything. `--page` is the only runtime value
+ * the component computes; the motion itself stays a utility.
+ */
+const ROW_TRACK = cn(
+  "flex w-full [transform:translateX(calc(var(--page)*-100%))]",
+  "transition-transform duration-300 ease-out motion-reduce:transition-none",
+);
+const ROW_PAGE = "flex w-full shrink-0 items-start";
+/**
  * Illustration styles run 20 portrait, 9 square and 3 landscape, so their own
  * proportions cannot line up. One 4:5 tile centre-crops them into a single
  * rhythm; a style sample is judged on texture and palette, and the uncropped
@@ -157,6 +169,91 @@ const TASK_TEMPLATE_SHELF = {
     readonly ratio: string;
   }
 >;
+
+/**
+ * One row, paged. The rail masks its right edge so a page that overruns the
+ * column fades instead of being cut, and the two pagers sit outside that mask
+ * so they always have a solid surface. `‹` appears only once there is a page
+ * to go back to.
+ */
+function ComposerPagedRow({
+  label,
+  page,
+  pageCount,
+  onStep,
+  gap,
+  children,
+}: {
+  /** Set only when the row is the whole group; a shelf labels its wrapper. */
+  readonly label?: string;
+  readonly page: number;
+  readonly pageCount: number;
+  readonly onStep: (step: number) => void;
+  readonly gap: string;
+  /** One entry per page, in order; the key is the page it paints. */
+  readonly children: readonly ReactNode[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="flex min-w-0 items-center gap-2"
+      role="group"
+      aria-label={label}
+    >
+      {page > 0 && (
+        <Button
+          type="button"
+          variant="neutral"
+          size="icon"
+          className={ROW_PAGER}
+          aria-label={t(($) => {
+            return $.chat.taskChips.shelf.previousPage;
+          })}
+          onClick={() => {
+            onStep(-1);
+          }}
+        >
+          <ChevronLeft className="size-4" aria-hidden />
+        </Button>
+      )}
+      <div className={cn(ROW_RAIL, page < pageCount - 1 && ROW_FADE)}>
+        <div className={ROW_TRACK} style={{ "--page": page } as CSSProperties}>
+          {children.map((content, index) => {
+            const pageKey = `page-${String(index)}`;
+            // Every page stays mounted so the track can slide, so the ones
+            // off-screen have to leave the tab order and the accessibility
+            // tree with it.
+            return (
+              <div
+                key={pageKey}
+                className={cn(ROW_PAGE, gap)}
+                inert={index !== page}
+              >
+                {content}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {page < pageCount - 1 && (
+        <Button
+          type="button"
+          variant="neutral"
+          size="icon"
+          className={ROW_PAGER}
+          aria-label={t(($) => {
+            return $.chat.taskChips.shelf.nextPage;
+          })}
+          onClick={() => {
+            onStep(1);
+          }}
+        >
+          <ChevronRight className="size-4" aria-hidden />
+        </Button>
+      )}
+    </div>
+  );
+}
 
 /**
  * One cover. Selecting it attaches the template to the composer the same way
@@ -229,12 +326,15 @@ function ComposerTemplateShelf({
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
   const group = slashTemplatePreviewGroup(category);
   const page = useGet(signals.taskChips.templatePages$)[task];
-  const nextTemplates = useSet(signals.taskChips.nextTemplates$);
+  const stepPage = useSet(signals.taskChips.stepTemplatePage$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
-  const pageCount = Math.ceil(group.previews.length / TEMPLATES_PER_PAGE);
+  const pageCount = Math.max(
+    Math.ceil(group.previews.length / TEMPLATES_PER_PAGE),
+    1,
+  );
   // Named one key at a time: the extractor only keeps keys it can see.
   const labels = {
     image: t(($) => {
@@ -248,10 +348,24 @@ function ComposerTemplateShelf({
     }),
   };
   const label = labels[task];
-  const pagePreviews = group.previews.slice(
-    page * TEMPLATES_PER_PAGE,
-    (page + 1) * TEMPLATES_PER_PAGE,
-  );
+  const pages = Array.from({ length: pageCount }, (_, index) => {
+    return group.previews
+      .slice(index * TEMPLATES_PER_PAGE, (index + 1) * TEMPLATES_PER_PAGE)
+      .map((preview) => {
+        return (
+          <ComposerTemplateCover
+            key={preview.slug}
+            preview={preview}
+            width={width}
+            ratio={ratio}
+            onSelect={() => {
+              insertTemplate(preview.template, preview.attachment);
+              detach(saveDraft(pageSignal), Reason.DomCallback);
+            }}
+          />
+        );
+      });
+  });
   return (
     <div
       className="flex min-w-0 flex-col gap-3"
@@ -277,42 +391,16 @@ function ComposerTemplateShelf({
           <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <div className="flex min-w-0 items-center gap-2">
-        <div className={cn(ROW_RAIL, ROW_FADE)}>
-          <div className="flex w-max items-start gap-3">
-            {pagePreviews.map((preview) => {
-              return (
-                <ComposerTemplateCover
-                  key={preview.slug}
-                  preview={preview}
-                  width={width}
-                  ratio={ratio}
-                  onSelect={() => {
-                    insertTemplate(preview.template, preview.attachment);
-                    detach(saveDraft(pageSignal), Reason.DomCallback);
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-        {pageCount > 1 && (
-          <Button
-            type="button"
-            variant="neutral"
-            size="icon"
-            className={ROW_PAGER}
-            aria-label={t(($) => {
-              return $.chat.taskChips.shelf.nextTemplates;
-            })}
-            onClick={() => {
-              nextTemplates(task, pageCount);
-            }}
-          >
-            <ChevronRight className="size-4" aria-hidden />
-          </Button>
-        )}
-      </div>
+      <ComposerPagedRow
+        page={page}
+        pageCount={pageCount}
+        gap="gap-3"
+        onStep={(step) => {
+          stepPage(task, step, pageCount);
+        }}
+      >
+        {pages}
+      </ComposerPagedRow>
     </div>
   );
 }
@@ -343,64 +431,53 @@ function ComposerTaskIdeas({
     }),
   }[task];
   const page = useGet(signals.taskChips.ideaPages$)[task];
-  const nextIdeas = useSet(signals.taskChips.nextIdeas$);
+  const stepPage = useSet(signals.taskChips.stepIdeaPage$);
   const insertPrompt = useSet(signals.editor.selectOrAppendText$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
   const icons = IDEA_ICONS[task];
-  const pageIdeas = Array.from({ length: IDEAS_PER_PAGE }, (_, index) => {
-    return ideas[(page * IDEAS_PER_PAGE + index) % ideas.length]!;
+  const pageCount = Math.max(Math.ceil(ideas.length / IDEAS_PER_PAGE), 1);
+  const pages = Array.from({ length: pageCount }, (_, pageIndex) => {
+    return ideas
+      .slice(pageIndex * IDEAS_PER_PAGE, (pageIndex + 1) * IDEAS_PER_PAGE)
+      .map((idea, index) => {
+        const Icon =
+          icons[(pageIndex * IDEAS_PER_PAGE + index) % icons.length]!;
+        return (
+          <Button
+            key={idea.label}
+            type="button"
+            variant="neutral"
+            className="shrink-0"
+            onClick={() => {
+              insertPrompt(idea.prompt);
+              detach(saveDraft(pageSignal), Reason.DomCallback);
+            }}
+          >
+            <Icon
+              size={16}
+              className="shrink-0 text-muted-foreground"
+              aria-hidden
+            />
+            {idea.label}
+          </Button>
+        );
+      });
   });
   return (
-    <div
-      className="flex min-w-0 items-center gap-2"
-      role="group"
-      aria-label={t(($) => {
+    <ComposerPagedRow
+      label={t(($) => {
         return $.chat.taskChips.ideasLabel;
       })}
+      page={page}
+      pageCount={pageCount}
+      gap="gap-2"
+      onStep={(step) => {
+        stepPage(task, step, pageCount);
+      }}
     >
-      <div className={cn(ROW_RAIL, ROW_FADE)}>
-        <div className="flex w-max items-center gap-2">
-          {pageIdeas.map((idea, index) => {
-            const ideaIndex = (page * IDEAS_PER_PAGE + index) % ideas.length;
-            const Icon = icons[ideaIndex % icons.length]!;
-            return (
-              <Button
-                key={idea.label}
-                type="button"
-                variant="neutral"
-                className="shrink-0"
-                onClick={() => {
-                  insertPrompt(idea.prompt);
-                  detach(saveDraft(pageSignal), Reason.DomCallback);
-                }}
-              >
-                <Icon
-                  size={16}
-                  className="shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-                {idea.label}
-              </Button>
-            );
-          })}
-        </div>
-      </div>
-      <Button
-        type="button"
-        variant="neutral"
-        size="icon"
-        className={ROW_PAGER}
-        aria-label={t(($) => {
-          return $.chat.taskChips.moreIdeas;
-        })}
-        onClick={() => {
-          nextIdeas(task, Math.ceil(ideas.length / IDEAS_PER_PAGE));
-        }}
-      >
-        <ChevronRight className="size-4" aria-hidden />
-      </Button>
-    </div>
+      {pages}
+    </ComposerPagedRow>
   );
 }
 

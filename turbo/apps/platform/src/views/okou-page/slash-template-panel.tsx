@@ -10,7 +10,6 @@ import {
   Presentation,
   Route,
   Video,
-  Workflow,
 } from "lucide-react";
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -35,7 +34,7 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
   illustration: Image,
   video: Video,
   website: Globe,
-  workflow: Workflow,
+  workflow: Route,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
 
 interface SlashTemplatePanelProps {

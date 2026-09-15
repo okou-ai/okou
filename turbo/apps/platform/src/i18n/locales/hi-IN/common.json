@@ -2384,7 +2384,8 @@
         "browseStyles": "सभी शैलियाँ देखें",
         "browseTemplates": "सभी टेम्पलेट देखें",
         "image": "चित्र शैलियाँ",
-        "nextTemplates": "अगले टेम्पलेट",
+        "nextPage": "अगला पृष्ठ",
+        "previousPage": "पिछला पृष्ठ",
         "video": "वीडियो टेम्पलेट",
         "website": "वेबसाइट टेम्पलेट"
       },

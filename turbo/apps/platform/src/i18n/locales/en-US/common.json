@@ -2384,7 +2384,8 @@
         "browseStyles": "Browse all styles",
         "browseTemplates": "Browse all templates",
         "image": "Image styles",
-        "nextTemplates": "Next templates",
+        "nextPage": "Next page",
+        "previousPage": "Previous page",
         "video": "Video templates",
         "website": "Website templates"
       },

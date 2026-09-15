@@ -2430,7 +2430,8 @@
         "browseStyles": "Ver todos os estilos",
         "browseTemplates": "Ver todos os modelos",
         "image": "Estilos de imagem",
-        "nextTemplates": "Próximos modelos",
+        "nextPage": "Próxima página",
+        "previousPage": "Página anterior",
         "video": "Modelos de vídeo",
         "website": "Modelos de site"
       },

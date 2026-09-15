@@ -2375,7 +2375,8 @@
         "browseStyles": "すべてのスタイルを見る",
         "browseTemplates": "すべてのテンプレートを見る",
         "image": "画像スタイル",
-        "nextTemplates": "次のテンプレート",
+        "nextPage": "次のページ",
+        "previousPage": "前のページ",
         "video": "動画テンプレート",
         "website": "ウェブサイトテンプレート"
       },

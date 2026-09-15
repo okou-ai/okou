@@ -2375,7 +2375,8 @@
         "browseStyles": "Jelajahi semua gaya",
         "browseTemplates": "Jelajahi semua templat",
         "image": "Gaya gambar",
-        "nextTemplates": "Templat berikutnya",
+        "nextPage": "Halaman berikutnya",
+        "previousPage": "Halaman sebelumnya",
         "video": "Templat video",
         "website": "Templat situs web"
       },

@@ -2384,7 +2384,8 @@
         "browseStyles": "Alle Stile durchsuchen",
         "browseTemplates": "Alle Vorlagen durchsuchen",
         "image": "Bildstile",
-        "nextTemplates": "Weitere Vorlagen anzeigen",
+        "nextPage": "Nächste Seite",
+        "previousPage": "Vorherige Seite",
         "video": "Videovorlagen",
         "website": "Website-Vorlagen"
       },
