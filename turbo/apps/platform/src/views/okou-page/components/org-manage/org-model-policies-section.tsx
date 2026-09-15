@@ -1224,6 +1224,7 @@ function ProviderRouteChoices({
   oauthTypes,
   gatewayCount,
   supportByok,
+  subscriptionChoicesAllowed,
   onChoose,
 }: {
   routeKind: ModelPolicyRouteKind;
@@ -1231,6 +1232,7 @@ function ProviderRouteChoices({
   oauthTypes: ModelProviderType[];
   gatewayCount: number;
   supportByok: boolean;
+  subscriptionChoicesAllowed: boolean;
   onChoose: (routeKind: ModelPolicyRouteKind) => void;
 }) {
   const { t } = useTranslation();
@@ -1292,6 +1294,7 @@ function ProviderRouteChoices({
         {oauthTypes.length > 0 && (
           <RouteChoiceButton
             active={routeKind === "oauth"}
+            disabled={!subscriptionChoicesAllowed}
             pro={!supportByok}
             title={
               oauthRouteKind === "codex"
@@ -1382,6 +1385,19 @@ function ProviderRouteConfiguration({
   return null;
 }
 
+function visibleSubscriptionProviderTypes({
+  types,
+  routeKind,
+  allowNewChoices,
+}: {
+  types: ModelProviderType[];
+  routeKind: ModelPolicyRouteKind;
+  allowNewChoices: boolean;
+}): ModelProviderType[] {
+  // Keep the saved subscription visible even when new org routes are API-only.
+  return allowNewChoices || routeKind === "oauth" ? types : [];
+}
+
 function ModelPolicyRouteDialog({
   policies,
   addableModels,
@@ -1402,6 +1418,9 @@ function ModelPolicyRouteDialog({
   onSubmit: (next: UpdateOrgModelPolicy[]) => void;
 }) {
   const { t } = useTranslation();
+  const policySnapshot = useLastResolved(orgModelPolicies$);
+  const subscriptionChoicesAllowed =
+    policySnapshot?.writePreconditionRequired !== true;
   const dialog = useGet(modelPolicyDialogState$);
   const close = useSet(closeModelPolicyDialog$);
   const completeClose = useSet(completeModelPolicyDialogClose$);
@@ -1621,7 +1640,12 @@ function ModelPolicyRouteDialog({
           <ProviderRouteChoices
             routeKind={dialog.routeKind}
             apiTypes={apiTypes}
-            oauthTypes={oauthTypes}
+            oauthTypes={visibleSubscriptionProviderTypes({
+              types: oauthTypes,
+              routeKind: dialog.routeKind,
+              allowNewChoices: subscriptionChoicesAllowed,
+            })}
+            subscriptionChoicesAllowed={subscriptionChoicesAllowed}
             gatewayCount={gatewayOptions.length}
             supportByok={modelCapabilities.supportByok}
             onChoose={chooseRoute}
@@ -1779,7 +1803,10 @@ export function OrgModelPoliciesSection() {
     detach(
       (async () => {
         await updatePolicies(
-          { policies: filterPolicyUpdatesForPlan(next, modelCapabilities) },
+          {
+            policies: filterPolicyUpdatesForPlan(next, modelCapabilities),
+            revision: data.revision,
+          },
           pageSignal,
         );
         pageSignal.throwIfAborted();

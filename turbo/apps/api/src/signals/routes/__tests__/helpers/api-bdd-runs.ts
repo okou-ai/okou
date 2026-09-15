@@ -1025,10 +1025,16 @@ export function createRunsApi(
       actor: ApiTestUser,
       policies: OrgModelPolicyRequest["policies"],
     ): Promise<void> {
+      const snapshot = await accept(
+        runApp(context)(modelPoliciesMainContract).list({
+          headers: authenticate(context, actor),
+        }),
+        [200],
+      );
       await accept(
         runApp(context)(modelPoliciesMainContract).update({
           headers: authenticate(context, actor),
-          body: { policies },
+          body: { policies, revision: snapshot.body.revision },
         }),
         [200],
       );
@@ -1059,10 +1065,16 @@ export function createRunsApi(
         },
       ];
 
+      const snapshot = await accept(
+        runApp(context)(modelPoliciesMainContract).list({
+          headers: authenticate(context, actor),
+        }),
+        [200],
+      );
       await accept(
         runApp(context)(modelPoliciesMainContract).update({
           headers: authenticate(context, actor),
-          body: { policies },
+          body: { policies, revision: snapshot.body.revision },
         }),
         [200],
       );

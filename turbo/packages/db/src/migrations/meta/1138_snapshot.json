@@ -1,5 +1,5 @@
 {
-  "id": "9668b1a6-dea5-48a5-a825-625b536aa3b6",
+  "id": "ba11033b-3ddb-4f68-b6fb-71edcc68ea4b",
   "prevId": "73cfea9f-5c81-40e9-991c-68291583ae11",
   "version": "7",
   "dialect": "postgresql",
@@ -2390,6 +2390,12 @@
         "model_provider_id": {
           "name": "model_provider_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model_provider_account_identity": {
+          "name": "model_provider_account_identity",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },
@@ -30995,12 +31001,6 @@
         "stripe_pending_update_expires_at": {
           "name": "stripe_pending_update_expires_at",
           "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deferred_schedule": {
-          "name": "deferred_schedule",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

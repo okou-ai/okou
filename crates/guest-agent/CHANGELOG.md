@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.90.3](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.2...guest-agent-v0.90.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **pi:** preserve codex rate-limit diagnostics ([#34266](https://github.com/vm0-ai/vm0/issues/34266)) ([48cb88f](https://github.com/vm0-ai/vm0/commit/48cb88fe5c6a70dd6519565211de55b710fee3af))
+
+
+### Refactoring
+
+* retire the pi langfuse credential bootstrap ([#34326](https://github.com/vm0-ai/vm0/issues/34326)) ([7d93840](https://github.com/vm0-ai/vm0/commit/7d93840dba64065a157662079527495623adb676))
+
 ## [0.90.2](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.1...guest-agent-v0.90.2) (2026-09-15)
 
 ## [0.90.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.0...guest-agent-v0.90.1) (2026-09-14)

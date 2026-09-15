@@ -1,4 +1,5 @@
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
+import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -8738,6 +8739,7 @@ async function validateCapturedSubscriptionAccount(
         "The selected subscription account was disconnected. Reconnect it before starting another run.",
       );
     }
+    return { identity: personalSubscriptionAccountIdentity(account) };
   }
   return undefined;
 }
@@ -8779,6 +8781,7 @@ async function commitPreparedLaunchUnderLock(
   ) {
     return conflict("Run admission is unavailable");
   }
+  let capturedIdentity: string | null = null;
   if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
     if (args.createArgs.piMemoryPhase2Maintenance) {
       const validate = args.createArgs.validatePiMemoryPhase2Admission;
@@ -8792,16 +8795,31 @@ async function commitPreparedLaunchUnderLock(
       args,
       threadSessionValidation,
     );
-    if (failure) {
+    if (failure && "identity" in failure) {
+      capturedIdentity = failure.identity;
+    } else if (failure) {
       return failure;
     }
   }
-  return await commitValidatedPreparedLaunch(
+  const result = await commitValidatedPreparedLaunch(
     tx,
     args,
     payload,
     threadSessionValidation,
   );
+  if (
+    capturedIdentity &&
+    "kind" in result &&
+    (result.kind === "pending" || result.kind === "queued")
+  ) {
+    // The new run and its validated account are still owned by this admission
+    // transaction. Historical and preparation-failure rows remain unknown.
+    await tx
+      .update(agentRuns)
+      .set({ modelProviderAccountIdentity: capturedIdentity })
+      .where(eq(agentRuns.id, result.run.id));
+  }
+  return result;
 }
 
 async function commitValidatedPreparedLaunch(

@@ -299,22 +299,43 @@ describe("Intro Video HeyGen presenter route", () => {
     });
   });
 
-  it("lists only public HeyGen Starfish voices for the wizard", async () => {
+  it("lists only public HeyGen Starfish voices a user can audition", async () => {
     const fixture = await seedFixture();
     await enableIntroVideo(fixture);
-    let voiceRequests = 0;
+    const requestedTokens: (string | null)[] = [];
     server.use(
       http.get(HEYGEN_VOICES_URL, ({ request }) => {
-        voiceRequests += 1;
         const url = new URL(request.url);
         expect(request.headers.get("x-api-key")).toBe("test-heygen-key");
+        requestedTokens.push(url.searchParams.get("token"));
         expect(Object.fromEntries(url.searchParams)).toStrictEqual({
           type: "public",
           engine: "starfish",
-          limit: "24",
+          // Scanning past the provider's sample-less ranking uses its widest page.
+          limit: "100",
           language: "English",
           gender: "female",
+          ...(url.searchParams.has("token")
+            ? { token: "silent-voice-page" }
+            : {}),
         });
+        // HeyGen ranks its newest voices first and none of them carry a sample,
+        // so the first provider page holds nothing the wizard can offer.
+        if (!url.searchParams.has("token")) {
+          return HttpResponse.json({
+            data: [
+              {
+                voice_id: "00e3d285aba44b27a83c47c02c9c2d9c",
+                name: "Orson - Firm & Measured",
+                language: "English",
+                gender: "female",
+                type: "public",
+              },
+            ],
+            has_more: true,
+            next_token: "silent-voice-page",
+          });
+        }
         return HttpResponse.json({
           data: [
             {
@@ -323,6 +344,13 @@ describe("Intro Video HeyGen presenter route", () => {
               language: "English",
               gender: "female",
               preview_audio_url: "https://files.heygen.test/annie.wav",
+              type: "public",
+            },
+            {
+              voice_id: "02052ba42f3d4d50a809b964bb8b1b94",
+              name: "Davor - Firm & Measured",
+              language: "English",
+              gender: "female",
               type: "public",
             },
           ],
@@ -335,7 +363,7 @@ describe("Intro Video HeyGen presenter route", () => {
     const response = await createIntroVideoPresenterTestApp(
       fixture.usagePricingResolution,
     ).request(
-      "/api/intro-video/voices?pageSize=24&language=English&gender=female",
+      "/api/intro-video/voices?pageSize=1&language=English&gender=female",
       { headers: authHeaders() },
     );
 
@@ -353,7 +381,7 @@ describe("Intro Video HeyGen presenter route", () => {
       hasMore: true,
       nextToken: "next-voice-page",
     });
-    expect(voiceRequests).toBe(1);
+    expect(requestedTokens).toStrictEqual([null, "silent-voice-page"]);
 
     server.use(
       http.get(HEYGEN_VOICES_URL, () => {
@@ -378,7 +406,7 @@ describe("Intro Video HeyGen presenter route", () => {
     });
   });
 
-  it("lists public HeyGen styles and Avatar III looks for the simple form", async () => {
+  it("lists public HeyGen styles and auditionable Avatar III looks", async () => {
     const fixture = await seedFixture();
     await enableIntroVideo(fixture);
     server.use(
@@ -445,10 +473,58 @@ describe("Intro Video HeyGen presenter route", () => {
               status: "completed",
               supported_api_engines: ["avatar_iii"],
             },
+            {
+              id: "Silent_public_1",
+              group_id: "e0a2c5e5b1f04a4ba6ee2f6e0a1c9d77",
+              name: "Silent in Blue suit",
+              default_voice_id: "5b4d2f1c9e7a4c3b8d6f0a1e2c3b4d5e",
+              avatar_type: "studio_avatar",
+              preview_image_url: "https://files.heygen.test/silent.webp",
+              status: "completed",
+              supported_api_engines: ["avatar_iii"],
+            },
+            {
+              id: "Retired_public_1",
+              group_id: "f1b3d6f6c2e15b5cb7ff3f7f1b2dae88",
+              name: "Retired in Grey suit",
+              default_voice_id: "6c5e3a2d0f8b5d4c9e7a1b2c3d4e5f60",
+              avatar_type: "studio_avatar",
+              preview_image_url: "https://files.heygen.test/retired.webp",
+              status: "completed",
+              supported_api_engines: ["avatar_iii"],
+            },
           ],
           has_more: false,
           next_token: null,
         });
+      }),
+      // A look is offered only when its own voice can be auditioned first.
+      http.get(`${HEYGEN_VOICES_URL}/:voiceId`, ({ params }) => {
+        if (params.voiceId === "812d4eea4a8442a382dcaf2dbaddbd93") {
+          return HttpResponse.json({
+            data: {
+              voice_id: "812d4eea4a8442a382dcaf2dbaddbd93",
+              name: "Daphne - Warm & Friendly",
+              language: "English",
+              gender: "female",
+              preview_audio_url: "https://files.heygen.test/daphne-voice.wav",
+            },
+          });
+        }
+        if (params.voiceId === "5b4d2f1c9e7a4c3b8d6f0a1e2c3b4d5e") {
+          return HttpResponse.json({
+            data: {
+              voice_id: "5b4d2f1c9e7a4c3b8d6f0a1e2c3b4d5e",
+              name: "Orson - Firm & Measured",
+              language: "English",
+              gender: "male",
+            },
+          });
+        }
+        return HttpResponse.json(
+          { error: { message: "voice not found" } },
+          { status: 404 },
+        );
       }),
     );
     mocks.clerk.session(fixture.userId, fixture.orgId);
@@ -488,6 +564,8 @@ describe("Intro Video HeyGen presenter route", () => {
           groupId: "c1926d821b4d43d6a5f07f2985bb5cd1",
           name: "Daphne in Grey blazer",
           defaultVoiceId: "812d4eea4a8442a382dcaf2dbaddbd93",
+          defaultVoiceName: "Daphne - Warm & Friendly",
+          defaultVoiceSampleUrl: "https://files.heygen.test/daphne-voice.wav",
           avatarType: "studio_avatar",
           previewImageUrl: "https://files.heygen.test/daphne.webp",
           previewVideoUrl: "https://files.heygen.test/daphne.mp4",
@@ -535,6 +613,51 @@ describe("Intro Video HeyGen presenter route", () => {
       });
     },
   );
+
+  it("reports a failed default-voice lookup instead of hiding looks", async () => {
+    const fixture = await seedFixture();
+    await enableIntroVideo(fixture);
+    server.use(
+      http.get(HEYGEN_AVATARS_URL, () => {
+        return HttpResponse.json({
+          data: [
+            {
+              id: "Daphne_public_1",
+              group_id: "c1926d821b4d43d6a5f07f2985bb5cd1",
+              name: "Daphne in Grey blazer",
+              default_voice_id: "812d4eea4a8442a382dcaf2dbaddbd93",
+              avatar_type: "studio_avatar",
+              preview_image_url: "https://files.heygen.test/daphne.webp",
+              status: "completed",
+              supported_api_engines: ["avatar_iii"],
+            },
+          ],
+          has_more: false,
+          next_token: null,
+        });
+      }),
+      http.get(`${HEYGEN_VOICES_URL}/:voiceId`, () => {
+        return HttpResponse.json(
+          { error: { message: "voice service down" } },
+          { status: 500 },
+        );
+      }),
+    );
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const result = await accept(
+      introVideoPresenterClient(fixture.usagePricingResolution).avatars({
+        headers: authHeaders(),
+        query: {},
+      }),
+      [503],
+    );
+    expect(result.body).toStrictEqual({
+      error: {
+        code: "HEYGEN_UNAVAILABLE",
+        message: "HeyGen is temporarily unavailable",
+      },
+    });
+  });
 
   it("rejects a dynamically selected avatar that is not public", async () => {
     const fixture = await seedFixture();
