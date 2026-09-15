@@ -8,9 +8,13 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { agentExists } from "../services/agent-data.service";
 import { persistAgentDraft } from "../services/agent-draft-write.service";
+import {
+  brandMotionDraftTemplateIds,
+  canSaveBrandMotionDraft,
+} from "../services/draft-generation-template.service";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -88,6 +92,31 @@ const patchAgentDraftInner$ = command(
     const draftAttachments = bodyResult.data.draftAttachments ?? null;
     const draftUserMessage = bodyResult.data.draftUserMessage;
     const writeDb = set(writeDb$);
+    const templateIds = brandMotionDraftTemplateIds(draftUserMessage);
+    if (templateIds.length > 0) {
+      const [saved] = await writeDb
+        .select({ draftUserMessage: agentDrafts.draftUserMessage })
+        .from(agentDrafts)
+        .where(
+          and(
+            eq(agentDrafts.userId, auth.userId),
+            eq(agentDrafts.orgId, auth.orgId),
+            eq(agentDrafts.agentId, params.id),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      const allowed = await canSaveBrandMotionDraft(writeDb, {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        templateIds,
+        savedDocument: saved?.draftUserMessage ?? null,
+      });
+      signal.throwIfAborted();
+      if (!allowed) {
+        return badRequestMessage("Brand motion is not available");
+      }
+    }
     const updatedAt = nowDate();
     await persistAgentDraft(writeDb, {
       userId: auth.userId,

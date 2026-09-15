@@ -36,6 +36,10 @@ import {
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  BRAND_MOTION_TEMPLATE_ITEMS,
+  isBrandMotionTemplateReady,
+} from "@okouai/core/brand-motion-template-items";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
@@ -64,6 +68,7 @@ import {
   avatarNeckSweaterEnabled$,
   featureSwitch$,
 } from "../external/feature-switch.ts";
+import { observeFeatureSwitchChanges$ } from "../external/feature-switch-state.ts";
 import {
   agentMentionText,
   createAgentMentionAvatarRuntime,
@@ -115,6 +120,13 @@ interface MountedWorkflowNamesSync {
 const mountedWorkflowNamesSyncs$ = state<ReadonlySet<MountedWorkflowNamesSync>>(
   new Set(),
 );
+
+const brandMotionPreviewEnabled$ = computed((get) => {
+  return (
+    get(featureSwitch$)[FeatureSwitchKey.BrandMotion] &&
+    BRAND_MOTION_TEMPLATE_ITEMS.some(isBrandMotionTemplateReady)
+  );
+});
 
 const registerMountedWorkflowNamesSync$ = command(
   ({ get, set }, mountedWorkflowNamesSync: MountedWorkflowNamesSync): void => {
@@ -324,7 +336,8 @@ const INLINE_TEMPLATE_NAME_ZONE_CLASS =
   "transition-colors dark:text-orange-300 " +
   "hover:bg-orange-500/15 focus-visible:outline-none focus-visible:ring-1 " +
   "focus-visible:ring-inset focus-visible:ring-orange-500/40 " +
-  "dark:hover:bg-orange-400/20 dark:focus-visible:ring-orange-300/40";
+  "dark:hover:bg-orange-400/20 dark:focus-visible:ring-orange-300/40 " +
+  "disabled:pointer-events-none disabled:opacity-50";
 
 interface ChatThreadMentionAttributes {
   readonly threadId: string;
@@ -941,6 +954,7 @@ function createTemplateAttachmentNodeView(
   node: ProseMirrorNode,
   openTemplate: (category: string) => void,
   removeTemplate: () => void,
+  templateEnabled: (type: ComposerTemplateAttachmentType) => boolean,
   localizedUi: Set<() => void>,
 ): NodeView {
   const dom = document.createElement("div");
@@ -958,7 +972,8 @@ function createTemplateAttachmentNodeView(
   openButton.className =
     "flex min-w-0 items-center gap-2 rounded-md px-1 py-1 " +
     "transition-colors hover:bg-muted focus-visible:outline-none " +
-    "focus-visible:ring-2 focus-visible:ring-ring";
+    "focus-visible:ring-2 focus-visible:ring-ring " +
+    "disabled:pointer-events-none disabled:opacity-50";
   const iconContainer = document.createElement("span");
   iconContainer.className =
     "flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden " +
@@ -987,6 +1002,7 @@ function createTemplateAttachmentNodeView(
   let currentNode = node;
   function localize(): void {
     const attachment = templateAttachmentNodeAttributes(currentNode);
+    openButton.disabled = !templateEnabled(attachment.type);
     openButton.setAttribute(
       "aria-label",
       templateAttachmentPreviewLabel(attachment),
@@ -1062,6 +1078,7 @@ function createTemplateAttachmentNodeView(
  */
 interface InlineTemplateNodeActions {
   readonly openTemplate: (category: string) => void;
+  readonly templateEnabled: (type: ComposerTemplateAttachmentType) => boolean;
   /** Read per render so a Lab toggle applies to the next mounted composer. */
   readonly coverEnabled: () => boolean;
 }
@@ -1111,6 +1128,7 @@ function createInlineTemplateNodeView(
   let currentNode = node;
   function render(nextNode: ProseMirrorNode): void {
     const attachment = templateAttachmentNodeAttributes(nextNode);
+    openButton.disabled = !actions.templateEnabled(attachment.type);
     title.textContent = attachment.title;
     // The node is rewritten in place when the picker changes the selection, so
     // the cover has to follow the new attributes rather than only the first.
@@ -1581,6 +1599,7 @@ interface WorkflowComposerRuntime {
   localizedUi: Set<() => void>;
   /** Read on every chip render so Lab updates apply without remounting. */
   templateChipCover: () => boolean;
+  templateEnabled: (type: ComposerTemplateAttachmentType) => boolean;
 }
 
 function createTemplateAttachmentNode(
@@ -1619,6 +1638,9 @@ function createTemplateAttachmentNode(
           },
           () => {
             runtime.removeTemplate();
+          },
+          (type) => {
+            return runtime.templateEnabled(type);
           },
           runtime.localizedUi,
         );
@@ -1675,6 +1697,9 @@ function createInlineTemplateNode(
           node,
           {
             openTemplate,
+            templateEnabled: (type) => {
+              return runtime.templateEnabled(type);
+            },
             coverEnabled: () => {
               return runtime.templateChipCover();
             },
@@ -1869,14 +1894,18 @@ function refreshMountedWorkflowEditorLocalization(editor: Editor): void {
   });
 }
 
+function refreshWorkflowComposerUi(runtime: WorkflowComposerRuntime): void {
+  for (const localize of runtime.localizedUi) {
+    localize();
+  }
+}
+
 function refreshWorkflowComposerLocalization(
   editor: Editor,
   runtime: WorkflowComposerRuntime,
 ): void {
   refreshMountedWorkflowEditorLocalization(editor);
-  for (const localize of runtime.localizedUi) {
-    localize();
-  }
+  refreshWorkflowComposerUi(runtime);
   // The feedback chrome widgets carry their language in the decoration key;
   // an empty transaction makes the view re-read decorations in the new one.
   if (editor.isInitialized) {
@@ -1895,6 +1924,9 @@ function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
   runtime.removeFeedback = () => {};
   runtime.templateChipCover = () => {
     return false;
+  };
+  runtime.templateEnabled = (type) => {
+    return type !== "brand-motion";
   };
 }
 
@@ -1985,19 +2017,29 @@ function mountCompositionListeners(
   );
 }
 
-function mountLocalizationListener(
-  editor: Editor,
-  runtime: WorkflowComposerRuntime,
-  signal: AbortSignal,
-): void {
-  const refreshLocalizedUi = () => {
-    refreshWorkflowComposerLocalization(editor, runtime);
-  };
-  i18n.on("languageChanged", refreshLocalizedUi);
-  signal.addEventListener("abort", () => {
-    i18n.off("languageChanged", refreshLocalizedUi);
-  });
-}
+const observeWorkflowComposerUi$ = command(
+  (
+    { set },
+    editor: Editor,
+    runtime: WorkflowComposerRuntime,
+    signal: AbortSignal,
+  ) => {
+    const refreshLocalizedUi = () => {
+      refreshWorkflowComposerLocalization(editor, runtime);
+    };
+    i18n.on("languageChanged", refreshLocalizedUi);
+    signal.addEventListener("abort", () => {
+      i18n.off("languageChanged", refreshLocalizedUi);
+    });
+    set(
+      observeFeatureSwitchChanges$,
+      () => {
+        refreshWorkflowComposerUi(runtime);
+      },
+      signal,
+    );
+  },
+);
 
 interface MountEditorOptions {
   editor: Editor;
@@ -2095,6 +2137,9 @@ function createMountEditorCommand({
       runtime.templateChipCover = () => {
         return get(featureSwitch$)[FeatureSwitchKey.ComposerTemplateChipCover];
       };
+      runtime.templateEnabled = (type) => {
+        return type !== "brand-motion" || get(brandMotionPreviewEnabled$);
+      };
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2154,7 +2199,7 @@ function createMountEditorCommand({
       set(legacyTemplateAttachment.sync$);
       set(templateSelection.sync$);
       editor.mount(element);
-      mountLocalizationListener(editor, runtime, signal);
+      set(observeWorkflowComposerUi$, editor, runtime, signal);
       mountCompositionListeners(editor, compositionGate, signal);
       set(
         draft.setInputSyncTarget$,
@@ -2484,6 +2529,12 @@ function createInsertTemplateCommand(
       request: GenerationTemplateRequest,
       attachment: ComposerTemplateAttachment,
     ) => {
+      if (
+        request.type === "brand-motion" &&
+        !get(featureSwitch$)[FeatureSwitchKey.BrandMotion]
+      ) {
+        return;
+      }
       const node = inlineTemplateNode(editor, request, attachment);
       const replaceLegacy = get(legacyReplacementPending$);
       set(legacyReplacementPending$, false);
@@ -2560,6 +2611,12 @@ function createTemplateCommands(
     createPrepareTemplateInsertionCommand(editor);
   const openTemplatePicker$ = command(
     ({ get, set }, intent: OpenComposerTemplatePickerIntent): void => {
+      if (
+        intent.category === "brand-motion" &&
+        !get(brandMotionPreviewEnabled$)
+      ) {
+        return;
+      }
       set(legacyReplacementPending$, intent.kind === "edit-legacy");
       let referenceValue: GenerationTemplateRequest | null = null;
       if (intent.kind === "edit-selected") {
@@ -2567,6 +2624,12 @@ function createTemplateCommands(
         referenceValue = set(readSelectedTemplate$) ?? null;
       } else if (intent.kind === "edit-legacy") {
         referenceValue = get(draft.generationTemplate$) ?? null;
+      }
+      if (
+        referenceValue?.type === "brand-motion" &&
+        !get(brandMotionPreviewEnabled$)
+      ) {
+        return;
       }
       if (intent.kind === "insert") {
         set(prepareTemplateInsertion$);
@@ -2656,6 +2719,9 @@ function createWorkflowComposerRuntime(): WorkflowComposerRuntime {
     localizedUi: new Set(),
     templateChipCover: () => {
       return false;
+    },
+    templateEnabled: (type) => {
+      return type !== "brand-motion";
     },
   };
 }

@@ -75,6 +75,10 @@ import {
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  brandMotionDraftTemplateIds,
+  canSaveBrandMotionDraft,
+} from "./draft-generation-template.service";
 
 type ChatThreadRow = {
   readonly id: string;
@@ -1006,8 +1010,42 @@ export const updateChatThreadDraft$ = command(
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
     signal: AbortSignal,
-  ): Promise<{ readonly updated: boolean }> => {
+  ): Promise<
+    | { readonly updated: boolean }
+    | { readonly error: "brand-motion-unavailable" }
+  > => {
     const writeDb = set(writeDb$);
+    const templateIds = brandMotionDraftTemplateIds(args.draftUserMessage);
+    if (templateIds.length > 0) {
+      const [saved] = await writeDb
+        .select({
+          orgId: agents.orgId,
+          draftUserMessage: chatThreads.draftUserMessage,
+        })
+        .from(chatThreads)
+        .leftJoin(agents, eq(chatThreads.agentId, agents.id))
+        .where(
+          and(
+            eq(chatThreads.id, args.threadId),
+            eq(chatThreads.userId, args.userId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!saved) {
+        return { updated: false };
+      }
+      const allowed = await canSaveBrandMotionDraft(writeDb, {
+        orgId: saved.orgId,
+        userId: args.userId,
+        templateIds,
+        savedDocument: saved.draftUserMessage,
+      });
+      signal.throwIfAborted();
+      if (!allowed) {
+        return { error: "brand-motion-unavailable" };
+      }
+    }
     const updated = await writeDb
       .update(chatThreads)
       .set({

@@ -2,6 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -168,52 +169,73 @@ test("Protect local edits while a saved draft is loading", async () => {
   expect(document.body).not.toHaveTextContent("older-notes.txt");
 });
 
-test("Restore a brand motion draft and preserve its type when editing the text", async () => {
-  const thread = continuityThread(12, 1, "Brand motion draft");
-  const templatePart = {
-    type: "template",
-    titleSnapshot: "Mask Sweep",
-    template: {
-      type: "brand-motion",
-      selection: { templateId: "brand-motion:brand-mask-sweep-lockup" },
-    },
-  } as const;
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 12,
-    threads: [thread],
-    drafts: new Map([
-      [
-        thread.id,
-        continuityDraft([
-          templatePart,
-          { type: "text", text: "Animate my brand" },
-        ]),
-      ],
-    ]),
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-
-  const composer = await messageComposer();
-  await waitFor(() => {
-    expect(composer).toHaveTextContent("Mask Sweep");
-    expect(composer).toHaveTextContent("Animate my brand");
-  });
-  await userEvent.type(composer, " for launch");
-  await waitFor(() => {
-    const saved = workspace.draftPatches.find((patch) => {
-      return (
-        patch.threadId === thread.id &&
-        draftPlainText(patch.draftUserMessage).includes("for launch")
-      );
+test.each([false, true])(
+  "Restore an unavailable brand motion draft without a picker entry (enabled=%s)",
+  async (enabled) => {
+    const thread = continuityThread(12, 1, "Brand motion draft");
+    const templatePart = {
+      type: "template",
+      titleSnapshot: "Mask Sweep",
+      template: {
+        type: "brand-motion",
+        selection: { templateId: "brand-motion:brand-mask-sweep-lockup" },
+      },
+    } as const;
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 12,
+      threads: [thread],
+      drafts: new Map([
+        [
+          thread.id,
+          continuityDraft([
+            templatePart,
+            { type: "text", text: "Animate my brand" },
+          ]),
+        ],
+      ]),
     });
-    expect(saved?.draftUserMessage?.parts).toContainEqual(templatePart);
-  });
-});
+
+    await setupPage({
+      context,
+      path: `/chats/${thread.id}`,
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.BrandMotion]: enabled },
+    });
+
+    const composer = await messageComposer();
+    await waitFor(() => {
+      expect(composer).toHaveTextContent("Mask Sweep");
+      expect(composer).toHaveTextContent("Animate my brand");
+    });
+    const preview = fastButton("Preview template Mask Sweep");
+    expect(preview).toBeDisabled();
+    // A stale DOM event must also be rejected at the semantic picker action.
+    click(preview);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await userEvent.type(composer, " for launch");
+    await waitFor(() => {
+      const saved = workspace.draftPatches.find((patch) => {
+        return (
+          patch.threadId === thread.id &&
+          draftPlainText(patch.draftUserMessage).includes("for launch")
+        );
+      });
+      expect(saved?.draftUserMessage?.parts).toContainEqual(templatePart);
+    });
+    await fill(composer, "Keep working on the launch");
+    await waitFor(() => {
+      const saved = workspace.draftPatches.find((patch) => {
+        return (
+          draftPlainText(patch.draftUserMessage) ===
+          "Keep working on the launch"
+        );
+      });
+      expect(saved?.draftUserMessage?.parts).toStrictEqual([
+        { type: "text", text: "Keep working on the launch" },
+      ]);
+    });
+  },
+);
 
 test("Restore a rich saved draft when a chat opens", async () => {
   const thread = continuityThread(3, 1, "Rich draft conversation");

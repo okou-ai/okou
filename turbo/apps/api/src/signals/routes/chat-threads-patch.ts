@@ -4,7 +4,7 @@ import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-thr
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { updateChatThreadDraft$ } from "../services/chat-thread.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -33,6 +33,9 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  if ("error" in result) {
+    return badRequestMessage("Brand motion is not available");
+  }
   if (!result.updated) {
     return chatThreadNotFound();
   }
