@@ -45,7 +45,8 @@ interface SlashTemplatePanelProps {
   readonly workflowsLoading: boolean;
   /** Categories precede workflows in the editor's shared suggestion index. */
   readonly selectedIndex: number;
-  readonly previewIndex: number;
+  /** The row the pointer is previewing, or null while the keyboard leads. */
+  readonly previewIndex: number | null;
   readonly onPreview: (index: number | null) => void;
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
@@ -312,14 +313,15 @@ function SlashTemplateDetailPane({
 function SlashPanelWorkflowList({
   workflows,
   loading,
-  selectedIndex,
+  markedIndex,
   onPreview,
   onSelect,
   workflowOptionId,
 }: {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly loading: boolean;
-  readonly selectedIndex: number;
+  /** Relative to this list; negative while no row carries the mark. */
+  readonly markedIndex: number;
   readonly onPreview: (index: number) => void;
   readonly onSelect: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly workflowOptionId: (workflowId: string) => string;
@@ -353,7 +355,7 @@ function SlashPanelWorkflowList({
             type="button"
             className={cn(
               "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
-              selectedIndex === index
+              markedIndex === index
                 ? "bg-state-selected hover:bg-state-selected-hover"
                 : "hover:bg-state-hover",
             )}
@@ -397,7 +399,13 @@ export function SlashTemplatePanel({
   categoryOptionId,
 }: SlashTemplatePanelProps) {
   const { t } = useTranslation();
-  const previewCategory = categories[previewIndex] ?? null;
+  // The pointer owns the index while it is inside the panel, so a row it has
+  // left drops back to its default fill even though the right pane still shows
+  // what that row previewed — the pointer is on its way into those covers, and
+  // a mark left behind would disagree with wherever it lands next. The keyboard
+  // mark comes back once the pointer leaves and the preview follows it again.
+  const markedIndex = previewIndex === null ? selectedIndex : -1;
+  const previewCategory = categories[previewIndex ?? selectedIndex] ?? null;
   // Narrowed here rather than inside the pane, so the pane has no unreachable
   // branch for a category that can never reach it.
   const detailCategory =
@@ -436,7 +444,7 @@ export function SlashTemplatePanel({
                   aria-label={label}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
-                    selectedIndex === index
+                    markedIndex === index
                       ? "bg-state-selected hover:bg-state-selected-hover"
                       : "hover:bg-state-hover",
                   )}
@@ -466,7 +474,7 @@ export function SlashTemplatePanel({
           <SlashPanelWorkflowList
             workflows={workflows}
             loading={workflowsLoading}
-            selectedIndex={selectedIndex - categories.length}
+            markedIndex={markedIndex - categories.length}
             onPreview={(index) => {
               onPreview(categories.length + index);
             }}

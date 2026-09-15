@@ -324,7 +324,7 @@ interface ComposerSuggestionMenuState {
   readonly selectCreate: (mode: ComposerCreateCommand) => void;
   /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
-  readonly previewIndex: number;
+  readonly previewIndex: number | null;
   readonly previewSuggestion: (index: number | null) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (preview: SlashTemplatePreview) => void;

@@ -436,6 +436,53 @@ test("A hovered category's template stays selectable when the pointer enters its
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+test("A category row keeps no mark once the pointer is in its covers", async () => {
+  await openSlashMenu(true);
+  const presentation = slashButton("Presentation");
+  const website = slashButton("Website");
+  expect(presentation).toHaveClass("bg-state-selected");
+
+  // Same boundary events as the test above: the pointer walks a category row
+  // and then crosses into the covers it previewed, without leaving the panel.
+  fireEvent.mouseOver(website);
+  fireEvent.mouseMove(website);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+  const cover = slashButton(first.title);
+  fireEvent.mouseOut(website, { relatedTarget: cover });
+  fireEvent.mouseOver(cover, { relatedTarget: website });
+  fireEvent.mouseMove(cover);
+
+  // Neither the row the pointer left nor the row it started on stays filled,
+  // so the left column never argues with the covers on the right.
+  expect(website).not.toHaveClass("bg-state-selected");
+  expect(presentation).not.toHaveClass("bg-state-selected");
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+});
+
+test("The keyboard selection is marked again once the pointer leaves", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const presentation = slashButton("Presentation");
+  const website = slashButton("Website");
+
+  await user.hover(website);
+  await waitFor(() => {
+    expect(presentation).not.toHaveClass("bg-state-selected");
+  });
+
+  await user.unhover(website);
+  await waitFor(() => {
+    expect(presentation).toHaveClass("bg-state-selected");
+  });
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
+});
+
 test("The panel emphasizes the typed query inside a workflow name", async () => {
   setupModels();
   mockChatLifecycle(context);
