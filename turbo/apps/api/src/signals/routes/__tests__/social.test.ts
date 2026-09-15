@@ -397,7 +397,7 @@ describe("managed SocialKit route", () => {
   });
 
   it.each(["session", "sandbox"] as const)(
-    "preserves Instagram views and legacy reader compatibility for %s callers",
+    "preserves null, omitted, zero and positive Instagram views for %s callers",
     async (tokenType) => {
       const actor = createBddApi(context).user();
       if (!actor.orgId) {
@@ -424,60 +424,51 @@ describe("managed SocialKit route", () => {
             };
       let providerRequests = 0;
 
-      for (const nullable of [false, true]) {
-        for (const views of [null, undefined, 0, 12]) {
-          const availableData = {
-            likes: 4,
-            comments: 2,
-            author: "example",
-            videoUrl: "https://media.example/video.mp4",
-          };
-          server.use(
-            http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
-              providerRequests += 1;
-              expect(
-                new URL(request.url).searchParams.has("requireViews"),
-              ).toBeFalsy();
-              return HttpResponse.json(
-                providerResponse({
-                  ...availableData,
-                  ...(views === undefined ? {} : { views }),
-                }),
-              );
-            }),
-          );
+      for (const views of [null, undefined, 0, 12]) {
+        const availableData = {
+          likes: 4,
+          comments: 2,
+          author: "example",
+          videoUrl: "https://media.example/video.mp4",
+        };
+        server.use(
+          http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+            providerRequests += 1;
+            expect(
+              new URL(request.url).searchParams.has("requireViews"),
+            ).toBeFalsy();
+            return HttpResponse.json(
+              providerResponse({
+                ...availableData,
+                ...(views === undefined ? {} : { views }),
+              }),
+            );
+          }),
+        );
 
-          const response = await accept(
-            client(pricing.resolution)(socialContract).request({
-              headers: {
-                ...headers,
-                ...(nullable
-                  ? { "x-okou-instagram-views": "nullable" as const }
-                  : {}),
-              },
-              body: {
-                tool: "instagram_stats",
-                input: { url: "https://www.instagram.com/reel/example/" },
-              },
-            }),
-            [200],
-          );
+        const response = await accept(
+          client(pricing.resolution)(socialContract).request({
+            headers,
+            body: {
+              tool: "instagram_stats",
+              input: { url: "https://www.instagram.com/reel/example/" },
+            },
+          }),
+          [200],
+        );
 
-          expect(response.body.result).toStrictEqual({
-            ...availableData,
-            ...(views === undefined || (views === null && !nullable)
-              ? {}
-              : { views }),
-          });
-          expect(response.body.provider).toBe(
-            tokenType === "session" ? "socialkit" : undefined,
-          );
-          expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
-        }
+        expect(response.body.result).toStrictEqual({
+          ...availableData,
+          ...(views === undefined ? {} : { views }),
+        });
+        expect(response.body.provider).toBe(
+          tokenType === "session" ? "socialkit" : undefined,
+        );
+        expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
       }
-      expect(providerRequests).toBe(8);
+      expect(providerRequests).toBe(4);
       expect(beforeCredits - (await credits(actor))).toBe(
-        8 * SOCIALKIT_REQUEST_CREDITS,
+        4 * SOCIALKIT_REQUEST_CREDITS,
       );
     },
   );
@@ -500,10 +491,7 @@ describe("managed SocialKit route", () => {
 
       const response = await accept(
         client(pricing.resolution)(socialContract).request({
-          headers: {
-            ...authenticate(actor),
-            "x-okou-instagram-views": "nullable",
-          },
+          headers: authenticate(actor),
           body: {
             tool: "instagram_stats",
             input: {
