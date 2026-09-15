@@ -40,6 +40,7 @@ import { buildInfoRoutes } from "./routes/build-info";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runnersRoutes } from "./routes/runners";
+import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { userExportRoutes } from "./routes/user-export";
 import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
@@ -419,4 +420,5 @@ export const ROUTES: readonly RouteEntry[] = [
   ...usageMembersRoutes,
   ...usageRecordRoutes,
   ...runnersRoutes,
+  ...runnerCancellationRoutes,
 ];

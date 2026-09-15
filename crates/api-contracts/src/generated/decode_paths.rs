@@ -597,6 +597,28 @@ pub mod runners {
                 }
             }
 
+            /// Generated decode-path schemas under `runners::runs::by_run_id::cancellation`.
+            pub mod cancellation {
+                const NODES: &[crate::decode_path::DecodePathNode] = &[
+                    crate::decode_path::DecodePathNode::Object(0, 4),
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Leaf,
+                    crate::decode_path::DecodePathNode::Leaf,
+                ];
+
+                const FIELDS: &[crate::decode_path::DecodePathField] = &[
+                    crate::decode_path::DecodePathField::new("mode", 1),
+                    crate::decode_path::DecodePathField::new("protocolVersion", 2),
+                    crate::decode_path::DecodePathField::new("runId", 3),
+                    crate::decode_path::DecodePathField::new("state", 4),
+                ];
+
+                /// Decode-path schema for Run stop intent and authenticated absence.
+                pub static RESPONSE: crate::DecodePathSchema =
+                    crate::DecodePathSchema::new(NODES, FIELDS);
+            }
+
             /// Generated decode-path schemas under `runners::runs::by_run_id::connector_runtime`.
             pub mod connector_runtime {
                 /// Generated decode-path schemas under `runners::runs::by_run_id::connector_runtime::sync`.

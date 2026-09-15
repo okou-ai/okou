@@ -363,6 +363,7 @@ const redriveTerminalLifecycle$ = command(
           userId: candidate.userId,
           orgId: candidate.orgId,
           runnerCancellationMode: "hard",
+          preserveExistingCancellation: true,
         },
         signal,
       );
@@ -434,6 +435,7 @@ export const cleanupThreadlessRuns$ = command(
                 userId: candidate.userId,
                 orgId: candidate.orgId,
                 runnerCancellationMode: "hard",
+                preserveExistingCancellation: true,
                 protectActivePiMemoryPhase2Maintenance: true,
               },
               signal,

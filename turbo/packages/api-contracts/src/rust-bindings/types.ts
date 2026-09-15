@@ -13,6 +13,7 @@ import {
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   runnersModelProviderFailuresContract,
+  runnerCancellationResponseSchema,
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
@@ -55,6 +56,10 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["runners", "runs", "cancellation"],
+    rustDoc: ["Authenticated Run cancellation reconciliation DTOs."],
+  },
   {
     rustModulePath: ["runners", "ssh"],
     rustDoc: ["Private Runner SSH authority DTOs."],
@@ -128,6 +133,48 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: runnerCancellationResponseSchema,
+    rustModulePath: ["runners", "runs", "cancellation"],
+    rustTypeName: "Response",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: [
+          "Stop intent or authenticated physical absence for an exact Run.",
+        ],
+        fields: {
+          protocolVersion: ["Version of the cancellation response contract."],
+          runId: ["Exact Run authorized by the request's sandbox credential."],
+          mode: [
+            "Explicit committed stop mode; null cannot reconstruct a historical intent.",
+          ],
+        },
+        variants: {
+          present: [
+            "The matching Run exists; only an explicit mode requests cancellation.",
+          ],
+          gone: [
+            "The authenticated Run is physically absent; stop its remaining execution.",
+          ],
+          unavailable: [
+            "The present row does not match the expected owner or claim.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "ResponsePresentMode",
+        rustDoc: [
+          "Effective mode persisted by the API's canonical stop decision.",
+        ],
+        variants: {
+          cooperative: ["Allow bounded cancellation recovery."],
+          hard: ["Stop without waiting for cooperative recovery."],
+        },
+      },
+    ],
+  },
   ...sshTypeBindings,
   ...piNativeTypeBindings,
   {
