@@ -1948,8 +1948,7 @@
           "print": "Druck und Verlagswesen",
           "retro-tech": "Retro-Technik und Oberflächen"
         },
-        "preview": "Vorschau von {{title}}",
-        "previewUnavailable": "Für diesen Stil ist keine Videovorschau verfügbar."
+        "preview": "Vorschau von {{title}}"
       },
       "voice": {
         "auto": "Okou wählen lassen",

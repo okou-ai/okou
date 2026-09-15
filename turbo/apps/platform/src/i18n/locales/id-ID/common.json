@@ -1940,8 +1940,7 @@
           "print": "Percetakan dan penerbitan",
           "retro-tech": "Teknologi retro dan antarmuka"
         },
-        "preview": "Pratinjau {{title}}",
-        "previewUnavailable": "Pratinjau video tidak tersedia untuk gaya ini."
+        "preview": "Pratinjau {{title}}"
       },
       "voice": {
         "auto": "Biarkan Okou memilih",
