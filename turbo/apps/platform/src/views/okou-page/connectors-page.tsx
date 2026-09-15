@@ -836,7 +836,10 @@ function ConnectorsDirectoryToolbar({
     // top padding and column gap so nothing moves until the page is scrolled,
     // and the strip under the controls dissolves what passes beneath them
     // rather than clipping it on a line.
-    <div className="sticky top-0 z-20 -mb-6 -mt-3">
+    // z-30 clears the cards: their access buttons carry `relative z-20` in the
+    // same stacking context, and on a tie the later element in the document
+    // wins, so a z-20 bar would have the card's button painted over it.
+    <div className="sticky top-0 z-30 -mb-6 -mt-3">
       <div className="flex flex-col gap-3 bg-background pt-3">
         <div className="flex items-center">
           <ConnectorsScopeSegment
