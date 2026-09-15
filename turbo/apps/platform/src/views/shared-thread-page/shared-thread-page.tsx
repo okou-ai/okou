@@ -5,7 +5,7 @@ import type {
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { Button, Card, CardContent, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { useLoadable, useSet } from "ccstate-react";
+import { useLoadable } from "ccstate-react";
 import type { Root } from "hast";
 import { Copy, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -278,18 +278,9 @@ function SharedRichMessageBody({
   readonly richContent: SharedThreadRichContentSignals;
 }) {
   const trees = useLoadable(richContent.trees$);
-  const retry = useSet(richContent.retry$);
   const tree =
     trees.state === "hasData" ? trees.data.get(messageIndex) : undefined;
-  const onRetry = trees.state === "hasError" ? retry : undefined;
-  return (
-    <MarkdownEventBody
-      chatBubble
-      tree={tree}
-      mediaPreview="link"
-      onRetry={onRetry}
-    />
-  );
+  return <MarkdownEventBody chatBubble tree={tree} mediaPreview="link" />;
 }
 
 function SharedThreadHandoff({

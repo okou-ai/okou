@@ -257,6 +257,7 @@ test("Leaving the page releases the active Mermaid artifact split view blob", as
 });
 
 test("Completed Mermaid diagrams remain accessible and inspectable", async () => {
+  const browser = context.mocks.browser.blobDownload();
   const chat = createMarkdownChatFixture(context);
   const renderGate = context.mocks.deferred<void>();
   const renderDiagram = mermaid.render.bind(mermaid);
@@ -326,6 +327,17 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
       }),
     ).toBeTruthy();
   });
+  const urls = screen.getAllByRole("img", { name: "Diagram" }).map((image) => {
+    return image.getAttribute("src");
+  });
+  expect(new Set(urls).size).toBe(2);
+  for (const url of urls) {
+    if (!url) {
+      throw new Error("Expected an independently owned diagram image URL");
+    }
+    expect(browser.blobForUrl(url)?.type).toBe("image/svg+xml");
+    expect(browser.revokedUrls).not.toContain(url);
+  }
 });
 
 test("A streaming Mermaid diagram stays readable until complete", async () => {

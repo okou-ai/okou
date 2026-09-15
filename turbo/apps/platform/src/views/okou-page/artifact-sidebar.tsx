@@ -39,7 +39,6 @@ import { MarkdownEventBody } from "../components/markdown.tsx";
 import { jsonParseOr } from "../../signals/utils.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
-import { retryRichMarkdown$ } from "../../signals/rich-markdown-retry.ts";
 import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -819,24 +818,10 @@ function ArtifactSpinner() {
   );
 }
 
-function ArtifactBodyError({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry?: () => void;
-}): ReactNode {
-  const { t } = useTranslation();
+function ArtifactBodyError({ message }: { message: string }): ReactNode {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
       <span>{message}</span>
-      {onRetry !== undefined && (
-        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-          {t(($) => {
-            return $.chat.errors.recovery.tryAgain;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -905,7 +890,6 @@ function ArtifactMarkdownBody({
   tree$: MarkdownPreviewTreeComputed;
 }) {
   const { t } = useTranslation();
-  const retry = useSet(retryRichMarkdown$);
   const loadable = useLoadable(tree$);
   if (loadable.state === "loading") {
     return (
@@ -931,7 +915,6 @@ function ArtifactMarkdownBody({
                 }),
               },
             )}
-            onRetry={retry}
           />
         </ArtifactStageCard>
       </ArtifactStageShell>
