@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artifactUrlSchema } from "./artifact-references";
 
 import {
   findManagedSocialKitTool,
@@ -213,7 +214,7 @@ const socialKitDownloadProviderResultSchema = z.object({
 
 const socialKitDownloadArtifactSchema = z.object({
   id: z.string().uuid(),
-  url: z.url(),
+  url: artifactUrlSchema,
   filename: z.string().min(1),
   contentType: z.string().min(1),
   sizeBytes: z.number().int().positive(),

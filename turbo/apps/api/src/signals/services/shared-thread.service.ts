@@ -482,16 +482,20 @@ export const createSharedThread$ = command(
       privateArtifactCreationEnabled(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-    const preparation = enabled
-      ? await settle(
-          set(
-            prepareSharedThreadArtifacts$,
-            { ...args, threadId: id, messages },
+    const preparation =
+      enabled ||
+      [...attachmentCopies.values()].some((copy) => {
+        return copy.isPrivate;
+      })
+        ? await settle(
+            set(
+              prepareSharedThreadArtifacts$,
+              { ...args, threadId: id, messages },
+              signal,
+            ),
             signal,
-          ),
-          signal,
-        )
-      : { ok: true as const, value: null };
+          )
+        : { ok: true as const, value: null };
     if (!preparation.ok) {
       if (preparation.error instanceof SharedThreadArtifactUnavailable) {
         return { kind: "artifact-unavailable" };

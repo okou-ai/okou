@@ -21,7 +21,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { copyPublicArtifactObject$ } from "../../external/s3";
+import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
 import {
@@ -50,6 +50,12 @@ const api = () => {
 
 async function fixture(privateFiles = false) {
   const actor = bdd.user();
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [{ publicUserData: { userId: actor.userId } }],
+      totalCount: 1,
+    },
+  );
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -77,7 +83,6 @@ async function fixture(privateFiles = false) {
           filename,
           contentType,
           size: Buffer.byteLength(bytes),
-          purpose: "artifact",
         },
       }),
       [200],
@@ -255,42 +260,59 @@ test("serves shares written by the previous API after the migration", async () =
   ]);
 });
 
-// Provider-boundary coverage: normal chat sending currently resolves public
-// inputs only. Exercise the private-to-public adapter using a real private
-// upload, without fabricating a chat event the send endpoint cannot create.
-test("copies private bytes with separate credentials while retaining source privacy", async () => {
+test("sends private attachments and shares independent private snapshots after rollout is disabled", async () => {
   const f = await fixture(true);
   const file = await f.upload(
     "private.pdf",
     "application/pdf",
     "private bytes",
   );
-  const sourcePath = new URL(file.uploadUrl).pathname.slice(1);
-  const separator = sourcePath.indexOf("/");
-  const key = `artifacts/shared-threads/${randomUUID()}/private.pdf`;
-  await createStore().set(
-    copyPublicArtifactObject$,
-    {
-      sourceBucket: sourcePath.slice(0, separator),
-      sourceKey: sourcePath.slice(separator + 1),
-      key,
-      filename: "private.pdf",
-      contentType: "application/pdf",
-      size: Buffer.byteLength("private bytes"),
-      publicBrand: "okou",
-    },
-    context.signal,
+  await accept(
+    api()(featureSwitchesContract).update({
+      headers,
+      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: false } },
+    }),
+    [200],
   );
-  const response = await fetch(
-    `https://a.okou.io/${key.slice("artifacts/".length)}`,
+  const message = await f.send([file.part, file.part]);
+  const created = await accept(f.share(message), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
   );
-  expect(response.status).toBe(200);
-  await expect(response.text()).resolves.toBe("private bytes");
+  const attachments = shared.body.messages[0]?.attachments;
+  expect(attachments).toHaveLength(2);
+  const url = attachments?.[0]?.url;
+  if (!url) {
+    throw new Error("Expected shared private attachment");
+  }
+  expect(attachments?.[1]?.url).toBe(url);
+  expect(url).toMatch(/^https:\/\/a\.okou\.io\/[a-f0-9]{24}\.pdf$/u);
+  await expect((await fetch(url)).text()).resolves.toBe("private bytes");
+  const copies = context.mocks.s3.send.mock.calls
+    .map(([command]) => {
+      return command;
+    })
+    .filter((command) => {
+      return command instanceof CopyObjectCommand;
+    });
+  expect(copies).toHaveLength(1);
+  expect(copies[0]?.input).toMatchObject({ Bucket: "test-private-artifacts" });
+  expect(
+    context.mocks.s3.send.mock.calls.some(([command]) => {
+      return (
+        command instanceof PutObjectCommand &&
+        command.input.Bucket === "test-user-artifacts"
+      );
+    }),
+  ).toBeFalsy();
   const source = await accept(
     api()(webFilesContract).fileUrl({ headers, query: { file_id: file.id } }),
     [200],
   );
   expect(source.body.publicUrl).toBeNull();
+  f.storage.removeUpload(file.uploadUrl);
+  await expect((await fetch(url)).text()).resolves.toBe("private bytes");
 });
 
 test("shares attachment-only prompts and reuses a copy for repeated references", async () => {
@@ -309,46 +331,53 @@ test("shares attachment-only prompts and reuses a copy for repeated references",
   expect(attachments?.[0]?.url).toBe(attachments?.[1]?.url);
 });
 
-test("publishes the annotated image without exposing its original", async () => {
-  const f = await fixture();
-  const original = await f.upload("screen.png", "image/png", "original image");
-  const annotated = await f.upload(
-    "screen.annotated.png",
-    "image/png",
-    "annotated image",
-  );
-  const message = await f.send([
-    {
-      ...original.part,
-      annotatedFileId: annotated.id,
-      annotations: {
-        marks: [
-          {
-            id: "redaction",
-            shape: "redact",
-            rect: { x: 0, y: 0, width: 0.5, height: 0.5 },
-          },
-        ],
+test.each([false, true])(
+  "publishes the annotated image without exposing its original (private=%s)",
+  async (privateFiles) => {
+    const f = await fixture(privateFiles);
+    const original = await f.upload(
+      "screen.png",
+      "image/png",
+      "original image",
+    );
+    const annotated = await f.upload(
+      "screen.annotated.png",
+      "image/png",
+      "annotated image",
+    );
+    const message = await f.send([
+      {
+        ...original.part,
+        annotatedFileId: annotated.id,
+        annotations: {
+          marks: [
+            {
+              id: "redaction",
+              shape: "redact",
+              rect: { x: 0, y: 0, width: 0.5, height: 0.5 },
+            },
+          ],
+        },
       },
-    },
-  ]);
-  const created = await accept(f.share(message), [201]);
-  const shared = await accept(
-    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-    [200],
-  );
-  const attachments = shared.body.messages[0]?.attachments;
-  expect(attachments).toHaveLength(1);
-  const attachment = attachments?.[0];
-  if (!attachment) {
-    throw new Error("Expected annotated attachment");
-  }
-  expect(attachment.filename).toBe("screen.annotated.png");
-  await expect((await fetch(attachment.url)).text()).resolves.toBe(
-    "annotated image",
-  );
-  expect(JSON.stringify(shared.body)).not.toContain(original.id);
-});
+    ]);
+    const created = await accept(f.share(message), [201]);
+    const shared = await accept(
+      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+      [200],
+    );
+    const attachments = shared.body.messages[0]?.attachments;
+    expect(attachments).toHaveLength(1);
+    const attachment = attachments?.[0];
+    if (!attachment) {
+      throw new Error("Expected annotated attachment");
+    }
+    expect(attachment.filename).toBe("screen.annotated.png");
+    await expect((await fetch(attachment.url)).text()).resolves.toBe(
+      "annotated image",
+    );
+    expect(JSON.stringify(shared.body)).not.toContain(original.id);
+  },
+);
 
 test("requires file read capability when sharing prompt attachments", async () => {
   const f = await fixture();

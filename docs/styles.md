@@ -93,6 +93,40 @@ removed to avoid duplicate hints. The shared tooltip supports disabled triggers
 and preserves full-width tile layout. Visible labels and essential explanations
 remain available without hovering.
 
+### The composer card surface
+
+`Card` from `@okouai/ui` takes `surface="composer"` for the composer card and the
+two surfaces that sit in its place: the service-status notice and the shared
+thread's claim prompt. The variant carries the fill, radius, border, shadow, the
+focus border transition and the `after` veil layer; callers keep layout,
+stacking and container context, which is why the composer still spells
+`@container/composer z-10` itself. The `okou-composer` selector and its
+consumers have been removed.
+
+It is a `cva` variant on the component rather than an exported class string,
+because a class constant is not a component API: a caller can reorder it against
+its own utilities, and nothing types which surfaces may take it. `surface`
+defaults to `default`, so every existing `Card` is unchanged. The variant reads
+the App's `--okou-card-shadow` and `--okou-composer-focus-veil` from the shared
+package, the way `DialogContent` already reads `--okou-viewport-height`.
+
+The two borrowed surfaces did change, on purpose. They had been pinned to an
+earlier spelling of the composer that the composer itself no longer used, so
+draining the selector meant choosing which one they follow. At rest their border
+moves one step — lighter in Light, darker in Dark — and the measured difference
+stays under 17/255 on a one-device-pixel line, because the retired `0.7px` and
+the shared hairline both round to the same single device pixel at every scale
+factor tested. On focus in Light the retired rule also drew a second ring
+outside the card at `--gray-500`; the shared surface paints focus on the border
+the card already has, for the reason the guide gives above. Dark focus keeps the
+muted amber either way.
+
+`--okou-composer-ring` and `--okou-composer-radius` are removed with the rule.
+The ring had no consumer left once the extra layer was gone, and the radius is
+`rounded-3xl`, which is the same 1.5rem. `--okou-composer-focus-veil` stays: the
+shared surface still reads it, and it remains a `:root` runtime theme value for
+the reason recorded above.
+
 ### Page surfaces
 
 `surfaceVariants` from `@okouai/ui` owns the shared page-surface treatment. Use it on the existing native element, or pass its classes to `Card`; it does not add a wrapper or change button, form, link, scroll, or overflow semantics. Its `className` option composes layout utilities. `radius` is `standard` by default or `compact`; `interactive` opts a whole surface into the pointer hover overlay and defaults to `false`. A surface containing separate interactive children can keep the default treatment.
@@ -1078,12 +1112,31 @@ the separate removal of the chat thinking spinner switch, which deleted the
 loader, its colour state and its keyframes outright; the rotating mark is now
 the only thinking indicator, so these states are the online-visible path.
 
-`okou-shimmer-text` was scoped out of this batch. Its gradient has six colour
-stops, and Tailwind's gradient utilities interpolate in oklab, so only the exact
-`bg-[linear-gradient(...)]` form reproduces it — 229 characters for that one
-utility, past the length this family keeps its class strings under. Choosing
-between that and an App-owned gradient token for a single consumer is a design
-decision rather than a mechanical replacement.
+`okou-shimmer-text` was scoped out of that batch and has since been drained on
+its own terms. Its gradient has six colour stops, and Tailwind's own gradient
+utilities interpolate in oklab and compose from three positions, so no `bg-*`
+utility can express it and the inline `bg-[linear-gradient(…)]` form runs to 229
+characters for one class. The decision that batch deferred was between that and
+an App-owned token; the token won.
+
+`--background-image-shimmer-text` is an `@theme inline` entry, so `bg-shimmer-text`
+emits the gradient with its `--muted-foreground` and `--foreground` references
+intact and each theme still resolves them on the element. `--animate-shimmer`
+joins the `--animate-*` entries beside it on the same contract, and the
+`okou-shimmer` keyframes stay in the stylesheet, because keyframes are not class
+selectors. The remaining declarations are ordinary utilities on `ShimmerText` in
+`chat-thread-page.tsx`, which already existed as a component and needed no new
+wrapper.
+
+Two of them need stating. `[background-size:200%_100%]` is an arbitrary property
+rather than `bg-size-*`, matching the effort slider's `[background-size:…]`
+beside its own aurora tokens. And `[-webkit-background-clip:text]` stays beside
+`bg-clip-text` because Tailwind emits only the unprefixed property: its default
+targets do not need the prefix, but the retired rule declared both, so keeping it
+is the no-change choice. Chromium treats the two as aliases, so no measurement
+here can separate them — dropping either one leaves both computing to `text`.
+Removing the prefixed declaration is a browser-support decision, not part of this
+drain.
 
 ### The standalone PWA fixed cover
 

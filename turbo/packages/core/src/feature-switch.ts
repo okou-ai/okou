@@ -419,6 +419,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
   },
+  [FeatureSwitchKey.TelegramDmSessions]: {
+    maintainer: "linghan@okou.ai",
+    description:
+      "Use agent/model-scoped Telegram DM sessions and separate reply chains. Enable after compatible callback readers are deployed.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
     description:

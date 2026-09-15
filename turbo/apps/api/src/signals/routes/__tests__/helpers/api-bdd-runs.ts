@@ -858,7 +858,17 @@ export function createRunsApi(
     async requestDirectRun(
       actor: ApiTestUser | null,
       body: DirectRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 429 | 503)[],
+      statuses: readonly (
+        | 201
+        | 400
+        | 401
+        | 402
+        | 403
+        | 404
+        | 409
+        | 429
+        | 503
+      )[],
     ) {
       return await accept(createDirectRunThroughService(actor, body), statuses);
     },
@@ -1073,7 +1083,17 @@ export function createRunsApi(
     async requestCreateRun(
       actor: ApiTestUser | null,
       body: AgentRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 429 | 503)[],
+      statuses: readonly (
+        | 201
+        | 400
+        | 401
+        | 402
+        | 403
+        | 404
+        | 409
+        | 429
+        | 503
+      )[],
       extraHeaders?: Readonly<Record<string, string>>,
     ) {
       return await accept(
@@ -1091,7 +1111,17 @@ export function createRunsApi(
     async requestCreateRunUnchecked(
       actor: ApiTestUser | null,
       body: unknown,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 429 | 503)[],
+      statuses: readonly (
+        | 201
+        | 400
+        | 401
+        | 402
+        | 403
+        | 404
+        | 409
+        | 429
+        | 503
+      )[],
     ) {
       return await accept(
         runApp(context)(runFixtureContract).create({

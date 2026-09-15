@@ -1,5 +1,8 @@
 import { mockNow } from "../../../lib/time";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactReferencePath,
+  artifactReferencesContract,
+} from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -26,6 +29,8 @@ import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { webFileUrlRoutes } from "../web-file-url";
 import { webDownloadRoutes } from "../web-download";
+import { artifactReferenceRoutes } from "../artifact-references";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -36,7 +41,6 @@ const body = Object.freeze({
   filename: "report.html",
   contentType: "text/html",
   size: 13,
-  purpose: "artifact" as const,
 });
 const routes = Object.freeze([
   ...featureSwitchesRoutes,
@@ -45,6 +49,7 @@ const routes = Object.freeze([
   ...uploadsMultipartRoutes,
   ...webFileUrlRoutes,
   ...webDownloadRoutes,
+  ...artifactReferenceRoutes,
 ]);
 
 function api() {
@@ -90,7 +95,68 @@ beforeEach(() => {
 });
 
 describe("private artifact uploads", () => {
-  it("keeps the shared switch off by default and enables artifact output only", async () => {
+  it("keeps old public uploads readable after private creation is enabled", async () => {
+    installSharedThreadStorage(context);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected single upload");
+    }
+    await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      body: "public bytes",
+    });
+    await accept(
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    await setPrivateArtifacts(true);
+    const preview = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(preview.body.publicUrl).toBe(prepared.body.url);
+    const downloaded = await accept(
+      api()(webFilesContract).download({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(downloaded.body).toBe("public bytes");
+  });
+
+  it("previews private bytes uploaded by an older composer without a complete request", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    const preview = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: prepared.body.url.slice("/artifacts/".length) },
+      }),
+      [200],
+    );
+    expect(preview.body.url).toBe(
+      "https://private-r2.example/upload?signature=put",
+    );
+    expect(context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1]).toMatchObject({
+      input: { Bucket: bucket },
+    });
+  });
+
+  it("keeps uploads public by default and makes both attachments and outputs private when enabled", async () => {
     const flags = await accept(
       api()(featureSwitchesContract).get({ headers }),
       [200],
@@ -114,13 +180,13 @@ describe("private artifact uploads", () => {
       }),
       [200],
     );
-    expect(input.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.png$/u,
+    expect(input.body.url).toBe(
+      artifactReferencePath(input.body.id, "input.png"),
     );
     const artifact = await accept(
       api()(uploadsContract).prepare({
         headers,
-        body,
+        body: { ...body, purpose: "artifact" },
         extraHeaders: { origin: "https://app.okou.ai" },
       }),
       [200],

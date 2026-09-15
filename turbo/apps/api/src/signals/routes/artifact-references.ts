@@ -15,7 +15,7 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
-import { generateArtifactPreviewUrl } from "../external/s3";
+import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
 import { privateArtifactRecord } from "../services/private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "../services/private-hosted-preview.service";
 import { resolveArtifactShare$ } from "../services/artifact-shares.service";
@@ -47,11 +47,15 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   const file = await get(privateArtifactRecord(id));
   signal.throwIfAborted();
   if (file) {
-    if (
-      file.userId !== auth.userId ||
-      file.orgId !== auth.orgId ||
-      file.materializationStatus !== "ready"
-    ) {
+    if (file.userId !== auth.userId || file.orgId !== auth.orgId) {
+      return notFound("Artifact unavailable");
+    }
+    // Older attachment composers do not call complete after a single PUT.
+    // Verify the owned object exists before signing its preview; multipart
+    // uploads remain unreadable until R2 publishes the completed object.
+    const object = await get(s3ObjectHead(file.bucket, file.key));
+    signal.throwIfAborted();
+    if (object.kind === "missing") {
       return notFound("Artifact unavailable");
     }
     const preview = await get(

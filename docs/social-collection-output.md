@@ -172,7 +172,8 @@ affect CLI output only; existing CLI/API wire contracts remain unchanged.
 
 `inspect`, `posts`, `search`, `comments`, `transcript`, and `summarize` support
 `--output <path>`, `--select <fields>`, `--format json|csv`, and `--overwrite`.
-JSON remains the default; `--json` controls compactness. Without an output path,
+Transcript also supports `--format text|srt|vtt` with `--output`, as described
+below. JSON remains the default; `--json` controls compactness. Without an output path,
 JSON is printed on stdout as before. Export options are unavailable on download,
 download discovery, capabilities, and service status.
 
@@ -236,11 +237,72 @@ request/export error. Abrupt termination can also leave a staging file.
 Invalid selectors, formats, and combinations are rejected before requests.
 `--stream` cannot be combined with `--output`, `--select`, `--format`, or
 `--overwrite`; it retains its existing JSON Lines contract. `--overwrite`
-requires `--output`. JSONL files and text/SRT/VTT transcript exports are outside
-this interface.
+requires `--output`. JSONL file export is outside this interface.
 
 Disk or directory state may change after preflight. If projection or publication
 fails after retrieval, the CLI prints the full original envelope to stdout,
 reports an actionable export error on stderr, and exits 1. It does not repeat
 provider requests. A path in a receipt refers to the local runtime, not a hosted
 artifact. Use `okou web upload-file` when delivering that file to a web-chat user.
+
+## Transcript text and timed subtitles
+
+```bash
+okou social transcript https://youtu.be/example --format text --output transcript.txt
+okou social transcript https://youtu.be/example --format srt --output captions.srt
+okou social transcript https://youtu.be/example --format vtt --output captions.vtt
+```
+
+Choose the desired format before extraction. These examples are separate requests;
+formatting the retrieved result never adds a provider request. Each format requires
+`--output` and rejects `--select`. `--json` controls the stdout receipt's compactness,
+and `--overwrite` retains the same explicit replacement behavior as JSON/CSV.
+
+Plain text uses a nonblank full `data.transcript` once. When it is absent or blank,
+the CLI joins `data.transcriptSegments[].text` in source order. It preserves Unicode,
+language and full-text formatting, adding a final newline when needed. Missing
+segment text or a result with no usable text fails instead of silently producing
+an incomplete or empty transcript.
+
+SRT and WebVTT use the supplied segment text and require every segment to have a
+finite nonnegative `start` and a finite positive `duration`, both in seconds.
+Each end is computed from that segment's start plus duration. A display `timestamp`,
+the next segment's start, or a full transcript cannot establish a missing duration.
+Extraction support in `capabilities` does not guarantee timestamped output for an
+individual source.
+
+Cue starts must be nondecreasing in source order; actual overlaps are preserved.
+Absolute starts and ends are rounded to milliseconds, and intervals that collapse
+at that precision or exceed safe integer milliseconds fail. Hours do not wrap at 24. SRT uses numbered cues and comma milliseconds; WebVTT uses a `WEBVTT` header,
+numbered cue identifiers, and period milliseconds.
+
+WebVTT escapes cue ampersands, angle brackets and nonbreaking spaces as literal text, following its
+[cue payload format](https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API/Web_Video_Text_Tracks_Format#cue_payload).
+SRT preserves source cue text without adding WebVTT character references, which
+some SRT readers display literally. SRT readers differ in
+[markup support](https://www.loc.gov/preservation/digital/formats/fdd/fdd000569.shtml);
+choose WebVTT when literal markup display matters. Both formats normalize CRLF/CR
+line endings to LF and remove blank cue lines so they cannot terminate a cue.
+Nonblank lines and Unicode are preserved. Blank or NUL-containing cue text is
+rejected. This does not translate, align, or fabricate speech or timing.
+
+SRT also rejects source text whose line begins with a timestamp followed by
+`-->`, such as `00:00:10,000 --> 00:00:11,000`. Readers can interpret such a line
+as another cue even without a blank separator, changing the supplied timing and
+splitting the text. Decimal points and flexible numeric/whitespace spellings
+also count as ambiguous. Choose WebVTT or plain text before extraction when the
+transcript may quote subtitle syntax. An SRT rejection retains the retrieved
+stdout JSON and any existing output file; recover text without another request.
+
+Files contain only transcript/subtitle content. Retain the separate stdout JSON
+receipt for status, warnings, errors, and credits; its `export.language` also keeps
+the source language when supplied. JSON exports retain their original envelope.
+
+Unavailable or invalid timing returns an actionable error, preserves the complete
+retrieved result on stdout, and leaves an existing output file intact. Save
+`data.transcript` or join the recovered segment texts as plain text without making
+another Social request. A failed export is not a reason to retry extraction, and
+an empty/unavailable transcript does not prove that a video contains no speech.
+Malformed API responses (such as negative or nonnumeric timing fields) still fail
+the existing response validation before formatting; they produce no accepted
+result or subtitle file.

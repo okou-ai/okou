@@ -780,7 +780,9 @@ describe("workflow queue", () => {
       threadId: automation.threadId,
       signal: context.signal,
     });
-    await expect.poll(admissionLock.waiterCount).toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(admissionLock.transitiveWaiterCount)
+      .toBeGreaterThanOrEqual(2);
 
     admissionLock.release();
     const [workflowResult] = await Promise.all([workflowRequest, goalDrain]);
@@ -908,8 +910,8 @@ describe("workflow queue", () => {
       },
     });
     // The persisted queued message is the product milestone proving the send
-    // reached the queue; the waiter count is a cluster-wide `pg_locks`
-    // observation of one org key that several admission attempts share, so it
+    // reached the queue. The transitive PostgreSQL blocker observation includes
+    // contenders waiting on the first admission's earlier B1 subject locks and
     // is only used as a lower-bound barrier here.
     await expect
       .poll(async () => {
@@ -919,7 +921,9 @@ describe("workflow queue", () => {
         });
       })
       .toBe(true);
-    await expect.poll(admissionLock.waiterCount).toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(admissionLock.transitiveWaiterCount)
+      .toBeGreaterThanOrEqual(2);
 
     // The business assertion: the stale sweep must leave the fresh user message
     // queued and must not drain it ahead of the stale automation event that is
@@ -2257,7 +2261,7 @@ describe("workflow queue", () => {
         });
       })
       .toBe(true);
-    await expect.poll(admissionLock.waiterCount).toBe(2);
+    await expect.poll(admissionLock.transitiveWaiterCount).toBe(2);
 
     admissionLock.release();
     const [workflowResult, userResult] = await Promise.all([

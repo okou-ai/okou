@@ -1,5 +1,5 @@
 {
-  "id": "2e0c3241-f33d-4b80-b0e7-60b3200e46ef",
+  "id": "73cfea9f-5c81-40e9-991c-68291583ae11",
   "prevId": "c3e783be-c4b6-4bcb-803e-3ab85a6b82a3",
   "version": "7",
   "dialect": "postgresql",
@@ -20733,20 +20733,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "member_invite_usage_pack_required": {
-          "name": "member_invite_usage_pack_required",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "member_invitation_allowed": {
-          "name": "member_invitation_allowed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -31009,12 +30995,6 @@
         "stripe_pending_update_expires_at": {
           "name": "stripe_pending_update_expires_at",
           "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deferred_schedule": {
-          "name": "deferred_schedule",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },

@@ -1720,6 +1720,7 @@ export async function holdOrgAdmissionLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly waiterCount: () => Promise<number>;
+  readonly transitiveWaiterCount: () => Promise<number>;
   readonly cancelBlockedQueries: () => Promise<number>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
@@ -1769,6 +1770,11 @@ export async function holdOrgAdmissionLockFixture(args: {
         waiterCountRowSchema,
       );
       return rows[0]?.waiterCount ?? 0;
+    },
+    // B1 subjects precede the org lock. A second admission can wait on the
+    // first admission's subject lock instead of this fixture's org lock.
+    transitiveWaiterCount: () => {
+      return transitiveBlockedWaiterCount(holderPid);
     },
     // Force a real admission rollback, scoped to this fixture's held lock.
     cancelBlockedQueries: async () => {

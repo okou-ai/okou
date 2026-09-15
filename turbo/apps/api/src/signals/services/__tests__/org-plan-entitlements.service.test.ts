@@ -78,11 +78,13 @@ async function createHarness(
           await tx.execute(
             sql`CREATE TABLE org_plan_entitlements (LIKE public.org_plan_entitlements INCLUDING ALL)`,
           );
-          if (schema === "contracted") {
+          // Current tables have contracted. Reconstruct the outgoing shape only
+          // inside these private compatibility controls until their rollout ends.
+          if (schema !== "contracted") {
             await tx.execute(sql`
           ALTER TABLE org_plan_entitlements
-          DROP COLUMN member_invitation_allowed,
-          DROP COLUMN member_invite_usage_pack_required
+          ADD COLUMN member_invitation_allowed boolean NOT NULL DEFAULT false,
+          ADD COLUMN member_invite_usage_pack_required boolean NOT NULL DEFAULT false
         `);
           }
           if (schema === "retained") {
