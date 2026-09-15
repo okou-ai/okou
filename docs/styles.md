@@ -862,8 +862,11 @@ That deletion also retires the last references to `.okou-chat-bubble-user` and
 `.okou-chat-bubble-assistant`. The chat-bubble batch removed those class names
 from every element and recorded that they survived only inside this selection
 exception; with the exception gone, neither name appears anywhere in the
-repository outside the migration ledger. `okou-app` keeps its custom-property
-scope and the gradient shadow override.
+repository outside the migration ledger. With the card tokens promoted to
+`:root`, `.okou-app` now declares nothing of its own: the one selector left in
+the stylesheet is the workspace canvas's
+`.okou-app[data-gradient-color-themes] .okou-workspace-bg::before`, which uses
+the class as a scoping ancestor rather than to carry a declaration.
 
 Deleting rather than porting is the right move because there is nothing to
 port. A replacement could only be a condition no element satisfies, and
