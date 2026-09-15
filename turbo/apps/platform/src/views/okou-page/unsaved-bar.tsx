@@ -23,7 +23,7 @@ interface AnchorConfig {
   readonly renderInPlaceWithoutContainer: boolean;
 }
 
-const ANCHORS: Record<UnsavedBarAnchor, AnchorConfig> = {
+const ANCHORS: Readonly<Record<UnsavedBarAnchor, AnchorConfig>> = {
   page: {
     containerId: "root",
     // The shell root is outside the `.okou-app` subtree, so the bar re-enters
