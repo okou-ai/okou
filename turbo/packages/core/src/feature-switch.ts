@@ -57,6 +57,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.SocialDownloadMp3]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Explicit MP3 audio downloads in Okou Social",
+    // Activate only with compatible API/CLI readers; see deployment compatibility.
+    enabled: false,
+  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",

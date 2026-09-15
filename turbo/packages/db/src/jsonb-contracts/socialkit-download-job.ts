@@ -3,7 +3,7 @@ export interface SocialKitDownloadRequestSnapshot {
   readonly url: string;
   readonly maxDuration: number;
   readonly quality: "240p" | "360p" | "480p" | "720p" | "1080p";
-  readonly format: "mp4" | "m4a";
+  readonly format: "mp4" | "m4a" | "mp3";
 }
 
 export interface SocialKitDownloadProviderResult {
@@ -12,7 +12,7 @@ export interface SocialKitDownloadProviderResult {
   readonly creditsCost: number;
   // Older jobs did not persist provider-reported media metadata.
   readonly quality?: string;
-  readonly format?: "mp4" | "m4a";
+  readonly format?: "mp4" | "m4a" | "mp3";
   readonly title?: string;
   readonly thumbnail?: string;
 }

@@ -1550,7 +1550,10 @@ const downloadCommand = new Command()
     "--quality <quality>",
     "240p, 360p, 480p, 720p, or 1080p (default: 720p)",
   )
-  .option("--format <format>", "mp4 or m4a (default: mp4)")
+  .option(
+    "--format <format>",
+    "mp4, m4a, or mp3 (default: mp4; mp3 requires account enablement)",
+  )
   .option(
     "--resume <download-id>",
     "Resume polling an existing download",
@@ -1672,6 +1675,7 @@ Examples:
   Fields:      okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
   Fields file: okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --json
   Download:    okou social download https://youtu.be/<id> --max-duration 600 --json
+  MP3 audio:   okou social download https://youtu.be/<id> --max-duration 600 --format mp3 --json
   Find tasks:  okou social downloads --status active --json
   Resume:      okou social download --resume <download-id> --json
 
