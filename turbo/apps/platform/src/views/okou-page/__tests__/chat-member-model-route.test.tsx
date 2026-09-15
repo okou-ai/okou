@@ -128,7 +128,9 @@ test.each(
             await screen.findByRole("region", { name: "Chat models" }),
           )
         : await screen.findByRole("option", {
-            name: new RegExp(modelLabel, "u"),
+            name: (name) => {
+              return name.includes(modelLabel);
+            },
           });
     if (!option) {
       throw new Error(`Expected a model option for ${modelLabel}`);
