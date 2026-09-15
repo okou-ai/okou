@@ -16,6 +16,11 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
+import {
+  userPreferencesContract,
+  type UserLocale,
+} from "@okouai/api-contracts/contracts/user-preferences";
+import { userPreferencesRoutes } from "../user-preferences";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import {
@@ -32,7 +37,6 @@ import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
-import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
@@ -65,10 +69,7 @@ import { verifyOkouToken } from "../../auth/tokens";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
-import {
-  readMorningBriefDefaultEligibilityFixture,
-  withMorningBriefDefaultActivationFixture,
-} from "../../../test-fixtures/morning-brief-default";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -1329,8 +1330,8 @@ async function postOfficialWorkflowWebhook(args: {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "X-VM0-Timestamp": String(timestamp),
-      "X-VM0-Signature": computeHmacSignature(
+      "X-Okou-Timestamp": String(timestamp),
+      "X-Okou-Signature": computeHmacSignature(
         args.body,
         args.secret,
         timestamp,
@@ -1720,6 +1721,28 @@ async function deliverClerkOrganizationCreated(
   await flushWaitUntilForTest();
 }
 
+async function deliverClerkOrganizationMembershipCreated(
+  actor: ApiTestUser,
+  createdAt: Date,
+): Promise<void> {
+  if (!actor.orgId || !actor.orgRole) {
+    throw new Error("Expected organization-scoped Clerk member");
+  }
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organizationMembership.created",
+    data: {
+      id: `membership-${actor.userId}-${actor.orgId}`,
+      organization: { id: actor.orgId },
+      public_user_data: { user_id: actor.userId },
+      role: actor.orgRole,
+      created_at: createdAt.getTime(),
+    },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
 async function listMorningBriefInstallations(actor: ApiTestUser) {
   const response = await accept(
     workflowCollectionClient().list({
@@ -2051,7 +2074,7 @@ beforeEach(async () => {
   await cleanupCatalog();
 });
 
-describe.sequential("Morning Brief preference", () => {
+describe("Morning Brief preference", () => {
   it("installs idempotently without the Official Workflows feature and preserves identities across disable and re-enable", async () => {
     installCatalogStorageFixture();
     const synced = await syncDeployedCatalog();
@@ -2071,6 +2094,7 @@ describe.sequential("Morning Brief preference", () => {
       installCatalogStorageFixture();
       await cleanupCatalog();
     });
+    await connectBriefSource(actor);
     const headers = authHeaders(actor);
     await setOfficialWorkflowsEnabled(actor, false);
     await setMorningBriefEnabled(actor, true);
@@ -2080,6 +2104,7 @@ describe.sequential("Morning Brief preference", () => {
       [200],
     );
     expect(initial.body).toStrictEqual({
+      status: "paused",
       enabled: false,
       nextRunAt: null,
       timezone: "Asia/Shanghai",
@@ -2170,6 +2195,7 @@ describe.sequential("Morning Brief preference", () => {
       [200],
     );
     expect(disabled.body).toStrictEqual({
+      status: "paused",
       enabled: false,
       nextRunAt: null,
       timezone: "Asia/Shanghai",
@@ -2239,7 +2265,7 @@ describe.sequential("Morning Brief preference", () => {
     });
   });
 
-  it("returns typed missing-timezone and missing-default-Agent states without mutation", async () => {
+  it("preserves enable intent while timezone or default Agent is unavailable", async () => {
     const missingTimezone = await workflowBdd.setupWorkflowOrg();
     await setMorningBriefEnabled(missingTimezone.actor, true);
     const timezoneHeaders = authHeaders(missingTimezone.actor);
@@ -2256,14 +2282,20 @@ describe.sequential("Morning Brief preference", () => {
         headers: timezoneHeaders,
         body: { enabled: true },
       }),
-      [400],
+      [200],
     );
-    expect(rejectedTimezone.body.error.code).toBe(
-      "MORNING_BRIEF_MISSING_TIMEZONE",
-    );
+    expect(rejectedTimezone.body).toMatchObject({
+      status: "preparing",
+      enabled: true,
+      unavailableReason: "missing-timezone",
+    });
 
     const missingAgent = bdd.user();
+    mockBriefMemberships([
+      { actor: missingAgent, createdAt: new Date("2020-01-01T00:00:00.000Z") },
+    ]);
     await bdd.updateUserTimezone(missingAgent, "Asia/Shanghai");
+    await initializeBriefMember(missingAgent);
     await setMorningBriefEnabled(missingAgent, true);
     const agentHeaders = authHeaders(missingAgent);
     const unavailableAgent = await accept(
@@ -2280,11 +2312,13 @@ describe.sequential("Morning Brief preference", () => {
         headers: agentHeaders,
         body: { enabled: true },
       }),
-      [400],
+      [200],
     );
-    expect(rejectedAgent.body.error.code).toBe(
-      "MORNING_BRIEF_MISSING_DEFAULT_AGENT",
-    );
+    expect(rejectedAgent.body).toMatchObject({
+      status: "preparing",
+      enabled: true,
+      unavailableReason: "missing-default-agent",
+    });
 
     for (const fixture of [missingTimezone.actor, missingAgent]) {
       const listed = await accept(
@@ -2302,7 +2336,7 @@ describe.sequential("Morning Brief preference", () => {
     }
   });
 
-  it("fails closed when generic installations already exist across Agents", async () => {
+  it("adopts the default Agent installation when installations exist across Agents", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
     const { actor } = await workflowBdd.setupWorkflowOrg({
@@ -2324,20 +2358,13 @@ describe.sequential("Morning Brief preference", () => {
     await setOfficialWorkflowsEnabled(actor, true);
     await setMorningBriefEnabled(actor, false);
     const headers = authHeaders(actor);
-    const installations = await Promise.all(
-      [onboarding.defaultAgentId, alternate.agentId].map(async (agentId) => {
-        return await accept(
-          officialClient().install({
-            headers,
-            params: { definitionName: "morning-brief" },
-            body: {
-              agentId,
-              blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
-            },
-          }),
-          [201],
-        );
-      }),
+    const onDefaultAgent = await installMorningBriefFromCatalog(
+      actor,
+      onboarding.defaultAgentId,
+    );
+    const onAlternateAgent = await installMorningBriefFromCatalog(
+      actor,
+      alternate.agentId,
     );
 
     const hiddenRead = await accept(
@@ -2345,531 +2372,673 @@ describe.sequential("Morning Brief preference", () => {
       [403],
     );
     expect(hiddenRead.body.error.code).toBe("FORBIDDEN");
-    const hiddenUpdate = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [403],
-    );
-    expect(hiddenUpdate.body.error.code).toBe("FORBIDDEN");
 
     await setMorningBriefEnabled(actor, true);
 
     const read = await accept(
       morningBriefPreferenceClient().get({ headers }),
-      [409],
+      [200],
     );
-    expect(read.body.error.code).toBe("MORNING_BRIEF_MULTIPLE_INSTALLATIONS");
-    const update = await accept(
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+
+    const paused = await accept(
       morningBriefPreferenceClient().update({
         headers,
         body: { enabled: false },
       }),
-      [409],
-    );
-    expect(update.body.error.code).toBe("MORNING_BRIEF_MULTIPLE_INSTALLATIONS");
-
-    for (const installation of installations) {
-      const unchanged = await accept(
-        installationClient().get({
-          headers,
-          params: { workflowId: installation.body.workflow.id },
-        }),
-        [200],
-      );
-      expect(unchanged.body.workflow.automations).toMatchObject([
-        { enabled: true },
-      ]);
-    }
-  });
-});
-
-describe.sequential("Morning Brief default onboarding", () => {
-  it("emits scoped installed and not-eligible outcomes with Official Workflows off", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const activationAt = new Date("2026-09-07T01:00:00.000Z");
-    const beforeActivation = new Date(activationAt.getTime() - 1);
-    const preActivationActor = bdd.user();
-    const eligibleCreator = bdd.user();
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-
-    for (const actor of [preActivationActor, eligibleCreator]) {
-      await setMorningBriefEnabled(actor, true);
-      await setOfficialWorkflowsEnabled(actor, false);
-    }
-
-    await withMorningBriefDefaultActivationFixture(activationAt, async () => {
-      await deliverClerkOrganizationCreated(
-        preActivationActor,
-        beforeActivation,
-      );
-      await deliverClerkOrganizationCreated(eligibleCreator, activationAt);
-    });
-
-    await expect(
-      readMorningBriefDefaultEligibilityFixture({
-        orgId: preActivationActor.orgId ?? "",
-        userId: preActivationActor.userId,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      readMorningBriefDefaultEligibilityFixture({
-        orgId: eligibleCreator.orgId ?? "",
-        userId: eligibleCreator.userId,
-      }),
-    ).resolves.toStrictEqual(activationAt);
-
-    context.mocks.axiomLogging.info.mockClear();
-    expect(
-      (
-        await bdd.completeOnboarding(preActivationActor, {
-          timezone: "Asia/Shanghai",
-        })
-      ).status,
-    ).toBe(200);
-    expect(
-      context.mocks.axiomLogging.info.mock.calls.filter(([message]) => {
-        return message === "Morning Brief onboarding provisioning outcome";
-      }),
-    ).toStrictEqual([
-      [
-        "Morning Brief onboarding provisioning outcome",
-        expect.objectContaining({
-          context: "onboarding.service",
-          orgId: preActivationActor.orgId,
-          userId: preActivationActor.userId,
-          firstCompletion: true,
-          timezone: "stored",
-          provisioning: {
-            outcome: "skipped",
-            reason: "not-eligible",
-          },
-        }),
-      ],
-    ]);
-    await expect(
-      listMorningBriefInstallations(preActivationActor),
-    ).resolves.toHaveLength(0);
-
-    context.mocks.axiomLogging.info.mockClear();
-    expect(
-      (
-        await bdd.completeOnboarding(eligibleCreator, {
-          timezone: "Asia/Shanghai",
-        })
-      ).status,
-    ).toBe(200);
-    expect(
-      context.mocks.axiomLogging.info.mock.calls.filter(([message]) => {
-        return message === "Morning Brief onboarding provisioning outcome";
-      }),
-    ).toStrictEqual([
-      [
-        "Morning Brief onboarding provisioning outcome",
-        expect.objectContaining({
-          context: "onboarding.service",
-          orgId: eligibleCreator.orgId,
-          userId: eligibleCreator.userId,
-          firstCompletion: true,
-          timezone: "stored",
-          provisioning: {
-            outcome: "installed",
-            workflowId: expect.any(String),
-          },
-        }),
-      ],
-    ]);
-    const installations = await listMorningBriefInstallations(eligibleCreator);
-    expect(installations).toHaveLength(1);
-    const installation = installations[0];
-    if (!installation) {
-      throw new Error("Expected a default Morning Brief installation");
-    }
-    const detail = await accept(
-      installationClient().get({
-        headers: authHeaders(eligibleCreator),
-        params: { workflowId: installation.id },
-      }),
       [200],
     );
-    expect(detail.body.workflow.automations).toHaveLength(1);
-    expect(detail.body.workflow.automations).toMatchObject([
-      {
-        enabled: true,
-        official: {
-          blueprintKey: "daily-delivery",
-          reconciliationStatus: "current",
-        },
-      },
-    ]);
-  });
-
-  it("marks only post-activation organization creators and preserves the first source timestamp", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const activationAt = new Date("2026-09-02T08:00:00.000Z");
-    const beforeActivation = new Date(activationAt.getTime() - 1);
-    const laterDelivery = new Date(activationAt.getTime() + 60_000);
-    const unsetActor = bdd.user();
-    const preActivationActor = bdd.user();
-    const eligibleCreator = bdd.user();
-    const membershipActor = bdd.user();
-    const invitationActor = bdd.user();
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
+    expect(paused.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      nextRunAt: null,
     });
 
-    for (const actor of [unsetActor, preActivationActor]) {
-      await setMorningBriefEnabled(actor, true);
-      await setOfficialWorkflowsEnabled(actor, false);
-    }
-
-    await deliverClerkOrganizationCreated(unsetActor, laterDelivery);
-    await withMorningBriefDefaultActivationFixture(activationAt, async () => {
-      await deliverClerkOrganizationCreated(
-        preActivationActor,
-        beforeActivation,
-      );
-      await deliverClerkOrganizationCreated(eligibleCreator, activationAt);
-      await deliverClerkOrganizationCreated(eligibleCreator, laterDelivery);
-
-      if (!membershipActor.orgId || !invitationActor.orgId) {
-        throw new Error("Expected organization-scoped Clerk actors");
-      }
-      webhooks.configureClerkWebhookSecret();
-      webhooks.verifyNextClerkWebhook({
-        type: "organizationMembership.created",
-        data: {
-          organization: { id: membershipActor.orgId },
-          public_user_data: { user_id: membershipActor.userId },
-          role: "org:admin",
-          created_at: laterDelivery.getTime(),
-        },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-
-      webhooks.verifyNextClerkWebhook({
-        type: "organizationInvitation.accepted",
-        data: {
-          id: `invitation_${randomUUID()}`,
-          organization_id: invitationActor.orgId,
-          user_id: invitationActor.userId,
-          email_address: invitationActor.email,
-          updated_at: laterDelivery.getTime(),
-        },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-    });
-
+    // The adopted installation follows the preference; the other one is left
+    // alone and keeps running.
     await expect(
-      readMorningBriefDefaultEligibilityFixture({
-        orgId: unsetActor.orgId ?? "",
-        userId: unsetActor.userId,
-      }),
-    ).resolves.toBeNull();
+      readMorningBriefAutomations(actor, onDefaultAgent),
+    ).resolves.toMatchObject([{ enabled: false }]);
     await expect(
-      readMorningBriefDefaultEligibilityFixture({
-        orgId: preActivationActor.orgId ?? "",
-        userId: preActivationActor.userId,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      readMorningBriefDefaultEligibilityFixture({
-        orgId: eligibleCreator.orgId ?? "",
-        userId: eligibleCreator.userId,
-      }),
-    ).resolves.toStrictEqual(activationAt);
-    await expect(
-      readMorningBriefDefaultEligibilityFixture({
-        orgId: membershipActor.orgId ?? "",
-        userId: membershipActor.userId,
-      }),
-    ).resolves.toBeNull();
-    await expect(
-      readMorningBriefDefaultEligibilityFixture({
-        orgId: invitationActor.orgId ?? "",
-        userId: invitationActor.userId,
-      }),
-    ).resolves.toBeNull();
-
-    for (const actor of [unsetActor, preActivationActor]) {
-      const completed = await bdd.completeOnboarding(actor, {
-        timezone: "Asia/Shanghai",
-      });
-      expect(completed.status).toBe(200);
-      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
-        0,
-      );
-    }
+      readMorningBriefAutomations(actor, onAlternateAgent),
+    ).resolves.toMatchObject([{ enabled: true }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
   });
 
-  it("installs once on concurrent first completion with only MorningBrief enabled", async () => {
+  it("keeps the preference on its own installation after a catalog install on another Agent", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
-    const actor = bdd.user();
-    const activationAt = new Date("2026-09-02T08:00:00.000Z");
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
     if (!actor.orgId) {
       throw new Error("Expected organization-scoped actor");
     }
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    await setMorningBriefEnabled(actor, true);
-    await setOfficialWorkflowsEnabled(actor, false);
-    await withMorningBriefDefaultActivationFixture(activationAt, async () => {
-      await deliverClerkOrganizationCreated(actor, activationAt);
-    });
-
-    const completions = await Promise.all([
-      bdd.completeOnboarding(actor, { timezone: "Asia/Shanghai" }),
-      bdd.completeOnboarding(actor, { timezone: "Asia/Shanghai" }),
-    ]);
-    expect(
-      completions.map((response) => {
-        return response.status;
-      }),
-    ).toStrictEqual([200, 200]);
-
-    const installations = await listMorningBriefInstallations(actor);
-    expect(installations).toHaveLength(1);
-    const installation = installations[0];
-    if (!installation) {
-      throw new Error("Expected a default Morning Brief installation");
-    }
-    const detail = await accept(
-      installationClient().get({
-        headers: authHeaders(actor),
-        params: { workflowId: installation.id },
-      }),
-      [200],
-    );
     const onboarding = await bdd.readOnboardingStatus(actor);
-    expect(detail.body.workflow.automations).toHaveLength(1);
-    expect(detail.body.workflow).toMatchObject({
-      id: installation.id,
-      agentId: onboarding.defaultAgentId,
-      official: {
-        definitionName: "morning-brief",
-        installationState: "installed",
-      },
-      automations: [
-        {
-          enabled: true,
-          kind: "schedule",
-          schedule: {
-            type: "cron",
-            cronExpression: "0 7 * * *",
-            timezone: "Asia/Shanghai",
-          },
-          official: {
-            blueprintKey: "daily-delivery",
-            reconciliationStatus: "current",
-          },
-        },
-      ],
-    });
-  });
-
-  it("keeps legacy and invalid-timezone completions additive without later installation retries", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const activationAt = new Date("2026-09-02T08:00:00.000Z");
-    const missingTimezone = bdd.user();
-    const invalidTimezone = bdd.user();
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected a default Agent");
+    }
+    const alternate = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
       installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, alternate.agentId);
       await cleanupCatalog();
     });
+    await connectBriefSource(actor);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+    const headers = authHeaders(actor);
 
-    for (const actor of [missingTimezone, invalidTimezone]) {
-      await setMorningBriefEnabled(actor, true);
-      await setOfficialWorkflowsEnabled(actor, false);
-      await withMorningBriefDefaultActivationFixture(activationAt, async () => {
-        await deliverClerkOrganizationCreated(actor, activationAt);
-      });
-    }
-
-    expect((await bdd.completeOnboarding(missingTimezone)).status).toBe(200);
-    expect(
-      (
-        await bdd.completeOnboarding(invalidTimezone, {
-          timezone: "Mars/Olympus",
-        })
-      ).status,
-    ).toBe(200);
-    for (const actor of [missingTimezone, invalidTimezone]) {
-      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
-        0,
-      );
-    }
-
-    expect(
-      (
-        await bdd.completeOnboarding(invalidTimezone, {
-          timezone: "Asia/Shanghai",
-        })
-      ).status,
-    ).toBe(200);
-    await expect(
-      listMorningBriefInstallations(invalidTimezone),
-    ).resolves.toHaveLength(0);
-    const preference = await accept(
-      morningBriefPreferenceClient().get({
-        headers: authHeaders(invalidTimezone),
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
       }),
       [200],
     );
-    expect(preference.body).toMatchObject({
-      enabled: false,
+    const [managed] = await listMorningBriefInstallations(actor);
+    if (!managed) {
+      throw new Error("Expected a Preferences-managed installation");
+    }
+    expect(managed.agentId).toBe(onboarding.defaultAgentId);
+
+    await setOfficialWorkflowsEnabled(actor, true);
+    const onAlternateAgent = await installMorningBriefFromCatalog(
+      actor,
+      alternate.agentId,
+    );
+
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
       timezone: "Asia/Shanghai",
       unavailableReason: null,
     });
+
+    const paused = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
+    await expect(
+      readMorningBriefAutomations(actor, managed.id),
+    ).resolves.toMatchObject([{ enabled: false }]);
+    await expect(
+      readMorningBriefAutomations(actor, onAlternateAgent),
+    ).resolves.toMatchObject([{ enabled: true }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
   });
 
-  it("preserves existing enabled and disabled installations and stored timezones", async () => {
+  it("leaves an installed brief in place when the org default Agent changes", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
-    const activationAt = new Date("2026-09-02T08:00:00.000Z");
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
     });
-
-    for (const initiallyEnabled of [true, false]) {
-      const actor = bdd.user();
-      await setMorningBriefEnabled(actor, true);
-      await setOfficialWorkflowsEnabled(actor, false);
-      await withMorningBriefDefaultActivationFixture(activationAt, async () => {
-        await deliverClerkOrganizationCreated(actor, activationAt);
-      });
-      await bdd.updateUserTimezone(actor, "Asia/Shanghai");
-      const headers = authHeaders(actor);
-      await accept(
-        morningBriefPreferenceClient().update({
-          headers,
-          body: { enabled: true },
-        }),
-        [200],
-      );
-      if (!initiallyEnabled) {
-        await accept(
-          morningBriefPreferenceClient().update({
-            headers,
-            body: { enabled: false },
-          }),
-          [200],
-        );
-      }
-
-      const [before] = await listMorningBriefInstallations(actor);
-      if (!before) {
-        throw new Error("Expected a pre-existing Morning Brief installation");
-      }
-      const beforeDetail = await accept(
-        installationClient().get({
-          headers,
-          params: { workflowId: before.id },
-        }),
-        [200],
-      );
-      const beforeAutomation = beforeDetail.body.workflow.automations[0];
-      if (!beforeAutomation) {
-        throw new Error("Expected a pre-existing Morning Brief automation");
-      }
-
-      expect(
-        (
-          await bdd.completeOnboarding(actor, {
-            timezone: "America/Los_Angeles",
-          })
-        ).status,
-      ).toBe(200);
-      const [after] = await listMorningBriefInstallations(actor);
-      expect(after?.id).toBe(before.id);
-      const afterDetail = await accept(
-        installationClient().get({
-          headers: authHeaders(actor),
-          params: { workflowId: before.id },
-        }),
-        [200],
-      );
-      expect(afterDetail.body.workflow.automations).toMatchObject([
-        {
-          id: beforeAutomation.id,
-          enabled: initiallyEnabled,
-          schedule: { timezone: "Asia/Shanghai" },
-        },
-      ]);
-    }
-  });
-
-  it("reports installer failure while committing onboarding and never retries it", async () => {
-    installCatalogStorageFixture();
-    const activationAt = new Date("2026-09-02T08:00:00.000Z");
-    const actor = bdd.user();
-    if (!actor.orgId) {
+    const orgId = actor.orgId;
+    if (!orgId) {
       throw new Error("Expected organization-scoped actor");
     }
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    const originalAgentId = onboarding.defaultAgentId;
+    if (!originalAgentId) {
+      throw new Error("Expected a default Agent");
+    }
+    const replacement = await workflowBdd.createAgent(actor);
     onTestFinished(async () => {
       installCatalogStorageFixture();
+      await setOrgDefaultAgentFixture({ orgId, agentId: originalAgentId });
+      await bdd.deleteAgent(actor, replacement.agentId);
       await cleanupCatalog();
     });
-    await setMorningBriefEnabled(actor, true);
+    await connectBriefSource(actor);
     await setOfficialWorkflowsEnabled(actor, false);
-    await withMorningBriefDefaultActivationFixture(activationAt, async () => {
-      await deliverClerkOrganizationCreated(actor, activationAt);
-    });
-    context.mocks.axiomLogging.warn.mockClear();
+    await setMorningBriefEnabled(actor, true);
+    const headers = authHeaders(actor);
 
-    expect(
-      (
-        await bdd.completeOnboarding(actor, {
-          timezone: "Asia/Shanghai",
-        })
-      ).status,
-    ).toBe(200);
-    expect(context.mocks.axiomLogging.warn.mock.calls).toContainEqual([
-      "Morning Brief onboarding provisioning outcome",
-      expect.objectContaining({
-        context: "onboarding.service",
-        orgId: actor.orgId,
-        userId: actor.userId,
-        firstCompletion: true,
-        timezone: "stored",
-        provisioning: expect.objectContaining({
-          outcome: "failed",
-          reason: "installation-failed",
-          failureKind: "not-found",
-        }),
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
       }),
-    ]);
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    expect(
-      (await bdd.readOnboardingStatus(actor)).onboardingComplete,
-    ).toBeTruthy();
+      [200],
+    );
+    const [installed] = await listMorningBriefInstallations(actor);
+    if (!installed) {
+      throw new Error("Expected a Preferences-managed installation");
+    }
+    expect(installed.agentId).toBe(originalAgentId);
 
+    // Only the Clerk org-creation bootstrap writes `default_agent_id`, so no
+    // production endpoint can repoint an existing org at another Agent. This
+    // fixture is the narrow exception that makes the case reachable at all.
+    await setOrgDefaultAgentFixture({ orgId, agentId: replacement.agentId });
+
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+
+    // Logging in must not provision a second brief on the new default Agent.
+    await initializeBriefMember(actor);
+    await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
+      { id: installed.id, agentId: originalAgentId },
+    ]);
+
+    // Ownership stays on the Agent the brief was installed on, even once the
+    // new default Agent carries a brief of its own.
+    await setOfficialWorkflowsEnabled(actor, true);
+    const onNewDefaultAgent = await installMorningBriefFromCatalog(
+      actor,
+      replacement.agentId,
+    );
+    const paused = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
+    await expect(
+      readMorningBriefAutomations(actor, installed.id),
+    ).resolves.toMatchObject([{ enabled: false }]);
+    await expect(
+      readMorningBriefAutomations(actor, onNewDefaultAgent),
+    ).resolves.toMatchObject([{ enabled: true }]);
+
+    const reenabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(reenabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    await expect(
+      readMorningBriefAutomations(actor, installed.id),
+    ).resolves.toMatchObject([{ enabled: true }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
+  });
+});
+
+async function installMorningBriefFromCatalog(
+  actor: ApiTestUser,
+  agentId: string,
+): Promise<string> {
+  const response = await accept(
+    officialClient().install({
+      headers: authHeaders(actor),
+      params: { definitionName: "morning-brief" },
+      body: {
+        agentId,
+        blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
+      },
+    }),
+    [201],
+  );
+  return response.body.workflow.id;
+}
+
+async function readMorningBriefAutomations(
+  actor: ApiTestUser,
+  workflowId: string,
+) {
+  const response = await accept(
+    installationClient().get({
+      headers: authHeaders(actor),
+      params: { workflowId },
+    }),
+    [200],
+  );
+  return response.body.workflow.automations;
+}
+
+function mockBriefMemberships(
+  entries: readonly { readonly actor: ApiTestUser; readonly createdAt: Date }[],
+): void {
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: entries.map(({ actor, createdAt }) => {
+        return {
+          id: `membership-${actor.userId}-${actor.orgId}`,
+          role: actor.orgRole ?? "org:member",
+          createdAt: createdAt.getTime(),
+          organization: { id: actor.orgId },
+          publicUserData: { userId: actor.userId },
+        };
+      }),
+    },
+  );
+}
+
+async function connectBriefSource(actor: ApiTestUser): Promise<void> {
+  const onboarding = await bdd.readOnboardingStatus(actor);
+  if (!onboarding.defaultAgentId) {
+    throw new Error("Expected default Agent");
+  }
+  mockGmailConnectorOAuth();
+  const start = await connectors.startOauth(
+    actor,
+    "gmail",
+    "oauth",
+    onboarding.defaultAgentId,
+  );
+  const state = new URL(start.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  await connectors.completeOauthCallback("gmail", {
+    code: "brief-code",
+    state,
+  });
+  const membershipRead =
+    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation();
+  await runs.enableAgentConnectors(actor, onboarding.defaultAgentId, ["gmail"]);
+  if (membershipRead) {
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+      membershipRead,
+    );
+  }
+}
+
+async function initializeBriefMember(actor: ApiTestUser, timezone?: string) {
+  return await accept(
+    setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    ).initialize({
+      headers: authHeaders(actor),
+      body: timezone === undefined ? {} : { timezone },
+    }),
+    [200],
+  );
+}
+
+async function tickBriefEnrollment(actor: ApiTestUser) {
+  if (!actor.orgId) {
+    throw new Error("Expected organization-scoped member");
+  }
+  return await accept(
+    setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
+      testWorkflowAutomationExecutionContract,
+    ).enrollMorningBrief({
+      body: { orgId: actor.orgId, userId: actor.userId },
+    }),
+    [200],
+  );
+}
+
+async function readBriefPreference(actor: ApiTestUser) {
+  return await accept(
+    morningBriefPreferenceClient().get({ headers: authHeaders(actor) }),
+    [200],
+  );
+}
+
+async function prepareBriefMember({
+  actor = bdd.user(),
+  createdAt = new Date("2030-01-01T00:00:00.000Z"),
+  catalogAvailable = true,
+}: {
+  readonly actor?: ApiTestUser;
+  readonly createdAt?: Date;
+  readonly catalogAvailable?: boolean;
+} = {}) {
+  installCatalogStorageFixture();
+  if (catalogAvailable) {
     await syncDeployedCatalog();
+  }
+  mockBriefMemberships([{ actor, createdAt }]);
+  await setOfficialWorkflowsEnabled(actor, false);
+  await setMorningBriefEnabled(actor, true);
+  await deliverClerkOrganizationCreated(actor, createdAt);
+  onTestFinished(async () => {
+    installCatalogStorageFixture();
+    await cleanupCatalog();
+  });
+  return { actor, createdAt };
+}
+
+describe("Morning Brief default onboarding", () => {
+  it("installs without any connected source and stays single across concurrent cron ticks", async () => {
+    const { actor } = await prepareBriefMember();
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+    await Promise.all([tickBriefEnrollment(actor), tickBriefEnrollment(actor)]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
+  it("installs from the preference toggle without any connected source", async () => {
+    const { actor } = await prepareBriefMember();
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    const reenabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(reenabled.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
+  it("preserves a cancellation before installation across late and duplicate membership events", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await connectBriefSource(actor);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    await tickBriefEnrollment(actor);
+    await initializeBriefMember(actor, "America/Los_Angeles");
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      timezone: "Asia/Shanghai",
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+  });
+
+  it("ignores historical membership events even when replayed after activation", async () => {
+    const { actor } = await prepareBriefMember();
+    const createdAt = new Date("2020-01-01T00:00:00.000Z");
+    mockBriefMemberships([{ actor, createdAt }]);
+    await connectBriefSource(actor);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+  });
+
+  it("installs once with either event order and concurrent initialization", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await connectBriefSource(actor);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      status: "preparing",
+      unavailableReason: "missing-timezone",
+    });
+    await Promise.all([
+      initializeBriefMember(actor, "Asia/Shanghai"),
+      initializeBriefMember(actor, "Asia/Shanghai"),
+    ]);
+    const [before] = await listMorningBriefInstallations(actor);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    await tickBriefEnrollment(actor);
+    const [after] = await listMorningBriefInstallations(actor);
+    expect(after?.id).toBe(before?.id);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
+  it("recovers a transient installation failure without repeating onboarding", async () => {
+    const { actor } = await prepareBriefMember({ catalogAvailable: false });
+    await connectBriefSource(actor);
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    await syncDeployedCatalog();
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      status: "enabled",
+      enabled: true,
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
+  it("keeps membership verification retryable when Clerk is temporarily unavailable", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await connectBriefSource(actor);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
+      new Error("Temporary Clerk outage"),
+    );
+    const failed = await setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    ).initialize({
+      headers: authHeaders(actor),
+      body: { timezone: "Asia/Shanghai" },
+    });
+    expect(failed.status).toBe(200);
+    expect(failed.body).toMatchObject({ timezone: "Asia/Shanghai" });
+    mockBriefMemberships([{ actor, createdAt }]);
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+    });
+  });
+
+  it("reschedules an existing brief after a timezone change and keeps a paused brief paused", async () => {
+    const { actor } = await prepareBriefMember();
+    await connectBriefSource(actor);
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    const [before] = await listMorningBriefInstallations(actor);
+    await bdd.updateUserTimezone(actor, "America/Los_Angeles");
+    const changed = await readBriefPreference(actor);
+    expect(changed.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "America/Los_Angeles",
+    });
+    expect(changed.body.nextRunAt).not.toBeNull();
+    if (!changed.body.nextRunAt) {
+      throw new Error("Expected next run");
+    }
     expect(
-      (
-        await bdd.completeOnboarding(actor, {
-          timezone: "Asia/Shanghai",
-        })
-      ).status,
-    ).toBe(200);
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        hour: "numeric",
+        hour12: false,
+      }).format(new Date(changed.body.nextRunAt)),
+    ).toBe("07");
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await bdd.updateUserTimezone(actor, "Asia/Tokyo");
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    const [after] = await listMorningBriefInstallations(actor);
+    expect(after?.id).toBe(before?.id);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      timezone: "Asia/Tokyo",
+      nextRunAt: null,
+    });
+  });
+
+  it("enrolls an invited member of an existing organization without enrolling its existing owner", async () => {
+    const owner = await prepareBriefMember({
+      createdAt: new Date("2020-01-01T00:00:00.000Z"),
+    });
+    const actor = bdd.user({ orgId: owner.actor.orgId, orgRole: "org:member" });
+    const createdAt = new Date("2030-01-01T00:00:00.000Z");
+    mockBriefMemberships([owner, { actor, createdAt }]);
+    await setMorningBriefEnabled(actor, true);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    await connectBriefSource(actor);
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      status: "enabled",
+      enabled: true,
+    });
+    await initializeBriefMember(owner.actor, "Asia/Tokyo");
+    expect((await readBriefPreference(owner.actor)).body).toMatchObject({
+      status: "paused",
+      enabled: false,
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+    await expect(
+      listMorningBriefInstallations(owner.actor),
+    ).resolves.toHaveLength(0);
+  });
+
+  it("isolates enrollment, sources, and cancellation for the same account in two organizations", async () => {
+    const first = await prepareBriefMember();
+    const second = await prepareBriefMember({
+      actor: bdd.user({ userId: first.actor.userId, email: first.actor.email }),
+    });
+    mockBriefMemberships([first, second]);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(second.actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await initializeBriefMember(first.actor, "Asia/Shanghai");
+    await initializeBriefMember(second.actor, "America/Los_Angeles");
+    await connectBriefSource(first.actor);
+    await initializeBriefMember(first.actor);
+    expect((await readBriefPreference(first.actor)).body).toMatchObject({
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+    });
+    expect((await readBriefPreference(second.actor)).body).toMatchObject({
+      status: "paused",
+      enabled: false,
+      timezone: "America/Los_Angeles",
+    });
+    await connectBriefSource(second.actor);
+    await initializeBriefMember(second.actor);
+    expect((await readBriefPreference(second.actor)).body).toMatchObject({
+      status: "paused",
+      enabled: false,
+    });
+    expect((await readBriefPreference(first.actor)).body).toMatchObject({
+      status: "enabled",
+      enabled: true,
+    });
+    await expect(
+      listMorningBriefInstallations(second.actor),
+    ).resolves.toHaveLength(0);
+  });
+
+  it("cancels pending enrollment when membership is removed, including a late created event", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await initializeBriefMember(actor);
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type: "organizationMembership.deleted",
+      data: {
+        id: `membership-${actor.userId}-${actor.orgId}`,
+        organization: { id: actor.orgId },
+        public_user_data: { user_id: actor.userId },
+      },
+    });
+    await webhooks.requestClerkWebhook("{}", {}, [200]);
+    await flushWaitUntilForTest();
+    mockBriefMemberships([]);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+  });
+
+  it("keeps an explicit timezone choice when browser initialization races it", async () => {
+    const { actor } = await prepareBriefMember();
+    await Promise.all([
+      initializeBriefMember(actor, "Asia/Shanghai"),
+      bdd.updateUserTimezone(actor, "Asia/Tokyo"),
+    ]);
+    const initialized = await initializeBriefMember(
+      actor,
+      "America/Los_Angeles",
+    );
+    expect(initialized.body.timezone).toBe("Asia/Tokyo");
+    const invalid = await setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    ).initialize({
+      headers: authHeaders(actor),
+      body: { timezone: "Invalid/Timezone" },
+    });
+    expect(invalid.status).toBe(400);
+    const saved = await accept(
+      setupApp({ context, routes: userPreferencesRoutes })(
+        userPreferencesContract,
+      ).get({ headers: authHeaders(actor) }),
+      [200],
+    );
+    expect(saved.body.timezone).toBe("Asia/Tokyo");
+  });
+
+  it("honors an explicit feature override and never reinstalls a deleted completed enrollment", async () => {
+    const { actor } = await prepareBriefMember();
+    await connectBriefSource(actor);
+    await setMorningBriefEnabled(actor, false);
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    await setMorningBriefEnabled(actor, true);
+    await initializeBriefMember(actor);
+    const [installed] = await listMorningBriefInstallations(actor);
+    if (!installed) {
+      throw new Error("Expected installed brief");
+    }
+    await accept(
+      installationClient().uninstall({
+        headers: authHeaders(actor),
+        params: { workflowId: installed.id },
+      }),
+      [204],
+    );
+    await initializeBriefMember(actor);
+    await tickBriefEnrollment(actor);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
 });
 
-describe.sequential("Official Workflow installations", () => {
+describe("Official Workflow installations", () => {
   it("materializes active deployed Official Workflows and rejects retired installations", async () => {
     installCatalogStorageFixture();
     const synced = await syncDeployedCatalog();
@@ -4342,7 +4511,12 @@ describe.sequential("Official Workflow installations", () => {
     ).resolves.toStrictEqual(beforeRunFamily);
   });
 
-  it("rejects installation release races without churning unchanged reconfiguration Blueprints", async () => {
+  it.each([
+    "installation release",
+    "instruction release",
+    "concurrent pause",
+    "persisted reconciliation",
+  ] as const)("preserves workflow identity during %s races", async (phase) => {
     installCatalogStorageFixture();
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
     const definitionName = `api-test-race-${suffix}`;
@@ -4426,453 +4600,515 @@ describe.sequential("Official Workflow installations", () => {
       ],
     };
 
-    const installing = accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body: installBody,
-      }),
-      [409],
-    );
-    await watchStarted.promise;
-    const installingWorkspaceAutomations = await accept(
-      automationClient().listWorkspace({ headers }),
-      [200],
-    );
-    expect(
-      installingWorkspaceAutomations.body.some((entry) => {
-        return entry.workflow.name === definitionName;
-      }),
-    ).toBeFalsy();
-    await syncCatalog(
-      catalog([
-        activeDefinition(
-          definitionName,
-          [blueprint],
-          "Accepted Definition revision two.",
-        ),
-      ]),
-    );
-    releaseWatch.resolve(undefined);
-    const installConflict = await installing;
-    expect(installConflict.body.error.message).toBe(
-      "Official Workflow changed during installation; retry",
-    );
-    const afterInstallConflict = await accept(
-      workflowCollectionClient().list({
-        headers,
-        query: { agentId },
-      }),
-      [200],
-    );
-    expect(
-      afterInstallConflict.body.some((workflow) => {
-        return workflow.name === definitionName;
-      }),
-    ).toBeFalsy();
-    expect(stopCalls).toBeGreaterThan(0);
-
-    const installed = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body: installBody,
-      }),
-      [201],
-    );
-    const installedAutomation = installed.body.workflow.automations[0];
-    if (!installedAutomation) {
-      throw new Error("Expected Official Gmail automation");
-    }
-
-    blockNextLabelLookup = true;
-    const reconfiguring = accept(
-      installationClient().reconfigure({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-        body: {
-          blueprints: [
-            {
-              blueprintKey: "gmail-label-trigger",
-              bindings: [{ key: "label-name", value: "Follow Up" }],
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    await labelLookupStarted.promise;
-    await syncCatalog(
-      catalog([
-        activeDefinition(
-          definitionName,
-          [blueprint],
-          "Accepted Definition revision three.",
-        ),
-      ]),
-    );
-    releaseLabelLookup.resolve(undefined);
-    const reconfiguredAcrossInstructionRelease = await reconfiguring;
-    expect(
-      reconfiguredAcrossInstructionRelease.body.workflow.automations[0],
-    ).toMatchObject({
-      id: installedAutomation.id,
-      official: {
-        reconciliationStatus: "current",
-        parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-      },
-    });
-    const unchanged = await accept(
-      installationClient().get({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(unchanged.body.workflow.instruction).toBe(
-      "Accepted Definition revision three.",
-    );
-    expect(unchanged.body.workflow.automations[0]?.official).toMatchObject({
-      reconciliationStatus: "current",
-      parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-    });
-
-    const reconfigured = await accept(
-      installationClient().reconfigure({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-        body: {
-          blueprints: [
-            {
-              blueprintKey: "gmail-label-trigger",
-              bindings: [{ key: "label-name", value: "Follow Up" }],
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    expect(reconfigured.body.workflow.automations[0]).toMatchObject({
-      id: installedAutomation.id,
-      chatThreadId: installedAutomation.chatThreadId,
-      official: {
-        reconciliationStatus: "current",
-        parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-      },
-    });
-
-    const concurrentLookupStarted = createDeferredPromise<void>(context.signal);
-    const releaseConcurrentLookup = createDeferredPromise<void>(context.signal);
-    let blockConcurrentLookup = true;
-    server.use(
-      http.get(
-        "https://gmail.googleapis.com/gmail/v1/users/me/labels",
-        async () => {
-          if (blockConcurrentLookup) {
-            blockConcurrentLookup = false;
-            concurrentLookupStarted.resolve(undefined);
-            await releaseConcurrentLookup.promise;
-          }
-          return HttpResponse.json({
-            labels: [
-              { id: "Label_important", name: "Important" },
-              { id: "Label_follow_up", name: "Follow Up" },
-            ],
-          });
-        },
-      ),
-    );
-    const concurrentReconfiguration = accept(
-      installationClient().reconfigure({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-        body: {
-          blueprints: [
-            {
-              blueprintKey: "gmail-label-trigger",
-              bindings: [{ key: "label-name", value: "Important" }],
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    await concurrentLookupStarted.promise;
-    await accept(
-      automationClient().disable({
-        headers,
-        params: { id: installedAutomation.id },
-      }),
-      [200],
-    );
-    releaseConcurrentLookup.resolve(undefined);
-    const reconfiguredAfterPause = await concurrentReconfiguration;
-    expect(reconfiguredAfterPause.body.workflow.automations[0]).toMatchObject({
-      id: installedAutomation.id,
-      enabled: false,
-      official: {
-        intendedEnabled: false,
-        reconciliationStatus: "current",
-        parameterBindings: [{ key: "label-name", value: "Important" }],
-      },
-    });
-
-    let expiringWatchCalls = 0;
-    server.use(
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
-        expiringWatchCalls++;
-        return HttpResponse.json({
-          historyId: "101",
-          expiration: String(now() + 60_000),
-        });
-      }),
-    );
-    await accept(
-      automationClient().enable({
-        headers,
-        params: { id: installedAutomation.id },
-      }),
-      [200],
-    );
-    expect(expiringWatchCalls).toBe(1);
-
-    const reconciliationWatchStarted = createDeferredPromise<void>(
-      context.signal,
-    );
-    const releaseReconciliationWatch = createDeferredPromise<void>(
-      context.signal,
-    );
-    server.use(
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-        async () => {
-          reconciliationWatchStarted.resolve(undefined);
-          await releaseReconciliationWatch.promise;
-          return HttpResponse.json({
-            historyId: "102",
-            expiration: "4102444800000",
-          });
-        },
-      ),
-    );
-    const persistedReconfiguration = accept(
-      installationClient().reconfigure({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-        body: {
-          blueprints: [
-            {
-              blueprintKey: "gmail-label-trigger",
-              bindings: [{ key: "label-name", value: "Follow Up" }],
-            },
-          ],
-        },
-      }),
-      [200],
-    );
-    await reconciliationWatchStarted.promise;
-    const disableDuringReconciliation = await accept(
-      automationClient().disable({
-        headers,
-        params: { id: installedAutomation.id },
-      }),
-      [409],
-    );
-    expect(disableDuringReconciliation.body.error.message).toBe(
-      "Official Workflow reconfiguration is in progress; retry shortly",
-    );
-    releaseReconciliationWatch.resolve(undefined);
-    const reconfiguredAfterConflict = await persistedReconfiguration;
-    expect(
-      reconfiguredAfterConflict.body.workflow.automations[0],
-    ).toMatchObject({
-      id: installedAutomation.id,
-      enabled: true,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-        parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-      },
-    });
-    await accept(
-      installationClient().uninstall({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-      }),
-      [204],
-    );
-  });
-
-  it("compensates a later provider-watch failure and retries without a visible partial installation", async () => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-watch-${suffix}`;
-    await syncCatalog(
-      catalog([
-        activeDefinition(definitionName, [
-          scheduledBlueprint(),
-          gmailBlueprint(),
+    if (phase === "installation release") {
+      const installing = accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: installBody,
+        }),
+        [409],
+      );
+      await watchStarted.promise;
+      const installingWorkspaceAutomations = await accept(
+        automationClient().listWorkspace({ headers }),
+        [200],
+      );
+      expect(
+        installingWorkspaceAutomations.body.some((entry) => {
+          return entry.workflow.name === definitionName;
+        }),
+      ).toBeFalsy();
+      await syncCatalog(
+        catalog([
+          activeDefinition(
+            definitionName,
+            [blueprint],
+            "Accepted Definition revision two.",
+          ),
         ]),
-      ]),
-    );
-
-    const setup = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    const actor = setup.actor;
-    const { agentId } = await workflowBdd.createAgent(actor);
-    let agentDeleted = false;
-    onTestFinished(async () => {
-      if (!agentDeleted) {
-        installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, agentId);
+      );
+      releaseWatch.resolve(undefined);
+      const installConflict = await installing;
+      expect(installConflict.body.error.message).toBe(
+        "Official Workflow changed during installation; retry",
+      );
+      const afterInstallConflict = await accept(
+        workflowCollectionClient().list({
+          headers,
+          query: { agentId },
+        }),
+        [200],
+      );
+      expect(
+        afterInstallConflict.body.some((workflow) => {
+          return workflow.name === definitionName;
+        }),
+      ).toBeFalsy();
+      expect(stopCalls).toBeGreaterThan(0);
+    } else {
+      blockNextWatch = false;
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body:
+            phase === "concurrent pause"
+              ? {
+                  ...installBody,
+                  blueprints: [
+                    {
+                      blueprintKey: "gmail-label-trigger",
+                      bindings: [{ key: "label-name", value: "Follow Up" }],
+                    },
+                  ],
+                }
+              : installBody,
+        }),
+        [201],
+      );
+      const installedAutomation = installed.body.workflow.automations[0];
+      if (!installedAutomation) {
+        throw new Error("Expected Official Gmail automation");
       }
-      await cleanupCatalog();
-    });
-    mockGmailConnectorOAuth({ email: `official-${suffix}@example.test` });
-    await workflowBdd.connectConnector(actor, "gmail");
-    mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-    let stopCalls = 0;
-    server.use(
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
-        return HttpResponse.json({ error: "watch failed" }, { status: 500 });
-      }),
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
-        stopCalls++;
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    await setOfficialWorkflowsEnabled(actor, true);
-    const headers = authHeaders(actor);
-    const body = {
-      agentId,
-      blueprints: [
-        {
-          blueprintKey: "daily",
-          bindings: [{ key: "cron-expression", value: "0 6 * * *" }],
-        },
-        { blueprintKey: "gmail-trigger", bindings: [] },
-      ],
-    };
 
-    await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body,
-      }),
-      [400],
-    );
-    const listedAfterFailure = await accept(
-      workflowCollectionClient().list({
-        headers,
-        query: { agentId },
-      }),
-      [200],
-    );
-    expect(
-      listedAfterFailure.body.some((workflow) => {
-        return workflow.name === definitionName;
-      }),
-    ).toBeFalsy();
-
-    server.use(
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
-        return HttpResponse.json({
-          historyId: "100",
-          expiration: "4102444800000",
-        });
-      }),
-    );
-    const retried = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body,
-      }),
-      [201],
-    );
-    expect(retried.body.workflow.automations).toHaveLength(2);
-    expect(
-      retried.body.workflow.automations.every((automation) => {
-        return automation.enabled;
-      }),
-    ).toBeTruthy();
-    const gmailAutomation = retried.body.workflow.automations.find(
-      (automation) => {
-        return automation.official?.blueprintKey === "gmail-trigger";
-      },
-    );
-    if (!gmailAutomation) {
-      throw new Error("Expected retried Official Gmail automation");
-    }
-    await accept(
-      automationClient().disable({
-        headers,
-        params: { id: gmailAutomation.id },
-      }),
-      [200],
-    );
-    server.use(
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
-        return HttpResponse.json(
-          { error: "resume watch failed" },
-          { status: 500 },
+      if (phase === "instruction release") {
+        blockNextLabelLookup = true;
+        const reconfiguring = accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "gmail-label-trigger",
+                  bindings: [{ key: "label-name", value: "Follow Up" }],
+                },
+              ],
+            },
+          }),
+          [200],
         );
-      }),
-    );
-    await accept(
-      automationClient().enable({
-        headers,
-        params: { id: gmailAutomation.id },
-      }),
-      [400],
-    );
-    const afterFailedResume = await accept(
-      installationClient().get({
-        headers,
-        params: { workflowId: retried.body.workflow.id },
-      }),
-      [200],
-    );
-    expect(
-      afterFailedResume.body.workflow.automations.find((automation) => {
-        return automation.id === gmailAutomation.id;
-      }),
-    ).toMatchObject({
-      enabled: false,
-      official: {
-        intendedEnabled: false,
-        reconciliationStatus: "current",
-      },
-    });
-    server.use(
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
-        return HttpResponse.json({
-          historyId: "101",
-          expiration: "4102444800000",
+        await labelLookupStarted.promise;
+        await syncCatalog(
+          catalog([
+            activeDefinition(
+              definitionName,
+              [blueprint],
+              "Accepted Definition revision three.",
+            ),
+          ]),
+        );
+        releaseLabelLookup.resolve(undefined);
+        const reconfiguredAcrossInstructionRelease = await reconfiguring;
+        expect(
+          reconfiguredAcrossInstructionRelease.body.workflow.automations[0],
+        ).toMatchObject({
+          id: installedAutomation.id,
+          official: {
+            reconciliationStatus: "current",
+            parameterBindings: [{ key: "label-name", value: "Follow Up" }],
+          },
         });
-      }),
-    );
-    await accept(
-      automationClient().enable({
-        headers,
-        params: { id: gmailAutomation.id },
-      }),
-      [200],
-    );
-    const stopCallsBeforeAgentDeletion = stopCalls;
-    await bdd.deleteAgent(actor, agentId);
-    agentDeleted = true;
-    await accept(
-      installationClient().get({
-        headers,
-        params: { workflowId: retried.body.workflow.id },
-      }),
-      [404],
-    );
-    expect(stopCalls).toBeGreaterThan(stopCallsBeforeAgentDeletion);
+        const unchanged = await accept(
+          installationClient().get({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+          }),
+          [200],
+        );
+        expect(unchanged.body.workflow.instruction).toBe(
+          "Accepted Definition revision three.",
+        );
+        expect(unchanged.body.workflow.automations[0]?.official).toMatchObject({
+          reconciliationStatus: "current",
+          parameterBindings: [{ key: "label-name", value: "Follow Up" }],
+        });
+
+        const reconfigured = await accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "gmail-label-trigger",
+                  bindings: [{ key: "label-name", value: "Follow Up" }],
+                },
+              ],
+            },
+          }),
+          [200],
+        );
+        expect(reconfigured.body.workflow.automations[0]).toMatchObject({
+          id: installedAutomation.id,
+          chatThreadId: installedAutomation.chatThreadId,
+          official: {
+            reconciliationStatus: "current",
+            parameterBindings: [{ key: "label-name", value: "Follow Up" }],
+          },
+        });
+      } else if (phase === "concurrent pause") {
+        const concurrentLookupStarted = createDeferredPromise<void>(
+          context.signal,
+        );
+        const releaseConcurrentLookup = createDeferredPromise<void>(
+          context.signal,
+        );
+        let blockConcurrentLookup = true;
+        server.use(
+          http.get(
+            "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+            async () => {
+              if (blockConcurrentLookup) {
+                blockConcurrentLookup = false;
+                concurrentLookupStarted.resolve(undefined);
+                await releaseConcurrentLookup.promise;
+              }
+              return HttpResponse.json({
+                labels: [
+                  { id: "Label_important", name: "Important" },
+                  { id: "Label_follow_up", name: "Follow Up" },
+                ],
+              });
+            },
+          ),
+        );
+        const concurrentReconfiguration = accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "gmail-label-trigger",
+                  bindings: [{ key: "label-name", value: "Important" }],
+                },
+              ],
+            },
+          }),
+          [200],
+        );
+        await concurrentLookupStarted.promise;
+        await accept(
+          automationClient().disable({
+            headers,
+            params: { id: installedAutomation.id },
+          }),
+          [200],
+        );
+        releaseConcurrentLookup.resolve(undefined);
+        const reconfiguredAfterPause = await concurrentReconfiguration;
+        expect(
+          reconfiguredAfterPause.body.workflow.automations[0],
+        ).toMatchObject({
+          id: installedAutomation.id,
+          enabled: false,
+          official: {
+            intendedEnabled: false,
+            reconciliationStatus: "current",
+            parameterBindings: [{ key: "label-name", value: "Important" }],
+          },
+        });
+      } else {
+        await accept(
+          automationClient().disable({
+            headers,
+            params: { id: installedAutomation.id },
+          }),
+          [200],
+        );
+        let expiringWatchCalls = 0;
+        server.use(
+          http.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+            () => {
+              expiringWatchCalls++;
+              return HttpResponse.json({
+                historyId: "101",
+                expiration: String(now() + 60_000),
+              });
+            },
+          ),
+        );
+        await accept(
+          automationClient().enable({
+            headers,
+            params: { id: installedAutomation.id },
+          }),
+          [200],
+        );
+        expect(expiringWatchCalls).toBe(1);
+
+        const reconciliationWatchStarted = createDeferredPromise<void>(
+          context.signal,
+        );
+        const releaseReconciliationWatch = createDeferredPromise<void>(
+          context.signal,
+        );
+        server.use(
+          http.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+            async () => {
+              reconciliationWatchStarted.resolve(undefined);
+              await releaseReconciliationWatch.promise;
+              return HttpResponse.json({
+                historyId: "102",
+                expiration: "4102444800000",
+              });
+            },
+          ),
+        );
+        const persistedReconfiguration = accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "gmail-label-trigger",
+                  bindings: [{ key: "label-name", value: "Follow Up" }],
+                },
+              ],
+            },
+          }),
+          [200],
+        );
+        await reconciliationWatchStarted.promise;
+        const disableDuringReconciliation = await accept(
+          automationClient().disable({
+            headers,
+            params: { id: installedAutomation.id },
+          }),
+          [409],
+        );
+        expect(disableDuringReconciliation.body.error.message).toBe(
+          "Official Workflow reconfiguration is in progress; retry shortly",
+        );
+        releaseReconciliationWatch.resolve(undefined);
+        const reconfiguredAfterConflict = await persistedReconfiguration;
+        expect(
+          reconfiguredAfterConflict.body.workflow.automations[0],
+        ).toMatchObject({
+          id: installedAutomation.id,
+          enabled: true,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "current",
+            parameterBindings: [{ key: "label-name", value: "Follow Up" }],
+          },
+        });
+      }
+      await accept(
+        installationClient().uninstall({
+          headers,
+          params: { workflowId: installed.body.workflow.id },
+        }),
+        [204],
+      );
+    }
   });
+
+  it.each(["installation retry", "resume retry", "agent deletion"] as const)(
+    "preserves official workflow state through %s",
+    async (scenario) => {
+      installCatalogStorageFixture();
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-watch-${suffix}`;
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            scheduledBlueprint(),
+            gmailBlueprint(),
+          ]),
+        ]),
+      );
+
+      const setup = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+      });
+      const actor = setup.actor;
+      const { agentId } = await workflowBdd.createAgent(actor);
+      let agentDeleted = false;
+      onTestFinished(async () => {
+        if (!agentDeleted) {
+          installCatalogStorageFixture();
+          await bdd.deleteAgent(actor, agentId);
+        }
+        await cleanupCatalog();
+      });
+      mockGmailConnectorOAuth({ email: `official-${suffix}@example.test` });
+      await workflowBdd.connectConnector(actor, "gmail");
+      mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
+      let stopCalls = 0;
+      server.use(
+        http.post(
+          "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+          () => {
+            return scenario === "installation retry"
+              ? HttpResponse.json({ error: "watch failed" }, { status: 500 })
+              : HttpResponse.json({
+                  historyId: "100",
+                  expiration: "4102444800000",
+                });
+          },
+        ),
+        http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
+          stopCalls++;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+      await setOfficialWorkflowsEnabled(actor, true);
+      const headers = authHeaders(actor);
+      const body = {
+        agentId,
+        blueprints: [
+          {
+            blueprintKey: "daily",
+            bindings: [{ key: "cron-expression", value: "0 6 * * *" }],
+          },
+          { blueprintKey: "gmail-trigger", bindings: [] },
+        ],
+      };
+
+      if (scenario === "installation retry") {
+        await accept(
+          officialClient().install({
+            headers,
+            params: { definitionName },
+            body,
+          }),
+          [400],
+        );
+        const listedAfterFailure = await accept(
+          workflowCollectionClient().list({
+            headers,
+            query: { agentId },
+          }),
+          [200],
+        );
+        expect(
+          listedAfterFailure.body.some((workflow) => {
+            return workflow.name === definitionName;
+          }),
+        ).toBeFalsy();
+      }
+
+      server.use(
+        http.post(
+          "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+          () => {
+            return HttpResponse.json({
+              historyId: "100",
+              expiration: "4102444800000",
+            });
+          },
+        ),
+      );
+      const retried = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body,
+        }),
+        [201],
+      );
+      expect(retried.body.workflow.automations).toHaveLength(2);
+      expect(
+        retried.body.workflow.automations.every((automation) => {
+          return automation.enabled;
+        }),
+      ).toBeTruthy();
+      if (scenario === "installation retry") {
+        return;
+      }
+
+      if (scenario === "resume retry") {
+        const gmailAutomation = retried.body.workflow.automations.find(
+          (automation) => {
+            return automation.official?.blueprintKey === "gmail-trigger";
+          },
+        );
+        if (!gmailAutomation) {
+          throw new Error("Expected retried Official Gmail automation");
+        }
+        await accept(
+          automationClient().disable({
+            headers,
+            params: { id: gmailAutomation.id },
+          }),
+          [200],
+        );
+        server.use(
+          http.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+            () => {
+              return HttpResponse.json(
+                { error: "resume watch failed" },
+                { status: 500 },
+              );
+            },
+          ),
+        );
+        await accept(
+          automationClient().enable({
+            headers,
+            params: { id: gmailAutomation.id },
+          }),
+          [400],
+        );
+        const afterFailedResume = await accept(
+          installationClient().get({
+            headers,
+            params: { workflowId: retried.body.workflow.id },
+          }),
+          [200],
+        );
+        expect(
+          afterFailedResume.body.workflow.automations.find((automation) => {
+            return automation.id === gmailAutomation.id;
+          }),
+        ).toMatchObject({
+          enabled: false,
+          official: {
+            intendedEnabled: false,
+            reconciliationStatus: "current",
+          },
+        });
+        server.use(
+          http.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+            () => {
+              return HttpResponse.json({
+                historyId: "101",
+                expiration: "4102444800000",
+              });
+            },
+          ),
+        );
+        await accept(
+          automationClient().enable({
+            headers,
+            params: { id: gmailAutomation.id },
+          }),
+          [200],
+        );
+        return;
+      }
+
+      const stopCallsBeforeAgentDeletion = stopCalls;
+      await bdd.deleteAgent(actor, agentId);
+      agentDeleted = true;
+      await accept(
+        installationClient().get({
+          headers,
+          params: { workflowId: retried.body.workflow.id },
+        }),
+        [404],
+      );
+      expect(stopCalls).toBeGreaterThan(stopCallsBeforeAgentDeletion);
+    },
+  );
 
   it("preserves the Google Forms account projection across same-target reconfiguration", async () => {
     installCatalogStorageFixture();
@@ -5745,336 +5981,358 @@ describe.sequential("Official Workflow installations", () => {
     ).resolves.toMatchObject({ autonomyBudget: 8, enabled: true });
   });
 
-  it("repairs a committed dormant materialization gap after lease expiry without duplicating identity, watch, or history", async () => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-materialize-${suffix}`;
-    await syncCatalog(
-      catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
-    );
-    const setup = await workflowBdd.setupWorkflowOrg();
-    const { actor } = setup;
-    const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
+  it.each([
+    "dormant materialization",
+    "current lifecycle gap",
+    "discarded materialization",
+  ] as const)(
+    "repairs %s without duplicating identity, watch, or history",
+    async (phase) => {
       installCatalogStorageFixture();
-      const createdRuns = await runs.listAgentRuns(actor, {
-        agent: agentId,
-        limit: 100,
-      });
-      for (const run of createdRuns.runs) {
-        await runs.requestCancelRun(actor, run.id, [200, 400]);
-      }
-      await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
-    mockGmailConnectorOAuth({ email: `materialize-${suffix}@example.test` });
-    await workflowBdd.connectConnector(actor, "gmail");
-    mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-    let watchCalls = 0;
-    let stopCalls = 0;
-    server.use(
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/watch", () => {
-        watchCalls++;
-        return HttpResponse.json({
-          historyId: String(100 + watchCalls),
-          expiration: "4102444800000",
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-materialize-${suffix}`;
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
+      );
+      const setup = await workflowBdd.setupWorkflowOrg();
+      const { actor } = setup;
+      const { agentId } = await workflowBdd.createAgent(actor);
+      onTestFinished(async () => {
+        installCatalogStorageFixture();
+        const createdRuns = await runs.listAgentRuns(actor, {
+          agent: agentId,
+          limit: 100,
         });
-      }),
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
-        stopCalls++;
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    await setOfficialWorkflowsEnabled(actor, true);
-    const headers = authHeaders(actor);
-    const installed = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body: {
-          agentId,
-          blueprints: [{ blueprintKey: "gmail-trigger", bindings: [] }],
+        for (const run of createdRuns.runs) {
+          await runs.requestCancelRun(actor, run.id, [200, 400]);
+        }
+        await flushWaitUntilForTest();
+        await bdd.deleteAgent(actor, agentId);
+        await cleanupCatalog();
+      });
+      mockGmailConnectorOAuth({ email: `materialize-${suffix}@example.test` });
+      await workflowBdd.connectConnector(actor, "gmail");
+      mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
+      let watchCalls = 0;
+      let stopCalls = 0;
+      server.use(
+        http.post(
+          "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+          () => {
+            watchCalls++;
+            return HttpResponse.json({
+              historyId: String(100 + watchCalls),
+              expiration: "4102444800000",
+            });
+          },
+        ),
+        http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
+          stopCalls++;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+      await setOfficialWorkflowsEnabled(actor, true);
+      const headers = authHeaders(actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId,
+            blueprints: [{ blueprintKey: "gmail-trigger", bindings: [] }],
+          },
+        }),
+        [201],
+      );
+      const workflowId = installed.body.workflow.id;
+      const automation = installed.body.workflow.automations[0];
+      if (!automation) {
+        throw new Error("Expected Official Gmail Automation");
+      }
+      expect(automation).toMatchObject({
+        enabled: true,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "current",
         },
-      }),
-      [201],
-    );
-    const workflowId = installed.body.workflow.id;
-    const automation = installed.body.workflow.automations[0];
-    if (!automation) {
-      throw new Error("Expected Official Gmail Automation");
-    }
-    expect(automation).toMatchObject({
-      enabled: true,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-      },
-    });
+      });
 
-    runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    const historical = await accept(
-      automationClient().run({
-        headers,
-        params: { id: automation.id },
-      }),
-      [201],
-    );
-    if (!historical.body.runId) {
-      throw new Error("Expected historical Official Automation Run");
-    }
-    await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
+      runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      const historical = await accept(
+        automationClient().run({
+          headers,
+          params: { id: automation.id },
+        }),
+        [201],
+      );
+      if (!historical.body.runId) {
+        throw new Error("Expected historical Official Automation Run");
+      }
+      await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
 
-    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    await runOfficialWorkflowReconciliationWorker();
-    const removedIdentity = await readOfficialWorkflowReconciliationState({
-      workflowId,
-    });
-    expect(removedIdentity.body.identities).toStrictEqual([
-      expect.objectContaining({
+      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+      await runOfficialWorkflowReconciliationWorker();
+      const removedIdentity = await readOfficialWorkflowReconciliationState({
+        workflowId,
+      });
+      expect(removedIdentity.body.identities).toStrictEqual([
+        expect.objectContaining({
+          id: automation.id,
+          automationId: null,
+          blueprintKey: "gmail-trigger",
+          state: "removed",
+          retainedIntendedEnabled: true,
+        }),
+      ]);
+
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
+      );
+      await runOfficialWorkflowReconciliationWorker();
+      const restored = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(restored.body.workflow.automations).toHaveLength(1);
+      expect(restored.body.workflow.automations[0]).toMatchObject({
         id: automation.id,
-        automationId: null,
-        blueprintKey: "gmail-trigger",
-        state: "removed",
-        retainedIntendedEnabled: true,
-      }),
-    ]);
+        chatThreadId: automation.chatThreadId,
+        enabled: true,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "current",
+        },
+      });
+      const historyCounts = await readAgentRunFamilyCountsFixture(
+        context,
+        agentId,
+      );
 
-    await syncCatalog(
-      catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
-    );
-    await runOfficialWorkflowReconciliationWorker();
-    const restored = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(restored.body.workflow.automations).toHaveLength(1);
-    expect(restored.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      chatThreadId: automation.chatThreadId,
-      enabled: true,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-      },
-    });
-    const historyCounts = await readAgentRunFamilyCountsFixture(
-      context,
-      agentId,
-    );
+      if (phase === "dormant materialization") {
+        await simulateDormantMaterializationCrash({
+          definitionName,
+          automationId: automation.id,
+        });
+        watchCalls = 0;
+        const crashed = await accept(
+          installationClient().get({ headers, params: { workflowId } }),
+          [200],
+        );
+        expect(crashed.body.workflow.automations).toHaveLength(1);
+        expect(crashed.body.workflow.automations[0]).toMatchObject({
+          id: automation.id,
+          enabled: false,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "reconciling",
+          },
+        });
+        const crashedWork = await readOfficialWorkflowReconciliationState({
+          workflowId,
+        });
+        expect(crashedWork.body.reconciliationWork).toMatchObject([
+          {
+            definitionName,
+            state: "running",
+            leaseId: expect.any(String),
+            attemptCount: 0,
+          },
+        ]);
+        expect(crashedWork.body.identities).toStrictEqual([
+          expect.objectContaining({
+            id: automation.id,
+            automationId: null,
+            blueprintKey: "gmail-trigger",
+            state: "reconciling",
+            retainedIntendedEnabled: true,
+            retainedAppliedFingerprint: expect.any(String),
+          }),
+        ]);
 
-    await simulateDormantMaterializationCrash({
-      definitionName,
-      automationId: automation.id,
-    });
-    watchCalls = 0;
-    const crashed = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(crashed.body.workflow.automations).toHaveLength(1);
-    expect(crashed.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      enabled: false,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "reconciling",
-      },
-    });
-    const crashedWork = await readOfficialWorkflowReconciliationState({
-      workflowId,
-    });
-    expect(crashedWork.body.reconciliationWork).toMatchObject([
-      {
-        definitionName,
-        state: "running",
-        leaseId: expect.any(String),
-        attemptCount: 0,
-      },
-    ]);
-    expect(crashedWork.body.identities).toStrictEqual([
-      expect.objectContaining({
-        id: automation.id,
-        automationId: null,
-        blueprintKey: "gmail-trigger",
-        state: "reconciling",
-        retainedIntendedEnabled: true,
-        retainedAppliedFingerprint: expect.any(String),
-      }),
-    ]);
+        const retried = await Promise.all([
+          runOfficialWorkflowReconciliationWorker(),
+          runOfficialWorkflowReconciliationWorker(),
+        ]);
+        expect(
+          retried.reduce((sum, result) => {
+            return sum + result.claimed;
+          }, 0),
+        ).toBe(1);
+        expect(
+          retried.reduce((sum, result) => {
+            return sum + result.completed;
+          }, 0),
+        ).toBe(1);
+        expect(
+          retried.reduce((sum, result) => {
+            return sum + result.installations;
+          }, 0),
+        ).toBe(1);
 
-    const retried = await Promise.all([
-      runOfficialWorkflowReconciliationWorker(),
-      runOfficialWorkflowReconciliationWorker(),
-    ]);
-    expect(
-      retried.reduce((sum, result) => {
-        return sum + result.claimed;
-      }, 0),
-    ).toBe(1);
-    expect(
-      retried.reduce((sum, result) => {
-        return sum + result.completed;
-      }, 0),
-    ).toBe(1);
-    expect(
-      retried.reduce((sum, result) => {
-        return sum + result.installations;
-      }, 0),
-    ).toBe(1);
-
-    const recovered = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(recovered.body.workflow.automations).toHaveLength(1);
-    expect(recovered.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      chatThreadId: automation.chatThreadId,
-      enabled: true,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-      },
-    });
-    const recoveredIdentity = await readOfficialWorkflowReconciliationState({
-      workflowId,
-    });
-    expect(recoveredIdentity.body.identities).toStrictEqual([
-      expect.objectContaining({
-        id: automation.id,
-        automationId: automation.id,
-        blueprintKey: "gmail-trigger",
-        state: "active",
-      }),
-    ]);
-    expect(watchCalls).toBe(1);
-    await expect(
-      readAgentRunFamilyCountsFixture(context, agentId),
-    ).resolves.toStrictEqual(historyCounts);
-    await expect(
-      readOfficialWorkflowRunStateFixture(context, historical.body.runId),
-    ).resolves.toMatchObject({
-      provenance: {
-        definitions: [expect.objectContaining({ name: definitionName })],
-      },
-    });
-
-    await simulateCurrentLifecycleGap({
-      definitionName,
-      automationId: automation.id,
-    });
-    watchCalls = 0;
-    const currentGap = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(currentGap.body.workflow.automations).toHaveLength(1);
-    expect(currentGap.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      enabled: false,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-      },
-    });
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
-    const currentGapRecovered = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(currentGapRecovered.body.workflow.automations).toHaveLength(1);
-    expect(currentGapRecovered.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      enabled: true,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-      },
-    });
-    expect(watchCalls).toBe(1);
-    await expect(
-      readAgentRunFamilyCountsFixture(context, agentId),
-    ).resolves.toStrictEqual(historyCounts);
-
-    watchCalls = 0;
-    stopCalls = 0;
-    await simulateDormantMaterializationDiscardCrash({
-      definitionName,
-      automationId: automation.id,
-    });
-    const discardGap = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(discardGap.body.workflow.automations).toHaveLength(1);
-    expect(discardGap.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      enabled: false,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "failed",
-      },
-    });
-    await runOfficialWorkflowReconciliationWorker();
-    const compensated = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(compensated.body.workflow.automations).toHaveLength(0);
-    expect(stopCalls).toBe(1);
-    expect(watchCalls).toBe(0);
-    const compensatedState = await readOfficialWorkflowReconciliationState({
-      workflowId,
-    });
-    expect(compensatedState.body.identities).toStrictEqual([
-      expect.objectContaining({
-        id: automation.id,
-        automationId: null,
-        blueprintKey: "gmail-trigger",
-        state: "failed",
-        retainedIntendedEnabled: true,
-      }),
-    ]);
-    await makeOfficialWorkflowReconciliationWorkDue(definitionName);
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual(
-      expect.objectContaining({ claimed: 1, completed: 1, installations: 1 }),
-    );
-    const discardRecovered = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(discardRecovered.body.workflow.automations).toHaveLength(1);
-    expect(discardRecovered.body.workflow.automations[0]).toMatchObject({
-      id: automation.id,
-      enabled: true,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-      },
-    });
-    expect(watchCalls).toBe(1);
-    await expect(
-      readAgentRunFamilyCountsFixture(context, agentId),
-    ).resolves.toStrictEqual(historyCounts);
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 0,
-      completed: 0,
-      advanced: 0,
-      retried: 0,
-      installations: 0,
-    });
-    expect(watchCalls).toBe(1);
-  });
+        const recovered = await accept(
+          installationClient().get({ headers, params: { workflowId } }),
+          [200],
+        );
+        expect(recovered.body.workflow.automations).toHaveLength(1);
+        expect(recovered.body.workflow.automations[0]).toMatchObject({
+          id: automation.id,
+          chatThreadId: automation.chatThreadId,
+          enabled: true,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "current",
+          },
+        });
+        const recoveredIdentity = await readOfficialWorkflowReconciliationState(
+          {
+            workflowId,
+          },
+        );
+        expect(recoveredIdentity.body.identities).toStrictEqual([
+          expect.objectContaining({
+            id: automation.id,
+            automationId: automation.id,
+            blueprintKey: "gmail-trigger",
+            state: "active",
+          }),
+        ]);
+        expect(watchCalls).toBe(1);
+        await expect(
+          readAgentRunFamilyCountsFixture(context, agentId),
+        ).resolves.toStrictEqual(historyCounts);
+        await expect(
+          readOfficialWorkflowRunStateFixture(context, historical.body.runId),
+        ).resolves.toMatchObject({
+          provenance: {
+            definitions: [expect.objectContaining({ name: definitionName })],
+          },
+        });
+      } else if (phase === "current lifecycle gap") {
+        await simulateCurrentLifecycleGap({
+          definitionName,
+          automationId: automation.id,
+        });
+        watchCalls = 0;
+        const currentGap = await accept(
+          installationClient().get({ headers, params: { workflowId } }),
+          [200],
+        );
+        expect(currentGap.body.workflow.automations).toHaveLength(1);
+        expect(currentGap.body.workflow.automations[0]).toMatchObject({
+          id: automation.id,
+          enabled: false,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "current",
+          },
+        });
+        await expect(
+          runOfficialWorkflowReconciliationWorker(),
+        ).resolves.toStrictEqual(
+          expect.objectContaining({
+            claimed: 1,
+            completed: 1,
+            installations: 1,
+          }),
+        );
+        const currentGapRecovered = await accept(
+          installationClient().get({ headers, params: { workflowId } }),
+          [200],
+        );
+        expect(currentGapRecovered.body.workflow.automations).toHaveLength(1);
+        expect(currentGapRecovered.body.workflow.automations[0]).toMatchObject({
+          id: automation.id,
+          enabled: true,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "current",
+          },
+        });
+        expect(watchCalls).toBe(1);
+        await expect(
+          readAgentRunFamilyCountsFixture(context, agentId),
+        ).resolves.toStrictEqual(historyCounts);
+      } else {
+        watchCalls = 0;
+        stopCalls = 0;
+        await simulateDormantMaterializationDiscardCrash({
+          definitionName,
+          automationId: automation.id,
+        });
+        const discardGap = await accept(
+          installationClient().get({ headers, params: { workflowId } }),
+          [200],
+        );
+        expect(discardGap.body.workflow.automations).toHaveLength(1);
+        expect(discardGap.body.workflow.automations[0]).toMatchObject({
+          id: automation.id,
+          enabled: false,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "failed",
+          },
+        });
+        await runOfficialWorkflowReconciliationWorker();
+        const compensated = await accept(
+          installationClient().get({ headers, params: { workflowId } }),
+          [200],
+        );
+        expect(compensated.body.workflow.automations).toHaveLength(0);
+        expect(stopCalls).toBe(1);
+        expect(watchCalls).toBe(0);
+        const compensatedState = await readOfficialWorkflowReconciliationState({
+          workflowId,
+        });
+        expect(compensatedState.body.identities).toStrictEqual([
+          expect.objectContaining({
+            id: automation.id,
+            automationId: null,
+            blueprintKey: "gmail-trigger",
+            state: "failed",
+            retainedIntendedEnabled: true,
+          }),
+        ]);
+        await makeOfficialWorkflowReconciliationWorkDue(definitionName);
+        await expect(
+          runOfficialWorkflowReconciliationWorker(),
+        ).resolves.toStrictEqual(
+          expect.objectContaining({
+            claimed: 1,
+            completed: 1,
+            installations: 1,
+          }),
+        );
+        const discardRecovered = await accept(
+          installationClient().get({ headers, params: { workflowId } }),
+          [200],
+        );
+        expect(discardRecovered.body.workflow.automations).toHaveLength(1);
+        expect(discardRecovered.body.workflow.automations[0]).toMatchObject({
+          id: automation.id,
+          enabled: true,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "current",
+          },
+        });
+        expect(watchCalls).toBe(1);
+        await expect(
+          readAgentRunFamilyCountsFixture(context, agentId),
+        ).resolves.toStrictEqual(historyCounts);
+        await expect(
+          runOfficialWorkflowReconciliationWorker(),
+        ).resolves.toStrictEqual({
+          claimed: 0,
+          completed: 0,
+          advanced: 0,
+          retried: 0,
+          installations: 0,
+        });
+        expect(watchCalls).toBe(1);
+      }
+    },
+  );
 
   it("discards paused stale dormant materialization before promotion and preserves newer catalog intent", async () => {
     installCatalogStorageFixture();
@@ -7787,7 +8045,7 @@ describe.sequential("Official Workflow installations", () => {
   });
 });
 
-describe.sequential("Official Workflow Run admission", () => {
+describe("Official Workflow Run admission", () => {
   it("pins exact active and retained-retired artifacts without org shadowing", async () => {
     installCatalogStorageFixture();
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);

@@ -128,8 +128,8 @@ async def test_removed_connector_becomes_ordinary_request_without_auth(
     )
     _remove_from_catalog(cache_path, retained_base=retained_base)
     registry.reset_cache_for_tests()
-    removed_intent = (("X-VM0-Connector-Intent", _REMOVED),) if include_intent else ()
-    retained_intent = (("X-VM0-Connector-Intent", _RETAINED),) if include_intent else ()
+    removed_intent = (("X-Okou-Connector-Intent", _REMOVED),) if include_intent else ()
+    retained_intent = (("X-Okou-Connector-Intent", _RETAINED),) if include_intent else ()
     removed_flow = real_flow(
         with_response=False,
         client_ip=_CLIENT_IP,
@@ -174,7 +174,7 @@ async def test_removed_connector_becomes_ordinary_request_without_auth(
     assert removed_flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
     assert metadata_keys.FIREWALL_NAME not in removed_flow.metadata
     assert "Authorization" not in removed_flow.request.headers
-    assert "X-VM0-Connector-Intent" not in removed_flow.request.headers
+    assert "X-Okou-Connector-Intent" not in removed_flow.request.headers
     assert retained_flow.response is None
     assert retained_flow.metadata[metadata_keys.FIREWALL_NAME] == _RETAINED
     assert retained_flow.request.headers["Authorization"] == "Bearer retained"
@@ -240,7 +240,7 @@ async def test_custom_connector_id_selects_active_owner_and_does_not_fall_throug
         path="/items/123",
         request_headers=headers(
             ("Host", shared_host),
-            ("X-VM0-Connector-Intent", custom_connector_id),
+            ("X-Okou-Connector-Intent", custom_connector_id),
         ),
     )
     removed_flow = real_flow(
@@ -250,7 +250,7 @@ async def test_custom_connector_id_selects_active_owner_and_does_not_fall_throug
         path="/items/123",
         request_headers=headers(
             ("Host", shared_host),
-            ("X-VM0-Connector-Intent", custom_connector_id),
+            ("X-Okou-Connector-Intent", custom_connector_id),
         ),
     )
 
@@ -329,7 +329,7 @@ async def test_catalog_removal_during_auth_revalidation_discards_old_credentials
         path="/items/123",
         request_headers=headers(
             ("Host", "removed.example.com"),
-            ("X-VM0-Connector-Intent", _REMOVED),
+            ("X-Okou-Connector-Intent", _REMOVED),
         ),
     )
     auth_resolution_entered = asyncio.Event()

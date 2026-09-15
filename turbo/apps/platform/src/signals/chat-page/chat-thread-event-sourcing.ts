@@ -3,9 +3,9 @@ import {
   chatThreadMetadataContract,
   type ChatThreadEvent,
   type ChatThreadMetadata,
-  type ReasoningEffort,
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
@@ -16,7 +16,7 @@ import {
 import { activeRoute$ } from "../active-route.ts";
 import { apiClient$ } from "../api-client.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { rootSignal$, rootVersion$ } from "../root-signal.ts";
+import { rootSignal$ } from "../root-signal.ts";
 import { pathParams$ } from "../route.ts";
 import {
   createChildAbortController,
@@ -60,7 +60,7 @@ export interface ThreadMeta {
   readonly title: string | null;
   readonly pinnedAt: string | null;
   readonly selectedModel: string | null;
-  readonly reasoningEffort?: ReasoningEffort | null;
+  readonly modelSettings: ModelSettings;
   readonly serviceTier: "priority" | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -161,17 +161,6 @@ const initialLocalChatThreadEventsLoaded$ = computed((get) => {
   return get(initialLocalChatThreadEventsLoadedDeferred$).promise;
 });
 
-interface ChatThreadEventSyncBarrier {
-  work: Promise<void> | null;
-}
-
-const chatThreadEventSyncBarrier$ = computed(
-  (get): ChatThreadEventSyncBarrier => {
-    get(rootVersion$);
-    return { work: null };
-  },
-);
-
 const optimisticChatThreadCreateIds$ = computed((get): ReadonlySet<string> => {
   return new Set(
     get(optimisticChatThreadEventsState$).flatMap((event) => {
@@ -243,54 +232,41 @@ const applySharedChatThreadEventResult$ = command(
   },
 );
 
+// Each caller runs its own catch-up: a mutation can commit after an older sync
+// has already read its result, so sharing one in-flight refresh would serve a
+// stale answer. Failure remains a rejection, never authoritative not-found.
 const syncSharedEventDrivenChatThreads$ = command(
-  ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const barrier = get(chatThreadEventSyncBarrier$);
-    // Keep explicit refreshes independent: a mutation can commit after an
-    // older sync has already read its result. Readers await the latest work.
-    const work = withCleanup(
-      (async () => {
-        const dataKey = await get(sharedChatThreadEventDataKey$);
-        signal.throwIfAborted();
-        const currentSeqId = get(chatThreadEventState$).latestSeqId;
-        const cached = await set(
-          queryChatThreadEventSharedDatabase$,
-          {
-            dataKey,
-            afterSeqId: currentSeqId,
-            consistency: "cache-only",
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-        const cachedLastSeqId =
-          cached.events.at(-1)?.seqId ?? cached.snapshot?.latestSeqId ?? null;
-        const result =
-          cachedLastSeqId !== null &&
-          (currentSeqId === null || cachedLastSeqId > currentSeqId)
-            ? cached
-            : await set(
-                queryChatThreadEventSharedDatabase$,
-                {
-                  dataKey,
-                  afterSeqId: currentSeqId,
-                  consistency: "catch-up",
-                },
-                signal,
-              );
-        signal.throwIfAborted();
-        set(applySharedChatThreadEventResult$, result, "remote", signal);
-      })(),
-      () => {
-        // Failure remains a rejection, never authoritative not-found. An
-        // older completion must not release a newer caller's ownership.
-        if (barrier.work === work) {
-          barrier.work = null;
-        }
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const dataKey = await get(sharedChatThreadEventDataKey$);
+    signal.throwIfAborted();
+    const currentSeqId = get(chatThreadEventState$).latestSeqId;
+    const cached = await set(
+      queryChatThreadEventSharedDatabase$,
+      {
+        dataKey,
+        afterSeqId: currentSeqId,
+        consistency: "cache-only",
       },
+      signal,
     );
-    barrier.work = work;
-    return work;
+    signal.throwIfAborted();
+    const cachedLastSeqId =
+      cached.events.at(-1)?.seqId ?? cached.snapshot?.latestSeqId ?? null;
+    const result =
+      cachedLastSeqId !== null &&
+      (currentSeqId === null || cachedLastSeqId > currentSeqId)
+        ? cached
+        : await set(
+            queryChatThreadEventSharedDatabase$,
+            {
+              dataKey,
+              afterSeqId: currentSeqId,
+              consistency: "catch-up",
+            },
+            signal,
+          );
+    signal.throwIfAborted();
+    set(applySharedChatThreadEventResult$, result, "remote", signal);
   },
 );
 
@@ -354,7 +330,7 @@ const canonicalThreadMetaMap$ = computed((get) => {
       title: thread.title,
       pinnedAt: thread.pinnedAt,
       selectedModel: thread.selectedModel,
-      reasoningEffort: thread.reasoningEffort ?? null,
+      modelSettings: thread.modelSettings,
       serviceTier: thread.serviceTier,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
@@ -389,7 +365,7 @@ function remoteThreadMeta(metadata: ChatThreadMetadata): ThreadMeta {
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
     selectedModel: metadata.selectedModel,
-    reasoningEffort: metadata.reasoningEffort ?? null,
+    modelSettings: metadata.modelSettings,
     serviceTier: metadata.serviceTier,
     computerUseHostId: metadata.computerUseHostId,
     cloudBrowserEnabled: metadata.cloudBrowserEnabled,
@@ -426,6 +402,7 @@ function waitForSharedWork<T>(
   signal: AbortSignal,
 ): Promise<T> {
   signal.throwIfAborted();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const waitController = createChildAbortController(signal);
   const aborted = createDeferredPromise<never>(waitController.signal);
   return withCleanup(Promise.race([work, aborted.promise]), () => {
@@ -486,6 +463,7 @@ const resolveColdThreadMeta$ = command(
     canonicalSync: Promise<void>,
     signal: AbortSignal,
   ): Promise<ColdThreadMetaResolution> => {
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const controller = createChildAbortController(signal);
     const metadata = set(attemptRemoteThreadMeta$, threadId, controller.signal);
     const eventStream = set(
@@ -528,13 +506,12 @@ export const resolveThreadMeta$ = command(
 
     const remoteStartedAt = performance.now();
     const initialRemoteSync = get(initialRemoteChatThreadEventsSyncedDeferred$);
-    const syncBarrier = get(chatThreadEventSyncBarrier$);
     // Refresh missing threads against current server state after initial sync.
-    const canonicalSync =
-      syncBarrier.work ??
-      (initialRemoteSync.settled()
-        ? set(syncSharedEventDrivenChatThreads$, get(rootSignal$))
-        : initialRemoteSync.promise);
+    // This reader owns its own refresh, so another caller's cancellation can
+    // never finish it.
+    const canonicalSync = initialRemoteSync.settled()
+      ? set(syncSharedEventDrivenChatThreads$, get(rootSignal$))
+      : initialRemoteSync.promise;
     const syncVersion = get(chatThreadEventSyncVersion$);
     const resolution = await set(
       resolveColdThreadMeta$,

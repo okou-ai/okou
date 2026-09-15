@@ -96,6 +96,7 @@ export default [
       "ccstate/setup-page-render": "off",
       "ccstate/no-side-effect-in-render": "error",
       "ccstate/no-new-abort-controller": "error",
+      "ccstate/no-create-child-abort-controller": "error",
       "ccstate/no-new-promise": "error",
       "ccstate/no-direct-local-storage": "error",
       "ccstate/no-direct-session-storage": "error",
@@ -371,7 +372,9 @@ export default [
       "vite.config.ts",
       "vitest.config.ts",
       "src/mocks/**",
-      "src/__tests__/**",
+      "src/__tests__/**/*",
+      // Keep startup child-signal debt visible to the lifecycle rules.
+      "!src/__tests__/authentication-startup.test.tsx",
       // Asset files — not JS/TS, would cause parse errors when matched by
       // broad file globs in .oxlintrc.json overrides (e.g. src/views/**/*.*)
       "**/*.svg",

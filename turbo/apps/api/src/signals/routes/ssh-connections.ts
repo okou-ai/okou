@@ -4,6 +4,13 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-errors";
 import { sshErrorResponse } from "../../lib/ssh-error";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import {
+  createSshCredential,
+  deleteSshCredential,
+  listSshCredentials,
+  updateSshCredential,
+} from "../services/ssh-credential.service";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -73,7 +80,8 @@ function mapSshFailure(result: {
 }
 
 const listSshConnectionsInner$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
     const featureContext = await get(sshFeatureContext$);
     signal.throwIfAborted();
@@ -198,6 +206,7 @@ const deleteSshConnectionInner$ = command(
       orgId: auth.orgId,
       userId: auth.userId,
       connectionId: params.connectionId,
+      featureContext,
     });
     signal.throwIfAborted();
     if (!result.ok) {
@@ -235,6 +244,7 @@ const resetSshConnectionHostKeyInner$ = command(
       userId: auth.userId,
       connectionId: params.connectionId,
       expectedGeneration: bodyResult.data.expectedGeneration,
+      featureContext,
     });
     signal.throwIfAborted();
     if (!result.ok) {
@@ -263,7 +273,132 @@ const listSshObservationsInner$ = command(
   },
 );
 
+const listSshCredentialsInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const owner = get(organizationAuthContext$);
+    const featureContext = await get(sshFeatureContext$);
+    signal.throwIfAborted();
+    if (!featureContext) {
+      return sshConfigurationUnavailable;
+    }
+    const credentials = await listSshCredentials(get(db$), owner);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: { credentials } };
+  },
+);
+const createSshCredentialInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const owner = get(organizationAuthContext$);
+    const featureContext = await get(sshFeatureContext$);
+    signal.throwIfAborted();
+    if (!featureContext) {
+      return sshConfigurationUnavailable;
+    }
+    const body = await get(bodyResultOf(sshCredentialsContract.create));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return sshErrorResponse(
+        400,
+        SSH_ERROR_CODES.INVALID_INPUT,
+        "Invalid SSH credential",
+      );
+    }
+    const credential = await createSshCredential({
+      db: set(writeDb$),
+      owner,
+      body: body.data,
+      featureContext,
+    });
+    signal.throwIfAborted();
+    return { status: 201 as const, body: credential };
+  },
+);
+const updateSshCredentialInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const owner = get(organizationAuthContext$);
+    const featureContext = await get(sshFeatureContext$);
+    signal.throwIfAborted();
+    if (!featureContext) {
+      return sshConfigurationUnavailable;
+    }
+    const [body, params] = await Promise.all([
+      get(bodyResultOf(sshCredentialsContract.update)),
+      get(pathParamsOf(sshCredentialsContract.update)),
+    ]);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return sshErrorResponse(
+        400,
+        SSH_ERROR_CODES.INVALID_INPUT,
+        "Invalid SSH credential",
+      );
+    }
+    const result = await updateSshCredential({
+      db: set(writeDb$),
+      owner,
+      credentialId: params.credentialId,
+      body: body.data,
+      featureContext,
+    });
+    signal.throwIfAborted();
+    return result.ok
+      ? { status: 200 as const, body: result.value }
+      : mapSshFailure(result);
+  },
+);
+const deleteSshCredentialInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const owner = get(organizationAuthContext$);
+    const featureContext = await get(sshFeatureContext$);
+    signal.throwIfAborted();
+    if (!featureContext) {
+      return sshConfigurationUnavailable;
+    }
+    const [body, params] = await Promise.all([
+      get(bodyResultOf(sshCredentialsContract.delete)),
+      get(pathParamsOf(sshCredentialsContract.delete)),
+    ]);
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return sshErrorResponse(
+        400,
+        SSH_ERROR_CODES.INVALID_INPUT,
+        "Invalid SSH credential revision",
+      );
+    }
+    const result = await deleteSshCredential({
+      db: set(writeDb$),
+      owner,
+      credentialId: params.credentialId,
+      expectedRevision: body.data.expectedRevision,
+    });
+    signal.throwIfAborted();
+    return result.ok
+      ? { status: 204 as const, body: undefined }
+      : mapSshFailure(result);
+  },
+);
+
 export const sshConnectionsRoutes: readonly RouteEntry[] = [
+  {
+    route: sshCredentialsContract.list,
+    handler: authRoute(sshAuth, listSshCredentialsInner$),
+  },
+  {
+    route: sshCredentialsContract.create,
+    handler: authRoute(sshAuth, createSshCredentialInner$),
+  },
+  {
+    route: sshCredentialsContract.update,
+    handler: authRoute(sshAuth, updateSshCredentialInner$),
+  },
+  {
+    route: sshCredentialsContract.delete,
+    handler: authRoute(sshAuth, deleteSshCredentialInner$),
+  },
   {
     route: sshConnectionsContract.observations,
     handler: authRoute(sshAuth, listSshObservationsInner$),

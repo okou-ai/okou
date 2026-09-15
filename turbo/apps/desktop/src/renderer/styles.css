@@ -1667,31 +1667,3 @@ button {
     text-align: left;
   }
 }
-.driver-choice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.driver-choice select {
-  font: inherit;
-  color: inherit;
-  border: 1px solid rgba(30, 38, 52, 0.08);
-  border-radius: 8px;
-  background: #f8fafc;
-  padding: 8px 12px;
-}
-
-.driver-status {
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.driver-choice select:hover {
-  border-color: rgba(30, 38, 52, 0.24);
-}
-.driver-choice select:disabled {
-  cursor: not-allowed;
-  opacity: 0.62;
-}

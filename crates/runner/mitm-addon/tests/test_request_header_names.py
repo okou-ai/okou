@@ -1,10 +1,14 @@
 """Request-header field-count and field-name admission integration tests."""
 
 import pytest
+from h2 import events as h2_events
+from h2.config import H2Configuration
+from h2.connection import H2Connection
 from mitmproxy import connection
 from mitmproxy.addons.proxyserver import Proxyserver
 from mitmproxy.flow import Error
 from mitmproxy.proxy import commands, events
+from mitmproxy.proxy.layers.http import HTTPMode
 from mitmproxy.proxy.layers.http._hooks import (
     HttpErrorHook,
     HttpRequestHeadersHook,
@@ -62,8 +66,8 @@ async def test_requestheaders_rejects_over_budget_names_before_header_processing
         (b"Expect", b"100-continue"),
         (b"X-Trace", b"first"),
         (b"x-trace", b"second"),
-        (b"x-VM0-Connector-Intent", b"primary"),
-        (b"x-VM0-Codex-Model-Catalog-Prefetch", b"1"),
+        (b"x-Okou-Connector-Intent", b"primary"),
+        (b"x-Okou-Codex-Model-Catalog-Prefetch", b"1"),
     )
     flow = real_flow(
         with_response=False,
@@ -81,9 +85,9 @@ async def test_requestheaders_rejects_over_budget_names_before_header_processing
 
     assert mitm_addon.requestheaders(flow) is None
 
-    assert flow.response is not None
-    assert flow.response.status_code == 431
-    assert flow.response.content == b""
+    assert flow.error is not None
+    assert flow.error.msg == Error.KILLED_MESSAGE
+    assert flow.response is None
     assert flow.request.headers.fields == retained_fields
     assert metadata_keys.SANDBOX_RUN_ID not in flow.metadata
     _assert_no_request_stream(flow)
@@ -119,8 +123,8 @@ async def test_requestheaders_accepts_name_budget_and_preserves_existing_header_
         (b"uSeR-aGeNt", _BROWSER_USER_AGENT),
         *repeated_fields,
         (boundary_name, b"accepted"),
-        (b"x-VM0-Connector-Intent", b"primary"),
-        (b"x-VM0-Codex-Model-Catalog-Prefetch", b"1"),
+        (b"x-Okou-Connector-Intent", b"primary"),
+        (b"x-Okou-Codex-Model-Catalog-Prefetch", b"1"),
     )
     padding_fields = ((b"X-Padding", b""),) * (_MAX_REQUEST_HEADER_FIELDS - len(fixed_fields))
     flow = real_flow(
@@ -142,8 +146,8 @@ async def test_requestheaders_accepts_name_budget_and_preserves_existing_header_
     assert all(
         name
         not in (
-            b"x-VM0-Connector-Intent",
-            b"x-VM0-Codex-Model-Catalog-Prefetch",
+            b"x-Okou-Connector-Intent",
+            b"x-Okou-Codex-Model-Catalog-Prefetch",
         )
         for name, _value in flow.request.headers.fields
     )
@@ -203,4 +207,111 @@ async def test_http1_over_budget_field_count_kills_before_expect_and_body_proces
         isinstance(command, (commands.OpenConnection, commands.SendData))
         and isinstance(command.connection, connection.Server)
         for command in (*header_commands, *terminal_commands)
+    )
+
+
+@pytest.mark.parametrize("framing", ["content-length", "chunked", "http2"])
+@pytest.mark.parametrize("body_during_headers_hook", [False, True])
+async def test_over_budget_names_terminate_before_expect_and_incomplete_body(
+    framing: str,
+    body_during_headers_hook: bool,
+) -> None:
+    partial_body = b"a" * 16384
+    rejected_name = b"x" * (_MAX_REQUEST_HEADER_NAME_BYTES + 1)
+
+    with taddons.context(Proxyserver(), mitm_addon) as addon_context:
+        client, http_layer = start_http_layer(
+            addon_context,
+            alpn=b"h2" if framing == "http2" else b"http/1.1",
+            mode=HTTPMode.transparent,
+        )
+        http2 = None
+        if framing == "http2":
+            http2 = H2Connection(H2Configuration(client_side=True, header_encoding=None))
+            http2.initiate_connection()
+            http2.send_headers(
+                1,
+                [
+                    (b":method", b"POST"),
+                    (b":scheme", b"https"),
+                    (b":authority", PLACEHOLDER_HOST.encode()),
+                    (b":path", b"/"),
+                    (b"expect", b"100-continue"),
+                    (b"content-length", str(len(partial_body) * 2).encode()),
+                    (rejected_name, b"rejected"),
+                ],
+                end_stream=False,
+            )
+            request_head = http2.data_to_send()
+            http2.send_data(1, partial_body, end_stream=False)
+            body_data = http2.data_to_send()
+        else:
+            if framing == "chunked":
+                body_header = b"Transfer-Encoding: chunked\r\n"
+                body_data = b"%x\r\n" % len(partial_body) + partial_body + b"\r\n"
+            else:
+                body_header = f"Content-Length: {len(partial_body) * 2}\r\n".encode()
+                body_data = partial_body
+            request_head = (
+                (
+                    f"POST / HTTP/1.1\r\nHost: {PLACEHOLDER_HOST}\r\nExpect: 100-continue\r\n"
+                ).encode()
+                + body_header
+                + rejected_name
+                + b": rejected\r\n\r\n"
+            )
+
+        all_commands = list(http_layer.handle_event(events.DataReceived(client, request_head)))
+        request_headers_hook = next(
+            command for command in all_commands if isinstance(command, HttpRequestHeadersHook)
+        )
+        if body_during_headers_hook:
+            all_commands.extend(http_layer.handle_event(events.DataReceived(client, body_data)))
+
+        await addon_context.master.addons.invoke_addon(mitm_addon, request_headers_hook)
+        flow = request_headers_hook.flow
+        header_commands = list(
+            http_layer.handle_event(events.HookCompleted(request_headers_hook, None))
+        )
+        all_commands.extend(header_commands)
+        for command in header_commands:
+            if isinstance(command, HttpErrorHook):
+                await addon_context.master.addons.invoke_addon(mitm_addon, command)
+                all_commands.extend(http_layer.handle_event(events.HookCompleted(command, None)))
+
+        # The client observes termination without a complete upload or body EOF.
+        client_bytes = b"".join(
+            command.data
+            for command in all_commands
+            if isinstance(command, commands.SendData) and command.connection is client
+        )
+        if http2 is not None:
+            response_events = http2.receive_data(client_bytes)
+            assert any(
+                isinstance(event, h2_events.StreamReset) and event.stream_id == 1
+                for event in response_events
+            )
+            assert not any(
+                isinstance(
+                    event, h2_events.InformationalResponseReceived | h2_events.ResponseReceived
+                )
+                for event in response_events
+            )
+        else:
+            assert any(
+                isinstance(command, commands.CloseConnection) and command.connection is client
+                for command in all_commands
+            )
+            assert client_bytes == b""
+
+        if not body_during_headers_hook:
+            all_commands.extend(http_layer.handle_event(events.DataReceived(client, body_data)))
+
+    assert flow.request.raw_content is None
+    assert flow.live is False
+    assert not any(isinstance(command, HttpRequestHook) for command in all_commands)
+    assert not any(
+        isinstance(command, (commands.OpenConnection, commands.SendData))
+        and isinstance(command.connection, connection.Server)
+        for command in all_commands
     )

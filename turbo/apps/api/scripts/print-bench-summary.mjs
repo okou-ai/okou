@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Print a one-line-per-bench summary of vitest bench --outputJson output.
-// Usage: node print-bench-summary.mjs <bench-results.json>
+// Print a one-line-per-bench summary of the custom P90 reporter output.
+// Usage: node print-bench-summary.mjs <bench-results-p90.json>
 
 import { readFileSync, existsSync } from "node:fs";
 import { argv, exit, stderr, stdout } from "node:process";
 
-const path = argv[2] ?? "bench-results.json";
+const path = argv[2] ?? "bench-results-p90.json";
 if (!existsSync(path)) {
   stderr.write(`::warning::${path} not found\n`);
   exit(0);

@@ -257,9 +257,9 @@ export function OrgMembersTab() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl bg-card okou-border">
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         <MembersTableHeader showUsagePack={showUsagePack} />
-        <div className="h-0 okou-border-t mx-5" />
+        <div className="h-0 border-t border-t-gray-400 mx-5" />
 
         {isLoading && (
           <>
@@ -299,7 +299,9 @@ export function OrgMembersTab() {
             {membershipRequests.map((req, i) => {
               return (
                 <div key={req.id}>
-                  {i > 0 && <div className="h-0 okou-border-t mx-5" />}
+                  {i > 0 && (
+                    <div className="h-0 border-t border-t-gray-400 mx-5" />
+                  )}
                   <MembershipRequestRow
                     request={req}
                     showUsagePack={showUsagePack}
@@ -307,7 +309,7 @@ export function OrgMembersTab() {
                 </div>
               );
             })}
-            <div className="h-0 okou-border-t mx-5" />
+            <div className="h-0 border-t border-t-gray-400 mx-5" />
           </>
         )}
 
@@ -316,7 +318,7 @@ export function OrgMembersTab() {
             return (
               <div key={m.userId}>
                 {(i > 0 || membershipRequests.length > 0) && (
-                  <div className="h-0 okou-border-t mx-5" />
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
                 )}
                 <MemberRow
                   member={m}
@@ -340,7 +342,7 @@ export function OrgMembersTab() {
                 {(i > 0 ||
                   filtered.length > 0 ||
                   membershipRequests.length > 0) && (
-                  <div className="h-0 okou-border-t mx-5" />
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
                 )}
                 <PendingInvitationRow
                   invitation={inv}
@@ -361,13 +363,11 @@ type InviteDialogMode =
   | "loading"
   | "packages"
   | "setup"
-  | "suspended"
-  | "upgrade";
+  | "suspended";
 
 function resolveInviteDialogMode(args: {
   readonly capabilities:
     | {
-        readonly legacyMemberInvitationAllowed: boolean | null;
         readonly status: "active" | "suspended";
       }
     | undefined;
@@ -381,9 +381,6 @@ function resolveInviteDialogMode(args: {
   }
   if (args.capabilities.status === "suspended") {
     return "suspended";
-  }
-  if (args.capabilities.legacyMemberInvitationAllowed === false) {
-    return "upgrade";
   }
   if (args.catalogLoading) {
     return "loading";
@@ -545,24 +542,6 @@ function InviteDialogContent({
       </>
     );
   }
-  if (mode === "upgrade") {
-    return (
-      <>
-        <DialogHeader>
-          <DialogTitle>
-            {t(($) => {
-              return $.settings.workspace.members.invite.upgrade.title;
-            })}
-          </DialogTitle>
-        </DialogHeader>
-        <DialogDescription className="py-2 leading-6">
-          {t(($) => {
-            return $.settings.workspace.members.invite.upgrade.description;
-          })}
-        </DialogDescription>
-      </>
-    );
-  }
   if (mode === "loading" || mode === "error") {
     return (
       <>
@@ -620,11 +599,6 @@ function InvitePrimaryActionLabel({
   if (mode === "suspended") {
     return t(($) => {
       return $.settings.workspace.members.invite.suspended.action;
-    });
-  }
-  if (mode === "upgrade") {
-    return t(($) => {
-      return $.settings.workspace.members.invite.upgrade.action;
     });
   }
   if (mode === "loading") {
@@ -759,7 +733,7 @@ function InviteDialog() {
   };
 
   const handlePrimary = () => {
-    if (mode === "setup" || mode === "suspended" || mode === "upgrade") {
+    if (mode === "setup" || mode === "suspended") {
       openPackageConfiguration();
       return;
     }

@@ -133,7 +133,7 @@ function queuedMessage(container: ParentNode): HTMLElement | undefined {
   );
 }
 
-test("Load a long chat history without losing grouped-run context", async () => {
+async function prepareLongGroupedConversation() {
   const thread = continuityThread(20, 1, "Long grouped history");
   const rows: ChatEventRow[] = [];
   let sequence = 1;
@@ -156,7 +156,6 @@ test("Load a long chat history without losing grouped-run context", async () => 
     rows.push(promptEvent, responseEvent);
     return { prompt: promptEvent, response: responseEvent };
   };
-
   const earliest = addPair(
     "Earliest retained request",
     "Earliest retained answer",
@@ -209,21 +208,32 @@ test("Load a long chat history without losing grouped-run context", async () => 
     "history-run-after-group",
   );
   addPair("Most recent follow-up", "Most recent answer", "history-run-recent");
-
   const workspace = installContinuityWorkspace(context, {
     caseId: 20,
     threads: [thread],
     chatEventRows: rows,
   });
-
   await setupPage({
     context,
     path: `/chats/${thread.id}`,
     ...workspace.pageOptions,
   });
-
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const container = threadContainer(thread.id);
+  return {
+    thread,
+    composer,
+    container,
+    latestGrouped,
+    earliest,
+    beforeGroup,
+    afterGroup,
+  };
+}
+
+test("Render a long conversation with intact grouped messages", async () => {
+  const { composer, container, latestGrouped } =
+    await prepareLongGroupedConversation();
   await waitFor(() => {
     expect(container).toHaveTextContent("Final launch brief is ready");
     expect(container).toHaveTextContent(
@@ -238,14 +248,20 @@ test("Load a long chat history without losing grouped-run context", async () => 
   expect(container).toHaveTextContent("First launch brief result");
   expect(container).toHaveTextContent("Second launch brief result");
   expect(container).not.toHaveTextContent("Earliest retained request");
-
   expect(eventAnchorCount(container, latestGrouped.response.id)).toBe(1);
+});
 
+test("Page older conversation history without losing grouped-run anchors", async () => {
+  const { thread, container, earliest, beforeGroup, afterGroup } =
+    await prepareLongGroupedConversation();
+  await waitFor(() => {
+    expect(container).toHaveTextContent("Final launch brief is ready");
+  });
+  expect(container).not.toHaveTextContent("Earliest retained request");
   const scroller = scrollContainer(thread.id);
   setScrollableGeometry(scroller, 2400, 600);
   scroller.scrollTop = 50;
   fireEvent.scroll(scroller);
-
   await waitFor(() => {
     expect(container).toHaveTextContent("Earliest retained request");
     expect(container).toHaveTextContent("Earliest retained answer");

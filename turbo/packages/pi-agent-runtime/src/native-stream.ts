@@ -10,7 +10,7 @@ import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
 import { assertPiNativeCredential } from "./credential";
-import type { PiAgentModelConfig } from "./types";
+import type { PiAgentStreamConfig } from "./types";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
@@ -26,9 +26,11 @@ function isBedrock(
   return model.api === "bedrock-converse-stream";
 }
 
-type NativeStreamConfig = Pick<
-  PiAgentModelConfig,
-  "catalogModel" | "dialect" | "region" | "bedrockAuth" | "transport"
+type NativeStreamConfig = Extract<
+  PiAgentStreamConfig,
+  {
+    readonly dialect: "anthropic-messages" | "bedrock-converse-stream";
+  }
 >;
 
 function assertNativeOptions(options: PiAgentStreamOptions): void {
@@ -103,6 +105,7 @@ export function streamPiNative(
   }
   if (
     !isBedrock(model) ||
+    config.dialect !== "bedrock-converse-stream" ||
     config.transport !== "aws-event-stream" ||
     !config.region ||
     !config.bedrockAuth

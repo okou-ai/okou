@@ -17,14 +17,8 @@ Electron only owns the app shell and command bridge; the helper owns macOS
 Accessibility, target-window screenshot capture, and targeted CGEvent input
 dispatch.
 
-## Experimental Computer Use driver
-
-Okou remains the default actuator. A current Developer account can check
-**Developer Tools** in the app menu, then explicitly select **CUA (Experimental)**
-in the **Computer Use driver** panel below the hero/setup and existing developer
-panels. Showing or hiding Developer Tools does not switch or stop a driver. See [selection, recovery and manual verification](cua/README.md#developer-selection-and-recovery)
-and the exact [CUA 0.23.2 command contract](cua/ADAPTER.md). Selection is local to
-this installation; failed CUA execution never silently selects another driver.
+Computer Use uses the built-in Okou driver. Developer Tools controls filesystem,
+MCP, and screen recording features; it does not select a Computer Use backend.
 
 ## Development
 
@@ -155,12 +149,13 @@ could not have crossed to the Okou bundle anyway. Both retired lines answer
 Only the unqualified `release` and `dmg` routes remain unqualified, and both
 resolve to Okou.
 
-The release systems may deploy independently. The API therefore accepts both
-Zero callback schemes
-(`ai.vm0.zero.desktop` and `ai.vm0.zero.desktop.dev`) while also accepting the
-Okou schemes (`ai.okou.desktop` and `ai.okou.desktop.dev`). Desktop
-builds select exactly one product feed and one callback scheme from their
-packaged identity; they do not discover or switch products at runtime.
+The API now accepts only the Okou callback schemes (`ai.okou.desktop` and
+`ai.okou.desktop.dev`); the Zero schemes were retired once the `hard` migration
+policy made the sign-in path unreachable from an installed Zero build, which
+offers only `Download Okou` or `Quit Zero`. A handoff request carrying a Zero
+scheme is now rejected with `400`. Desktop builds select exactly one product
+feed and one callback scheme from their packaged identity; they do not discover
+or switch products at runtime.
 
 Current Desktop builds support only Okou. `OKOU_DESKTOP_PRODUCT` and the
 runtime configuration's optional `product` field accept `okou`; unsupported

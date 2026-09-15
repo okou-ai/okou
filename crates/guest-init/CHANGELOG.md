@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.16.259](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.258...guest-init-v0.16.259) (2026-09-15)
+
+## [0.16.258](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.257...guest-init-v0.16.258) (2026-09-15)
+
+## [0.16.257](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.256...guest-init-v0.16.257) (2026-09-14)
+
+## [0.16.256](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.255...guest-init-v0.16.256) (2026-09-14)
+
+## [0.16.255](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.254...guest-init-v0.16.255) (2026-09-14)
+
+## [0.16.254](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.253...guest-init-v0.16.254) (2026-09-11)
+
+
+### Performance Improvements
+
+* **guest-init:** reduce dynamic cgroup placement latency ([#33531](https://github.com/vm0-ai/vm0/issues/33531)) ([98ddb4c](https://github.com/vm0-ai/vm0/commit/98ddb4cf21af498240fc63852cc8e6300b714b7c))
+
+## [0.16.253](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.252...guest-init-v0.16.253) (2026-09-11)
+
+## [0.16.252](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.251...guest-init-v0.16.252) (2026-09-11)
+
 ## [0.16.251](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.250...guest-init-v0.16.251) (2026-09-11)
 
 ## [0.16.250](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.249...guest-init-v0.16.250) (2026-09-10)

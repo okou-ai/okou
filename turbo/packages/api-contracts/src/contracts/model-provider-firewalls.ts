@@ -1,4 +1,8 @@
 import type { ExpandedFirewallConfig } from "@okouai/connectors/firewall-types";
+import {
+  getOpenRouterBaseUrl,
+  type OpenRouterRoutingContext,
+} from "./openrouter-routing";
 
 import type {
   ModelProviderFramework,
@@ -294,6 +298,7 @@ function isFirewallSupported(
 export function getModelProviderPiEndpoint(
   type: ModelProviderType,
   api: ModelProviderPiApi,
+  routing?: OpenRouterRoutingContext,
 ): ModelProviderPiEndpoint | undefined {
   if (type === "codex-oauth-token") {
     return api === "openai-codex-responses"
@@ -314,7 +319,13 @@ export function getModelProviderPiEndpoint(
   if (!config?.piApis?.includes(api)) {
     return undefined;
   }
-  const baseUrl = config.openaiBaseUrl ?? "https://api.openai.com/v1";
+  const baseUrl =
+    type === "openrouter-codex" && routing
+      ? getOpenRouterBaseUrl(
+          api === "openai-completions" ? "chat/completions" : "responses",
+          routing,
+        )
+      : (config.openaiBaseUrl ?? "https://api.openai.com/v1");
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
   return {
     baseUrl,
@@ -337,8 +348,34 @@ export function getModelProviderPiChatCompletionsUrl(
 
 export function getModelProviderFirewall(
   type: ModelProviderType,
+  routing?: OpenRouterRoutingContext,
 ): ExpandedFirewallConfig | undefined {
-  return isFirewallSupported(type)
+  const firewall = isFirewallSupported(type)
     ? MODEL_PROVIDER_FIREWALL_CONFIGS[type]
     : undefined;
+  if (
+    !firewall ||
+    !routing ||
+    (type !== "openrouter-api-key" && type !== "openrouter-codex")
+  ) {
+    return firewall;
+  }
+  const apis = firewall.apis.map((api) => {
+    const path = api.base.slice("https://openrouter.ai/api/v1/".length);
+    if (
+      path !== "messages" &&
+      path !== "responses" &&
+      path !== "chat/completions"
+    ) {
+      return api;
+    }
+    const baseUrl = getOpenRouterBaseUrl(path, routing);
+    const base = `${baseUrl}${path === "messages" ? "/v1" : ""}/${path}`;
+    return base === api.base ? api : { ...api, base };
+  });
+  return apis.every((api, index) => {
+    return api === firewall.apis[index];
+  })
+    ? firewall
+    : { ...firewall, apis };
 }

@@ -130,6 +130,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
       title: "CLI renamed title",
       pinnedAt: null,
       selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,

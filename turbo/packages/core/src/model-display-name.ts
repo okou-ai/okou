@@ -26,6 +26,7 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   "anthropic/claude-opus-4.5": "Claude Opus 4.5",
   "anthropic/claude-haiku-4.5": "Claude Haiku 4.5",
   // Canonical DeepSeek model IDs
+  "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
   "deepseek-v4-flash": "DeepSeek V4 Flash",
   "deepseek-v4-pro": "DeepSeek V4 Pro",
   // MiniMax via shared gateways

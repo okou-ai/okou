@@ -9,12 +9,14 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { storages } from "@okouai/db/schema/storage";
 
 import { db } from "../../../lib/db";
-import { commitPiMemoryStage1Candidate } from "../pi-memory-stage1-candidate.service";
+import {
+  commitPiMemoryStage1Candidate,
+  deleteStoragesWithPiMemoryCandidates,
+} from "../pi-memory-stage1-candidate.service";
 import {
   advancePiMemoryPhase2InputRevision,
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
-  heartbeatPiMemoryPhase2Job,
   notifyPiMemoryPhase2ExternalHeadChange,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
   PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS,
@@ -324,8 +326,9 @@ describe("Pi memory Phase 2 job transitions", () => {
     }
 
     await expect(
-      heartbeatPiMemoryPhase2Job(db(), {
+      failPiMemoryPhase2Job(db(), {
         ...scope,
+        errorClass: "provider_timeout",
         leaseToken: randomUUID(),
         claimedRevision: claimed.claimedRevision,
         claimedBaseVersionId: claimed.baseVersion.versionId,
@@ -333,24 +336,15 @@ describe("Pi memory Phase 2 job transitions", () => {
       }),
     ).resolves.toBeFalsy();
     await expect(
-      heartbeatPiMemoryPhase2Job(db(), {
+      failPiMemoryPhase2Job(db(), {
         ...scope,
+        errorClass: "provider_timeout",
         leaseToken: claimed.leaseToken,
         claimedRevision: claimed.claimedRevision,
         claimedBaseVersionId: claimed.baseVersion.versionId,
         currentTime: claimed.leaseExpiresAt,
       }),
     ).resolves.toBeFalsy();
-    await expect(
-      heartbeatPiMemoryPhase2Job(db(), {
-        ...scope,
-        leaseToken: claimed.leaseToken,
-        claimedRevision: claimed.claimedRevision,
-        claimedBaseVersionId: claimed.baseVersion.versionId,
-        currentTime: new Date(NOW.getTime() + 1000),
-      }),
-    ).resolves.toBeTruthy();
-
     const failedAt = new Date(NOW.getTime() + 2000);
     await expect(
       failPiMemoryPhase2Job(db(), {
@@ -487,9 +481,6 @@ describe("Pi memory Phase 2 job transitions", () => {
         ...invalid,
       };
       await expect(
-        heartbeatPiMemoryPhase2Job(db(), fence),
-      ).resolves.toBeFalsy();
-      await expect(
         failPiMemoryPhase2Job(db(), {
           ...fence,
           errorClass: "rejected_fence",
@@ -569,15 +560,6 @@ describe("Pi memory Phase 2 job transitions", () => {
     if (!second || !third) {
       throw new Error("Expected both takeover claims");
     }
-    await expect(
-      heartbeatPiMemoryPhase2Job(db(), {
-        ...scope,
-        leaseToken: second.leaseToken,
-        claimedRevision: second.claimedRevision,
-        claimedBaseVersionId: second.baseVersion.versionId,
-        currentTime: new Date(second.leaseExpiresAt.getTime() - 1),
-      }),
-    ).resolves.toBeFalsy();
     await expect(
       failPiMemoryPhase2Job(db(), {
         ...scope,
@@ -674,7 +656,12 @@ describe("Pi memory Phase 2 job transitions", () => {
       { piSessionId: "retained-history" },
     ]);
     await insertPendingPhase2Job(scope);
-    await db().delete(storages).where(eq(storages.id, scope.memoryStorageId));
+    await db().transaction(async (tx) => {
+      await deleteStoragesWithPiMemoryCandidates(
+        tx,
+        eq(storages.id, scope.memoryStorageId),
+      );
+    });
 
     await expect(readPhase2Job(scope)).resolves.toBeUndefined();
     const [candidate] = await db()
@@ -685,9 +672,9 @@ describe("Pi memory Phase 2 job transitions", () => {
       );
     expect(candidate).toBeUndefined();
     const [historyBlob] = await db()
-      .select({ hash: blobs.hash })
+      .select({ hash: blobs.hash, refCount: blobs.refCount })
       .from(blobs)
       .where(eq(blobs.hash, hash as string));
-    expect(historyBlob).toStrictEqual({ hash });
+    expect(historyBlob).toStrictEqual({ hash, refCount: 1 });
   });
 });

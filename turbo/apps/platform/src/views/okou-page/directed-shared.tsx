@@ -23,7 +23,7 @@ export function StandaloneLayout({ children }: { children: ReactNode }) {
   return (
     <div
       ref={shellDocumentAttributesRef}
-      className="okou-app okou-viewport-shell flex w-full flex-col bg-background"
+      className="okou-app box-border flex h-full max-h-full min-h-full w-full flex-col overflow-hidden bg-background pb-(--sab)"
       data-gradient-color-themes={gradientColorThemesEnabled || undefined}
       data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
     >

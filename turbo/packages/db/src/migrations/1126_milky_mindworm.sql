@@ -1,0 +1,1 @@
+ALTER TABLE "agent_runs" ADD COLUMN "langfuse_trace_enabled" boolean DEFAULT false NOT NULL;

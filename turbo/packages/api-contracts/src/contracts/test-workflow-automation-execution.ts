@@ -59,6 +59,18 @@ export const testWorkflowAutomationCallbackInterruptionResponseSchema = z
   .strict();
 
 export const testWorkflowAutomationExecutionContract = c.router({
+  enrollMorningBrief: {
+    method: "POST",
+    path: "/api/test/workflow-automation-execution/enroll-morning-brief",
+    body: z
+      .object({ orgId: z.string().min(1), userId: z.string().min(1) })
+      .strict(),
+    responses: {
+      200: z.object({ attempted: z.number().int().nonnegative() }),
+      404: z.string(),
+    },
+    summary: "Run Morning Brief enrollment for one test-owned member",
+  },
   execute: {
     method: "POST",
     path: "/api/test/workflow-automation-execution/execute",

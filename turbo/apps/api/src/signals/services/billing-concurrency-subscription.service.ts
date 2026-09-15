@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -7,7 +8,7 @@ import type {
 } from "@okouai/api-contracts/contracts/billing";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import {
   usagePackAllocationChanges,
@@ -377,7 +378,9 @@ function schedulePhaseItems(
       price,
       quantity,
       ...(discounts.length > 0 ? { discounts } : {}),
-      ...(item.metadata ? { metadata: { ...item.metadata } } : {}),
+      ...(item.metadata
+        ? { metadata: retireImpactMetadata(item.metadata) }
+        : {}),
       ...(taxRates.length > 0 ? { tax_rates: taxRates } : {}),
     };
   });
@@ -535,7 +538,7 @@ function schedulePhaseParams(
       end_date: period.end,
       ...(phase.currency ? { currency: phase.currency } : {}),
       items: args.items,
-      ...(metadata ? { metadata: { ...metadata } } : {}),
+      ...(metadata ? { metadata: retireImpactMetadata(metadata) } : {}),
       proration_behavior: phase.proration_behavior ?? "none",
     },
     scheduleDiscounts(phase.discounts ?? []),

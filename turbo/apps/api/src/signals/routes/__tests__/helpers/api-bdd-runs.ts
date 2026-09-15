@@ -153,6 +153,10 @@ interface ClerkUserProfile {
 }
 
 interface ClerkOrganizationMembership {
+  readonly id: string;
+  readonly createdAt: number;
+  readonly role: string;
+  readonly organization: { readonly id: string };
   readonly publicUserData: {
     readonly userId: string;
   };
@@ -209,7 +213,15 @@ function clerkOrganizationMemberships(
     return [];
   }
 
-  return [{ publicUserData: { userId: actor.userId } }];
+  return [
+    {
+      id: `membership-${actor.userId}-${actor.orgId}`,
+      createdAt: Date.parse("2020-01-01T00:00:00.000Z"),
+      role: actor.orgRole ?? "org:member",
+      organization: { id: actor.orgId },
+      publicUserData: { userId: actor.userId },
+    },
+  ];
 }
 
 function authenticate(
@@ -846,7 +858,17 @@ export function createRunsApi(
     async requestDirectRun(
       actor: ApiTestUser | null,
       body: DirectRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 429 | 503)[],
+      statuses: readonly (
+        | 201
+        | 400
+        | 401
+        | 402
+        | 403
+        | 404
+        | 409
+        | 429
+        | 503
+      )[],
     ) {
       return await accept(createDirectRunThroughService(actor, body), statuses);
     },
@@ -1003,10 +1025,16 @@ export function createRunsApi(
       actor: ApiTestUser,
       policies: OrgModelPolicyRequest["policies"],
     ): Promise<void> {
+      const snapshot = await accept(
+        runApp(context)(modelPoliciesMainContract).list({
+          headers: authenticate(context, actor),
+        }),
+        [200],
+      );
       await accept(
         runApp(context)(modelPoliciesMainContract).update({
           headers: authenticate(context, actor),
-          body: { policies },
+          body: { policies, revision: snapshot.body.revision },
         }),
         [200],
       );
@@ -1037,10 +1065,16 @@ export function createRunsApi(
         },
       ];
 
+      const snapshot = await accept(
+        runApp(context)(modelPoliciesMainContract).list({
+          headers: authenticate(context, actor),
+        }),
+        [200],
+      );
       await accept(
         runApp(context)(modelPoliciesMainContract).update({
           headers: authenticate(context, actor),
-          body: { policies },
+          body: { policies, revision: snapshot.body.revision },
         }),
         [200],
       );
@@ -1061,7 +1095,17 @@ export function createRunsApi(
     async requestCreateRun(
       actor: ApiTestUser | null,
       body: AgentRunRequest,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 429 | 503)[],
+      statuses: readonly (
+        | 201
+        | 400
+        | 401
+        | 402
+        | 403
+        | 404
+        | 409
+        | 429
+        | 503
+      )[],
       extraHeaders?: Readonly<Record<string, string>>,
     ) {
       return await accept(
@@ -1079,7 +1123,17 @@ export function createRunsApi(
     async requestCreateRunUnchecked(
       actor: ApiTestUser | null,
       body: unknown,
-      statuses: readonly (201 | 400 | 401 | 402 | 403 | 404 | 429 | 503)[],
+      statuses: readonly (
+        | 201
+        | 400
+        | 401
+        | 402
+        | 403
+        | 404
+        | 409
+        | 429
+        | 503
+      )[],
     ) {
       return await accept(
         runApp(context)(runFixtureContract).create({

@@ -115,7 +115,7 @@ def add_vercel_bypass_header(headers: http.Headers) -> None:
 
 def get_api_url() -> str:
     """Get API URL from mitmproxy options."""
-    return ctx.options.vm0_api_url
+    return ctx.options.okou_api_url
 
 
 def make_api_request(url: str, data: bytes, bearer_credential: str) -> urllib.request.Request:

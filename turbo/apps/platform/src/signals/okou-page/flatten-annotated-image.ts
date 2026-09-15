@@ -5,6 +5,7 @@ import {
   type ImageAnnotationMark,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  annotationTextBox,
   HIGHLIGHT_FILL,
   markOrdinal,
   NOTE_GROUND,
@@ -13,6 +14,7 @@ import {
   PIN_RADIUS_PX,
   REDACT_FILL,
   STROKE_HALO_INNER,
+  textScale,
 } from "./image-annotation.ts";
 import { createDeferredPromise, withCleanup } from "../utils.ts";
 
@@ -30,6 +32,8 @@ const TEXT_FONT_UNITS = 18;
 const NOTE_FONT_UNITS = 15;
 const NOTE_LINE_UNITS = 20;
 const NOTE_PADDING_UNITS = 6;
+/** Label leading, matching the `leading-tight` the DOM label is printed with. */
+const LABEL_LINE_RATIO = 1.25;
 const ARROW_HEAD_UNITS = 18;
 const CORNER_RADIUS_UNITS = 4;
 
@@ -410,16 +414,28 @@ function drawMark(
 
   const x = toX(mark.at.x);
   const y = toY(mark.at.y);
-  const fontSize = px(scale, TEXT_FONT_UNITS);
+  // The size the label's corners were dragged to, and the same ceiling the
+  // field wrapped it at. `fillText` draws one line and ignores `\n`, so a label
+  // that wrapped on screen used to print as a single run past the edge.
+  const fontSize = px(scale, TEXT_FONT_UNITS) * textScale(mark);
+  const lineHeight = fontSize * LABEL_LINE_RATIO;
   context.font = `700 ${fontSize}px ${annotationFontFamily()}`;
   context.textAlign = "left";
   context.textBaseline = "top";
   context.lineJoin = "round";
   context.lineWidth = px(scale, HALO_WIDTH_UNITS * 3);
-  context.strokeStyle = STROKE_HALO_INNER;
-  context.strokeText(mark.text, x, y);
-  context.fillStyle = mark.ink;
-  context.fillText(mark.text, x, y);
+  const lines = wrapNote(
+    context,
+    mark.text,
+    annotationTextBox(mark).maxWidth * scale.width,
+  );
+  for (const [index, line] of lines.entries()) {
+    const lineY = y + index * lineHeight;
+    context.strokeStyle = STROKE_HALO_INNER;
+    context.strokeText(line, x, lineY);
+    context.fillStyle = mark.ink;
+    context.fillText(line, x, lineY);
+  }
 }
 
 interface FlattenedAnnotatedImage {

@@ -88,6 +88,7 @@ impl MitmdumpRuntime {
         self.reconcile().await?;
         tempfile::Builder::new()
             .prefix(LAUNCH_PREFIX)
+            .permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700))
             .tempdir_in(&self.root)
             .map_err(|error| {
                 RunnerError::Internal(format!(

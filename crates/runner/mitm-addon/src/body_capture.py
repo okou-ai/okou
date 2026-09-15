@@ -4,6 +4,7 @@ import base64
 import re
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
+from itertools import islice
 from typing import Literal
 
 from mitmproxy import http
@@ -11,7 +12,7 @@ from mitmproxy import http
 import body_decoding
 import flow_metadata_keys as metadata_keys
 import request_streaming
-import response_streaming
+import stream_capture
 from body_limits import BODY_CAPTURE_LIMIT
 
 _REDACTED_HEADER_VALUE = "***"
@@ -52,6 +53,7 @@ _MAX_CAPTURE_HEADER_NAME_LENGTH = 256
 _MAX_CAPTURE_HEADER_VALUE_TO_PRESERVE = 256
 _MAX_CAPTURE_HEADER_FIELDS = 512
 _MAX_CAPTURE_HEADER_BYTES = 32 * 1024
+_MAX_CAPTURE_HEADER_INSPECTION_FIELDS = 2_048
 _CAPTURE_HEADER_FOLD_SEPARATOR_BYTES = len(b", ")
 _BODY_CAPTURE_DEPENDENCY_HEADER_NAMES = frozenset(
     {
@@ -304,12 +306,15 @@ def _body_capture_dependency_header_name(raw_name: bytes) -> bytes | None:
     return normalized_name
 
 
-def _inspect_headers_for_capture(headers: http.Headers) -> _CaptureHeaderInspection:
+def _inspect_headers_for_capture(
+    headers: http.Headers, *, inspect_body_dependencies: bool = True
+) -> _CaptureHeaderInspection:
     """Inspect bounded serialization and body dependencies before string access.
 
-    Serialization stops decoding at its prefix limit. Raw-name inspection keeps
-    looking for the two body dependencies so unrelated overflow does not hide a
-    later matching field or suppress an otherwise bounded body capture.
+    Serialization stops decoding at its prefix limit. Body dependencies require
+    a complete scan within the total raw-field limit, including unrelated fields.
+    The raw tuple length detects exhaustion without traversing its tail. When
+    discovery cannot finish or no body needs capture, only serialize the prefix.
     """
     result: dict[str, str] = {}
     seen_names: set[str] = set()
@@ -317,10 +322,14 @@ def _inspect_headers_for_capture(headers: http.Headers) -> _CaptureHeaderInspect
     dependency_names: set[bytes] = set()
     dependency_bytes = 0
     dependency_field_count = 0
-    dependencies_within_budget = True
+    dependencies_within_budget = (
+        inspect_body_dependencies and len(headers.fields) <= _MAX_CAPTURE_HEADER_INSPECTION_FIELDS
+    )
     captured_bytes = 0
     serialized_truncated = False
-    for index, (raw_name, raw_value) in enumerate(headers.fields):
+    for index, (raw_name, raw_value) in enumerate(
+        islice(headers.fields, _MAX_CAPTURE_HEADER_INSPECTION_FIELDS)
+    ):
         if not serialized_truncated:
             field_bytes = len(raw_name) + len(raw_value)
             if (
@@ -338,8 +347,10 @@ def _inspect_headers_for_capture(headers: http.Headers) -> _CaptureHeaderInspect
                     seen_names.add(case_insensitive_name)
                     result[captured_name] = _sanitize_header_value_for_capture(captured_name, value)
 
-        normalized_raw_name = _body_capture_dependency_header_name(raw_name)
-        if normalized_raw_name is not None and dependencies_within_budget:
+        normalized_raw_name = (
+            _body_capture_dependency_header_name(raw_name) if dependencies_within_budget else None
+        )
+        if normalized_raw_name is not None:
             fold_separator_bytes = (
                 _CAPTURE_HEADER_FOLD_SEPARATOR_BYTES
                 if normalized_raw_name in dependency_names
@@ -370,7 +381,7 @@ def _inspect_headers_for_capture(headers: http.Headers) -> _CaptureHeaderInspect
 
 def _sanitize_headers_for_capture(headers: http.Headers) -> tuple[dict[str, str], bool]:
     """Build a bounded header prefix safe for persistent network logs."""
-    inspection = _inspect_headers_for_capture(headers)
+    inspection = _inspect_headers_for_capture(headers, inspect_body_dependencies=False)
     return inspection.serialized, inspection.serialized_truncated
 
 
@@ -447,10 +458,14 @@ def add_capture_fields(
     Each serialized header map is a prefix bounded to 512 fields and 32 KiB of
     raw name/value bytes. ``*_headers_truncated`` means that this serialized
     prefix did not contain every header field; it does not describe body
-    capture. Body dependency headers are inspected separately with the same
-    field and byte budgets, so unrelated header overflow cannot hide a later
-    ``content-type`` or ``content-encoding`` field. Multiple ``content-type``
-    values are ambiguous, while repeated ``content-encoding`` fields are folded
+    capture. Total inspection is capped at 2,048 raw fields per side, including
+    unrelated fields. Body dependencies require a complete scan within that
+    limit and retain their separate 512-field and 32-KiB value budgets. Dependency
+    discovery is skipped when no body bytes need capture or the raw field count
+    exceeds the limit; a partial scan must not imply absent metadata. Within
+    the limit, dependencies after the serialized prefix still apply to body
+    capture. Multiple ``content-type`` values are ambiguous, while repeated
+    ``content-encoding`` fields are folded
     and validated. Malformed, unsafe, or over-budget dependency metadata fails
     body capture closed.
 
@@ -485,17 +500,28 @@ def add_capture_fields(
     ``None`` result omits a non-empty buffered body and marks it ``binary``;
     ``b""`` remains a successful empty result with no body field.
     """
+    request_body_suppressed = bool(flow.metadata.get(metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE))
+    request_stream_body = (
+        None if request_body_suppressed else request_streaming.captured_request_stream_body(flow)
+    )
     # Request headers (always available)
-    request_inspection = _inspect_headers_for_capture(flow.request.headers)
+    request_inspection = _inspect_headers_for_capture(
+        flow.request.headers,
+        inspect_body_dependencies=not request_body_suppressed
+        and bool(
+            request_stream_body.buffer
+            if request_stream_body is not None
+            else flow.request.raw_content
+        ),
+    )
     log_entry["request_headers"] = request_inspection.serialized
     if request_inspection.serialized_truncated:
         log_entry["request_headers_truncated"] = True
 
     # Request body
-    if flow.metadata.get(metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE):
+    if request_body_suppressed:
         log_entry["request_body_truncated"] = True
     else:
-        request_stream_body = request_streaming.captured_request_stream_body(flow)
         if request_stream_body is not None:
             request_stream_incomplete = (
                 flow.metadata.get(metadata_keys.REQUEST_STREAM_COMPLETE) is not True
@@ -550,17 +576,19 @@ def add_capture_fields(
 
     # Response headers
     if flow.response:
-        response_inspection = _inspect_headers_for_capture(flow.response.headers)
-        log_entry["response_headers"] = response_inspection.serialized
-        if response_inspection.serialized_truncated:
-            log_entry["response_headers_truncated"] = True
-        stream_body = response_streaming.captured_response_stream_body(flow)
+        stream_body = stream_capture.captured_response_stream_body(flow)
         stream_truncated = False
         if stream_body is not None:
             stream_truncated = stream_body.truncated
             raw_response_body = bytes(stream_body.buffer)
         else:
             raw_response_body = flow.response.raw_content
+        response_inspection = _inspect_headers_for_capture(
+            flow.response.headers, inspect_body_dependencies=bool(raw_response_body)
+        )
+        log_entry["response_headers"] = response_inspection.serialized
+        if response_inspection.serialized_truncated:
+            log_entry["response_headers_truncated"] = True
         if raw_response_body is None:
             return
 

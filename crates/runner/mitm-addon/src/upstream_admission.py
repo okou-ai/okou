@@ -21,7 +21,7 @@ TLS_ADMISSION_INVALID_REGISTRY_SANDBOX: Final = "invalid_registry_sandbox"
 TLS_ADMISSION_REGISTRY_UNAVAILABLE: Final = "registry_unavailable"
 
 _TEST_ENDPOINT_PATH_PREFIX: Final = "/api/test/"
-_TEST_ENDPOINT_BYPASS_HEADER: Final = "x-vm0-test-endpoint-bypass"
+_TEST_ENDPOINT_BYPASS_HEADER: Final = "x-okou-test-endpoint-bypass"
 _UPSTREAM_BINDING_DIAGNOSTICS = "_upstream_binding_diagnostics"
 
 TlsAdmissionKind = Literal[

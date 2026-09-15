@@ -125,6 +125,7 @@ async function createRegisteredBridge(): Promise<{
     },
     events: createEvents(),
   });
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   await bridge.registerTab(owner.signal);
   return { bridge, bridges, owner };

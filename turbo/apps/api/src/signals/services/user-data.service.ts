@@ -19,6 +19,10 @@ import type {
 import { isActiveRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import { isVideoModelId } from "@okouai/api-contracts/contracts/video-models";
+import {
+  modelSettingsSchema,
+  withModelReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
   SecretResponse,
@@ -28,7 +32,7 @@ import type { VariableListResponse } from "@okouai/api-contracts/contracts/varia
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -181,6 +185,7 @@ export function userModelPreference({
     const [row] = await db
       .select({
         selectedModel: orgMembersMetadata.selectedModel,
+        modelSettings: orgMembersMetadata.modelSettings,
         serviceTier: orgMembersMetadata.serviceTier,
         selectedVideoModel: orgMembersMetadata.selectedVideoModel,
         selectedImageModel: orgMembersMetadata.selectedImageModel,
@@ -208,13 +213,18 @@ export function userModelPreference({
     const selectedImageModel = isImageModelId(row?.selectedImageModel)
       ? row.selectedImageModel
       : null;
+    const modelSettings = modelSettingsSchema.parse(row?.modelSettings ?? {});
     return {
       selectedModel,
+      modelSettings,
       serviceTier,
       selectedVideoModel,
       selectedImageModel,
       updatedAt:
-        selectedModel || selectedVideoModel || selectedImageModel
+        selectedModel ||
+        selectedVideoModel ||
+        selectedImageModel ||
+        Object.keys(modelSettings).length > 0
           ? (row?.updatedAt.toISOString() ?? null)
           : null,
     };
@@ -376,6 +386,14 @@ function userModelPreferenceColumns(
           selectedModel: preference.selectedModel,
           serviceTier: preference.serviceTier,
         }),
+    ...(preference.modelSettingsPatch === undefined
+      ? {}
+      : {
+          modelSettings: withModelReasoningEffort(
+            {},
+            preference.modelSettingsPatch,
+          ),
+        }),
     // Absent means "leave it alone", so an older bundle that knows only the run
     // model keeps its stored media defaults. Null clears one explicitly.
     ...("selectedVideoModel" in preference
@@ -398,6 +416,7 @@ export const updateUserModelPreference$ = command(
     const writeDb = set(writeDb$);
     const updatedAt = nowDate();
     const columns = userModelPreferenceColumns(args.preference);
+    const modelSettingsPatch = args.preference.modelSettingsPatch;
     await writeDb
       .insert(orgMembersMetadata)
       .values({
@@ -409,7 +428,19 @@ export const updateUserModelPreference$ = command(
       })
       .onConflictDoUpdate({
         target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-        set: { ...columns, updatedAt },
+        set: {
+          ...columns,
+          ...(modelSettingsPatch === undefined
+            ? {}
+            : {
+                modelSettings: sql`${orgMembersMetadata.modelSettings} || jsonb_build_object(
+                  cast(${modelSettingsPatch.model} as text),
+                  COALESCE(${orgMembersMetadata.modelSettings} -> cast(${modelSettingsPatch.model} as text), '{}'::jsonb)
+                    || jsonb_build_object('effort', cast(${modelSettingsPatch.effort} as text))
+                )`,
+              }),
+          updatedAt,
+        },
       });
     signal.throwIfAborted();
 

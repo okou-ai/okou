@@ -28,8 +28,17 @@ use connection::{
 /// An NBD COW block device backed by a base image and sparse COW file.
 ///
 /// The device appears as `/dev/nbdN` and can be used as a Firecracker rootfs.
-/// Writes go to an in-memory buffer that is periodically flushed to a sparse COW file.
+/// Writes go to an in-memory buffer and are flushed to the sparse COW file
+/// when buffered data reaches [`crate::DEFAULT_FLUSH_THRESHOLD`]. NBD FLUSH
+/// requests and orderly disconnect or shutdown also flush pending writes and
+/// fsync the COW file. Idle time alone does not flush sub-threshold writes;
+/// there is no periodic flush timer.
 /// Reads check the buffer, then COW file, then base image.
+///
+/// Threshold-triggered flushing does not fsync the COW file or persist the dirty
+/// bitmap. Use [`Self::destroy_keep_cow`] to preserve the COW file and bitmap for
+/// snapshots. Dropping the device only performs best-effort cleanup and may
+/// discard buffered writes.
 pub struct NbdCowDevice {
     /// NBD device index (N in /dev/nbdN).
     device_index: u32,

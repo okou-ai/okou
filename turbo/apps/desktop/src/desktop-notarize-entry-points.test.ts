@@ -62,11 +62,6 @@ import { appendFileSync } from "node:fs";
 
 export async function sign(options) {
   appendFileSync(process.env.TEST_TRACE_PATH, "sign\\n");
-  const resourceRoot = process.env.TEST_EXPECTED_APP_PATH + "/Contents/Resources/cua/";
-  const expectedNestedCode = ["cua-driver", "cua-cursor-theme", "node_modules/@trycua/cua-driver-darwin-arm64/libcua_driver_sdk.dylib", "node_modules/@trycua/cua-driver-darwin-arm64/cua_driver_node_runtime.node"];
-  if (JSON.stringify(options.binaries) !== JSON.stringify([...expectedNestedCode.map((name) => resourceRoot + name), ...["cua-owner.node", "cua-guardian"].map((name) => process.env.TEST_EXPECTED_APP_PATH + "/Contents/Resources/native/" + name)])) {
-    throw new Error("CUA nested code must be signed before the outer app");
-  }
   const signingOptionsAreUnchanged =
     options.app === process.env.TEST_EXPECTED_APP_PATH &&
     options.batchCodesignCalls === true &&

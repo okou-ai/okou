@@ -16,8 +16,12 @@ import {
   heldSandboxStateSchema,
   heldWorkspaceStateSchema,
   jobSchema,
+  PI_MEMORY_SUMMARY_MAX_BYTES,
+  PI_MEMORY_SUMMARY_MAX_TOKENS,
+  PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
   piApiFirstTurnConfigSchema,
   piApiFirstTurnManifestSchema,
+  piMemoryRecallSelectionSchema,
   piModelConfigLegacySchema,
   piModelConfigSchema,
   piModelConfigV2Schema,
@@ -315,7 +319,6 @@ describe("Pi sandbox execution contract", () => {
       provider: "deepseek",
       baseUrl: "https://api.deepseek.com/",
       model: "deepseek-v4-flash",
-      api: "openai-responses" as const,
       apiKeyEnv: "OPENAI_API_KEY",
       credentialSecretName: "DEEPSEEK_API_KEY",
     },
@@ -343,35 +346,21 @@ describe("Pi sandbox execution contract", () => {
     rawSize: 1024,
   };
 
-  it("keeps legacy Pi transports decodable while current configs use Responses", () => {
+  it("preserves canonical Gen1 request policy and custom gateway credentials", () => {
     expect(piModelConfigSchema.parse(piStoredContext.piModelConfig)).toEqual(
       piStoredContext.piModelConfig,
     );
-    const { api: _currentApi, ...legacyBase } = piStoredContext.piModelConfig;
-    for (const api of [
-      undefined,
-      "openai-completions",
-      "openai-codex-responses",
-    ] as const) {
-      const legacy = {
-        ...legacyBase,
-        ...(api === undefined ? {} : { api }),
-      };
-      expect(piModelConfigSchema.parse(legacy)).toEqual(legacy);
-    }
     expect(
       piModelConfigSchema.parse({
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
         model: "gpt-5.6-terra",
-        api: "openai-responses",
         thinkingLevel: "low",
         serviceTier: "priority",
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OPENAI_API_KEY",
       }),
     ).toMatchObject({
-      api: "openai-responses",
       thinkingLevel: "low",
       serviceTier: "priority",
     });
@@ -380,7 +369,6 @@ describe("Pi sandbox execution contract", () => {
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
         model: "gpt-5.6-terra",
-        api: "openai-responses",
         thinkingLevel: "low",
         serviceTier: "fast",
         apiKeyEnv: "OPENAI_API_KEY",
@@ -393,7 +381,6 @@ describe("Pi sandbox execution contract", () => {
         baseUrl: "https://gateway.example.com/v1",
         model: "company-deepseek-production",
         catalogModel: "deepseek-v4-flash",
-        api: "openai-responses",
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
         credentialHeader: {
@@ -420,7 +407,6 @@ describe("Pi sandbox execution contract", () => {
           baseUrl: "https://gateway.example.com/v1",
           model: "company-deepseek-production",
           catalogModel: "deepseek-v4-flash",
-          api: "openai-responses",
           apiKeyEnv: "OPENAI_API_KEY",
           credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
           credentialHeader: { name: "x-api-key", valueTemplate },
@@ -428,6 +414,30 @@ describe("Pi sandbox execution contract", () => {
       ).toBe(false);
     }
   });
+
+  it.each([
+    undefined,
+    "openai-responses",
+    "openai-completions",
+    "openai-codex-responses",
+  ])(
+    "rejects an extra Gen1 api key with value %s at the wire boundary",
+    (api) => {
+      const config = { ...piStoredContext.piModelConfig, api };
+      const result = piModelConfigLegacySchema.safeParse(config);
+      expect(result.error?.issues).toEqual([
+        expect.objectContaining({ code: "unrecognized_keys", keys: ["api"] }),
+      ]);
+      expect(piModelConfigSchema.safeParse(config).success).toBe(false);
+      expect(
+        storedExecutionContextSchema.safeParse({
+          ...storedContext,
+          ...piStoredContext,
+          piModelConfig: config,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it.each([2, 3] as const)(
     "accepts only exact generation %s dialect-aware credential binding sets",
@@ -620,6 +630,45 @@ describe("Pi sandbox execution contract", () => {
       mode,
       sandboxEventSequenceStart: 4,
     });
+  });
+
+  it("accepts one strict sampled Langfuse handoff parent", () => {
+    const langfuseParent = {
+      traceId: "1".repeat(32),
+      spanId: "2".repeat(16),
+      traceFlags: 1,
+      sessionId: piSessionId,
+      sandboxWaitStartedAt: 1_000,
+    } as const;
+    const manifest = piApiFirstTurnManifestSchema.parse({
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode: "pending-tool-continuation",
+      baseSession: { sessionId: piSessionId, sha256: null },
+      session: handoffSession,
+      sandboxEventSequenceStart: 4,
+      langfuseParent,
+    });
+
+    expect(manifest.langfuseParent).toStrictEqual(langfuseParent);
+    for (const invalidParent of [
+      { ...langfuseParent, traceId: "0".repeat(32) },
+      { ...langfuseParent, traceId: "1".repeat(31) },
+      { ...langfuseParent, spanId: "0".repeat(16) },
+      { ...langfuseParent, spanId: "2".repeat(15) },
+      { ...langfuseParent, traceFlags: 0 },
+      { ...langfuseParent, sandboxWaitStartedAt: undefined },
+      { ...langfuseParent, sandboxWaitStartedAt: -1 },
+      { ...langfuseParent, sandboxWaitStartedAt: 1.5 },
+      { ...langfuseParent, extra: true },
+    ]) {
+      expect(
+        piApiFirstTurnManifestSchema.safeParse({
+          ...manifest,
+          langfuseParent: invalidParent,
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("bounds referenced sandbox history at 128 MiB while retaining the V3 API budget", () => {
@@ -2456,6 +2505,85 @@ describe("runner Claude tool list contracts", () => {
     ).toBe(true);
     expect(
       executionContextSchema.shape.tools.safeParse(["Bash,Read"]).success,
+    ).toBe(true);
+  });
+});
+
+describe("Pi memory recall selection contract", () => {
+  const summary = "# Working memory\n\nKeep repository-native checks.";
+  const readySelection = {
+    status: "ready" as const,
+    memoryStorageId: "memory-storage",
+    storageVersionId: "storage-version-a",
+    content: summary,
+    sourceHash: "a".repeat(64),
+    sourceSize: Buffer.byteLength(summary, "utf8"),
+    tokenCount: 12,
+  };
+
+  it("bounds the full-source token count by the 64 KiB source limit", () => {
+    // A source within the byte ceiling can never exceed one token per byte.
+    expect(PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS).toBe(
+      PI_MEMORY_SUMMARY_MAX_BYTES,
+    );
+    expect(PI_MEMORY_SUMMARY_MAX_TOKENS).toBe(2500);
+
+    for (const tokenCount of [
+      1,
+      PI_MEMORY_SUMMARY_MAX_TOKENS,
+      2943,
+      PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
+    ]) {
+      expect(
+        piMemoryRecallSelectionSchema.safeParse({
+          ...readySelection,
+          tokenCount,
+        }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects impossible and non-source token counts", () => {
+    for (const tokenCount of [
+      0,
+      -1,
+      1.5,
+      PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS + 1,
+    ]) {
+      expect(
+        piMemoryRecallSelectionSchema.safeParse({
+          ...readySelection,
+          tokenCount,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps the remaining full-source fields required", () => {
+    expect(
+      piMemoryRecallSelectionSchema.safeParse({
+        ...readySelection,
+        content: "x".repeat(PI_MEMORY_SUMMARY_MAX_BYTES + 1),
+      }).success,
+    ).toBe(false);
+    expect(
+      piMemoryRecallSelectionSchema.safeParse({
+        ...readySelection,
+        sourceSize: PI_MEMORY_SUMMARY_MAX_BYTES + 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      piMemoryRecallSelectionSchema.safeParse({
+        ...readySelection,
+        sourceHash: "zz",
+      }).success,
+    ).toBe(false);
+    expect(
+      piMemoryRecallSelectionSchema.safeParse({
+        status: "no-content",
+        memoryStorageId: "memory-storage",
+        storageVersionId: "storage-version-a",
+      }).success,
     ).toBe(true);
   });
 });

@@ -194,13 +194,19 @@ test("Selecting a slide preserves its authored layout", async () => {
       </body>
     </html>`);
   await setupPage({
+    locale: "en-US",
     context,
     host: "app.okou.ai",
     path: `/agents/${AGENT_ID}/chat`,
   });
 
   const firstFrame = await openPresentationDetail();
-  await hydratePreviewFrame(firstFrame, objectUrls);
+  // Selection depends on the iframe load event, not on reading the first
+  // slide's document. Render and inspect the selected slide below.
+  fireEvent.load(firstFrame);
+  await waitFor(() => {
+    expect(firstFrame).toHaveAttribute("data-loaded", "true");
+  });
   const firstFrameUrl = firstFrame.getAttribute("src");
   click(await waitForNamedButton("Preview slide 2"));
   await waitFor(() => {

@@ -15,13 +15,21 @@ import {
   type ModelProviderType,
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { upsertBuiltInNoSecretModelProviderIdentity } from "@okouai/db/operations/model-provider-built-in-identity";
 import { modelProviders as modelProvidersTable } from "@okouai/db/schema/model-provider";
 import { modelProviderConnections } from "@okouai/db/schema/model-provider-gateway";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db$, writeDb$, type Db } from "../external/db";
+import {
+  publishModelPoliciesChangedForOrgSafely,
+  publishPersonalModelProvidersChangedSafely,
+} from "../external/realtime";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -29,10 +37,29 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 import { lockModelProviderState } from "./auth-state-lock.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  deletePersonalModelProviderAccount,
+  isPersonalSubscriptionProviderType,
+  captureActivePersonalModelProviderAccount,
+  identifyPersonalSubscriptionAccountsBeforeDisconnect,
+  upsertPersonalModelProviderAccount,
+  visiblePersonalModelProviderCondition,
+} from "./model-provider-account.service";
+
 const L = logger("model-provider.service");
 
 const ORG_SENTINEL_USER_ID = "__org__";
 type ModelProviderRow = typeof modelProvidersTable.$inferSelect;
+
+function publishProviderChanged(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Promise<void> {
+  return args.userId === ORG_SENTINEL_USER_ID
+    ? publishModelPoliciesChangedForOrgSafely(args.orgId)
+    : publishPersonalModelProvidersChangedSafely(args.userId);
+}
 
 function hasUsableSecretValue(value: string | undefined): value is string {
   return value !== undefined && value.trim().length > 0;
@@ -130,14 +157,71 @@ export function modelProviders(
   return modelProvidersForUser(orgId, ORG_SENTINEL_USER_ID);
 }
 
-export function userModelProviders(
-  orgId: string,
-  userId: string,
-): Computed<Promise<ModelProviderListResponse>> {
-  return modelProvidersForUser(orgId, userId);
-}
-
 type NotFoundResponse = ReturnType<typeof notFound>;
+
+async function disconnectPersonalSubscriptionProvider(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly type: "claude-code-oauth-token" | "codex-oauth-token";
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
+  signal: AbortSignal,
+): Promise<NotFoundResponse | undefined> {
+  const subscriptionType = args.type;
+  // Seed before the all-accounts transaction. Opaque identity requests must
+  // not hold the provider lock across network I/O. The removal itself still
+  // serializes the complete connected set with new connections.
+  await captureActivePersonalModelProviderAccount(
+    {
+      ...args,
+      type: subscriptionType,
+      modelProviderId: null,
+      featureSwitchContext: args.featureSwitchContext,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  await identifyPersonalSubscriptionAccountsBeforeDisconnect(args, signal);
+  signal.throwIfAborted();
+  const result = await args.db.transaction(async (tx) => {
+    await lockModelProviderState(tx, args);
+    const accounts = await tx
+      .select({ id: modelProviderAccounts.id })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          eq(modelProviderAccounts.type, subscriptionType),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
+    if (accounts.length === 0) {
+      return notFound("Resource not found");
+    }
+    for (const account of accounts) {
+      await deletePersonalModelProviderAccount(
+        {
+          ...args,
+          db: tx,
+          disconnectAll: true,
+          id: account.id,
+          featureSwitchContext: args.featureSwitchContext,
+        },
+        signal,
+      );
+    }
+    return undefined;
+  });
+  signal.throwIfAborted();
+  if (result === undefined) {
+    await publishProviderChanged(args);
+    signal.throwIfAborted();
+  }
+  return result;
+}
 
 /**
  * Delete a user-level model provider and cascade-delete its secrets.
@@ -155,7 +239,7 @@ type NotFoundResponse = ReturnType<typeof notFound>;
  */
 export const deleteUserModelProvider$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -164,8 +248,25 @@ export const deleteUserModelProvider$ = command(
     signal: AbortSignal,
   ): Promise<NotFoundResponse | undefined> => {
     const writeDb = set(writeDb$);
+    const featureSwitchContext = await get(
+      userFeatureSwitchContext(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    if (
+      args.userId !== ORG_SENTINEL_USER_ID &&
+      isPersonalSubscriptionProviderType(args.type) &&
+      isFeatureEnabled(
+        FeatureSwitchKey.PersonalSubscriptionPriority,
+        featureSwitchContext,
+      )
+    ) {
+      return await disconnectPersonalSubscriptionProvider(
+        { db: writeDb, ...args, type: args.type, featureSwitchContext },
+        signal,
+      );
+    }
 
-    return await writeDb.transaction(async (tx) => {
+    const result = await writeDb.transaction(async (tx) => {
       await lockModelProviderState(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -236,6 +337,12 @@ export const deleteUserModelProvider$ = command(
 
       return undefined;
     });
+    signal.throwIfAborted();
+    if (result === undefined) {
+      await publishProviderChanged(args);
+      signal.throwIfAborted();
+    }
+    return result;
   },
 );
 
@@ -609,6 +716,21 @@ export const upsertUserModelProvider$ = command(
     const { secretName } = validation;
     const writeDb = set(writeDb$);
 
+    if (
+      args.userId !== ORG_SENTINEL_USER_ID &&
+      isPersonalSubscriptionProviderType(args.type)
+    ) {
+      return await set(
+        upsertSingletonSubscription$,
+        {
+          ...args,
+          type: args.type,
+          authMethod: null,
+          secretValues: { [secretName]: args.secret },
+        },
+        signal,
+      );
+    }
     const encryptedValue = await encryptStoredSecretValue(args.secret);
     signal.throwIfAborted();
 
@@ -690,7 +812,8 @@ export const upsertUserModelProvider$ = command(
       throw new Error("Expected model provider upsert to return a row");
     }
 
-    const wasCreated = !existingProvider;
+    await publishProviderChanged(args);
+    signal.throwIfAborted();
 
     return {
       provider: toModelProviderInfoFromRow({
@@ -699,7 +822,7 @@ export const upsertUserModelProvider$ = command(
         type: args.type,
         secretName,
       }),
-      created: wasCreated,
+      created: !existingProvider,
     };
   },
 );
@@ -939,6 +1062,15 @@ export const upsertUserMultiAuthModelProvider$ = command(
     );
     signal.throwIfAborted();
 
+    if (
+      args.userId !== ORG_SENTINEL_USER_ID &&
+      isPersonalSubscriptionProviderType(args.type)
+    ) {
+      return await upsertSingletonSubscription(
+        { db: writeDb, ...args, type: args.type, featureSwitchContext },
+        signal,
+      );
+    }
     const secretNames = Object.keys(args.secretValues);
     const encryptedSecrets = await encryptMultiAuthSecrets(
       { ...args, featureSwitchContext },
@@ -964,6 +1096,8 @@ export const upsertUserMultiAuthModelProvider$ = command(
     signal.throwIfAborted();
 
     const { provider } = result;
+    await publishProviderChanged(args);
+    signal.throwIfAborted();
 
     return {
       provider: toModelProviderInfoFromRow({
@@ -1074,6 +1208,8 @@ export const upsertOrgNoSecretModelProvider$ = command(
     );
     signal.throwIfAborted();
 
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
+    signal.throwIfAborted();
     return {
       provider: toModelProviderInfoFromRow({
         provider: result.provider,
@@ -1084,3 +1220,75 @@ export const upsertOrgNoSecretModelProvider$ = command(
     };
   },
 );
+
+const upsertSingletonSubscription$ = command(
+  async (
+    { get, set },
+    args: Omit<
+      Parameters<typeof upsertPersonalModelProviderAccount>[0],
+      "mode" | "db" | "featureSwitchContext"
+    >,
+    signal: AbortSignal,
+  ) => {
+    const featureSwitchContext = await get(
+      userFeatureSwitchContext(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    return await upsertSingletonSubscription(
+      { ...args, db: set(writeDb$), featureSwitchContext },
+      signal,
+    );
+  },
+);
+
+async function upsertSingletonSubscription(
+  args: Omit<Parameters<typeof upsertPersonalModelProviderAccount>[0], "mode">,
+  signal: AbortSignal,
+): Promise<
+  | BadRequestResponse
+  | { readonly provider: ModelProviderInfo; readonly created: boolean }
+> {
+  const [previous] = await args.db
+    .select({ id: modelProvidersTable.id })
+    .from(modelProvidersTable)
+    .where(
+      and(
+        eq(modelProvidersTable.orgId, args.orgId),
+        eq(modelProvidersTable.userId, args.userId),
+        eq(modelProvidersTable.type, args.type),
+        visiblePersonalModelProviderCondition(args.db),
+      ),
+    )
+    .limit(1);
+  const result = await upsertPersonalModelProviderAccount(
+    { ...args, mode: { kind: "replace-active" } },
+    signal,
+  );
+  if ("status" in result) {
+    return badRequestMessage(result.body.error.message);
+  }
+  if (!result.provider.modelProviderId) {
+    throw new Error("Concrete subscription account has no logical provider");
+  }
+  const [provider] = await args.db
+    .select()
+    .from(modelProvidersTable)
+    .where(eq(modelProvidersTable.id, result.provider.modelProviderId))
+    .limit(1);
+  if (!provider) {
+    throw new Error("Subscription provider disappeared after connection");
+  }
+  return {
+    created: !previous,
+    provider: toModelProviderInfoFromRow({
+      provider,
+      userId: args.userId,
+      type: args.type,
+      authMethod: args.authMethod,
+      secretName: getSecretNameForType(args.type) ?? null,
+      secretNames: args.authMethod
+        ? (getSecretNamesForAuthMethod(args.type, args.authMethod) ?? null)
+        : null,
+    }),
+  };
+}

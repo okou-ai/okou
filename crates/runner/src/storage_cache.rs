@@ -12,6 +12,13 @@
 //! so `guest-storage-apply` reads the guest-local staged archive instead of
 //! re-fetching.
 //!
+//! Production source preparation first selects admissible extracted-file hits
+//! and pins their owned bytes in the plan. Those identities bypass archive
+//! prefetch and staging entirely. After successful direct use and Agent spawn,
+//! the same bounded background owner can retire the redundant compressed entry
+//! while holding both formats' locks and validating the extracted replacement.
+//! Ordinary archive consumers retain the delivery and fill paths below.
+//!
 //! Eligible fresh and reused sandbox attempts can assign bounded cold
 //! identities to a runner owner before independent pre-spawn preparation.
 //! That owner performs one full request, keeps the cache writer through atomic
@@ -36,7 +43,6 @@
 
 use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
 use std::fmt;
-use std::future::Future;
 use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -56,13 +62,12 @@ use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::lock;
-use crate::object_download_policy::{
-    OBJECT_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_TIMEOUT, is_retryable_http_status,
-    is_retryable_reqwest_error, sleep_object_download_retry_delay,
-};
+use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
 use crate::paths::{HomePaths, short_digest, touch_mtime};
 use crate::storage_plan::{ArchiveHandle, StoragePlan};
 use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
+
+pub(crate) mod decoded;
 
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
@@ -104,8 +109,7 @@ const STORAGE_CACHE_BACKGROUND_FILL_FILLED: &str = "storage_cache_background_fil
 const STORAGE_CACHE_BACKGROUND_FILL_ALREADY_CACHED: &str =
     "storage_cache_background_fill_already_cached";
 const STORAGE_CACHE_BACKGROUND_FILL_BUSY: &str = "storage_cache_background_fill_busy";
-const STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED: &str =
-    "storage_cache_background_fill_retryable_skipped";
+const STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE: &str = "storage_cache_background_fill_unavailable";
 const STORAGE_CACHE_BACKGROUND_FILL_SKIPPED: &str = "storage_cache_background_fill_skipped";
 const STORAGE_CACHE_BACKGROUND_FILL_FAILED: &str = "storage_cache_background_fill_failed";
 const STORAGE_CACHE_BACKGROUND_FILL_FAILED_ERROR: &str = "background-fill-failed";
@@ -130,10 +134,6 @@ const STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED: &str = "storage_cache_fresh_delive
 const STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED: &str =
     "storage_cache_fresh_delivery_publication_failed";
 const STORAGE_CACHE_FRESH_DELIVERY_STAGED: &str = "storage_cache_fresh_delivery_staged";
-const STORAGE_CACHE_FRESH_DELIVERY_STAGE_FALLBACK: &str =
-    "storage_cache_fresh_delivery_stage_fallback";
-const STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK: &str =
-    "storage_cache_fresh_delivery_guest_fallback";
 const STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST: &str =
     "storage_cache_fresh_delivery_single_request";
 const STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST: &str =
@@ -299,9 +299,16 @@ enum BackgroundFillEntryState {
     Active,
 }
 
+#[derive(Clone)]
+enum BackgroundFillAction {
+    Fill(Option<decoded::DecodedCache>),
+    RetireArchive(decoded::DecodedCache),
+}
+
 struct BackgroundFillEntry {
     group: CacheTargetGroup,
     home: HomePaths,
+    action: BackgroundFillAction,
     subscribers: Vec<SandboxOpReporter>,
     state: BackgroundFillEntryState,
 }
@@ -347,6 +354,7 @@ struct BackgroundFillWork {
     key: (String, String),
     group: CacheTargetGroup,
     home: HomePaths,
+    action: BackgroundFillAction,
 }
 
 struct BackgroundFillWorkerResult {
@@ -401,6 +409,7 @@ impl StorageCacheBackgroundFillCoordinator {
         group: CacheTargetGroup,
         home: HomePaths,
         reporter: SandboxOpReporter,
+        action: BackgroundFillAction,
     ) -> BackgroundFillAdmission {
         let Some(key) = group_key(&group) else {
             warn!("storage_cache: refusing empty background fill group");
@@ -415,6 +424,27 @@ impl StorageCacheBackgroundFillCoordinator {
             return BackgroundFillAdmission::Closed;
         }
         if let Some(entry) = state.entries.get_mut(&key) {
+            if entry.state == BackgroundFillEntryState::Queued {
+                // Archive consumers take precedence over queued retirement.
+                // Active work is already owned; a later run may retry optional
+                // maintenance after it finishes.
+                match (&mut entry.action, action) {
+                    (BackgroundFillAction::Fill(cache), BackgroundFillAction::Fill(next)) => {
+                        if cache.is_none() {
+                            *cache = next;
+                        }
+                    }
+                    (
+                        current @ BackgroundFillAction::RetireArchive(_),
+                        next @ BackgroundFillAction::Fill(_),
+                    ) => {
+                        *current = next;
+                        entry.group = group;
+                        entry.home = home;
+                    }
+                    _ => {}
+                }
+            }
             entry.subscribers.push(reporter);
             return BackgroundFillAdmission::Deduplicated;
         }
@@ -426,6 +456,7 @@ impl StorageCacheBackgroundFillCoordinator {
             BackgroundFillEntry {
                 group,
                 home,
+                action,
                 subscribers: vec![reporter],
                 state: BackgroundFillEntryState::Queued,
             },
@@ -510,6 +541,25 @@ impl StorageCacheBackgroundFillCoordinator {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .closed
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn wait_idle_for_test(&self) {
+        loop {
+            let (send, receive) = oneshot::channel();
+            self.lifecycle
+                .inner
+                .commands
+                .send(BackgroundFillCommand::Checkpoint(send))
+                .await
+                .unwrap();
+            if receive.await.unwrap() == (0, 0) {
+                return;
+            }
+            // Observe a coordinator checkpoint without busy-spinning while a
+            // blocking filesystem worker is active. This is test-only polling.
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
     }
 }
 
@@ -656,19 +706,24 @@ fn take_background_fill_work(
     if state.closed {
         return None;
     }
-    let (group, home) = {
+    let (group, home, action) = {
         let entry = state.entries.get_mut(key)?;
         if entry.state != BackgroundFillEntryState::Queued {
             return None;
         }
         entry.state = BackgroundFillEntryState::Active;
-        (entry.group.clone(), entry.home.clone())
+        (
+            entry.group.clone(),
+            entry.home.clone(),
+            entry.action.clone(),
+        )
     };
     state.queued = state.queued.saturating_sub(1);
     Some(BackgroundFillWork {
         key: key.clone(),
         group,
         home,
+        action,
     })
 }
 
@@ -712,7 +767,33 @@ async fn run_background_fill_work(
     http: Client,
 ) -> BackgroundFillWorkerResult {
     let started_at = Instant::now();
-    let report = match process_group_background_fill(&work.group, &http, &work.home).await {
+    let outcome = async {
+        if let BackgroundFillAction::RetireArchive(cache) = &work.action {
+            return cache
+                .retire_archive(&work.key.0, &work.key.1)
+                .await
+                .map(|retired| BackgroundFillOutcome::ArchiveRetirement { retired })
+                .map_err(|error| {
+                    RunnerError::Internal(format!("retire storage archive: {error}"))
+                });
+        }
+        let outcome = process_group_background_fill(&work.group, &http, &work.home).await?;
+        if matches!(
+            outcome,
+            BackgroundFillOutcome::Filled { .. } | BackgroundFillOutcome::AlreadyCached { .. }
+        ) && let BackgroundFillAction::Fill(Some(decoded)) = &work.action
+        {
+            decoded
+                .warm_from_archive(&work.key.0, &work.key.1)
+                .await
+                .map_err(|error| {
+                    RunnerError::Internal(format!("warm extracted storage cache: {error}"))
+                })?;
+        }
+        Ok::<_, RunnerError>(outcome)
+    }
+    .await;
+    let report = match outcome {
         Ok(outcome) => BackgroundFillReport::from_outcome(outcome, started_at.elapsed()),
         Err(error) => {
             warn!(%error, "storage_cache: background fill failed");
@@ -782,10 +863,7 @@ enum FreshArchiveSizeSource {
 
 enum FreshArchiveFetchTaskResult {
     Downloaded(FreshArchiveDownloaded),
-    Terminal {
-        group: CacheTargetGroup,
-        reason: &'static str,
-    },
+    Terminal { reason: &'static str },
 }
 
 struct FreshArchivePublicationTaskResult {
@@ -798,15 +876,9 @@ struct FreshArchivePublished {
     permit: OwnedSemaphorePermit,
 }
 
-enum FreshArchiveResolved {
-    Ready {
-        group: CacheTargetGroup,
-        archive: FreshArchivePublished,
-    },
-    Passthrough {
-        group: CacheTargetGroup,
-        reason: &'static str,
-    },
+struct FreshArchiveResolved {
+    group: CacheTargetGroup,
+    archive: FreshArchivePublished,
 }
 
 /// In-flight runner ownership for archives selected from one storage plan.
@@ -956,14 +1028,21 @@ impl FreshArchiveDelivery {
                         FreshArchivePublicationTaskResult { group, result }
                     });
                 }
-                FreshArchiveFetchTaskResult::Terminal { group, reason } => {
+                FreshArchiveFetchTaskResult::Terminal { reason } => {
                     let action = if reason == "cancelled" {
                         STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
                     } else {
                         STORAGE_CACHE_FRESH_DELIVERY_FAILED
                     };
                     telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
-                    resolved.push(FreshArchiveResolved::Passthrough { group, reason });
+                    self.cancel_and_drain(telemetry).await;
+                    return Err(if reason == "cancelled" {
+                        RunnerError::Cancelled
+                    } else {
+                        RunnerError::Internal(format!(
+                            "runner-owned archive download failed: {reason}"
+                        ))
+                    });
                 }
             }
         }
@@ -980,22 +1059,20 @@ impl FreshArchiveDelivery {
                         true,
                         None,
                     );
-                    resolved.push(FreshArchiveResolved::Ready {
+                    resolved.push(FreshArchiveResolved {
                         group: task.group,
                         archive,
                     });
                 }
-                Err(_) => {
+                Err(error) => {
                     telemetry.record(
                         STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED,
                         Duration::ZERO,
                         false,
                         Some("publication"),
                     );
-                    resolved.push(FreshArchiveResolved::Passthrough {
-                        group: task.group,
-                        reason: "publication",
-                    });
+                    self.cancel_and_drain(telemetry).await;
+                    return Err(error);
                 }
             }
         }
@@ -1010,7 +1087,7 @@ impl FreshArchiveDelivery {
 /// no asynchronous cleanup.
 #[must_use = "deferred storage cache fill must be started after agent spawn or explicitly dropped"]
 pub(crate) struct DeferredBackgroundFill {
-    groups: Vec<CacheTargetGroup>,
+    groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
     home: HomePaths,
     selected_at: Instant,
 }
@@ -1034,8 +1111,8 @@ impl DeferredBackgroundFill {
         );
         let reporter = telemetry.reporter();
         let mut accepted = 0;
-        for group in self.groups {
-            match coordinator.submit(group, self.home.clone(), reporter.clone()) {
+        for (group, action) in self.groups {
+            match coordinator.submit(group, self.home.clone(), reporter.clone(), action) {
                 BackgroundFillAdmission::Accepted => accepted += 1,
                 BackgroundFillAdmission::Deduplicated => telemetry.record(
                     STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED,
@@ -1157,13 +1234,97 @@ struct ProcessedGroupTask {
     processed: RunnerResult<ProcessedGroup>,
 }
 
+/// Pin admitted extracted files before deciding whether an archive is needed.
+/// A plan makes this decision once: later population must not refetch selected
+/// entries after disk eviction or redo a miss after prefetch has already begun.
+async fn prepare_decoded_storage(
+    plan: &mut StoragePlan,
+    groups: &[CacheTargetGroup],
+    cache: &decoded::DecodedCache,
+    telemetry: &mut JobTelemetry,
+) -> RunnerResult<()> {
+    if plan.decoded_prepared() {
+        return Ok(());
+    }
+    for batch in groups.chunks(decoded::LOOKUP_BATCH_SIZE) {
+        if plan.decoded_manifest_rejected() {
+            break;
+        }
+        let keys = batch
+            .iter()
+            .map(|group| {
+                group.targets.first().and_then(|target| {
+                    is_ordinary_storage_group(group, plan)
+                        .then_some((target.name.as_str(), target.version.as_str()))
+                })
+            })
+            .collect::<Vec<_>>();
+        let started = Instant::now();
+        let result = cache.get_ready_batch(&keys).await;
+        telemetry.record(
+            "storage_cache_decode_lookup",
+            started.elapsed(),
+            result.is_ok(),
+            None,
+        );
+        let ready = result.map_err(|error| {
+            RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
+        })?;
+        for (group, files) in batch.iter().zip(ready) {
+            reuse_decoded(plan, group, files)?;
+        }
+    }
+    plan.finish_decoded_preparation();
+    Ok(())
+}
+
+fn reuse_decoded(
+    plan: &mut StoragePlan,
+    group: &CacheTargetGroup,
+    files: Option<Arc<decoded::CachedFiles>>,
+) -> RunnerResult<bool> {
+    let Some(files) = files else {
+        return Ok(false);
+    };
+    // Check mounts only on a ready hit. Misses keep ordinary delivery.
+    let Some(mounts) = group
+        .targets
+        .iter()
+        .map(|target| plan.decoded_mount(target.handle).map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(false);
+    };
+    if !plan.admit_decoded_manifest()? {
+        return Ok(false);
+    }
+    let added = mounts
+        .iter()
+        .map(|mount| {
+            8 + mount.len()
+                + files
+                    .files
+                    .iter()
+                    .map(|file| 20 + file.path.len() + file.content.len())
+                    .sum::<usize>()
+        })
+        .sum::<usize>();
+    if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES {
+        return Ok(false);
+    }
+    for mount in mounts {
+        plan.add_decoded(mount, Arc::clone(&files));
+    }
+    Ok(true)
+}
+
 type ProcessedGroupTaskResult = ProcessedGroupTask;
 
 enum TargetOutcome {
     Hit,
+    Decoded,
     MissPassthrough { reason: &'static str },
     LockBusyPassthrough,
-    RunnerOwnedPassthrough { reason: &'static str },
 }
 
 enum DownloadBody {
@@ -1181,16 +1342,17 @@ enum CachedArchive {
 
 enum CacheFetchOutcome {
     Downloaded(Bytes),
-    RetryableSkipped,
+    Unavailable,
     Skipped,
 }
 
 enum BackgroundFillOutcome {
+    ArchiveRetirement { retired: bool },
     Filled { size: u64 },
     AlreadyCached { size: u64 },
     Busy,
     Skipped,
-    RetryableSkipped,
+    Unavailable,
 }
 
 struct BackgroundFillReport {
@@ -1201,6 +1363,14 @@ struct BackgroundFillReport {
 impl BackgroundFillReport {
     fn from_outcome(outcome: BackgroundFillOutcome, duration: Duration) -> Self {
         let (action_type, size) = match outcome {
+            BackgroundFillOutcome::ArchiveRetirement { retired } => (
+                if retired {
+                    "storage_cache_archive_retired"
+                } else {
+                    "storage_cache_archive_retirement_skipped"
+                },
+                None,
+            ),
             BackgroundFillOutcome::Filled { size } => {
                 (STORAGE_CACHE_BACKGROUND_FILL_FILLED, Some(size))
             }
@@ -1208,9 +1378,7 @@ impl BackgroundFillReport {
                 (STORAGE_CACHE_BACKGROUND_FILL_ALREADY_CACHED, Some(size))
             }
             BackgroundFillOutcome::Busy => (STORAGE_CACHE_BACKGROUND_FILL_BUSY, None),
-            BackgroundFillOutcome::RetryableSkipped => {
-                (STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED, None)
-            }
+            BackgroundFillOutcome::Unavailable => (STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, None),
             BackgroundFillOutcome::Skipped => (STORAGE_CACHE_BACKGROUND_FILL_SKIPPED, None),
         };
         Self {
@@ -1440,9 +1608,9 @@ async fn flush_fresh_guest_stage_batch(
     batch: &mut FreshGuestStageBatch,
     stage: &mut GuestStageRecorder<'_>,
     outcomes: &mut Vec<(CacheTargetGroup, TargetOutcome)>,
-) {
+) -> RunnerResult<()> {
     if batch.writes.is_empty() {
-        return;
+        return Ok(());
     }
     let started_at = Instant::now();
     let result = stage
@@ -1455,32 +1623,20 @@ async fn flush_fresh_guest_stage_batch(
         started_at,
         &result,
     );
-    let success = result.is_ok();
+    result?;
     for group in batch.groups.drain(..) {
-        let outcome = if success {
-            stage.telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_STAGED,
-                Duration::ZERO,
-                true,
-                None,
-            );
-            TargetOutcome::Hit
-        } else {
-            stage.telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_STAGE_FALLBACK,
-                Duration::ZERO,
-                true,
-                Some("guest-stage"),
-            );
-            TargetOutcome::RunnerOwnedPassthrough {
-                reason: "guest-stage",
-            }
-        };
-        outcomes.push((group, outcome));
+        stage.telemetry.record(
+            STORAGE_CACHE_FRESH_DELIVERY_STAGED,
+            Duration::ZERO,
+            true,
+            None,
+        );
+        outcomes.push((group, TargetOutcome::Hit));
     }
     batch.writes.clear();
     batch.permits.clear();
     batch.content_bytes = 0;
+    Ok(())
 }
 
 async fn stage_fresh_archives(
@@ -1498,32 +1654,24 @@ async fn stage_fresh_archives(
         telemetry,
         metrics: stage_metrics,
     };
-
-    for result in resolved {
-        match result {
-            FreshArchiveResolved::Ready { group, archive } => {
-                let FreshArchivePublished { bytes, permit } = archive;
-                let target = group.targets.first().ok_or_else(|| {
-                    RunnerError::Internal("empty runner-owned archive target group".to_string())
-                })?;
-                let write = GuestStageWrite {
-                    guest_path: guest_archive_path(&target.name, &target.version),
-                    bytes,
-                };
-                if batch.should_flush_before(&write) {
-                    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await;
-                }
-                batch.push(group, write, permit);
-                if batch.should_flush_after_push() {
-                    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await;
-                }
-            }
-            FreshArchiveResolved::Passthrough { group, reason } => {
-                outcomes.push((group, TargetOutcome::RunnerOwnedPassthrough { reason }));
-            }
+    for FreshArchiveResolved { group, archive } in resolved {
+        let FreshArchivePublished { bytes, permit } = archive;
+        let target = group.targets.first().ok_or_else(|| {
+            RunnerError::Internal("empty runner-owned archive target group".to_string())
+        })?;
+        let write = GuestStageWrite {
+            guest_path: guest_archive_path(&target.name, &target.version),
+            bytes,
+        };
+        if batch.should_flush_before(&write) {
+            flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
+        }
+        batch.push(group, write, permit);
+        if batch.should_flush_after_push() {
+            flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
         }
     }
-    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await;
+    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
     Ok(outcomes)
 }
 
@@ -1619,7 +1767,7 @@ pub async fn populate_cache(
     home: &HomePaths,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
-    populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None).await
+    populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None, None).await
 }
 
 pub(crate) async fn populate_cache_with_fresh_delivery(
@@ -1628,9 +1776,13 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     home: &HomePaths,
     telemetry: &mut JobTelemetry,
     fresh_delivery: Option<&mut FreshArchiveDelivery>,
+    decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
-    let targets = collect_targets(plan);
-    if targets.is_empty() && fresh_delivery.is_none() {
+    let target_groups = group_targets(collect_targets(plan));
+    if let Some(cache) = decoded {
+        prepare_decoded_storage(plan, &target_groups, cache, telemetry).await?;
+    }
+    if target_groups.is_empty() && fresh_delivery.is_none() {
         return Ok(None);
     }
 
@@ -1653,9 +1805,17 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
         .iter()
         .filter_map(|(group, _)| group_key(group))
         .collect::<HashSet<_>>();
-    let target_groups = group_targets(targets)
+    let target_groups = target_groups
         .into_iter()
         .filter(|group| group_key(group).is_none_or(|key| !owned_keys.contains(&key)))
+        .filter_map(|group| {
+            if group_has_decoded(&group, plan) {
+                outcomes.push((group, TargetOutcome::Decoded));
+                None
+            } else {
+                Some(group)
+            }
+        })
         .collect::<Vec<_>>();
 
     // Cache population runs in owned tasks so a slow guest staging write does
@@ -1725,7 +1885,8 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     let outcomes = stage_result?;
 
     record_passthrough_summary(&outcomes, telemetry);
-    let deferred = defer_background_fill_groups(&outcomes, home.clone(), telemetry);
+    let deferred =
+        defer_background_fill_groups(&outcomes, home.clone(), decoded.cloned(), plan, telemetry);
     for (group, outcome) in outcomes {
         apply_group_outcome(plan, &group, &outcome, telemetry);
     }
@@ -1739,15 +1900,54 @@ fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
         .map(|target| (target.name.clone(), target.version.clone()))
 }
 
+fn is_ordinary_storage_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
+    !plan.decoded_manifest_rejected()
+        && !group.targets.is_empty()
+        && group
+            .targets
+            .iter()
+            .all(|target| plan.is_ordinary_storage_download(target.handle))
+}
+
+fn group_has_decoded(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
+    !group.targets.is_empty()
+        && group
+            .targets
+            .iter()
+            .all(|target| plan.has_decoded(target.handle))
+}
+
 fn defer_background_fill_groups(
     outcomes: &[(CacheTargetGroup, TargetOutcome)],
     home: HomePaths,
+    decoded: Option<decoded::DecodedCache>,
+    plan: &StoragePlan,
     telemetry: &mut JobTelemetry,
 ) -> Option<DeferredBackgroundFill> {
     let groups = outcomes
         .iter()
-        .filter(|(_, outcome)| should_background_fill(outcome))
-        .map(|(group, _)| group.clone())
+        .filter_map(|(group, outcome)| {
+            let decoded = decoded
+                .as_ref()
+                .filter(|_| is_ordinary_storage_group(group, plan));
+            let action = if matches!(outcome, TargetOutcome::Decoded) {
+                if !group
+                    .targets
+                    .iter()
+                    .any(|target| plan.decoded_archive_retirement_candidate(target.handle))
+                {
+                    return None;
+                }
+                BackgroundFillAction::RetireArchive(decoded?.clone())
+            } else if should_background_fill(outcome)
+                || (decoded.is_some() && matches!(outcome, TargetOutcome::Hit))
+            {
+                BackgroundFillAction::Fill(decoded.cloned())
+            } else {
+                return None;
+            };
+            Some((group.clone(), action))
+        })
         .collect::<Vec<_>>();
     if groups.is_empty() {
         return None;
@@ -1773,7 +1973,7 @@ fn should_background_fill(outcome: &TargetOutcome) -> bool {
 
 #[cfg(test)]
 async fn run_background_fill_groups(
-    groups: Vec<CacheTargetGroup>,
+    groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
     home: HomePaths,
 ) -> Vec<SandboxOpRecord> {
     let http = match Client::builder().build() {
@@ -1795,7 +1995,7 @@ async fn run_background_fill_groups(
 
     let mut fills = JoinSet::new();
     let mut reports = Vec::new();
-    for group in groups {
+    for (group, action) in groups {
         while fills.len() >= CONCURRENCY {
             if let Some(report) = join_next_background_fill(&mut fills).await {
                 reports.extend(report.into_records());
@@ -1805,14 +2005,13 @@ async fn run_background_fill_groups(
         let http = http.clone();
         let home = home.clone();
         fills.spawn(async move {
-            let started_at = Instant::now();
-            match process_group_background_fill(&group, &http, &home).await {
-                Ok(outcome) => BackgroundFillReport::from_outcome(outcome, started_at.elapsed()),
-                Err(error) => {
-                    warn!(%error, "storage_cache: background fill failed");
-                    BackgroundFillReport::failed(started_at.elapsed())
-                }
-            }
+            let work = BackgroundFillWork {
+                key: group_key(&group).unwrap(),
+                group,
+                home,
+                action,
+            };
+            run_background_fill_work(work, http).await.report
         });
     }
 
@@ -1919,14 +2118,23 @@ fn collect_targets(plan: &StoragePlan) -> Vec<CacheTarget> {
 /// case, the caller must keep it paired with this plan and either resolve it
 /// through `populate_cache_with_fresh_delivery` or call
 /// [`FreshArchiveDelivery::cancel_and_drain`] before abandoning the plan.
+/// A preparation builds at most one HTTP client, only for an admitted cache miss.
+/// Select extracted files using the same source groups before archive admission;
+/// selected hits never start an archive request. A prepared plan keeps its pins
+/// and does not repeat the lookup during population.
 pub(crate) async fn prepare_fresh_archive_delivery(
-    plan: &StoragePlan,
+    plan: &mut StoragePlan,
     home: &HomePaths,
     admission: &FreshArchiveDeliveryAdmission,
     cancel: &CancellationToken,
     telemetry: &mut JobTelemetry,
+    decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<FreshArchiveDelivery> {
-    let groups = group_targets(collect_targets(plan));
+    let mut groups = group_targets(collect_targets(plan));
+    if let Some(cache) = decoded {
+        prepare_decoded_storage(plan, &groups, cache, telemetry).await?;
+    }
+    groups.retain(|group| !group_has_decoded(group, plan));
     let mut scan_summary =
         FreshDeliveryScanSummary::from_groups(&groups, FRESH_DELIVERY_SCAN_LIMIT);
     let owner_cancel = cancel.child_token();
@@ -1943,12 +2151,7 @@ pub(crate) async fn prepare_fresh_archive_delivery(
     let group_count = groups.len();
 
     let prepare_result: RunnerResult<()> = async {
-        let http = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|error| {
-                RunnerError::Internal(format!("build runner-owned archive client: {error}"))
-            })?;
+        let mut http: Option<Client> = None;
 
         let mut scanned = 0;
         for group in groups.into_iter().take(FRESH_DELIVERY_SCAN_LIMIT) {
@@ -2034,7 +2237,20 @@ pub(crate) async fn prepare_fresh_archive_delivery(
             let archive_size = group.archive_size;
             let task_group = group.clone();
             let task_cancel = owner_cancel.clone();
-            let task_http = http.clone();
+            let task_http = match &mut http {
+                Some(http) => http,
+                slot @ None => slot.insert(
+                    Client::builder()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .build()
+                        .map_err(|error| {
+                            RunnerError::Internal(format!(
+                                "build runner-owned archive client: {error}"
+                            ))
+                        })?,
+                ),
+            }
+            .clone();
             let (apply_tx, apply_rx) = oneshot::channel();
             delivery.apply.push(apply_tx);
             delivery.fetches.spawn(async move {
@@ -2046,23 +2262,18 @@ pub(crate) async fn prepare_fresh_archive_delivery(
                 let (bytes, size_source) = match fetch {
                     Ok(download) => download,
                     Err(reason) => {
-                        return FreshArchiveFetchTaskResult::Terminal {
-                            group: task_group,
-                            reason,
-                        };
+                        return FreshArchiveFetchTaskResult::Terminal { reason };
                     }
                 };
 
                 tokio::select! {
                     biased;
                     () = task_cancel.cancelled() => FreshArchiveFetchTaskResult::Terminal {
-                        group: task_group,
                         reason: "cancelled",
                     },
                     ready = apply_rx => {
                         if ready.is_err() {
                             FreshArchiveFetchTaskResult::Terminal {
-                                group: task_group,
                                 reason: "cancelled",
                             }
                         } else {
@@ -2212,21 +2423,11 @@ async fn process_group_background_fill(
     if group.archive_size.is_some_and(|size| size > CACHE_MAX_SIZE) {
         return Ok(BackgroundFillOutcome::Skipped);
     }
-
-    let mut saw_retryable_skipped = false;
-    for target in &group.targets {
-        match process_one_background_fill(target, group.archive_size, http, home).await? {
-            BackgroundFillOutcome::RetryableSkipped => {
-                saw_retryable_skipped = true;
-            }
-            outcome => return Ok(outcome),
-        }
-    }
-    if saw_retryable_skipped {
-        Ok(BackgroundFillOutcome::RetryableSkipped)
-    } else {
-        Ok(BackgroundFillOutcome::Skipped)
-    }
+    let target = group
+        .targets
+        .first()
+        .ok_or_else(|| RunnerError::Internal("empty storage cache target group".into()))?;
+    process_one_background_fill(target, group.archive_size, http, home).await
 }
 
 async fn process_group_hit_or_passthrough(
@@ -2292,7 +2493,7 @@ async fn process_one_background_fill(
             write_to_cache(&cache_dir, &bytes).await?;
             BackgroundFillOutcome::Filled { size }
         }
-        CacheFetchOutcome::RetryableSkipped => BackgroundFillOutcome::RetryableSkipped,
+        CacheFetchOutcome::Unavailable => BackgroundFillOutcome::Unavailable,
         CacheFetchOutcome::Skipped => BackgroundFillOutcome::Skipped,
     };
     drop(writer);
@@ -2309,7 +2510,7 @@ async fn fetch_cache_target(
         None => {
             // Legacy queued contexts do not carry encoded size. Preserve the
             // existing bounded range probe for those entries.
-            match retry_cache_fetch(|| probe_size(http, &target.archive_url)).await {
+            match probe_size(http, &target.archive_url).await {
                 Ok(SizeProbe::Known(n)) => n,
                 Ok(SizeProbe::Unknown(reason)) => {
                     let reason = reason.as_str();
@@ -2319,7 +2520,7 @@ async fn fetch_cache_target(
                         reason,
                         "storage_cache: probe returned no usable size header, passthrough"
                     );
-                    return Ok(CacheFetchOutcome::RetryableSkipped);
+                    return Ok(CacheFetchOutcome::Unavailable);
                 }
                 Err(e) => {
                     let reason = e.to_string();
@@ -2329,7 +2530,7 @@ async fn fetch_cache_target(
                         error = %reason,
                         "storage_cache: probe failed, passthrough"
                     );
-                    return Ok(CacheFetchOutcome::RetryableSkipped);
+                    return Ok(CacheFetchOutcome::Unavailable);
                 }
             }
         }
@@ -2344,15 +2545,12 @@ async fn fetch_cache_target(
         return Ok(CacheFetchOutcome::Skipped);
     }
 
-    let body = retry_cache_fetch(|| {
-        download_tarball(http, &target.archive_url, Some(size), CACHE_MAX_SIZE)
-    })
-    .await;
+    let body = download_tarball(http, &target.archive_url, Some(size), CACHE_MAX_SIZE).await;
     let bytes = match body {
         Ok(body) => body,
         Err(e) => {
             let reason = e.to_string();
-            match e.into_error() {
+            match e {
                 CacheDownloadError::Http(_) => {
                     warn!(
                         name = %target.name,
@@ -2360,7 +2558,7 @@ async fn fetch_cache_target(
                         error = %reason,
                         "storage_cache: full download failed, passthrough"
                     );
-                    return Ok(CacheFetchOutcome::RetryableSkipped);
+                    return Ok(CacheFetchOutcome::Unavailable);
                 }
                 CacheDownloadError::Internal(e) => return Err(e),
             }
@@ -2374,7 +2572,7 @@ async fn fetch_cache_target(
                 version = %target.version,
                 "storage_cache: full download returned empty archive, passthrough"
             );
-            return Ok(CacheFetchOutcome::RetryableSkipped);
+            return Ok(CacheFetchOutcome::Unavailable);
         }
         DownloadBody::OverSize { observed_size } => {
             warn!(
@@ -2401,7 +2599,7 @@ async fn fetch_cache_target(
             observed_size,
             "storage_cache: full download size differed from expectation, passthrough"
         );
-        return Ok(CacheFetchOutcome::RetryableSkipped);
+        return Ok(CacheFetchOutcome::Unavailable);
     }
 
     Ok(CacheFetchOutcome::Downloaded(bytes))
@@ -2599,10 +2797,6 @@ enum ProbeContentRange {
     Invalid,
 }
 
-trait CacheRetryableError {
-    fn is_retryable(&self) -> bool;
-}
-
 #[derive(Debug)]
 enum CacheHttpError {
     Status {
@@ -2616,7 +2810,6 @@ enum CacheHttpError {
     Transport {
         phase: &'static str,
         detail: String,
-        retryable: bool,
     },
 }
 
@@ -2633,11 +2826,9 @@ impl CacheHttpError {
         if let Some(status) = error.status() {
             return Self::status(phase, status);
         }
-        let retryable = is_retryable_reqwest_error(&error);
         Self::Transport {
             phase,
             detail: reqwest_error(error),
-            retryable,
         }
     }
 }
@@ -2650,16 +2841,6 @@ impl fmt::Display for CacheHttpError {
                 write!(f, "{phase}: unexpected status {status}")
             }
             Self::Transport { phase, detail, .. } => write!(f, "{phase}: {detail}"),
-        }
-    }
-}
-
-impl CacheRetryableError for CacheHttpError {
-    fn is_retryable(&self) -> bool {
-        match self {
-            Self::Status { status, .. } => is_retryable_http_status(*status),
-            Self::UnexpectedStatus { .. } => false,
-            Self::Transport { retryable, .. } => *retryable,
         }
     }
 }
@@ -2687,69 +2868,6 @@ impl fmt::Display for CacheDownloadError {
         match self {
             Self::Http(error) => write!(f, "{error}"),
             Self::Internal(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-impl CacheRetryableError for CacheDownloadError {
-    fn is_retryable(&self) -> bool {
-        match self {
-            Self::Http(error) => error.is_retryable(),
-            Self::Internal(_) => false,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct CacheRetryError<E> {
-    error: E,
-    attempts: usize,
-    exhausted_retry: bool,
-}
-
-impl<E> CacheRetryError<E> {
-    fn into_error(self) -> E {
-        self.error
-    }
-}
-
-impl<E: fmt::Display> fmt::Display for CacheRetryError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.exhausted_retry {
-            write!(
-                f,
-                "retry exhausted after {} attempts: {}",
-                self.attempts, self.error
-            )
-        } else {
-            write!(f, "{}", self.error)
-        }
-    }
-}
-
-async fn retry_cache_fetch<T, E, F, Fut>(mut operation: F) -> Result<T, CacheRetryError<E>>
-where
-    E: CacheRetryableError,
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-{
-    let mut attempt = 1;
-    loop {
-        match operation().await {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                let retryable = error.is_retryable();
-                let should_retry = retryable && attempt < OBJECT_DOWNLOAD_MAX_ATTEMPTS;
-                if !should_retry {
-                    return Err(CacheRetryError {
-                        error,
-                        attempts: attempt,
-                        exhausted_retry: retryable && attempt >= OBJECT_DOWNLOAD_MAX_ATTEMPTS,
-                    });
-                }
-                sleep_object_download_retry_delay().await;
-                attempt += 1;
-            }
         }
     }
 }
@@ -2929,9 +3047,13 @@ async fn read_cached_archive(
     let mut file = fs::File::open(path)
         .await
         .map_err(|e| RunnerError::Internal(format!("open cached {}: {e}", path.display())))?;
-    let mut bytes = Vec::with_capacity(initial_body_capacity(None, expected_size, max_size));
+    let capacity = initial_body_capacity(None, expected_size, max_size);
+    let mut bytes = Vec::with_capacity(capacity);
     let mut downloaded = 0u64;
-    let mut buf = [0u8; 64 * 1024];
+    // Keep the scratch space out of every spawned archive task's future. Small
+    // cached archives also need no 64-KiB Tokio file read buffer. The size is
+    // only a hint: retain a useful minimum and read to EOF under the byte limit.
+    let mut buf = vec![0u8; capacity.clamp(4096, BODY_BUFFER_FALLBACK_CAPACITY)];
 
     loop {
         let n = file
@@ -3145,6 +3267,9 @@ fn apply_outcome(
     telemetry: &mut JobTelemetry,
 ) {
     match outcome {
+        TargetOutcome::Decoded => {
+            telemetry.record("storage_cache_decoded", Duration::ZERO, true, None)
+        }
         TargetOutcome::Hit => {
             rewrite_url(plan, target);
             telemetry.record("storage_cache_hit", Duration::ZERO, true, None);
@@ -3163,14 +3288,6 @@ fn apply_outcome(
                 Duration::ZERO,
                 true,
                 None,
-            );
-        }
-        TargetOutcome::RunnerOwnedPassthrough { reason } => {
-            telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK,
-                Duration::ZERO,
-                true,
-                Some(reason),
             );
         }
     }
@@ -3218,10 +3335,8 @@ fn add_passthrough_summary(
     target_count: usize,
 ) {
     match outcome {
-        TargetOutcome::Hit => summary.hit_targets += target_count,
-        TargetOutcome::MissPassthrough { .. } | TargetOutcome::RunnerOwnedPassthrough { .. } => {
-            summary.miss_targets += target_count
-        }
+        TargetOutcome::Hit | TargetOutcome::Decoded => summary.hit_targets += target_count,
+        TargetOutcome::MissPassthrough { .. } => summary.miss_targets += target_count,
         TargetOutcome::LockBusyPassthrough => summary.lock_busy_targets += target_count,
     }
 }
@@ -3550,9 +3665,17 @@ mod tests {
         let admission = FreshArchiveDeliveryAdmission::new();
         let cancel = CancellationToken::new();
         let mut delivery =
-            prepare_fresh_archive_delivery(plan, home, &admission, &cancel, telemetry).await?;
-        populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, Some(&mut delivery))
-            .await
+            prepare_fresh_archive_delivery(plan, home, &admission, &cancel, telemetry, None)
+                .await?;
+        populate_cache_with_fresh_delivery(
+            plan,
+            sandbox,
+            home,
+            telemetry,
+            Some(&mut delivery),
+            None,
+        )
+        .await
     }
 
     fn assert_background_op(records: &[SandboxOpRecord], action_type: &str, success: bool) {
@@ -3724,6 +3847,227 @@ mod tests {
 
     fn write_storage_lock(home: &HomePaths, name: &str, version: &str) {
         drop(lock::open_lock_file(&home.storage_lock(name, version)).unwrap());
+    }
+
+    #[tokio::test]
+    async fn decoded_hit_survives_restart_and_compressed_eviction_while_archive_lock_is_busy() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("decoded-hit");
+        let cache = decoded::DecodedCache::new(home.clone());
+        let mount = temp.path().join("guest-mount");
+        let entry = storage_entry(
+            mount.to_str().unwrap().into(),
+            "https://storage.example/immutable.tar.gz".into(),
+            "name",
+            "v1",
+        );
+        write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        write_storage_lock(&home, "name", "v1");
+        cache.warm_from_archive("name", "v1").await.unwrap();
+        cache.shutdown().await;
+        let cache = decoded::DecodedCache::new(home.clone());
+
+        // Extracted files survive owner restart and compressed-cache GC.
+        // Holding the archive lock proves the hit never reopens the archive.
+        std::fs::remove_file(home.storage_cache_dir("name", "v1").join("archive.tar.gz")).unwrap();
+        let writer = lock::acquire(home.storage_lock("name", "v1"))
+            .await
+            .unwrap();
+        let mut hit = plan_from_entries(vec![entry.clone()], Vec::new(), None);
+        assert!(
+            populate_cache_with_fresh_delivery(
+                &mut hit,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
+        let files = hit.take_decoded();
+        assert_eq!(files.len(), 1);
+        cache.shutdown().await;
+        let manifest = serde_json::to_vec(&hit.into_guest_manifest()).unwrap();
+        let input = guest_contracts::storage_files::encode_input(
+            &manifest,
+            &[(files[0].0.as_str(), &files[0].1.files)],
+        )
+        .unwrap();
+        assert!(guest_storage_apply::run_storage_files_bytes(&input));
+        assert_eq!(
+            std::fs::read(mount.join("file.txt")).unwrap(),
+            b"storage cache test file\n"
+        );
+        assert_eq!(
+            std::fs::metadata(mount.join("file.txt"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
+        drop(writer);
+    }
+
+    #[tokio::test]
+    async fn decoded_lookup_misses_do_not_alias_names_or_versions() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("decoded-identity");
+        let cache = decoded::DecodedCache::new(home.clone());
+        write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        write_storage_lock(&home, "name", "v1");
+        cache.warm_from_archive("name", "v1").await.unwrap();
+        let mut fill = fresh_storage_plan("https://storage.example/a".into(), "name", "v1");
+        populate_cache_with_fresh_delivery(
+            &mut fill,
+            &sandbox,
+            &home,
+            &mut new_telemetry(),
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        for (name, version) in [("name", "v2"), ("other", "v1")] {
+            let url = "https://storage.example/selected";
+            let mut plan = fresh_storage_plan(url.into(), name, version);
+            let deferred = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap();
+            assert!(deferred.is_some());
+            assert!(plan.take_decoded().is_empty());
+            assert_eq!(storage_archive_url(&plan, 0), Some(url));
+        }
+        cache.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn instruction_and_artifact_delivery_never_reads_or_warms_decoded_entries() {
+        for corrupt in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let sandbox = MockSandbox::new("decoded-ineligible");
+            let cache = decoded::DecodedCache::new(home.clone());
+            write_cached_archive(&home, "name", "v1", &tarball_bytes());
+            write_storage_lock(&home, "name", "v1");
+            if corrupt {
+                cache.warm_from_archive("name", "v1").await.unwrap();
+                let entry = home
+                    .storages_dir()
+                    .join(crate::paths::short_digest("name"))
+                    .join(format!("decoded-v1-{}", crate::paths::short_digest("v1")));
+                std::fs::write(entry.join("index.json"), b"{").unwrap();
+            }
+            let url = "https://storage.example/a";
+            let mut instruction =
+                storage_entry("/mnt/instructions".into(), url.into(), "name", "v1");
+            instruction.instructions_target_filename = Some("AGENTS.md".into());
+            for mut plan in [
+                plan_from_entries(vec![instruction], Vec::new(), None),
+                fresh_artifact_plan(url.into(), "name", "v1"),
+            ] {
+                let deferred = populate_cache_with_fresh_delivery(
+                    &mut plan,
+                    &sandbox,
+                    &home,
+                    &mut new_telemetry(),
+                    None,
+                    Some(&cache),
+                )
+                .await
+                .unwrap();
+                assert!(deferred.is_none(), "irrelevant decoded fill was selected");
+                assert!(plan.take_decoded().is_empty());
+                let source =
+                    storage_archive_url(&plan, 0).or_else(|| artifact_archive_url(&plan, 0));
+                assert!(source.unwrap().starts_with("file://"));
+            }
+            if !corrupt {
+                assert!(cache.get_ready("name", "v1").await.unwrap().is_none());
+            }
+            cache.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn ready_decoded_files_preserve_mount_and_manifest_admission() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("decoded-admission");
+        let cache = decoded::DecodedCache::new(home.clone());
+        write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        write_storage_lock(&home, "name", "v1");
+        cache.warm_from_archive("name", "v1").await.unwrap();
+        let url = "https://storage.example/a";
+        let mut fill = fresh_storage_plan(url.into(), "name", "v1");
+        populate_cache_with_fresh_delivery(
+            &mut fill,
+            &sandbox,
+            &home,
+            &mut new_telemetry(),
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        let long_url = format!(
+            "{url}?{}",
+            "a".repeat(guest_contracts::storage_files::MAX_MANIFEST_BYTES)
+        );
+        let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), "name", "v1");
+        instruction.instructions_target_filename = Some("AGENTS.md".into());
+        let plans = [
+            plan_from_entries(
+                vec![storage_entry(
+                    "/mnt/parent".into(),
+                    url.into(),
+                    "name",
+                    "v1",
+                )],
+                vec![artifact_entry(
+                    "/mnt/parent/child".into(),
+                    url.into(),
+                    "name",
+                    "v1",
+                )],
+                None,
+            ),
+            plan_from_entries(vec![instruction], Vec::new(), None),
+            fresh_storage_plan(long_url, "name", "v1"),
+        ];
+        for mut plan in plans {
+            populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap();
+            assert!(plan.take_decoded().is_empty());
+            assert!(
+                storage_archive_url(&plan, 0)
+                    .unwrap()
+                    .starts_with("file://")
+            );
+        }
+        cache.shutdown().await;
     }
 
     struct SamePathConcurrentWriteDetectingSandbox {
@@ -4004,27 +4348,25 @@ mod tests {
         }
     }
 
-    fn truncated_ok_response(body: &[u8]) -> Vec<u8> {
-        let partial_len = (body.len() / 2).max(1);
-        let mut response =
-            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
-        response.extend_from_slice(&body[..partial_len]);
-        response
-    }
-
     #[tokio::test]
     async fn fresh_delivery_records_empty_scan_summary() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
-        let plan = plan_from_entries(Vec::new(), Vec::new(), None);
+        let mut plan = plan_from_entries(Vec::new(), Vec::new(), None);
         let admission = FreshArchiveDeliveryAdmission::new();
         let cancel = CancellationToken::new();
         let mut telemetry = new_telemetry();
 
-        let delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert!(delivery.apply.is_empty());
         let ops = telemetry.pending_ops_with_outcome_snapshot();
@@ -4053,6 +4395,263 @@ mod tests {
         assert_eq!(
             bounded_outcome_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SCAN_SUFFIX_UNKNOWN),
             0
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn fresh_delivery_only_needs_ca_certificates_for_admitted_misses() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        crate::ca::ensure(&home).await.unwrap();
+        let cert_file = home.ca_dir().join(crate::ca::CA_CERT);
+        let empty_cert_dir = temp.path().join("empty-certs");
+        fs::create_dir(&empty_cert_dir).await.unwrap();
+
+        crate::test_fixtures::ignored_child::run_ignored_child_test(
+            "storage_cache::tests::fresh_delivery_missing_ca_child",
+            ("VM0_TEST_FRESH_DELIVERY_MISSING_CA", "1"),
+            &[
+                ("SSL_CERT_FILE", Some(cert_file.to_str().unwrap())),
+                ("SSL_CERT_DIR", Some(empty_cert_dir.to_str().unwrap())),
+            ],
+            Duration::from_secs(30),
+        )
+        .await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "runs in an isolated process with its own CA certificate files"]
+    async fn fresh_delivery_missing_ca_child() {
+        if !crate::test_fixtures::ignored_child::ignored_child_test_env_guard_enabled((
+            "VM0_TEST_FRESH_DELIVERY_MISSING_CA",
+            "1",
+        )) {
+            return;
+        }
+
+        // Initialize unrelated telemetry before making this child's CA store
+        // unavailable. Changing a private file needs no process-wide env mutation.
+        let mut telemetry = new_telemetry();
+        let server = MockServer::start_async().await;
+        let body = tarball_bytes();
+        let get = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/archive.tar.gz");
+                then.status(200).body(body.clone());
+            })
+            .await;
+        let cert_file = std::env::var_os("SSL_CERT_FILE").unwrap();
+        let certificates = fs::read(&cert_file).await.unwrap();
+        fs::write(&cert_file, b"").await.unwrap();
+
+        for case in [
+            "empty",
+            "warm",
+            "decoded-only",
+            "oversized",
+            "lock-busy",
+            "capacity",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let admission = FreshArchiveDeliveryAdmission::new();
+            let cancel = CancellationToken::new();
+            let storages = (0..if case == "empty" { 0 } else { 2 })
+                .map(|index| {
+                    let name = format!("{case}-{index}");
+                    if matches!(case, "warm" | "decoded-only") {
+                        write_cached_archive(&home, &name, "v1", &body);
+                    }
+                    storage_entry_with_archive_size(
+                        format!("/mnt/{name}"),
+                        server.url("/archive.tar.gz"),
+                        &name,
+                        "v1",
+                        Some(if case == "oversized" {
+                            CACHE_MAX_SIZE + 1
+                        } else {
+                            body.len() as u64
+                        }),
+                    )
+                })
+                .collect();
+            let mut plan = plan_from_entries(storages, Vec::new(), None);
+            let decoded =
+                (case == "decoded-only").then(|| decoded::DecodedCache::new(home.clone()));
+            if let Some(cache) = &decoded {
+                for index in 0..2 {
+                    let name = format!("decoded-only-{index}");
+                    write_storage_lock(&home, &name, "v1");
+                    cache.warm_from_archive(&name, "v1").await.unwrap();
+                    fs::remove_file(home.storage_cache_dir(&name, "v1").join("archive.tar.gz"))
+                        .await
+                        .unwrap();
+                }
+            }
+            let mut writers = Vec::new();
+            if case == "lock-busy" {
+                for index in 0..2 {
+                    writers.push(
+                        lock::acquire(home.storage_lock(&format!("{case}-{index}"), "v1"))
+                            .await
+                            .unwrap(),
+                    );
+                }
+            }
+            let held_capacity = (case == "capacity").then(|| {
+                Arc::clone(&admission.permits)
+                    .try_acquire_many_owned(FRESH_DELIVERY_RUNNER_LIMIT as u32)
+                    .unwrap()
+            });
+
+            let mut delivery = prepare_fresh_archive_delivery(
+                &mut plan,
+                &home,
+                &admission,
+                &cancel,
+                &mut telemetry,
+                decoded.as_ref(),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{case} should not need a client: {error}"));
+            if case == "warm" {
+                let sandbox = MockSandbox::new("test");
+                let deferred = populate_cache_with_fresh_delivery(
+                    &mut plan,
+                    &sandbox,
+                    &home,
+                    &mut telemetry,
+                    Some(&mut delivery),
+                    None,
+                )
+                .await
+                .unwrap();
+                assert!(deferred.is_none());
+                let batches = sandbox.write_files_calls();
+                let files: Vec<_> = batches.iter().flat_map(|batch| &batch.files).collect();
+                assert_eq!(files.len(), 2);
+                for index in 0..2 {
+                    let path = guest_archive_path(&format!("warm-{index}"), "v1");
+                    assert!(
+                        files
+                            .iter()
+                            .any(|file| file.path == path && file.content == body)
+                    );
+                    assert_eq!(
+                        storage_archive_url(&plan, index),
+                        Some(format!("file://{path}").as_str())
+                    );
+                }
+            }
+            if let Some(cache) = &decoded {
+                let sandbox = MockSandbox::new("decoded-only");
+                let deferred = populate_cache_with_fresh_delivery(
+                    &mut plan,
+                    &sandbox,
+                    &home,
+                    &mut telemetry,
+                    Some(&mut delivery),
+                    Some(cache),
+                )
+                .await
+                .unwrap();
+                assert!(deferred.is_none());
+                assert!(sandbox.write_files_calls().is_empty());
+                let files = plan.take_decoded();
+                assert_eq!(files.len(), 2);
+                for (index, (mount, cached)) in files.iter().enumerate() {
+                    assert_eq!(mount, &format!("/mnt/decoded-only-{index}"));
+                    assert_eq!(cached.files.len(), 1);
+                    assert_eq!(cached.files[0].path, "file.txt");
+                    assert_eq!(
+                        cached.files[0].content,
+                        b"storage cache test file\n".as_slice()
+                    );
+                }
+                cache.shutdown().await;
+            }
+            delivery.cancel_and_drain(&mut telemetry).await;
+            drop(held_capacity);
+            drop(writers);
+            assert_eq!(
+                admission.permits.available_permits(),
+                FRESH_DELIVERY_RUNNER_LIMIT,
+                "{case} must not retain capacity"
+            );
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let cancel = CancellationToken::new();
+        let mut plan = fresh_storage_plan_with_archive_size(
+            server.url("/archive.tar.gz"),
+            "cold",
+            "v1",
+            body.len() as u64,
+        );
+        let error = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .err()
+        .expect("an admitted miss still requires a valid client");
+        assert!(
+            error
+                .to_string()
+                .contains("build runner-owned archive client")
+        );
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+        assert!(!home.storage_cache_dir("cold", "v1").exists());
+        get.assert_calls_async(0).await;
+
+        // Restoring the CA store makes the same archive eligible again. A leaked
+        // writer lock would skip this fetch; a cached failed client would fail it.
+        fs::write(&cert_file, certificates).await.unwrap();
+        let mut delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
+        let sandbox = MockSandbox::new("test");
+        assert!(
+            populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                Some(&mut delivery),
+                None,
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
+        get.assert_calls_async(1).await;
+        assert_eq!(
+            fs::read(home.storage_cache_dir("cold", "v1").join("archive.tar.gz"))
+                .await
+                .unwrap(),
+            body
+        );
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
         );
     }
 
@@ -4153,10 +4752,16 @@ mod tests {
         );
         let admission = FreshArchiveDeliveryAdmission::new();
         let cancel = CancellationToken::new();
-        let mut delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let mut delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
         let task = tokio::spawn({
             let home = home.clone();
             let sandbox = Arc::clone(&sandbox);
@@ -4167,6 +4772,7 @@ mod tests {
                     &home,
                     &mut telemetry,
                     Some(&mut delivery),
+                    None,
                 )
                 .await
             }
@@ -4312,166 +4918,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fresh_delivery_missing_content_length_falls_back_without_detached_fill() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let mut response =
-            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
-        response.extend_from_slice(format!("{:x}\r\n", body.len()).as_bytes());
-        response.extend_from_slice(&body);
-        response.extend_from_slice(b"\r\n0\r\n\r\n");
-        let (url, server_task) = raw_http_url(response).await;
-        let name = "fresh-no-size";
-        let version = "v1";
-        let mut plan = fresh_storage_plan(url.clone(), name, version);
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        server_task.assert_finished().await;
-        assert!(deferred.is_none());
-        assert_eq!(storage_archive_url(&plan, 0), Some(url.as_str()));
-        assert!(sandbox.write_files_calls().is_empty());
-        assert!(
-            !home
-                .storage_cache_dir(name, version)
-                .join("archive.tar.gz")
-                .exists()
-        );
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, false);
-        assert_op_error(
-            &ops,
-            STORAGE_CACHE_FRESH_DELIVERY_FAILED,
-            "response-size-missing",
-        );
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, true);
-        assert_no_op(&ops, STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_size_mismatch_falls_back_without_a_second_request() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-mismatch.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let original = server.url("/fresh-mismatch.tar.gz");
-        let name = "fresh-mismatch";
-        let version = "v1";
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            name,
-            version,
-            body.len() as u64 + 1,
-        );
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        assert!(sandbox.write_files_calls().is_empty());
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op_error(
-            &ops,
-            STORAGE_CACHE_FRESH_DELIVERY_FAILED,
-            "response-size-mismatch",
-        );
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-        assert_no_op(&ops, STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_zero_response_length_falls_back_without_cache_work() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-zero.tar.gz")
-                    .header_missing("range");
-                then.status(200).header("content-length", "0");
-            })
-            .await;
-        let original = server.url("/fresh-zero.tar.gz");
-        let mut plan = fresh_storage_plan(original.clone(), "fresh-zero", "v1");
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op_error(
-            &ops,
-            STORAGE_CACHE_FRESH_DELIVERY_FAILED,
-            "response-size-zero",
-        );
-        assert_no_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_http_failure_falls_back_after_one_request() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-unavailable.tar.gz")
-                    .header_missing("range");
-                then.status(503);
-            })
-            .await;
-        let original = server.url("/fresh-unavailable.tar.gz");
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            "fresh-unavailable",
-            "v1",
-            tarball_bytes().len() as u64,
-        );
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op_error(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, "http-status");
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-    }
-
-    #[tokio::test]
     async fn fresh_delivery_rejects_unsolicited_partial_content() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
@@ -4489,12 +4935,10 @@ mod tests {
         let original = server.url("/fresh-partial.tar.gz");
         let mut plan = fresh_storage_plan(original.clone(), "fresh-partial", "v1");
 
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
+        let result =
+            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry).await;
 
-        assert!(deferred.is_none());
+        assert!(matches!(result, Err(RunnerError::Internal(_))));
         get.assert_calls_async(1).await;
         assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
         assert!(
@@ -4506,7 +4950,6 @@ mod tests {
         let ops = telemetry.pending_ops_snapshot();
         assert_op_error(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, "http-status");
         assert_no_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
     }
 
     #[tokio::test]
@@ -4540,19 +4983,16 @@ mod tests {
             body.len() as u64,
         );
 
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
+        let result =
+            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry).await;
 
-        assert!(deferred.is_none());
+        assert!(matches!(result, Err(RunnerError::Internal(_))));
         redirect.assert_calls_async(1).await;
         target.assert_calls_async(0).await;
         assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
         let ops = telemetry.pending_ops_snapshot();
         assert_op_error(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, "http-status");
         assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
     }
 
     #[tokio::test]
@@ -4579,13 +5019,12 @@ mod tests {
                 5,
             );
 
-            let deferred =
+            let result =
                 populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                    .await
-                    .unwrap();
+                    .await;
 
             server_task.assert_finished().await;
-            assert!(deferred.is_none(), "case {case}");
+            assert!(matches!(result, Err(RunnerError::Internal(_))));
             assert_eq!(storage_archive_url(&plan, 0), Some(url.as_str()));
             let ops = telemetry.pending_ops_snapshot();
             assert_op_error(
@@ -4615,7 +5054,7 @@ mod tests {
             .await;
         let name = "fresh-cancel";
         let version = "v1";
-        let plan = fresh_storage_plan_with_archive_size(
+        let mut plan = fresh_storage_plan_with_archive_size(
             server.url("/fresh-cancel.tar.gz"),
             name,
             version,
@@ -4623,10 +5062,16 @@ mod tests {
         );
         let admission = FreshArchiveDeliveryAdmission::new();
         let cancel = CancellationToken::new();
-        let mut delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let mut delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
 
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
@@ -4767,7 +5212,7 @@ mod tests {
             .await;
         let name = "fresh-lock-busy";
         let version = "v1";
-        let plan = fresh_storage_plan_with_archive_size(
+        let mut plan = fresh_storage_plan_with_archive_size(
             server.url("/fresh-lock-busy.tar.gz"),
             name,
             version,
@@ -4783,10 +5228,16 @@ mod tests {
         let admission = FreshArchiveDeliveryAdmission::new();
         let cancel = CancellationToken::new();
 
-        let delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert!(delivery.apply.is_empty());
         get.assert_calls_async(0).await;
@@ -4808,7 +5259,7 @@ mod tests {
         fs::write(home.locks_dir(), b"not a directory")
             .await
             .unwrap();
-        let plan = fresh_storage_plan_with_archive_size(
+        let mut plan = fresh_storage_plan_with_archive_size(
             "https://example.invalid/prepare-failure.tar.gz".to_string(),
             "prepare-failure",
             "v1",
@@ -4818,11 +5269,17 @@ mod tests {
         let cancel = CancellationToken::new();
         let mut telemetry = new_telemetry();
 
-        let error =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .err()
-                .unwrap();
+        let error = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .err()
+        .unwrap();
 
         assert!(error.to_string().contains("lock dir"));
         assert_eq!(
@@ -4894,10 +5351,16 @@ mod tests {
         let admission = FreshArchiveDeliveryAdmission::new();
         let cancel = CancellationToken::new();
         let mut telemetry = new_telemetry();
-        let mut delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let mut delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(delivery.apply.len(), FRESH_DELIVERY_PER_RUN_LIMIT);
         let sandbox = MockSandbox::new("test");
@@ -4907,6 +5370,7 @@ mod tests {
             &home,
             &mut telemetry,
             Some(&mut delivery),
+            None,
         )
         .await
         .unwrap();
@@ -4998,17 +5462,23 @@ mod tests {
                 )
             })
             .collect();
-        let plan = plan_from_entries(storages, Vec::new(), None);
+        let mut plan = plan_from_entries(storages, Vec::new(), None);
         let admission = FreshArchiveDeliveryAdmission::new();
         let held_permits = (0..FRESH_DELIVERY_RUNNER_LIMIT)
             .map(|_| Arc::clone(&admission.permits).try_acquire_owned().unwrap())
             .collect::<Vec<_>>();
         let cancel = CancellationToken::new();
 
-        let delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert!(delivery.apply.is_empty());
         assert!(
@@ -5104,14 +5574,20 @@ mod tests {
             "v1",
             Some(2),
         ));
-        let plan = plan_from_entries(storages, Vec::new(), None);
+        let mut plan = plan_from_entries(storages, Vec::new(), None);
         let admission = FreshArchiveDeliveryAdmission::new();
         let cancel = CancellationToken::new();
 
-        let delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert!(delivery.apply.is_empty());
         get.assert_calls_async(0).await;
@@ -5130,111 +5606,6 @@ mod tests {
             "2",
             None,
         );
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_publication_failure_falls_back_after_one_request() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-publication-failure.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let original = server.url("/fresh-publication-failure.tar.gz");
-        let name = "fresh-publication-failure";
-        let version = "v1";
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            name,
-            version,
-            body.len() as u64,
-        );
-        let admission = FreshArchiveDeliveryAdmission::new();
-        let cancel = CancellationToken::new();
-        let mut delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
-        let cache_dir = home.storage_cache_dir(name, version);
-        fs::create_dir_all(cache_dir.parent().unwrap())
-            .await
-            .unwrap();
-        fs::write(&cache_dir, b"blocks atomic directory rename")
-            .await
-            .unwrap();
-
-        let deferred = populate_cache_with_fresh_delivery(
-            &mut plan,
-            &sandbox,
-            &home,
-            &mut telemetry,
-            Some(&mut delivery),
-        )
-        .await
-        .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        assert!(sandbox.write_files_calls().is_empty());
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED, false);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_stage_failure_keeps_published_cache_and_guest_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        sandbox.push_write_file_result(Err(sandbox_write_file_error("vsock unavailable")));
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-stage-failure.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let original = server.url("/fresh-stage-failure.tar.gz");
-        let name = "fresh-stage-failure";
-        let version = "v1";
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            name,
-            version,
-            body.len() as u64,
-        );
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        assert_eq!(
-            fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz"))
-                .await
-                .unwrap(),
-            body
-        );
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_STAGE_FALLBACK, true);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-        assert_no_op(&ops, STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY);
     }
 
     #[tokio::test]
@@ -5276,27 +5647,40 @@ mod tests {
                     .body(body.clone());
             })
             .await;
-        let first_plan = plan_for(&server.base_url(), "first", 0, 5, body_size);
-        let second_plan = plan_for(&server.base_url(), "second", 5, 4, body_size);
-        let third_plan = plan_for(&server.base_url(), "third", 9, 1, body_size);
+        let mut first_plan = plan_for(&server.base_url(), "first", 0, 5, body_size);
+        let mut second_plan = plan_for(&server.base_url(), "second", 5, 4, body_size);
+        let mut third_plan = plan_for(&server.base_url(), "third", 9, 1, body_size);
 
-        let mut first =
-            prepare_fresh_archive_delivery(&first_plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
-        let mut second = prepare_fresh_archive_delivery(
-            &second_plan,
+        let mut first = prepare_fresh_archive_delivery(
+            &mut first_plan,
             &home,
             &admission,
             &cancel,
             &mut telemetry,
+            None,
         )
         .await
         .unwrap();
-        let mut third =
-            prepare_fresh_archive_delivery(&third_plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let mut second = prepare_fresh_archive_delivery(
+            &mut second_plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
+        let mut third = prepare_fresh_archive_delivery(
+            &mut third_plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(first.apply.len(), FRESH_DELIVERY_PER_RUN_LIMIT);
         assert_eq!(second.apply.len(), FRESH_DELIVERY_PER_RUN_LIMIT);
@@ -5710,6 +6094,137 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bounded_maintenance_progresses_past_decoded_and_already_retired_hits() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("maintenance-progress");
+        let cache = decoded::DecodedCache::new(home.clone());
+        let server = MockServer::start_async().await;
+        let get = server
+            .mock_async(|when, then| {
+                when.method(GET);
+                then.status(500);
+            })
+            .await;
+        let entries = (0..3)
+            .map(|index| {
+                let name = format!("maintenance-progress-{index}");
+                write_cached_archive(&home, &name, "v1", &tarball_bytes());
+                write_storage_lock(&home, &name, "v1");
+                storage_entry(
+                    format!("/mnt/progress-{index}"),
+                    server.url("/unused"),
+                    &name,
+                    "v1",
+                )
+            })
+            .collect::<Vec<_>>();
+        cache
+            .warm_from_archive("maintenance-progress-0", "v1")
+            .await
+            .unwrap();
+        let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(1, 1).unwrap();
+        // Two fill operations and three retirements must progress through one
+        // queue slot. Already decoded/retired prefixes cannot starve later keys.
+        for _ in 0..5 {
+            let mut plan = plan_from_entries(entries.clone(), Vec::new(), None);
+            let mut telemetry = new_telemetry();
+            let deferred = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap();
+            drop(plan);
+            deferred.unwrap().start(&coordinator, &mut telemetry);
+            coordinator.wait_idle_for_test().await;
+        }
+        coordinator.shutdown().await;
+        for index in 0..3 {
+            let name = format!("maintenance-progress-{index}");
+            assert!(cache.get_ready(&name, "v1").await.unwrap().is_some());
+            assert!(
+                !home
+                    .storage_cache_dir(&name, "v1")
+                    .join("archive.tar.gz")
+                    .exists()
+            );
+        }
+        get.assert_calls_async(0).await;
+        cache.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn queued_archive_demand_takes_precedence_over_retirement_in_either_order() {
+        for retirement_first in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let bytes = tarball_bytes();
+            write_cached_archive(&home, "queued", "v1", &bytes);
+            write_storage_lock(&home, "queued", "v1");
+            let cache = decoded::DecodedCache::new(home.clone());
+            cache.warm_from_archive("queued", "v1").await.unwrap();
+            let mut server = gated_archive_server(bytes.clone(), 1).await;
+            let coordinator = StorageCacheBackgroundFillCoordinator::new_with_limits(1, 4).unwrap();
+            let reporter = new_telemetry().reporter();
+            assert_eq!(
+                coordinator.submit(
+                    background_fill_group(
+                        server.url.clone(),
+                        "active",
+                        "v1",
+                        Some(bytes.len() as u64)
+                    ),
+                    home.clone(),
+                    reporter.clone(),
+                    BackgroundFillAction::Fill(None),
+                ),
+                BackgroundFillAdmission::Accepted
+            );
+            tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let group =
+                background_fill_group(server.url.clone(), "queued", "v1", Some(bytes.len() as u64));
+            let mut actions = [
+                BackgroundFillAction::Fill(None),
+                BackgroundFillAction::RetireArchive(cache.clone()),
+            ];
+            if retirement_first {
+                actions.reverse();
+            }
+            for (index, action) in actions.into_iter().enumerate() {
+                assert_eq!(
+                    coordinator.submit(group.clone(), home.clone(), reporter.clone(), action),
+                    if index == 0 {
+                        BackgroundFillAdmission::Accepted
+                    } else {
+                        BackgroundFillAdmission::Deduplicated
+                    }
+                );
+            }
+            server.release.add_permits(1);
+            coordinator.wait_idle_for_test().await;
+            coordinator.shutdown().await;
+            cache.shutdown().await;
+            server.task.await.unwrap().unwrap();
+            assert_eq!(
+                std::fs::read(
+                    home.storage_cache_dir("queued", "v1")
+                        .join("archive.tar.gz")
+                )
+                .unwrap(),
+                bytes
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn background_fill_coordinator_bounds_distinct_keys_globally() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
@@ -5729,6 +6244,7 @@ mod tests {
                     ),
                     home.clone(),
                     reporter.clone(),
+                    BackgroundFillAction::Fill(None),
                 ),
                 BackgroundFillAdmission::Accepted
             );
@@ -5802,11 +6318,21 @@ mod tests {
             background_fill_group(archive_url, "deduplicated", "v1", Some(body.len() as u64));
 
         assert_eq!(
-            coordinator.submit(group.clone(), home.clone(), first_reporter),
+            coordinator.submit(
+                group.clone(),
+                home.clone(),
+                first_reporter,
+                BackgroundFillAction::Fill(None)
+            ),
             BackgroundFillAdmission::Accepted
         );
         assert_eq!(
-            coordinator.submit(group, home.clone(), second_reporter),
+            coordinator.submit(
+                group,
+                home.clone(),
+                second_reporter,
+                BackgroundFillAction::Fill(None)
+            ),
             BackgroundFillAdmission::Deduplicated
         );
 
@@ -5836,7 +6362,12 @@ mod tests {
             Some(body.len() as u64),
         );
         assert_eq!(
-            coordinator.submit(first_group, home.clone(), first_reporter),
+            coordinator.submit(
+                first_group,
+                home.clone(),
+                first_reporter,
+                BackgroundFillAction::Fill(None)
+            ),
             BackgroundFillAdmission::Accepted
         );
         tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
@@ -5859,7 +6390,10 @@ mod tests {
                     "v1",
                     Some(body.len() as u64),
                 ),
-            ],
+            ]
+            .into_iter()
+            .map(|group| (group, BackgroundFillAction::Fill(None)))
+            .collect(),
             home: home.clone(),
             selected_at: Instant::now(),
         }
@@ -5913,6 +6447,7 @@ mod tests {
                 ),
                 home.clone(),
                 reporter.clone(),
+                BackgroundFillAction::Fill(None),
             ),
             BackgroundFillAdmission::Accepted
         );
@@ -5930,6 +6465,7 @@ mod tests {
                 ),
                 home.clone(),
                 reporter,
+                BackgroundFillAction::Fill(None),
             ),
             BackgroundFillAdmission::Accepted
         );
@@ -5990,15 +6526,15 @@ mod tests {
         assert_eq!(busy.len(), 1);
         assert_eq!(busy[0].action_type, STORAGE_CACHE_BACKGROUND_FILL_BUSY);
 
-        let retryable_skipped = BackgroundFillReport::from_outcome(
-            BackgroundFillOutcome::RetryableSkipped,
+        let failed = BackgroundFillReport::from_outcome(
+            BackgroundFillOutcome::Unavailable,
             Duration::from_millis(6),
         )
         .into_records();
-        assert_eq!(retryable_skipped.len(), 1);
+        assert_eq!(failed.len(), 1);
         assert_eq!(
-            retryable_skipped[0].action_type,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED
+            failed[0].action_type,
+            STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE
         );
 
         let failed = BackgroundFillReport::failed(Duration::from_millis(7)).into_records();
@@ -6071,14 +6607,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_fill_preserves_retryable_skipped_outcome() {
+    async fn background_fill_preserves_failed_outcome() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
         let mut telemetry = new_telemetry();
         let mut plan = fresh_storage_plan(
             "http://127.0.0.1:9/archive.tar.gz".to_string(),
-            "background-retryable",
+            "background-failed",
             "v1",
         );
 
@@ -6087,11 +6623,7 @@ mod tests {
             .run()
             .await;
 
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -6523,42 +7055,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_transient_status_retry_then_success_rewrites_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let responses = vec![
-            http_response("500 Internal Server Error", b""),
-            partial_content_response(body.len()),
-            http_response("200 OK", &body),
-        ];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-        let name = "probe-retry-success";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(url, name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(
-            storage_archive_url(&manifest, 0),
-            Some(format!("file://{}", guest_archive_path(name, version)).as_str())
-        );
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz")).unwrap(),
-            body
-        );
-        assert_eq!(sandbox.write_file_calls().len(), 1);
-        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, true);
-    }
-
-    #[tokio::test]
-    async fn probe_client_error_does_not_retry() {
+    async fn probe_http_error_preserves_original_url() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
@@ -6597,15 +7094,11 @@ mod tests {
         full.assert_calls_async(0).await;
         assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
-    async fn probe_builder_error_does_not_retry() {
+    async fn probe_invalid_url_is_sanitized() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
@@ -6622,85 +7115,11 @@ mod tests {
 
         assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
-    async fn full_download_transient_status_retry_then_success_rewrites_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let responses = vec![
-            partial_content_response(body.len()),
-            http_response("503 Service Unavailable", b""),
-            http_response("200 OK", &body),
-        ];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-        let name = "download-retry-success";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(url, name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(
-            storage_archive_url(&manifest, 0),
-            Some(format!("file://{}", guest_archive_path(name, version)).as_str())
-        );
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz")).unwrap(),
-            body
-        );
-        assert_eq!(sandbox.write_file_calls().len(), 1);
-        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, true);
-    }
-
-    #[tokio::test]
-    async fn full_download_body_read_error_retry_then_success_rewrites_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let responses = vec![
-            partial_content_response(body.len()),
-            truncated_ok_response(&body),
-            http_response("200 OK", &body),
-        ];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-        let name = "download-body-retry-success";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(url, name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(
-            storage_archive_url(&manifest, 0),
-            Some(format!("file://{}", guest_archive_path(name, version)).as_str())
-        );
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz")).unwrap(),
-            body
-        );
-        assert_eq!(sandbox.write_file_calls().len(), 1);
-        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, true);
-    }
-
-    #[tokio::test]
-    async fn full_download_client_error_does_not_retry() {
+    async fn full_download_http_error_is_sanitized() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
@@ -6744,106 +7163,20 @@ mod tests {
         full.assert_calls_async(1).await;
         assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
         let http = Client::builder().build().unwrap();
-        let reason = retry_cache_fetch(|| {
-            download_tarball(&http, &original, Some(body.len() as u64), CACHE_MAX_SIZE)
-        })
-        .await
-        .err()
-        .expect("403 download should fail")
-        .to_string();
+        let reason = download_tarball(&http, &original, Some(body.len() as u64), CACHE_MAX_SIZE)
+            .await
+            .err()
+            .expect("403 download should fail")
+            .to_string();
         full.assert_calls_async(2).await;
         assert!(reason.contains("403"), "expected 403 in reason: {reason}");
-        assert!(!reason.contains("retry exhausted"), "got: {reason}");
         assert!(
             !reason.contains("X-Amz-Signature")
                 && !reason.contains("secret")
                 && !reason.contains("credential")
                 && !reason.contains("/download-forbidden.tar.gz"),
-            "telemetry error must not include presigned URL details: {reason}"
-        );
-    }
-
-    #[tokio::test]
-    async fn full_download_retry_exhaustion_is_passthrough() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/download-fails.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/download-fails.tar.gz")
-                    .header_missing("range");
-                then.status(503);
-            })
-            .await;
-
-        let original = format!(
-            "{}?X-Amz-Signature=secret&X-Amz-Credential=credential",
-            server.url("/download-fails.tar.gz")
-        );
-        let name = "download-retry-exhausted";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(original.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        probe.assert_async().await;
-        full.assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS).await;
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
-        assert!(sandbox.write_file_calls().is_empty());
-        assert!(
-            !home
-                .storage_cache_dir(name, version)
-                .join("archive.tar.gz")
-                .exists()
-        );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
-        let http = Client::builder().build().unwrap();
-        let reason = retry_cache_fetch(|| {
-            download_tarball(&http, &original, Some(body.len() as u64), CACHE_MAX_SIZE)
-        })
-        .await
-        .err()
-        .expect("503 downloads should exhaust retries")
-        .to_string();
-        full.assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS * 2)
-            .await;
-        assert!(
-            reason.contains("retry exhausted after 3 attempts") && reason.contains("503"),
-            "unexpected retry exhaustion reason: {reason}"
-        );
-        assert!(
-            !reason.contains("X-Amz-Signature")
-                && !reason.contains("secret")
-                && !reason.contains("credential")
-                && !reason.contains("/download-fails.tar.gz"),
             "telemetry error must not include presigned URL details: {reason}"
         );
     }
@@ -7110,11 +7443,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7231,11 +7560,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7286,11 +7611,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7608,109 +7929,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_retry_exhaustion_is_passthrough() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-
-        let probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/broken.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(500);
-            })
-            .await;
-
-        let original = format!(
-            "{}?X-Amz-Signature=secret&X-Amz-Credential=credential",
-            server.url("/broken.tar.gz")
-        );
-        let mut manifest = fresh_storage_plan(original.clone(), "broken-skill", "v1");
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        probe.assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS).await;
-
-        // archive_url untouched — guest-storage-apply will retry via the original URL.
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
-        let http = Client::builder().build().unwrap();
-        let error = retry_cache_fetch(|| probe_size(&http, &original))
-            .await
-            .unwrap_err()
-            .to_string();
-        probe
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS * 2)
-            .await;
-        assert!(
-            error.contains("retry exhausted after 3 attempts") && error.contains("500"),
-            "unexpected retry exhaustion reason: {error}"
-        );
-        assert!(
-            !error.contains("X-Amz-Signature")
-                && !error.contains("secret")
-                && !error.contains("credential")
-                && !error.contains("/broken.tar.gz"),
-            "telemetry error must not include presigned URL details: {error}"
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_transport_retry_exhaustion_is_sanitized_passthrough() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let responses = vec![Vec::new(); OBJECT_DOWNLOAD_MAX_ATTEMPTS * 2];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-
-        let original = format!("{url}?X-Amz-Signature=secret&X-Amz-Credential=credential");
-        let name = "transport-retry-exhausted";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(original.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        let http = Client::builder().build().unwrap();
-        let error = retry_cache_fetch(|| probe_size(&http, &original))
-            .await
-            .unwrap_err()
-            .to_string();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
-        assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
-        assert!(
-            error.contains("retry exhausted after 3 attempts"),
-            "unexpected retry exhaustion reason: {error}"
-        );
-        assert!(
-            !error.contains("X-Amz-Signature")
-                && !error.contains("secret")
-                && !error.contains("credential")
-                && !error.contains("/archive.tar.gz"),
-            "telemetry error must not include presigned URL details: {error}"
-        );
-    }
-
-    #[tokio::test]
     async fn probe_200_ignored_range_uses_content_length_without_reading_body() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -7789,11 +8007,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7840,11 +8054,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7891,11 +8101,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -8082,6 +8288,35 @@ mod tests {
             }
             DownloadBody::Empty => panic!("cached file over limit must not be empty"),
             DownloadBody::OverSize { observed_size } => assert_eq!(observed_size, 7),
+        }
+    }
+
+    #[tokio::test]
+    async fn cached_archive_read_preserves_contents_with_stale_size_hints() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive_path = temp.path().join("archive.tar.gz");
+        for length in [0, 1, 4097, 131_073] {
+            let content = (0..length).map(|i| (i % 251) as u8).collect::<Vec<_>>();
+            fs::write(&archive_path, &content).await.unwrap();
+            for hint in [None, Some(0), Some(1), Some(length as u64)] {
+                let result = read_cached_archive(&archive_path, hint, length as u64)
+                    .await
+                    .unwrap();
+                match result {
+                    DownloadBody::Empty => assert!(content.is_empty()),
+                    DownloadBody::Complete(bytes) => assert_eq!(bytes.as_ref(), content),
+                    DownloadBody::OverSize { observed_size } => {
+                        panic!("valid cached file rejected at {observed_size} bytes")
+                    }
+                }
+            }
+            if length > 1 {
+                let result = read_cached_archive(&archive_path, Some(1), length as u64 - 1)
+                    .await
+                    .unwrap();
+                assert!(matches!(result, DownloadBody::OverSize { observed_size }
+                    if observed_size == length as u64));
+            }
         }
     }
 
@@ -8610,304 +8845,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn duplicate_same_key_probe_failure_falls_back_to_next_target() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let failed_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(500);
-            })
-            .await;
-        let failed_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let successful_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-succeeds.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let successful_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-succeeds.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "probe-fallback";
-        let version = "v1";
-        let mut manifest = fresh_duplicate_storage_plan(
-            server.url("/probe-fails.tar.gz"),
-            server.url("/probe-succeeds.tar.gz"),
-            name,
-            version,
-        );
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        failed_probe
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS)
-            .await;
-        failed_full.assert_calls_async(0).await;
-        successful_probe.assert_async().await;
-        successful_full.assert_async().await;
-        assert_eq!(
-            sandbox.write_file_calls().len(),
-            1,
-            "fallback target should stage one guest archive for the whole group"
-        );
-
-        let expected = format!("file://{}", guest_archive_path(name, version));
-        assert_eq!(storage_archive_url(&manifest, 0), Some(expected.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(expected.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, 1);
-    }
-
-    #[tokio::test]
-    async fn duplicate_same_key_invalid_download_falls_back_to_next_target() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let invalid_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/invalid-download.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let invalid_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/invalid-download.tar.gz")
-                    .header_missing("range");
-                then.status(200);
-            })
-            .await;
-        let successful_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/valid-download.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let successful_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/valid-download.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "download-fallback";
-        let version = "v1";
-        let mut manifest = fresh_duplicate_storage_plan(
-            server.url("/invalid-download.tar.gz"),
-            server.url("/valid-download.tar.gz"),
-            name,
-            version,
-        );
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        invalid_probe.assert_async().await;
-        invalid_full.assert_async().await;
-        successful_probe.assert_async().await;
-        successful_full.assert_async().await;
-        assert_eq!(
-            sandbox.write_file_calls().len(),
-            1,
-            "fallback target should stage one guest archive for the whole group"
-        );
-
-        let expected = format!("file://{}", guest_archive_path(name, version));
-        assert_eq!(storage_archive_url(&manifest, 0), Some(expected.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(expected.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, 1);
-    }
-
-    #[tokio::test]
-    async fn duplicate_same_key_all_probe_failures_yield_group_retryable_skip() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let failed_probe_a = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-a.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(500);
-            })
-            .await;
-        let failed_full_a = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-a.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let failed_probe_b = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-b.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(503);
-            })
-            .await;
-        let failed_full_b = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-b.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "probe-all-fail";
-        let version = "v1";
-        let original_a = server.url("/probe-fails-a.tar.gz");
-        let original_b = server.url("/probe-fails-b.tar.gz");
-        let mut manifest =
-            fresh_duplicate_storage_plan(original_a.clone(), original_b.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        failed_probe_a
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS)
-            .await;
-        failed_probe_b
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS)
-            .await;
-        failed_full_a.assert_calls_async(0).await;
-        failed_full_b.assert_calls_async(0).await;
-        assert!(
-            sandbox.write_file_calls().is_empty(),
-            "all probe failures should not stage a guest archive"
-        );
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original_a.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(original_b.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED, 1);
-    }
-
-    #[tokio::test]
-    async fn duplicate_same_key_all_invalid_downloads_yield_group_retryable_skip() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let empty_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/empty-download.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let empty_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/empty-download.tar.gz")
-                    .header_missing("range");
-                then.status(200);
-            })
-            .await;
-        let mismatch_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/size-mismatch.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len() + 1))
-                    .body(b"x");
-            })
-            .await;
-        let mismatch_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/size-mismatch.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "download-all-invalid";
-        let version = "v1";
-        let original_a = server.url("/empty-download.tar.gz");
-        let original_b = server.url("/size-mismatch.tar.gz");
-        let mut manifest =
-            fresh_duplicate_storage_plan(original_a.clone(), original_b.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        empty_probe.assert_async().await;
-        empty_full.assert_async().await;
-        mismatch_probe.assert_async().await;
-        mismatch_full.assert_async().await;
-        assert!(
-            sandbox.write_file_calls().is_empty(),
-            "all invalid downloads should not stage a guest archive"
-        );
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original_a.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(original_b.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED, 1);
-    }
-
-    #[tokio::test]
     async fn shared_version_distinct_names_get_distinct_guest_paths() {
         // Regression guard: two manifest entries that share `vasVersionId`
         // but differ in `vasStorageName` must resolve to distinct guest
@@ -9172,11 +9109,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -9226,11 +9159,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -9308,11 +9237,7 @@ mod tests {
                     .exists(),
                 "{content_range} must not write a cache archive"
             );
-            assert_background_op(
-                &records,
-                STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-                true,
-            );
+            assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
         }
     }
 }

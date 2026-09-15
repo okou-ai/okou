@@ -17,6 +17,7 @@
 
 #![allow(dead_code)] // consumed across multiple test binaries
 
+pub(crate) mod delivery_image;
 pub(crate) mod process_session;
 mod system_log;
 
@@ -173,30 +174,38 @@ async fn command_output_with_optional_stdin_timeout(
                 stdout.read_to_end(&mut stdout_bytes),
                 stderr.read_to_end(&mut stderr_bytes),
             );
-            let status = child.wait().await?;
+            session.wait_for_exit().await?;
             stdin_result?;
             stdout_result?;
             stderr_result?;
-            Ok(Output {
-                status,
-                stdout: stdout_bytes,
-                stderr: stderr_bytes,
-            })
+            Ok::<(), io::Error>(())
         };
         tokio::time::timeout(timeout, wait_with_output).await
     };
 
-    match output {
-        Ok(output) => output,
-        Err(_) => match terminate_command(&mut child, &session).await {
-            Ok(_) => Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                timeout_context.to_string(),
-            )),
-            Err(error) => Err(io::Error::other(format!(
-                "{timeout_context}; timed-out command cleanup failed: {error}"
-            ))),
-        },
+    let result = match output {
+        Ok(result) => result,
+        Err(_) => Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            timeout_context.to_string(),
+        )),
+    };
+    // EOF can leave quiet descendants alive. Finalize every result while the
+    // unreaped leader still reserves its SID; never scan that SID after reaping.
+    let cleanup = terminate_command(&mut child, &session).await;
+    match (result, cleanup) {
+        (Ok(()), Ok(status)) => Ok(Output {
+            status,
+            stdout: stdout_bytes,
+            stderr: stderr_bytes,
+        }),
+        (Err(error), Ok(_)) => Err(error),
+        (Ok(()), Err(error)) => Err(io::Error::other(format!(
+            "completed command cleanup failed: {error}"
+        ))),
+        (Err(error), Err(cleanup_error)) => Err(io::Error::other(format!(
+            "{error}; command cleanup failed: {cleanup_error}"
+        ))),
     }
 }
 
@@ -1394,18 +1403,18 @@ where
 pub fn test_heartbeat_failure_diagnostic()
 -> guest_contracts::diagnostics::HeartbeatFailureDiagnostic {
     use guest_contracts::diagnostics::{
-        HeartbeatAttemptFailureKind, HeartbeatCompletedAttemptDiagnostic,
-        HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic,
+        HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic, HttpAttemptFailureKind,
+        HttpCompletedAttemptDiagnostic,
     };
 
     HeartbeatFailureDiagnostic {
         failed_cycles: vec![HeartbeatFailedCycleDiagnostic {
             scheduled_lag_ms: 17,
-            attempts: vec![HeartbeatCompletedAttemptDiagnostic {
+            attempts: vec![HttpCompletedAttemptDiagnostic {
                 attempt: 3,
                 client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
                 elapsed_ms: 30_001,
-                failure_kind: HeartbeatAttemptFailureKind::Timeout,
+                failure_kind: HttpAttemptFailureKind::Timeout,
                 http_status: None,
                 timeout_observed: Some(true),
                 connect_observed: Some(false),

@@ -797,7 +797,7 @@ describe("CONN-02: OAuth start and callback", () => {
 describe("CONN-02: OAuth device authorization", () => {
   it("returns 403 when the selected device-auth runtime method is unavailable", async () => {
     await installCatalogWithUnavailableMethods({
-      capabilityIdentityEnvName: "CALCOM_OAUTH_CLIENT_ID",
+      capabilityIdentityEnvName: "CAL_COM_OAUTH_CLIENT_ID",
       filteredAuthMethods: [
         {
           connectorSlug: "test-oauth-device",
@@ -1593,7 +1593,7 @@ describe("CONN-02: OAuth device authorization", () => {
     await connectorsApi.deleteFeatureSwitches(actor);
   });
 
-  it("serializes concurrent polls and restores claims after races and provider failures", async () => {
+  it("serializes concurrent device polls when a session is superseded", async () => {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     await connectorsApi.updateFeatureSwitches(actor, {
@@ -1601,7 +1601,7 @@ describe("CONN-02: OAuth device authorization", () => {
     });
 
     mockTestOAuthDeviceConnectorProvider();
-    const deferred = mockDeferredTestOAuthTokenEndpoint();
+    const deferred = mockDeferredTestOAuthTokenEndpoint(context.signal);
 
     const first = await connectorsApi.startDeviceAuth(
       actor,
@@ -1614,34 +1614,62 @@ describe("CONN-02: OAuth device authorization", () => {
       first.sessionId,
       first.sessionToken,
     );
-    await deferred.started;
+    const pollResults = await Promise.allSettled([
+      (async () => {
+        await deferred.started;
 
-    const concurrentPoll = await connectorsApi.pollDeviceAuth(
-      actor,
-      "test-oauth-device",
-      first.sessionId,
-      first.sessionToken,
-    );
-    expect(concurrentPoll).toStrictEqual({ status: "pending", interval: 0 });
-    expect(deferred.calls()).toBe(1);
+        const concurrentPoll = await connectorsApi.pollDeviceAuth(
+          actor,
+          "test-oauth-device",
+          first.sessionId,
+          first.sessionToken,
+        );
+        expect(concurrentPoll).toStrictEqual({
+          status: "pending",
+          interval: 0,
+        });
+        expect(deferred.calls()).toBe(1);
 
-    await connectorsApi.startDeviceAuth(actor, "test-oauth-device", "oauth");
-    deferred.release();
-    const racedPoll = await racedPollPromise;
-    expect(racedPoll).toStrictEqual({
-      status: "error",
-      errorCode: "session_superseded",
-      errorMessage: "OAuth device authorization session was superseded",
+        await connectorsApi.startDeviceAuth(
+          actor,
+          "test-oauth-device",
+          "oauth",
+        );
+        deferred.release();
+        const racedPoll = await racedPollPromise;
+        expect(racedPoll).toStrictEqual({
+          status: "error",
+          errorCode: "session_superseded",
+          errorMessage: "OAuth device authorization session was superseded",
+        });
+        expect(deferred.calls()).toBe(1);
+
+        const nothingPersisted = await connectorsApi.requestReadConnectorBySlug(
+          actor,
+          "test-oauth-device",
+          [404],
+        );
+        expectApiError(nothingPersisted.body);
+        expect(nothingPersisted.body.error.code).toBe("NOT_FOUND");
+      })().finally(() => {
+        deferred.release();
+      }),
+      racedPollPromise,
+    ]);
+    for (const result of pollResults) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+    await connectorsApi.deleteFeatureSwitches(actor);
+  });
+
+  it("restores a device poll claim after a provider failure", async () => {
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
     });
-    expect(deferred.calls()).toBe(1);
-
-    const nothingPersisted = await connectorsApi.requestReadConnectorBySlug(
-      actor,
-      "test-oauth-device",
-      [404],
-    );
-    expectApiError(nothingPersisted.body);
-    expect(nothingPersisted.body.error.code).toBe("NOT_FOUND");
 
     mockTestOAuthDeviceConnectorProvider({
       deviceCode: "pending",
@@ -1675,7 +1703,18 @@ describe("CONN-02: OAuth device authorization", () => {
     expect(restoredPoll).toStrictEqual({ status: "pending", interval: 0 });
     expect(restoredProvider.tokenBodies).toHaveLength(1);
 
-    const staleDeferred = mockDeferredTestOAuthTokenEndpoint();
+    await connectorsApi.deleteFeatureSwitches(actor);
+  });
+
+  it("reclaims a stale device poll while its original request is pending", async () => {
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.TestOauthConnector]: true,
+    });
+
+    mockTestOAuthDeviceConnectorProvider({ deviceCode: "pending" });
+    const staleDeferred = mockDeferredTestOAuthTokenEndpoint(context.signal);
     const stale = await connectorsApi.startDeviceAuth(
       actor,
       "test-oauth-device",
@@ -1687,22 +1726,33 @@ describe("CONN-02: OAuth device authorization", () => {
       stale.sessionId,
       stale.sessionToken,
     );
-    await staleDeferred.started;
-    mockNow(now() + 31_000);
+    const pollResults = await Promise.allSettled([
+      (async () => {
+        await staleDeferred.started;
+        mockNow(now() + 31_000);
 
-    const reclaimedPoll = await connectorsApi.pollDeviceAuth(
-      actor,
-      "test-oauth-device",
-      stale.sessionId,
-      stale.sessionToken,
-    );
-    expect(reclaimedPoll).toStrictEqual({ status: "pending", interval: 0 });
-    expect(staleDeferred.calls()).toBe(2);
-    staleDeferred.release();
-    const stalePoll = await stalePollPromise;
-    expect(stalePoll).toStrictEqual({ status: "pending", interval: 0 });
-    clearMockNow();
-
+        const reclaimedPoll = await connectorsApi.pollDeviceAuth(
+          actor,
+          "test-oauth-device",
+          stale.sessionId,
+          stale.sessionToken,
+        );
+        expect(reclaimedPoll).toStrictEqual({ status: "pending", interval: 0 });
+        expect(staleDeferred.calls()).toBe(2);
+        staleDeferred.release();
+        const stalePoll = await stalePollPromise;
+        expect(stalePoll).toStrictEqual({ status: "pending", interval: 0 });
+      })().finally(() => {
+        staleDeferred.release();
+        clearMockNow();
+      }),
+      stalePollPromise,
+    ]);
+    for (const result of pollResults) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
     await connectorsApi.deleteFeatureSwitches(actor);
   });
 
@@ -6609,7 +6659,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "Content-Type",
       "Last-Event-ID",
       "MCP-Protocol-Version",
-      "X-VM0-Connector-Intent",
+      "X-Okou-Connector-Intent",
     ]) {
       const definition = manualMcpConnectorBody({
         displayName: `Protected ${name}`,
@@ -7566,7 +7616,7 @@ describe("CONN-02: OAuth callback validation and state claiming", () => {
       origin: "https://api.okou.ai",
       connectorSlug: "github",
       query: { code: "code-123" },
-      headers: { "x-vm0-web-origin": "https://www.okou.ai" },
+      headers: { "x-okou-web-origin": "https://www.okou.ai" },
     });
     expect(trustedHeader.status).toBe(307);
     const trustedUrl = redirectLocation(trustedHeader);

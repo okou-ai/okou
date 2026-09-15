@@ -533,9 +533,9 @@ const action: ComputerUseCommand = {
 };
 
 describe("production driver generation and admission wiring", () => {
-  it.each(["switch", "drain"] as const)(
+  it.each(["drain"] as const)(
     "drains a healthy claimed action when %s cancels a concurrent permission refresh",
-    async (mode) => {
+    async () => {
       const app = desktop();
       await app.controller.start();
       const write = app.native.pause("keyboard.type_text");
@@ -545,10 +545,7 @@ describe("production driver generation and admission wiring", () => {
       await write.reached.promise;
       const refresh = app.permissions.refreshComputerUsePermissionState();
       const rejected = expect(refresh).rejects.toThrow();
-      const transition =
-        mode === "switch"
-          ? app.controller.transitionDriver(app.driverDefinition)
-          : app.controller.drainAndStop();
+      const transition = app.controller.drainAndStop();
       write.resume.resolve();
       const completed = await command.completed.promise;
       command.completeResponse.resolve();
@@ -558,104 +555,10 @@ describe("production driver generation and admission wiring", () => {
       expect(app.events.indexOf("completion")).toBeLessThan(
         app.events.indexOf("dispose:1"),
       );
-      expect(app.driver.getCapabilities()).toEqual(
-        mode === "switch" ? SUPPORTED_COMPUTER_USE_CAPABILITIES : [],
-      );
-      expect(app.controller.getHostState().status).toBe(
-        mode === "switch" ? "online" : "offline",
-      );
+      expect(app.driver.getCapabilities()).toEqual([]);
+      expect(app.controller.getHostState().status).toBe("offline");
     },
   );
-
-  it("drains delayed claim, permission, action, capture and completion on the original generation while the host stays alive", async () => {
-    const app = desktop();
-    await app.controller.start();
-    const command = app.claim(action);
-    app.timers.run(5_000);
-    await command.reached.promise;
-    const permission = app.native.pause("permissions.state");
-    const write = app.native.pause("keyboard.type_text");
-    const capture = app.native.pause("app.state");
-    const switchDriver = app.controller.transitionDriver(app.driverDefinition);
-    expect(app.controller.transitionDriver(app.driverDefinition)).toBe(
-      switchDriver,
-    );
-    expect(shouldDeferDesktopUpdate(app.controller.getHostState())).toBe(true);
-    command.response.resolve();
-    await permission.reached.promise;
-    expect(app.native.created).toBe(1);
-    permission.resume.resolve();
-    await write.reached.promise;
-    app.timers.run(2_000);
-    await app.heartbeat.promise;
-    expect(app.controller.getHostState().hostId).toBe("host-1");
-    expect(app.online).toEqual([true]);
-    expect(app.timers.count(5_000)).toBe(0);
-    write.resume.resolve();
-    await capture.reached.promise;
-    expect(app.events).not.toContain("dispose:1");
-    capture.resume.resolve();
-    expect(await command.completed.promise).toMatchObject({
-      status: "succeeded",
-      result: { app: "test.app", action: { app: "test.app" } },
-    });
-    expect(app.native.created).toBe(1);
-    expect(app.events).not.toContain("dispose:1");
-    command.completeResponse.resolve();
-    await switchDriver;
-    expect(app.events.indexOf("completion")).toBeLessThan(
-      app.events.indexOf("dispose:1"),
-    );
-    expect(app.events.indexOf("dispose:1")).toBeLessThan(
-      app.events.indexOf("create:2"),
-    );
-    expect(app.native.active).toBe(1);
-    expect(app.driver.generation).toBe(2);
-    expect(app.online).toEqual([true]);
-    expect(app.timers.count(0)).toBe(1);
-    expect(app.controller.getHostState()).toMatchObject({
-      status: "online",
-      hostId: "host-1",
-    });
-    for (const request of app.requests.filter(
-      (request) =>
-        request.path.endsWith("/heartbeat") ||
-        request.path.endsWith("/hosts/start"),
-    )) {
-      expect(request.body).toMatchObject({
-        supportedCapabilities: [...SUPPORTED_COMPUTER_USE_CAPABILITIES],
-      });
-    }
-  });
-  it("rejects an explicit snapshot from a retired generation before any new native action", async () => {
-    const app = desktop();
-    await app.controller.start();
-    const command = app.claim({
-      id: "capture",
-      kind: "app.state",
-      payload: { app: "test.app" },
-    });
-    app.timers.run(5_000);
-    command.response.resolve();
-    const completed = await command.completed.promise;
-    const result = completed.result as { snapshotId: string };
-    const transition = app.controller.transitionDriver(app.driverDefinition);
-    command.completeResponse.resolve();
-    await transition;
-    const old = app.claim({
-      ...action,
-      id: "stale",
-      payload: { ...action.payload, snapshotId: result.snapshotId },
-    });
-    app.timers.run(0);
-    old.response.resolve();
-    expect(await old.completed.promise).toMatchObject({
-      status: "failed",
-      error: { code: "unsupported_command" },
-    });
-    expect(app.events).not.toContain("2:keyboard.type_text");
-    old.completeResponse.resolve();
-  });
   it.each(["stop", "auth", "quit", "update"] as const)(
     "lets %s supersede a delayed host registration",
     async (reason) => {
@@ -696,22 +599,6 @@ describe("production driver generation and admission wiring", () => {
       expect(app.native.active).toBe(0);
     },
   );
-  it("waits for native disposal acknowledgment before publishing a replacement", async () => {
-    const app = desktop();
-    await app.controller.start();
-    app.native.holdClose();
-    const transition = app.controller.transitionDriver(app.driverDefinition);
-    await app.native.closeReached.promise;
-    expect(app.driver.generation).toBeNull();
-    expect(app.native.created).toBe(1);
-    await app.permissions.refreshComputerUsePermissionState();
-    expect(
-      app.events.filter((event) => event === "1:permissions.state"),
-    ).toHaveLength(2);
-    app.native.close();
-    await transition;
-    expect(app.native.created).toBe(2);
-  });
   it("keeps the permission request UX available after a manual stop without restarting commands", async () => {
     const app = desktop();
     await app.controller.start();
@@ -741,143 +628,6 @@ describe("production driver generation and admission wiring", () => {
     expect(app.native.created).toBe(1);
   });
 
-  it("serializes a replacement requested while the initial permission gate is pending", async () => {
-    const app = desktop();
-    const permission = app.native.pause("permissions.state");
-    const start = app.controller.start();
-    await permission.reached.promise;
-    const transition = app.controller.transitionDriver(app.driverDefinition);
-    permission.resume.resolve();
-    await Promise.all([start, transition]);
-    expect(app.driver.generation).toBe(2);
-    expect(app.native.active).toBe(1);
-    expect(app.controller.getHostState().status).toBe("online");
-    // Only the latest startup registers; it starts with the normal poll delay.
-    expect(app.timers.count(5_000)).toBe(1);
-    expect(
-      app.requests.filter((request) => request.path.endsWith("/hosts/start")),
-    ).toHaveLength(1);
-  });
-
-  it.each(["stop", "auth", "quit", "update"] as const)(
-    "lets %s supersede a transition with an in-flight action",
-    async (reason) => {
-      const app = desktop();
-      await app.controller.start();
-      const write = app.native.pause("keyboard.type_text");
-      const command = app.claim(action);
-      app.timers.run(5_000);
-      command.response.resolve();
-      await write.reached.promise;
-      const transition = app.controller.transitionDriver(app.driverDefinition);
-      const rejected = expect(transition).rejects.toThrow("superseded");
-      const stop =
-        reason === "stop"
-          ? app.controller.stop()
-          : reason === "auth"
-            ? app.controller.stopForAuthChange()
-            : app.controller.stopForQuit(
-                reason === "update" ? "update_relaunch" : "app_quit",
-              );
-      write.resume.resolve();
-      await stop;
-      await rejected;
-      expect(app.controller.getHostState().status).toBe("offline");
-      expect(app.native.created).toBe(1);
-      expect(app.native.active).toBe(0);
-      expect(
-        app.events.filter((event) => event === "1:keyboard.type_text"),
-      ).toHaveLength(1);
-      expect(app.timers.count(0)).toBe(0);
-    },
-  );
-
-  it.each(["claim", "permission", "action", "capture", "completion"] as const)(
-    "fails closed on a hung %s without releasing cleanup ownership or replaying",
-    async (phase) => {
-      const app = desktop({ transitionTimeoutMs: 1_234 });
-      await app.controller.start();
-      const gate =
-        phase === "permission"
-          ? app.native.pause("permissions.state")
-          : phase === "action"
-            ? app.native.pause("keyboard.type_text")
-            : phase === "capture"
-              ? app.native.pause("app.state")
-              : null;
-      const command = app.claim(action);
-      app.timers.run(5_000);
-      await command.reached.promise;
-      if (phase !== "claim") command.response.resolve();
-      if (gate) await gate.reached.promise;
-      if (phase === "completion") await command.completed.promise;
-      const transition = app.controller.transitionDriver(app.driverDefinition);
-      const rejected = expect(transition).rejects.toThrow("timed out");
-      app.timers.run(1_234);
-      await rejected;
-      expect(app.controller.getHostState().status).toBe("error");
-      expect(app.native.created).toBe(1);
-      expect(app.events).not.toContain("dispose:1");
-      const start = app.controller.start({ userInitiated: true });
-      const startRejected = expect(start).rejects.toThrow("timed out");
-      app.timers.run(1_234);
-      await startRejected;
-      expect(app.native.created).toBe(1);
-      command.response.resolve();
-      gate?.resume.resolve();
-      command.completeResponse.resolve();
-      await app.controller.stop();
-      expect(app.native.active).toBe(0);
-      expect(
-        app.events.filter((event) => event === "1:keyboard.type_text").length,
-      ).toBeLessThanOrEqual(1);
-      expect(app.timers.count(0)).toBe(0);
-      await app.controller.start({ userInitiated: true });
-      expect(app.driver.generation).toBe(2);
-      expect(app.controller.getHostState().status).toBe("online");
-    },
-  );
-
-  it("serializes different requests and resumes one polling path after the last replacement", async () => {
-    const app = desktop();
-    await app.controller.start();
-    const other: ComputerUseDriver = {
-      ...app.driverDefinition,
-      id: "replacement-fixture",
-    };
-    const first = app.controller.transitionDriver(app.driverDefinition);
-    const second = app.controller.transitionDriver(other);
-    await Promise.all([first, second]);
-    expect(app.driver.generation).toBe(2);
-    expect(app.native.active).toBe(1);
-    expect(app.timers.count(0)).toBe(1);
-    expect(app.events.filter((event) => event.startsWith("dispose:"))).toEqual([
-      "dispose:1",
-    ]);
-    expect(app.online).toEqual([true]);
-  });
-  it("preserves a real stdio MCP process and dispatches plugin commands after resume", async () => {
-    const plugin = pluginFixture();
-    const app = desktop({ plugin: plugin.manager });
-    await app.controller.start();
-    await plugin.ready;
-    const command: ComputerUseCommand = {
-      id: "plugin",
-      kind: "plugin.call",
-      payload: { plugin: "mcp", server: "fixture", tool: "pid", arguments: {} },
-    };
-    const before = await plugin.manager.execute(command);
-    expect(before.status).toBe("succeeded");
-    await app.controller.transitionDriver(app.driverDefinition);
-    expect(plugin.manager.getState().servers[0]?.status).toBe("running");
-    const queued = app.claim(command);
-    app.timers.run(0);
-    queued.response.resolve();
-    expect(await queued.completed.promise).toEqual(before);
-    queued.completeResponse.resolve();
-    expect(app.online).toEqual([true]);
-  });
-
   it("preserves manual Stop when a late sign-in completion arrives", async () => {
     const app = desktop();
     await app.controller.start();
@@ -885,52 +635,6 @@ describe("production driver generation and admission wiring", () => {
     await app.controller.startForAuthChange(new AbortController().signal);
     expect(app.controller.getHostState().status).toBe("offline");
     expect(app.native.created).toBe(1);
-  });
-  it("keeps a separate recorder session alive across native driver retirement", async () => {
-    const app = desktop();
-    const recorder = recorderFixture();
-    await app.controller.start();
-    await recorder.prepare({
-      sourceId: "display:1",
-      sourceKind: "display",
-      systemAudio: false,
-      microphone: false,
-    });
-    await recorder.start();
-    const sessionId = recorder.getState().sessionId;
-    expect(recorder.getState().status).toBe("recording");
-    await app.controller.transitionDriver(app.driverDefinition);
-    await recorder.refreshRecordingStatus();
-    expect(recorder.getState()).toMatchObject({
-      status: "recording",
-      sessionId,
-    });
-    await recorder.pause();
-    await recorder.resume();
-    expect(recorder.getState()).toMatchObject({
-      status: "recording",
-      sessionId,
-    });
-    expect(app.driver.generation).toBe(2);
-  });
-  it("refuses replacement when native process exit cannot be confirmed", async () => {
-    const app = desktop({
-      nativeShutdownGraceMs: 0,
-      expectedQuitError: "did not exit after SIGKILL",
-    });
-    await app.controller.start();
-    app.native.holdClose();
-    await expect(
-      app.controller.transitionDriver(app.driverDefinition),
-    ).rejects.toThrow("did not exit after SIGKILL");
-    expect(app.controller.getHostState().status).toBe("error");
-    expect(app.driver.generation).toBeNull();
-    await expect(app.controller.start({ userInitiated: true })).rejects.toThrow(
-      "did not exit after SIGKILL",
-    );
-    expect(app.native.created).toBe(1);
-    expect(app.native.active).toBe(1);
-    app.native.close();
   });
 
   it("does not register a host when the auth lifetime aborts during readiness", async () => {
@@ -960,34 +664,6 @@ describe("production driver generation and admission wiring", () => {
       app.requests.some((request) => request.path.endsWith("/hosts/start")),
     ).toBe(false);
     expect(app.native.active).toBe(0);
-  });
-  it("blocks a recovery callback already queued before the admission pause", async () => {
-    const app = desktop();
-    await app.controller.start();
-    let claims = 0;
-    server.use(
-      http.post(`${api}/api/computer-use/host/commands/next`, () => {
-        claims++;
-        return new HttpResponse(null, { status: 503 });
-      }),
-    );
-    app.timers.run(5_000);
-    await app.waitForHostState("recovering");
-    const heartbeat = app.timers.take(2_000);
-    const recovery = app.timers.take(2_000);
-    app.native.holdClose();
-    const transition = app.controller.transitionDriver(app.driverDefinition);
-    await app.native.closeReached.promise;
-    recovery();
-    expect(claims).toBe(1);
-    expect(app.native.created).toBe(1);
-    app.native.close();
-    await transition;
-    expect(app.timers.count(0)).toBe(1);
-    heartbeat();
-    await app.heartbeat.promise;
-    expect(app.controller.getHostState().status).toBe("online");
-    expect(claims).toBe(1);
   });
 });
 
@@ -1033,6 +709,53 @@ it.each(["permissions.state", "apps.list", "app.open", "app.state"])(
 );
 
 describe("native permission recovery through the runtime owner", () => {
+  it("preserves the MCP process and recorder session while recovering the native helper", async () => {
+    const plugin = pluginFixture();
+    const app = desktop({
+      plugin: plugin.manager,
+      nativeRequestTimeoutMs: 100,
+    });
+    const recorder = recorderFixture();
+    await app.controller.start();
+    await plugin.ready;
+    await recorder.prepare({
+      sourceId: "display:1",
+      sourceKind: "display",
+      systemAudio: false,
+      microphone: false,
+    });
+    await recorder.start();
+    const sessionId = recorder.getState().sessionId;
+    const command: ComputerUseCommand = {
+      id: "plugin",
+      kind: "plugin.call",
+      payload: { plugin: "mcp", server: "fixture", tool: "pid", arguments: {} },
+    };
+    const before = await plugin.manager.execute(command);
+    expect(before.status).toBe("succeeded");
+    const pause = app.native.pause("permissions.state");
+    const refresh = app.permissions.refreshComputerUsePermissionState();
+    await pause.reached.promise;
+    await app.native.closeReached.promise;
+    expect(shouldDeferDesktopUpdate(app.controller.getHostState())).toBe(true);
+    await refresh;
+    pause.resume.resolve();
+    expect(app.driver.generation).toBe(2);
+    expect(app.controller.getHostState().status).toBe("online");
+    expect(plugin.manager.getState().servers[0]?.status).toBe("running");
+    const queued = app.claim(command);
+    app.timers.run(0);
+    queued.response.resolve();
+    expect(await queued.completed.promise).toEqual(before);
+    queued.completeResponse.resolve();
+    await recorder.refreshRecordingStatus();
+    expect(recorder.getState()).toMatchObject({
+      status: "recording",
+      sessionId,
+    });
+    expect(app.online).toEqual([true]);
+  });
+
   it("coalesces a hung read, retires before one fresh probe, and preserves the host", async () => {
     const app = desktop({ nativeRequestTimeoutMs: 100 });
     await app.controller.start();
@@ -1124,15 +847,7 @@ describe("native permission recovery through the runtime owner", () => {
     },
   );
 
-  it.each([
-    "stop",
-    "auth",
-    "workspace",
-    "quit",
-    "update",
-    "cancel",
-    "switch",
-  ] as const)(
+  it.each(["stop", "auth", "workspace", "quit", "update", "cancel"] as const)(
     "%s supersedes cleanup and prevents a fresh probe",
     async (action) => {
       const app = desktop({ nativeRequestTimeoutMs: 100 });
@@ -1159,11 +874,6 @@ describe("native permission recovery through the runtime owner", () => {
           action === "quit" ? "app_quit" : "update_relaunch",
         );
       if (action === "cancel") abort.abort();
-      if (action === "switch")
-        supersede = app.controller.transitionDriver({
-          ...app.driverDefinition,
-          id: "replacement",
-        });
       const settledSupersede = Promise.allSettled([supersede]);
       app.native.close();
       pause.resume.resolve();
@@ -1172,15 +882,10 @@ describe("native permission recovery through the runtime owner", () => {
       expect(
         app.recoveries.filter((event) => event.outcome === "recovered"),
       ).toEqual([]);
-      if (action === "switch") {
-        expect(app.driver.selectedDriver.id).toBe("replacement");
-        expect(app.native.created).toBe(2);
-      } else {
-        expect(
-          app.events.filter((event) => event === "2:permissions.state"),
-        ).toEqual([]);
-        expect(app.driver.getCapabilities()).toEqual([]);
-      }
+      expect(
+        app.events.filter((event) => event === "2:permissions.state"),
+      ).toEqual([]);
+      expect(app.driver.getCapabilities()).toEqual([]);
     },
   );
 

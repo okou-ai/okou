@@ -3,7 +3,12 @@ import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
 import { mockedClerk } from "./mock-auth.ts";
-import { queryAllByRoleFast, setupPage, startPage } from "./page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+  startPage,
+} from "./page-helper.ts";
 import frFRCommon from "../i18n/locales/fr-FR/common.json";
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
@@ -18,28 +23,26 @@ const PRIMARY_LOAD_OPTIONS = {
 } as const;
 
 async function waitForReadySignIn(): Promise<void> {
-  await expect(screen.findByLabelText("Email address")).resolves.toBeVisible();
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
 }
 
 function installEarlyBootstrap(options: {
-  readonly clerk?: typeof mockedClerk;
-  readonly loaded?: Promise<void>;
+  readonly clerk: typeof mockedClerk;
+  readonly loaded: Promise<void>;
 }): void {
   context.mocks.clerk();
   const originalBootstrap = window.__okouClerkBootstrap;
   const originalClerk = Reflect.get(globalThis, "Clerk");
-  Reflect.set(globalThis, "Clerk", options.clerk ?? mockedClerk);
+  Reflect.set(globalThis, "Clerk", options.clerk);
   const bootstrap: NonNullable<Window["__okouClerkBootstrap"]> = {
-    loadOptions: PRIMARY_LOAD_OPTIONS,
-    loaded: options.loaded,
-    publishableKey: "test_production_key",
     resolveClerkUI: () => {
       return;
     },
+    runtime: Promise.resolve({
+      clerk: options.clerk,
+      loaded: options.loaded,
+    }),
   };
-  if (options.clerk) {
-    Reflect.set(bootstrap, "clerk", options.clerk);
-  }
   window.__okouClerkBootstrap = bootstrap;
   context.signal.addEventListener(
     "abort",
@@ -80,7 +83,7 @@ test("Authentication is ready before Platform content becomes interactive", asyn
   await expect(
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeInTheDocument();
-  expect(screen.queryByTestId("app-auth-v2")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   expect(queryAllByRoleFast("link").length).toBeGreaterThan(0);
 });
 
@@ -108,6 +111,7 @@ test.each(["setupPage", "startPage"])(
   "%s does not report cancelled authentication startup as ready",
   async (entryPoint) => {
     const clerkLoad = context.mocks.clerk().runtimePending();
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const controller = createChildAbortController(context.signal);
     const options = {
       context: {
@@ -142,6 +146,7 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
     await localeResponse.promise;
     return HttpResponse.json(frFRCommon);
   });
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const controller = createChildAbortController(context.signal);
   let currentSignal = controller.signal;
   const startup = startPage({
@@ -196,22 +201,48 @@ test("Authentication startup is reused without a duplicate load", async () => {
   expect(clerk.uiRequests).toStrictEqual([]);
 });
 
-test("Authentication startup retries after an early failure", async () => {
+test("A Clerk core failure offers a visible refresh without an automatic retry", async () => {
+  const failure = new Error("Clerk core resource is unavailable");
   const clerk = context.mocks.clerk();
-  installEarlyBootstrap({});
+  clerk.resourceUnavailable(failure);
+  const consoleError = vi.spyOn(console, "error");
+  const unexpectedError = consoleError.getMockImplementation();
+  consoleError.mockImplementation((...args) => {
+    if (args.includes(failure)) {
+      return;
+    }
+    unexpectedError?.(...args);
+  });
 
-  await setupPage({
+  const page = await startPage({
     context,
     host: "app.okou.ai",
     path: "/sign-in",
     auth: null,
   });
 
-  await waitForReadySignIn();
-  expect(clerk.resourceRequests).toStrictEqual([]);
-  expect(clerk.loads).toHaveLength(1);
-  expect(clerk.uiRequests).toStrictEqual([]);
-  expect(window.__okouClerkBootstrap?.loaded).toBeUndefined();
+  const alert = await screen.findByRole("alert");
+  await page.ready;
+  expect(alert).toHaveTextContent("Oops! Something went sideways");
+  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();
+  expect(clerk.resourceRequests).toStrictEqual([
+    { publishableKey: "test_production_key" },
+  ]);
+  expect(clerk.loads).toHaveLength(0);
+
+  const reload = vi
+    .spyOn(window.location, "reload")
+    .mockImplementation(() => {});
+  const refresh = queryAllByRoleFast("button", alert).find((button) => {
+    return button.textContent === "Refresh";
+  });
+  expect(refresh).toBeDefined();
+  if (!refresh) {
+    throw new Error("Refresh action is missing");
+  }
+  click(refresh);
+  expect(reload).toHaveBeenCalledOnce();
 });
 
 test("Startup onboarding follows the current account and workspace", async () => {
@@ -270,30 +301,10 @@ test("Okou production uses production authentication", async () => {
     { publishableKey: "test_production_key" },
   ]);
   expect(clerk.loads).toContainEqual(PRIMARY_LOAD_OPTIONS);
-  expect(clerk.uiRequests).toStrictEqual([]);
-  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
-});
-
-test("V1 comparison authentication loads the hosted Clerk UI", async () => {
-  const clerk = context.mocks.clerk();
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/v1/sign-in",
-    auth: null,
-  });
-
-  await expect(screen.findByTestId("clerk-sign-in")).resolves.toHaveTextContent(
-    "/v1/sign-in",
-  );
-  expect(screen.queryByTestId("app-auth-v2")).not.toBeInTheDocument();
-  expect(clerk.resourceRequests).toStrictEqual([
-    { publishableKey: "test_production_key" },
-  ]);
-  expect(clerk.loads).toContainEqual(PRIMARY_LOAD_OPTIONS);
   expect(clerk.uiRequests).toStrictEqual([
     "https://app.example.test/assets/clerk-ui-test.js",
   ]);
+  expect(screen.getByTestId("clerk-sign-in")).toHaveTextContent("/sign-in");
 });
 
 test("Authorized preview hosts use preview authentication", async () => {

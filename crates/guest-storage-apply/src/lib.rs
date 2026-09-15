@@ -3,7 +3,6 @@
 //! Features:
 //! - Parallel downloads using std::thread (max 4 concurrent)
 //! - Streaming extraction (no temp files)
-//! - Retry logic with 3 attempts
 //!
 //! ## Manifest application and failure semantics
 //!
@@ -14,9 +13,8 @@
 //!
 //! Downloads whose targets do not overlap may run concurrently. A failed task
 //! does not cancel its siblings, so a `false` result can coexist with targets
-//! successfully materialized by other tasks. Archive attempts extract in place
-//! and retries reuse the same target, so a failed task may also leave changes
-//! written by an earlier entry or attempt.
+//! successfully materialized by other tasks. Archives extract in place, so a
+//! failed task may also leave changes written by an earlier entry.
 //!
 //! On preparation or aggregate download failure, the crate attempts to remove
 //! staged sources used to normalize instruction storage. That targeted cleanup
@@ -25,17 +23,31 @@
 //! instruction normalization are best-effort operations, so the result
 //! reports required target preparation and downloads rather than
 //! transaction-wide success for every filesystem change.
+//!
+//! ## Archive metadata limits
+//!
+//! Each tar member has a 1 MiB budget for encoded metadata, including headers,
+//! GNU/PAX extension bodies and padding, and GNU sparse maps. This is both an
+//! individual-extension and combined metadata bound, enforced while tar parses
+//! metadata, before it can buffer unbounded input. Vector capacity and parsed
+//! descriptors add bounded overhead; the budget is not an exact heap/RSS cap.
+//! Oversized metadata is an archive error. Ordinary file payloads
+//! and their padding are exempt, including unread payloads of skipped entries;
+//! sparse files retain their physical-data streaming and hole-seeking behavior.
+//! The budget resets between members.
 
 mod archive;
 mod cleanup;
 mod download;
 mod error;
+mod files;
 mod http_failure;
 mod instructions;
 mod manifest;
 mod path;
 mod plan;
 mod source;
+mod tar_metadata;
 mod telemetry;
 
 use guest_contracts::storage_manifest::Manifest;
@@ -89,9 +101,49 @@ pub fn run_manifest_bytes(manifest_json: &[u8]) -> bool {
     run_manifest(manifest)
 }
 
+/// Apply bounded binary storage input after validating all mount bindings and files.
+pub fn run_storage_files_bytes(input: &[u8]) -> bool {
+    let parsed = (|| {
+        let (json, payload) = guest_contracts::storage_files::split_input(input)?;
+        let manifest = manifest::parse(json)
+            .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))?;
+        let files = guest_contracts::storage_files::decode(payload)?;
+        files::validate_bindings(&manifest, &files)?;
+        Ok::<_, std::io::Error>((manifest, files))
+    })();
+    match parsed {
+        Ok((manifest, files)) => run_manifest_with_files(manifest, files),
+        Err(error) => {
+            log_error!(LOG_TAG, "Invalid decoded storage input: {error}");
+            false
+        }
+    }
+}
+
 fn run_manifest(manifest: Manifest) -> bool {
+    run_manifest_with_files(manifest, Vec::new())
+}
+
+fn run_manifest_with_files(
+    manifest: Manifest,
+    files: Vec<guest_contracts::storage_files::StorageFiles>,
+) -> bool {
     let plan_start = Instant::now();
-    let plan = RunPlan::from_manifest(&manifest);
+    let mut plan = RunPlan::from_manifest(&manifest);
+    for group in files {
+        let Some(task) = plan
+            .download_tasks
+            .iter_mut()
+            .find(|task| task.mount_path() == group.mount_path)
+        else {
+            log_error!(
+                LOG_TAG,
+                "Decoded storage target missing from execution plan"
+            );
+            return false;
+        };
+        task.set_files(group.files);
+    }
     record_sandbox_op(
         "guest_storage_apply_plan_build",
         plan_start.elapsed(),

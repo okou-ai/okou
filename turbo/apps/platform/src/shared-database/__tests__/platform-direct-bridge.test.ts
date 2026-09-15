@@ -223,6 +223,7 @@ test("Show cached chat data before catching up live", async () => {
     expect(prewarmedThreadIds).toContain(unreadThreadId);
   });
 
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const signals = createChatEventSignals(threadId);
   await context.store.set(signals.setup$, owner.signal);
@@ -336,6 +337,7 @@ test("Cache incoming chat messages before the conversation is opened", async () 
     expect(batchedThreadIds).toContain(unopenedThreadId);
   });
 
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const signals = createChatEventSignals(unopenedThreadId);
   await context.store.set(signals.setup$, owner.signal);
@@ -420,6 +422,7 @@ test("Preserve every message during a burst of realtime notifications", async ()
   await vi.waitFor(() => {
     expect(prewarmedThreadIds).toContain(unopenedThreadId);
   });
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const signals = createChatEventSignals(threadId);
   await context.store.set(signals.setup$, owner.signal);

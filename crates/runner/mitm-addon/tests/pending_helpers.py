@@ -23,11 +23,21 @@ def assert_pending(
 
     ``flows``, ``buffered``, and ``reports`` map directly to the JSON fields
     with the same names.  ``flows`` is the number of admitted in-flight usage
-    flows, including billable model-provider and connector flows. ``buffered``
-    is the number
-    of unadmitted addon work units, including usage source events and retained
-    diagnostic reports, and ``reports`` is the number of pending webhook
-    report deliveries.
+    flows, including billable model-provider and connector flows.
+
+    ``buffered`` counts original usage source records in live stores, pending
+    or retry flushes, and delivering flushes, plus retained unadmitted
+    diagnostic reports. Usage is counted in source records, not webhook batches
+    or aggregated payload events. Admission alone does not remove usage:
+    delivering flushes remain counted while admitted callbacks are unresolved.
+    Successful or permanent outcomes leave the buffer when delivery ownership
+    ends. Retryable or unadmitted batches return to pending unless the retry
+    budget drops them. See ``usage.buffer.state`` for the ownership contract.
+
+    Diagnostic reports stop contributing to ``buffered`` at admission or
+    terminal discard, eviction, or reset, as defined by
+    ``usage.counters.BufferedReportLease``. ``reports`` is the number of pending
+    webhook report deliveries.
 
     When ``flush_request_id`` is provided, the snapshot must include a matching
     ``flushRequestId`` field.  When it is omitted, ``flushRequestId`` must be

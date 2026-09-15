@@ -1,5 +1,5 @@
 import { historicalRunGroupId } from "./run-event-provenance.service";
-import { validateReasoningEffortDispatch } from "./chat-reasoning-effort.service";
+import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { loadIntroVideoTemplateAccess } from "./intro-video-access.service";
 import { randomBytes } from "node:crypto";
@@ -3227,17 +3227,14 @@ async function buildCreateQueuedChatRunInput(
       featureSwitchContext,
     });
 
-  const effortError = validateReasoningEffortDispatch(
-    routedModel.reasoningEffort,
+  const reasoningEffort = resolveReasoningEffortForDispatch({
+    selectedModel: routedModel.modelPin.selectedModel,
+    effort: routedModel.reasoningEffort ?? undefined,
+    runtimeProviderType:
+      routedModel.builtInModelRuntimeRoute?.providerType ??
+      routedModel.effectiveModelProvider,
     piExecution,
-  );
-  if (effortError) {
-    return queuedMessageAdmissionFailure(
-      args,
-      launchMaterial,
-      effortError.body.error,
-    );
-  }
+  });
 
   const { incompleteContext, priorContext } =
     await loadQueuedMessageSessionContext(args, routedModel);
@@ -3289,7 +3286,7 @@ async function buildCreateQueuedChatRunInput(
     cliAgentType: routedModel.cliAgentType,
     piExecution,
     codexServiceTier: routedModel.codexServiceTier,
-    reasoningEffort: routedModel.reasoningEffort,
+    reasoningEffort,
     computerUseHostGrant,
     triggerSource,
     realAgentInPreview: isFeatureEnabled(
@@ -3444,525 +3441,224 @@ async function publishQueuedAdmissionFailureInvalidations(
   signal.throwIfAborted();
 }
 
-async function handleWebQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
-    readonly failure: WebQueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const displayError = await args.formatError(
-    {
-      orgId: args.failure.orgId,
-      userId: args.failure.userId,
-      code: args.failure.error.code,
-      message: args.failure.error.message,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const failed = await failQueuedUserMessage(args.db, {
-    threadId: args.failure.threadId,
-    eventId: args.failure.queuedMessage.id,
-    assistantContent: displayError,
-    errorMarker: args.failure.error.code.toLowerCase(),
-    currentTime: nowDate(),
-  });
-  signal.throwIfAborted();
-  if (!failed) {
-    return;
-  }
-
-  recordQueuedMessageAdmissionFailure(args.failure);
-  await publishQueuedAdmissionFailureInvalidations(
-    {
-      userId: args.failure.userId,
-      orgId: args.failure.orgId,
-      threadId: args.failure.threadId,
-    },
-    signal,
-  );
+interface QueuedAdmissionFailureChannel {
+  readonly name: string;
+  readonly deliver: (chatEventId: string, signal: AbortSignal) => Promise<void>;
+  readonly clearThinking?: (signal: AbortSignal) => Promise<void>;
 }
 
-async function handleFeishuQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
-    readonly failure: FeishuQueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-    readonly deliver: ChatCallbackDependencies["deliverFeishuAdmissionFailure"];
-    readonly clearThinking: ChatCallbackDependencies["clearFeishuThinkingReaction"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const displayError = await args.formatError(
-    {
-      orgId: args.failure.orgId,
-      userId: args.failure.userId,
-      code: args.failure.error.code,
-      message: args.failure.error.message,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const failed = await failQueuedUserMessage(args.db, {
-    threadId: args.failure.threadId,
-    eventId: args.failure.queuedMessage.id,
-    assistantContent: displayError,
-    errorMarker: args.failure.error.code.toLowerCase(),
-    currentTime: nowDate(),
-  });
-  signal.throwIfAborted();
-  if (!failed) {
-    return;
-  }
-
-  recordQueuedMessageAdmissionFailure(args.failure);
-  await publishQueuedAdmissionFailureInvalidations(
-    {
-      userId: args.failure.userId,
-      orgId: args.failure.orgId,
-      threadId: args.failure.threadId,
-    },
-    signal,
-  );
-  await tapError(
-    args.deliver(
-      {
-        chatThreadId: args.failure.threadId,
-        userId: args.failure.userId,
-        orgId: args.failure.orgId,
-        target: args.failure.feishuDelivery,
-        chatEventId: failed.assistantEventId,
-      },
-      signal,
-    ),
-    (error) => {
-      log.warn("Failed to deliver canonical Feishu admission error", {
-        threadId: args.failure.threadId,
-        error,
-      });
-    },
-  );
-  await tapError(
-    args.clearThinking(args.failure.feishuDelivery, signal),
-    (error) => {
-      log.warn("Failed to clear Feishu admission thinking reaction", {
-        threadId: args.failure.threadId,
-        error,
-      });
-    },
-  );
+interface QueuedAdmissionFailureDeliverers {
+  readonly deliverSlack: ChatCallbackDependencies["deliverSlackAdmissionFailure"];
+  readonly deliverFeishu: ChatCallbackDependencies["deliverFeishuAdmissionFailure"];
+  readonly clearFeishuThinking: ChatCallbackDependencies["clearFeishuThinkingReaction"];
+  readonly deliverTeams: ChatCallbackDependencies["deliverTeamsAdmissionFailure"];
+  readonly deliverTelegram: ChatCallbackDependencies["deliverTelegramAdmissionFailure"];
+  readonly deliverAgentPhone: ChatCallbackDependencies["deliverAgentPhoneAdmissionFailure"];
+  readonly deliverGitHub: ChatCallbackDependencies["deliverGitHubAdmissionFailure"];
 }
 
-async function handleSlackQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
-    readonly failure: SlackQueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-    readonly deliver: ChatCallbackDependencies["deliverSlackAdmissionFailure"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const displayError = await args.formatError(
-    {
-      orgId: args.failure.orgId,
-      userId: args.failure.userId,
-      code: args.failure.error.code,
-      message: args.failure.error.message,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const failed = await failQueuedUserMessage(args.db, {
-    threadId: args.failure.threadId,
-    eventId: args.failure.queuedMessage.id,
-    assistantContent: displayError,
-    errorMarker: args.failure.error.code.toLowerCase(),
-    currentTime: nowDate(),
-  });
-  signal.throwIfAborted();
-  if (!failed) {
-    return;
-  }
-
-  recordQueuedMessageAdmissionFailure(args.failure);
-  await publishQueuedAdmissionFailureInvalidations(
-    {
-      userId: args.failure.userId,
-      orgId: args.failure.orgId,
-      threadId: args.failure.threadId,
-    },
-    signal,
-  );
-  await tapError(
-    args.deliver(
-      {
-        chatThreadId: args.failure.threadId,
-        userId: args.failure.userId,
-        orgId: args.failure.orgId,
-        agentId: args.failure.agentId,
-        channelId: args.failure.slackDelivery.channelId,
-        threadTs: args.failure.slackDelivery.threadTs,
-        ...(args.failure.slackDelivery.routeThreadTs
-          ? { routeThreadTs: args.failure.slackDelivery.routeThreadTs }
-          : {}),
-        chatEventId: failed.assistantEventId,
-      },
-      signal,
-    ),
-    (error) => {
-      log.warn("Failed to deliver canonical Slack admission error", {
-        threadId: args.failure.threadId,
-        error,
-      });
-    },
-  );
-}
-
-async function handleTeamsQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
-    readonly failure: TeamsQueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-    readonly deliver: ChatCallbackDependencies["deliverTeamsAdmissionFailure"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const displayError = await args.formatError(
-    {
-      orgId: args.failure.orgId,
-      userId: args.failure.userId,
-      code: args.failure.error.code,
-      message: args.failure.error.message,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const failed = await failQueuedUserMessage(args.db, {
-    threadId: args.failure.threadId,
-    eventId: args.failure.queuedMessage.id,
-    assistantContent: displayError,
-    errorMarker: args.failure.error.code.toLowerCase(),
-    currentTime: nowDate(),
-  });
-  signal.throwIfAborted();
-  if (!failed) {
-    return;
-  }
-
-  recordQueuedMessageAdmissionFailure(args.failure);
-  await publishQueuedAdmissionFailureInvalidations(
-    {
-      userId: args.failure.userId,
-      orgId: args.failure.orgId,
-      threadId: args.failure.threadId,
-    },
-    signal,
-  );
-  await tapError(
-    args.deliver(
-      {
-        chatThreadId: args.failure.threadId,
-        userId: args.failure.userId,
-        orgId: args.failure.orgId,
-        agentId: args.failure.agentId,
-        target: args.failure.teamsDelivery,
-        chatEventId: failed.assistantEventId,
-      },
-      signal,
-    ),
-    (error) => {
-      log.warn("Failed to deliver canonical Teams admission error", {
-        threadId: args.failure.threadId,
-        error,
-      });
-    },
-  );
-}
-
-async function handleTelegramQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
-    readonly failure: TelegramQueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-    readonly deliver: ChatCallbackDependencies["deliverTelegramAdmissionFailure"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const displayError = await args.formatError(
-    {
-      orgId: args.failure.orgId,
-      userId: args.failure.userId,
-      code: args.failure.error.code,
-      message: args.failure.error.message,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const failed = await failQueuedUserMessage(args.db, {
-    threadId: args.failure.threadId,
-    eventId: args.failure.queuedMessage.id,
-    assistantContent: displayError,
-    errorMarker: args.failure.error.code.toLowerCase(),
-    currentTime: nowDate(),
-  });
-  signal.throwIfAborted();
-  if (!failed) {
-    return;
-  }
-
-  recordQueuedMessageAdmissionFailure(args.failure);
-  await publishQueuedAdmissionFailureInvalidations(
-    {
-      userId: args.failure.userId,
-      orgId: args.failure.orgId,
-      threadId: args.failure.threadId,
-    },
-    signal,
-  );
-  await tapError(
-    args.deliver(
-      {
-        chatThreadId: args.failure.threadId,
-        userId: args.failure.userId,
-        orgId: args.failure.orgId,
-        agentId: args.failure.agentId,
-        target: args.failure.telegramDelivery,
-        chatEventId: failed.assistantEventId,
-      },
-      signal,
-    ),
-    (error) => {
-      log.warn("Failed to deliver canonical Telegram admission error", {
-        threadId: args.failure.threadId,
-        error,
-      });
-    },
-  );
-}
-
-async function handleAgentPhoneQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
-    readonly failure: AgentPhoneQueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-    readonly deliver: ChatCallbackDependencies["deliverAgentPhoneAdmissionFailure"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const displayError = await args.formatError(
-    {
-      orgId: args.failure.orgId,
-      userId: args.failure.userId,
-      code: args.failure.error.code,
-      message: args.failure.error.message,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const failed = await failQueuedUserMessage(args.db, {
-    threadId: args.failure.threadId,
-    eventId: args.failure.queuedMessage.id,
-    assistantContent: displayError,
-    errorMarker: args.failure.error.code.toLowerCase(),
-    currentTime: nowDate(),
-  });
-  signal.throwIfAborted();
-  if (!failed) {
-    return;
-  }
-
-  recordQueuedMessageAdmissionFailure(args.failure);
-  await publishQueuedAdmissionFailureInvalidations(
-    {
-      userId: args.failure.userId,
-      orgId: args.failure.orgId,
-      threadId: args.failure.threadId,
-    },
-    signal,
-  );
-  await tapError(
-    args.deliver(
-      {
-        chatThreadId: args.failure.threadId,
-        userId: args.failure.userId,
-        orgId: args.failure.orgId,
-        agentId: args.failure.agentId,
-        target: args.failure.agentphoneDelivery,
-        chatEventId: failed.assistantEventId,
-        publicBrand: args.failure.publicBrand,
-      },
-      signal,
-    ),
-    (error) => {
-      log.warn("Failed to deliver canonical AgentPhone admission error", {
-        threadId: args.failure.threadId,
-        error,
-      });
-    },
-  );
-}
-
-async function handleGitHubQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
-    readonly failure: GitHubQueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-    readonly deliver: ChatCallbackDependencies["deliverGitHubAdmissionFailure"];
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const displayError = await args.formatError(
-    {
-      orgId: args.failure.orgId,
-      userId: args.failure.userId,
-      code: args.failure.error.code,
-      message: args.failure.error.message,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const failed = await failQueuedUserMessage(args.db, {
-    threadId: args.failure.threadId,
-    eventId: args.failure.queuedMessage.id,
-    assistantContent: displayError,
-    errorMarker: args.failure.error.code.toLowerCase(),
-    currentTime: nowDate(),
-  });
-  signal.throwIfAborted();
-  if (!failed) {
-    return;
-  }
-
-  recordQueuedMessageAdmissionFailure(args.failure);
-  await publishQueuedAdmissionFailureInvalidations(
-    {
-      userId: args.failure.userId,
-      orgId: args.failure.orgId,
-      threadId: args.failure.threadId,
-    },
-    signal,
-  );
-  await tapError(
-    args.deliver(
-      {
-        chatThreadId: args.failure.threadId,
-        userId: args.failure.userId,
-        orgId: args.failure.orgId,
-        agentId: args.failure.agentId,
-        target: args.failure.githubDelivery,
-        chatEventId: failed.assistantEventId,
-      },
-      signal,
-    ),
-    (error) => {
-      log.warn("Failed to deliver canonical GitHub admission error", {
-        threadId: args.failure.threadId,
-        error,
-      });
-    },
-  );
-}
-
-async function handleQueuedMessageAdmissionFailure(
-  args: {
-    readonly db: Db;
+/**
+ * Channel table for admission-failure delivery. Web admissions have no
+ * integration delivery, so they resolve to `undefined`.
+ */
+function queuedAdmissionFailureChannel(
+  args: QueuedAdmissionFailureDeliverers & {
     readonly failure: QueuedMessageAdmissionFailure;
-    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
-    readonly deliverSlack: ChatCallbackDependencies["deliverSlackAdmissionFailure"];
-    readonly deliverFeishu: ChatCallbackDependencies["deliverFeishuAdmissionFailure"];
-    readonly clearFeishuThinking: ChatCallbackDependencies["clearFeishuThinkingReaction"];
-    readonly deliverTeams: ChatCallbackDependencies["deliverTeamsAdmissionFailure"];
-    readonly deliverTelegram: ChatCallbackDependencies["deliverTelegramAdmissionFailure"];
-    readonly deliverAgentPhone: ChatCallbackDependencies["deliverAgentPhoneAdmissionFailure"];
-    readonly deliverGitHub: ChatCallbackDependencies["deliverGitHubAdmissionFailure"];
   },
-  signal: AbortSignal,
-): Promise<void> {
+): QueuedAdmissionFailureChannel | undefined {
   const failure = args.failure;
+  const base = {
+    chatThreadId: failure.threadId,
+    userId: failure.userId,
+    orgId: failure.orgId,
+  };
   switch (failure.kind) {
     case "web_admission_failure": {
-      return await handleWebQueuedMessageAdmissionFailure(
-        {
-          db: args.db,
-          failure,
-          formatError: args.formatError,
-        },
-        signal,
-      );
+      return undefined;
     }
     case "slack_admission_failure": {
-      return await handleSlackQueuedMessageAdmissionFailure(
-        {
-          db: args.db,
-          failure,
-          formatError: args.formatError,
-          deliver: args.deliverSlack,
+      return {
+        name: "Slack",
+        deliver: (chatEventId, signal) => {
+          return args.deliverSlack(
+            {
+              ...base,
+              agentId: failure.agentId,
+              channelId: failure.slackDelivery.channelId,
+              threadTs: failure.slackDelivery.threadTs,
+              ...(failure.slackDelivery.routeThreadTs
+                ? { routeThreadTs: failure.slackDelivery.routeThreadTs }
+                : {}),
+              chatEventId,
+            },
+            signal,
+          );
         },
-        signal,
-      );
+      };
     }
     case "feishu_admission_failure": {
-      return await handleFeishuQueuedMessageAdmissionFailure(
-        {
-          db: args.db,
-          failure,
-          formatError: args.formatError,
-          deliver: args.deliverFeishu,
-          clearThinking: args.clearFeishuThinking,
+      return {
+        name: "Feishu",
+        deliver: (chatEventId, signal) => {
+          return args.deliverFeishu(
+            { ...base, target: failure.feishuDelivery, chatEventId },
+            signal,
+          );
         },
-        signal,
-      );
+        clearThinking: (signal) => {
+          return args.clearFeishuThinking(failure.feishuDelivery, signal);
+        },
+      };
     }
     case "teams_admission_failure": {
-      return await handleTeamsQueuedMessageAdmissionFailure(
-        {
-          db: args.db,
-          failure,
-          formatError: args.formatError,
-          deliver: args.deliverTeams,
+      return {
+        name: "Teams",
+        deliver: (chatEventId, signal) => {
+          return args.deliverTeams(
+            {
+              ...base,
+              agentId: failure.agentId,
+              target: failure.teamsDelivery,
+              chatEventId,
+            },
+            signal,
+          );
         },
-        signal,
-      );
+      };
     }
     case "telegram_admission_failure": {
-      return await handleTelegramQueuedMessageAdmissionFailure(
-        {
-          db: args.db,
-          failure,
-          formatError: args.formatError,
-          deliver: args.deliverTelegram,
+      return {
+        name: "Telegram",
+        deliver: (chatEventId, signal) => {
+          return args.deliverTelegram(
+            {
+              ...base,
+              agentId: failure.agentId,
+              target: failure.telegramDelivery,
+              chatEventId,
+            },
+            signal,
+          );
         },
-        signal,
-      );
+      };
     }
     case "agentphone_admission_failure": {
-      return await handleAgentPhoneQueuedMessageAdmissionFailure(
-        {
-          db: args.db,
-          failure,
-          formatError: args.formatError,
-          deliver: args.deliverAgentPhone,
+      return {
+        name: "AgentPhone",
+        deliver: (chatEventId, signal) => {
+          return args.deliverAgentPhone(
+            {
+              ...base,
+              agentId: failure.agentId,
+              target: failure.agentphoneDelivery,
+              chatEventId,
+              publicBrand: failure.publicBrand,
+            },
+            signal,
+          );
         },
-        signal,
-      );
+      };
     }
     case "github_admission_failure": {
-      return await handleGitHubQueuedMessageAdmissionFailure(
-        {
-          db: args.db,
-          failure,
-          formatError: args.formatError,
-          deliver: args.deliverGitHub,
+      return {
+        name: "GitHub",
+        deliver: (chatEventId, signal) => {
+          return args.deliverGitHub(
+            {
+              ...base,
+              agentId: failure.agentId,
+              target: failure.githubDelivery,
+              chatEventId,
+            },
+            signal,
+          );
         },
-        signal,
-      );
+      };
     }
     default: {
       return unreachableQueuedAdmissionFailure(failure);
     }
   }
+}
+
+async function deliverQueuedAdmissionFailureToChannel(
+  args: {
+    readonly channel: QueuedAdmissionFailureChannel;
+    readonly threadId: string;
+    readonly chatEventId: string;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  const channel = args.channel;
+  await tapError(channel.deliver(args.chatEventId, signal), (error) => {
+    log.warn(`Failed to deliver canonical ${channel.name} admission error`, {
+      threadId: args.threadId,
+      error,
+    });
+  });
+  const clearThinking = channel.clearThinking;
+  if (!clearThinking) {
+    return;
+  }
+  await tapError(clearThinking(signal), (error) => {
+    log.warn(`Failed to clear ${channel.name} admission thinking reaction`, {
+      threadId: args.threadId,
+      error,
+    });
+  });
+}
+
+async function handleQueuedMessageAdmissionFailure(
+  args: QueuedAdmissionFailureDeliverers & {
+    readonly db: Db;
+    readonly failure: QueuedMessageAdmissionFailure;
+    readonly formatError: ChatCallbackDependencies["formatIntegrationRunError"];
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  const channel = queuedAdmissionFailureChannel(args);
+  const displayError = await args.formatError(
+    {
+      orgId: args.failure.orgId,
+      userId: args.failure.userId,
+      code: args.failure.error.code,
+      message: args.failure.error.message,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  const failed = await failQueuedUserMessage(args.db, {
+    threadId: args.failure.threadId,
+    eventId: args.failure.queuedMessage.id,
+    assistantContent: displayError,
+    errorMarker: args.failure.error.code.toLowerCase(),
+    currentTime: nowDate(),
+  });
+  signal.throwIfAborted();
+  if (!failed) {
+    return;
+  }
+
+  recordQueuedMessageAdmissionFailure(args.failure);
+  await publishQueuedAdmissionFailureInvalidations(
+    {
+      userId: args.failure.userId,
+      orgId: args.failure.orgId,
+      threadId: args.failure.threadId,
+    },
+    signal,
+  );
+  if (!channel) {
+    return;
+  }
+  await deliverQueuedAdmissionFailureToChannel(
+    {
+      channel,
+      threadId: args.failure.threadId,
+      chatEventId: failed.assistantEventId,
+    },
+    signal,
+  );
 }
 
 function unreachableQueuedAdmissionFailure(failure: never): never {
@@ -4577,103 +4273,93 @@ async function dispatchCanonicalDeliveryCallbacks(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  if (args.slackDeliveryCallbackId) {
-    const delivery = await settle(
-      args.dependencies.dispatchSlackDelivery(
-        args.slackDeliveryCallbackId,
-        signal,
-      ),
-      signal,
-    );
-    if (!delivery.ok) {
-      log.error("Failed to finalize canonical Slack delivery callback", {
-        runId: args.runId,
-        callbackId: args.slackDeliveryCallbackId,
-        error: delivery.error,
-      });
+  const channels: readonly {
+    readonly name: string;
+    readonly callbackId: string | undefined;
+    readonly dispatch: (
+      callbackId: string,
+      signal: AbortSignal,
+    ) => Promise<void>;
+  }[] = [
+    {
+      name: "Slack",
+      callbackId: args.slackDeliveryCallbackId,
+      dispatch: (callbackId, dispatchSignal) => {
+        return args.dependencies.dispatchSlackDelivery(
+          callbackId,
+          dispatchSignal,
+        );
+      },
+    },
+    {
+      name: "Feishu",
+      callbackId: args.feishuDeliveryCallbackId,
+      dispatch: (callbackId, dispatchSignal) => {
+        return args.dependencies.dispatchFeishuDelivery(
+          callbackId,
+          dispatchSignal,
+        );
+      },
+    },
+    {
+      name: "Teams",
+      callbackId: args.teamsDeliveryCallbackId,
+      dispatch: (callbackId, dispatchSignal) => {
+        return args.dependencies.dispatchTeamsDelivery(
+          callbackId,
+          dispatchSignal,
+        );
+      },
+    },
+    {
+      name: "Telegram",
+      callbackId: args.telegramDeliveryCallbackId,
+      dispatch: (callbackId, dispatchSignal) => {
+        return args.dependencies.dispatchTelegramDelivery(
+          callbackId,
+          args.status,
+          dispatchSignal,
+        );
+      },
+    },
+    {
+      name: "AgentPhone",
+      callbackId: args.agentphoneDeliveryCallbackId,
+      dispatch: (callbackId, dispatchSignal) => {
+        return args.dependencies.dispatchAgentPhoneDelivery(
+          callbackId,
+          args.status,
+          dispatchSignal,
+        );
+      },
+    },
+    {
+      name: "GitHub",
+      callbackId: args.githubDeliveryCallbackId,
+      dispatch: (callbackId, dispatchSignal) => {
+        return args.dependencies.dispatchGitHubDelivery(
+          callbackId,
+          args.status,
+          dispatchSignal,
+        );
+      },
+    },
+  ];
+  for (const channel of channels) {
+    const callbackId = channel.callbackId;
+    if (!callbackId) {
+      continue;
     }
-  }
-  if (args.feishuDeliveryCallbackId) {
-    const delivery = await settle(
-      args.dependencies.dispatchFeishuDelivery(
-        args.feishuDeliveryCallbackId,
-        signal,
-      ),
-      signal,
-    );
+    const delivery = await settle(channel.dispatch(callbackId, signal), signal);
     if (!delivery.ok) {
-      log.error("Failed to finalize canonical Feishu delivery callback", {
-        runId: args.runId,
-        callbackId: args.feishuDeliveryCallbackId,
-        error: delivery.error,
-      });
-    }
-  }
-  if (args.teamsDeliveryCallbackId) {
-    const delivery = await settle(
-      args.dependencies.dispatchTeamsDelivery(
-        args.teamsDeliveryCallbackId,
-        signal,
-      ),
-      signal,
-    );
-    if (!delivery.ok) {
-      log.error("Failed to finalize canonical Teams delivery callback", {
-        runId: args.runId,
-        callbackId: args.teamsDeliveryCallbackId,
-        error: delivery.error,
-      });
-    }
-  }
-  if (args.telegramDeliveryCallbackId) {
-    const delivery = await settle(
-      args.dependencies.dispatchTelegramDelivery(
-        args.telegramDeliveryCallbackId,
-        args.status,
-        signal,
-      ),
-      signal,
-    );
-    if (!delivery.ok) {
-      log.error("Failed to finalize canonical Telegram delivery callback", {
-        runId: args.runId,
-        callbackId: args.telegramDeliveryCallbackId,
-        error: delivery.error,
-      });
-    }
-  }
-  if (args.agentphoneDeliveryCallbackId) {
-    const delivery = await settle(
-      args.dependencies.dispatchAgentPhoneDelivery(
-        args.agentphoneDeliveryCallbackId,
-        args.status,
-        signal,
-      ),
-      signal,
-    );
-    if (!delivery.ok) {
-      log.error("Failed to finalize canonical AgentPhone delivery callback", {
-        runId: args.runId,
-        callbackId: args.agentphoneDeliveryCallbackId,
-        error: delivery.error,
-      });
-    }
-  }
-  if (args.githubDeliveryCallbackId) {
-    const delivery = await settle(
-      args.dependencies.dispatchGitHubDelivery(
-        args.githubDeliveryCallbackId,
-        args.status,
-        signal,
-      ),
-      signal,
-    );
-    if (!delivery.ok) {
-      log.error("Failed to finalize canonical GitHub delivery callback", {
-        runId: args.runId,
-        callbackId: args.githubDeliveryCallbackId,
-        error: delivery.error,
-      });
+      log.error(
+        `Failed to finalize canonical ${channel.name} delivery callback`,
+        {
+          runId: args.runId,
+          callbackId,
+          error: delivery.error,
+        },
+      );
     }
   }
 }

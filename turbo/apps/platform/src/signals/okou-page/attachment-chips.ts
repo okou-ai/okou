@@ -1,4 +1,7 @@
-import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
+import {
+  createAttachmentPreviewSignals,
+  type AttachmentPreviewSignals,
+} from "../attachment-resource-url.ts";
 import { command, computed, state } from "ccstate";
 import { openArtifactInOpenSidebar$ } from "../chat-page/thread-sidebar-coordinator.ts";
 import {
@@ -76,6 +79,8 @@ type AttachmentDocumentLightboxInput =
 
 type AttachmentImageLightboxInput = {
   readonly url: string;
+  /** Reuse the initiating thread image's already resolved credential. */
+  readonly preview?: AttachmentPreviewSignals;
   readonly file?: File;
   /**
    * Present only for an image the viewer is allowed to mark up — a composer
@@ -239,6 +244,7 @@ type AttachmentSidebarPreviewInput = {
   readonly shareAvailable?: boolean;
   readonly splitViewAvailable?: boolean;
   readonly text$?: TextPreviewComputed;
+  readonly preview?: AttachmentPreviewSignals;
 };
 
 export function attachmentSidebarRef(
@@ -262,6 +268,7 @@ export function attachmentSidebarRef(
       // The caller's preview content rides along, so the sidebar reuses the
       // already-fetched text instead of fetching its own copy.
       ...(value.text$ ? { text$: value.text$ } : {}),
+      ...(value.preview ? { preview: value.preview } : {}),
       ...share,
     };
   }
@@ -318,7 +325,8 @@ export const openImageLightbox$ = command(
     set(internalLightboxDialogFullscreen$, false);
     set(internalLightboxState$, {
       ...imageLightboxState(resource ? { ...input, url: resource.url } : input),
-      ...createAttachmentPreviewSignals(resource?.url ?? input.url),
+      ...(input.preview ??
+        createAttachmentPreviewSignals(resource?.url ?? input.url)),
     });
   },
 );
@@ -335,6 +343,7 @@ export const navigateImageLightbox$ = command(
       url: string;
       filename?: string;
       threadId?: string;
+      preview?: AttachmentPreviewSignals;
       artifact?: AttachmentArtifactMetadata;
       shareAvailable?: boolean;
       showSizeInSubtitle?: boolean;
@@ -346,7 +355,7 @@ export const navigateImageLightbox$ = command(
     set(internalLightboxState$, {
       kind: "image",
       ...value,
-      ...createAttachmentPreviewSignals(value.url),
+      ...(value.preview ?? createAttachmentPreviewSignals(value.url)),
     });
   },
 );

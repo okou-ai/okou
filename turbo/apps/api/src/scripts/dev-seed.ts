@@ -35,7 +35,7 @@ function writeLine(message: string): void {
  * Populate the development database with pricing, model keys, and skills.
  *
  * Pricing convention: 1 USD = 1000 credits.
- * Prices are per 1M tokens, stored as integer credits per 1M tokens.
+ * Token prices use integer credits with a per-row token unit size.
  *
  * API keys are read from environment variables per vendor:
  *   DEV_MODEL_{VENDOR_UPPER}_KEY (e.g., DEV_MODEL_ANTHROPIC_KEY, DEV_MODEL_OPENAI_KEY)
@@ -413,6 +413,12 @@ const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.output", usd(50), 1_000_000],
     ["tokens.cache_read", usd(1), 1_000_000],
     ["tokens.cache_creation", usd(12.5), 1_000_000],
+  ]),
+  ...usageGroup("model", "deepseek-v4.1-flash", [
+    ["tokens.input", usd(37.5), 100_000_000],
+    ["tokens.output", usd(150), 100_000_000],
+    ["tokens.cache_read", usd(3.75), 100_000_000],
+    ["tokens.cache_creation", 0, 100_000_000],
   ]),
   // Canonical Okou customer credit pricing for managed DeepSeek V4 Flash.
   // Keep this product rate independent of the selected upstream route.

@@ -318,6 +318,8 @@ const executeDirectImageProviderJob$ = command(
         orgId: args.orgId,
         userId: args.userId,
         runId: args.runId,
+        billingRunId: args.runId ?? null,
+        billingContext: args.runId ? "run" : "runless",
         publicBrand: args.publicBrand,
         privateArtifacts: args.privateArtifacts,
         pricing: args.pricing,

@@ -52,6 +52,7 @@ function preference(
   return {
     selectedModel: DEFAULT_RUN_MODEL,
     serviceTier: "priority",
+    modelSettings: {},
     selectedImageModel: DEFAULT_IMAGE_MODEL,
     selectedVideoModel: DEFAULT_VIDEO_MODEL,
     updatedAt: "2026-06-12T00:00:00.000Z",
@@ -66,7 +67,7 @@ function installModelEnvironment(
   mockOrgModelRoutes(modelPreference.selectedModel ?? DEFAULT_RUN_MODEL);
   mockBillingCapabilities({
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
   });
   context.mocks.data.userModelPreference(modelPreference);
 }
@@ -459,7 +460,7 @@ test("Follow the live video model default in an untouched new chat", async () =>
   });
 });
 
-async function exerciseNewChatThreeModePicker(): Promise<void> {
+async function browseNewChatModelCategories(): Promise<void> {
   await openPicker();
   expect(category("Chat")).toHaveAttribute("aria-checked", "true");
   await expect(
@@ -481,6 +482,9 @@ async function exerciseNewChatThreeModePicker(): Promise<void> {
       }),
     ).toBeFalsy();
   });
+}
+
+async function selectModelsAcrossNewChatCategories(): Promise<void> {
   click(mediaModelRow("Veo 3.1 fast"));
 
   await chooseMediaModel("Image", "GPT Image 2");
@@ -508,7 +512,7 @@ async function exerciseNewChatThreeModePicker(): Promise<void> {
   expect(scopeCard("Image model for this chat")).toBeNull();
 }
 
-test("Switch Chat, Image, and Video from one model picker in a desktop new chat", async () => {
+async function openDesktopNewChatModelPicker() {
   setDesktopViewport();
   installModelEnvironment();
   mockChatLifecycle(context, { threadId: "desktop-new-model-modes" });
@@ -520,8 +524,18 @@ test("Switch Chat, Image, and Video from one model picker in a desktop new chat"
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
+}
 
-  await exerciseNewChatThreeModePicker();
+test("Browse Chat, Image, and Video catalogs in a desktop new chat", async () => {
+  await openDesktopNewChatModelPicker();
+  await browseNewChatModelCategories();
+  expect(category("Video")).toHaveAttribute("aria-checked", "true");
+});
+
+test("Retain independent Chat, Image, and Video selections in a desktop new chat", async () => {
+  await openDesktopNewChatModelPicker();
+  await openCategory("Video");
+  await selectModelsAcrossNewChatCategories();
   expect(scopeCard("Video model for this chat")).not.toBeNull();
 });
 
@@ -538,7 +552,8 @@ test("Switch Chat, Image, and Video from one model picker in a mobile new chat",
     },
   });
 
-  await exerciseNewChatThreeModePicker();
+  await browseNewChatModelCategories();
+  await selectModelsAcrossNewChatCategories();
   expect(scopeCard("Video model for this chat")).not.toBeNull();
 });
 
@@ -595,7 +610,7 @@ test("Switch Chat, Image, and Video from one model picker in a mobile existing c
   expect(category("Chat")).toHaveAttribute("aria-checked", "true");
 });
 
-test("Temporarily choose an image model for a new chat", async () => {
+async function openTemporaryImageModelChat() {
   const creates: ({ readonly imageModel?: string } | undefined)[] = [];
   const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
   let currentPreference = preference();
@@ -629,6 +644,11 @@ test("Temporarily choose an image model for a new chat", async () => {
     },
   });
 
+  return { creates, preferenceUpdates };
+}
+
+test("A temporary image model applies to one new chat and resets for the next", async () => {
+  const { creates, preferenceUpdates } = await openTemporaryImageModelChat();
   await chooseMediaModel("Image", "GPT Image 2");
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).toHaveTextContent(
@@ -660,7 +680,11 @@ test("Temporarily choose an image model for a new chat", async () => {
   await screen.findByRole("heading", { level: 2 });
   await openCategory("Image");
   expectSelected("Nano Banana 2");
-  click(mediaModelRow("GPT Image 2"));
+});
+
+test("Save a temporary image model as the default for future chats", async () => {
+  const { preferenceUpdates } = await openTemporaryImageModelChat();
+  await chooseMediaModel("Image", "GPT Image 2");
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
   });
@@ -676,7 +700,6 @@ test("Temporarily choose an image model for a new chat", async () => {
       },
     ]);
   });
-  currentPreference = preference({ selectedImageModel: "gpt-image-2" });
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscription("userPreferenceChanged"),
@@ -841,83 +864,78 @@ test("Choose a video model for the current thread", async () => {
   ]);
 });
 
-test.each(["desktop", "mobile"])(
-  "Choose image and video models from the compact overview on %s",
-  async (viewport) => {
-    if (viewport === "desktop") {
-      setDesktopViewport();
-    } else {
-      setMobileViewport();
-    }
-    installModelEnvironment();
-    mockThread({
-      selectedModel: DEFAULT_RUN_MODEL,
-      selectedImageModel: null,
-      selectedVideoModel: null,
-    });
-    const images: (ImageModel | null)[] = [];
-    const videos: (VideoModel | null)[] = [];
-    context.mocks.api(
-      chatThreadImageModelContract.update,
-      ({ body, respond }) => {
-        images.push(body.model);
-        return respond(204);
-      },
-    );
-    context.mocks.api(
-      chatThreadVideoModelContract.update,
-      ({ body, respond }) => {
-        videos.push(body.model);
-        return respond(204);
-      },
-    );
-    await setupPage({
-      context,
-      path: `/chats/${THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.ModelPickerMenu]: true },
-    });
-    await findComposerEditor();
-    await waitFor(() => {
-      expect(mediaModelRow("Claude Fable 5.1")).toBeVisible();
-    });
-    click(mediaModelRow("Claude Fable 5.1"));
-    await screen.findByRole("region", { name: "Models" });
-    click(mediaModelRow("Change Image model, Nano Banana 2"));
-    await screen.findByRole("region", { name: "Image models" });
-    expectSelected("Nano Banana 2");
-    click(mediaModelRow("GPT Image 1"));
-    await waitFor(() => {
-      expect(images).toStrictEqual(["gpt-image-1"]);
-    });
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("region", { name: "Image models" }),
-      ).not.toBeInTheDocument();
-    });
-    click(mediaModelRow("Claude Fable 5.1"));
-    await screen.findByRole("region", { name: "Models" });
-    expect(mediaModelRow("Change Image model, GPT Image 1")).toBeVisible();
-    click(
-      mediaModelRow(
-        `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
-      ),
-    );
-    await screen.findByRole("region", { name: "Video models" });
-    click(mediaModelRow("Seedance 2.0"));
-    await waitFor(() => {
-      expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
-    });
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("region", { name: "Video models" }),
-      ).not.toBeInTheDocument();
-    });
-    click(mediaModelRow("Claude Fable 5.1"));
-    await screen.findByRole("region", { name: "Models" });
-    expect(mediaModelRow("Change Video model, Seedance 2.0")).toBeVisible();
-    expect(mediaModelRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
-  },
-);
+// The overview's pages are the narrow viewport's layout; a desktop reaches the
+// same media models through the flyout, which the tests below cover.
+test("Choose image and video models from the compact overview", async () => {
+  setMobileViewport();
+  installModelEnvironment();
+  mockThread({
+    selectedModel: DEFAULT_RUN_MODEL,
+    selectedImageModel: null,
+    selectedVideoModel: null,
+  });
+  const images: (ImageModel | null)[] = [];
+  const videos: (VideoModel | null)[] = [];
+  context.mocks.api(
+    chatThreadImageModelContract.update,
+    ({ body, respond }) => {
+      images.push(body.model);
+      return respond(204);
+    },
+  );
+  context.mocks.api(
+    chatThreadVideoModelContract.update,
+    ({ body, respond }) => {
+      videos.push(body.model);
+      return respond(204);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },
+  });
+  await findComposerEditor();
+  await waitFor(() => {
+    expect(mediaModelRow("Claude Fable 5.1")).toBeVisible();
+  });
+  click(mediaModelRow("Claude Fable 5.1"));
+  await screen.findByRole("region", { name: "Models" });
+  click(mediaModelRow("Change Image model, Nano Banana 2"));
+  await screen.findByRole("region", { name: "Image models" });
+  expectSelected("Nano Banana 2");
+  click(mediaModelRow("GPT Image 1"));
+  await waitFor(() => {
+    expect(images).toStrictEqual(["gpt-image-1"]);
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Image models" }),
+    ).not.toBeInTheDocument();
+  });
+  click(mediaModelRow("Claude Fable 5.1"));
+  await screen.findByRole("region", { name: "Models" });
+  expect(mediaModelRow("Change Image model, GPT Image 1")).toBeVisible();
+  click(
+    mediaModelRow(
+      `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
+    ),
+  );
+  await screen.findByRole("region", { name: "Video models" });
+  click(mediaModelRow("Seedance 2.0"));
+  await waitFor(() => {
+    expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Video models" }),
+    ).not.toBeInTheDocument();
+  });
+  click(mediaModelRow("Claude Fable 5.1"));
+  await screen.findByRole("region", { name: "Models" });
+  expect(mediaModelRow("Change Video model, Seedance 2.0")).toBeVisible();
+  expect(mediaModelRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
+});
 
 test("Switch model type in the flyout without leaving the panel", async () => {
   installModelEnvironment();

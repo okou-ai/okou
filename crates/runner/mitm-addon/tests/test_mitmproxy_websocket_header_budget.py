@@ -90,7 +90,7 @@ async def test_http1_handshake_classification_bounds_raw_value_conversion(
         fake_firewall_headers(headers={"Authorization": "Bearer managed-secret"}),
     ):
         addon_context.options.update(
-            vm0_api_url="https://api.okou.ai", vm0_proxy_registry_path=str(registry_path)
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
         )
         client, http_layer = start_http_layer(
             addon_context, alpn=b"http/1.1", host="api.openai.com"

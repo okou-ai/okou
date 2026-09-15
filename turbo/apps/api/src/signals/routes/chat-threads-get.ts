@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 
 import { authContext$ } from "../auth/auth-context";
@@ -23,7 +24,7 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       agentId: chatThreads.agentId,
       title: chatThreads.title,
       selectedModel: chatThreads.selectedModel,
-      reasoningEffort: chatThreads.reasoningEffort,
+      modelSettings: chatThreads.modelSettings,
       codexServiceTier: chatThreads.codexServiceTier,
       pinnedAt: chatThreads.pinnedAt,
       computerUseHostId: chatThreads.computerUseHostId,
@@ -49,9 +50,7 @@ const getInner$ = command(async ({ get }, signal: AbortSignal) => {
       agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel,
-      ...(thread.reasoningEffort !== null
-        ? { reasoningEffort: thread.reasoningEffort }
-        : {}),
+      modelSettings: modelSettingsSchema.parse(thread.modelSettings),
       serviceTier: chatThreadServiceTierFromCodex(thread.codexServiceTier),
       pinnedAt: thread.pinnedAt?.toISOString() ?? null,
       computerUseHostId: thread.computerUseHostId,

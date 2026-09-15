@@ -1,6 +1,5 @@
 import { command, computed, state } from "ccstate";
 import { matchShortcut } from "@okouai/ui";
-import { stableChatThreadNavigationEnabled$ } from "../external/feature-switch.ts";
 import {
   hideKeyboardShortcutHints$,
   keyboardShortcutHintsVisible$,
@@ -19,7 +18,7 @@ export const threadNumberShortcutModifier$ = computed(() => {
 });
 
 export const threadNumberShortcutsEnabled$ = computed((get) => {
-  return get(stableChatThreadNavigationEnabled$) && get(standaloneDisplayMode$);
+  return get(standaloneDisplayMode$);
 });
 
 export const threadNumberShortcutHintsVisible$ = computed((get) => {

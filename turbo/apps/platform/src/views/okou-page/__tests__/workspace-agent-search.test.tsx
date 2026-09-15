@@ -24,7 +24,7 @@ const MAC_USER_AGENT =
 function prepareAgents() {
   context.mocks.browser.userAgent(MAC_USER_AGENT);
   const agents: AgentResponse[] = [
-    { agentId: DEFAULT_AGENT_ID, displayName: "Zero" },
+    { agentId: DEFAULT_AGENT_ID, displayName: "Nova" },
     { agentId: RESEARCH_AGENT_ID, displayName: "Research Agent" },
     {
       agentId: SUPPORT_AGENT_ID,
@@ -38,6 +38,7 @@ function prepareAgents() {
     },
   ].map((agent) => {
     return {
+      isDefaultAgent: agent.agentId === DEFAULT_AGENT_ID,
       ownerId: "test-user-123",
       description: null,
       sound: null,
@@ -104,7 +105,7 @@ test("Find workspace agents by name with case and whitespace normalization", asy
   ).toBeVisible();
 });
 
-test("Agent search excludes IDs and blank queries but includes Zero", async () => {
+test("Agent search excludes IDs and blank queries but includes Nova", async () => {
   prepareAgents();
   await setupPage({ context, path: `/agents/${DEFAULT_AGENT_ID}/chat` });
   const { dialog, search } = await openSearch();
@@ -114,9 +115,9 @@ test("Agent search excludes IDs and blank queries but includes Zero", async () =
   ).resolves.toBeVisible();
   expect(within(dialog).getByText("0 results")).toBeVisible();
 
-  await fill(search, "zero");
+  await fill(search, "nova");
   await expect(
-    within(dialog).findByRole("option", { name: "Zero" }),
+    within(dialog).findByRole("option", { name: "Nova" }),
   ).resolves.toBeVisible();
 
   await fill(search, " ");
@@ -147,7 +148,7 @@ test("Selecting a workspace agent search result opens its chat", async () => {
 test("Limit matching agents to the workspace search result size", async () => {
   context.mocks.browser.userAgent(MAC_USER_AGENT);
   context.mocks.data.agents([
-    { agentId: DEFAULT_AGENT_ID, displayName: "Zero" },
+    { agentId: DEFAULT_AGENT_ID, displayName: "Nova" },
     ...Array.from({ length: 30 }, (_, index) => {
       return {
         agentId: `c1000000-0000-4000-a000-${(index + 1).toString().padStart(12, "0")}`,

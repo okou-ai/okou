@@ -4,6 +4,10 @@ The production application remains the existing `vm0-kms-prod` IAM user.
 GitHub Actions uses a separate OIDC role for ciphertext rewrap. No new access
 keys or static operator credentials are required.
 
+The production backfill is complete. Follow the
+[permanent retirement plan](permanent-retirement.md) for retained recovery
+dependencies and isolated snapshot inspection before scheduling old-key deletion.
+
 ## One-time IAM prerequisite
 
 An AWS administrator must provision or reconcile this exact role in account

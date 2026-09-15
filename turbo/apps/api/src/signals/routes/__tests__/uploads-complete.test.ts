@@ -179,8 +179,8 @@ describe("POST /api/uploads/complete", () => {
       ).prepare({
         headers: { authorization: fixture.bearer },
         body: {
-          filename: "private-report.pdf",
-          contentType: "application/pdf",
+          filename: "private-report.md",
+          contentType: "text/markdown; charset=utf-8",
           size: 1234,
           purpose: "artifact",
         },
@@ -191,7 +191,7 @@ describe("POST /api/uploads/complete", () => {
       expect(command).toBeInstanceOf(HeadObjectCommand);
       return Promise.resolve({
         ContentLength: 1234,
-        ContentType: "application/pdf",
+        ContentType: "text/markdown; charset=utf-8",
       });
     });
     const response = await chat.completeUploadWithBearer(
@@ -200,13 +200,14 @@ describe("POST /api/uploads/complete", () => {
       [200],
     );
     expect(response.body).toMatchObject({
-      url: artifactReferencePath(prepared.body.id, "private-report.pdf"),
+      url: artifactReferencePath(prepared.body.id, "private-report.md"),
+      contentType: "text/markdown; charset=utf-8",
     });
     const catalog = await chat.listArtifactCatalog(fixture.actor, {
       kind: "file",
     });
     const artifact = catalog.artifacts.find((entry) => {
-      return entry.title === "private-report.pdf";
+      return entry.title === "private-report.md";
     });
     expect(artifact).toBeDefined();
     if (!artifact) {
@@ -217,7 +218,11 @@ describe("POST /api/uploads/complete", () => {
       artifact.id,
     );
     expect(detail).toMatchObject({
-      file: { url: prepared.body.url, filename: "private-report.pdf" },
+      file: {
+        url: prepared.body.url,
+        filename: "private-report.md",
+        contentType: "text/markdown; charset=utf-8",
+      },
     });
   });
 
@@ -435,23 +440,29 @@ describe("POST /api/uploads/complete", () => {
     expect(response.body).toStrictEqual({ error: "Internal server error" });
   });
 
-  it("uses a recognized complete content type when provided", async () => {
-    const fixture = await createRunUploadFixture();
-    const fileId = randomUUID();
-    addUploadObject(fixture, fileId, "data.bin", 9);
+  it.each([
+    ["text/csv", "text/csv"],
+    ['Text/Markdown; Charset="UTF-8"', "text/markdown; charset=utf-8"],
+  ])(
+    "preserves recognized complete content type %s",
+    async (contentType, expected) => {
+      const fixture = await createRunUploadFixture();
+      const fileId = randomUUID();
+      addUploadObject(fixture, fileId, "data.bin", 9);
 
-    const response = await chat.completeUploadWithBearer(
-      fixture.bearer,
-      { id: fileId, contentType: "text/csv" },
-      [200],
-    );
+      const response = await chat.completeUploadWithBearer(
+        fixture.bearer,
+        { id: fileId, contentType },
+        [200],
+      );
 
-    expect(response.body).toMatchObject({
-      id: fileId,
-      filename: "data.bin",
-      contentType: "text/csv",
-    });
-  });
+      expect(response.body).toMatchObject({
+        id: fileId,
+        filename: "data.bin",
+        contentType: expected,
+      });
+    },
+  );
 
   it("infers audio content type from uploaded filename", async () => {
     const fixture = await createRunUploadFixture();

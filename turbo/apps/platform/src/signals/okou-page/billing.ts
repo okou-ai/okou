@@ -37,7 +37,7 @@ import { bestEffort, settle, tapError, withCleanup } from "../utils.ts";
 import { accept } from "../../lib/accept.ts";
 import {
   applyStoredAdAttribution$,
-  readApiAdAttributionMetadata$,
+  readStoredAdAttributionMetadata$,
 } from "../bootstrap/ad-attribution.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
@@ -49,6 +49,7 @@ import {
 } from "../bootstrap/google-ads-paid-conversion.ts";
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
+import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import {
   setUsagePackMigrationRevisionPreview$,
@@ -474,20 +475,16 @@ const usagePackCatalogResponse$ = computed(async (get) => {
 export const memberUsagePackOptionsAsync$ = computed(
   async (get): Promise<readonly MemberUsagePackOption[]> => {
     const catalog = await get(usagePackCatalogResponse$);
-    // Older APIs only accept paid selections. Keep their catalog unchanged until
-    // the server advertises support for a member without a paid allocation.
-    return catalog.supportsFreeMembers
-      ? [
-          {
-            usagePackUsd: 0,
-            priceUsd: 0,
-            purchasedCredits: 0,
-            bonusCredits: 0,
-            totalCredits: 0,
-          },
-          ...catalog.usagePacks,
-        ]
-      : catalog.usagePacks;
+    return [
+      {
+        usagePackUsd: 0,
+        priceUsd: 0,
+        purchasedCredits: 0,
+        bonusCredits: 0,
+        totalCredits: 0,
+      },
+      ...catalog.usagePacks,
+    ];
   },
 );
 
@@ -504,10 +501,7 @@ export const usagePackMigrationAsync$ = computed(
     get(usagePackMigrationReload$);
     const createClient = get(apiClient$);
     const client = createClient(billingUsagePackMigrationContract);
-    const result = await accept(
-      client.get({ query: { supportsFreeMembers: "true" } }),
-      [200, 403, 404, 409],
-    );
+    const result = await accept(client.get(), [200, 403, 404, 409]);
     return result.status === 200 ? result.body : null;
   },
 );
@@ -518,6 +512,7 @@ export const usagePackMigrationAsync$ = computed(
 
 /** Force a refetch of billing status (e.g. after onboarding creates the org row). */
 export const reloadBillingStatus$ = command(({ set }) => {
+  set(invalidateOrgModelPolicies$);
   set(billingReload$, (x) => {
     return x + 1;
   });
@@ -774,7 +769,7 @@ export const startCheckout$ = command(
     const cancelUrl = checkoutReturnUrl();
     cancelUrl.searchParams.set("billing", "canceled");
     set(applyStoredAdAttribution$, cancelUrl);
-    const adAttribution = set(readApiAdAttributionMetadata$);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingCheckoutContract);
     const request: CheckoutRequest = {
@@ -845,7 +840,7 @@ export const startUsagePackCheckout$ = command(
     const cancelUrl = new URL(currentUrl);
     cancelUrl.searchParams.set("billing", "canceled");
     set(applyStoredAdAttribution$, cancelUrl);
-    const adAttribution = set(readApiAdAttributionMetadata$);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingUsagePackCheckoutContract);
     const request: UsagePackCheckoutRequest = {

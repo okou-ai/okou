@@ -108,12 +108,14 @@ export function AgentAvatarImg({
   alt,
   className,
   size,
+  preserveChinBaseline = false,
   "data-testid": testId,
 }: {
   name: string;
   alt: string;
   className: string;
   size?: number;
+  preserveChinBaseline?: boolean;
   "data-testid"?: string;
 }) {
   const { src, rawAvatarUrl } = useAgentAvatarState(name);
@@ -125,6 +127,7 @@ export function AgentAvatarImg({
       <AvatarSvgPreview
         config={svgConfig}
         size={size}
+        preserveChinBaseline={preserveChinBaseline}
         className={className}
         alt={alt}
         data-testid={testId}

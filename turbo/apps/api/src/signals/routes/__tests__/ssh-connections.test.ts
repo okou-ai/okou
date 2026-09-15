@@ -1,3 +1,4 @@
+import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
@@ -70,9 +71,11 @@ function createBody(
     displayName: overrides.displayName ?? `Host ${host}`,
     host,
     port: overrides.port ?? 22,
-    username: overrides.username ?? "deploy",
-    privateKey: overrides.privateKey ?? "private-key",
-    passphrase: overrides.passphrase ?? null,
+    credential: inlineSshKey(
+      overrides.username ?? "deploy",
+      overrides.privateKey ?? "private-key",
+      overrides.passphrase ?? null,
+    ),
   };
 }
 
@@ -197,9 +200,7 @@ describe("SSH connection routes", () => {
         body: {
           displayName: "  Production  ",
           host: "  BÜCHER.Example.  ",
-          username: "  deploy  ",
-          privateKey,
-          passphrase,
+          credential: inlineSshKey("  deploy  ", privateKey, passphrase),
         },
       }),
       [201],
@@ -269,7 +270,7 @@ describe("SSH connection routes", () => {
         body: {
           expectedGeneration: 2,
           displayName: "Renamed",
-          username: "operator",
+          credential: inlineSshKey("operator", privateKey, passphrase),
         },
       }),
       [200],
@@ -288,7 +289,7 @@ describe("SSH connection routes", () => {
         params: { connectionId: created.body.id },
         body: {
           expectedGeneration: 3,
-          credentials: { privateKey: "replacement\n", passphrase: null },
+          credential: inlineSshKey("operator", "replacement\n"),
         },
       }),
       [200],
@@ -450,6 +451,54 @@ describe("SSH connection routes", () => {
       context,
       routes: sshConnectionsRoutes,
     });
+    for (const [path, method, body] of [
+      [
+        "/api/ssh/connections",
+        "POST",
+        {
+          ...createBody("password.example.com"),
+          credential: {
+            create: {
+              name: "Invalid",
+              username: "deploy",
+              authentication: {
+                method: "private_key",
+                privateKey: "test",
+                password: "password-canary",
+              },
+            },
+          },
+        },
+      ],
+      [
+        `/api/ssh/connections/${created.body.id}`,
+        "PATCH",
+        {
+          expectedGeneration: created.body.generation,
+          credential: {
+            create: {
+              name: "Invalid",
+              username: "deploy",
+              authentication: {
+                method: "private_key",
+                privateKey: "test",
+                password: "password-canary",
+              },
+            },
+          },
+        },
+      ],
+    ] as const) {
+      const response = await rawRequest(path, {
+        method,
+        headers: { ...authHeaders(), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body)).not.toContain("password-canary");
+    }
+    expect(kms.generateDataKeyCalls).toBe(1);
+
     const unknownField = await rawRequest("/api/ssh/connections", {
       method: "POST",
       headers: { ...authHeaders(), "content-type": "application/json" },
@@ -475,7 +524,7 @@ describe("SSH connection routes", () => {
       headers: { ...authHeaders(), "content-type": "application/json" },
       body: JSON.stringify({
         ...createBody("invalid-key.example.com"),
-        privateKey: "",
+        credential: inlineSshKey("deploy", ""),
       }),
     });
     expect(invalidPrivateKey.status).toBe(400);
@@ -485,7 +534,7 @@ describe("SSH connection routes", () => {
       headers: { ...authHeaders(), "content-type": "application/json" },
       body: JSON.stringify({
         ...createBody("invalid-passphrase.example.com"),
-        passphrase: "",
+        credential: inlineSshKey("deploy", "test", ""),
       }),
     });
     expect(invalidPassphrase.status).toBe(400);
@@ -589,7 +638,7 @@ describe("SSH connection routes", () => {
         params: { connectionId: created.body.id },
         body: {
           expectedGeneration: 1,
-          credentials: { privateKey: "should-not-encrypt", passphrase: null },
+          credential: inlineSshKey("deploy", "should-not-encrypt"),
         },
       }),
       [404],

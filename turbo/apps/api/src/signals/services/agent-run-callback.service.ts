@@ -656,8 +656,8 @@ async function dispatchHttpCallback(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-VM0-Signature": signature,
-    "X-VM0-Timestamp": timestamp.toString(),
+    "X-Okou-Signature": signature,
+    "X-Okou-Timestamp": timestamp.toString(),
   };
   const bypass = optionalEnv("VERCEL_AUTOMATION_BYPASS_SECRET");
   if (bypass) {

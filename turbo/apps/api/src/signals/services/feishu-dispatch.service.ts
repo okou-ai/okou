@@ -1,7 +1,9 @@
-import { randomBytes } from "node:crypto";
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
-import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import {
@@ -19,18 +21,22 @@ import {
   buildFeishuNoticeMessage,
 } from "../../lib/feishu-message-card";
 import { logger } from "../../lib/log";
+import {
+  formatFeishuMessageContent,
+  parseFeishuMessageContent,
+  type FeishuPromptFile,
+} from "../../lib/feishu-message-content";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
   addFeishuMessageReaction,
   listFeishuChatMessages,
   replyWithFeishuMessage,
-  sendFeishuMessage,
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
 import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { safeJsonParse, tapError } from "../utils";
+import { tapError } from "../utils";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
@@ -45,27 +51,13 @@ const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
 const FEISHU_AGENT_PICKER_MAX_OPTIONS = 100;
 const FEISHU_MODEL_PICKER_MAX_OPTIONS = 100;
-const textContentSchema = z.object({ text: z.string() });
-const resourceContentSchema = z.object({
-  file_key: z.string().optional(),
-  image_key: z.string().optional(),
-  file_name: z.string().optional(),
-});
-
-export interface FeishuPromptFile {
-  readonly fileId: string;
-  readonly messageId: string;
-  readonly fileKey: string;
-  readonly type: "file" | "image";
-  readonly filename: string;
-}
-
 interface FeishuPromptContext {
   readonly text: string;
   readonly files: readonly FeishuPromptFile[];
 }
 
 export interface FeishuInboundMessage {
+  readonly platform?: FeishuPlatform;
   readonly installationId: string;
   readonly eventId: string;
   readonly tenantKey: string;
@@ -79,13 +71,7 @@ export interface FeishuInboundMessage {
   readonly openId: string;
   readonly text: string;
   readonly promptText: string;
-  readonly file: FeishuPromptFile | null;
-}
-
-export function shouldReplyInFeishuThread(
-  message: FeishuInboundMessage,
-): boolean {
-  return message.chatType !== "p2p" || message.threadId !== null;
+  readonly files: readonly FeishuPromptFile[];
 }
 
 interface FeishuAgent {
@@ -95,6 +81,7 @@ interface FeishuAgent {
 }
 
 export interface FeishuDispatchInstallation {
+  readonly platform?: FeishuPlatform;
   readonly orgId: string;
   readonly ownerUserId: string | null;
   readonly defaultAgentId: string;
@@ -160,19 +147,6 @@ async function reply(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  if (!shouldReplyInFeishuThread(args.message)) {
-    await sendFeishuMessage(
-      {
-        db: args.db,
-        installationId: args.message.installationId,
-        receiveIdType: "chat_id",
-        receiveId: args.message.chatId,
-        message: args.outbound,
-      },
-      signal,
-    );
-    return;
-  }
   await replyWithFeishuMessage(
     {
       db: args.db,
@@ -225,6 +199,7 @@ export async function replyToUnconnectedFeishuMessage(
         db: args.db,
         message: args.message,
         outbound: buildFeishuHelpMessage({
+          platform: args.message.platform,
           botName: args.botName,
         }),
       },
@@ -248,6 +223,7 @@ export async function replyToUnconnectedFeishuMessage(
     return;
   }
   const connectUrl = buildFeishuConnectUrl({
+    platform: args.message.platform,
     installationId: args.message.installationId,
     openId: args.message.openId,
     chatId: args.message.chatId,
@@ -258,6 +234,7 @@ export async function replyToUnconnectedFeishuMessage(
       db: args.db,
       message: args.message,
       outbound: buildFeishuLoginMessage({
+        platform: args.message.platform,
         connectUrl,
       }),
     },
@@ -405,10 +382,11 @@ export async function replyFeishuAgentUnavailable(
   },
   signal: AbortSignal,
 ): Promise<void> {
+  const providerName = FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name;
   const text =
     args.status === "not_accessible"
-      ? "The configured agent is not available to your Feishu account. Use `/switch` to choose an accessible agent."
-      : "The configured Feishu agent could not be found. Ask an admin to select another agent.";
+      ? `The configured agent is not available to your ${providerName} account. Use \`/switch\` to choose an accessible agent.`
+      : `The configured ${providerName} agent could not be found. Ask an admin to select another agent.`;
   await replyNotice(
     {
       db: args.db,
@@ -421,73 +399,19 @@ export async function replyFeishuAgentUnavailable(
   );
 }
 
-export function feishuPromptFile(args: {
-  readonly messageId: string;
-  readonly messageType: string;
-  readonly content: string;
-}): FeishuPromptFile | null {
-  if (!["audio", "file", "image", "media"].includes(args.messageType)) {
-    return null;
-  }
-  const parsed = resourceContentSchema.safeParse(safeJsonParse(args.content));
-  if (!parsed.success) {
-    return null;
-  }
-  const resourceType = args.messageType === "image" ? "image" : "file";
-  const fileKey =
-    resourceType === "image" ? parsed.data.image_key : parsed.data.file_key;
-  if (!fileKey) {
-    return null;
-  }
-  const fallbackName =
-    args.messageType === "image"
-      ? "image"
-      : args.messageType === "audio"
-        ? "audio"
-        : args.messageType === "media"
-          ? "video"
-          : "file";
-  const filename =
-    parsed.data.file_name?.replace(/\s+/gu, " ").trim() || fallbackName;
-  return {
-    fileId: `feishu_file_${randomBytes(16).toString("base64url")}`,
-    messageId: args.messageId,
-    fileKey,
-    type: resourceType,
-    filename,
-  };
-}
-
-export function formatFeishuFileContext(file: FeishuPromptFile): string {
-  return [
-    `[Feishu file] ${file.filename}`,
-    `   [MESSAGE_ID] ${file.messageId}`,
-    `   [FILE_KEY] ${file.fileId}`,
-    `   [TYPE] ${file.type}`,
-  ].join("\n");
-}
-
 function historyMessageContext(
   message: FeishuHistoryMessage,
+  platform: FeishuPlatform,
 ): FeishuPromptContext {
-  const file = message.body?.content
-    ? feishuPromptFile({
+  const content = message.body?.content
+    ? parseFeishuMessageContent({
         messageId: message.message_id,
         messageType: message.msg_type,
         content: message.body.content,
       })
     : null;
-  if (file) {
-    return { text: formatFeishuFileContext(file), files: [file] };
-  }
-  if (message.msg_type !== "text" || !message.body?.content) {
+  if (!content) {
     return { text: `[${message.msg_type} message]`, files: [] };
-  }
-  const parsed = textContentSchema.safeParse(
-    safeJsonParse(message.body.content),
-  );
-  if (!parsed.success) {
-    return { text: "[text message]", files: [] };
   }
   const text = (message.mentions ?? []).reduce((currentText, mention) => {
     if (!mention.key) {
@@ -498,8 +422,11 @@ function historyMessageContext(
       mention.key,
       mention.id ? `${label} (${mention.id})` : label,
     );
-  }, parsed.data.text);
-  return { text, files: [] };
+  }, content.text);
+  return {
+    text: formatFeishuMessageContent({ text, files: content.files }, platform),
+    files: content.files,
+  };
 }
 
 function formatFeishuSenderBlock(message: FeishuHistoryMessage): string {
@@ -513,8 +440,9 @@ function formatFeishuSenderBlock(message: FeishuHistoryMessage): string {
 function formatFeishuContextMessage(
   message: FeishuHistoryMessage,
   relativeIndex: number,
+  platform: FeishuPlatform,
 ): FeishuPromptContext {
-  const context = historyMessageContext(message);
+  const context = historyMessageContext(message, platform);
   return {
     text: [
       "---",
@@ -536,16 +464,17 @@ const FEISHU_CONTEXT_PREAMBLE = [
 function formatFeishuContext(
   header: string,
   messages: readonly FeishuHistoryMessage[],
+  platform: FeishuPlatform = "feishu",
 ): FeishuPromptContext {
   if (messages.length === 0) {
     return { text: "", files: [] };
   }
   const totalMessages = messages.length;
   const formattedMessages = messages.map((message, index) => {
-    return formatFeishuContextMessage(message, index - totalMessages);
+    return formatFeishuContextMessage(message, index - totalMessages, platform);
   });
   return {
-    text: `${header}\n\n${FEISHU_CONTEXT_PREAMBLE}\n\n${formattedMessages
+    text: `${header}\n\n${FEISHU_CONTEXT_PREAMBLE.replace("Feishu", FEISHU_PLATFORMS[platform].name)}\n\n${formattedMessages
       .map((context) => {
         return context.text;
       })
@@ -571,7 +500,11 @@ function formatConversationHistory(
     return { text: "", files: [] };
   }
   if (current.chatType === "p2p") {
-    return formatFeishuContext("# Feishu Thread Context", messages.slice(-30));
+    return formatFeishuContext(
+      `# ${FEISHU_PLATFORMS[current.platform ?? "feishu"].name} Thread Context`,
+      messages.slice(-30),
+      current.platform,
+    );
   }
 
   const threadKeys = new Set(
@@ -611,10 +544,12 @@ function formatConversationHistory(
   const recentContext = formatFeishuContext(
     "# Recent Channel Messages",
     recentChat,
+    current.platform,
   );
   const threadContext = formatFeishuContext(
-    "# Feishu Thread Context",
+    `# ${FEISHU_PLATFORMS[current.platform ?? "feishu"].name} Thread Context`,
     threadMessages,
+    current.platform,
   );
   return {
     text: [recentContext.text, threadContext.text].filter(Boolean).join("\n\n"),
@@ -653,6 +588,7 @@ export async function loadFeishuConversationHistory(
 }
 
 export function buildFeishuSystemPrompt(args: {
+  readonly platform?: FeishuPlatform;
   readonly chatType: FeishuInboundMessage["chatType"];
   readonly installationId: string;
   readonly tenantKey: string;
@@ -662,16 +598,17 @@ export function buildFeishuSystemPrompt(args: {
   readonly senderOpenId: string;
   readonly history: string;
 }): string {
+  const platformName = FEISHU_PLATFORMS[args.platform ?? "feishu"].name;
   const isDirectMessage = args.chatType === "p2p";
   const typeLabel = isDirectMessage ? "Direct message" : "Group mention";
   const groupIdLine = isDirectMessage
     ? ""
-    : `Group ID: ${args.chatId} (same as Chat ID; use it directly as the \`--chat\` value for \`okou feishu message send\`)`;
+    : `Group ID: ${args.chatId} (same as Chat ID; use it directly as the \`--chat\` value for \`okou ${args.platform ?? "feishu"} message send\`)`;
   return [
     CONVERSATION_GUIDANCE,
     "",
     "# Current Integration",
-    "You are currently running inside: Feishu",
+    `You are currently running inside: ${platformName}`,
     `Scope: ${typeLabel}`,
     `Installation ID: ${args.installationId}`,
     `Tenant key: ${args.tenantKey}`,
@@ -813,7 +750,7 @@ async function handleDisconnectCommand(
       db: args.db,
       message: args.message,
       title: "Disconnected",
-      text: "Your Feishu account has been disconnected and its agent access has been revoked.",
+      text: `Your ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} account has been disconnected and its agent access has been revoked.`,
       kind: "success",
     },
     signal,
@@ -835,8 +772,7 @@ async function replyAgentPicker(
       message: args.commandArgs.message,
       title: "Choose an agent",
       text: commandOptionsText({
-        intro:
-          "Send one of these commands to choose which agent responds to your Feishu messages.",
+        intro: `Send one of these commands to choose which agent responds to your ${FEISHU_PLATFORMS[args.commandArgs.message.platform ?? "feishu"].name} messages.`,
         command: "switch",
         options: [
           ...(args.defaultAgent
@@ -1008,8 +944,7 @@ const handleModelCommand$ = command(
           message: args.message,
           title: "Choose a model",
           text: commandOptionsText({
-            intro:
-              "Send one of these commands to choose the model for your own Feishu runs.",
+            intro: `Send one of these commands to choose the model for your own ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} runs.`,
             command: "model",
             options: picker.options.map((option) => {
               return {
@@ -1082,6 +1017,7 @@ const handleConnectedCommand$ = command(
             db: args.db,
             message: args.message,
             outbound: buildFeishuHelpMessage({
+              platform: args.message.platform,
               botName: args.installation.botName,
             }),
           },
@@ -1095,7 +1031,7 @@ const handleConnectedCommand$ = command(
             db: args.db,
             message: args.message,
             title: "Already connected",
-            text: `Your Feishu account is already connected to ${PUBLIC_BRAND_PRESENTATION.brandName}. Send a task to start working with your agent.`,
+            text: `Your ${FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name} account is already connected to ${PUBLIC_BRAND_PRESENTATION.brandName}. Send a task to start working with your agent.`,
             kind: "success",
           },
           signal,
@@ -1120,6 +1056,7 @@ const handleConnectedCommand$ = command(
             db: args.db,
             message: args.message,
             outbound: buildFeishuHelpMessage({
+              platform: args.message.platform,
               botName: args.installation.botName,
             }),
           },

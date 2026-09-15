@@ -22,6 +22,9 @@ export const platformFeishuCreateEnterpriseCustomAppImg =
   platformStaticAssetUrl(
     "views/zero-page/assets/feishu/create-enterprise-custom-app-bfcbb0ba2ffb.png",
   );
+export const platformLarkCreateAppForAgentImg = platformStaticAssetUrl(
+  "views/zero-page/assets/lark/create-app-for-agent-3f059c49315e.png",
+);
 export const platformFeishuAppCreatedCredentialsImg = platformStaticAssetUrl(
   "views/zero-page/assets/feishu/app-created-credentials-e58acd598bca.png",
 );

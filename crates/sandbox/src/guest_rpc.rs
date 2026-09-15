@@ -6,9 +6,10 @@ use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
 
-/// Owned provider stream. Implementations must hold the authoritative normal
-/// operation reservation until this stream is dropped, including during
-/// handler work that does not read or write the guest connection.
+/// Owned provider stream retaining the authoritative normal-operation reservation
+/// until dropped. Keep it through request I/O, including intervening handler work.
+/// Host-only work remaining after I/O closes must own its resources separately,
+/// without retaining this stream solely to account for that work.
 pub trait GuestRpcStream: AsyncRead + AsyncWrite + Unpin + Send {}
 
 /// A request connection accepted for an exact host-derived assignment.

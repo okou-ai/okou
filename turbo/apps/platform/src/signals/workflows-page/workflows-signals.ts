@@ -948,7 +948,7 @@ export const openWorkflowChat$ = command(
       [200],
     );
     signal.throwIfAborted();
-    const { draft } = set(ensureDraft$, result.body.chatThreadId);
+    const draft = set(ensureDraft$, result.body.chatThreadId);
     set(draft.clear$);
     set(draft.setInput$, result.body.prompt);
     set(detachedNavigateTo$, ROUTES.chat, {

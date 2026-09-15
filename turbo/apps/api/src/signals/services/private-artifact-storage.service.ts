@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
+import type { RunUploadedFileMetadata } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -20,25 +21,10 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import { safeUrlParse } from "../utils";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
-
-/**
- * A private artifact that exists only to back one record of the named feature.
- * That feature owns the object's lifetime and may delete it with its record;
- * an artifact without this marker is the user's own and must never be reclaimed
- * by a feature that merely references it.
- */
-export const IMAGE_REFERENCE_EXCLUSIVE_OWNER = "image-reference";
-export const PRIVATE_ARTIFACT_EXCLUSIVE_OWNERS = [
-  IMAGE_REFERENCE_EXCLUSIVE_OWNER,
-] as const;
-export type PrivateArtifactExclusiveOwner =
-  (typeof PRIVATE_ARTIFACT_EXCLUSIVE_OWNERS)[number];
-
 const privateMetadataSchema = z.object({
   storage: z.literal(PRIVATE_STORAGE),
   bucket: z.string().min(1),
   publicBrand: z.enum(["vm0", "okou"]),
-  exclusiveOwner: z.enum(PRIVATE_ARTIFACT_EXCLUSIVE_OWNERS).optional(),
 });
 
 export function privateArtifactCreationEnabled(orgId: string, userId: string) {
@@ -53,7 +39,7 @@ export function artifactFileReference(
 ): { readonly id: string } | null {
   const reference = parseArtifactReference(value, env("APP_URL"));
   if (reference) {
-    return { id: reference.id };
+    return { id: reference.id ?? "" };
   }
   if (value.startsWith("/artifacts/")) {
     return { id: "" };
@@ -87,6 +73,49 @@ export function privateArtifactsBucket(): string {
   return bucket;
 }
 
+/** Persist this location with the owning record before starting the upload. */
+export function privateArtifactLocation(
+  id: string,
+  filename: string,
+  publicBrand: PublicBrand,
+) {
+  const bucket = privateArtifactsBucket();
+  return {
+    id,
+    key: `private-artifacts/${id}/${sanitizeArtifactFilename(filename)}`,
+    bucket,
+    url: privateArtifactUrl(id, filename),
+    publicBrand,
+    metadata: { "artifact-id": id },
+    storageMetadata: { storage: PRIVATE_STORAGE, bucket, publicBrand },
+  };
+}
+
+/** Historical accessLevel="private" records still address public objects. */
+export function artifactStorageBucket(
+  metadata: RunUploadedFileMetadata,
+): string {
+  if (metadata.storage === undefined) {
+    return env("R2_USER_ARTIFACTS_BUCKET_NAME");
+  }
+  const storage = privateMetadataSchema.parse(metadata);
+  if (storage.bucket !== privateArtifactsBucket()) {
+    throw new Error("Artifact does not match the configured private bucket");
+  }
+  return storage.bucket;
+}
+
+/** Template records persist their authorized source keys, including old public keys. */
+export function templateArtifactBucket(key: string): string {
+  if (key.startsWith("private-artifacts/")) {
+    return privateArtifactsBucket();
+  }
+  if (!key.startsWith("artifacts/")) {
+    throw new Error("Unsupported presentation template storage key");
+  }
+  return env("R2_USER_ARTIFACTS_BUCKET_NAME");
+}
+
 export const allocatePrivateArtifact$ = command(
   async (
     { set },
@@ -98,14 +127,16 @@ export const allocatePrivateArtifact$ = command(
       readonly size: number;
       readonly publicBrand: PublicBrand;
       readonly id?: string;
-      readonly exclusiveOwner?: PrivateArtifactExclusiveOwner;
     },
     signal: AbortSignal,
   ) => {
-    const bucket = privateArtifactsBucket();
     const id = args.id ?? randomUUID();
-    const key = `private-artifacts/${id}/${sanitizeArtifactFilename(args.filename)}`;
-    const url = privateArtifactUrl(id, args.filename);
+    const location = privateArtifactLocation(
+      id,
+      args.filename,
+      args.publicBrand,
+    );
+    const { bucket, key } = location;
     const db = set(writeDb$);
     // This independent ownership record also covers uploads outside a run.
     // Historical accessLevel="private" rows still use public storage; only
@@ -125,12 +156,7 @@ export const allocatePrivateArtifact$ = command(
         accessLevel: "private",
         materializationStatus: "pending",
         metadata: {
-          storage: PRIVATE_STORAGE,
-          bucket,
-          publicBrand: args.publicBrand,
-          ...(args.exclusiveOwner === undefined
-            ? {}
-            : { exclusiveOwner: args.exclusiveOwner }),
+          ...location.storageMetadata,
         },
       })
       .onConflictDoNothing({ target: runUploadedFiles.id })
@@ -150,7 +176,6 @@ export const allocatePrivateArtifact$ = command(
         existing.metadata.storage !== PRIVATE_STORAGE ||
         existing.metadata.bucket !== bucket ||
         existing.metadata.publicBrand !== args.publicBrand ||
-        existing.metadata.exclusiveOwner !== args.exclusiveOwner ||
         existing.storageKey !== key ||
         existing.filename !== args.filename ||
         existing.contentType !== args.contentType
@@ -158,14 +183,7 @@ export const allocatePrivateArtifact$ = command(
         throw new Error("Private artifact identity belongs to another object");
       }
     }
-    return {
-      id,
-      key,
-      bucket,
-      url,
-      publicBrand: args.publicBrand,
-      metadata: { "artifact-id": id },
-    };
+    return location;
   },
 );
 
@@ -180,7 +198,7 @@ export function privateArtifactRecord(id: string) {
       .from(runUploadedFiles)
       .where(eq(runUploadedFiles.id, id))
       .limit(1);
-    if (!row || row.metadata.storage !== PRIVATE_STORAGE) {
+    if (!row || row.metadata.storage === undefined) {
       return null;
     }
     const metadata = privateMetadataSchema.parse(row.metadata);
@@ -208,7 +226,9 @@ export const completePrivateArtifact$ = command(
     { set },
     args: {
       readonly id: string;
-      readonly url: string;
+      // Internal previews and browser captures keep their reference on the
+      // owning record, without publishing a standalone catalog file.
+      readonly url: string | null;
       readonly contentType: string;
       readonly size: number;
     },

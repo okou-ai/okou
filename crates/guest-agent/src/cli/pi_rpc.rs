@@ -239,6 +239,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use guest_contracts::diagnostics::ModelRequestDiagnostic;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::AsyncWriteExt;
@@ -450,6 +451,7 @@ fn boundary_error(code: &str, message: &str) -> AgentError {
 struct PiAssistantTerminal {
     failed: bool,
     result: String,
+    model_request: Option<ModelRequestDiagnostic>,
 }
 
 impl PiAssistantTerminal {
@@ -469,8 +471,45 @@ impl PiAssistantTerminal {
         } else {
             result
         };
-        Self { failed, result }
+        let model_request = (stop_reason == Some("error"))
+            .then(|| model_request_diagnostic(message))
+            .flatten();
+        Self {
+            failed,
+            result,
+            model_request,
+        }
     }
+}
+
+fn model_request_diagnostic(message: &Value) -> Option<ModelRequestDiagnostic> {
+    if message.get("api").and_then(Value::as_str) != Some("openai-codex-responses") {
+        return None;
+    }
+    let diagnostic = message
+        .get("diagnostics")?
+        .as_array()?
+        .iter()
+        .rev()
+        .find(|diagnostic| {
+            diagnostic.get("type").and_then(Value::as_str) == Some("okou_model_request")
+        })?;
+    let request: ModelRequestDiagnostic =
+        serde_json::from_value(diagnostic.get("details")?.clone()).ok()?;
+    if request
+        .http_status
+        .is_some_and(|status| !(100..=599).contains(&status))
+    {
+        return None;
+    }
+    Some(request)
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PiRetryAttempt {
+    attempt: u32,
+    max_attempts: u32,
 }
 
 pub(super) struct PiRpcProjection {
@@ -479,6 +518,7 @@ pub(super) struct PiRpcProjection {
     started_at: Instant,
     emitted_session_init: bool,
     assistant_terminal: Option<PiAssistantTerminal>,
+    pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
 }
 
@@ -490,6 +530,7 @@ impl PiRpcProjection {
             started_at: Instant::now(),
             emitted_session_init: false,
             assistant_terminal: None,
+            pending_retry: None,
             terminal_error: false,
         }
     }
@@ -508,6 +549,24 @@ impl PiRpcProjection {
             Some("response") => self.project_response(record, responses, record_bytes),
             Some("message_end") => self.project_message_end(record),
             Some("agent_settled") => Ok(Some(self.project_agent_settled())),
+            Some("auto_retry_start") => {
+                self.pending_retry = serde_json::from_value(record).ok();
+                // A cancelled backoff still proves the configured limit, but
+                // does not complete the newly scheduled attempt.
+                if let Some(retry) = self.pending_retry
+                    && let Some(request) = self
+                        .assistant_terminal
+                        .as_mut()
+                        .and_then(|terminal| terminal.model_request.as_mut())
+                {
+                    request.retry_limit = Some(retry.max_attempts);
+                }
+                Ok(None)
+            }
+            Some("auto_retry_end") => {
+                self.pending_retry = None;
+                Ok(None)
+            }
             Some("extension_error") => {
                 self.terminal_error = true;
                 Err(AgentError::Execution(format!(
@@ -589,10 +648,16 @@ impl PiRpcProjection {
         mut message: Value,
     ) -> Result<Option<Value>, AgentError> {
         let citation_projection = normalize_assistant_citations(&mut message);
-        self.assistant_terminal = Some(PiAssistantTerminal::from_message(
-            &message,
-            citation_projection.citation.is_some(),
-        ));
+        let mut terminal =
+            PiAssistantTerminal::from_message(&message, citation_projection.citation.is_some());
+        let retry = self.pending_retry.take();
+        if let Some(request) = terminal.model_request.as_mut() {
+            // Only a scheduled SDK retry is a retry. Compaction and queued
+            // input can continue after an error without sharing its budget.
+            request.retry_attempts = retry.map_or(0, |retry| retry.attempt);
+            request.retry_limit = retry.map(|retry| retry.max_attempts);
+        }
+        self.assistant_terminal = Some(terminal);
         let content = assistant_content(&mut message)?;
         if content.is_empty() && citation_projection.citation.is_none() {
             return Ok(None);
@@ -718,14 +783,34 @@ impl PiRpcProjection {
 
     fn project_agent_settled(&mut self) -> Value {
         let assistant = self.assistant_terminal.take().unwrap_or_default();
-        json!({
-            "type": "result",
-            "subtype": if assistant.failed { "error_during_execution" } else { "success" },
-            "is_error": assistant.failed,
-            "result": assistant.result,
-            "session_id": self.session_id,
-            "duration_ms": self.started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-        })
+        self.pending_retry = None;
+        let mut result = serde_json::Map::from_iter([
+            ("type".to_owned(), json!("result")),
+            (
+                "subtype".to_owned(),
+                json!(if assistant.failed {
+                    "error_during_execution"
+                } else {
+                    "success"
+                }),
+            ),
+            ("is_error".to_owned(), json!(assistant.failed)),
+            ("result".to_owned(), json!(assistant.result)),
+            ("session_id".to_owned(), json!(self.session_id)),
+            (
+                "duration_ms".to_owned(),
+                json!(
+                    self.started_at
+                        .elapsed()
+                        .as_millis()
+                        .min(u128::from(u64::MAX)) as u64
+                ),
+            ),
+        ]);
+        if let Some(request) = assistant.model_request {
+            result.insert("modelRequest".to_owned(), json!(request));
+        }
+        Value::Object(result)
     }
 }
 
@@ -1164,6 +1249,182 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn model_request_evidence_tracks_completed_retries_and_clears_on_recovery() {
+        let failed: Value = serde_json::from_str(include_str!(
+            "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-rate-limit.json"
+        ))
+        .expect("shared model boundary fixture");
+        let failure = json!({"type": "message_end", "message": failed});
+        let retry = json!({"type": "auto_retry_start", "attempt": 1, "maxAttempts": 2});
+        let success = json!({"type": "message_end", "message": {
+            "role": "assistant", "stopReason": "stop", "content": []
+        }});
+        for (records, expected) in [
+            (
+                vec![failure.clone()],
+                json!({"httpStatus": 429, "transportAttempts": 1, "retryAttempts": 0}),
+            ),
+            (
+                vec![
+                    failure.clone(),
+                    retry.clone(),
+                    failure.clone(),
+                    json!({"type": "auto_retry_start", "attempt": 2, "maxAttempts": 2}),
+                    failure.clone(),
+                ],
+                json!({"httpStatus": 429, "transportAttempts": 1, "retryAttempts": 2, "retryLimit": 2}),
+            ),
+            // The SDK can drain a queued follow-up after exhausting the first
+            // retry budget, without settling between the two request cycles.
+            (
+                vec![
+                    failure.clone(),
+                    retry.clone(),
+                    failure.clone(),
+                    json!({"type": "auto_retry_start", "attempt": 2, "maxAttempts": 2}),
+                    failure.clone(),
+                    json!({"type": "auto_retry_end", "success": false, "attempt": 2}),
+                    json!({"type": "message_end", "message": {"role": "user", "content": "next input"}}),
+                    failure.clone(),
+                    retry.clone(),
+                    failure.clone(),
+                    json!({"type": "auto_retry_start", "attempt": 2, "maxAttempts": 2}),
+                    failure.clone(),
+                    json!({"type": "auto_retry_end", "success": false, "attempt": 2}),
+                ],
+                json!({"httpStatus": 429, "transportAttempts": 1, "retryAttempts": 2, "retryLimit": 2}),
+            ),
+            // Scheduling a backoff that is then cancelled is not a completed retry.
+            (
+                vec![
+                    failure.clone(),
+                    retry.clone(),
+                    json!({"type": "auto_retry_end", "success": false, "attempt": 1, "finalError": "Retry cancelled"}),
+                ],
+                json!({"httpStatus": 429, "transportAttempts": 1, "retryAttempts": 0, "retryLimit": 2}),
+            ),
+            (
+                vec![
+                    failure.clone(),
+                    retry.clone(),
+                    success.clone(),
+                    failure.clone(),
+                ],
+                json!({"httpStatus": 429, "transportAttempts": 1, "retryAttempts": 0}),
+            ),
+            (vec![failure.clone(), retry, success], Value::Null),
+        ] {
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new("run", "session");
+            for record in records {
+                projection
+                    .project(record, &responses, 0)
+                    .expect("project native event");
+            }
+            let result = projection
+                .project(json!({"type": "agent_settled"}), &responses, 0)
+                .expect("settled result")
+                .expect("terminal event");
+            assert_eq!(result["modelRequest"], expected);
+            assert_eq!(result["is_error"], !expected.is_null());
+        }
+    }
+
+    #[test]
+    fn model_request_evidence_is_only_accepted_from_valid_failed_assistant_messages() {
+        let failed: Value = serde_json::from_str(include_str!(
+            "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-rate-limit.json"
+        ))
+        .expect("shared model boundary fixture");
+        let mut aborted = failed.clone();
+        aborted["stopReason"] = json!("aborted");
+        let mut wrong_api = failed.clone();
+        wrong_api["api"] = json!("unrelated");
+        let mut malformed = failed.clone();
+        malformed["diagnostics"][0]["details"]["httpStatus"] = json!("429");
+        let mut unknown = failed;
+        unknown["diagnostics"][0]["type"] = json!("provider-authored-text");
+        let tool = json!({
+            "role": "toolResult", "toolCallId": "call", "isError": true,
+            "content": [{"type": "text", "text": "{\"detail\":\"Rate limit exceeded\"}"}],
+            "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1}}],
+        });
+        for message in [aborted, wrong_api, malformed, unknown, tool] {
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new("run", "session");
+            projection
+                .project(
+                    json!({"type": "message_end", "message": message}),
+                    &responses,
+                    0,
+                )
+                .expect("project native message");
+            let result = projection
+                .project(json!({"type": "agent_settled"}), &responses, 0)
+                .expect("settled result")
+                .expect("terminal event");
+            assert!(result.get("modelRequest").is_none());
+        }
+    }
+
+    #[test]
+    fn projection_matches_shared_public_event_fixtures() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../../fixtures/pi-public-events.json"))
+                .expect("shared public event fixture must parse");
+        for case in fixture["cases"].as_array().expect("fixture cases") {
+            let name = case["name"].as_str().expect("case name");
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new(
+                fixture["runId"].as_str().expect("run id"),
+                fixture["sessionId"].as_str().expect("session id"),
+            );
+            let projected = projection
+                .project(
+                    json!({ "type": "message_end", "message": case["guestMessage"] }),
+                    &responses,
+                    0,
+                )
+                .expect("official assistant should project");
+            let events: Vec<Value> = projected
+                .into_iter()
+                .flat_map(|event| {
+                    super::super::provider_event_normalization::normalize_for_sequencing(
+                        crate::env::Framework::Pi,
+                        event,
+                    )
+                })
+                .collect();
+            let messages: Vec<&Value> = events.iter().map(|event| &event["message"]).collect();
+            assert_eq!(json!(messages), case["expectedMessages"], "{name}");
+            // Guest sequencing belongs to the installed startup boundary and
+            // ingestor. Projection does not invent the API's zero-based index.
+            for event in events {
+                assert_eq!(event["type"], "assistant", "{name}");
+                assert!(event.get("sequenceNumber").is_none(), "{name}");
+                assert!(event.get("duration_ms").is_none(), "{name}");
+            }
+            assert!(
+                projection
+                    .project(json!({ "type": "agent_end" }), &responses, 0)
+                    .expect("agent_end is not terminal")
+                    .is_none(),
+                "{name}"
+            );
+            let terminal = projection
+                .project(json!({ "type": "agent_settled" }), &responses, 0)
+                .expect("agent_settled should project")
+                .expect("only agent_settled owns the terminal result");
+            assert_eq!(terminal["type"], "result", "{name}");
+            assert_eq!(terminal["subtype"], "success", "{name}");
+            assert_eq!(terminal["is_error"], false, "{name}");
+            assert_eq!(terminal["result"], case["guestResult"], "{name}");
+            assert_eq!(terminal["session_id"], fixture["sessionId"], "{name}");
+            assert!(terminal["duration_ms"].as_u64().is_some(), "{name}");
+        }
+    }
+
     async fn next_command(reader: &mut BufReader<tokio::process::ChildStdout>) -> Value {
         let mut line = String::new();
         reader
@@ -1332,6 +1593,60 @@ mod tests {
             .expect("settled event should emit");
         assert_eq!(result["result"], "before\n\nafter");
         assert!(!result.to_string().contains("oai-mem-citation"));
+    }
+
+    #[test]
+    fn short_fence_runs_keep_citations_out_of_assistant_and_terminal_text() {
+        use super::super::pi_memory_citation::{CLOSE, OPEN};
+
+        for (fence, short) in [("```", "``"), ("~~~~", "~~~")] {
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new("run", "session");
+            let prefix = format!("before\n{fence}\n");
+            let assistant = projection
+                .project(
+                    json!({
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                { "type": "text", "text": format!("{prefix}{OPEN}\n{short}") },
+                                { "type": "text", "text": format!("\n{fence}\n<citation_entries>private-synthetic.md:1-1|note=[synthetic note]</citation_entries>{CLOSE}after") },
+                            ],
+                            "model": "model",
+                            "timestamp": 1,
+                            "usage": {},
+                            "stopReason": "stop",
+                        }
+                    }),
+                    &responses,
+                    0,
+                )
+                .expect("message should project")
+                .expect("assistant should emit");
+            assert_eq!(
+                assistant["message"]["content"],
+                json!([
+                    { "type": "text", "text": format!("before\n{fence}") },
+                    { "type": "text", "text": "after" },
+                ])
+            );
+            assert_eq!(
+                assistant["message"]["memoryCitation"]["entries"],
+                json!([{
+                    "path": "private-synthetic.md",
+                    "lineStart": 1,
+                    "lineEnd": 1,
+                    "note": "synthetic note",
+                }])
+            );
+
+            let result = projection
+                .project(json!({ "type": "agent_settled" }), &responses, 0)
+                .expect("settled event should project")
+                .expect("settled event should emit");
+            assert_eq!(result["result"], format!("before\n{fence}\n\nafter"));
+        }
     }
 
     #[test]

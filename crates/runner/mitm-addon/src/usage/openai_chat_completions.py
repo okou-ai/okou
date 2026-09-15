@@ -406,6 +406,10 @@ class _OpenAIChatCompletionsSseUsageHandler:
         self._using_extractor = False
         if self._failure_observer is not None:
             self._failure_observer.observe(ModelHttpFailureEvidence(event_name=event_name))
+        if self._include_usage:
+            self._usage.clear()
+            if self._on_parse_error is not None:
+                self._on_parse_error(event_name or "eventless", "sse event discarded")
 
 
 def create_openai_chat_completions_sse_usage_extractor(

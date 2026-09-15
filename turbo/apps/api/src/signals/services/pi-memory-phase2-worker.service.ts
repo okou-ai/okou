@@ -1,4 +1,12 @@
+import {
+  checkPiMemoryQuota,
+  PiMemoryQuotaError,
+} from "./pi-memory-quota.service";
+import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { command } from "ccstate";
@@ -10,12 +18,15 @@ import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { createAgentRun$ } from "./agent-run-create.service";
 import { dispatchRunCallbacks } from "./agent-run-callback.service";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import {
+  PiMemoryPhase2CredentialError,
+  resolvePiMemoryPhase2Credential,
+} from "./pi-memory-phase2-credential.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
   PI_MEMORY_PHASE2_LEASE_DURATION_MS,
-  piMemoryPhase2SelectionDigest,
   type ClaimedPiMemoryPhase2Job,
   type PiMemoryPhase2OwnerScope,
 } from "./pi-memory-phase2-job.service";
@@ -162,6 +173,39 @@ async function recoverMaintenanceRun(
   return { outcome: "dispatched", runId: job.maintenanceRunId };
 }
 
+async function checkNewAttemptQuotaAdmission(
+  db: Db,
+  claim: ClaimedPiMemoryPhase2Job,
+  credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
+  signal: AbortSignal,
+): Promise<boolean> {
+  // Prepare ordinary admission first; quota then sees locally reconciled data.
+  // Canonical createAgentRun admission and final transaction remain authoritative.
+  const admission = await checkOrgCreditsForRunAdmission({
+    db,
+    orgId: claim.orgId,
+    userId: claim.userId,
+    modelProviderType: credential.pin.modelProvider,
+    selectedModel: PI_MEMORY_PHASE2_MODEL,
+  });
+  signal.throwIfAborted();
+  if (admission) {
+    return false;
+  }
+  await checkPiMemoryQuota(
+    db,
+    {
+      orgId: claim.orgId,
+      userId: claim.userId,
+      stage: "phase2",
+      source: credential.quota,
+    },
+    signal,
+  );
+
+  return true;
+}
+
 const dispatchClaim$ = command(
   async (
     { set },
@@ -169,13 +213,22 @@ const dispatchClaim$ = command(
     signal: AbortSignal,
   ): Promise<PiMemoryPhase2WorkerResult> => {
     const { db, claim } = input;
-    const route = await resolveBuiltInModelRuntimeRoute(
+    // The claimed job's owner decides, never the cron caller. Off releases
+    // the lease with an explicit disposition and dispatches no maintenance run.
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
       db,
-      PI_MEMORY_PHASE2_MODEL,
+      claim.orgId,
+      claim.userId,
     );
     signal.throwIfAborted();
-    if (!route) {
-      return await failClaim(db, claim, nowDate(), "model_route_unavailable");
+    if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
+      return await failClaim(db, claim, nowDate(), "pi_memory_disabled");
+    }
+    const credential = await resolvePiMemoryPhase2Credential(db, claim, signal);
+    signal.throwIfAborted();
+
+    if (!(await checkNewAttemptQuotaAdmission(db, claim, credential, signal))) {
+      return await failClaim(db, claim, nowDate(), "source_admission_denied");
     }
 
     const selectionDigest = piMemoryPhase2SelectionDigest(claim.selected);
@@ -210,9 +263,14 @@ const dispatchClaim$ = command(
           ],
         },
         apiStartTime: now(),
-        modelProviderType: "built-in",
+        modelProviderType: credential.pin.modelProvider,
+        modelProviderId: credential.pin.modelProviderId ?? undefined,
+        modelProviderCredentialScope:
+          credential.pin.modelProviderCredentialScope,
+        agentRunModelPin: credential.pin,
+        validatePiMemoryPhase2Admission: credential.validate,
         selectedModelOverride: PI_MEMORY_PHASE2_MODEL,
-        builtInModelRuntimeRoute: route,
+        builtInModelRuntimeRoute: credential.route,
         callbacks: [
           {
             internalKind: "pi-memory:phase2",
@@ -250,7 +308,7 @@ const dispatchClaim$ = command(
         },
         validateEnvironmentReferences: false,
         queueOnConcurrencyLimit: true,
-        enforceBuiltInCredits: true,
+        enforceBuiltInCredits: credential.pin.modelProvider === "built-in",
         piExecution: true,
         piMemoryPhase2Maintenance: maintenance,
       },
@@ -297,6 +355,12 @@ export const executePiMemoryPhase2Work$ = command(
     );
     if (dispatched.ok) {
       return dispatched.value;
+    }
+    if (
+      dispatched.error instanceof PiMemoryPhase2CredentialError ||
+      dispatched.error instanceof PiMemoryQuotaError
+    ) {
+      return await failClaim(db, claim, nowDate(), dispatched.error.errorClass);
     }
     log.error("Pi memory maintenance run dispatch failed", {
       memoryStorageId: claim.memoryStorageId,

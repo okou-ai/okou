@@ -1,9 +1,7 @@
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { createHash } from "node:crypto";
 
-import {
-  piNativeCatalogModelSchema,
-  type PiModelConfigV4,
-} from "@okouai/api-contracts/contracts/pi-native";
+import type { PiModelConfigV4 } from "@okouai/api-contracts/contracts/pi-native";
 import type { z } from "zod";
 import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import type { PiModelConfig } from "@okouai/api-contracts/contracts/runners";
@@ -13,7 +11,7 @@ import { inArray } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
 import type { Db } from "../external/db";
-import { isPiGptModel, type PiGptModel } from "./pi-gpt-model";
+import { isPiGptModel, type PiGptModel } from "@okouai/core/pi-execution";
 
 const PI_API_FIRST_TURN_USAGE_NAMESPACE =
   "26e1c547-485d-4438-bf6d-4b77959da0cb";

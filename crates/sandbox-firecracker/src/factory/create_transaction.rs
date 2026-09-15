@@ -493,6 +493,7 @@ impl SandboxCreateTransaction {
 
         let leaked = LeakedResources {
             sandbox_id: self.id.clone(),
+            process_exit: None,
             cow_device: self
                 .cow_device
                 .take()

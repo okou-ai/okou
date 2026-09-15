@@ -1,9 +1,6 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
-import {
-  INTRO_VIDEO_TEMPLATE_ID,
-  introVideoTemplateOptions,
-} from "@okouai/core/intro-video-template";
+import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { command, computed, state } from "ccstate";
 
 export type IntroVideoPickerTab = "style" | "avatar" | "voice";
@@ -13,7 +10,6 @@ export function createIntroVideoPickerSignals() {
   const style$ = state<IntroVideoOptions["style"] | null>(null);
   const avatar$ = state<IntroVideoOptions["avatar"]>({ kind: "none" });
   const voice$ = state<IntroVideoOptions["voice"] | null>(null);
-  const search$ = state("");
   const group$ = state("all");
   return {
     tab$: computed((get) => {
@@ -28,9 +24,6 @@ export function createIntroVideoPickerSignals() {
     voice$: computed((get) => {
       return get(voice$);
     }),
-    search$: computed((get) => {
-      return get(search$);
-    }),
     group$: computed((get) => {
       return get(group$);
     }),
@@ -39,17 +32,15 @@ export function createIntroVideoPickerSignals() {
       const voice = get(voice$);
       return style && voice
         ? {
-            type: "video",
+            type: "intro-video",
             selection: {
-              stylePresetId: INTRO_VIDEO_TEMPLATE_ID,
-              explainerOptions: { style, avatar: get(avatar$), voice },
+              options: { style, avatar: get(avatar$), voice },
             },
           }
         : null;
     }),
     setTab$: command(({ set }, tab: IntroVideoPickerTab) => {
       set(tab$, tab);
-      set(search$, "");
       set(group$, "all");
     }),
     setStyle$: command(({ set }, style: IntroVideoOptions["style"]) => {
@@ -64,16 +55,12 @@ export function createIntroVideoPickerSignals() {
     setVoice$: command(({ set }, voice: IntroVideoOptions["voice"]) => {
       set(voice$, voice);
     }),
-    setSearch$: command(({ set }, search: string) => {
-      set(search$, search);
-    }),
     setGroup$: command(({ set }, group: string) => {
       set(group$, group);
     }),
     restore$: command(({ set }, template: GenerationTemplateRequest | null) => {
       const options = introVideoTemplateOptions(template);
       set(tab$, "style");
-      set(search$, "");
       set(group$, "all");
       set(style$, options?.style ?? null);
       set(avatar$, options?.avatar ?? { kind: "none" });

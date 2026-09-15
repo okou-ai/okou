@@ -8,7 +8,10 @@ import {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { refreshOrgModelPolicies$ } from "./org-model-policies.ts";
+import {
+  invalidateOrgModelPolicies$,
+  refreshOrgModelPolicies$,
+} from "./org-model-policies.ts";
 
 const reloadModelProviderConnections$ = state(0);
 
@@ -36,6 +39,7 @@ export const createModelProviderConnection$ = command(
     set(reloadModelProviderConnections$, (value) => {
       return value + 1;
     });
+    set(invalidateOrgModelPolicies$);
     return result.body;
   },
 );

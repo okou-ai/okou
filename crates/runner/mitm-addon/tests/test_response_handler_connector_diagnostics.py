@@ -587,6 +587,7 @@ async def test_head_response_stream_emits_no_diagnostic_body(tmp_path, real_flow
 async def test_streams_connector_401_when_user_auth_is_present(
     tmp_path, real_flow, mitm_ctx, headers
 ):
+    write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(tmp_path, sandbox_info=_sandbox_without_firewalls(tmp_path))
     flow = real_flow(
         with_response=False,
@@ -617,6 +618,7 @@ async def test_streams_connector_401_when_user_auth_is_present(
 async def test_streamed_connector_401_with_user_auth_keeps_upstream_response(
     tmp_path, real_flow, mitm_ctx, headers
 ):
+    write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(
         tmp_path,
         sandbox_info=_sandbox_without_firewalls(
@@ -660,6 +662,7 @@ async def test_streamed_connector_401_with_user_auth_keeps_upstream_response(
 async def test_streamed_connector_401_with_query_auth_keeps_upstream_response(
     tmp_path, real_flow, mitm_ctx
 ):
+    write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(
         tmp_path,
         sandbox_info=_sandbox_without_firewalls(
@@ -696,7 +699,12 @@ async def test_streamed_connector_401_with_query_auth_keeps_upstream_response(
     assert "firewall_error" not in entry
 
 
-def test_streamed_connector_401_before_request_gets_diagnostic(tmp_path, real_flow, mitm_ctx):
+@pytest.mark.parametrize(
+    "request_completed", [False, True], ids=["before-request", "after-request"]
+)
+async def test_streamed_connector_401_gets_diagnostic(
+    tmp_path, real_flow, mitm_ctx, request_completed
+):
     write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(
         tmp_path,
@@ -717,6 +725,9 @@ def test_streamed_connector_401_before_request_gets_diagnostic(tmp_path, real_fl
         request_stream = flow.request.stream
         assert callable(request_stream)
         assert request_stream(b"partial request") == b"partial request"
+        if request_completed:
+            await mitm_addon.request(flow)
+        assert flow.response is None
         flow.response = tutils.tresp(
             status_code=401,
             headers=header_map({"content-type": "text/plain"}),
@@ -744,6 +755,7 @@ def test_streamed_connector_401_before_request_gets_diagnostic(tmp_path, real_fl
 def test_streamed_authenticated_connector_401_before_request_keeps_upstream_response(
     tmp_path, real_flow, mitm_ctx, headers
 ):
+    write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(
         tmp_path,
         sandbox_info=_sandbox_without_firewalls(
@@ -788,6 +800,7 @@ def test_streamed_authenticated_connector_401_before_request_keeps_upstream_resp
 def test_streamed_query_authenticated_connector_401_before_request_keeps_upstream_response(
     tmp_path, real_flow, mitm_ctx
 ):
+    write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(
         tmp_path,
         sandbox_info=_sandbox_without_firewalls(
@@ -1059,6 +1072,7 @@ async def test_replaces_connector_401_body_when_auth_query_param_is_empty(
 async def test_preserves_connector_401_body_when_user_auth_is_present(
     tmp_path, real_flow, mitm_ctx, headers
 ):
+    write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(tmp_path, sandbox_info=_sandbox_without_firewalls(tmp_path))
     flow = real_flow(
         with_response=False,
@@ -1124,6 +1138,7 @@ async def test_preserves_model_provider_401_body_without_connector_diagnostic(
 async def test_preserves_connector_401_body_when_query_auth_is_present(
     tmp_path, real_flow, mitm_ctx
 ):
+    write_connector_diagnostic_catalog_cache(tmp_path)
     reg_path = _write_registry(tmp_path, sandbox_info=_sandbox_without_firewalls(tmp_path))
     flow = real_flow(
         with_response=False,

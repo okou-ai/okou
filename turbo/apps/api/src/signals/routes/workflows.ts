@@ -23,6 +23,7 @@ import { and, asc, eq, ne, sql } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
+import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
@@ -30,7 +31,12 @@ import {
   ApiDispatchTimingCollector,
   measureApiDispatchTiming,
 } from "../services/api-dispatch-timing.service";
-import { autonomyBudgetExhausted, conflict, notFound } from "../../lib/error";
+import {
+  autonomyBudgetExhausted,
+  conflict,
+  notFound,
+  providerUnavailable,
+} from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
@@ -38,6 +44,12 @@ import {
   deleteOrphanedWorkflowVolume$,
   deleteWorkflow$,
 } from "../services/workflow-delete.service";
+import {
+  clerk$,
+  clerkRateLimit,
+  clerkReadUnavailable,
+} from "../external/clerk";
+import { loadWorkflowOwnerProfile } from "../services/workflow-owner-profile.service";
 import { workflowDetail } from "../services/workflow-detail.service";
 import {
   ensureWorkflowUserAutomationThread,
@@ -61,7 +73,7 @@ import {
   childAutonomyBudget,
   loadOwnedRunAutonomyBudget,
 } from "../services/autonomy-budget.service";
-import { awaitWithSignal, bestEffort, onRejection } from "../utils";
+import { awaitWithSignal, bestEffort, onRejection, settle } from "../utils";
 import { reconcileGmailWatchesForUser } from "../services/gmail-automation-event.service";
 import { reconcileGoogleCalendarWatchesForUser } from "../services/google-calendar-automation-event.service";
 import { lockConnectorAccountTarget } from "../services/auth-state-lock.service";
@@ -512,6 +524,7 @@ const prepareAndCreateWorkflow$ = command(
           {
             orgId: args.orgId,
             storageName: getCustomSkillStorageName(workflowId),
+            piResourceIndex: true,
             files: [
               {
                 path: "SKILL.md",
@@ -594,6 +607,62 @@ const createWorkflowInner$ = command(
     });
     await publishCreatedWorkflow(auth.userId, inserted.chatThreadId, signal);
     return { status: 201 as const, body: summary };
+  },
+);
+
+const getWorkflowOwnerProfileInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(workflowsDetailContract.ownerProfile));
+    const db = set(writeDb$);
+    const visible = await loadVisibleWorkflowById(db, {
+      orgId: auth.orgId,
+      member: memberFromAuth(auth),
+      workflowId: params.workflowId,
+    });
+    signal.throwIfAborted();
+    if (!visible) {
+      return workflowNotFound(params.workflowId);
+    }
+    set(setResHeader$, "Cache-Control", "no-store");
+    const result = await settle(
+      loadWorkflowOwnerProfile(
+        db,
+        get(clerk$),
+        visible.workflow.ownerUserId,
+        signal,
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      const rateLimit = clerkRateLimit(result.error);
+      if (rateLimit) {
+        set(setResHeader$, "Retry-After", String(rateLimit.retryAfterSeconds));
+        return {
+          status: 429 as const,
+          body: {
+            error: {
+              code: "TOO_MANY_REQUESTS",
+              message: "Workflow owner profile is temporarily rate limited",
+            },
+          },
+        };
+      }
+      if (clerkReadUnavailable(result.error)) {
+        return providerUnavailable(
+          "Workflow owner profile is temporarily unavailable",
+        );
+      }
+      throw result.error;
+    }
+    const profile = result.value;
+    if (profile === undefined) {
+      return providerUnavailable("Workflow owner profile lookup is busy");
+    }
+    return {
+      status: 200 as const,
+      body: profile ?? { displayName: null, imageUrl: null },
+    };
   },
 );
 
@@ -1325,6 +1394,7 @@ const publishCopiedWorkflow$ = command(
                   input: {
                     orgId: args.orgId,
                     storageName: getCustomSkillStorageName(targetWorkflowId),
+                    piResourceIndex: true,
                     files: copiedWorkflowVolumeFiles(
                       copiedSourceWorkflow,
                       copiedSourceFiles,
@@ -1829,6 +1899,10 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const workflowsRoutes: readonly RouteEntry[] = [
+  {
+    route: workflowsDetailContract.ownerProfile,
+    handler: authRoute(workflowReadAuth, getWorkflowOwnerProfileInner$),
+  },
   {
     route: workflowsCollectionContract.list,
     handler: authRoute(workflowReadAuth, listWorkflowsInner$),

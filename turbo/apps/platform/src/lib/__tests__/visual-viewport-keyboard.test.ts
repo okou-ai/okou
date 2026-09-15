@@ -148,6 +148,7 @@ function startViewportKeyboardState(): ControlledViewportClock {
   let settledController: AbortController | null = null;
   setupVisualViewportKeyboardState(context.signal, () => {
     settledController?.abort();
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     settledController = createChildAbortController(context.signal);
     return settledController.signal;
   });

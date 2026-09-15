@@ -1,5 +1,209 @@
 # Changelog
 
+## [0.194.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.1...runner-rs-v0.194.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **pi:** preserve codex rate-limit diagnostics ([#34266](https://github.com/vm0-ai/vm0/issues/34266)) ([48cb88f](https://github.com/vm0-ai/vm0/commit/48cb88fe5c6a70dd6519565211de55b710fee3af))
+
+
+### Refactoring
+
+* **runner:** replace addon readiness marker with private control socket ([#34308](https://github.com/vm0-ai/vm0/issues/34308)) ([0035c91](https://github.com/vm0-ai/vm0/commit/0035c91324113ccec6a31d26db35533af619ff9f))
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
+## [0.194.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.0...runner-rs-v0.194.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** clean up quiet ignored-child descendants ([#34261](https://github.com/vm0-ai/vm0/issues/34261)) ([92923ba](https://github.com/vm0-ai/vm0/commit/92923ba9eb5b0c0593362b6702b0fd3775c9c28f))
+
+## [0.194.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.193.0...runner-rs-v0.194.0) (2026-09-15)
+
+
+### Features
+
+* **runner:** carry ssh over native cloudflare access websockets ([#34235](https://github.com/vm0-ai/vm0/issues/34235)) ([d0e77ab](https://github.com/vm0-ai/vm0/commit/d0e77ab1325582bc095e6895f678cd7c99b0cf10))
+
+## [0.193.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.6...runner-rs-v0.193.0) (2026-09-15)
+
+
+### Features
+
+* **ssh:** add reusable cloudflare access configuration ([#34105](https://github.com/vm0-ai/vm0/issues/34105)) ([21f7e6a](https://github.com/vm0-ai/vm0/commit/21f7e6a3d2870791cb705ebd37217457d9118890))
+
+## [0.192.6](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.5...runner-rs-v0.192.6) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+## [0.192.5](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.4...runner-rs-v0.192.5) (2026-09-14)
+
+## [0.192.4](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.3...runner-rs-v0.192.4) (2026-09-14)
+
+
+### Documentation
+
+* **python:** clarify brotli trailing-data fallback ([#34049](https://github.com/vm0-ai/vm0/issues/34049)) ([dd61073](https://github.com/vm0-ai/vm0/commit/dd610736476b821b9caa39239f67432bcea7c516))
+
+## [0.192.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.2...runner-rs-v0.192.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* **python:** reject truncated buffered json usage responses ([#33972](https://github.com/vm0-ai/vm0/issues/33972)) ([aba8e15](https://github.com/vm0-ai/vm0/commit/aba8e159c3ac4607977b462193632908131eaac4))
+* **runner:** preserve firecracker discovery uncertainty on stat errors ([#33988](https://github.com/vm0-ai/vm0/issues/33988)) ([8e8829f](https://github.com/vm0-ai/vm0/commit/8e8829fe1a2b6bb01312973f9f40e82a13f95f76))
+* **runner:** reject overlong integers in flush markers ([#33999](https://github.com/vm0-ai/vm0/issues/33999)) ([d214b89](https://github.com/vm0-ai/vm0/commit/d214b89961eff646fa1a1910d398b688bcda272e))
+* **runner:** terminate oversized header names before body buffering ([#33962](https://github.com/vm0-ai/vm0/issues/33962)) ([0326351](https://github.com/vm0-ai/vm0/commit/0326351d39a9e79bd9d0c6a0085b84a18d177b81))
+
+
+### Documentation
+
+* **python:** correct idle websocket failure-observer contract ([#33991](https://github.com/vm0-ai/vm0/issues/33991)) ([4a4be18](https://github.com/vm0-ai/vm0/commit/4a4be185ef2b420dd1bd2674deb309a25702afa6))
+
+## [0.192.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.1...runner-rs-v0.192.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* **python:** detect loop-carried metadata aliases ([#33890](https://github.com/vm0-ai/vm0/issues/33890)) ([ae04c7e](https://github.com/vm0-ai/vm0/commit/ae04c7e09f883569f77fba159d88d930629b5aaf))
+* **runner:** unify resolved auth header case handling ([#33937](https://github.com/vm0-ai/vm0/issues/33937)) ([a4588ed](https://github.com/vm0-ai/vm0/commit/a4588ed0307713cb2bff6b16937e45935ca618fa))
+
+
+### Performance Improvements
+
+* **runner:** release completed jsonl batches before idle ([#33935](https://github.com/vm0-ai/vm0/issues/33935)) ([b26d24d](https://github.com/vm0-ai/vm0/commit/b26d24d6bc759e51917d7ae4fb7cbc918d05a841))
+
+## [0.192.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.0...runner-rs-v0.192.1) (2026-09-14)
+
+
+### Performance Improvements
+
+* **runner:** bound capture header dependency traversal ([#33885](https://github.com/vm0-ai/vm0/issues/33885)) ([ad39560](https://github.com/vm0-ai/vm0/commit/ad39560e1e84e67bf5a8f46795cbc037f74a554c))
+
+## [0.192.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.3...runner-rs-v0.192.0) (2026-09-14)
+
+
+### Features
+
+* **model-provider:** gate supported platform openrouter us routing ([#33768](https://github.com/vm0-ai/vm0/issues/33768)) ([a19d5ea](https://github.com/vm0-ai/vm0/commit/a19d5ea87246eac8595cb3a8163feae856f4835f))
+
+## [0.191.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.2...runner-rs-v0.191.3) (2026-09-13)
+
+
+### Bug Fixes
+
+* **python:** invalidate chat usage after sse event discard ([#33771](https://github.com/vm0-ai/vm0/issues/33771)) ([26953c4](https://github.com/vm0-ai/vm0/commit/26953c471ebfba8e1857832cc4f36360c1e647ae))
+* **runner:** include origin port in firewall auth proxy tunnels ([#33770](https://github.com/vm0-ai/vm0/issues/33770)) ([66e1b39](https://github.com/vm0-ai/vm0/commit/66e1b39831a3e89473d5a7edf0ba518d625fc5fb))
+
+
+### Refactoring
+
+* **runner:** remove legacy connector-intent header tolerance ([#33767](https://github.com/vm0-ai/vm0/issues/33767)) ([fbde4b7](https://github.com/vm0-ai/vm0/commit/fbde4b7330555badff700092cfa231cf3ee70c6b))
+
+## [0.191.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.1...runner-rs-v0.191.2) (2026-09-13)
+
+
+### Refactoring
+
+* **runner:** accept both connector-intent header names ([#33707](https://github.com/vm0-ai/vm0/issues/33707)) ([33e83ae](https://github.com/vm0-ai/vm0/commit/33e83ae7126fba27731120dbde3df8fff993ec96))
+
+## [0.191.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.0...runner-rs-v0.191.1) (2026-09-12)
+
+
+### Performance Improvements
+
+* **runner:** reuse idle ssh connections within a run ([#33690](https://github.com/vm0-ai/vm0/issues/33690)) ([17e9259](https://github.com/vm0-ai/vm0/commit/17e9259583f7682ccbc69214bd5da9442a3b6a21))
+
+## [0.191.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.8...runner-rs-v0.191.0) (2026-09-12)
+
+
+### Features
+
+* **ssh:** add managed sessions within a run ([#33674](https://github.com/vm0-ai/vm0/issues/33674)) ([45c6643](https://github.com/vm0-ai/vm0/commit/45c6643695cfd76617ae72e5fb4b42a437cd9a70))
+
+
+### Bug Fixes
+
+* **runner:** own usage retry delivery through shutdown ([#33675](https://github.com/vm0-ai/vm0/issues/33675)) ([f2016a4](https://github.com/vm0-ai/vm0/commit/f2016a4f77d3c783f0bc847ddf4cfa9ff0da043a))
+* **ssh:** wait for private key decoding capacity ([#33646](https://github.com/vm0-ai/vm0/issues/33646)) ([8451ce0](https://github.com/vm0-ai/vm0/commit/8451ce0e82e70cfeb16bb83441892c4022e38014))
+
+
+### Refactoring
+
+* **runner:** rename sandbox-internal and preview-only x-vm0 headers ([#33663](https://github.com/vm0-ai/vm0/issues/33663)) ([9375cec](https://github.com/vm0-ai/vm0/commit/9375cec4abaa342c41b17cc54275f9cb59031b64))
+* **ssh:** scope admission to eight requests per run ([#33631](https://github.com/vm0-ai/vm0/issues/33631)) ([13d35da](https://github.com/vm0-ai/vm0/commit/13d35da64779aa788565f075242278f8eee5cda0))
+
+
+### Performance Improvements
+
+* **runner:** bound connector diagnostic auth-header inspection ([#33676](https://github.com/vm0-ai/vm0/issues/33676)) ([65501ea](https://github.com/vm0-ai/vm0/commit/65501eaee44650b3a2c613464776b24c3a5acc5d))
+
+## [0.190.8](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.7...runner-rs-v0.190.8) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ssh:** release guest park protection when rpc closes ([#33534](https://github.com/vm0-ai/vm0/issues/33534)) ([1fb21f7](https://github.com/vm0-ai/vm0/commit/1fb21f794131078cdfc87c970eaf7f2c5d9f1c6f))
+
+
+### Refactoring
+
+* **runner:** share finalizing reservation activation ([#33550](https://github.com/vm0-ai/vm0/issues/33550)) ([94937b7](https://github.com/vm0-ai/vm0/commit/94937b79b1990bb2fe3a650ec8bf43e98a5c7533))
+
+
+### Performance Improvements
+
+* **runner:** refill doctor io slots independently of result order ([#33575](https://github.com/vm0-ai/vm0/issues/33575)) ([620dbb4](https://github.com/vm0-ai/vm0/commit/620dbb477e06fabb378e8b09c2d59484ade0d52e))
+
+## [0.190.7](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.6...runner-rs-v0.190.7) (2026-09-11)
+
+## [0.190.6](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.5...runner-rs-v0.190.6) (2026-09-11)
+
+
+### Bug Fixes
+
+* **runner:** bound proxy flush filesystem waits ([#33549](https://github.com/vm0-ai/vm0/issues/33549)) ([4ad60dc](https://github.com/vm0-ai/vm0/commit/4ad60dcfb79c4bae323a4a4d9cea0aec92bd2e9b))
+* **runner:** keep local cancellation scans responsive ([#33513](https://github.com/vm0-ai/vm0/issues/33513)) ([9a5676e](https://github.com/vm0-ai/vm0/commit/9a5676e8eacebc58e2fad416a4deff8db48ec4da))
+
+
+### Documentation
+
+* **python:** correct buffered pending-state counter semantics ([#33533](https://github.com/vm0-ai/vm0/issues/33533)) ([df04dea](https://github.com/vm0-ai/vm0/commit/df04dea683cbfcf2b35d2e0a3917c7c11b374ff7))
+
+
+### Refactoring
+
+* **runner:** rename the vm0-prefixed mitm addon options ([#33546](https://github.com/vm0-ai/vm0/issues/33546)) ([b1507ec](https://github.com/vm0-ai/vm0/commit/b1507ec2a083b67ef55a76bc7f78bd977cb03c66)), closes [#33492](https://github.com/vm0-ai/vm0/issues/33492)
+
+## [0.190.5](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.4...runner-rs-v0.190.5) (2026-09-11)
+
+## [0.190.4](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.3...runner-rs-v0.190.4) (2026-09-11)
+
+
+### Bug Fixes
+
+* **runner:** retry transient builtin catalog read failures ([#33461](https://github.com/vm0-ai/vm0/issues/33461)) ([6c7314b](https://github.com/vm0-ai/vm0/commit/6c7314bd8e8ac780fb24141f4dce0e442fed07dd))
+
+
+### Documentation
+
+* **runner:** clarify oversized background fill failure boundary ([#33454](https://github.com/vm0-ai/vm0/issues/33454)) ([266e707](https://github.com/vm0-ai/vm0/commit/266e707f5f7fc26892ccf6541166098ccd41a96c))
+
+
+### Performance Improvements
+
+* **python:** bound json nesting guard string scanning ([#33460](https://github.com/vm0-ai/vm0/issues/33460)) ([f222d69](https://github.com/vm0-ai/vm0/commit/f222d6930ff95ac74739f877566366f29fc3c36a))
+* **runner:** bound retry-after header inspection ([#33455](https://github.com/vm0-ai/vm0/issues/33455)) ([9ada863](https://github.com/vm0-ai/vm0/commit/9ada86363d7e1606c625b4caf1a6e9976d7fd4c9))
+
 ## [0.190.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.2...runner-rs-v0.190.3) (2026-09-11)
 
 

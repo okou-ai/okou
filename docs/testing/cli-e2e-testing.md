@@ -7,7 +7,7 @@ entry points. The current suite covers:
 
 - the packaged canonical `okou` binary through unauthenticated command-boundary
   smoke checks;
-- Clerk-backed sign-up and sign-in through the platform-owned Auth v2 UI;
+- sign-up and sign-in through Clerk's hosted UI;
 - onboarding, chat submission, runner dispatch, and the assistant result through
   the deployed web application;
 - real Claude BYOK, built-in Codex, and built-in Pi execution, including
@@ -73,6 +73,16 @@ When those constraints make a scenario impractical, place the scenario at the
 API integration or crates layer rather than introducing a deployed test hook.
 
 ## Running runner E2E tests
+
+All `cli-e2e-*` jobs in `.github/workflows/turbo.yml` check out the event's
+immutable PR head SHA on `pull_request`, matching the preview API and CLI
+artifact. This applies to test discovery, account preparation, bootstrap,
+execution, report finalization, and cleanup. Do not use the implicit PR merge
+commit or a moving branch name for those checkouts: newer setup code can send
+requests that the deployed PR API does not support. Push and merge-group jobs
+continue to use `github.sha`, so merge-queue E2E still tests the queued revision.
+This rule does not change other jobs' checkout policies, including the App
+artifact's explicit merge-candidate build.
 
 The BATS files under `e2e/tests/03-runner` are CI-only and cannot be run from a
 local checkout. They depend on temporary Clerk organizations and API tokens,

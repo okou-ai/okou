@@ -1,4 +1,14 @@
+import type {
+  InitClientReturn,
+  InitClientArgs,
+} from "@okouai/api-contracts/contracts/trpc-contract";
 import { command, computed, state } from "ccstate";
+import {
+  sshCredentialsContract,
+  createSshCredentialRequestSchema,
+  updateSshCredentialRequestSchema,
+  type SshCredentialResponse,
+} from "@okouai/api-contracts/contracts/ssh-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   agentSshAccessContract,
@@ -14,7 +24,6 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
-import { readClerkToken } from "./clerk-token.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { apiClient$ } from "./api-client.ts";
 import { currentAgent$, agents$ } from "./agent.ts";
@@ -39,6 +48,14 @@ export const cancelSshPrivateKeyFile$ = command(({ set }) => {
   set(resetPrivateKeyRead$);
   set(privateKeyFileRead$, null);
 });
+export const mountSshForm$ = onRef(
+  command(({ set }, form: HTMLFormElement, signal: AbortSignal) => {
+    signal.addEventListener("abort", () => {
+      form.reset();
+      set(cancelSshPrivateKeyFile$);
+    });
+  }),
+);
 export const mountSshPrivateKey$ = onRef(
   command(({ set }, input: HTMLTextAreaElement, signal: AbortSignal) => {
     signal.addEventListener("abort", () => {
@@ -113,42 +130,106 @@ export const sshIdentity$ = computed(async (get) => {
   return user ? `${identity.orgId}:${user.id}` : null;
 });
 const reload$ = state(0);
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
 const sshClients$ = computed(async (get) => {
-  const identity = await get(sshIdentity$);
-  const clerk = await get(clerk$);
+  const [identity, clerk] = await Promise.all([get(sshIdentity$), get(clerk$)]);
   const createClient = get(apiClient$);
-  const assertIdentity = (sessionId: string | undefined) => {
+  const getSession = () => {
+    const session = clerk.session;
     if (
       !identity ||
-      !sessionId ||
-      sessionId !== clerk.session?.id ||
+      !session ||
       identity !== `${clerk.organization?.id}:${clerk.user?.id}`
     ) {
       throw new DOMException("SSH owner changed", "AbortError");
     }
+    return session;
   };
-  const options = {
-    getToken: async (signal: AbortSignal) => {
-      const sessionId = clerk.session?.id;
-      assertIdentity(sessionId);
-      const token = await readClerkToken(clerk, signal);
-      signal.throwIfAborted();
-      assertIdentity(sessionId);
-      return token;
-    },
+  const getTokenGuard = () => {
+    const session = getSession();
+    return () => {
+      if (getSession().id !== session.id) {
+        throw new DOMException("SSH owner changed", "AbortError");
+      }
+    };
   };
+  const options = { getTokenGuard };
   return {
     identity,
     connections: createClient(sshConnectionsContract, options),
     access: createClient(agentSshAccessContract, options),
+    credentials: createClient(sshCredentialsContract, options),
   };
 });
-const dialog$ = state<{
+export interface SshDialogState {
   readonly identity: string;
-  readonly kind: "create" | "edit" | "rotate" | "delete" | "reset";
+  readonly kind:
+    | "create"
+    | "edit"
+    | "delete"
+    | "reset"
+    | "create-credential"
+    | "edit-credential"
+    | "delete-credential";
+  readonly credential: SshCredentialResponse | null;
   readonly connection: SshConnectionResponse | null;
-} | null>(null);
+}
+const dialog$ = state<SshDialogState | null>(null);
+const view$ = state<"hosts" | "credentials">("hosts");
+export const sshView$ = computed((get) => {
+  return get(view$);
+});
+export const changeSshView$ = command(({ set }, value: string) => {
+  if (value === "hosts" || value === "credentials") {
+    set(view$, value);
+  }
+});
+const credentialEditor$ = state({
+  selection: "new",
+  method: "private_key",
+  replace: false,
+});
+export const sshCredentialEditor$ = computed((get) => {
+  return get(credentialEditor$);
+});
+export const chooseSshCredential$ = command(({ set }, value: string | null) => {
+  if (value === null) {
+    return;
+  }
+  set(cancelSshPrivateKeyFile$);
+  set(credentialEditor$, (current) => {
+    return { ...current, selection: value };
+  });
+});
+export const chooseSshAuthMethod$ = command(({ set }, value: string) => {
+  if (value !== "private_key" && value !== "password") {
+    return;
+  }
+  set(cancelSshPrivateKeyFile$);
+  set(credentialEditor$, (current) => {
+    return { ...current, method: value };
+  });
+});
+export const replaceSshAuthentication$ = command(
+  ({ set }, replace: boolean) => {
+    set(cancelSshPrivateKeyFile$);
+    set(credentialEditor$, (current) => {
+      return { ...current, replace };
+    });
+  },
+);
+export const sshCredentials$ = computed(async (get) => {
+  get(reload$);
+  if (!(await get(sshIdentity$))) {
+    return null;
+  }
+  const result = await accept(
+    (await get(sshClients$)).credentials.list(),
+    [200, 404],
+    undefined,
+    { showErrorToast: false },
+  );
+  return result.status === 200 ? result.body.credentials : null;
+});
 const conflict$ = state<string | null>(null);
 export const sshConflict$ = computed((get) => {
   return get(conflict$);
@@ -212,6 +293,7 @@ export const sshObservationsSnapshot$ = computed(async (get) => {
   };
 });
 export const refreshSsh$ = command(({ set }) => {
+  set(view$, "hosts");
   set(cancelSshPrivateKeyFile$);
   set(dialog$, null);
   set(conflict$, null);
@@ -261,7 +343,7 @@ export const subscribeSshChanged$ = command(
 export const openSshDialog$ = command(
   async (
     { get, set },
-    kind: "create" | "edit" | "rotate" | "delete" | "reset",
+    kind: "create" | "edit" | "delete" | "reset",
     connection: SshConnectionResponse | null,
     signal: AbortSignal,
   ) => {
@@ -272,7 +354,35 @@ export const openSshDialog$ = command(
     }
     set(conflict$, null);
     set(cancelSshPrivateKeyFile$);
-    set(dialog$, { identity, kind, connection });
+    set(credentialEditor$, {
+      selection: connection?.credentialId ?? "new",
+      method: "private_key",
+      replace: false,
+    });
+    set(dialog$, { identity, kind, connection, credential: null });
+  },
+);
+
+export const openSshCredentialDialog$ = command(
+  async (
+    { get, set },
+    kind: "create-credential" | "edit-credential" | "delete-credential",
+    credential: SshCredentialResponse | null,
+    signal: AbortSignal,
+  ) => {
+    const identity = await get(sshIdentity$);
+    signal.throwIfAborted();
+    if (!identity) {
+      return;
+    }
+    set(conflict$, null);
+    set(cancelSshPrivateKeyFile$);
+    set(credentialEditor$, {
+      selection: "new",
+      method: credential?.authMethod ?? "private_key",
+      replace: false,
+    });
+    set(dialog$, { identity, kind, connection: null, credential });
   },
 );
 
@@ -282,6 +392,87 @@ function textField(form: FormData, name: string): string {
     throw new Error(`Missing SSH form field: ${name}`);
   }
   return value;
+}
+
+function authenticationFromForm(
+  form: FormData,
+  editor: { readonly method: string },
+) {
+  return editor.method === "password"
+    ? { method: "password" as const, password: textField(form, "password") }
+    : {
+        method: "private_key" as const,
+        privateKey: textField(form, "privateKey"),
+        passphrase: textField(form, "passphrase") || null,
+      };
+}
+function credentialFromForm(
+  form: FormData,
+  editor: { readonly method: string },
+) {
+  return createSshCredentialRequestSchema.parse({
+    name: textField(form, "credentialName"),
+    username: textField(form, "username"),
+    authentication: authenticationFromForm(form, editor),
+  });
+}
+async function saveCredentialForm(
+  client: InitClientReturn<typeof sshCredentialsContract, InitClientArgs>,
+  dialog: SshDialogState,
+  form: FormData,
+  editor: { readonly method: string; readonly replace: boolean },
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (dialog.kind === "create-credential") {
+    await accept(
+      client.create({
+        body: credentialFromForm(form, editor),
+        fetchOptions: { signal },
+      }),
+      [201],
+      signal,
+    );
+  } else if (
+    dialog.kind === "edit-credential" ||
+    dialog.kind === "delete-credential"
+  ) {
+    const credential = dialog.credential;
+    if (!credential) {
+      throw new Error("SSH credential editor requires a credential");
+    }
+    const params = { credentialId: credential.id };
+    if (dialog.kind === "delete-credential") {
+      const result = await accept(
+        client.delete({
+          params,
+          body: { expectedRevision: credential.revision },
+          fetchOptions: { signal },
+        }),
+        [204, 404, 409],
+        signal,
+      );
+      return result.status === 204 ? null : result.body.error.code;
+    }
+    const body = updateSshCredentialRequestSchema.parse({
+      expectedRevision: credential.revision,
+      name: textField(form, "credentialName"),
+      username: textField(form, "username"),
+      ...(editor.replace
+        ? { authentication: authenticationFromForm(form, editor) }
+        : {}),
+    });
+    const result = await accept(
+      client.update({
+        params,
+        body,
+        fetchOptions: { signal },
+      }),
+      [200, 404, 409],
+      signal,
+    );
+    return result.status === 200 ? null : result.body.error.code;
+  }
+  return null;
 }
 
 export const saveSsh$ = command(
@@ -296,69 +487,77 @@ export const saveSsh$ = command(
     if (clients.identity !== dialog.identity) {
       return;
     }
-    const client = clients.connections;
-    const credentials =
-      dialog.kind === "create" || dialog.kind === "rotate"
-        ? {
-            privateKey: textField(form, "privateKey"),
-            passphrase: textField(form, "passphrase") || null,
-          }
-        : undefined;
-    const fields =
-      dialog.kind === "create" || dialog.kind === "edit"
-        ? {
-            displayName: textField(form, "displayName"),
-            host: textField(form, "host"),
-            port: Number(textField(form, "port")),
-            username: textField(form, "username"),
-          }
-        : undefined;
+    const editor = get(credentialEditor$);
     let conflicted: string | null = null;
-    if (dialog.kind === "create") {
-      const body = createSshConnectionRequestSchema.parse({
-        ...fields,
-        ...credentials,
-      });
-      await accept(
-        client.create({ body, fetchOptions: { signal } }),
-        [201],
+    if (
+      ["create-credential", "edit-credential", "delete-credential"].includes(
+        dialog.kind,
+      )
+    ) {
+      conflicted = await saveCredentialForm(
+        clients.credentials,
+        dialog,
+        form,
+        editor,
         signal,
       );
     } else {
-      const connection = dialog.connection;
-      if (!connection) {
-        throw new Error("SSH edit requires a connection");
-      }
-      const params = { connectionId: connection.id };
-      if (dialog.kind === "delete") {
-        await accept(
-          client.delete({ params, fetchOptions: { signal } }),
-          [204],
-          signal,
-        );
-      } else if (dialog.kind === "reset") {
+      const client = clients.connections;
+      const fields =
+        dialog.kind === "create" || dialog.kind === "edit"
+          ? {
+              displayName: textField(form, "displayName"),
+              host: textField(form, "host"),
+              port: Number(textField(form, "port")),
+              credential:
+                editor.selection === "new"
+                  ? { create: credentialFromForm(form, editor) }
+                  : { id: editor.selection },
+            }
+          : undefined;
+      if (dialog.kind === "create") {
+        const body = createSshConnectionRequestSchema.parse(fields);
         const result = await accept(
-          client.resetHostKey({
-            params,
-            body: { expectedGeneration: connection.generation },
-            fetchOptions: { signal },
-          }),
-          [200, 409],
+          client.create({ body, fetchOptions: { signal } }),
+          [201, 404],
           signal,
         );
-        conflicted = result.status === 409 ? result.body.error.code : null;
+        conflicted = result.status === 201 ? null : result.body.error.code;
       } else {
-        const body = updateSshConnectionRequestSchema.parse({
-          expectedGeneration: connection.generation,
-          ...fields,
-          ...(credentials ? { credentials } : {}),
-        });
-        const result = await accept(
-          client.update({ params, body, fetchOptions: { signal } }),
-          [200, 409],
-          signal,
-        );
-        conflicted = result.status === 409 ? result.body.error.code : null;
+        const connection = dialog.connection;
+        if (!connection) {
+          throw new Error("SSH edit requires a connection");
+        }
+        const params = { connectionId: connection.id };
+        if (dialog.kind === "delete") {
+          await accept(
+            client.delete({ params, fetchOptions: { signal } }),
+            [204],
+            signal,
+          );
+        } else if (dialog.kind === "reset") {
+          const result = await accept(
+            client.resetHostKey({
+              params,
+              body: { expectedGeneration: connection.generation },
+              fetchOptions: { signal },
+            }),
+            [200, 409],
+            signal,
+          );
+          conflicted = result.status === 409 ? result.body.error.code : null;
+        } else {
+          const body = updateSshConnectionRequestSchema.parse({
+            expectedGeneration: connection.generation,
+            ...fields,
+          });
+          const result = await accept(
+            client.update({ params, body, fetchOptions: { signal } }),
+            [200, 404, 409],
+            signal,
+          );
+          conflicted = result.status === 200 ? null : result.body.error.code;
+        }
       }
     }
     signal.throwIfAborted();

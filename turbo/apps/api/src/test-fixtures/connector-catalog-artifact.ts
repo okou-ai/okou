@@ -1659,10 +1659,23 @@ const connectors = [
     connectorSlug: "posthog",
     label: "PostHog",
     authMethods: [
-      standardOauthMethod({
+      providerMethod({
         connectorSlug: "posthog",
-        prefix: "POSTHOG",
-        tokenEnvironmentNames: ["POSTHOG_TOKEN"],
+        authMethodId: "oauth",
+        clientId: "https://app.okou.ai/connectors/posthog/metadata.json",
+        values: {
+          accessToken: secret("POSTHOG_ACCESS_TOKEN"),
+          refreshToken: secret("POSTHOG_REFRESH_TOKEN"),
+          baseUrl: variable("POSTHOG_BASE_URL"),
+          region: variable("POSTHOG_REGION"),
+        },
+        envBindings: {
+          POSTHOG_TOKEN: secret("POSTHOG_ACCESS_TOKEN"),
+          POSTHOG_BASE_URL: variable("POSTHOG_BASE_URL"),
+          POSTHOG_REGION: variable("POSTHOG_REGION"),
+        },
+        refreshableSecrets: ["POSTHOG_ACCESS_TOKEN"],
+        storageVersion: 2,
       }),
     ],
   }),

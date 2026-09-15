@@ -22,7 +22,7 @@ use super::super::{
 };
 use crate::ids::RunId;
 
-pub(super) struct HostTrust {
+pub(in crate::ssh) struct HostTrust {
     authority: Arc<Authority>,
     run: RunId,
     connection: uuid::Uuid,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pause, Play, Square, Trash2 } from "lucide-react";
 
-const recorder = window.vm0DesktopRecorder;
+const recorder = window.okouDesktopRecorder;
 
 function formatElapsed(elapsedMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));

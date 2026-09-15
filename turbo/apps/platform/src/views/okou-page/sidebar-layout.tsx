@@ -327,7 +327,7 @@ function MobileTopBar() {
                 <Link
                   pathname={breadcrumb.sectionPath}
                   options={breadcrumb.sectionOptions}
-                  className="hover:opacity-70 transition-opacity no-underline text-inherit"
+                  className="hover:opacity-70 no-underline text-inherit"
                 >
                   {breadcrumb.section}
                 </Link>
@@ -368,7 +368,10 @@ function MobileSidebarMount() {
       <Sidebar isDesktop={false} />
       <div
         data-sidebar-expanded={expanded || undefined}
-        className="okou-pwa-fixed-cover fixed inset-0 z-30 bg-black/40 hidden data-[sidebar-expanded]:max-md:block"
+        // A fixed cover is clipped by the visual viewport, so in a standalone
+        // PWA it stops short of the bottom safe inset. Extending `bottom` by
+        // that inset keeps the scrim painted to the physical screen edge.
+        className="fixed inset-0 z-30 bg-black/40 hidden data-[sidebar-expanded]:max-md:block [@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]"
         aria-label={t(($) => {
           return $.appShell.sidebar.mobile.overlay;
         })}
@@ -391,7 +394,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   return withChatScrollLayout(
     <div
       ref={shellDocumentAttributesRef}
-      className="okou-app okou-viewport-shell okou-managed-bottom-safe-area flex w-full bg-background md:bg-sidebar"
+      className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0 md:bg-sidebar"
       data-gradient-color-themes={gradientColorThemesEnabled || undefined}
       data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
     >

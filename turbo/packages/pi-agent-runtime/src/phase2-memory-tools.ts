@@ -4,6 +4,12 @@ import { isAbsolute, posix, resolve } from "node:path";
 
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import {
+  PI_MEMORY_SUMMARY_MAX_BYTES,
+  PI_MEMORY_SUMMARY_MAX_TOKENS,
+} from "@okouai/api-contracts/contracts/runners";
+
+import { piMemorySummaryTokenCount } from "./memory-recall";
 
 export const PI_MEMORY_PHASE2_TOOL_NAMES = Object.freeze([
   "phase2_list",
@@ -32,6 +38,7 @@ const PRIVATE_INPUT_PATHS = new Set([
   "inputs/raw-memories.md",
   "inputs/workspace-diff.md",
 ]);
+const SUMMARY_LOGICAL_PATH = "memory/memory_summary.md";
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 interface Phase2MaintenanceToolRoots {
@@ -197,7 +204,7 @@ function mutableOutputPath(path: NormalizedToolPath): boolean {
   if (path.logicalPath === "memory/MEMORY.md") {
     return true;
   }
-  if (path.logicalPath === "memory/memory_summary.md") {
+  if (path.logicalPath === SUMMARY_LOGICAL_PATH) {
     return true;
   }
   if (!path.logicalPath.startsWith("memory/skills/")) {
@@ -303,6 +310,35 @@ async function writeMutableFile(
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Content-free numbers for the whole summary that a successful write or edit
+ * leaves on disk. The stored source is bounded by bytes, while the separate
+ * o200k budget only bounds the excerpt a later run injects into its prompt.
+ */
+function mutationOutcome(
+  outcome: "written" | "edited",
+  path: NormalizedToolPath,
+  content: string,
+): string {
+  if (path.logicalPath !== SUMMARY_LOGICAL_PATH) {
+    return outcome;
+  }
+  const bytes = byteLength(content);
+  // Tokenizing a source that already exceeds the byte ceiling would be
+  // unbounded work for feedback alone, and output validation rejects it anyway.
+  const tokens =
+    bytes > PI_MEMORY_SUMMARY_MAX_BYTES
+      ? "unmeasured"
+      : piMemorySummaryTokenCount(content).toString();
+  return [
+    outcome,
+    `summary_bytes=${bytes.toString()}`,
+    `summary_byte_limit=${PI_MEMORY_SUMMARY_MAX_BYTES.toString()}`,
+    `summary_tokens=${tokens}`,
+    `summary_injection_target=${PI_MEMORY_SUMMARY_MAX_TOKENS.toString()}`,
+  ].join(" ");
 }
 
 function boundedUtf8(
@@ -683,7 +719,12 @@ function createWriteTool(
         await args.testHooks?.afterPathValidation?.(path.logicalPath);
         await writeMutableFile(path, params.content);
         return {
-          content: [{ type: "text" as const, text: "written" }],
+          content: [
+            {
+              type: "text" as const,
+              text: mutationOutcome("written", path, params.content),
+            },
+          ],
           details: {},
         };
       });
@@ -730,7 +771,12 @@ function createEditTool(
         const updated = `${content.slice(0, first)}${params.new_text}${content.slice(first + params.old_text.length)}`;
         await writeMutableFile(path, updated);
         return {
-          content: [{ type: "text" as const, text: "edited" }],
+          content: [
+            {
+              type: "text" as const,
+              text: mutationOutcome("edited", path, updated),
+            },
+          ],
           details: {},
         };
       });

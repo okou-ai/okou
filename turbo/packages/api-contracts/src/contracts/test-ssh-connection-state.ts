@@ -23,15 +23,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
       .strict(),
     z
       .object({
-        action: z.literal("move-connection-org"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
-        targetOrgId: z.string().min(1),
-      })
-      .strict(),
-    z
-      .object({
         action: z.literal("create-runtime"),
         agentId: z.uuid().optional(),
         runnerGroup: z.string().min(1).optional(),
@@ -58,14 +49,6 @@ export const testSshConnectionStateActionBodySchema = z.discriminatedUnion(
         userId: z.string().min(1),
         agentId: z.uuid(),
         enabled: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("delete-credential"),
-        orgId: z.string().min(1),
-        userId: z.string().min(1),
-        connectionId: z.uuid(),
       })
       .strict(),
     z

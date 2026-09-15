@@ -102,6 +102,7 @@ const MODEL_BRAND_ICON: Readonly<Record<SupportedRunModel, ModelProviderType>> =
     "claude-opus-4-8": "anthropic-api-key",
     "claude-sonnet-5": "anthropic-api-key",
     "claude-sonnet-4-6": "anthropic-api-key",
+    "deepseek-v4.1-flash": "deepseek",
     "deepseek-v4-flash": "deepseek",
     "deepseek-v4-pro": "deepseek",
     "gpt-6-astra": "openai-api-key",

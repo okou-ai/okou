@@ -40,10 +40,14 @@ import {
 function setupModels(): void {
   mockAgent();
   mockOrgModelRoutes("claude-fable-5-1");
-  mockBillingCapabilities({ supportByok: true, restrictedVm0Models: false });
+  mockBillingCapabilities({
+    supportByok: true,
+    restrictedBuiltInModels: false,
+  });
   context.mocks.data.userModelPreference({
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
+    modelSettings: {},
     selectedImageModel: "gpt-image-2",
     selectedVideoModel: "dreamina-seedance-2-0-260128",
     updatedAt: "2026-09-07T00:00:00.000Z",
@@ -140,13 +144,21 @@ test("Choose a video through the consolidated Create entry with the keyboard and
     name: "Video models",
   });
   expect(videoPicker).toHaveTextContent("Seedance 2.0");
-  click(screen.getByRole("combobox", { name: "Ratio" }));
-  click(await screen.findByRole("option", { name: "9:16" }));
-  await waitFor(() => {
-    expect(screen.getByRole("combobox", { name: "Ratio" })).toHaveTextContent(
-      "9:16",
-    );
+  click(
+    await waitFor(() => {
+      return button("Video options 16:9 · 8s · 720p");
+    }),
+  );
+  const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
+  const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
+    return radio.textContent?.trim() === "9:16";
   });
+  if (!portrait) {
+    throw new Error("Portrait ratio missing");
+  }
+  click(portrait);
+  expect(portrait).toHaveAttribute("aria-checked", "true");
+  await user.keyboard("{Escape}");
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);
@@ -566,15 +578,16 @@ test("Multiple templates keep a generic toolbar label and all references survive
       }
     },
   });
-  const editor = await setupComposer();
+  await setupComposer();
   const user = userEvent.setup({ delay: null });
   const [first, second] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first || !second) {
     throw new Error("Expected two presentation templates");
   }
-  await selectTemplate(user, first);
-  await selectTemplate(user, second);
-  await user.click(editor);
+  await selectTemplate(first);
+  await selectTemplate(second);
+  // Page bootstrap can remount the editor while the template dialogs are open.
+  await user.click(await findComposerEditor());
   await user.paste(" /create presentation");
   const menu = await screen.findByTestId("slash-workflow-menu");
   click(button("Create presentation", menu));
@@ -605,7 +618,7 @@ test("Presentation adds another template when the draft already has one", async 
   if (!first || !second) {
     throw new Error("Expected two presentation templates");
   }
-  await selectTemplate(user, first);
+  await selectTemplate(first);
   await user.click(editor);
   await user.paste(" /create presentation");
   const menu = await screen.findByTestId("slash-workflow-menu");
@@ -671,7 +684,7 @@ test("Canceling and switching Create preserve slash text and template references
   if (!template) {
     throw new Error("Expected a presentation template");
   }
-  await selectTemplate(user, template);
+  await selectTemplate(template);
   await user.click(editor);
   await user.paste("Our launch /create");
   const menu = await screen.findByTestId("slash-workflow-menu");

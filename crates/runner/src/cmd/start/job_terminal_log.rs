@@ -89,6 +89,14 @@ fn log_job_execution_failed(
                 failure_reason = diagnostic
                     .and_then(|diagnostic| diagnostic.failure_reason)
                     .map(|reason| reason.as_str()),
+                model_http_status = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.http_status),
+                model_transport_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .map(|request| request.transport_attempts),
+                model_retry_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .map(|request| request.retry_attempts),
+                model_retry_limit = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.retry_limit),
                 cli_termination_initiator = cli_termination_fields.initiator,
                 cli_termination_reason = cli_termination_fields.reason,
                 cli_termination_signal_sent = cli_termination_fields.signal_sent,
@@ -494,11 +502,10 @@ mod tests {
     use guest_contracts::diagnostics::{
         AgentFramework, CliObservedExitKind, CliTerminationDiagnostic, CliTerminationReason,
         CliTerminationSignal, EventDeliveryAcceptanceOutcome, EventDeliveryActiveAttemptDiagnostic,
-        EventDeliveryActiveBatchDiagnostic, EventDeliveryAttemptFailureKind,
-        EventDeliveryCompletedAttemptDiagnostic, EventDeliveryDiagnostic,
+        EventDeliveryActiveBatchDiagnostic, EventDeliveryDiagnostic,
         EventDeliveryDrainTimeoutDiagnostic, EventDeliveryFailedBatchDiagnostic, FailureClass,
-        FailureDetailSource, HeartbeatAttemptFailureKind, HeartbeatCompletedAttemptDiagnostic,
-        HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic, PromptMetadata,
+        FailureDetailSource, HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic,
+        HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic, PromptMetadata,
         SessionHistoryStatus, WorkloadResourceLimitDiagnostic,
     };
     use tracing::Level;
@@ -823,6 +830,36 @@ mod tests {
     }
 
     #[test]
+    fn pi_rate_limit_logs_info_with_observed_request_and_retry_evidence() {
+        let mut diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::Pi,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_failure_reason(FailureReason::ProviderRateLimited)
+        .with_failure_detail_source(FailureDetailSource::PiResult);
+        diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+            http_status: Some(429),
+            transport_attempts: 1,
+            retry_attempts: 3,
+            retry_limit: Some(3),
+        });
+        let failure = executor::ExecutionFailure::new(
+            1,
+            r#"{"detail":"Rate limit exceeded"}"#,
+            Some(diagnostic),
+        );
+        let event = capture_job_failure_log(&failure);
+        assert_eq!(event.level, Level::INFO);
+        assert_field_eq(&event, "failure_reason", "provider_rate_limited");
+        assert_field_eq(&event, "failure_framework", "pi");
+        assert_field_eq(&event, "model_http_status", "429");
+        assert_field_eq(&event, "model_transport_attempts", "1");
+        assert_field_eq(&event, "model_retry_attempts", "3");
+        assert_field_eq(&event, "model_retry_limit", "3");
+    }
+
+    #[test]
     fn pi_result_upstream_server_error_logs_job_execution_failed_at_info() {
         let diagnostic = FailureDiagnostic::new(
             FailureClass::CliNonzero,
@@ -1110,22 +1147,22 @@ mod tests {
 
     #[test]
     fn diagnostic_failure_logs_bounded_event_delivery_fields() {
-        let failed_attempt = EventDeliveryCompletedAttemptDiagnostic {
+        let failed_attempt = HttpCompletedAttemptDiagnostic {
             attempt: 4,
             client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
             elapsed_ms: 30_001,
-            failure_kind: EventDeliveryAttemptFailureKind::HttpStatus,
+            failure_kind: HttpAttemptFailureKind::HttpStatus,
             http_status: Some(500),
             timeout_observed: None,
             connect_observed: None,
         };
-        let first_active_completed_attempt = EventDeliveryCompletedAttemptDiagnostic {
+        let first_active_completed_attempt = HttpCompletedAttemptDiagnostic {
             attempt: 1,
             client_request_id: "33333333-3333-4333-8333-333333333333".to_string(),
             elapsed_ms: 1_001,
             ..failed_attempt.clone()
         };
-        let second_active_completed_attempt = EventDeliveryCompletedAttemptDiagnostic {
+        let second_active_completed_attempt = HttpCompletedAttemptDiagnostic {
             attempt: 2,
             client_request_id: "44444444-4444-4444-8444-444444444444".to_string(),
             elapsed_ms: 2_001,
@@ -1289,11 +1326,11 @@ mod tests {
             failed_cycles: vec![
                 HeartbeatFailedCycleDiagnostic {
                     scheduled_lag_ms: 11,
-                    attempts: vec![HeartbeatCompletedAttemptDiagnostic {
+                    attempts: vec![HttpCompletedAttemptDiagnostic {
                         attempt: 1,
                         client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
                         elapsed_ms: 100,
-                        failure_kind: HeartbeatAttemptFailureKind::HttpStatus,
+                        failure_kind: HttpAttemptFailureKind::HttpStatus,
                         http_status: Some(503),
                         timeout_observed: None,
                         connect_observed: None,
@@ -1302,20 +1339,20 @@ mod tests {
                 HeartbeatFailedCycleDiagnostic {
                     scheduled_lag_ms: 27,
                     attempts: vec![
-                        HeartbeatCompletedAttemptDiagnostic {
+                        HttpCompletedAttemptDiagnostic {
                             attempt: 1,
                             client_request_id: "22222222-2222-4222-8222-222222222222".to_string(),
                             elapsed_ms: 30_000,
-                            failure_kind: HeartbeatAttemptFailureKind::Timeout,
+                            failure_kind: HttpAttemptFailureKind::Timeout,
                             http_status: None,
                             timeout_observed: Some(true),
                             connect_observed: Some(false),
                         },
-                        HeartbeatCompletedAttemptDiagnostic {
+                        HttpCompletedAttemptDiagnostic {
                             attempt: 2,
                             client_request_id: "33333333-3333-4333-8333-333333333333".to_string(),
                             elapsed_ms: 30_001,
-                            failure_kind: HeartbeatAttemptFailureKind::Timeout,
+                            failure_kind: HttpAttemptFailureKind::Timeout,
                             http_status: None,
                             timeout_observed: Some(true),
                             connect_observed: Some(false),
@@ -1368,11 +1405,11 @@ mod tests {
                 event_count: 1,
                 conservative_bytes: 128,
                 outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
-                attempts: vec![EventDeliveryCompletedAttemptDiagnostic {
+                attempts: vec![HttpCompletedAttemptDiagnostic {
                     attempt: 3,
                     client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
                     elapsed_ms: 10_000,
-                    failure_kind: EventDeliveryAttemptFailureKind::Timeout,
+                    failure_kind: HttpAttemptFailureKind::Timeout,
                     http_status: None,
                     timeout_observed: Some(true),
                     connect_observed: Some(true),

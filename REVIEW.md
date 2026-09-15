@@ -65,6 +65,11 @@ Do not load unrelated references merely because they share a parent directory.
 - Tests should verify externally observable state or HTTP responses a production
   caller can obtain. Internal state and mock calls are not substitutes. Use the
   surface guide for external mocks, real infrastructure, and centralized cleanup.
+- API tests that assert log output require `Changes Requested`, outside the
+  logger's own suite and one redaction check; other surfaces may assert a log
+  record that is their own documented contract. A PR that answers a log-noise
+  issue by adding another outcome classifier must justify why the record is
+  needed at all.
 - For features that change, replace, remove, or reroute an existing flow, require
   regression coverage for the affected path and appropriate feature/capability/
   permission containment. A rewritten expectation alone does not prove an

@@ -675,7 +675,11 @@ mod tests {
     #[test]
     fn response_validation_rejects_mismatched_question_fields() {
         let query = build_dns_query(0x1234, DNS_READINESS_HOSTNAME).unwrap();
-        let response = response_for_query(&query, DNS_READINESS_IPV4);
+        // Keep the answer owner independent so a question-name change cannot also
+        // invalidate the answer and hide a missing question-name check.
+        let response =
+            response_for_query_with_owner(&query, question_name(&query), DNS_READINESS_IPV4);
+        validate_readiness_response(&response).unwrap();
 
         let mut wrong_name = response.clone();
         *wrong_name.get_mut(13).unwrap() = b'x';

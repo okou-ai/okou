@@ -18,25 +18,28 @@ export const posthogProvider: AuthCodeConnectorAuthProvider<"posthog"> = {
       );
     },
     exchangeCode: async (args) => {
-      const { clientId, clientSecret } = args.authClient;
-      const code = args.code;
-      const redirectUri = args.redirectUri;
-      const result = await exchangePosthogCode(
-        args.authCodeGrant,
-        clientId,
-        clientSecret,
-        code,
-        redirectUri,
-      );
+      const result = await exchangePosthogCode({
+        grant: args.authCodeGrant,
+        clientId: args.authClient.clientId,
+        code: args.code,
+        redirectUri: args.redirectUri,
+        codeVerifier: args.codeVerifier,
+      });
       return {
         outputs: {
           accessToken: result.accessToken,
           refreshToken: result.refreshToken,
+          region: result.region,
+          baseUrl: result.baseUrl,
         },
         expiresIn: result.expiresIn,
         scopes: result.scopes,
         userInfo: {
-          id: result.userInfo.id,
+          // Preserve existing US account IDs while separating EU's ID namespace.
+          id:
+            result.region === "us"
+              ? result.userInfo.id
+              : `${result.region}:${result.userInfo.id}`,
           username: result.userInfo.name,
           email: result.userInfo.email,
         },
@@ -46,12 +49,14 @@ export const posthogProvider: AuthCodeConnectorAuthProvider<"posthog"> = {
   access: {
     kind: "refresh-token",
     refresh: async (args, signal: AbortSignal) => {
-      const { clientId, clientSecret } = args.authClient;
       return oauthRefreshResultToProviderResult(
         await refreshPosthogToken(
-          clientId,
-          clientSecret,
-          args.inputs.refreshToken,
+          {
+            clientId: args.authClient.clientId,
+            refreshToken: args.inputs.refreshToken,
+            region: args.inputs.region,
+            baseUrl: args.inputs.baseUrl,
+          },
           signal,
         ),
       );

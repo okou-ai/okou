@@ -339,6 +339,7 @@ function PinnedAgentGridCard({
         <AgentAvatarImg
           name={agent.agentId}
           alt=""
+          preserveChinBaseline
           className={`block h-full w-full object-cover object-top ${
             isDefaultAgent ? "" : "rounded-full"
           }`}
@@ -351,7 +352,7 @@ function PinnedAgentGridCard({
       </span>
       <span
         data-testid="pinned-agent-label-frame"
-        className={`okou-nav-copy ${pinnedAgentGridLabelFrameClassName} w-full truncate text-center text-[11px] ${
+        className={`text-[color:var(--nav-copy,inherit)] ${pinnedAgentGridLabelFrameClassName} w-full truncate text-center text-[11px] ${
           isPrimarySelected ? "font-medium" : ""
         } ${isDragging ? "opacity-0" : ""}`}
       >
@@ -505,7 +506,7 @@ export function PinnedAgentListSection({
 
     return (
       <div className="shrink-0" data-testid="pinned-agents-horizontal">
-        <span className="okou-nav-copy-muted flex h-8 items-center pl-2 text-[13px] font-medium leading-4 text-muted-foreground">
+        <span className="flex h-8 items-center pl-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
           {t(($) => {
             return $.sidebar.pinnedAgents;
           })}
@@ -531,7 +532,7 @@ export function PinnedAgentListSection({
               </span>
               <span
                 data-testid="pinned-agent-label-frame"
-                className={`okou-nav-copy-muted ${pinnedAgentGridLabelFrameClassName} text-[11px]`}
+                className={`text-[color:var(--nav-copy-muted,inherit)] ${pinnedAgentGridLabelFrameClassName} text-[11px]`}
               >
                 {t(($) => {
                   return $.sidebar.addPin;
@@ -554,11 +555,11 @@ export function PinnedAgentListSection({
           return setCollapsed(!collapsed);
         }}
       >
-        <span className="okou-nav-copy-muted okou-nav-copy-muted-hover flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-muted-foreground group-hover:text-sidebar-foreground transition-colors">
+        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-nav-copy-muted group-hover:text-nav-copy transition-colors">
           {t(($) => {
             return $.sidebar.pinned;
           })}
-          <span className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <span className="shrink-0 opacity-0 group-hover:opacity-100">
             <ChevronRight
               className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
               size={12}
@@ -624,7 +625,7 @@ export function PinnedAgentListSection({
                       alt={agent.displayName ?? agent.agentId}
                       className="h-5 w-5 shrink-0 rounded-md object-cover object-top"
                     />
-                    <span className="okou-nav-copy truncate">
+                    <span className="text-[color:var(--nav-copy,inherit)] truncate">
                       {agent.displayName ?? agent.agentId}
                     </span>
                   </Link>

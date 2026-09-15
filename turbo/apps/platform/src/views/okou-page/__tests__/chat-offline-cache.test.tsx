@@ -91,6 +91,7 @@ function threadMetadata(
     agentId: thread.agentId,
     title: thread.title,
     selectedModel: thread.selectedModel,
+    modelSettings: thread.modelSettings ?? {},
     serviceTier: thread.serviceTier,
     pinnedAt: thread.pinnedAt,
     computerUseHostId: thread.computerUseHostId,

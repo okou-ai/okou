@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -54,7 +53,6 @@ test.each([
       host: "app.okou.ai",
       locale: "en-US",
       env: { TZ: timezone },
-      featureSwitches: { [FeatureSwitchKey.MarkdownTime]: true },
     });
 
     const summerTime = await screen.findByText(summer);
@@ -100,7 +98,6 @@ test.each([
     host: "app.okou.ai",
     locale: "en-US",
     env: { TZ: "Asia/Shanghai" },
-    featureSwitches: { [FeatureSwitchKey.MarkdownTime]: true },
   });
 
   const time = await screen.findByText(scenario.expected);
@@ -120,7 +117,6 @@ test("A time tag can render from datetime without a text label", async () => {
     host: "app.okou.ai",
     locale: "en-US",
     env: { TZ: "Asia/Shanghai" },
-    featureSwitches: { [FeatureSwitchKey.MarkdownTime]: true },
   });
 
   const time = await screen.findByText("Sep 9, 2026, 3:00:00 PM GMT+8");
@@ -144,7 +140,6 @@ test("Missing, invalid, and timezone-free datetimes retain their original text",
     path: chat.path,
     host: "app.okou.ai",
     env: { TZ: "America/Los_Angeles" },
-    featureSwitches: { [FeatureSwitchKey.MarkdownTime]: true },
   });
 
   await expect(
@@ -185,7 +180,6 @@ test("Time tags in inline and fenced code remain literal code", async () => {
     host: "app.okou.ai",
     locale: "en-US",
     env: { TZ: "America/Los_Angeles" },
-    featureSwitches: { [FeatureSwitchKey.MarkdownTime]: true },
   });
 
   const time = await screen.findByText("Sep 9, 2026, 12:00:00 AM PDT");
@@ -196,20 +190,4 @@ test("Time tags in inline and fenced code remain literal code", async () => {
   expect(frame?.querySelector("pre code.language-html")?.textContent).toBe(
     `${fenced}\n`,
   );
-});
-
-test("Time tags retain their original text while localization is disabled", async () => {
-  const chat = installMessage(
-    '<time datetime="2026-09-09T15:00:00+08:00">2026-09-09T15:00:00+08:00</time>',
-  );
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-    env: { TZ: "America/Los_Angeles" },
-    featureSwitches: { [FeatureSwitchKey.MarkdownTime]: false },
-  });
-
-  const time = await screen.findByText("2026-09-09T15:00:00+08:00");
-  expect(time).toHaveAttribute("datetime", "2026-09-09T15:00:00+08:00");
 });

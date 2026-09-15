@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
-  it("should have exactly 42 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(42);
+  it("should have exactly 43 capabilities", () => {
+    expect(CAPABILITIES).toHaveLength(43);
   });
 
   it("should follow {resource}:{action} naming pattern", () => {
@@ -23,8 +23,9 @@ describe("CAPABILITIES", () => {
     expect(CAPABILITIES).not.toContain("integration-slack:write");
   });
 
-  it("should include Feishu messaging capability", () => {
+  it("should include separate Feishu and Lark messaging capabilities", () => {
     expect(CAPABILITIES).toContain("feishu:write");
+    expect(CAPABILITIES).toContain("lark:write");
   });
 
   it("should include telegram read and write capabilities", () => {

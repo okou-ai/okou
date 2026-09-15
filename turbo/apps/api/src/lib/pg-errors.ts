@@ -1,6 +1,5 @@
 const PG_FOREIGN_KEY_VIOLATION = "23503";
 const PG_LOCK_NOT_AVAILABLE = "55P03";
-const PG_QUERY_CANCELED = "57014";
 const PG_UNIQUE_VIOLATION = "23505";
 /** SQLSTATE is a fixed five-character class code; longer driver text is not. */
 const SQL_STATE_PATTERN = /^[0-9A-Z]{5}$/u;
@@ -24,10 +23,6 @@ export function isForeignKeyViolation(error: unknown): boolean {
 
 export function isLockNotAvailable(error: unknown): boolean {
   return pgErrorCode(error) === PG_LOCK_NOT_AVAILABLE;
-}
-
-export function isQueryCanceled(error: unknown): boolean {
-  return pgErrorCode(error) === PG_QUERY_CANCELED;
 }
 
 export function isUniqueViolation(error: unknown): boolean {

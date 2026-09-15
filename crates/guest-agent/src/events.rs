@@ -165,16 +165,18 @@ impl EventPayloadEnvelope {
         event_bytes: usize,
         private_citation_bytes: usize,
     ) -> usize {
-        self.prefix.len()
-            + event_bytes
-            + EVENT_PAYLOAD_EVENTS_SUFFIX.len()
-            + if self.pi_memory_citation_transport {
-                PI_MEMORY_CITATION_TRANSPORT_PREFIX.len()
-                    + private_citation_bytes
-                    + PI_MEMORY_CITATION_TRANSPORT_SUFFIX.len()
+        self.prefix
+            .len()
+            .saturating_add(event_bytes)
+            .saturating_add(EVENT_PAYLOAD_EVENTS_SUFFIX.len())
+            .saturating_add(if self.pi_memory_citation_transport {
+                PI_MEMORY_CITATION_TRANSPORT_PREFIX
+                    .len()
+                    .saturating_add(private_citation_bytes)
+                    .saturating_add(PI_MEMORY_CITATION_TRANSPORT_SUFFIX.len())
             } else {
                 EVENT_PAYLOAD_PUBLIC_SUFFIX.len()
-            }
+            })
     }
 
     pub(crate) fn payload(&self, events: &[Bytes], private_citations: &[Bytes]) -> Bytes {

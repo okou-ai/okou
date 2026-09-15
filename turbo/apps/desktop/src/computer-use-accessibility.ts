@@ -67,11 +67,6 @@ export interface AccessibilityElementSnapshot {
 }
 
 export interface AccessibilityAppStateSnapshot {
-  readonly observation?: {
-    readonly text: string;
-    readonly elementsComplete: boolean;
-    readonly source: "cua";
-  };
   readonly app: string;
   readonly appDisplayName?: string;
   readonly bundleId?: string;
@@ -879,20 +874,6 @@ function indexAccessibilitySnapshot(
   };
 }
 
-function indexedAccessibilitySnapshot(
-  snapshot: AccessibilityAppStateSnapshot,
-): IndexedAccessibilitySnapshot {
-  if (snapshot.observation) {
-    if (!snapshot.elementIdsByIndex)
-      throw new ComputerUseNativeHelperError(
-        "accessibility_unavailable",
-        "CUA observation is missing its retained element index",
-      );
-    return { snapshot, elementIdsByIndex: snapshot.elementIdsByIndex };
-  }
-  return indexAccessibilitySnapshot(snapshot);
-}
-
 const ROLE_LABELS: Readonly<Record<string, string>> = Object.freeze({
   AXButton: "button",
   AXCheckBox: "checkbox",
@@ -1215,7 +1196,7 @@ function windowSpaceLine(
 export function renderAccessibilityTree(
   snapshot: AccessibilityAppStateSnapshot,
 ): string {
-  const indexed = indexedAccessibilitySnapshot(snapshot).snapshot;
+  const indexed = indexAccessibilitySnapshot(snapshot).snapshot;
   const appName = indexed.appDisplayName ?? indexed.app;
   const appIdentity = indexed.appPath ?? appName;
   const appDetails = [
@@ -1231,14 +1212,6 @@ export function renderAccessibilityTree(
       ? `App=${appIdentity} (${appDetails.join(", ")})`
       : `App=${appIdentity}`,
   ];
-  if (indexed.observation) {
-    lines.push(
-      indexed.observation.text,
-      "Element coverage is incomplete.",
-      "</app_state>",
-    );
-    return lines.join("\n");
-  }
   const windowTitle =
     formatText(indexed.windowTitle) ?? formatText(indexed.elements[0]?.name);
   if (windowTitle) {
@@ -1396,9 +1369,6 @@ async function listApps(
     status: "succeeded",
     result: {
       apps,
-      ...(nativeBackend.discoveryNote
-        ? { discoveryNote: nativeBackend.discoveryNote }
-        : {}),
     },
   };
 }
@@ -1413,10 +1383,8 @@ async function getAppState(
   const helperStartedAt = Date.now();
   const rawSnapshot = await nativeBackend.getAppState(app, id, settle);
   const helperDurationMs = Date.now() - helperStartedAt;
-  const snapshot = rawSnapshot.observation
-    ? rawSnapshot
-    : normalizeAccessibilitySnapshot(rawSnapshot);
-  const indexed = indexedAccessibilitySnapshot(snapshot);
+  const snapshot = normalizeAccessibilitySnapshot(rawSnapshot);
+  const indexed = indexAccessibilitySnapshot(snapshot);
   const screenshot = nativeAppStateScreenshot(indexed.snapshot);
   if ("status" in screenshot) {
     return screenshot;
@@ -1459,36 +1427,6 @@ async function withPostActionAppState(args: {
   readonly nativeBackend: ComputerUseNativeBackend;
   readonly snapshotStore: ComputerUseSnapshotStore;
 }): Promise<ComputerUseCommandExecutionResult> {
-  if (args.actionResult.result.driver === "cua") {
-    try {
-      const observed = await getAppState(
-        args.app,
-        args.nativeBackend,
-        args.snapshotStore,
-        true,
-      );
-      return {
-        status: "succeeded",
-        result: {
-          ...(observed.status === "succeeded"
-            ? observed.result
-            : { observationError: observed.error }),
-          action: args.actionResult.result,
-        },
-      };
-    } catch (error) {
-      return {
-        status: "succeeded",
-        result: {
-          action: args.actionResult.result,
-          observationError: {
-            code: "accessibility_unavailable",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        },
-      };
-    }
-  }
   const appStateResult = await getAppState(
     args.app,
     args.nativeBackend,
@@ -1624,15 +1562,6 @@ function elementTargetText(target: ComputerUseElementTarget): string {
     : (target.elementId ?? "element");
 }
 
-function actionSummary(
-  result: Record<string, unknown>,
-  legacy: string,
-): string {
-  return result.driver === "cua" && typeof result.effect === "string"
-    ? `CUA action effect: ${result.effect}; inspect action evidence and post-state`
-    : legacy;
-}
-
 async function clickElement(args: {
   readonly app: string;
   readonly elementId: string | null;
@@ -1682,10 +1611,7 @@ async function clickElement(args: {
         button: args.button,
         clickCount: args.clickCount,
         ...nativeResult,
-        summary: actionSummary(
-          nativeResult,
-          `Clicked ${elementTargetText(target)}`,
-        ),
+        summary: `Clicked ${elementTargetText(target)}`,
       },
     };
   }
@@ -1724,7 +1650,7 @@ async function clickElement(args: {
         button: args.button,
         clickCount: args.clickCount,
         ...nativeResult,
-        summary: actionSummary(nativeResult, `Clicked ${args.x},${args.y}`),
+        summary: `Clicked ${args.x},${args.y}`,
       },
     };
   }
@@ -1754,7 +1680,7 @@ async function setElementValue(
       app,
       ...elementTargetResult(target),
       ...nativeResult,
-      summary: actionSummary(nativeResult, `Set ${elementTargetText(target)}`),
+      summary: `Set ${elementTargetText(target)}`,
     },
   };
 }
@@ -1781,7 +1707,7 @@ async function performElementAction(
       ...elementTargetResult(target),
       action,
       ...nativeResult,
-      summary: actionSummary(nativeResult, `Performed ${action}`),
+      summary: `Performed ${action}`,
     },
   };
 }
@@ -1804,7 +1730,7 @@ async function typeText(
     result: {
       app,
       ...result,
-      summary: actionSummary(result, "Typed text"),
+      summary: "Typed text",
     },
   };
 }
@@ -1829,7 +1755,7 @@ async function pressKey(
       app,
       key: normalizedKey,
       ...nativeResult,
-      summary: actionSummary(nativeResult, `Pressed ${normalizedKey}`),
+      summary: `Pressed ${normalizedKey}`,
     },
   };
 }
@@ -1859,10 +1785,7 @@ async function scrollElement(
       direction,
       pages,
       ...nativeResult,
-      summary: actionSummary(
-        nativeResult,
-        `Scrolled ${elementTargetText(target)}`,
-      ),
+      summary: `Scrolled ${elementTargetText(target)}`,
     },
   };
 }
@@ -1883,7 +1806,6 @@ export async function executeComputerUseCommand(
   try {
     const nativeBackend =
       dependencies.nativeBackend ?? createComputerUseNativeBackend();
-    nativeBackend.validateCommand?.(command);
     const snapshotStore =
       dependencies.snapshotStore ?? new ComputerUseSnapshotStore();
     const app = payloadString(command.payload, "app");
@@ -1971,19 +1893,14 @@ export async function executeComputerUseCommand(
       if (!direction) {
         return missingField("direction");
       }
-      const target =
-        nativeBackend.supportsWindowScroll &&
-        !elementId &&
-        elementIndex === null
-          ? { ...(snapshotId ? { snapshotId } : {}) }
-          : resolveElementTarget({
-              app,
-              elementId,
-              elementIndex,
-              snapshotId,
-              snapshotStore,
-              commandName: "element.scroll",
-            });
+      const target = resolveElementTarget({
+        app,
+        elementId,
+        elementIndex,
+        snapshotId,
+        snapshotStore,
+        commandName: "element.scroll",
+      });
       if ("status" in target) {
         return target;
       }
@@ -2007,9 +1924,7 @@ export async function executeComputerUseCommand(
       const elementId = payloadString(command.payload, "elementId");
       const elementIndex = payloadElementIndex(command.payload);
       const snapshotId = payloadString(command.payload, "snapshotId");
-      const value = nativeBackend.validateCommand
-        ? command.payload.value
-        : payloadString(command.payload, "value");
+      const value = payloadString(command.payload, "value");
       if (typeof value !== "string" || !value) {
         return missingField("value");
       }
@@ -2064,9 +1979,7 @@ export async function executeComputerUseCommand(
       });
     }
     if (command.kind === "keyboard.type_text") {
-      const text = nativeBackend.validateCommand
-        ? command.payload.text
-        : payloadString(command.payload, "text");
+      const text = payloadString(command.payload, "text");
       const snapshotId = payloadString(command.payload, "snapshotId");
       const foregroundRecovery = payloadForegroundRecoveryPolicy(
         command.payload,

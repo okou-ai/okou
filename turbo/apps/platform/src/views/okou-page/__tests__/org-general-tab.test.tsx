@@ -45,7 +45,7 @@ async function reopenSettings(): Promise<void> {
 }
 
 async function openGeneralTab(): Promise<void> {
-  await setupPage({ context, path: "/?settings=general" });
+  await setupPage({ context, path: "/agents?settings=general" });
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(
@@ -362,7 +362,7 @@ test.each(["closing Settings", "navigating back"])(
   "Require fresh workspace confirmation after %s",
   async (exit) => {
     context.mocks.data.org({ id: "org_1", name: "Acme", role: "admin" });
-    await setupPage({ context, path: "/" });
+    await setupPage({ context, path: "/agents" });
     await reopenSettings();
 
     const dialog = await openDeleteDialog();

@@ -13,10 +13,9 @@ import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  refreshDueSystemStoragePresignedUrls$,
   SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
-  SYSTEM_STORAGE_PRESIGNED_URL_REFRESH_LIMIT,
   systemStoragePresignedUrlCacheKey,
+  pruneStoragePresignedUrls$,
 } from "../services/system-storage-presigned-url-cache.service";
 import {
   isTestEndpointAllowed,
@@ -481,24 +480,24 @@ const mutateSystemStoragePresignedUrlCacheState$ = command(
       case "read-owned-storage-cache": {
         return await readOwnedStorageCacheForAction(db, body, signal);
       }
-      case "refresh-owned-storage-cache": {
+      case "prune-owned-storage-cache": {
         const storage = await requireOwnedSystemStorage(
           db,
           body.storage_id,
           signal,
         );
         const result = await set(
-          refreshDueSystemStoragePresignedUrls$,
+          pruneStoragePresignedUrls$,
           {
             db,
-            limit: SYSTEM_STORAGE_PRESIGNED_URL_REFRESH_LIMIT,
-            pruneLimit: SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
+            scope: "system_storage",
+            limit: SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
             objectKeyPrefix: `${storage.s3Prefix}/`,
           },
           signal,
         );
         signal.throwIfAborted();
-        return actionOk({ cache_refresh: result });
+        return actionOk({ cache_prune: result });
       }
       case "read-storage-state": {
         return await readStorageStateForAction(db, body, signal);

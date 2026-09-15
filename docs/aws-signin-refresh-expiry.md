@@ -7,13 +7,18 @@ response without credentials and records `needsReconnect=true` with the
 existing `credential_expired` reason. The account remains unavailable until
 the user reconnects it.
 
-The transition emits a fixed structured DEBUG message instead of WARN. The
-provider code is independent of normalized OAuth `invalid_grant`; AWS currently
-normalizes other 4xx responses to that OAuth code too. Message text alone never
-selects the expiry policy. Unknown 4xx, 429, 5xx, transport failures and malformed
-responses keep their existing handling and warning policy. Storage exceptions
-still propagate through normal API error reporting; DEBUG is not a certificate
-that a database transaction committed or a run succeeded.
+The transition writes no log record. Refresh-failure diagnostics follow one
+rule: a `reconnect_required` outcome is silent because the persisted reconnect
+state is already the signal an operator and the account owner can read, and an
+`upstream_provider` outcome writes one WARN with `accessSourceKey`, `orgId`,
+`userId`, `errorCode` and `failureReason`, without provider message text or an
+OAuth error echo. The provider code is independent of normalized OAuth
+`invalid_grant`; AWS currently normalizes other 4xx responses to that OAuth code
+too. Message text alone never selects the expiry policy. Unknown 4xx, 429, 5xx,
+transport failures and malformed responses keep their existing handling and are
+classified by the same rule. Storage exceptions still propagate through normal
+API error reporting; a silent expiry is not a certificate that a database
+transaction committed or a run succeeded.
 
 Every refresh checks the selected account's current state under the existing
 refresh locks. AWS CLI accounts marked `credential_expired` return the same

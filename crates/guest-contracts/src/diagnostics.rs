@@ -34,6 +34,9 @@ pub struct FailureDiagnostic {
     pub failure_detail_source: Option<FailureDetailSource>,
     /// Parsed detailed failure reason, when available.
     pub failure_reason: Option<FailureReason>,
+    /// Observed model-request status and completed retry evidence, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_request: Option<ModelRequestDiagnostic>,
     /// Conservative session-history target status recorded during failure handling.
     pub session_history_status: SessionHistoryStatus,
     /// Content-safe shape classification for the submitted prompt.
@@ -53,6 +56,23 @@ pub struct FailureDiagnostic {
     pub workload_resource_limit: Option<WorkloadResourceLimitDiagnostic>,
 }
 
+/// Content-free evidence from the final failed model call and its session retries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRequestDiagnostic {
+    /// HTTP status actually observed on the final transport attempt, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    /// Fetch attempts made by the final model call, including transport failures.
+    pub transport_attempts: u32,
+    /// Completed session retries, including the final failed response; excludes scheduled sleeps.
+    #[serde(default)]
+    pub retry_attempts: u32,
+    /// Session retry maximum observed from an SDK retry event, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_limit: Option<u32>,
+}
+
 impl FailureDiagnostic {
     /// Create a diagnostic with required fields and empty optional details.
     #[must_use]
@@ -70,6 +90,7 @@ impl FailureDiagnostic {
             claude_num_turns: None,
             failure_detail_source: None,
             failure_reason: None,
+            model_request: None,
             session_history_status: SessionHistoryStatus::Unknown,
             prompt_shape: prompt.prompt_shape,
             prompt_bytes: prompt.prompt_bytes,
@@ -175,13 +196,13 @@ pub struct HeartbeatFailedCycleDiagnostic {
     /// Delay between the scheduled interval tick and the start of this cycle.
     pub scheduled_lag_ms: u64,
     /// Completed failed attempts, bounded by the heartbeat retry budget.
-    pub attempts: Vec<HeartbeatCompletedAttemptDiagnostic>,
+    pub attempts: Vec<HttpCompletedAttemptDiagnostic>,
 }
 
-/// One completed failed HTTP attempt for a heartbeat cycle.
+/// One completed failed HTTP attempt, shared by heartbeat and event delivery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HeartbeatCompletedAttemptDiagnostic {
+pub struct HttpCompletedAttemptDiagnostic {
     /// One-based attempt number.
     pub attempt: u32,
     /// Exact `x-client-request-id` value sent on the request.
@@ -189,7 +210,7 @@ pub struct HeartbeatCompletedAttemptDiagnostic {
     /// Monotonic elapsed request time in milliseconds.
     pub elapsed_ms: u64,
     /// Stable content-safe failure classification.
-    pub failure_kind: HeartbeatAttemptFailureKind,
+    pub failure_kind: HttpAttemptFailureKind,
     /// HTTP response status, when a response was received.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub http_status: Option<u16>,
@@ -201,10 +222,10 @@ pub struct HeartbeatCompletedAttemptDiagnostic {
     pub connect_observed: Option<bool>,
 }
 
-/// Content-safe failure classification for a completed heartbeat HTTP attempt.
+/// Content-safe failure classification for a completed HTTP attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum HeartbeatAttemptFailureKind {
+pub enum HttpAttemptFailureKind {
     /// The request exceeded its transport timeout.
     Timeout,
     /// A connection could not be established.
@@ -215,7 +236,7 @@ pub enum HeartbeatAttemptFailureKind {
     Transport,
 }
 
-impl HeartbeatAttemptFailureKind {
+impl HttpAttemptFailureKind {
     /// Return the stable snake_case string representation.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -299,30 +320,7 @@ pub struct EventDeliveryFailedBatchDiagnostic {
     /// Whether the API explicitly rejected every terminal attempt.
     pub outcome: EventDeliveryAcceptanceOutcome,
     /// Completed failed attempts, bounded by the delivery retry budget.
-    pub attempts: Vec<EventDeliveryCompletedAttemptDiagnostic>,
-}
-
-/// One completed failed HTTP attempt for an exhausted event batch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EventDeliveryCompletedAttemptDiagnostic {
-    /// One-based attempt number.
-    pub attempt: u32,
-    /// Exact `x-client-request-id` value sent on the request.
-    pub client_request_id: String,
-    /// Monotonic elapsed request time in milliseconds.
-    pub elapsed_ms: u64,
-    /// Stable content-safe failure classification.
-    pub failure_kind: EventDeliveryAttemptFailureKind,
-    /// HTTP response status, when a response was received.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub http_status: Option<u16>,
-    /// Whether Reqwest identified the response-less failure as timeout-related.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_observed: Option<bool>,
-    /// Whether Reqwest identified the response-less failure as connection-related.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub connect_observed: Option<bool>,
+    pub attempts: Vec<HttpCompletedAttemptDiagnostic>,
 }
 
 /// Delivery state captured when the global drain deadline expires.
@@ -355,7 +353,7 @@ pub struct EventDeliveryActiveBatchDiagnostic {
     /// Conservative batch byte accounting used by guest admission control.
     pub conservative_bytes: u64,
     /// Completed failed attempts before the drain deadline.
-    pub completed_attempts: Vec<EventDeliveryCompletedAttemptDiagnostic>,
+    pub completed_attempts: Vec<HttpCompletedAttemptDiagnostic>,
     /// Request attempt still in flight at the deadline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_attempt: Option<EventDeliveryActiveAttemptDiagnostic>,
@@ -392,33 +390,6 @@ impl EventDeliveryAcceptanceOutcome {
         match self {
             Self::ConfirmedRejection => "confirmed_rejection",
             Self::OutcomeUnknown => "outcome_unknown",
-        }
-    }
-}
-
-/// Content-safe failure classification for a completed event HTTP attempt.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EventDeliveryAttemptFailureKind {
-    /// The request exceeded its transport timeout.
-    Timeout,
-    /// A connection could not be established.
-    Connect,
-    /// The API returned a non-success HTTP response.
-    HttpStatus,
-    /// Another transport failure occurred without an HTTP response.
-    Transport,
-}
-
-impl EventDeliveryAttemptFailureKind {
-    /// Return the stable snake_case string representation.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Timeout => "timeout",
-            Self::Connect => "connect",
-            Self::HttpStatus => "http_status",
-            Self::Transport => "transport",
         }
     }
 }
@@ -1671,20 +1642,20 @@ mod tests {
 
     #[test]
     fn failure_diagnostic_round_trips_bounded_event_delivery_details() {
-        let first_attempt = EventDeliveryCompletedAttemptDiagnostic {
+        let first_attempt = HttpCompletedAttemptDiagnostic {
             attempt: 1,
             client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
             elapsed_ms: 30_000,
-            failure_kind: EventDeliveryAttemptFailureKind::HttpStatus,
+            failure_kind: HttpAttemptFailureKind::HttpStatus,
             http_status: Some(500),
             timeout_observed: None,
             connect_observed: None,
         };
-        let combined_transport_attempt = EventDeliveryCompletedAttemptDiagnostic {
+        let combined_transport_attempt = HttpCompletedAttemptDiagnostic {
             attempt: 1,
             client_request_id: "33333333-3333-4333-8333-333333333333".to_string(),
             elapsed_ms: 10_000,
-            failure_kind: EventDeliveryAttemptFailureKind::Timeout,
+            failure_kind: HttpAttemptFailureKind::Timeout,
             http_status: None,
             timeout_observed: Some(true),
             connect_observed: Some(true),
@@ -1737,8 +1708,14 @@ mod tests {
             "confirmed_rejection"
         );
         assert_eq!(
-            json["eventDelivery"]["firstFailedBatch"]["attempts"][0]["failureKind"],
-            "http_status"
+            json["eventDelivery"]["firstFailedBatch"]["attempts"][0],
+            serde_json::json!({
+                "attempt": 1,
+                "clientRequestId": "11111111-1111-4111-8111-111111111111",
+                "elapsedMs": 30_000,
+                "failureKind": "http_status",
+                "httpStatus": 500
+            })
         );
         assert_eq!(
             json["eventDelivery"]["drainTimeout"]["activeBatch"]["completedAttempts"][0]["timeoutObserved"],
@@ -1756,26 +1733,23 @@ mod tests {
             EventDeliveryAcceptanceOutcome::ConfirmedRejection.as_str(),
             "confirmed_rejection"
         );
-        assert_eq!(
-            EventDeliveryAttemptFailureKind::Transport.as_str(),
-            "transport"
-        );
+        assert_eq!(HttpAttemptFailureKind::Transport.as_str(), "transport");
 
         let round_trip: FailureDiagnostic = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(round_trip, diagnostic);
     }
 
     #[test]
-    fn completed_event_attempt_deserializes_without_transport_observations() {
-        let attempt: EventDeliveryCompletedAttemptDiagnostic =
-            serde_json::from_value(serde_json::json!({
-                "attempt": 3,
-                "clientRequestId": "11111111-1111-4111-8111-111111111111",
-                "elapsedMs": 12_000,
-                "failureKind": "timeout"
-            }))
-            .unwrap();
+    fn completed_http_attempt_deserializes_without_transport_observations() {
+        let attempt: HttpCompletedAttemptDiagnostic = serde_json::from_value(serde_json::json!({
+            "attempt": 3,
+            "clientRequestId": "11111111-1111-4111-8111-111111111111",
+            "elapsedMs": 12_000,
+            "failureKind": "timeout"
+        }))
+        .unwrap();
 
+        assert_eq!(attempt.http_status, None);
         assert_eq!(attempt.timeout_observed, None);
         assert_eq!(attempt.connect_observed, None);
     }
@@ -1786,20 +1760,20 @@ mod tests {
             failed_cycles: vec![HeartbeatFailedCycleDiagnostic {
                 scheduled_lag_ms: 25,
                 attempts: vec![
-                    HeartbeatCompletedAttemptDiagnostic {
+                    HttpCompletedAttemptDiagnostic {
                         attempt: 1,
                         client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
                         elapsed_ms: 10_000,
-                        failure_kind: HeartbeatAttemptFailureKind::Timeout,
+                        failure_kind: HttpAttemptFailureKind::Timeout,
                         http_status: None,
                         timeout_observed: Some(true),
                         connect_observed: Some(false),
                     },
-                    HeartbeatCompletedAttemptDiagnostic {
+                    HttpCompletedAttemptDiagnostic {
                         attempt: 2,
                         client_request_id: "22222222-2222-4222-8222-222222222222".to_string(),
                         elapsed_ms: 3,
-                        failure_kind: HeartbeatAttemptFailureKind::HttpStatus,
+                        failure_kind: HttpAttemptFailureKind::HttpStatus,
                         http_status: Some(503),
                         timeout_observed: None,
                         connect_observed: None,
@@ -1822,10 +1796,16 @@ mod tests {
             "timeout"
         );
         assert_eq!(
-            json["heartbeat"]["failedCycles"][0]["attempts"][1]["httpStatus"],
-            503
+            json["heartbeat"]["failedCycles"][0]["attempts"][1],
+            serde_json::json!({
+                "attempt": 2,
+                "clientRequestId": "22222222-2222-4222-8222-222222222222",
+                "elapsedMs": 3,
+                "failureKind": "http_status",
+                "httpStatus": 503
+            })
         );
-        assert_eq!(HeartbeatAttemptFailureKind::Transport.as_str(), "transport");
+        assert_eq!(HttpAttemptFailureKind::Transport.as_str(), "transport");
 
         let round_trip: FailureDiagnostic = serde_json::from_value(json).unwrap();
         assert_eq!(round_trip, diagnostic);

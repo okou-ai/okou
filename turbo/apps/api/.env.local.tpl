@@ -63,6 +63,13 @@ AXIOM_TOKEN_SESSIONS=op://Development/axiom/AXIOM_TOKEN_SESSIONS
 AXIOM_TOKEN_TELEMETRY=op://Development/axiom/AXIOM_TOKEN_TELEMETRY
 AXIOM_DATASET_SUFFIX=dev
 
+# Optional: isolated Pi Langfuse project. Tracing starts only for runs whose
+# user has explicitly enabled the default-off feature switch.
+LANGFUSE_PUBLIC_KEY=op://Development/langfuse/LANGFUSE_PUBLIC_KEY
+LANGFUSE_SECRET_KEY=op://Development/langfuse/LANGFUSE_SECRET_KEY
+LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
+LANGFUSE_PROJECT_ID=cmu0bvhcu012gad0drbw8ddts
+
 # Required: Secrets encryption
 SECRETS_ENCRYPTION_KEY=op://Development/vm0/SECRETS_ENCRYPTION_KEY
 
@@ -90,6 +97,12 @@ OPENAI_API_KEY=op://Development/openai/OPENAI_API_KEY
 
 # Optional: OpenRouter lightweight model calls
 OPENROUTER_API_KEY=op://Development/openrouter/Section_ak7dvythmldarvk4dodjs4ecyq/OPENROUTER_API_KEY
+
+# Google LLM workload identity (Vercel preview uses llm-dev; no static key).
+# Configure all three together; runtime OIDC is supplied by Vercel.
+GCP_LLM_PROJECT_ID=
+GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=
+GCP_LLM_SERVICE_ACCOUNT_EMAIL=
 
 # Required: OpenAI Webhook signing secret (for built-in generations webhook)
 OPENAI_WEBHOOK_SECRET=op://Development/openai/OPENAI_WEBHOOK_SECRET

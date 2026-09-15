@@ -7,7 +7,6 @@ import {
   COMPUTER_USE_AUTOMATION_PERMISSION_TARGETS,
   type ComputerUseAutomationPermissionTarget,
   type DesktopComputerUseState,
-  type ComputerUseDriverId,
 } from "./computer-use-types";
 
 interface ComputerUseIpcOptions {
@@ -24,12 +23,6 @@ interface ComputerUseIpcOptions {
 }
 
 interface ComputerUseNativeApi {
-  readonly setExperimentalCuaEnabled: (
-    enabled: boolean,
-  ) => Promise<DesktopComputerUseState>;
-  readonly selectDriver: (
-    driver: ComputerUseDriverId,
-  ) => Promise<DesktopComputerUseState>;
   readonly getState: () => DesktopComputerUseState;
   readonly refreshPermissions: () => Promise<DesktopComputerUseState>;
   readonly start: (options: {
@@ -123,25 +116,6 @@ export function installComputerUseIpc(
         isComputerUseStartOptions(value) && value.userInitiated === true,
     };
   };
-
-  ipcMain.handle(
-    COMPUTER_USE_CHANNELS.setExperimentalCuaEnabled,
-    (event, enabled: unknown) => {
-      assertComputerUsePage(event);
-      if (typeof enabled !== "boolean")
-        throw new Error("Experimental CUA enabled state must be a boolean");
-      return api.setExperimentalCuaEnabled(enabled);
-    },
-  );
-  ipcMain.handle(
-    COMPUTER_USE_CHANNELS.selectDriver,
-    (event, driver: unknown) => {
-      assertComputerUsePage(event);
-      if (driver !== "okou" && driver !== "cua")
-        throw new Error("Unknown Computer Use driver");
-      return api.selectDriver(driver);
-    },
-  );
 
   ipcMain.handle(COMPUTER_USE_CHANNELS.getState, (event) => {
     assertComputerUsePage(event);

@@ -23,16 +23,18 @@ interface SessionFixture {
   readonly email: string;
 }
 
-function expectValueFree(diagnostics: string, values: readonly string[]): void {
+// The payload carries random identifiers, so a bare secret length would match
+// them by chance without proving anything about the secret. Only derivatives
+// that reproduce the value itself are meaningful evidence of a leak.
+function expectValueFree(payload: string, values: readonly string[]): void {
   for (const value of values) {
     const forbiddenDerivatives = [
       value,
-      String(value.length),
       createHash("sha256").update(value).digest("hex"),
       JSON.stringify(value),
     ];
     for (const derivative of forbiddenDerivatives) {
-      expect(diagnostics).not.toContain(derivative);
+      expect(payload).not.toContain(derivative);
     }
   }
 }
@@ -387,12 +389,8 @@ describe("POST /api/billing/redeem-code", () => {
     expectValueFree(
       JSON.stringify({
         response: response.body,
-        logs: {
-          debug: context.mocks.axiomLogging.debug.mock.calls,
-          info: context.mocks.axiomLogging.info.mock.calls,
-          warn: context.mocks.axiomLogging.warn.mock.calls,
-          error: context.mocks.axiomLogging.error.mock.calls,
-        },
+        upstreamAuthorization: requestedAuthorization,
+        upstreamBody: requestedBody,
       }),
       [ATOM_MACHINE_SECRET_KEY],
     );

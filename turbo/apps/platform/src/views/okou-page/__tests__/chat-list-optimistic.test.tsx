@@ -54,6 +54,7 @@ function installNewThreadDefaults(): void {
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-5.6-luna",
     serviceTier: null,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-08-01T00:00:00.000Z",
@@ -61,17 +62,19 @@ function installNewThreadDefaults(): void {
   installActiveChatBoundaries(context);
 }
 
-test("A new conversation appears before server confirmation", async () => {
+async function openUnconfirmedConversation() {
   const auth = chatListAuth(9);
   const confirmation = context.mocks.deferred<void>();
-  let createdThreadId: string | undefined;
-  let requestedModel: string | undefined;
-  let draftRequested = false;
+  const requests: {
+    threadId: string | undefined;
+    model: string | undefined;
+    draftRequested: boolean;
+  } = { threadId: undefined, model: undefined, draftRequested: false };
   installNewThreadDefaults();
   installChatListStream(context, { caseId: 9, snapshot: [] });
   context.mocks.api(chatThreadsContract.create, async ({ body, respond }) => {
-    createdThreadId = body.clientThreadId;
-    requestedModel = body.model;
+    requests.threadId = body.clientThreadId;
+    requests.model = body.model;
     await confirmation.promise;
     return respond(201, {
       id: body.clientThreadId ?? "b7000000-0000-4000-a000-000000000009",
@@ -82,7 +85,7 @@ test("A new conversation appears before server confirmation", async () => {
     });
   });
   context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
-    draftRequested = true;
+    requests.draftRequested = true;
     return respond(200, {
       draftUserMessage: null,
       draftAttachments: null,
@@ -103,29 +106,46 @@ test("A new conversation appears before server confirmation", async () => {
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
   });
+  return { confirmation, requests };
+}
 
+test("A new conversation appears before server confirmation", async () => {
+  const { confirmation, requests } = await openUnconfirmedConversation();
+  const defaultModel = await screen.findByRole("combobox", {
+    name: "GPT 5.6 Luna",
+  });
+  expect(defaultModel).toBeVisible();
+  await sendComposerMessage("Start the local conversation");
+
+  await waitFor(() => {
+    expect(sidebarThreadTitles()).toStrictEqual(["New chat"]);
+    expect(requests.threadId).toBeDefined();
+  });
+  expect(sidebarThreadLinks()).toHaveLength(1);
+  expect(sidebarThreadLinks()[0]).toHaveAttribute(
+    "data-sidebar-chat-thread-id",
+    requests.threadId,
+  );
+  expect(requests.draftRequested).toBeFalsy();
+  expect(confirmation.settled()).toBeFalsy();
+});
+
+test("The changed model survives the first send before server confirmation", async () => {
+  const { confirmation, requests } = await openUnconfirmedConversation();
   const defaultModel = await screen.findByRole("combobox", {
     name: "GPT 5.6 Luna",
   });
   expect(defaultModel).toBeVisible();
   await selectClaudeSonnet();
   await sendComposerMessage("Start the local conversation");
-
   await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual(["New chat"]);
-    expect(createdThreadId).toBeDefined();
+    expect(requests.model).toBe("claude-sonnet-4-6");
   });
-  expect(sidebarThreadLinks()).toHaveLength(1);
-  expect(sidebarThreadLinks()[0]).toHaveAttribute(
-    "data-sidebar-chat-thread-id",
-    createdThreadId,
-  );
   const selectedModel = await screen.findByRole("combobox", {
     name: "Claude Sonnet 4.6",
   });
   expect(selectedModel).toBeVisible();
-  expect(requestedModel).toBe("claude-sonnet-4-6");
-  expect(draftRequested).toBeFalsy();
+  expect(requests.draftRequested).toBeFalsy();
   expect(confirmation.settled()).toBeFalsy();
 });
 

@@ -9,12 +9,25 @@ const R2_IMAGE_TRANSFORM_HOSTS = new Set([
   "static.okou.io",
 ]);
 const R2_IMAGE_TRANSFORM_PREFIX = "/cdn-cgi/image/";
+const R2_IMAGE_TRANSFORM_INPUT_PATH =
+  /\.(?:avif|gif|heic|jpe?g|png|svg|webp)$/iu;
+const R2_IMAGE_TRANSFORM_CONTENT_TYPES = new Set([
+  "image/avif",
+  "image/gif",
+  "image/heic",
+  "image/jpeg",
+  "image/png",
+  "image/svg+xml",
+  "image/webp",
+]);
 
 // Output quality for Cloudflare Image Resizing. Tuned to stay crisp on
 // text-heavy presentation thumbnails while still shrinking payloads.
 const R2_IMAGE_TRANSFORM_QUALITY = 85;
 
 export interface R2ImageTransformOptions {
+  /** A known source MIME type takes precedence over the URL extension. */
+  readonly contentType?: string;
   readonly width?: number;
   readonly height?: number;
   readonly fit?: "cover" | "scale-down";
@@ -65,13 +78,36 @@ function parseAbsoluteUrl(url: string): URL | null {
   }
 }
 
+function isSupportedImageInput(url: URL, contentType?: string): boolean {
+  const type = contentType?.split(";")[0]?.trim().toLowerCase();
+  if (type && type !== "application/octet-stream") {
+    return R2_IMAGE_TRANSFORM_CONTENT_TYPES.has(type);
+  }
+  // URL-only previews and generic binary metadata do not identify a format.
+  return R2_IMAGE_TRANSFORM_INPUT_PATH.test(url.pathname);
+}
+
 export function r2ImageTransformUrl(
   url: string,
   options: R2ImageTransformOptions,
+  remoteImageOrigin?: string,
 ): string {
   const parsed = parseAbsoluteUrl(url);
-  if (parsed === null) {
+  // Unsupported or unknown input formats keep their original URL. A browser
+  // can display formats such as BMP that Cloudflare cannot transform.
+  if (parsed === null || !isSupportedImageInput(parsed, options.contentType)) {
     return url;
+  }
+
+  if (
+    remoteImageOrigin &&
+    parsed.protocol === "https:" &&
+    parsed.hostname.endsWith(".r2.cloudflarestorage.com") &&
+    parsed.searchParams.has("X-Amz-Signature")
+  ) {
+    // The signature covers the source URL. Preserve its encoded path and query
+    // byte for byte instead of reconstructing it with URLSearchParams.
+    return `${remoteImageOrigin}${R2_IMAGE_TRANSFORM_PREFIX}${r2ImageTransformDirectives(options)}/${url}`;
   }
 
   if (

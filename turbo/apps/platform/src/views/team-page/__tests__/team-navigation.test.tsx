@@ -116,6 +116,7 @@ test("The agent chat shortcut opens the first available thread", async () => {
       hasMore: false,
     });
   });
+  context.mocks.data.userPreferences({ locale: "en-US" });
   await setupTeamPage({
     context,
     path: `/agents/${RESEARCH_AGENT_ID}/chat`,
@@ -138,10 +139,12 @@ test("The agent chat shortcut opens the first available thread", async () => {
     shiftKey: true,
   });
 
-  await waitFor(() => {
-    expect(window.location.pathname).toBe(`/chats/${FIRST_THREAD_ID}`);
-    expect(screen.getByText("First shortcut thread message.")).toBeVisible();
-  });
+  const thread = await screen.findByRole("region", { name: "Chat thread" });
+  const message = await within(thread).findByText(
+    "First shortcut thread message.",
+  );
+  expect(message).toBeVisible();
+  expect(window.location.pathname).toBe(`/chats/${FIRST_THREAD_ID}`);
 });
 
 test("Agent details that fail to load offer a direct retry", async () => {

@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
-import {
-  PI_MEMORY_SUMMARY_MAX_BYTES,
-  PI_MEMORY_SUMMARY_MAX_TOKENS,
-} from "@okouai/api-contracts/contracts/runners";
+import { PI_MEMORY_SUMMARY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import {
   MAX_FILE_SIZE_BYTES,
   STORAGE_MANIFEST_MAX_FILES,
@@ -621,9 +618,8 @@ const downloadProjectionArchive$ = command(
     if (!("ok" in tokenCount)) {
       return { status: "invalid" };
     }
-    if (tokenCount.ok > PI_MEMORY_SUMMARY_MAX_TOKENS) {
-      return { status: "over_limit" };
-    }
+    // `tokenCount` describes the full source. The prompt injection budget is
+    // applied by the runtime renderer, so token-only excess is not over limit.
     return {
       status: "ready",
       content: decoded.ok,
@@ -844,14 +840,15 @@ function readyProjectionIsAuthentic(
   const tokenCount = safeSync(() => {
     return encode(projection.content).length;
   });
+  // `tokenCount` describes the full stored source. The prompt budget is applied
+  // by the runtime renderer, so a larger authentic source is not corrupt here.
   return (
     "ok" in tokenCount &&
     projection.content.trim().length > 0 &&
     content.length === projection.sourceSize &&
     hashFileContent(content) === projection.sourceHash &&
     content.length <= PI_MEMORY_SUMMARY_MAX_BYTES &&
-    tokenCount.ok === projection.tokenCount &&
-    projection.tokenCount <= PI_MEMORY_SUMMARY_MAX_TOKENS
+    tokenCount.ok === projection.tokenCount
   );
 }
 

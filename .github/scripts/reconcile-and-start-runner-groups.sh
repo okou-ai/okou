@@ -19,9 +19,6 @@ output_value() {
 required_env=(
   AWS_METAL_RUNNER_HOSTS
   BIN_DIR
-  CURRENT_EVENT
-  CURRENT_RUN_ID
-  DEFAULT_BRANCH
   JOB_REF
   METAL_HOSTS
   METAL_USER
@@ -63,27 +60,10 @@ if [ "$recovery_needed" != "true" ] && [ "$recovery_needed" != "false" ]; then
 fi
 
 if [ "$recovery_needed" = "true" ]; then
-  current_pr_number=""
-  case "$CURRENT_EVENT" in
-    pull_request|merge_group)
-      if [[ ! "$JOB_REF" =~ ^pr-([1-9][0-9]*)$ ]]; then
-        echo "::error::Cannot resolve the runner owner PR from ${JOB_REF}" >&2
-        exit 2
-      fi
-      current_pr_number=${BASH_REMATCH[1]}
-      ;;
-    push) ;;
-    *)
-      echo "::error::Unsupported runner recovery event: ${CURRENT_EVENT}" >&2
-      exit 2
-      ;;
-  esac
-
   recovery_dir="${work_dir}/recovery"
   plan_output="${work_dir}/plan.out"
-  export CURRENT_PR_NUMBER=$current_pr_number
   GITHUB_OUTPUT="$plan_output" \
-    RESOLVE_OUTPUT_DIR="$recovery_dir" \
+    RESOLVE_OUTPUT_DIR="${work_dir}/references" \
     RUNNER_HOST_GROUPS_MATRIX="$runner_host_groups_matrix" \
     "${SCRIPT_DIR}/runner-binary-cache-plan.sh"
 
@@ -92,6 +72,17 @@ if [ "$recovery_needed" = "true" ]; then
     echo "::error::Validated runner binary recovery was unavailable for ${recovery_miss_count} target(s)" >&2
     exit 1
   fi
+
+  recovery_references=$(output_value hit-references "$plan_output")
+  while IFS= read -r reference; do
+    target=$(jq -r '.target' <<<"$reference")
+    env GITHUB_OUTPUT= \
+      EXPECTED_TARGET="$target" \
+      EXPECTED_BINARY_INPUT_DIGEST="$(jq -r '.binaryInputDigest' <<<"$reference")" \
+      CACHE_REFERENCE="$reference" \
+      RESOLVE_OUTPUT_DIR="${recovery_dir}/${target}" \
+      "${SCRIPT_DIR}/runner-binary-cache.sh" download-reference
+  done < <(jq -c '.[]' <<<"$recovery_references")
 
   RECOVERY_DIR="$recovery_dir" \
     "${SCRIPT_DIR}/reconcile-runner-binary-groups.sh" restore

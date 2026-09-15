@@ -166,12 +166,14 @@ impl std::error::Error for InitError {}
 /// operation.
 fn initialize_process_containment() -> Result<(), InitError> {
     create_dir_all(Path::new(CGROUP_V2_MOUNT_PATH))?;
+    // CLI children and managed tools migrate before exec. Favor these dynamic
+    // placements over fork/exit throughput; this policy applies only to the guest.
     mount(
         Some("cgroup2"),
         CGROUP_V2_MOUNT_PATH,
         Some("cgroup2"),
         MsFlags::MS_NODEV | MsFlags::MS_NOEXEC | MsFlags::MS_NOSUID,
-        None::<&str>,
+        Some("favordynmods"),
     )
     .map_err(|source| InitError::Mount {
         target: CGROUP_V2_MOUNT_PATH.into(),

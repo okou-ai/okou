@@ -96,8 +96,7 @@ Do not add generic advice, filler, secrets, or fabricated verification.
 2. \`memory_summary.md\`
 
 The first line must be exactly \`v1\`, with no prefix or frontmatter. The next
-heading must be \`## User Profile\`. Keep the whole file dense and within the
-engine's byte and token limits. Use this ordered structure:
+heading must be \`## User Profile\`. Use this ordered structure:
 
 - \`## User Profile\`: concise, grounded stable context.
 - \`## User preferences\`: compact actionable bullets likely to matter again.
@@ -108,6 +107,18 @@ engine's byte and token limits. Use this ordered structure:
 Every index topic must contain exact searchable keywords and a short routing
 description. Keep detailed runbooks and provenance in \`MEMORY.md\`, skills, or
 Pi evidence rather than duplicating them here.
+
+Two separate limits apply to this file:
+
+- Writing target: aim for at most 2500 exact o200k tokens. Later runs inject
+  only a bounded excerpt of this size, marker included, so the most important
+  routing content belongs near the beginning and the end.
+- Hard limit: the whole file must stay within 65536 UTF-8 bytes. Exceeding it
+  fails output validation.
+
+A file above the 2500-token target is still valid and is stored in full. Do not
+delete grounded content only to reach the target; move detail into
+\`MEMORY.md\`, skills, or Pi evidence instead, and do not pad this index.
 
 3. \`skills/<skill-name>/\` (optional)
 
@@ -133,7 +144,7 @@ WORKFLOW
 `;
 
 export const PI_MEMORY_PHASE2_ADAPTED_TEMPLATE_SHA256 =
-  "037a827b7144353283b57be564687f032380e21e3f945e31b69e445ea62acbd9";
+  "7f763f1bbdbaab290a565a1e831fdc66d6ae1f23c23cfee6c2eb90e2ba40ebfb";
 
 export function renderPiMemoryPhase2Prompt(): string {
   const digest = createHash("sha256")

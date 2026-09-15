@@ -282,6 +282,7 @@ export function installActiveChatBoundaries(
       agentId: thread.agentId,
       title: thread.title,
       selectedModel: thread.selectedModel ?? null,
+      modelSettings: thread.modelSettings ?? {},
       serviceTier: thread.serviceTier ?? null,
       pinnedAt: thread.pinnedAt,
       computerUseHostId: thread.computerUseHostId ?? null,
@@ -364,7 +365,7 @@ export function sidebarThreadTitles(): string[] {
   return sidebarThreadLinks().map((link) => {
     return (
       link
-        .querySelector(".okou-nav-copy")
+        .querySelector('[data-slot="sidebar-thread-title"]')
         ?.textContent?.replace(/\s+/gu, " ")
         .trim() ?? ""
     );

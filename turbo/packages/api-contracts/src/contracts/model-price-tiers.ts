@@ -20,6 +20,7 @@ export const SUPPORTED_RUN_MODELS = [
   "gpt-5.6-terra",
   "gpt-5.6-luna",
   "gpt-5.5",
+  "deepseek-v4.1-flash",
   "deepseek-v4-pro",
   "deepseek-v4-flash",
 ] as const;
@@ -47,6 +48,7 @@ export const BUILT_IN_MODEL_PRICE_TIER = Object.freeze<
   "claude-opus-4-8": "$$$",
   "claude-sonnet-5": "$$",
   "claude-sonnet-4-6": "$$",
+  "deepseek-v4.1-flash": "$",
   "deepseek-v4-flash": "$",
   // Display tier only. Runtime token pricing is seeded separately.
   "deepseek-v4-pro": "$",

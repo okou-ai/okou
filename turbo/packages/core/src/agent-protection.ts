@@ -7,17 +7,9 @@ interface AgentIdentityUpdate {
   readonly visibility?: "public" | "private";
 }
 
-// New App/CLI clients can reach older API targets during rollout/rollback.
-// Missing identity grants no protected action; retire old-response tolerance
-// after those API targets are gone (#33251).
-const identityUnavailableError = {
-  code: "AGENT_IDENTITY_UNAVAILABLE",
-  message: "Agent identity is unavailable. Refresh the agent and try again.",
-};
-
 /** Validate protected fields using authoritative identity, never a name. */
 export function agentIdentityUpdateError(
-  isDefaultAgent: boolean | undefined,
+  isDefaultAgent: boolean,
   update: AgentIdentityUpdate,
 ) {
   if (
@@ -26,9 +18,6 @@ export function agentIdentityUpdateError(
     update.visibility === undefined
   ) {
     return null;
-  }
-  if (typeof isDefaultAgent !== "boolean") {
-    return identityUnavailableError;
   }
   if (!isDefaultAgent) {
     return null;
@@ -60,10 +49,7 @@ export function agentIdentityUpdateError(
   return null;
 }
 
-export function agentDeletionError(isDefaultAgent: boolean | undefined) {
-  if (typeof isDefaultAgent !== "boolean") {
-    return identityUnavailableError;
-  }
+export function agentDeletionError(isDefaultAgent: boolean) {
   return isDefaultAgent
     ? {
         code: "DEFAULT_AGENT_DELETE_LOCKED",

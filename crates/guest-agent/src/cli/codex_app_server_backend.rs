@@ -682,14 +682,16 @@ async fn run_codex_app_server(
                 "codex app-server shutdown failed: {}",
                 masker.mask_string(&error.to_string())
             ))),
-            (Err(CodexRunError::Execution(error)), Ok(())) => Err(error),
+            (Err(CodexRunError::Execution(error)), Ok(())) => {
+                Err(with_stderr_tail(error, &stderr_lines))
+            }
             (Err(CodexRunError::Execution(error)), Err(shutdown_error)) => {
                 let shutdown_error = masker.mask_string(&shutdown_error.to_string());
                 log_warn!(
                     LOG_TAG,
                     "codex app-server shutdown failed after run error: {shutdown_error}"
                 );
-                Err(error)
+                Err(with_stderr_tail(error, &stderr_lines))
             }
             (Err(CodexRunError::Heartbeat(failure)), shutdown_result) => {
                 if let Err(shutdown_error) = shutdown_result {
@@ -1587,9 +1589,123 @@ fn non_empty_string_at(
         .ok_or_else(|| AgentError::Execution(message.to_string()))
 }
 
+/// Retain stderr on the existing execution-error path without replacing typed
+/// failures or changing heartbeat/cancellation precedence. Call only after
+/// masking the collected lines together, before this additional output bound.
+fn with_stderr_tail(error: AgentError, masked_stderr: &[String]) -> AgentError {
+    const MAX_TAIL_BYTES: usize = 4096;
+    const TRUNCATED: &str = "[truncated] ";
+
+    let AgentError::Execution(mut message) = error else {
+        return error;
+    };
+    let stderr = masked_stderr.join("\n");
+    if stderr.is_empty() {
+        return AgentError::Execution(message);
+    }
+
+    // Keep whole escaped characters from the end, bounding the rendered bytes
+    // (not just the raw input) and preventing stderr from injecting log lines.
+    let mut tail = std::collections::VecDeque::new();
+    let mut bytes = 0;
+    for character in stderr.chars().rev() {
+        let escaped = character.escape_debug().to_string();
+        if bytes + escaped.len() > MAX_TAIL_BYTES - TRUNCATED.len() {
+            tail.push_front(TRUNCATED.to_string());
+            break;
+        }
+        bytes += escaped.len();
+        tail.push_front(escaped);
+    }
+    message.push_str("; stderr tail: ");
+    for fragment in tail {
+        message.push_str(&fragment);
+    }
+    AgentError::Execution(message)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine;
+
+    #[test]
+    fn execution_stderr_preserves_primary_error_and_escapes_controls() {
+        let error = with_stderr_tail(
+            AgentError::Execution("initialize failed".to_string()),
+            &["第一行\r\u{1b}".to_string(), "second\tline".to_string()],
+        );
+        assert_eq!(
+            error.to_string(),
+            "execution: initialize failed; stderr tail: 第一行\\r\\u{1b}\\nsecond\\tline"
+        );
+    }
+
+    #[test]
+    fn execution_stderr_bounds_rendered_controls_and_unicode() {
+        for character in ['界', '\u{1b}', '\n'] {
+            let error = with_stderr_tail(
+                AgentError::Execution("initialize failed".to_string()),
+                &[format!(
+                    "{}last diagnostic",
+                    character.to_string().repeat(5000)
+                )],
+            );
+            let message = error.to_string();
+            let (_, tail) = message.split_once("; stderr tail: ").unwrap();
+            assert!(tail.len() <= 4096);
+            assert!(tail.starts_with("[truncated] "));
+            assert!(tail.ends_with("last diagnostic"));
+            assert!(!tail.chars().any(char::is_control));
+        }
+    }
+
+    #[test]
+    fn execution_stderr_masks_multiline_secrets_before_tail_truncation() {
+        let secret = "secret-first-line\nsecret-second-line";
+        let encoded_secret = base64::engine::general_purpose::STANDARD.encode(secret);
+        let masker = SecretMasker::from_raw(&encoded_secret);
+        // Raw tail truncation here would cut through the secret, leaving only a
+        // suffix that the ordinary complete-secret matcher could not recognize.
+        let lines = format!(
+            "{}\n{secret}\n{}",
+            "older context".repeat(400),
+            "x".repeat(4060)
+        )
+        .lines()
+        .map(str::to_string)
+        .collect();
+        let masked = masker.mask_diagnostic_lines(lines);
+        let error = with_stderr_tail(
+            AgentError::Execution("initialize failed".to_string()),
+            &masked,
+        );
+        let message = error.to_string();
+        assert!(!message.contains("first-line"));
+        assert!(!message.contains("second-line"));
+        assert!(message.contains("***"));
+        assert!(message.ends_with(&"x".repeat(4060)));
+    }
+
+    #[test]
+    fn execution_stderr_leaves_empty_tail_and_typed_failure_unchanged() {
+        let error = with_stderr_tail(AgentError::Execution("initialize failed".to_string()), &[]);
+        assert_eq!(error.to_string(), "execution: initialize failed");
+        let error = with_stderr_tail(
+            AgentError::CodexInputTooLarge {
+                actual_chars: 100,
+                max_chars: 50,
+            },
+            &["secondary diagnostic".to_string()],
+        );
+        assert!(matches!(
+            error,
+            AgentError::CodexInputTooLarge {
+                actual_chars: 100,
+                max_chars: 50
+            }
+        ));
+    }
 
     #[test]
     fn active_input_is_read_only_after_source_and_turn_are_ready() {

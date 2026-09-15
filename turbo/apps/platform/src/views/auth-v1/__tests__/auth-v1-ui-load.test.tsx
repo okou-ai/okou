@@ -39,7 +39,7 @@ test.each(["network", "missing export", "version mismatch"])(
     const page = await startPage({
       context,
       host: "app.okou.ai",
-      path: "/v1/sign-in",
+      path: "/sign-in",
       auth: null,
     });
 

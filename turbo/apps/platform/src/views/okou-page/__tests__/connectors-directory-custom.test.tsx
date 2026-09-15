@@ -43,16 +43,14 @@ test("Show Custom and contextual creation without built-in shelves", async () =>
   installCustomDirectory();
   await setupPage({
     context,
-    path: "/connectors",
+    path: "/connectors?scope=custom",
     featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   const section = await screen.findByRole("region", {
     name: "Custom",
   });
   expect(within(section).getByText("Acme Reports")).toBeVisible();
-  expect(
-    getConnectorAction("button", "New custom connector", section),
-  ).toBeVisible();
+  expect(getConnectorAction("button", "New custom connector")).toBeVisible();
   expect(queryConnectorAction("button", "New connector")).toBeNull();
 });
 
@@ -93,20 +91,13 @@ test.each(["admin", "member"] as const)(
     await waitFor(() => {
       expect(getConnectorCard("GitHub")).toBeVisible();
     });
-    await waitFor(() => {
-      expect(
-        Boolean(queryConnectorAction("button", "New custom connector")),
-      ).toBe(role === "admin");
-      expect(Boolean(screen.queryByRole("region", { name: "Custom" }))).toBe(
-        role === "admin",
-      );
-    });
-    click(getConnectorAction("button", "Filter connectors"));
-    click(getConnectorAction("menuitem", "Custom"));
+    // Browsing the catalog no longer trails a Custom block, whatever the role.
+    expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
+    click(screen.getByTestId("connectors-scope-custom"));
     await expect(
       screen.findByRole("region", { name: "Custom" }),
     ).resolves.toBeVisible();
-    expect(locationSearch()).toContain("tab=custom");
+    expect(locationSearch()).toContain("scope=custom");
     expect(queryConnectorCard("GitHub")).toBeNull();
     expect(
       screen.getByText(
@@ -128,34 +119,36 @@ test("Honor Custom deep links, scoped search, and returning to All", async () =>
   ]);
   await setupPage({
     context,
-    path: "/connectors?tab=custom&category=other&keywords=acme",
+    path: "/connectors?scope=custom&category=other&keywords=acme",
     featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   await waitFor(() => {
     expect(getConnectorCard("Acme Reports")).toBeVisible();
   });
   expect(queryConnectorCard("GitHub")).toBeNull();
-  expect(
-    screen.getByText("Custom", {
-      selector: '[aria-current="page"]',
-    }),
-  ).toBeVisible();
-  await fill(screen.getByPlaceholderText("Find connectors"), "missing");
+  // The segment says which scope is open, so the scope carries no breadcrumb.
+  expect(screen.getByTestId("connectors-scope-custom")).toHaveAttribute(
+    "data-checked",
+  );
+  expect(screen.queryByText("Discover / Custom")).toBeNull();
+  await fill(screen.getByPlaceholderText("Find custom connectors"), "missing");
   await expect(
     screen.findByText("No custom connectors match your search."),
   ).resolves.toBeVisible();
   expect(getConnectorAction("button", "New custom connector")).toBeVisible();
-  click(getConnectorAction("button", "Connectors"));
-  await expect(
-    screen.findByText('No connectors matching "missing"'),
-  ).resolves.toBeVisible();
-  expect(locationSearch()).not.toContain("tab=");
+  // Leaving a scope drops the controls that belonged to it, search included.
+  click(screen.getByTestId("connectors-scope-discover"));
+  await waitFor(() => {
+    expect(getConnectorCard("GitHub")).toBeInTheDocument();
+  });
+  expect(locationSearch()).not.toContain("scope=");
+  expect(locationSearch()).not.toContain("keywords=");
   expect(locationSearch()).not.toContain("category=");
   window.history.back();
   await expect(
     screen.findByText("No custom connectors match your search."),
   ).resolves.toBeVisible();
-  expect(locationSearch()).toContain("tab=custom");
+  expect(locationSearch()).toContain("scope=custom");
 });
 
 test("Keep category search scoped and offer All for a custom-only match", async () => {
@@ -194,12 +187,11 @@ test("Ignore obsolete connection filters in directory mode", async () => {
   await waitFor(() => {
     expect(getConnectorCard("GitHub")).toBeVisible();
   });
-  expect(getConnectorCard("Acme Reports")).toBeVisible();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Custom"));
+  click(screen.getByTestId("connectors-scope-custom"));
   await waitFor(() => {
-    expect(locationSearch()).toContain("tab=custom");
+    expect(locationSearch()).toContain("scope=custom");
   });
+  expect(getConnectorCard("Acme Reports")).toBeInTheDocument();
   expect(locationSearch()).not.toContain("connection=");
 });
 
@@ -254,9 +246,15 @@ test("Keep Custom usable while catalog loading fails, then recover", async () =>
   });
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent("Couldn't load built-in connectors.");
-  expect(getConnectorCard("Acme Reports")).toBeVisible();
+  // The other scope is a different page and does not go down with the catalog.
+  click(screen.getByTestId("connectors-scope-custom"));
+  await waitFor(() => {
+    expect(getConnectorCard("Acme Reports")).toBeInTheDocument();
+  });
+  click(screen.getByTestId("connectors-scope-discover"));
   failing = false;
-  click(getConnectorAction("button", "Retry", alert));
+  const stillFailing = await screen.findByRole("alert");
+  click(getConnectorAction("button", "Retry", stillFailing));
   await waitFor(() => {
     expect(getConnectorCard("GitHub")).toBeVisible();
   });
@@ -313,6 +311,7 @@ test("Wait for pending Custom results before declaring search empty", async () =
   });
   await expect(screen.findByText("Loading connectors…")).resolves.toBeVisible();
   expect(screen.queryByText(/No connectors matching/u)).toBeNull();
+  click(screen.getByTestId("connectors-scope-custom"));
   click(getConnectorAction("button", "New custom connector"));
   const dialog = await screen.findByRole("dialog", {
     name: "New custom connector",
@@ -322,8 +321,10 @@ test("Wait for pending Custom results before declaring search empty", async () =
     expect(getConnectorCard("Acme Reports")).toBeInTheDocument();
   });
   expect(dialog).toBeVisible();
+  // Cancelling leaves the location exactly as the scope left it.
+  const beforeCancel = locationSearch();
   click(getConnectorAction("button", "Cancel", dialog));
-  expect(locationSearch()).toContain("keywords=acme");
+  expect(locationSearch()).toBe(beforeCancel);
 });
 
 test("Keep SSH and Custom in separate sections and scope Remote access", async () => {
@@ -340,13 +341,8 @@ test("Keep SSH and Custom in separate sections and scope Remote access", async (
     },
   });
   const remote = await screen.findByTestId("connector-category-remote-access");
-  const custom = await screen.findByRole("region", {
-    name: "Custom",
-  });
   expect(within(remote).queryByText("Acme Reports")).toBeNull();
-  expect(
-    remote.compareDocumentPosition(custom) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
   click(getConnectorAction("button", "Filter connectors"));
   click(getConnectorAction("menuitem", "Remote access"));
   await waitFor(() => {
@@ -364,7 +360,9 @@ test.each([false, true])(
     mockPublicConnectorStatus(context, []);
     await setupPage({
       context,
-      path: "/connectors?tab=custom&keywords=missing",
+      path: directory
+        ? "/connectors?scope=custom&keywords=missing"
+        : "/connectors?tab=custom&keywords=missing",
       featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: directory },
     });
     const label = directory ? "New custom connector" : "New connector";
@@ -406,7 +404,9 @@ test.each([false, true])(
       return getConnectorCard("Created Service");
     });
     expect(card).toHaveTextContent("No accounts");
-    expect(locationSearch()).toContain("tab=custom");
+    expect(locationSearch()).toContain(
+      directory ? "scope=custom" : "tab=custom",
+    );
     expect(locationSearch().includes("keywords=missing")).toBe(!directory);
     await waitFor(() => {
       expect(

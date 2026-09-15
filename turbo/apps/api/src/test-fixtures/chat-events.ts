@@ -29,7 +29,6 @@ import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgEvents } from "@okouai/db/schema/feishu-org-event";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
-import { runOutputLegacyPiEvents } from "@okouai/db/schema/run-output-legacy-pi-event";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -44,8 +43,9 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
+import { Pool } from "pg";
 
-import { db } from "../lib/db";
+import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
 import { nowDate } from "../lib/time";
@@ -78,10 +78,6 @@ const BDD_BUILT_IN_MODEL_KEY_PREFIXES = [
   "built-in-key-bdd-dev-seed-",
 ] as const;
 const databasePidRowSchema = z.object({ pid: z.int() });
-const databaseConnectionOwnerRowSchema = z.object({
-  applicationName: z.string().min(1),
-  pid: z.int(),
-});
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
 const blockedByPidRowSchema = z.object({ blocked: z.boolean() });
 const blockedQueryRowSchema = z.object({ query: z.string() });
@@ -91,11 +87,6 @@ type ChatThreadBlockedStatementKind =
   | "select_for_update"
   | "update"
   | "other";
-
-interface ChatEventBlockedStatementCounts {
-  readonly hotSnapshotReads: number;
-  readonly physicalDeletions: number;
-}
 
 interface ChatEventContextFixture {
   readonly id: string;
@@ -1056,116 +1047,77 @@ export async function holdAgentRunRowLockFixture(args: {
 }
 
 /**
- * Holds chat-event reads so a route test can order one physical deletion
- * between two database statements. Product APIs cannot pause at this boundary.
+ * Product APIs cannot pause a completed SQL response or physically remove an
+ * event at that boundary. Preserve the real selected rows, delete only the
+ * owned event before returning them, and leave other threads' queries alone.
  */
-export async function holdChatEventReadsFixture(args: {
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedStatementCounts: () => Promise<ChatEventBlockedStatementCounts>;
-}> {
-  const started = createDeferredPromise<{
-    readonly applicationName: string;
-    readonly pid: number;
-  }>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const ownerRows = await executeRawRows(
-      tx,
-      sql`
-        SELECT
-          current_setting('application_name') AS "applicationName",
-          pg_backend_pid() AS "pid"
-      `,
-      databaseConnectionOwnerRowSchema,
-    );
-    const owner = ownerRows[0];
-    if (!owner) {
-      throw new Error("Expected the chat-event read lock holder owner");
-    }
-    await tx.execute(sql`LOCK TABLE ${chatEvents} IN ACCESS EXCLUSIVE MODE`);
-    started.resolve(owner);
-    await released.promise;
-  });
-  const owner = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedStatementCounts: async () => {
-      return await directBlockedChatEventStatementCounts(owner);
-    },
-  };
-}
-
-/**
- * Queues a chat-event read under a distinct database owner. This simulates an
- * unrelated Vitest worker sharing the same test database and lock boundary.
- */
-export async function queueOtherWorkerChatEventReadFixture(args: {
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly blocked: () => Promise<boolean>;
-  readonly done: Promise<void>;
-}> {
-  const started = createDeferredPromise<void>(args.signal);
-  const applicationName = `okou-api-test-other-${randomUUID()}`;
-  const missingEventId = randomUUID();
-  const done = onRejection(
-    db().transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT set_config('application_name', ${applicationName}, true)`,
-      );
-      started.resolve(undefined);
-      await tx
-        .select({ id: chatEvents.id })
-        .from(chatEvents)
-        .where(eq(chatEvents.id, missingEventId))
-        .orderBy(asc(chatEvents.seqId));
-    }),
-    (error) => {
-      if (!started.settled()) {
-        started.reject(error);
-      }
-    },
-  );
-  await started.promise;
-  return {
-    blocked: async () => {
-      return await databaseOwnerHasBlockedWaiter(applicationName);
-    },
-    done,
-  };
-}
-
-/**
- * Queues one physical event deletion behind a held table read boundary. Once
- * admitted, the exclusive lock makes the deletion run before later readers.
- */
-export async function queueChatEventPhysicalDeletionFixture(args: {
+export async function withChatEventDeletedAfterReadFixture<T>(args: {
+  readonly threadId: string;
   readonly eventId: string;
-  readonly signal: AbortSignal;
-}): Promise<{ readonly done: Promise<void> }> {
-  const started = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    started.resolve(undefined);
-    await tx.execute(sql`LOCK TABLE ${chatEvents} IN ACCESS EXCLUSIVE MODE`);
-    const deleted = await tx
-      .delete(chatEvents)
-      .where(eq(chatEvents.id, args.eventId))
-      .returning({ id: chatEvents.id });
-    if (deleted.length !== 1) {
-      throw new Error("Expected one chat event to be physically deleted");
-    }
+  readonly whileResponseHeld: () => Promise<void>;
+  readonly work: () => Promise<T>;
+}): Promise<T> {
+  await closeDbPool();
+  const original = Pool.prototype.query;
+  let held = false;
+  Pool.prototype.query = new Proxy(original, {
+    apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
+      const result: unknown = Reflect.apply(target, receiver, queryArgs);
+      const query = z.object({ text: z.string() }).safeParse(queryArgs[0]);
+      const values = z.array(z.unknown()).safeParse(queryArgs[1]);
+      if (
+        held ||
+        !(result instanceof Promise) ||
+        !query.success ||
+        !values.success ||
+        !isSharedThreadHotSnapshotRead(
+          normalizeBlockedQuery(query.data.text),
+        ) ||
+        !values.data.includes(args.threadId) ||
+        !values.data.includes(args.eventId)
+      ) {
+        return result;
+      }
+      held = true;
+      return (async () => {
+        const response: unknown = await result;
+        z.object({ rows: z.array(z.unknown()).length(1) }).parse(response);
+        await args.whileResponseHeld();
+        const deleted = await db()
+          .delete(chatEvents)
+          .where(
+            and(
+              eq(chatEvents.chatThreadId, args.threadId),
+              eq(chatEvents.id, args.eventId),
+            ),
+          )
+          .returning({ id: chatEvents.id });
+        if (deleted.length !== 1) {
+          throw new Error("Expected one chat event to be physically deleted");
+        }
+        return response;
+      })();
+    },
   });
-  await started.promise;
-  return { done };
+  const run = async () => {
+    const result = await args.work();
+    if (!held) {
+      throw new Error("Expected the selected hot chat-event response barrier");
+    }
+    return result;
+  };
+  const [result] = await Promise.allSettled([run()]);
+  // Instrumentation binds the pool query method. Close the instrumented pool
+  // before restoring the prototype so the next request cannot reuse the hold.
+  const [closed] = await Promise.allSettled([closeDbPool()]);
+  Pool.prototype.query = original;
+  if (result.status === "rejected") {
+    throw result.reason;
+  }
+  if (closed.status === "rejected") {
+    throw closed.reason;
+  }
+  return result.value;
 }
 
 /**
@@ -1470,24 +1422,6 @@ async function directBlockedWaiterCount(holderPid: number): Promise<number> {
   return rows[0]?.waiterCount ?? 0;
 }
 
-async function databaseOwnerHasBlockedWaiter(
-  applicationName: string,
-): Promise<boolean> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
-      SELECT EXISTS (
-        SELECT 1
-        FROM pg_stat_activity AS activity
-        WHERE activity.application_name = ${applicationName}
-          AND cardinality(pg_blocking_pids(activity.pid)) > 0
-      ) AS "blocked"
-    `,
-    blockedByPidRowSchema,
-  );
-  return rows[0]?.blocked ?? false;
-}
-
 function normalizeBlockedQuery(query: string): string {
   return query.toLowerCase().replaceAll(/\s+/g, " ").trim();
 }
@@ -1498,10 +1432,6 @@ function isSharedThreadHotSnapshotRead(query: string): boolean {
     query.includes(' from "chat_events" ') &&
     query.endsWith('order by "chat_events"."seq_id" asc')
   );
-}
-
-function isChatEventPhysicalDeletion(query: string): boolean {
-  return query === 'lock table "chat_events" in access exclusive mode';
 }
 
 /**
@@ -1560,34 +1490,6 @@ export async function holdChatEventSearchWatermarkRowLockFixture(args: {
       return await transitiveBlockedWaiterCount(holderPid);
     },
   };
-}
-
-async function directBlockedChatEventStatementCounts(owner: {
-  readonly applicationName: string;
-  readonly pid: number;
-}): Promise<ChatEventBlockedStatementCounts> {
-  const rows = await executeRawRows(
-    db(),
-    sql`
-      SELECT activity.query AS "query"
-      FROM pg_stat_activity AS activity
-      WHERE ${owner.pid} = ANY(pg_blocking_pids(activity.pid))
-        AND activity.application_name = ${owner.applicationName}
-    `,
-    blockedQueryRowSchema,
-  );
-  let hotSnapshotReads = 0;
-  let physicalDeletions = 0;
-  for (const row of rows) {
-    const query = normalizeBlockedQuery(row.query);
-    if (isSharedThreadHotSnapshotRead(query)) {
-      hotSnapshotReads++;
-    }
-    if (isChatEventPhysicalDeletion(query)) {
-      physicalDeletions++;
-    }
-  }
-  return { hotSnapshotReads, physicalDeletions };
 }
 
 async function firstDirectBlockedStatementKind(
@@ -1818,6 +1720,8 @@ export async function holdOrgAdmissionLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly waiterCount: () => Promise<number>;
+  readonly transitiveWaiterCount: () => Promise<number>;
+  readonly cancelBlockedQueries: () => Promise<number>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
@@ -1866,6 +1770,26 @@ export async function holdOrgAdmissionLockFixture(args: {
         waiterCountRowSchema,
       );
       return rows[0]?.waiterCount ?? 0;
+    },
+    // B1 subjects precede the org lock. A second admission can wait on the
+    // first admission's subject lock instead of this fixture's org lock.
+    transitiveWaiterCount: () => {
+      return transitiveBlockedWaiterCount(holderPid);
+    },
+    // Force a real admission rollback, scoped to this fixture's held lock.
+    cancelBlockedQueries: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT pg_cancel_backend(activity.pid) AS cancelled
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        z.object({ cancelled: z.boolean() }),
+      );
+      return rows.filter((row) => {
+        return row.cancelled;
+      }).length;
     },
   };
 }
@@ -2570,34 +2494,6 @@ export async function readRunOutputMemoryCitationsFixture(runId: string) {
     .from(runOutputMemoryCitations)
     .where(eq(runOutputMemoryCitations.runId, runId))
     .orderBy(asc(runOutputMemoryCitations.sequenceNumber));
-}
-
-export async function readRunOutputLegacyPiEventsFixture(runId: string) {
-  return await db()
-    .select({
-      sequenceNumber: runOutputLegacyPiEvents.sequenceNumber,
-      serializedEvent: runOutputLegacyPiEvents.serializedEvent,
-    })
-    .from(runOutputLegacyPiEvents)
-    .where(eq(runOutputLegacyPiEvents.runId, runId))
-    .orderBy(asc(runOutputLegacyPiEvents.sequenceNumber));
-}
-
-export async function readRunOutputMaterializationFixture(runId: string) {
-  const [row] = await db()
-    .select({
-      processedThroughSequence:
-        runOutputMaterializations.processedThroughSequence,
-      pendingSequenceNumbers: runOutputMaterializations.pendingSequenceNumbers,
-      latestResultSequence: runOutputMaterializations.latestResultSequence,
-      latestResultText: runOutputMaterializations.latestResultText,
-      latestOutputSequence: runOutputMaterializations.latestOutputSequence,
-      latestOutputText: runOutputMaterializations.latestOutputText,
-    })
-    .from(runOutputMaterializations)
-    .where(eq(runOutputMaterializations.runId, runId))
-    .limit(1);
-  return row ?? null;
 }
 
 /** Starts one event insert with reservation and persistence in one transaction. */

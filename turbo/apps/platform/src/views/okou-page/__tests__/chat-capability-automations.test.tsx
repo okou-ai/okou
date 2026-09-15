@@ -2,7 +2,7 @@ import {
   workflowAutomationsContract,
   type ChatThreadWorkflowAutomation,
 } from "@okouai/api-contracts/contracts/workflows";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
@@ -194,4 +194,104 @@ test("Browse a paused scheduled workflow without an inline switch", async () => 
   expect(
     within(disabledSchedule).queryByRole("switch"),
   ).not.toBeInTheDocument();
+});
+
+test("Refresh the automation list when the thread's automations change", async () => {
+  const automations: ChatThreadWorkflowAutomation[] = [
+    {
+      id: ACTIVE_SCHEDULE_ID,
+      ownerUserId: "test-user-123",
+      enabled: true,
+      chatThreadId: RUN_THREAD_ID,
+      nextRunAt: "2026-08-01T12:00:00.000Z",
+      lastRunAt: "2026-08-01T10:00:00.000Z",
+      official: null,
+      kind: "schedule",
+      schedule: { type: "loop", intervalSeconds: 7200 },
+      scheduleSummary: "Every 2 hours",
+      workflow: workflow(
+        "a0000000-0000-4000-a000-000000000871",
+        "active-release-schedule",
+        "Active release schedule",
+      ),
+    },
+  ];
+  installCapabilityChat({
+    events: [
+      {
+        id: "automation-refresh-prompt",
+        role: "user",
+        content: "Watch the workspace automations",
+        runId: "d0000000-0000-4000-a000-000000000862",
+        seqId: 1,
+        createdAt: "2026-08-01T10:00:00.000Z",
+      },
+      {
+        id: "automation-refresh-response",
+        role: "assistant",
+        content: "The automation watch is ready.",
+        runId: "d0000000-0000-4000-a000-000000000862",
+        seqId: 2,
+        createdAt: "2026-08-01T10:00:01.000Z",
+      },
+    ],
+  });
+  context.mocks.api(
+    workflowAutomationsContract.listForChatThread,
+    ({ params, respond }) => {
+      return respond(
+        200,
+        params.threadId === RUN_THREAD_ID ? [...automations] : [],
+      );
+    },
+  );
+
+  await setupPage({ context, path: RUN_PATH });
+
+  await readyChat();
+  click(await findButton("Automations"));
+  const automationSidebar = await screen.findByRole("complementary", {
+    name: "Automations",
+  });
+  expect(
+    within(automationSidebar).getByText("Active release schedule"),
+  ).toBeVisible();
+  const topic = `chatThreadAutomationsChanged:${RUN_THREAD_ID}`;
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+
+  automations.push({
+    id: WEBHOOK_ID,
+    ownerUserId: "test-user-123",
+    enabled: true,
+    chatThreadId: RUN_THREAD_ID,
+    nextRunAt: null,
+    lastRunAt: null,
+    official: null,
+    kind: "event",
+    eventType: "webhook-received",
+    eventConfig: {
+      provider: "webhook",
+      event: "received",
+      auth: { mode: "hmac-sha256" },
+    },
+    schedule: null,
+    scheduleSummary: null,
+    secretLastFour: "2468",
+    lastReceivedAt: "2026-08-01T09:00:00.000Z",
+    workflow: workflow(
+      "a0000000-0000-4000-a000-000000000872",
+      "release-webhook",
+      "Release webhook",
+    ),
+  });
+  context.mocks.ably.trigger(topic);
+
+  await expect(
+    within(automationSidebar).findByText("Release webhook"),
+  ).resolves.toBeVisible();
+  expect(
+    within(automationSidebar).getByText("Active release schedule"),
+  ).toBeVisible();
 });

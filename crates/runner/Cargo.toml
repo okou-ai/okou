@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.190.3"
+version = "0.194.2"
 edition.workspace = true
 
 [dependencies]
@@ -31,7 +31,7 @@ tracing = { workspace = true, features = ["attributes", "std"] }
 tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
-futures-util = { workspace = true, features = ["async-await", "async-await-macro", "std"] }
+futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
 hyper = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls"] }
 rustix = { workspace = true, features = ["fs", "linux_4_11", "process", "std", "time"] }
@@ -54,6 +54,10 @@ pkcs8 = { workspace = true, features = ["encryption", "std"] }
 pkcs5 = { workspace = true, features = ["alloc", "pbes2"] }
 rsa = { workspace = true, features = ["encoding", "std"] }
 zeroize = { workspace = true, features = ["alloc"] }
+rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
+tokio-tungstenite = { workspace = true, features = ["handshake"] }
+webpki-roots = { workspace = true }
 
 [build-dependencies]
 serde = { workspace = true, features = ["derive", "std"] }
@@ -84,8 +88,9 @@ guest-workspace-mount = { workspace = true }
 httpmock = { workspace = true, features = ["cookies"] }
 http-body = { workspace = true }
 sandbox-mock = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["process", "test-util"] }
 tracing-test-support.workspace = true
+rcgen = { workspace = true, features = ["crypto", "ring"] }
 
 [lints]
 workspace = true

@@ -765,7 +765,6 @@ export const webhookCompleteContract = c.router({
       401: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,
-      503: apiErrorSchema,
     },
     summary: "Handle agent run completion",
   },
@@ -903,6 +902,14 @@ const sessionHistoryCompressionRatioBucketSchema = z.enum([
   "ge_1",
 ]);
 
+const sessionHistoryPayloadBytesSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(RESUME_SESSION_HISTORY_MAX_BYTES);
+
+const sessionHistoryRestoreRepresentationSchema = z.enum(["raw", "codex_zstd"]);
+
 const booleanStringSchema = z.enum(["true", "false"]);
 
 const sessionHistoryContentLengthStateSchema = z.enum([
@@ -1028,6 +1035,18 @@ const sandboxOperationSchema = z.object({
   session_history_transfer_encoding_state:
     sessionHistoryTransferEncodingStateSchema.optional(),
   session_history_download_source: sandboxOperationDownloadSourceSchema,
+  session_history_framework: z.enum(["claude-code", "codex", "pi"]).optional(),
+  session_history_raw_bytes: sessionHistoryPayloadBytesSchema.optional(),
+  session_history_source_bytes: sessionHistoryPayloadBytesSchema.optional(),
+  // Successful history payload bytes; omitted when a local restore fails.
+  session_history_guest_bytes: sessionHistoryPayloadBytesSchema.optional(),
+  session_history_source_representation:
+    sessionHistoryRestoreRepresentationSchema.optional(),
+  session_history_restore_representation:
+    sessionHistoryRestoreRepresentationSchema.optional(),
+  session_history_restore_reason: z
+    .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
+    .optional(),
 });
 
 /**

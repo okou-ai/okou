@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "batch": "neutral-control-surface",
+  "cases": [
+    {
+      "id": "control-surface-workflows-light",
+      "path": "/workflows",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "control-surface-workflows-dark",
+      "path": "/workflows",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "control-surface-connectors-light",
+      "path": "/connectors",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "control-surface-connectors-dark",
+      "path": "/connectors",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "control-surface-agents-narrow",
+      "path": "/agents",
+      "theme": "light",
+      "viewport": { "width": 390, "height": 844 },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "control-surface-agents-narrow-dark",
+      "path": "/agents",
+      "theme": "dark",
+      "viewport": { "width": 390, "height": 844 },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    }
+  ]
+}

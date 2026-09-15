@@ -100,9 +100,9 @@ unless stale.fetch("permissions") == {
   raise "stale runner cleanup must use the same ownership permissions"
 end
 stale_checkout = stale.fetch("steps").find { |step| step["uses"] == "actions/checkout@v7.0.1" }
-unless stale_checkout&.dig("with", "ref") == "${{ github.event.repository.default_branch }}" &&
+unless stale_checkout&.dig("with", "ref") == "${{ github.sha }}" &&
     stale_checkout&.dig("with", "persist-credentials") == false
-  raise "stale runner cleanup must execute the trusted default-branch ownership script"
+  raise "stale runner cleanup must execute the scheduled or manually selected workflow commit"
 end
 
 stale_names = stale.fetch("steps").map { |step| step["name"] }
@@ -204,7 +204,6 @@ raise "missing locked runner reconciliation and start" unless locked_start
 unless locked_start.dig("env", "AWS_METAL_RUNNER_HOSTS") ==
       "${{ secrets.AWS_METAL_RUNNER_HOSTS }}" &&
     locked_start.dig("env", "BIN_DIR") == "${{ needs.deploy-runner-prepare.outputs.bin-dir }}" &&
-    locked_start.dig("env", "CURRENT_EVENT") == "${{ github.event_name }}" &&
     locked_start.dig("env", "JOB_REF") == "${{ needs.prepare.outputs.runner-image-job-ref }}" &&
     locked_start.dig("env", "METAL_HOSTS") == "${{ secrets.AWS_METAL_RUNNER_HOSTS }}" &&
     locked_start.dig("env", "RUNNER_SHA_MAP") ==

@@ -44,91 +44,6 @@ env:
   npm_config_audit: "false"
 
 jobs:
-  cua-guardian-proof:
-    name: cua-guardian-proof-macos
-    runs-on: macos-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with:
-          version: 10.33.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: turbo/pnpm-lock.yaml
-      - name: Install pinned dependencies
-        working-directory: turbo
-        run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - name: Build lifecycle proof with the macOS toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          proof="$PWD/turbo/apps/desktop/cua/guardian-proof"
-          build="$RUNNER_TEMP/cua-guardian-build"
-          mkdir -p "$build"
-          node_include="$(dirname "$(dirname "$(command -v node)")")/include/node"
-          cc -std=c11 -Wall -Wextra -Werror -bundle -undefined dynamic_lookup \
-            -I"$node_include" "$proof/owner.c" -o "$build/owner.node"
-          cc -std=c11 -Wall -Wextra -Werror "$proof/guardian.c" -o "$build/guardian"
-          cc -std=c11 -Wall -Wextra -Werror "$proof/fixture.c" -o "$build/fixture"
-          codesign --force --sign - "$build/owner.node" "$build/guardian" "$build/fixture"
-      - name: Prove retained identity and independent process exit
-        working-directory: turbo/apps/desktop
-        env:
-          CUA_EVIDENCE_PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          node -e 'require("electron")'
-          electron="$(node -p 'require("electron")')"
-          native="$RUNNER_TEMP/cua-guardian-runtime"
-          python3 scripts/stage-cua-runtime.py --out "$native"
-          python3 - "$native" <<'PY'
-          import json, subprocess, sys
-          from pathlib import Path
-          root = Path(sys.argv[1])
-          for relative in json.loads(Path("cua/artifacts.json").read_text())["nativeCode"]:
-              subprocess.run(["codesign", "--force", "--sign", "-", str(root / relative)], check=True)
-          PY
-          sdk="$native/node_modules/@trycua/cua-driver/dist/index.js"
-          python3 cua/guardian-proof/run-macos.py "$electron" \
-            "$RUNNER_TEMP/cua-guardian-build" "$sdk" "$RUNNER_TEMP/cua-guardian-evidence" "$native"
-      - name: Prove live application discovery across launch and quit
-        working-directory: turbo/apps/desktop
-        shell: bash
-        run: |
-          set -euo pipefail
-          # LaunchServices refuses app bundles under macOS's system temp path.
-          proof="$PWD/.cache/cua-discovery-proof"
-          mkdir -p "$(dirname "$proof")"
-          node cua/discovery-proof/build.mjs "$proof" \
-            "$RUNNER_TEMP/cua-guardian-build" "$RUNNER_TEMP/cua-guardian-runtime"
-          electron="$(node -p 'require("electron")')"
-          proof_status=0
-          "$electron" "$proof/discovery.js" "$proof" || proof_status=$?
-          cp "$proof/discovery.json" "$RUNNER_TEMP/cua-guardian-evidence/discovery.json"
-          exit "$proof_status"
-      - name: Prove nine commands and Quit across the production process channel
-        working-directory: turbo/apps/desktop
-        shell: bash
-        run: |
-          set -euo pipefail
-          proof="$RUNNER_TEMP/cua-adapter-proof"
-          node cua/guardian-proof/build-adapter.mjs "$proof" "$RUNNER_TEMP/cua-guardian-build"
-          electron="$(node -p 'require("electron")')"
-          "$electron" "$proof/adapter.js" "$proof"
-          cp "$proof/adapter.json" "$RUNNER_TEMP/cua-guardian-evidence/adapter.json"
-      - name: Upload guardian proof evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: cua-guardian-proof-macos
-          path: ${{ runner.temp }}/cua-guardian-evidence/
-          if-no-files-found: error
-          retention-days: 14
-
   detect-desktop-version:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -204,11 +119,6 @@ jobs:
 
       - name: Test desktop
         run: pnpm -F @okouai/desktop test
-
-      # This is an existing Python integration suite, not one Vitest test.
-      # Let unittest own its cases and cleanup instead of blocking a JS worker.
-      - name: Test CUA distribution and package inspection
-        run: python3 apps/desktop/scripts/test-cua-distribution.py
 
       - name: Test native helper
         run: pnpm -F @okouai/desktop test:native
@@ -330,30 +240,10 @@ jobs:
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/dist/bootstrap.js"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/assets/icon.png"
 
-      - name: Inspect default CUA package and archive without launching
-        env:
-          CUA_EVIDENCE_PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/cua-evidence/default"
-          python3 apps/desktop/scripts/inspect-cua-package.py \
-            --app "apps/desktop/out/Okou-darwin-arm64/Okou.app" \
-            --archive "${{ steps.build-prod.outputs.path }}" \
-            > "$RUNNER_TEMP/cua-evidence/default/package.json"
-
       - name: Smoke test default-configuration artifact launch
         env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/default/dormant.json
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js
-
-      - name: Probe embedded CUA in default-configuration artifact
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/default/probe.json
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --cua-probe --signed
-
-      - name: Force blocked CUA cleanup in default-configuration artifact
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/default/forced.json
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --cua-forced-probe --signed
+          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/desktop-smoke-evidence/default/startup.json
+        run: node apps/desktop/scripts/smoke-test-packaged-app.js --signed
 
       - name: Upload unsigned default-configuration macOS artifact
         uses: actions/upload-artifact@v7
@@ -489,36 +379,12 @@ jobs:
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/assets/icon.png"
           unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/desktop-runtime-config.json"
 
-      - name: Inspect production CUA package and archive without launching
-        env:
-          CUA_EVIDENCE_PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/cua-evidence/production"
-          python3 apps/desktop/scripts/inspect-cua-package.py \
-            --app "apps/desktop/out/Okou-darwin-arm64/Okou.app" \
-            --archive "${{ steps.build-okou-prod.outputs.path }}" \
-            > "$RUNNER_TEMP/cua-evidence/production/package.json"
-
       - name: Smoke test Okou production artifact launch
         env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/production/dormant.json
+          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/desktop-smoke-evidence/production/startup.json
           OKOU_DESKTOP_PRODUCT: okou
           OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js
-
-      - name: Probe embedded CUA in Okou production artifact
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/production/probe.json
-          OKOU_DESKTOP_PRODUCT: okou
-          OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --cua-probe --signed
-
-      - name: Force blocked CUA cleanup in Okou production artifact
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/production/forced.json
-          OKOU_DESKTOP_PRODUCT: okou
-          OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --cua-forced-probe --signed
+        run: node apps/desktop/scripts/smoke-test-packaged-app.js --signed
 
       - name: Upload unsigned Okou macOS artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -667,37 +533,12 @@ jobs:
           unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/app/assets/icon.png"
           unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/app/desktop-runtime-config.json"
 
-      - name: Inspect preview CUA package and archive without launching
-        if: github.event_name == 'pull_request'
-        env:
-          CUA_EVIDENCE_PR_HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/cua-evidence/preview"
-          python3 apps/desktop/scripts/inspect-cua-package.py \
-            --app "apps/desktop/out/Okou Dev-darwin-arm64/Okou Dev.app" \
-            --archive "${{ steps.build-preview.outputs.path }}" \
-            > "$RUNNER_TEMP/cua-evidence/preview/package.json"
-
       - name: Smoke test PR preview artifact launch
         if: github.event_name == 'pull_request'
         env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/preview/dormant.json
+          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/desktop-smoke-evidence/preview/startup.json
           OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.platform-url }}
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js
-
-      - name: Probe embedded CUA in PR preview artifact
-        if: github.event_name == 'pull_request'
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/preview/probe.json
-          OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.platform-url }}
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --cua-probe --signed
-
-      - name: Force blocked CUA cleanup in PR preview artifact
-        if: github.event_name == 'pull_request'
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/cua-evidence/preview/forced.json
-          OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.platform-url }}
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --cua-forced-probe --signed
+        run: node apps/desktop/scripts/smoke-test-packaged-app.js --signed
 
       - name: Upload unsigned PR preview macOS artifact
         if: github.event_name == 'pull_request'
@@ -708,11 +549,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload CUA package verification evidence
+      - name: Upload Desktop smoke verification evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: okou-desktop-cua-verification
-          path: ${{ runner.temp }}/cua-evidence/
+          name: okou-desktop-smoke-verification
+          path: ${{ runner.temp }}/desktop-smoke-evidence/
           if-no-files-found: error
           retention-days: 14
 

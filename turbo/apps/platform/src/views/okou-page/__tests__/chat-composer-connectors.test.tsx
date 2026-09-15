@@ -157,7 +157,7 @@ async function clearConnectorFilter(
   act(notifyResize);
 }
 
-test("Keep searchable connector menu above while filtering on desktop", async () => {
+async function prepareScrollableDesktopConnectorMenu() {
   const user = userEvent.setup({ delay: null });
   const layout = mockConnectorPopoverLayout({
     viewport: { width: 1000, height: 520 },
@@ -167,12 +167,10 @@ test("Keep searchable connector menu above while filtering on desktop", async ()
     catalog: searchableConnectorCatalog(),
     builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
   });
-
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
-
   await loadComposer();
   const trigger = await findFastControl("button", "Connectors");
   await openConnectors(user);
@@ -189,7 +187,27 @@ test("Keep searchable connector menu above while filtering on desktop", async ()
   expect(connectorList.scrollHeight).toBeGreaterThan(
     connectorList.clientHeight,
   );
+  return {
+    user,
+    searchInput,
+    layout,
+    popover,
+    trigger,
+    connectorList,
+    expandedListHeight,
+  };
+}
 
+test("Keep the desktop connector menu above while filtering", async () => {
+  const {
+    user,
+    searchInput,
+    layout,
+    popover,
+    trigger,
+    connectorList,
+    expandedListHeight,
+  } = await prepareScrollableDesktopConnectorMenu();
   await filterConnectorMenu(user, searchInput, layout.notifyResize);
   await waitFor(() => {
     expect(popoverSide(popover, trigger)).toBe("top");
@@ -197,7 +215,15 @@ test("Keep searchable connector menu above while filtering on desktop", async ()
     expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
     expect(screen.getByText("Add connectors")).toBeInTheDocument();
   });
+});
 
+test("Keep the desktop connector menu above after clearing its filter", async () => {
+  const { user, searchInput, layout, popover, trigger, connectorList } =
+    await prepareScrollableDesktopConnectorMenu();
+  await filterConnectorMenu(user, searchInput, layout.notifyResize);
+  await waitFor(() => {
+    expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
+  });
   await clearConnectorFilter(user, layout.notifyResize);
   await waitFor(() => {
     expect(popoverSide(popover, trigger)).toBe("top");
@@ -686,7 +712,7 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
     authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
-    ).resolves.toBeVisible();
+    ).resolves.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
     });

@@ -63,6 +63,7 @@ import { i18n } from "../../../i18n/index.ts";
 import {
   connectorDirectoryEnabled$,
   connectorDirectoryCustomScope$,
+  connectorsScope$,
   openConnectorDirectoryScope$,
 } from "./connector-directory-route.ts";
 import type {
@@ -453,11 +454,18 @@ export type ConnectorsConnectionFilter =
   | { readonly kind: "all" }
   | { readonly kind: "connected" }
   | { readonly kind: "not-connected" }
+  | { readonly kind: "unshared" }
   | { readonly kind: "agent"; readonly agentId: string };
 
 export const connectorsConnectionFilter$ = computed(
   (get): ConnectorsConnectionFilter => {
-    if (get(connectorDirectoryEnabled$)) {
+    // The directory browses a catalog, and category is the only dimension that
+    // organises it. The scope you already own is organised by who uses those
+    // connectors instead, so that is the one place this control still applies.
+    if (
+      get(connectorDirectoryEnabled$) &&
+      get(connectorsScope$) !== "connected"
+    ) {
       return { kind: "all" };
     }
     const raw = get(searchParams$).get(CONNECTORS_CONNECTION_FILTER_PARAM);
@@ -466,6 +474,9 @@ export const connectorsConnectionFilter$ = computed(
     }
     if (raw === "not-connected") {
       return { kind: "not-connected" };
+    }
+    if (raw === "unshared") {
+      return { kind: "unshared" };
     }
     if (raw?.startsWith(CONNECTORS_AGENT_FILTER_PREFIX)) {
       const agentId = raw.slice(CONNECTORS_AGENT_FILTER_PREFIX.length);
@@ -536,6 +547,7 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
   const keyword = get(connectorsSearch$);
   const effectiveFilter = get(connectorsConnectionFilter$);
   const category = get(connectorsCategoryFilter$);
+  const scope = get(connectorsScope$);
 
   const agentEnabledSlugs =
     effectiveFilter.kind === "agent"
@@ -543,6 +555,14 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
           (await get(connectorAgentAuthorizations$)).find((row) => {
             return row.agent.agentId === effectiveFilter.agentId;
           })?.enabledConnectorSlugs ?? [],
+        )
+      : null;
+  const sharedSlugs =
+    effectiveFilter.kind === "unshared"
+      ? new Set(
+          (await get(connectorAgentAuthorizations$)).flatMap((row) => {
+            return [...row.enabledConnectorSlugs];
+          }),
         )
       : null;
 
@@ -554,11 +574,19 @@ export const filteredConnectorCatalogItems$ = computed(async (get) => {
     if (category !== null && connector.category !== category) {
       return false;
     }
+    // The connected scope is membership, not a filter: whatever else is
+    // chosen, it only ever shows what this workspace has already connected.
+    if (scope === "connected" && !connector.connected) {
+      return false;
+    }
     if (effectiveFilter.kind === "connected") {
       return connector.connected;
     }
     if (effectiveFilter.kind === "not-connected") {
       return !connector.connected;
+    }
+    if (effectiveFilter.kind === "unshared") {
+      return !sharedSlugs?.has(connector.slug);
     }
     if (effectiveFilter.kind === "agent") {
       return agentEnabledSlugs?.has(connector.slug) ?? false;
@@ -2174,6 +2202,115 @@ async function waitForOAuthAuthCodePopupClosed(
 
 const resetOAuthAuthCodeWaitSignal$ = resetSignal();
 
+type ActiveConnectorOAuthAuthCodeWaitState = {
+  readonly flowId: string;
+  readonly connectorSlug: ConnectorSlug;
+  readonly account: PlatformConnectorAccountMutationIntent;
+  readonly oauthAttemptId: string;
+};
+
+type ConnectorOAuthAuthCodeWaitState =
+  | (ActiveConnectorOAuthAuthCodeWaitState & {
+      readonly status: "waiting";
+    })
+  | (ActiveConnectorOAuthAuthCodeWaitState & {
+      readonly status: "completed";
+      readonly connectionId: string;
+    });
+
+const internalConnectorOAuthAuthCodeWaitState$ =
+  state<ConnectorOAuthAuthCodeWaitState | null>(null);
+
+function connectorOAuthAuthCodeWaitIsCurrent(
+  waitState: ConnectorOAuthAuthCodeWaitState | null,
+  flowId: string,
+  oauthAttemptId: string,
+): waitState is ConnectorOAuthAuthCodeWaitState {
+  return (
+    waitState?.flowId === flowId && waitState.oauthAttemptId === oauthAttemptId
+  );
+}
+
+const refreshConnectorOAuthAuthCodeCompletion$ = command(
+  async (
+    { get, set },
+    flowId: string,
+    oauthAttemptId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const current = get(internalConnectorOAuthAuthCodeWaitState$);
+    if (!connectorOAuthAuthCodeWaitIsCurrent(current, flowId, oauthAttemptId)) {
+      return false;
+    }
+    if (current.status === "completed") {
+      return true;
+    }
+
+    const connectionId = await readConnectorOAuthCompletion(
+      get(apiClient$),
+      { kind: "builtin", connectorSlug: current.connectorSlug },
+      current.account,
+      current.oauthAttemptId,
+      signal,
+    );
+    signal.throwIfAborted();
+
+    const latest = get(internalConnectorOAuthAuthCodeWaitState$);
+    if (!connectorOAuthAuthCodeWaitIsCurrent(latest, flowId, oauthAttemptId)) {
+      return false;
+    }
+    if (latest.status === "completed") {
+      return true;
+    }
+    if (connectionId === null) {
+      return false;
+    }
+
+    set(internalConnectorOAuthAuthCodeWaitState$, {
+      ...latest,
+      status: "completed",
+      connectionId,
+    });
+    return true;
+  },
+);
+
+const refreshActiveConnectorOAuthAuthCodeCompletion$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+    const current = get(internalConnectorOAuthAuthCodeWaitState$);
+    return current
+      ? await set(
+          refreshConnectorOAuthAuthCodeCompletion$,
+          current.flowId,
+          current.oauthAttemptId,
+          signal,
+        )
+      : false;
+  },
+);
+
+const onActiveConnectorChanged$ = command(
+  async (
+    { get, set },
+    payload: unknown,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const current = get(internalConnectorOAuthAuthCodeWaitState$);
+    if (
+      !current ||
+      !isConnectorChangedPayloadFor(payload, current.connectorSlug)
+    ) {
+      return false;
+    }
+    return await set(
+      refreshConnectorOAuthAuthCodeCompletion$,
+      current.flowId,
+      current.oauthAttemptId,
+      signal,
+    );
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Connect command
 // ---------------------------------------------------------------------------
@@ -2333,8 +2470,9 @@ const openConnectorOAuthAuthCodeWindow$ = command(
 
 const completeConnectorOAuthAuthCodeFlow$ = command(
   async (
-    { set },
+    { get, set },
     args: {
+      readonly flowId: string;
       readonly connectorSlug: ConnectorSlug;
       readonly method: PublicConnectorCatalogAuthMethodDetail;
       readonly options: PostConnectOptions;
@@ -2346,37 +2484,24 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
     },
     signal: AbortSignal,
   ): Promise<ConnectorConnectionResult | false> => {
-    const { connectorSlug, method, options, account, oauthStart } = args;
-    let completedConnectionId: string | null = null;
-    // eslint-disable-next-line ccstate/no-command-in-command -- migrate this runtime callback to the static command graph
-    const completionAvailable$ = command(async ({ get }, sig: AbortSignal) => {
-      const connectionId = await readConnectorOAuthCompletion(
-        get(apiClient$),
-        { kind: "builtin", connectorSlug },
-        account,
-        oauthStart.oauthAttemptId,
-        sig,
-      );
-      sig.throwIfAborted();
-      completedConnectionId = connectionId;
-      return completedConnectionId !== null;
+    const { flowId, connectorSlug, method, options, account, oauthStart } =
+      args;
+    set(internalConnectorOAuthAuthCodeWaitState$, {
+      status: "waiting",
+      flowId,
+      connectorSlug,
+      account,
+      oauthAttemptId: oauthStart.oauthAttemptId,
     });
+
     const waitSignal = set(resetOAuthAuthCodeWaitSignal$, signal);
-    // eslint-disable-next-line ccstate/no-command-in-command -- migrate this runtime callback to the static command graph
-    const onMatchingConnectorChanged$ = command(
-      async ({ set }, payload: unknown, sig: AbortSignal): Promise<boolean> => {
-        return isConnectorChangedPayloadFor(payload, connectorSlug)
-          ? await set(completionAvailable$, sig)
-          : false;
-      },
-    );
     const changedPromise = (async () => {
       await set(
         setAblyPayloadLoop$,
         {
           topic: "connector:changed",
-          loopCommand$: onMatchingConnectorChanged$,
-          initializeCommand$: completionAvailable$,
+          loopCommand$: onActiveConnectorChanged$,
+          initializeCommand$: refreshActiveConnectorOAuthAuthCodeCompletion$,
         },
         waitSignal,
       );
@@ -2396,12 +2521,26 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
     signal.throwIfAborted();
 
     if (waitResult === "popupClosed") {
-      await set(completionAvailable$, signal);
+      await set(
+        refreshConnectorOAuthAuthCodeCompletion$,
+        flowId,
+        oauthStart.oauthAttemptId,
+        signal,
+      );
       signal.throwIfAborted();
     }
-    if (completedConnectionId === null) {
+    const completed = get(internalConnectorOAuthAuthCodeWaitState$);
+    if (
+      !connectorOAuthAuthCodeWaitIsCurrent(
+        completed,
+        flowId,
+        oauthStart.oauthAttemptId,
+      ) ||
+      completed.status !== "completed"
+    ) {
       return false;
     }
+    const completedConnectionId = completed.connectionId;
 
     set(reloadConnectorConnectionState$);
     const isConnected =
@@ -2482,6 +2621,7 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
         return await set(
           completeConnectorOAuthAuthCodeFlow$,
           {
+            flowId: flow.id,
             connectorSlug,
             method,
             options: oauthStart.options,
@@ -2494,6 +2634,9 @@ const connectConnectorOAuthAuthCodeCommand$ = command(
       () => {
         set(internalPollingOAuthAuthCodeConnectorSlug$, (current) => {
           return current === connectorSlug ? null : current;
+        });
+        set(internalConnectorOAuthAuthCodeWaitState$, (current) => {
+          return current?.flowId === flow.id ? null : current;
         });
         set(internalConnectFlowState$, (current) => {
           return current?.id === flow.id ? null : current;

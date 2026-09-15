@@ -303,6 +303,7 @@ export const startWorkerRealtimeSubscription$ = command(
       return null;
     }
 
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const controller = createChildAbortController(get(rootSignal$));
     const subscription: WorkerRealtimeSubscription = {
       controller,

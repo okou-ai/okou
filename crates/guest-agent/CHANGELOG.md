@@ -1,5 +1,86 @@
 # Changelog
 
+## [0.90.3](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.2...guest-agent-v0.90.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **pi:** preserve codex rate-limit diagnostics ([#34266](https://github.com/vm0-ai/vm0/issues/34266)) ([48cb88f](https://github.com/vm0-ai/vm0/commit/48cb88fe5c6a70dd6519565211de55b710fee3af))
+
+
+### Refactoring
+
+* retire the pi langfuse credential bootstrap ([#34326](https://github.com/vm0-ai/vm0/issues/34326)) ([7d93840](https://github.com/vm0-ai/vm0/commit/7d93840dba64065a157662079527495623adb676))
+
+## [0.90.2](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.1...guest-agent-v0.90.2) (2026-09-15)
+
+## [0.90.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.0...guest-agent-v0.90.1) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+## [0.90.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.10...guest-agent-v0.90.0) (2026-09-14)
+
+
+### Features
+
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
+## [0.89.10](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.9...guest-agent-v0.89.10) (2026-09-14)
+
+## [0.89.9](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.8...guest-agent-v0.89.9) (2026-09-14)
+
+
+### Bug Fixes
+
+* keep citation text private after short fence runs ([#33970](https://github.com/vm0-ai/vm0/issues/33970)) ([5781768](https://github.com/vm0-ai/vm0/commit/578176828ff6728a6febbd880a4dbf21e03e5188))
+
+
+### Performance Improvements
+
+* **guest-agent:** bound cascading json key masking ([#33942](https://github.com/vm0-ai/vm0/issues/33942)) ([abd1dc5](https://github.com/vm0-ai/vm0/commit/abd1dc5e8601481b46038688f959ae1f44e78658))
+
+## [0.89.8](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.7...guest-agent-v0.89.8) (2026-09-14)
+
+
+### Refactoring
+
+* **guest-agent:** unify codex app-server close finalization ([#33888](https://github.com/vm0-ai/vm0/issues/33888)) ([61c0c22](https://github.com/vm0-ai/vm0/commit/61c0c220d2a0559d64a05b91f8abfe076c876d51))
+
+
+### Performance Improvements
+
+* **guest-agent:** share masked key collision allocation progress ([#33943](https://github.com/vm0-ai/vm0/issues/33943)) ([309da39](https://github.com/vm0-ai/vm0/commit/309da39eecb4d08814f8eb64e47a7858f90fd7ac))
+
+## [0.89.7](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.6...guest-agent-v0.89.7) (2026-09-14)
+
+
+### Bug Fixes
+
+* **guest-agent:** retain codex initialization failure diagnostics ([#33833](https://github.com/vm0-ai/vm0/issues/33833)) ([a8ae14e](https://github.com/vm0-ai/vm0/commit/a8ae14e5e291db5404aac504f8512e5593059b24))
+
+## [0.89.6](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.5...guest-agent-v0.89.6) (2026-09-12)
+
+## [0.89.5](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.4...guest-agent-v0.89.5) (2026-09-11)
+
+
+### Refactoring
+
+* **api:** make pi api-first transitions explicit ([#33580](https://github.com/vm0-ai/vm0/issues/33580)) ([de15084](https://github.com/vm0-ai/vm0/commit/de15084436e6936d2a7338cd75d916f11cdd81e7))
+
+## [0.89.4](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.3...guest-agent-v0.89.4) (2026-09-11)
+
+
+### Bug Fixes
+
+* **guest-agent:** bound pi and codex event delivery ([#33532](https://github.com/vm0-ai/vm0/issues/33532)) ([c42da19](https://github.com/vm0-ai/vm0/commit/c42da19f700479f51954f2012106a211fe4f97c6))
+
+## [0.89.3](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.2...guest-agent-v0.89.3) (2026-09-11)
+
+## [0.89.2](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.1...guest-agent-v0.89.2) (2026-09-11)
+
 ## [0.89.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.0...guest-agent-v0.89.1) (2026-09-11)
 
 

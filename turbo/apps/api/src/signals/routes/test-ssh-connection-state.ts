@@ -5,7 +5,6 @@ import {
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { sshConnectionCredentials } from "@okouai/db/schema/ssh-connection-credential";
 import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/schema/agent-run";
@@ -271,26 +270,6 @@ async function setAgentAccess(
   return { status: 200 as const, body: { ok: true as const } };
 }
 
-async function deleteCredential(
-  db: Db,
-  body: TestSshConnectionStateAction<"delete-credential">,
-) {
-  const owned = db
-    .select({ id: sshConnections.id })
-    .from(sshConnections)
-    .where(
-      and(
-        eq(sshConnections.id, body.connectionId),
-        eq(sshConnections.orgId, body.orgId),
-        eq(sshConnections.userId, body.userId),
-      ),
-    );
-  await db
-    .delete(sshConnectionCredentials)
-    .where(eq(sshConnectionCredentials.connectionId, owned));
-  return { status: 200 as const, body: { ok: true as const } };
-}
-
 async function setLearnedHostKey(
   db: Db,
   body: TestSshConnectionStateAction<"set-learned-host-key">,
@@ -355,29 +334,11 @@ const mutateSshConnectionState$ = command(
       case "release-connection-lock": {
         return await connectionLock(db, bodyResult.data, signal);
       }
-      case "move-connection-org": {
-        const body = bodyResult.data;
-        await db
-          .update(sshConnections)
-          .set({ orgId: body.targetOrgId })
-          .where(
-            and(
-              eq(sshConnections.id, body.connectionId),
-              eq(sshConnections.orgId, body.orgId),
-              eq(sshConnections.userId, body.userId),
-            ),
-          );
-        signal.throwIfAborted();
-        return { status: 200 as const, body: { ok: true as const } };
-      }
       case "create-runtime": {
         return await createRuntime(db, bodyResult.data);
       }
       case "set-agent-access": {
         return await setAgentAccess(db, bodyResult.data);
-      }
-      case "delete-credential": {
-        return await deleteCredential(db, bodyResult.data);
       }
       case "set-learned-host-key": {
         return await setLearnedHostKey(db, bodyResult.data);

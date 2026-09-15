@@ -227,6 +227,15 @@ async fn wait_for_leak_cleaner_shutdown(
 }
 
 async fn cleanup_leaked_resource(mut leaked: LeakedResources, netns_pool: &NetnsPoolHandle) {
+    if let Some(exit) = &leaked.process_exit
+        && !exit.confirmed().await
+    {
+        warn!(
+            id = %leaked.sandbox_id,
+            "process exit unconfirmed; retaining leaked netns and directories for runner gc"
+        );
+        return;
+    }
     let cow_cleanup_outcome = match leaked.cow_device.take() {
         Some(cow_device) => destroy_cow_device_with_retries(&leaked.sandbox_id, cow_device).await,
         None => CowCleanupOutcome::BackingFilesSafeToDelete,
@@ -272,11 +281,13 @@ mod tests {
 
     use crate::cow_cleanup::cow_destroy_retry_policy;
     use crate::network::NetnsPool;
+    use crate::process::ProcessExitCompletion;
     use tracing_subscriber::prelude::*;
 
     fn test_leaked_resource(sandbox_id: &str) -> LeakedResources {
         LeakedResources {
             sandbox_id: sandbox_id.into(),
+            process_exit: None,
             cow_device: None,
             network: None,
             sock_dir: PathBuf::from("/nonexistent"),
@@ -298,6 +309,7 @@ mod tests {
             tmp,
             LeakedResources {
                 sandbox_id: "sandbox".into(),
+                process_exit: None,
                 cow_device: None,
                 network: None,
                 sock_dir,
@@ -305,6 +317,100 @@ mod tests {
                 delete_workspace,
             },
         )
+    }
+
+    fn attach_reusable_network(leaked: &mut LeakedResources) -> NetnsPoolHandle {
+        let mut pool = NetnsPool::active_at_capacity_for_test();
+        let network = pool.lease_for_test("test-leaked-netns");
+        pool.track_lease_for_test(&network);
+        leaked.network = Some(network);
+        NetnsPoolHandle::new_for_test(pool)
+    }
+
+    async fn assert_network_unavailable(pool: &NetnsPoolHandle) {
+        assert!(pool.acquire().await.is_err());
+    }
+
+    async fn assert_network_recycled(pool: &NetnsPoolHandle) {
+        let network = pool.acquire().await.unwrap();
+        assert_eq!(network.name(), "test-leaked-netns");
+        let mut network = Some(network);
+        assert!(pool.release(&mut network).await.invalid_message().is_none());
+        pool.cleanup().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn leaked_cleanup_waits_for_process_exit_before_recycling_network() {
+        let (tmp, mut leaked) = leaked_resource_with_paths(true).await;
+        let pool = attach_reusable_network(&mut leaked);
+        let (exit_tx, exit) = ProcessExitCompletion::channel();
+        leaked.process_exit = Some(exit);
+        let cleanup = cleanup_leaked_resource(leaked, &pool);
+        tokio::pin!(cleanup);
+
+        assert!(futures_util::poll!(&mut cleanup).is_pending());
+        assert_network_unavailable(&pool).await;
+        assert!(tmp.path().join("sock").exists());
+        assert!(tmp.path().join("workspace").exists());
+
+        exit_tx.send(true).unwrap();
+        cleanup.await;
+
+        assert_network_recycled(&pool).await;
+        assert!(!tmp.path().join("sock").exists());
+        assert!(!tmp.path().join("workspace").exists());
+    }
+
+    #[tokio::test]
+    async fn leaked_cleanup_preserves_resources_when_process_exit_is_unconfirmed() {
+        for completion in [Some(false), None] {
+            let (tmp, mut leaked) = leaked_resource_with_paths(true).await;
+            let pool = attach_reusable_network(&mut leaked);
+            let (exit_tx, exit) = ProcessExitCompletion::channel();
+            leaked.process_exit = Some(exit);
+            if let Some(confirmed) = completion {
+                exit_tx.send(confirmed).unwrap();
+            } else {
+                drop(exit_tx);
+            }
+
+            cleanup_leaked_resource(leaked, &pool).await;
+
+            assert_network_unavailable(&pool).await;
+            assert!(tmp.path().join("sock").exists());
+            assert!(tmp.path().join("workspace").exists());
+            pool.cleanup().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_leaked_cleanup_does_not_recycle_network_before_exit() {
+        let (tmp, mut leaked) = leaked_resource_with_paths(true).await;
+        let pool = attach_reusable_network(&mut leaked);
+        let (exit_tx, exit) = ProcessExitCompletion::channel();
+        leaked.process_exit = Some(exit);
+        let mut cleanup = Box::pin(cleanup_leaked_resource(leaked, &pool));
+
+        assert!(futures_util::poll!(&mut cleanup).is_pending());
+        drop(cleanup);
+        let _ = exit_tx.send(true);
+
+        assert_network_unavailable(&pool).await;
+        assert!(tmp.path().join("sock").exists());
+        assert!(tmp.path().join("workspace").exists());
+        pool.cleanup().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn leaked_cleanup_recycles_network_without_a_launched_process() {
+        let (tmp, mut leaked) = leaked_resource_with_paths(true).await;
+        let pool = attach_reusable_network(&mut leaked);
+
+        cleanup_leaked_resource(leaked, &pool).await;
+
+        assert_network_recycled(&pool).await;
+        assert!(!tmp.path().join("sock").exists());
+        assert!(!tmp.path().join("workspace").exists());
     }
 
     #[tokio::test]

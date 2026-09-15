@@ -16,8 +16,6 @@ import {
 } from "../../../test-fixtures/system-config-seeds";
 import {
   deleteOrgPlanEntitlementFixture,
-  insertOrgMetadataAsLegacyWriterFixture,
-  updateOrgPlanKeyAsLegacyWriterFixture,
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import {
@@ -134,6 +132,7 @@ describe("GET /api/billing/status", () => {
     expect(response.body.tier).toBe("limited-free-1");
     expect(response.body.status).toBe("active");
     expect(response.body.supportByok).toBeFalsy();
+    expect(response.body.restrictedBuiltInModels).toBeTruthy();
     expect(response.body.restrictedVm0Models).toBeTruthy();
     expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.credits).toBe(100_000);
@@ -430,7 +429,7 @@ describe("GET /api/billing/status", () => {
       showUsagePack: true,
       autoRechargeAllowed: false,
       supportByok: false,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
       videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: true,
     });
@@ -449,11 +448,14 @@ describe("GET /api/billing/status", () => {
     expect(response.body.canBuyConcurrency).toBeTruthy();
     expect(response.body.canBuyCredits).toBeFalsy();
     expect(response.body.showUsagePack).toBeTruthy();
-    expect(response.body).not.toHaveProperty("memberInviteUsagePackRequired");
     expect(response.body.status).toBe("active");
-    expect(response.body.memberInvitationAllowed).toBeTruthy();
     expect(response.body.autoRechargeAllowed).toBeFalsy();
     expect(response.body.supportByok).toBeFalsy();
+    // Both names are optional on the contract, so `toBeFalsy` alone would also
+    // pass on an omitted field. Pin the emitted type as well.
+    expect(typeof response.body.restrictedBuiltInModels).toBe("boolean");
+    expect(typeof response.body.restrictedVm0Models).toBe("boolean");
+    expect(response.body.restrictedBuiltInModels).toBeFalsy();
     expect(response.body.restrictedVm0Models).toBeFalsy();
     expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();
@@ -478,44 +480,6 @@ describe("GET /api/billing/status", () => {
     expect(missingPriceResponse.body).not.toHaveProperty(
       "concurrencyUnitAmountCents",
     );
-  });
-
-  it("keeps plan capabilities accurate for legacy rollout writes", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    onTestFinished(async () => {
-      await deleteOrgPlanEntitlementFixture(orgId);
-    });
-    await insertOrgMetadataAsLegacyWriterFixture({
-      orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-    const initialResponse = await accept(
-      client.get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(initialResponse.body.canBuyCredits).toBeFalsy();
-    expect(initialResponse.body.status).toBe("active");
-
-    await updateOrgPlanKeyAsLegacyWriterFixture({ orgId, planKey: "pro" });
-
-    const updatedResponse = await accept(
-      client.get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(updatedResponse.body.tier).toBe("limited-free-1");
-    expect(updatedResponse.body.canBuyCredits).toBeTruthy();
-    expect(updatedResponse.body.status).toBe("active");
   });
 
   it("includes active concurrency subscription slots", async () => {
@@ -1273,7 +1237,6 @@ describe("GET /api/billing/status", () => {
 
     expect(response.body.tier).toBe("pro-suspend");
     expect(response.body.status).toBe("suspended");
-    expect(response.body.memberInvitationAllowed).toBeFalsy();
     expect(response.body.credits).toBe(0);
     expect(response.body.hasSubscription).toBeFalsy();
   });

@@ -4,6 +4,7 @@ import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
+import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -16,10 +17,6 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  auxiliaryResults,
-  auxiliaryWarnings,
-} from "./helpers/auxiliary-generation";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -33,7 +30,6 @@ const providerSecret = "Private provider response and credential details";
 const selectedContent = "Publish the agreed launch checklist";
 
 beforeEach(() => {
-  context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
 });
 
@@ -185,173 +181,74 @@ async function expectNoShare(fixture: ShareFixture) {
   expect(catalog.artifacts).toStrictEqual([]);
 }
 
-function expectOutcome(outcome: string, reason: string) {
-  expect(auxiliaryResults(context, "shared_thread_title")).toStrictEqual([
-    expect.objectContaining({
-      feature: "shared_thread_title",
-      outcome,
-      reason,
-    }),
-  ]);
-  expect(auxiliaryWarnings(context)).toHaveLength(outcome === "error" ? 1 : 0);
-  expect(
-    context.mocks.axiomLogging.warn.mock.calls.map(([message]) => {
-      return message;
-    }),
-  ).toStrictEqual(outcome === "error" ? ["Auxiliary generation failed"] : []);
-  expect(context.mocks.axiomLogging.error.mock.calls).toStrictEqual([]);
-  expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-  const telemetry = JSON.stringify([
-    auxiliaryResults(context),
-    auxiliaryWarnings(context),
-  ]);
-  for (const secret of [
-    privateTitle,
-    privateContent,
-    selectedContent,
-    providerSecret,
-  ]) {
-    expect(telemetry).not.toContain(secret);
-  }
-}
-
 describe("optional shared-thread titles", () => {
+  // One shape per externally distinguishable outcome: a usable title, or the
+  // fixed fallback. Which provider code or transport fault produced a failure
+  // reaches the public snapshot identically.
   const generationCases = [
     {
       name: "healthy title",
       response: () => {
         return completion();
       },
-      outcome: "success",
-      reason: "none",
+      title: "Launch checklist",
     },
     {
       name: "rate limit",
       response: () => {
         return new HttpResponse(providerSecret, { status: 429 });
       },
-      outcome: "degraded",
-      reason: "rate_limited",
-    },
-    {
-      name: "gateway timeout",
-      response: () => {
-        return new HttpResponse(providerSecret, { status: 504 });
-      },
-      outcome: "degraded",
-      reason: "upstream_timeout",
-    },
-    {
-      name: "provider unavailable",
-      response: () => {
-        return new HttpResponse(providerSecret, { status: 503 });
-      },
-      outcome: "degraded",
-      reason: "provider_unavailable",
-    },
-    {
-      name: "network failure",
-      response: () => {
-        return HttpResponse.error();
-      },
-      outcome: "degraded",
-      reason: "network",
-    },
-    {
-      name: "body timeout",
-      response: () => {
-        return brokenBody(
-          new TypeError("terminated", {
-            cause: { code: "UND_ERR_BODY_TIMEOUT" },
-          }),
-        );
-      },
-      outcome: "degraded",
-      reason: "upstream_timeout",
+      title: "Shared conversation",
     },
     {
       name: "auth failure",
       response: () => {
         return new HttpResponse(providerSecret, { status: 401 });
       },
-      outcome: "error",
-      reason: "auth",
+      title: "Shared conversation",
     },
     {
-      name: "invalid request",
+      name: "network failure",
       response: () => {
-        return new HttpResponse(providerSecret, { status: 400 });
+        return HttpResponse.error();
       },
-      outcome: "error",
-      reason: "invalid_request",
+      title: "Shared conversation",
     },
     {
       name: "unknown defect",
       response: () => {
         return brokenBody(new TypeError(providerSecret));
       },
-      outcome: "error",
-      reason: "unknown",
-    },
-    {
-      name: "TLS configuration defect",
-      response: () => {
-        return brokenBody(
-          new TypeError("fetch failed", {
-            cause: { code: "DEPTH_ZERO_SELF_SIGNED_CERT" },
-          }),
-        );
-      },
-      outcome: "error",
-      reason: "unknown",
-    },
-    {
-      name: "empty output",
-      response: () => {
-        return completion("");
-      },
-      outcome: "error",
-      reason: "invalid_output",
-    },
-    {
-      name: "whitespace output",
-      response: () => {
-        return completion(" \n\t ");
-      },
-      outcome: "error",
-      reason: "invalid_output",
+      title: "Shared conversation",
     },
     {
       name: "empty interpreted title",
       response: () => {
         return completion("---");
       },
-      outcome: "error",
-      reason: "unusable_output",
+      title: "Shared conversation",
     },
     {
       // A public snapshot keeps its title forever, so a partial one is worse
-      // than the fixed fallback. The exhausted budget is still only counted.
+      // than the fixed fallback.
       name: "exhausted token budget",
       response: () => {
         return completion("A Truncated Shared Title That Must", "length");
       },
-      outcome: "degraded",
-      reason: "output_truncated",
+      title: "Shared conversation",
     },
     {
       name: "invalid JSON",
       response: () => {
         return new HttpResponse(providerSecret);
       },
-      outcome: "error",
-      reason: "invalid_output",
+      title: "Shared conversation",
     },
   ];
 
   it.each(generationCases)(
     "creates one private-content-safe snapshot with $name",
-    async ({ response, outcome, reason }) => {
+    async ({ response, title }) => {
       const fixture = await prepareShare();
       mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
       const prompts: string[] = [];
@@ -367,20 +264,16 @@ describe("optional shared-thread titles", () => {
       );
       expect(Object.keys(created.body)).toStrictEqual(["id"]);
       await flushWaitUntilForTest();
-      await expectSharedSnapshot(
-        fixture,
-        created.body.id,
-        outcome === "success" ? "Launch checklist" : "Shared conversation",
-      );
+      await expectSharedSnapshot(fixture, created.body.id, title);
       expect(prompts).toHaveLength(1);
       expect(prompts[0]).toContain(selectedContent);
       expect(prompts[0]).not.toContain(privateTitle);
       expect(prompts[0]).not.toContain(privateContent);
-      expectOutcome(outcome, reason);
+      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
-  it("uses the fixed title and a skipped result without model configuration", async () => {
+  it("uses the fixed title and calls no provider without model configuration", async () => {
     const fixture = await prepareShare();
     const requests: string[] = [];
     server.use(
@@ -393,10 +286,9 @@ describe("optional shared-thread titles", () => {
     await flushWaitUntilForTest();
     await expectSharedSnapshot(fixture, created.body.id, "Shared conversation");
     expect(requests).toStrictEqual([]);
-    expectOutcome("skipped", "not_applicable");
   });
 
-  it.each(["ingest", "flush"])(
+  it.each(["ingest", "flush"] as const)(
     "preserves a valid share when telemetry %s fails",
     async (mode) => {
       const fixture = await prepareShare();
@@ -406,15 +298,7 @@ describe("optional shared-thread titles", () => {
           return new HttpResponse(null, { status: 429 });
         }),
       );
-      if (mode === "ingest") {
-        context.mocks.axiom.sdkIngest.mockImplementation(() => {
-          throw new Error("Telemetry unavailable");
-        });
-      } else {
-        context.mocks.axiom.flush.mockRejectedValue(
-          new Error("Telemetry unavailable"),
-        );
-      }
+      mockAxiomSdkTelemetryFailure({ mode });
       const created = await accept(
         client().create(requestBody(fixture)),
         [201],
@@ -425,7 +309,6 @@ describe("optional shared-thread titles", () => {
         created.body.id,
         "Shared conversation",
       );
-      expect(auxiliaryWarnings(context)).toStrictEqual([]);
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
@@ -452,8 +335,6 @@ describe("optional shared-thread titles", () => {
     await flushWaitUntilForTest();
     await expectNoShare(fixture);
     expect(requests).toStrictEqual([]);
-    expect(auxiliaryResults(context, "shared_thread_title")).toStrictEqual([]);
-    expect(auxiliaryWarnings(context)).toStrictEqual([]);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
@@ -521,7 +402,7 @@ describe("optional shared-thread titles", () => {
       await returned.promise;
       await flushWaitUntilForTest();
       await expectNoShare(fixture);
-      expectOutcome("cancelled", "caller_cancelled");
+      expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
 
@@ -558,7 +439,6 @@ describe("optional shared-thread titles", () => {
     );
     expect(unknown.body.error.code).toBe("NO_SHAREABLE_MESSAGES");
     await expectNoShare(fixture);
-    expect(auxiliaryResults(context, "shared_thread_title")).toStrictEqual([]);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
@@ -568,7 +448,6 @@ describe("optional shared-thread titles", () => {
     const response = await accept(client().create(requestBody(fixture)), [413]);
     expect(response.body.error.code).toBe("SHARED_THREAD_TOO_LARGE");
     await expectNoShare(fixture);
-    expect(auxiliaryResults(context, "shared_thread_title")).toStrictEqual([]);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
@@ -594,18 +473,6 @@ describe("optional shared-thread titles", () => {
       "Unknown response status 500 for POST /api/chat-threads/:threadId/shared-threads",
     );
     await flushWaitUntilForTest();
-    expect(auxiliaryResults(context, "shared_thread_title")).toStrictEqual([
-      expect.objectContaining({
-        feature: "shared_thread_title",
-        outcome: "degraded",
-        reason: "rate_limited",
-      }),
-    ]);
-    expect(auxiliaryWarnings(context)).toStrictEqual([]);
-    expect(context.mocks.axiomLogging.error).toHaveBeenCalledWith(
-      expect.stringContaining("Unhandled request error:"),
-      expect.objectContaining({ type: "unhandled_request_error" }),
-    );
     expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
     // PostgreSQL reports the attempted public share ID through the external
     // error capture. Verify rollback using both public read endpoints.

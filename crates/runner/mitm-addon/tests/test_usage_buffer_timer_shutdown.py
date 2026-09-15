@@ -351,9 +351,8 @@ def test_shutdown_flush_retries_active_timer_failure_without_rescheduling_timer(
         assert shutdown_results == [1]
         assert enqueued_run_ids == ["run-1", "run-1"]
         assert enqueued_idempotency_keys[0] == enqueued_idempotency_keys[1]
-        assert len(timers) == 2
+        assert len(timers) == 1
         assert timers[0].cancelled is True
-        assert timers[1].cancelled is True
         assert_current_pending(
             pending_path,
             flows=0,
@@ -435,7 +434,7 @@ def test_shutdown_flush_drains_usage_deferred_by_threshold_flush_while_waiting(t
             str(tmp_path / "proxy.jsonl"),
         )
         assert not shutdown_returned.is_set()
-        assert len(timers) == 2
+        assert len(timers) == 1
 
         release_timer_enqueue.set()
         timer_thread.join_and_raise(timeout=1)
@@ -445,9 +444,8 @@ def test_shutdown_flush_drains_usage_deferred_by_threshold_flush_while_waiting(t
         assert not shutdown_thread.is_alive()
         assert shutdown_results == [1]
         assert enqueued_run_ids == ["run-1", "run-2"]
-        assert len(timers) == 2
+        assert len(timers) == 1
         assert timers[0].cancelled is True
-        assert timers[1].cancelled is True
         assert_current_pending(
             pending_path,
             flows=0,
@@ -475,7 +473,7 @@ def test_shutdown_flush_drains_live_usage_buffered_during_own_enqueue(tmp_path):
                 [event(source_key="source-2")],
                 path,
             )
-            assert len(timers) == 2
+            assert len(timers) == 1
         assert log_type == "usage_event"
 
     enqueue = RecordingEnqueue(side_effect=enqueue_webhook)
@@ -494,9 +492,8 @@ def test_shutdown_flush_drains_live_usage_buffered_during_own_enqueue(tmp_path):
     assert usage.flush_usage_events(trigger="shutdown") == 2
 
     assert enqueued_runs == ["run-1", "run-2"]
-    assert len(timers) == 2
+    assert len(timers) == 1
     assert timers[0].cancelled is True
-    assert timers[1].cancelled is True
     assert_current_pending(
         pending_path,
         flows=0,

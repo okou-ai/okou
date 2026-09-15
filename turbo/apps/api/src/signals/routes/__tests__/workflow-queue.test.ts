@@ -226,8 +226,8 @@ async function postWorkflowWebhook(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-VM0-Timestamp": String(timestamp),
-        "X-VM0-Signature": computeHmacSignature(
+        "X-Okou-Timestamp": String(timestamp),
+        "X-Okou-Signature": computeHmacSignature(
           rawBody,
           automation.secret,
           timestamp,
@@ -780,7 +780,9 @@ describe("workflow queue", () => {
       threadId: automation.threadId,
       signal: context.signal,
     });
-    await expect.poll(admissionLock.waiterCount).toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(admissionLock.transitiveWaiterCount)
+      .toBeGreaterThanOrEqual(2);
 
     admissionLock.release();
     const [workflowResult] = await Promise.all([workflowRequest, goalDrain]);
@@ -908,8 +910,8 @@ describe("workflow queue", () => {
       },
     });
     // The persisted queued message is the product milestone proving the send
-    // reached the queue; the waiter count is a cluster-wide `pg_locks`
-    // observation of one org key that several admission attempts share, so it
+    // reached the queue. The transitive PostgreSQL blocker observation includes
+    // contenders waiting on the first admission's earlier B1 subject locks and
     // is only used as a lower-bound barrier here.
     await expect
       .poll(async () => {
@@ -919,7 +921,9 @@ describe("workflow queue", () => {
         });
       })
       .toBe(true);
-    await expect.poll(admissionLock.waiterCount).toBeGreaterThanOrEqual(2);
+    await expect
+      .poll(admissionLock.transitiveWaiterCount)
+      .toBeGreaterThanOrEqual(2);
 
     // The business assertion: the stale sweep must leave the fresh user message
     // queued and must not drain it ahead of the stale automation event that is
@@ -1037,7 +1041,44 @@ describe("workflow queue", () => {
     ).toBeTruthy();
   });
 
-  it("queues webhook events behind the active run and drains one per completion", async () => {
+  it("leaves queue events older than the recent stale sweep window", async () => {
+    mockNow(Date.UTC(2020, 0, 1));
+    const scenario = await setup();
+    const automation = await createWebhookAutomation(scenario);
+    const firstRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "first"),
+      automation.threadId,
+    );
+    expectAcceptedWithoutRun(
+      await postWorkflowWebhook(automation, "outside the recovery window"),
+    );
+    const event = (await pendingAutomationEvents(automation.threadId))[0];
+    if (!event) {
+      throw new Error("Expected a pending automation event");
+    }
+    await setWorkflowQueueEventCreatedAtFixture({
+      eventId: event.id,
+      createdAt: new Date("2019-12-31T23:44:00.000Z"),
+    });
+
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    await runsApi.claimRunnerJob(firstRunId);
+    await completeRunWithoutCallbacksFixture({ runId: firstRunId });
+    await cleanupWorkflowQueueFixtures({
+      threadId: automation.threadId,
+      orgId: scenario.orgId,
+      runIds: [firstRunId],
+    });
+
+    await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
+      firstRunId,
+    ]);
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toMatchObject([{ id: event.id }]);
+  });
+
+  it("queues webhook events without extra keys and drains one per completion", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
     const kms = useSecretKmsProbe();
@@ -1070,10 +1111,29 @@ describe("workflow queue", () => {
     await completeRunThroughSandbox(scenario, firstRunId);
     const afterFirst = await workflowRunIds(automation.threadId);
     expect(afterFirst).toHaveLength(2);
-    const secondClaim = await completeRunThroughSandbox(
-      scenario,
-      afterFirst[1]!,
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("starts a promoted webhook run's API clock at dequeue time", async () => {
+    const scenario = await setup();
+    const automation = await createWebhookAutomation(scenario);
+    const firstRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "first"),
+      automation.threadId,
     );
+    const enqueuedAt = now() + 60_000;
+    mockNow(enqueuedAt);
+    expectAcceptedWithoutRun(await postWorkflowWebhook(automation, "second"));
+
+    const dequeuedAt = enqueuedAt + 10_000;
+    mockNow(dequeuedAt);
+    await completeRunThroughSandbox(scenario, firstRunId);
+    const runIds = await workflowRunIds(automation.threadId);
+    expect(runIds).toHaveLength(2);
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    const secondClaim = await runsApi.claimRunnerJob(runIds[1]!);
     expect(secondClaim.apiStartTime).toBe(dequeuedAt);
   });
 
@@ -1587,14 +1647,16 @@ describe("workflow queue", () => {
     // Both values become the same JavaScript Date. The database-first event
     // deliberately has the lexicographically later UUID, so a millisecond
     // conversion followed by an id sort would choose the wrong queue head.
-    await setWorkflowQueueEventCreatedAtFixture({
-      eventId: databaseFirst.id,
-      createdAt: "2019-12-31 23:54:00.000100",
-    });
-    await setWorkflowQueueEventCreatedAtFixture({
-      eventId: databaseSecond.id,
-      createdAt: "2019-12-31 23:54:00.000900",
-    });
+    await Promise.all([
+      setWorkflowQueueEventCreatedAtFixture({
+        eventId: databaseFirst.id,
+        createdAt: "2019-12-31 23:54:00.000100",
+      }),
+      setWorkflowQueueEventCreatedAtFixture({
+        eventId: databaseSecond.id,
+        createdAt: "2019-12-31 23:54:00.000900",
+      }),
+    ]);
 
     const result = await postWorkflowWebhook(
       automation,
@@ -2199,7 +2261,7 @@ describe("workflow queue", () => {
         });
       })
       .toBe(true);
-    await expect.poll(admissionLock.waiterCount).toBe(2);
+    await expect.poll(admissionLock.transitiveWaiterCount).toBe(2);
 
     admissionLock.release();
     const [workflowResult, userResult] = await Promise.all([

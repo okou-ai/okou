@@ -3,6 +3,17 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, inArray } from "drizzle-orm";
+import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
+import { nowDate } from "../../lib/time";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
+import { modelProviders } from "@okouai/db/schema/model-provider";
+import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
+import { secrets } from "@okouai/db/schema/secret";
+import { logger } from "../../lib/log";
+import { publishCancelToRunnerGroup } from "../external/realtime";
+import { tapError } from "../utils";
+import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
 import type { Db } from "../external/db";
 
@@ -14,6 +25,22 @@ export async function cleanupOrgMemberResources(
   },
   signal: AbortSignal,
 ): Promise<void> {
+  await revokeOrgMemberRunAuthority(db, args, signal);
+  signal.throwIfAborted();
+  await db
+    .update(morningBriefEnrollments)
+    .set({ state: "departed", updatedAt: nowDate() })
+    .where(
+      and(
+        eq(morningBriefEnrollments.orgId, args.orgId),
+        eq(morningBriefEnrollments.userId, args.userId),
+        inArray(morningBriefEnrollments.state, [
+          "checking",
+          "pending",
+          "ineligible",
+        ]),
+      ),
+    );
   const [installation] = await db
     .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
     .from(slackOrgInstallations)
@@ -67,5 +94,77 @@ export async function cleanupOrgMemberResources(
         eq(orgMembersMetadata.orgId, args.orgId),
       ),
     );
+  signal.throwIfAborted();
+}
+
+async function revokeOrgMemberRunAuthority(
+  db: Db,
+  args: { readonly orgId: string; readonly userId: string },
+  signal: AbortSignal,
+): Promise<void> {
+  // Membership revocation is a hard authority boundary, including credentials
+  // retained by ordinary personal-settings disconnect. Commit revocation before
+  // best-effort runner notification or the remaining member resource cleanup.
+  const cancelled = await db.transaction(async (tx) => {
+    const rows = await transitionAgentRunsToTerminal(tx, {
+      values: { status: "cancelled", completedAt: nowDate() },
+      conditions: [
+        eq(agentRuns.orgId, args.orgId),
+        eq(agentRuns.userId, args.userId),
+        inArray(agentRuns.status, ["queued", "pending", "running"]),
+      ],
+    });
+    await tx
+      .delete(agentRunQueue)
+      .where(
+        and(
+          eq(agentRunQueue.orgId, args.orgId),
+          eq(agentRunQueue.userId, args.userId),
+        ),
+      );
+    await tx
+      .delete(modelProviders)
+      .where(
+        and(
+          eq(modelProviders.orgId, args.orgId),
+          eq(modelProviders.userId, args.userId),
+        ),
+      );
+    await tx
+      .delete(modelProviderAuthSessions)
+      .where(
+        and(
+          eq(modelProviderAuthSessions.orgId, args.orgId),
+          eq(modelProviderAuthSessions.userId, args.userId),
+        ),
+      );
+    await tx
+      .delete(secrets)
+      .where(
+        and(
+          eq(secrets.orgId, args.orgId),
+          eq(secrets.userId, args.userId),
+          eq(secrets.type, "model-provider"),
+        ),
+      );
+    return rows;
+  });
+  signal.throwIfAborted();
+  await Promise.all(
+    cancelled.map(async (run) => {
+      if (!run.runnerGroup) {
+        return;
+      }
+      await tapError(
+        publishCancelToRunnerGroup(run.runnerGroup, run.runId, "hard"),
+        (error) => {
+          logger("OrgMemberCleanup").warn(
+            "Failed to publish membership-revoked run cancellation",
+            { runId: run.runId, error },
+          );
+        },
+      );
+    }),
+  );
   signal.throwIfAborted();
 }

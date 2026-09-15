@@ -13,7 +13,11 @@ Pass runtime values as positional sub-command arguments instead. When the value
 must remain reactive or outlive one invocation, represent it as explicit
 ccstate state owned by the surrounding signal graph. A signal factory may
 construct commands for a genuinely separate graph instance, but the owning
-code must instantiate that factory outside command execution.
+code must instantiate that factory outside command execution: at package
+scope, inside another factory, or inside a `computed` that derives the
+instance from its domain identity. A graph built in a `computed` cannot
+capture an `AbortSignal`, so let its owner install one with `resetSignal()`
+after construction.
 
 `ccstate/no-command-in-command` enforces this boundary.
 

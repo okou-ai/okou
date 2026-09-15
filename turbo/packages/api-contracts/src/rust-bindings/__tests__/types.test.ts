@@ -280,6 +280,11 @@ describe("Rust type bindings", () => {
     expect(source).toContain("pub enum ResolveResponse {");
     expect(source).toContain("private_key: crate::SecretText<65536>");
     expect(source).toContain("passphrase: Option<crate::SecretText<4096>>");
+    expect(source).toContain("password: crate::SecretText<4096>");
+    expect(source).toContain("ResolvedPassword {");
+    expect(
+      source.match(/pub struct ResolveResponseResolvedLearnedHostKey \{/gu),
+    ).toHaveLength(1);
     expect(source).toContain(
       "impl<'de> serde::Deserialize<'de> for ResolveResponse",
     );
@@ -289,6 +294,28 @@ describe("Rust type bindings", () => {
     expect(source).not.toMatch(
       /#\[derive\([^\]]*(Debug|Clone|Serialize)[^\]]*\)\]\s*(#\[[^\]]*\]\s*)*pub enum ResolveResponse\s*\{/,
     );
+  });
+  it("rejects incompatible shared fields in sensitive variants", () => {
+    const binding = validBinding({
+      sensitive: true,
+      schema: z.discriminatedUnion("outcome", [
+        z.object({ outcome: z.literal("key"), shared: z.string() }).strict(),
+        z
+          .object({ outcome: z.literal("password"), shared: z.number() })
+          .strict(),
+      ]),
+      declarations: [
+        {
+          rustTypeName: "Request",
+          rustDoc: ["Sensitive test response."],
+          fields: { shared: ["Incompatible shared field."] },
+          variants: { key: ["Key."], password: ["Password."] },
+        },
+      ],
+    });
+    expect(() => {
+      return renderExampleRustTypes([binding]);
+    }).toThrow("sensitive shared field shared has incompatible schemas");
   });
   it("contains exactly the supported Rust DTO set", () => {
     const actualBindings = normalizeTypeBindings(rustTypeBindings).map(
@@ -341,7 +368,6 @@ describe("Rust type bindings", () => {
     );
     expect(firstRender).toContain("pub struct PiModelConfig {");
     expect(firstRender).toContain("pub enum PiModelConfigProvider {");
-    expect(firstRender).toContain("pub enum PiModelConfigApi {");
     expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
     expect(firstRender).toContain("pub enum PiModelConfigServiceTier {");
     expect(firstRender).toContain("pub enum PiModelConfigApiKeyEnv {");
@@ -539,13 +565,6 @@ describe("Rust type bindings", () => {
             "ANTHROPIC_AUTH_TOKEN",
             "OPENAI_API_KEY",
             "CHATGPT_ACCESS_TOKEN",
-          ],
-        },
-        api: {
-          enum: [
-            "openai-completions",
-            "openai-responses",
-            "openai-codex-responses",
           ],
         },
         thinkingLevel: {

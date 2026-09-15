@@ -11,22 +11,7 @@ export type ThinkingMessage = z.infer<typeof thinkingMessageSchema>;
 export const activitySummaryResponseSchema = z.object({
   runId: z.string().uuid(),
   messages: z.array(thinkingMessageSchema).max(4),
-  status: z.enum([
-    "fresh",
-    "stale",
-    "pending",
-    "cooldown",
-    "ineligible",
-    "unavailable",
-  ]),
-  sourceRevision: z.string().nullable(),
-  summaryRevision: z.string().nullable(),
-  sourceSequence: z.number().int().nullable(),
-  summarySequence: z.number().int().nullable(),
-  messageCursor: z.number().int().nonnegative(),
-  summaryMessageCursor: z.number().int().nonnegative().nullable(),
-  summarizedAt: z.string().datetime().nullable(),
-  retryAfterMs: z.number().int().nonnegative(),
+  status: z.enum(["available", "ineligible", "unavailable"]),
 });
 export type ActivitySummaryResponse = z.infer<
   typeof activitySummaryResponseSchema

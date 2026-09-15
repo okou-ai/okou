@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.42.5](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.4...sandbox-firecracker-v0.42.5) (2026-09-15)
+
+## [0.42.4](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.3...sandbox-firecracker-v0.42.4) (2026-09-15)
+
+## [0.42.3](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.2...sandbox-firecracker-v0.42.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* **rust:** reuse managed child pidfds for firecracker monitoring ([#34061](https://github.com/vm0-ai/vm0/issues/34061)) ([7112251](https://github.com/vm0-ai/vm0/commit/7112251220aa4268e6b0b1e154bff401eb2d09d1))
+
+## [0.42.2](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.1...sandbox-firecracker-v0.42.2) (2026-09-14)
+
+## [0.42.1](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.0...sandbox-firecracker-v0.42.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **rust:** stop host cpu fairness ticker on sampling failures ([#33939](https://github.com/vm0-ai/vm0/issues/33939)) ([16999c6](https://github.com/vm0-ai/vm0/commit/16999c63ada2b7e89f7a23a670670cc55932b84d))
+
+## [0.42.0](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.10...sandbox-firecracker-v0.42.0) (2026-09-14)
+
+
+### Features
+
+* **runner:** add bounded binary guest rpc streaming ([#33879](https://github.com/vm0-ai/vm0/issues/33879)) ([bb81a9c](https://github.com/vm0-ai/vm0/commit/bb81a9ccd884e0dc907bc06c00983c07e7bea95e))
+
+
+### Documentation
+
+* **rust:** clarify balloon deflate-on-oom limits ([#33874](https://github.com/vm0-ai/vm0/issues/33874)) ([a944f45](https://github.com/vm0-ai/vm0/commit/a944f45cd6ca386fc9faf8de1652c19be5999a3b))
+
+## [0.41.10](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.9...sandbox-firecracker-v0.41.10) (2026-09-14)
+
+## [0.41.9](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.8...sandbox-firecracker-v0.41.9) (2026-09-12)
+
+
+### Bug Fixes
+
+* **rust:** revalidate snapshot bind targets after concurrent cleanup ([#33634](https://github.com/vm0-ai/vm0/issues/33634)) ([929f1ae](https://github.com/vm0-ai/vm0/commit/929f1aece5d9c5c7892b7e16691849f3eb71b51c))
+* **sandbox:** wait for firecracker exit before recycling resources ([#33644](https://github.com/vm0-ai/vm0/issues/33644)) ([a9ead38](https://github.com/vm0-ai/vm0/commit/a9ead38e66ee83ac4538d96bb4f7f3dcb31f9672))
+
+## [0.41.8](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.7...sandbox-firecracker-v0.41.8) (2026-09-12)
+
+## [0.41.7](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.6...sandbox-firecracker-v0.41.7) (2026-09-11)
+
+## [0.41.6](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.5...sandbox-firecracker-v0.41.6) (2026-09-11)
+
 ## [0.41.5](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.4...sandbox-firecracker-v0.41.5) (2026-09-11)
 
 ## [0.41.4](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.3...sandbox-firecracker-v0.41.4) (2026-09-10)

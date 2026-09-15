@@ -1,12 +1,14 @@
 import {
   runnerSshContract,
   runnerSshInvalidateSchema,
+  SSH_PASSWORD_MAX_LENGTH,
 } from "../contracts/runner-ssh";
 import {
   SSH_PRIVATE_KEY_MAX_LENGTH,
   SSH_PASSPHRASE_MAX_LENGTH,
 } from "../contracts/ssh-connections";
 import type { RustTypeBinding, RustTypeDeclarationDoc } from "./types";
+import { CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH } from "../contracts/cloudflare-access";
 
 function identityDocs(name: string): RustTypeDeclarationDoc {
   return {
@@ -98,6 +100,15 @@ export const sshTypeBindings = [
           authentication_failed: ["SSH user authentication failed."],
           protocol: ["Connection handshake failed before user authentication."],
           timed_out: ["Connection did not authenticate before its deadline."],
+          access_rejected: [
+            "Cloudflare Access rejected the Service Token or policy.",
+          ],
+          access_tls_failure: [
+            "The Access gateway TLS identity could not be verified.",
+          ],
+          access_protocol_failure: [
+            "The Access gateway did not establish a valid carrier.",
+          ],
         },
       },
     ],
@@ -192,6 +203,9 @@ export const sshTypeBindings = [
     fieldTypeOverrides: {
       privateKey: `crate::SecretText<${SSH_PRIVATE_KEY_MAX_LENGTH}>`,
       passphrase: `Option<crate::SecretText<${SSH_PASSPHRASE_MAX_LENGTH}>>`,
+      password: `crate::SecretText<${SSH_PASSWORD_MAX_LENGTH}>`,
+      clientId: `crate::SecretText<${CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}>`,
+      clientSecret: `crate::SecretText<${CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}>`,
     },
     declarations: [
       {
@@ -200,6 +214,10 @@ export const sshTypeBindings = [
           "Private JIT response. Never Debug, clone, serialize, persist or send to guest.",
         ],
         fields: {
+          authentication: [
+            "SSH authentication after protected carrier and host proof.",
+          ],
+          access: ["Private Access authority for the exact saved recipient."],
           host: ["Current destination, private to Runner."],
           port: ["Current destination port."],
           username: ["Current login identity."],
@@ -207,13 +225,49 @@ export const sshTypeBindings = [
           learnedHostKey: ["Existing pin, or first-use trust required."],
           privateKey: ["Bounded zeroizing private key text."],
           passphrase: ["Bounded zeroizing passphrase, preserving whitespace."],
+          password: [
+            "Bounded zeroizing login password, preserving whitespace.",
+          ],
         },
         variants: {
+          resolved_access: [
+            "Authorized protected carrier and SSH credential handoff.",
+          ],
           unavailable: ["Current authority not available; no secrets."],
           resolved: ["Authorized current credential handoff."],
+          resolved_password: [
+            "Authorized current password credential handoff.",
+          ],
         },
       },
       ...hostKeyDocs("ResolveResponseResolvedLearnedHostKey"),
+      {
+        rustTypeName: "ResolveResponseResolvedAccessAuthentication",
+        rustDoc: [
+          "Private SSH authentication after carrier authorization and host proof.",
+        ],
+        fields: {
+          privateKey: ["Bounded zeroizing key."],
+          passphrase: ["Optional zeroizing passphrase."],
+          password: ["Bounded zeroizing password."],
+        },
+        variants: {
+          private_key: ["SSH private key."],
+          password: ["SSH password."],
+        },
+      },
+      {
+        rustTypeName: "ResolveResponseResolvedAccessAccess",
+        rustDoc: [
+          "Private Service Token for the exact saved hostname, never guest-visible.",
+        ],
+        fields: {
+          configId: ["Owner configuration ID."],
+          generation: ["Effective Access generation."],
+          clientId: ["Bounded zeroizing Client ID."],
+          clientSecret: ["Bounded zeroizing Client Secret."],
+        },
+      },
     ],
   },
 ] satisfies readonly RustTypeBinding[];

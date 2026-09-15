@@ -157,6 +157,14 @@ export function resolvePublicArtifactsBaseUrl():
   return resolvePlatformRuntimeConfig().publicArtifactsBaseUrl;
 }
 
+export function resolveArtifactImageTransformOrigin():
+  | "https://a.okou.io"
+  | "https://cdn.vm7.io" {
+  return resolvePlatformEnvironment() === "production"
+    ? "https://a.okou.io"
+    : "https://cdn.vm7.io";
+}
+
 export function resolveOfficeDocumentViewerBaseUrl(): string {
   return OFFICE_DOCUMENT_VIEWER_BASE_URL;
 }
@@ -169,4 +177,20 @@ export function resolveHostedSiteDomains(): readonly (
   return resolvePlatformEnvironment() === "production"
     ? PRODUCTION_HOSTED_SITE_DOMAINS
     : PREVIEW_HOSTED_SITE_DOMAINS;
+}
+
+/** Send only the app origin to our hosted previews, including private ones. */
+export function hostedArtifactReferrerPolicy(
+  url: string,
+): "origin" | "no-referrer" {
+  if (!URL.canParse(url)) {
+    return "no-referrer";
+  }
+  const parsed = new URL(url);
+  return parsed.protocol === "https:" &&
+    resolveHostedSiteDomains().some((domain) => {
+      return parsed.hostname.endsWith(`.${domain}`);
+    })
+    ? "origin"
+    : "no-referrer";
 }

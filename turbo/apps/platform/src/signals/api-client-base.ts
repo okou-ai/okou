@@ -22,8 +22,8 @@ import { onRejection } from "./utils.ts";
 interface AuthedClientOptions {
   readonly baseUrl: string;
   readonly clientVersion: string;
-  readonly getRootSignal: () => AbortSignal;
-  readonly getToken: (signal: AbortSignal) => Promise<string | null>;
+  readonly getToken: (signal?: AbortSignal) => Promise<string | null>;
+  readonly getTokenGuard?: () => () => void;
   readonly getVercelProtectionBypass: () => string | undefined;
   readonly onForceUpgrade?: () => void;
   readonly validateResponse?: boolean;
@@ -36,22 +36,15 @@ interface AuthedClientOptions {
 const API_BOOTSTRAP_SELECTOR =
   'script[type="application/json"][data-okou-api-bootstrap]';
 
-function takeBootstrapResponse(
+function findBootstrapResponseScript(
   method: string,
-  requestUrl: string,
-  baseUrl: string,
-): {
-  readonly status: 200;
-  readonly body: unknown;
-  readonly headers: Headers;
-} | null {
+  path: string,
+): HTMLScriptElement | null {
   const currentDocument = globalThis.document;
   if (currentDocument === undefined) {
     return null;
   }
 
-  const url = new URL(requestUrl, baseUrl);
-  const path = `${url.pathname}${url.search}`;
   for (const script of currentDocument.querySelectorAll<HTMLScriptElement>(
     API_BOOTSTRAP_SELECTOR,
   )) {
@@ -63,17 +56,44 @@ function takeBootstrapResponse(
       continue;
     }
 
-    // The Worker emits this inert script after parsing a successful JSON API
-    // response. Parsing here makes it the first response for the same request.
-    const body: unknown = JSON.parse(script.textContent ?? "");
-    const headers = new Headers({
-      "Content-Type": script.dataset.contentType,
-    });
-    script.remove();
-    return { status: 200, body, headers };
+    return script;
   }
 
   return null;
+}
+
+/** Discard an unread Worker prefetch when its resource is invalidated. */
+export function discardApiBootstrapResponse(
+  method: string,
+  path: string,
+): void {
+  findBootstrapResponseScript(method, path)?.remove();
+}
+
+function takeBootstrapResponse(
+  method: string,
+  requestUrl: string,
+  baseUrl: string,
+): {
+  readonly status: 200;
+  readonly body: unknown;
+  readonly headers: Headers;
+} | null {
+  const url = new URL(requestUrl, baseUrl);
+  const script = findBootstrapResponseScript(
+    method,
+    `${url.pathname}${url.search}`,
+  );
+  if (!script) {
+    return null;
+  }
+
+  // The Worker emits this inert script after parsing a successful JSON API
+  // response. Parsing here makes it the first response for the same request.
+  const body: unknown = JSON.parse(script.textContent ?? "");
+  const headers = new Headers({ "Content-Type": "application/json" });
+  script.remove();
+  return { status: 200, body, headers };
 }
 
 export function createAuthedContractClient<T extends AppRouter>(
@@ -86,15 +106,15 @@ export function createAuthedContractClient<T extends AppRouter>(
     // Validation is handled below so errors include the actual response body.
     validateResponse: false,
     api: async (args: ApiFetcherArgs) => {
-      const signal = args.fetchOptions?.signal ?? options.getRootSignal();
+      const signal = args.fetchOptions?.signal ?? undefined;
       const path = options.resolvePath
         ? await options.resolvePath(args.path, { method: args.route.method })
         : args.path;
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
 
       const requestWithToken = (
         token: string | null,
-        requestSignal: AbortSignal,
+        requestSignal?: AbortSignal,
       ) => {
         const headers = new Headers(args.headers);
         if (token) {
@@ -110,7 +130,7 @@ export function createAuthedContractClient<T extends AppRouter>(
           fetchOptions: {
             ...args.fetchOptions,
             credentials: "include",
-            signal: requestSignal,
+            ...(requestSignal ? { signal: requestSignal } : {}),
           },
           headers,
           path,
@@ -125,7 +145,10 @@ export function createAuthedContractClient<T extends AppRouter>(
       const response =
         bootstrapResponse ??
         (await (async () => {
+          const validateToken = options.getTokenGuard?.();
           const token = await options.getToken(signal);
+          signal?.throwIfAborted();
+          validateToken?.();
           const measurement = startClientTelemetryMeasurement();
           const requestTelemetry = {
             event_name: "http.request",

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   Api,
   AssistantMessage,
+  AssistantMessageEvent,
   AssistantMessageEventStream,
   Context,
   Message,
@@ -30,6 +31,10 @@ import {
 import type { PiApiFirstTurnOwnership } from "./provider-ownership";
 import type { PiAgentStreamOptions } from "./stream-options";
 import { PiApiModelRequestError } from "./api-failure";
+import {
+  measurePiPreparationSync,
+  type PiPreparationObserver,
+} from "./preparation-timing";
 
 interface CreateMemoryPiSessionOptions {
   readonly cwd: string;
@@ -49,6 +54,8 @@ interface RunPiFirstModelTurnOptions<TApi extends Api = Api> {
   readonly timestamp?: number;
   readonly streamOptions?: Omit<PiAgentStreamOptions, "sessionId">;
   readonly ownership: PiApiFirstTurnOwnership;
+  readonly onPreparationTiming?: PiPreparationObserver;
+  readonly onEvent?: (event: AssistantMessageEvent) => void;
   readonly providerRequestBoundary?: (
     markProviderRequestMayHaveStarted: () => void,
   ) => Promise<void>;
@@ -163,10 +170,10 @@ export class MemoryPiSession {
     return branch.reverse();
   }
 
-  /** Mirror the official Pi SDK's persisted model and thinking defaults. */
+  /** Apply the captured run effort while retaining the prior session history. */
   prepareModelTurn<TApi extends Api>(
     model: Model<TApi>,
-    thinkingLevel: ModelThinkingLevel = PI_DEFAULT_THINKING_LEVEL,
+    thinkingLevel?: ModelThinkingLevel,
   ): void {
     const branch = this.#activeBranch();
     const hasMessages = branch.some((entry) => {
@@ -182,10 +189,18 @@ export class MemoryPiSession {
     const hasThinkingEntry = branch.some((entry) => {
       return entry.type === "thinking_level_change";
     });
-    if (!hasThinkingEntry) {
+    const effectiveThinkingLevel = clampThinkingLevel(
+      model,
+      thinkingLevel ?? PI_DEFAULT_THINKING_LEVEL,
+    );
+    if (
+      !hasThinkingEntry ||
+      (thinkingLevel !== undefined &&
+        this.buildSessionContext().thinkingLevel !== effectiveThinkingLevel)
+    ) {
       this.#appendEntry({
         type: "thinking_level_change",
-        thinkingLevel: clampThinkingLevel(model, thinkingLevel),
+        thinkingLevel: effectiveThinkingLevel,
       });
     }
   }
@@ -294,9 +309,10 @@ function piReasoningLevel(
 
 async function consumeAssistantMessage(
   stream: AssistantMessageEventStream,
+  onEvent?: (event: AssistantMessageEvent) => void,
 ): Promise<AssistantMessage> {
-  for await (const _event of stream) {
-    // The API slot commits only the final native Pi message.
+  for await (const event of stream) {
+    onEvent?.(event);
   }
   return await stream.result();
 }
@@ -310,18 +326,26 @@ function piAssistantRequiresHandoff(message: AssistantMessage): boolean {
 export async function runPiFirstModelTurn<TApi extends Api>(
   options: RunPiFirstModelTurnOptions<TApi>,
 ): Promise<PiModelTurnResult> {
-  options.session.prepareModelTurn(options.model, options.thinkingLevel);
-  options.session.appendMessage({
-    role: "user",
-    content: options.prompt,
-    timestamp: options.timestamp ?? Date.now(),
-  });
-  const sessionContext = options.session.buildSessionContext();
-  const context: Context = {
-    systemPrompt: options.systemPrompt,
-    messages: convertToLlm(sessionContext.messages),
-    tools: [...options.tools],
-  };
+  const { sessionContext, context } = measurePiPreparationSync(
+    options.onPreparationTiming,
+    "model_context",
+    () => {
+      options.session.prepareModelTurn(options.model, options.thinkingLevel);
+      options.session.appendMessage({
+        role: "user",
+        content: options.prompt,
+        timestamp: options.timestamp ?? Date.now(),
+      });
+      const sessionContext = options.session.buildSessionContext();
+      const context: Context = {
+        systemPrompt: options.systemPrompt,
+        messages: convertToLlm(sessionContext.messages),
+        tools: [...options.tools],
+      };
+      return { sessionContext, context };
+    },
+    options.streamOptions?.signal,
+  );
   if (options.providerRequestBoundary) {
     await options.providerRequestBoundary(() => {
       options.ownership.markProviderRequestMayHaveStarted();
@@ -354,7 +378,10 @@ export async function runPiFirstModelTurn<TApi extends Api>(
       context,
       streamOptions,
     );
-    assistantMessage = await consumeAssistantMessage(responseStream);
+    assistantMessage = await consumeAssistantMessage(
+      responseStream,
+      options.onEvent,
+    );
   } catch (error) {
     throw new PiApiModelRequestError(
       error,

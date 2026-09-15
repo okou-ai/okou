@@ -388,10 +388,10 @@ async function sendTelegramCompletionMessages(
   },
   signal: AbortSignal,
 ): Promise<
-  | { readonly kind: "ok"; readonly firstMessageId: number | undefined }
+  | { readonly kind: "ok"; readonly messageIds: readonly number[] }
   | Extract<SendTelegramMessageResult, { kind: "telegram-error" }>
 > {
-  let firstMessageId: number | undefined;
+  const messageIds: number[] = [];
   const chunks = splitMessage(args.htmlOutput);
   for (const [index, chunk] of chunks.entries()) {
     if (index > 0) {
@@ -405,9 +405,7 @@ async function sendTelegramCompletionMessages(
         botToken: args.botToken,
         chatId: args.target.chatId,
         text: chunk,
-        replyToMessageId: args.target.isDM
-          ? undefined
-          : Number(args.target.messageId),
+        replyToMessageId: Number(args.target.messageId),
         messageThreadId: args.target.messageThreadId,
       },
       signal,
@@ -415,9 +413,9 @@ async function sendTelegramCompletionMessages(
     if (sent.kind === "telegram-error") {
       return sent;
     }
-    firstMessageId ??= sent.messageId;
+    messageIds.push(sent.messageId);
   }
-  return { kind: "ok", firstMessageId };
+  return { kind: "ok", messageIds };
 }
 
 async function resolveTelegramPresentation(
@@ -472,10 +470,14 @@ async function persistTelegramChatDelivery(args: {
   readonly run: TelegramChatRunContext;
   readonly target: TelegramDeliveryTarget;
   readonly ownerLink: TelegramOwnerLink;
-  readonly botReplyMessageId: number;
+  readonly botReplyMessageIds: readonly number[];
   readonly responseText: string | undefined;
   readonly status: "completed" | "failed";
 }): Promise<void> {
+  const firstMessageId = args.botReplyMessageIds[0];
+  if (firstMessageId === undefined) {
+    return;
+  }
   await storeTelegramBotMessage({
     db: args.db,
     scope:
@@ -490,19 +492,25 @@ async function persistTelegramChatDelivery(args: {
             installationId: args.target.installationId,
           },
     chatId: args.target.chatId,
-    messageId: args.botReplyMessageId,
+    messageId: firstMessageId,
     text: args.responseText,
   });
-  await persistTelegramReplyChainRoute({
-    db: args.db,
-    ownerLink: args.ownerLink,
-    chatId: args.target.chatId,
-    previousRootMessageId: args.target.rootMessageId,
-    botReplyMessageId: String(args.botReplyMessageId),
-    chatThreadId: args.run.chatThreadId,
-    runStatus: args.status,
-    currentTime: nowDate(),
-  });
+  const replyMessageIds = args.target.isDM
+    ? args.botReplyMessageIds
+    : [firstMessageId];
+  for (const messageId of replyMessageIds) {
+    await persistTelegramReplyChainRoute({
+      db: args.db,
+      ownerLink: args.ownerLink,
+      chatId: args.target.chatId,
+      previousRootMessageId: args.target.rootMessageId,
+      isDirectMessage: args.target.isDM,
+      botReplyMessageId: String(messageId),
+      chatThreadId: args.run.chatThreadId,
+      runStatus: args.status,
+      currentTime: nowDate(),
+    });
+  }
 }
 
 async function deliverClaimedTelegramChatCallback(
@@ -555,17 +563,15 @@ async function deliverClaimedTelegramChatCallback(
       `Telegram API error: ${sent.description ?? `HTTP ${sent.status}`}`,
     );
   }
-  if (sent.firstMessageId !== undefined) {
-    await persistTelegramChatDelivery({
-      db: args.db,
-      run,
-      target: payload,
-      ownerLink: binding.ownerLink,
-      botReplyMessageId: sent.firstMessageId,
-      responseText,
-      status: args.status,
-    });
-  }
+  await persistTelegramChatDelivery({
+    db: args.db,
+    run,
+    target: payload,
+    ownerLink: binding.ownerLink,
+    botReplyMessageIds: sent.messageIds,
+    responseText,
+    status: args.status,
+  });
   return "delivered";
 }
 
@@ -683,7 +689,8 @@ export async function deliverTelegramChatAdmissionFailure(
       `Telegram API error: ${sent.description ?? `HTTP ${sent.status}`}`,
     );
   }
-  if (sent.firstMessageId === undefined) {
+  const firstMessageId = sent.messageIds[0];
+  if (firstMessageId === undefined) {
     return;
   }
   await storeTelegramBotMessage({
@@ -700,17 +707,21 @@ export async function deliverTelegramChatAdmissionFailure(
             installationId: args.target.installationId,
           },
     chatId: args.target.chatId,
-    messageId: sent.firstMessageId,
+    messageId: firstMessageId,
     text: undefined,
   });
-  await persistTelegramReplyChainRoute({
-    db: args.db,
-    ownerLink: binding.ownerLink,
-    chatId: args.target.chatId,
-    previousRootMessageId: args.target.rootMessageId,
-    botReplyMessageId: String(sent.firstMessageId),
-    chatThreadId: args.chatThreadId,
-    runStatus: "failed",
-    currentTime: nowDate(),
-  });
+  const replyMessageIds = args.target.isDM ? sent.messageIds : [firstMessageId];
+  for (const messageId of replyMessageIds) {
+    await persistTelegramReplyChainRoute({
+      db: args.db,
+      ownerLink: binding.ownerLink,
+      chatId: args.target.chatId,
+      previousRootMessageId: args.target.rootMessageId,
+      isDirectMessage: args.target.isDM,
+      botReplyMessageId: String(messageId),
+      chatThreadId: args.chatThreadId,
+      runStatus: "failed",
+      currentTime: nowDate(),
+    });
+  }
 }

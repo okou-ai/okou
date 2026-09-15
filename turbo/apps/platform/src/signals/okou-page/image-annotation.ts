@@ -1,5 +1,12 @@
 import { createAttachmentResourceUrl$ } from "../attachment-resource-url.ts";
-import { command, computed, state, type Computed, type State } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import { onRef } from "../utils.ts";
 import type {
   ImageAnnotation,
@@ -51,6 +58,21 @@ export const STROKE_HALO_INNER = "rgba(255, 255, 255, 0.90)";
  * UI, and a halo only separates a few pixels of each glyph.
  */
 export const NOTE_GROUND = "rgba(255, 255, 255, 0.94)";
+
+/**
+ * The frame around a selected label.
+ *
+ * One fixed colour rather than the mark's own ink: an outline in the ink reads
+ * as part of the annotation instead of as "this is the thing you picked up",
+ * and the yellow one all but disappears against a light screenshot. Like the
+ * inks it cannot come from a theme token — it is drawn on the user's picture,
+ * which does not follow our theme. This is the only saturated true blue in
+ * play, at 4.55 on white and 3.81 on near-black: the same bar the inks clear.
+ */
+export const SELECTION_STROKE = "#2F6FED";
+
+/** The type size a label is drawn at on screen before its corners are dragged. */
+export const LABEL_BASE_PX = 14;
 
 /** Radius of the disc a box's ordinal is printed in. */
 export const PIN_RADIUS_PX = 11;
@@ -214,7 +236,7 @@ export type AnnotationArrowEnd = "from" | "to";
  */
 export interface AnnotationDrag {
   readonly markId: string;
-  readonly mode: "move" | "resize" | "endpoint";
+  readonly mode: "move" | "resize" | "endpoint" | "scale";
   readonly corner?: AnnotationResizeEdge;
   readonly endpoint?: AnnotationArrowEnd;
   readonly origin: AnnotationPoint;
@@ -224,6 +246,25 @@ export interface AnnotationDrag {
     width: number;
     height: number;
   };
+  /**
+   * The type size a label was at when its corner was grabbed. A label has no
+   * rectangle of its own — its box is whatever the words happen to fill — so a
+   * scale drag is measured against this rather than against a stored size.
+   */
+  readonly startScale?: number;
+}
+
+/**
+ * How far a label can be taken from the base size. Below half it stops being
+ * legible on a screenshot, and above four times one word covers the region it
+ * is pointing at.
+ */
+export const MIN_TEXT_SCALE = 0.5;
+export const MAX_TEXT_SCALE = 4;
+
+/** The type size of a label, which marks placed before the handles lack. */
+export function textScale(mark: ImageAnnotationMark): number {
+  return mark.shape === "text" ? (mark.scale ?? 1) : 1;
 }
 
 /** A note narrower than this wraps every other word and reads as a column. */
@@ -337,11 +378,35 @@ function offsetMark(
  * now hugs whatever was typed and only wraps once it reaches this ceiling, so
  * there is no width left to compute and nothing to leave empty.
  */
-function defaultNoteBox(mark: ImageAnnotationMark): {
-  x: number;
-  y: number;
-  maxWidth: number;
-} {
+interface AnnotationTextBox {
+  readonly x: number;
+  readonly y: number;
+  readonly maxWidth: number;
+}
+
+/**
+ * The box a mark's words occupy, whether they have been typed yet or not.
+ *
+ * The editor writes in this box too, so it cannot come from `noteOnImage`: that
+ * one describes a note that already has text, and a field has to be placed
+ * before anything is in it. Both callers taking the same geometry is what makes
+ * typing continuous with what the flattened copy will show.
+ */
+export function annotationTextBox(
+  mark: ImageAnnotationMark,
+): AnnotationTextBox {
+  if (mark.shape === "text") {
+    // A label is anchored where it was placed. It is not held off the right
+    // edge the way a note is: moving it would move the mark itself.
+    return {
+      x: mark.at.x,
+      y: mark.at.y,
+      maxWidth: Math.max(
+        MIN_NOTE_WIDTH,
+        Math.min(MAX_NOTE_WIDTH, 1 - mark.at.x),
+      ),
+    };
+  }
   const bounds = markBounds(mark);
   // Held off the right edge by the narrowest note worth wrapping to: a mark in
   // the far corner would otherwise leave its note a two-character column.
@@ -362,7 +427,7 @@ const NOTE_ROOM = 0.06;
 export function noteOnImage(mark: ImageAnnotationMark): {
   text: string;
   ink: string;
-  box: { x: number; y: number; maxWidth: number };
+  box: AnnotationTextBox;
 } | null {
   if (
     mark.shape === "text" ||
@@ -375,7 +440,7 @@ export function noteOnImage(mark: ImageAnnotationMark): {
   if (!text) {
     return null;
   }
-  return { text, ink: mark.ink, box: defaultNoteBox(mark) };
+  return { text, ink: mark.ink, box: annotationTextBox(mark) };
 }
 
 const ZOOM_STEP = 0.25;
@@ -445,16 +510,15 @@ function createAnnotationViewportSignals() {
    * Forcing a remount to re-fire one throws the live input away mid-edit.
    */
   const noteField$ = state<HTMLElement | null>(null);
-  const noteFocusPending$ = state(false);
   const bindAnnotationNoteField$ = onRef<HTMLElement>(
-    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
       set(noteField$, element);
-      // A click on a printed note asks for the caret before the popover it
-      // lives in has mounted, so the request waits here for its element.
-      if (get(noteFocusPending$)) {
-        set(noteFocusPending$, false);
-        element.focus();
-      }
+      // The field only exists while a mark is open, and the caret belongs in it
+      // the whole time. Focusing on mount closes the gap a mount-time attribute
+      // leaves, where a keystroke meant for the words reached the editor's
+      // shortcuts instead — and it covers the click on a printed note, which
+      // asks for the caret before this element exists.
+      element.focus();
       signal.addEventListener(
         "abort",
         () => {
@@ -464,13 +528,8 @@ function createAnnotationViewportSignals() {
       );
     }),
   );
-  const focusAnnotationNoteField$ = command(({ get, set }) => {
-    const element = get(noteField$);
-    if (element) {
-      element.focus();
-      return;
-    }
-    set(noteFocusPending$, true);
+  const focusAnnotationNoteField$ = command(({ get }) => {
+    get(noteField$)?.focus();
   });
   const bindAnnotationSurface$ = onRef<HTMLElement>(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
@@ -844,6 +903,34 @@ function createAnnotationContentSignals(
   return { setAnnotationInk$, setAnnotationMarkNote$ };
 }
 
+/**
+ * Resizes a label by dragging one of its corners.
+ *
+ * Both the size and the anchor arrive together: the corner opposite the one
+ * being dragged stays where it is, so the label grows away from the hand rather
+ * than from wherever the text happens to start.
+ */
+function createScaleTextMark(
+  applyDragEdit$: Command<
+    void,
+    [(current: ImageAnnotation) => ImageAnnotation]
+  >,
+) {
+  return command(({ set }, id: string, scale: number, at: AnnotationPoint) => {
+    set(applyDragEdit$, (current) => {
+      return {
+        ...current,
+        marks: current.marks.map((mark) => {
+          if (mark.id !== id || mark.shape !== "text") {
+            return mark;
+          }
+          return { ...mark, at, scale };
+        }),
+      };
+    });
+  });
+}
+
 function createAnnotationGeometrySignals(
   session: AnnotationSessionSignals,
   history: AnnotationHistorySignals,
@@ -860,6 +947,7 @@ function createAnnotationGeometrySignals(
       set(history.pushAnnotation$, update);
     },
   );
+  const scaleAnnotationTextMark$ = createScaleTextMark(applyDragEdit$);
   const addAnnotationMark$ = command(({ set }, mark: ImageAnnotationMark) => {
     // Placing a second text mark leaves the first one, and an untyped one has
     // to go before its creation step stops being the last thing in history.
@@ -984,6 +1072,7 @@ function createAnnotationGeometrySignals(
     removeSelectedAnnotationMark$,
     moveAnnotationMarkRect$,
     moveAnnotationArrowEnd$,
+    scaleAnnotationTextMark$,
     nudgeAnnotationMark$,
   };
 }

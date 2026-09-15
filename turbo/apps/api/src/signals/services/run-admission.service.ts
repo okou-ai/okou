@@ -36,14 +36,14 @@ type CreditDb = Pick<Db, "$with" | "select" | "with">;
 interface OrgCreditAvailability {
   readonly status: OrgPlanCapabilities["status"];
   readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
   readonly spendableCredits: number;
   readonly usagePackCredits: number;
 }
 
 type OrgPlanRunAdmissionCapabilities = Pick<
   OrgPlanCapabilities,
-  "status" | "supportByok" | "restrictedVm0Models"
+  "status" | "supportByok" | "restrictedBuiltInModels"
 >;
 
 export interface RunCreditAdmissionState {
@@ -152,7 +152,7 @@ export async function resolveOrgCreditAvailability(params: {
   return {
     status: capabilities.status,
     supportByok: capabilities.supportByok,
-    restrictedVm0Models: capabilities.restrictedVm0Models,
+    restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     spendableCredits,
     usagePackCredits,
   };
@@ -256,7 +256,7 @@ export function checkOrgPlanRunAdmission(params: {
   const { capabilities } = params;
   const modelAccess = getRunModelAccess(
     params.selectedModel,
-    capabilities?.restrictedVm0Models,
+    capabilities?.restrictedBuiltInModels,
   );
   if (modelAccess === "retired") {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);

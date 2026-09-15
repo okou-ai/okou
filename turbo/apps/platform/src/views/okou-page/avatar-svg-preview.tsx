@@ -1,4 +1,5 @@
 import { useGet } from "ccstate-react";
+import { cn } from "@okouai/ui";
 import {
   avatarFramingEnabled$,
   avatarNeckSweaterEnabled$,
@@ -8,6 +9,7 @@ import {
   AVATAR_HEAD_SLOT,
   avatarSvgComposition,
   avatarSvgContentTransform,
+  isLegacyAvatarSvgConfig,
   type ResolvedAvatarSvgConfig,
 } from "./avatar-svg-utils.ts";
 
@@ -16,6 +18,8 @@ interface AvatarSvgPreviewProps {
   size?: number;
   className?: string;
   centerContent?: boolean;
+  /** Keep the shared chin and collar aligned with adjacent brand avatars. */
+  preserveChinBaseline?: boolean;
   alt?: string;
   "data-testid"?: string;
 }
@@ -28,18 +32,22 @@ export function AvatarSvgPreview({
   size,
   className,
   centerContent = false,
+  preserveChinBaseline = false,
   alt,
   "data-testid": testId,
 }: AvatarSvgPreviewProps) {
   const neckSweater = useGet(avatarNeckSweaterEnabled$);
-  const framing = useGet(avatarFramingEnabled$);
+  const preserveBaseline =
+    preserveChinBaseline && neckSweater && !isLegacyAvatarSvgConfig(config);
+  const framing = useGet(avatarFramingEnabled$) && !preserveBaseline;
   const { behind, head, front, headOffsetY, contentOffsetY, contentScale } =
     avatarSvgComposition(config, { neckSweater, framing });
   // `centerContent` is the avatar maker asking for centering on its own while
-  // the framing switch is off; the rule centers every avatar once it ships, and
-  // the prop goes with the switch.
+  // the framing switch is off. Pinned rows keep the shared chin baseline instead
+  // of letting hair height move each collar to a different position.
   const transform = avatarSvgContentTransform({
-    contentOffsetY: framing || centerContent ? contentOffsetY : 0,
+    contentOffsetY:
+      !preserveBaseline && (framing || centerContent) ? contentOffsetY : 0,
     contentScale,
   });
   const layerClassName = "absolute inset-0 h-full w-full object-cover";
@@ -49,7 +57,13 @@ export function AvatarSvgPreview({
 
   return (
     <div
-      className={`relative overflow-hidden ${className ?? ""}`}
+      className={cn(
+        "relative overflow-hidden",
+        className,
+        // Keep collars and tall hair intact when the shared chin baseline puts
+        // the top of a hairstyle just beyond the composition canvas.
+        preserveBaseline && "overflow-visible rounded-none",
+      )}
       style={size ? { width: size, height: size } : undefined}
       {...(alt ? { role: "img", "aria-label": alt } : undefined)}
       data-testid={testId}

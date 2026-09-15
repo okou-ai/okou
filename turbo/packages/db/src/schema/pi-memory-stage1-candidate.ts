@@ -29,7 +29,10 @@ export type PiMemoryStage1CandidateStatus =
 
 /**
  * Metadata-only Stage 1 generation control row for one native Pi session.
- * The source JSONL remains in the content-addressed blob store.
+ * The source JSONL remains in the content-addressed blob store. Lifecycle writes
+ * and parent deletion explicitly account through the API candidate service.
+ * The guarded retirement in #33975 removes the legacy trigger and function;
+ * raw candidate ownership writes and parent cascades are unsupported.
  */
 export const piMemoryStage1Candidates = pgTable(
   "pi_memory_stage1_candidates",

@@ -27,6 +27,7 @@ import {
 import { settle, tapError } from "../utils";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import {
+  canonicalInputMessageFiles,
   materializeCanonicalSlackInputAssets$,
   type CanonicalSlackInputAsset,
 } from "./canonical-asset.service";
@@ -357,13 +358,7 @@ async function persistCanonicalSlackMessage(
         eventType: "input.prompt",
         userMessage: createUserMessageDocument({
           text: args.displayContent,
-          files: args.canonicalAssets.map((asset) => {
-            return {
-              id: asset.assetId,
-              filename: asset.filename,
-              contentType: asset.contentType,
-            };
-          }),
+          files: canonicalInputMessageFiles(args.canonicalAssets),
           nonContentPart: createChatEventSourcePart({
             kind: "slack",
             messagePermalink: args.messagePermalink,

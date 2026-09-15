@@ -1,7 +1,13 @@
+import { MessagePort } from "node:worker_threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
+import {
+  sharedDatabaseClientMessageSchema,
+  sharedDatabaseWorkerMessageSchema,
+} from "../../../shared-database/protocol.ts";
 
 import {
   click,
@@ -33,6 +39,290 @@ const UPDATED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000002";
 const REMOVED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000003";
 const OTHER_THREAD_ID = "82000000-0000-4000-a000-000000000004";
 const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
+
+// Infrastructure-only synchronization: the page has no partial-ACK state for
+// one scope while its sibling is still pending. Observe the real transport only
+// to order provider events; assert loading and recovery through the page below.
+function observeTemplateSubscriptions() {
+  const messages = vi.spyOn(MessagePort.prototype, "postMessage");
+  const subscriptions = () => {
+    return messages.mock.calls.flatMap(([message]) => {
+      const parsed = sharedDatabaseClientMessageSchema.safeParse(message);
+      return parsed.success &&
+        parsed.data.type === "realtime-subscribe" &&
+        parsed.data.topic === "presentationTemplatesChanged"
+        ? [parsed.data]
+        : [];
+    });
+  };
+  return {
+    waitForSubscribed: async (scope: "user" | "org") => {
+      await waitFor(() => {
+        const request = subscriptions().find((subscription) => {
+          return subscription.scope === scope;
+        });
+        expect(request).toBeDefined();
+        expect(
+          messages.mock.calls.some(([message]) => {
+            const parsed = sharedDatabaseWorkerMessageSchema.safeParse(message);
+            return (
+              parsed.success &&
+              parsed.data.type === "realtime-subscribed" &&
+              parsed.data.subscriptionId === request?.subscriptionId
+            );
+          }),
+        ).toBeTruthy();
+      });
+    },
+  };
+}
+
+test.each(["user", "org"] as const)(
+  "Uploaded templates wait for the %s subscription",
+  async (delayedScope) => {
+    mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+    mockTemplateChat();
+    const uploaded = createUploadedTemplate({
+      id: UPLOADED_TEMPLATE_ID,
+      title: "Both subscriptions are ready",
+    });
+    mockPresentationTemplateLibrary([uploaded]);
+    const gates = {
+      user: context.mocks.ably.deferSubscribeOnChannel(
+        "user:test-user-123",
+        "presentationTemplatesChanged",
+      ),
+      org: context.mocks.ably.deferSubscribeOnChannel(
+        "org:org_default",
+        "presentationTemplatesChanged",
+      ),
+    };
+    const observed = observeTemplateSubscriptions();
+    const user = userEvent.setup();
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      host: "app.okou.ai",
+      sharedWorkerTestTransport: "message-port",
+    });
+    await Promise.all([gates.user.started, gates.org.started]);
+    const picker = await openTemplatePicker(user, "Presentation");
+    const firstScope = delayedScope === "user" ? "org" : "user";
+    gates[firstScope].attach();
+    await observed.waitForSubscribed(firstScope);
+    expect(
+      within(picker).getByText("Loading uploaded templates…"),
+    ).toBeInTheDocument();
+    gates[delayedScope].attach();
+    await expect(
+      within(picker).findByLabelText(`Select template ${uploaded.title}`),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test("A template subscription failure releases both scopes and leaves built-ins usable", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  mockPresentationTemplateLibrary([]);
+  const org = context.mocks.ably.deferSubscribeOnChannel(
+    "org:org_default",
+    "presentationTemplatesChanged",
+  );
+  const observed = observeTemplateSubscriptions();
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+  await org.started;
+  const picker = await openTemplatePicker(user, "Presentation");
+  await observed.waitForSubscribed("user");
+  org.fail(new Error("Template subscription unavailable"));
+  await expect(
+    within(picker).findByText(
+      "Uploaded templates are temporarily unavailable.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(within(picker).getByText(firstBuiltInTitle())).toBeInTheDocument();
+  expect(
+    within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
+  ).toBeEnabled();
+  expect(within(picker).queryByText("Retry")).not.toBeInTheDocument();
+  // Worker-side listener release has no separate page-visible surface. Check
+  // the external Ably boundary after the page has exposed the original failure.
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        "user:test-user-123",
+        "presentationTemplatesChanged",
+      ),
+    ).toBeFalsy();
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        "org:org_default",
+        "presentationTemplatesChanged",
+      ),
+    ).toBeFalsy();
+  });
+});
+
+test("Retrying a failed catalog restores uploaded templates", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Recovered catalog",
+  });
+  mockPresentationTemplateLibrary([uploaded]);
+  let unavailable = true;
+  context.mocks.api(presentationTemplatesContract.list, ({ respond }) => {
+    return unavailable
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Catalog unavailable",
+          },
+        })
+      : respond(200, [uploaded]);
+  });
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+  const picker = await openTemplatePicker(user, "Presentation");
+  await expect(
+    within(picker).findByText("Couldn't load uploaded templates."),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryAllByText("Catalog unavailable")).toHaveLength(0);
+  unavailable = false;
+  click(buttonNamed("Retry", picker));
+  await expect(
+    within(picker).findByLabelText(`Select template ${uploaded.title}`),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(picker).queryByText("Couldn't load uploaded templates."),
+  ).not.toBeInTheDocument();
+});
+
+test("A resolved empty catalog leaves the import card as the only prompt", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  mockPresentationTemplateLibrary([]);
+  const gates = {
+    user: context.mocks.ably.deferSubscribeOnChannel(
+      "user:test-user-123",
+      "presentationTemplatesChanged",
+    ),
+    org: context.mocks.ably.deferSubscribeOnChannel(
+      "org:org_default",
+      "presentationTemplatesChanged",
+    ),
+  };
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+  await Promise.all([gates.user.started, gates.org.started]);
+  const picker = await openTemplatePicker(user, "Presentation");
+  expect(
+    within(picker).getByText("Loading uploaded templates…"),
+  ).toBeInTheDocument();
+  gates.user.attach();
+  gates.org.attach();
+  await waitFor(() => {
+    expect(
+      within(picker).queryByText("Loading uploaded templates…"),
+    ).not.toBeInTheDocument();
+  });
+  // An empty library is the default state, not a condition worth reporting: the
+  // import card already carries both the affordance and the absence.
+  expect(
+    within(presentationGrid()).queryByRole("status"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(picker).getByLabelText("Import your own deck"),
+  ).toBeInTheDocument();
+  expect(
+    within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
+  ).toBeEnabled();
+});
+
+test("An obsolete catalog leaves the current template cover displayed", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  const existing = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Existing template",
+  });
+  const published = createUploadedTemplate({
+    id: UPDATED_TEMPLATE_ID,
+    title: "Published template",
+  });
+  mockPresentationTemplateLibrary([existing]);
+  const staleStarted = context.mocks.deferred<void>();
+  const releaseStale = context.mocks.deferred<void>();
+  const staleReturned = context.mocks.deferred<void>();
+  let reads = 0;
+  context.mocks.api(presentationTemplatesContract.list, async ({ respond }) => {
+    reads += 1;
+    if (reads === 1) {
+      return respond(200, [existing]);
+    }
+    if (reads === 2) {
+      staleStarted.resolve();
+      await releaseStale.promise;
+      staleReturned.resolve();
+      return respond(200, [existing]);
+    }
+    return respond(200, [
+      {
+        ...existing,
+        title: reads === 3 ? "Current catalog" : "Confirmed catalog",
+      },
+      published,
+    ]);
+  });
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+  const picker = await openTemplatePicker(user, "Presentation");
+  await expect(
+    within(picker).findByText(existing.title),
+  ).resolves.toBeInTheDocument();
+  context.mocks.ably.trigger("presentationTemplatesChanged", existing.id);
+  await staleStarted.promise;
+  context.mocks.ably.trigger("presentationTemplatesChanged", published.id);
+  await expect(
+    within(picker).findByText("Current catalog"),
+  ).resolves.toBeInTheDocument();
+  const loadedImage = await loadImportedTemplateImage(
+    importedTemplateMedia(published.id),
+    "slide-1",
+  );
+  const displayedSource = loadedImage.getAttribute("src");
+  releaseStale.resolve();
+  await staleReturned.promise;
+  context.mocks.ably.trigger("presentationTemplatesChanged", published.id);
+  await expect(
+    within(picker).findByText("Confirmed catalog"),
+  ).resolves.toBeInTheDocument();
+  const displayedImage = importedTemplateMedia(published.id).querySelector(
+    'img[data-imported-presentation-template-image][data-active="true"]',
+  );
+  expect(displayedImage).toBeInTheDocument();
+  expect(displayedImage).toHaveAttribute("src", displayedSource);
+});
 
 function importedTemplateCard(templateId: string): HTMLElement {
   const card = document.querySelector<HTMLElement>(
@@ -396,7 +686,7 @@ test("Keep uploaded-template browsing stable during changes", async () => {
   expectTextBefore(remaining.title, firstBuiltInTitle());
 });
 
-test("Keep workspace template availability current", async () => {
+test("Keep workspace templates current through publication after changing chats", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   const capture = mockTemplateChat();
   const existing = createUploadedTemplate({
@@ -428,13 +718,11 @@ test("Keep workspace template availability current", async () => {
   ]);
   trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
-
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
-
   await openTemplatePicker(user, "Presentation");
   await waitFor(() => {
     expect(screen.getByText(existing.title)).toBeVisible();
@@ -447,7 +735,6 @@ test("Keep workspace template availability current", async () => {
   await waitFor(() => {
     expect(secondChat).toHaveAttribute("aria-current", "page");
   });
-
   library.replace([existing, published]);
   context.mocks.ably.triggerOnChannel(
     "org:org_default",
@@ -461,12 +748,66 @@ test("Keep workspace template availability current", async () => {
       screen.getByLabelText(`Select template ${published.title}`),
     ).toBeEnabled();
   });
+});
+
+test("Keep workspace templates current through withdrawal after preview", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  const capture = mockTemplateChat();
+  const existing = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Existing Workspace Deck",
+    canManage: false,
+  });
+  const published = createUploadedTemplate({
+    id: UPDATED_TEMPLATE_ID,
+    title: "New Workspace Deck",
+    canManage: false,
+  });
+  const library = mockPresentationTemplateLibrary([existing]);
+  capture.lifecycle.setThreadList([
+    {
+      id: THREAD_ID,
+      title: "First workspace chat",
+      agent: { id: AGENT_ID, avatarUrl: null },
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:01:00.000Z",
+    },
+    {
+      id: OTHER_THREAD_ID,
+      title: "Second workspace chat",
+      agent: { id: AGENT_ID, avatarUrl: null },
+      createdAt: "2026-08-01T00:02:00.000Z",
+      updatedAt: "2026-08-01T00:03:00.000Z",
+    },
+  ]);
+  trackTemplatePreviewImagePreloads();
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await openTemplatePicker(user, "Presentation");
+  await waitFor(() => {
+    expect(screen.getByText(existing.title)).toBeVisible();
+  });
+  library.replace([existing, published]);
+  context.mocks.ably.triggerOnChannel(
+    "org:org_default",
+    "presentationTemplatesChanged",
+    published.id,
+  );
+  await waitFor(() => {
+    expect(screen.getByText(published.title)).toBeVisible();
+    expect(
+      screen.getByLabelText(`Select template ${published.title}`),
+    ).toBeEnabled();
+  });
   click(buttonNamed(`Preview ${published.title} at current slide`));
   await screen.findByRole("group", {
     name: `${published.title} slide preview`,
   });
   click(buttonContainingText("Template", screen.getByRole("dialog")));
-
   library.replace([existing]);
   context.mocks.ably.triggerOnChannel(
     "org:org_default",

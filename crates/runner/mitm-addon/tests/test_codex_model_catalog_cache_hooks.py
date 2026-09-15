@@ -547,7 +547,7 @@ async def test_both_firewall_auth_paths_prepare_catalog_cache(
                 "Host": "chatgpt.com",
                 "Accept-Encoding": "identity",
                 "Content-Length": "0",
-                "X-VM0-Codex-Model-Catalog-Prefetch": "1",
+                "X-Okou-Codex-Model-Catalog-Prefetch": "1",
             }
         ),
     )
@@ -557,7 +557,7 @@ async def test_both_firewall_auth_paths_prepare_catalog_cache(
     ):
         await mitm_addon.request(request_flow)
     assert request_flow.request.headers["Accept-Encoding"] == "br"
-    assert "X-VM0-Codex-Model-Catalog-Prefetch" not in request_flow.request.headers
+    assert "X-Okou-Codex-Model-Catalog-Prefetch" not in request_flow.request.headers
     request_flow.response = catalog_response(encoding="br")
     request_telemetry = await finish_response(request_flow)
     assert request_telemetry["model_catalog_prefetch_role"] == "producer"
@@ -573,7 +573,7 @@ async def test_both_firewall_auth_paths_prepare_catalog_cache(
             {
                 "Host": "chatgpt.com",
                 "Accept-Encoding": "identity",
-                "X-VM0-Codex-Model-Catalog-Prefetch": "1",
+                "X-Okou-Codex-Model-Catalog-Prefetch": "1",
             }
         ),
     )
@@ -589,7 +589,7 @@ async def test_both_firewall_auth_paths_prepare_catalog_cache(
     assert header_flow.response.status_code == 200
     assert header_flow.response.content == CATALOG_BODY
     assert header_flow.response.stream is False
-    assert "X-VM0-Codex-Model-Catalog-Prefetch" not in header_flow.request.headers
+    assert "X-Okou-Codex-Model-Catalog-Prefetch" not in header_flow.request.headers
 
 
 @pytest.mark.parametrize(
@@ -627,7 +627,7 @@ async def test_prefetch_marker_requires_one_exact_raw_value_across_request_hooks
             (b"Host", b"chatgpt.com"),
             (b"Accept-Encoding", b"identity"),
             (b"Content-Length", b"0"),
-            *((b"x-VM0-Codex-Model-Catalog-Prefetch", value) for value in marker_values),
+            *((b"x-Okou-Codex-Model-Catalog-Prefetch", value) for value in marker_values),
         ]
     )
     flow = real_flow(
@@ -652,7 +652,7 @@ async def test_prefetch_marker_requires_one_exact_raw_value_across_request_hooks
         requestheaders_result = mitm_addon.requestheaders(flow)
         assert requestheaders_result is None
         assert all(
-            name.lower() != b"x-vm0-codex-model-catalog-prefetch"
+            name.lower() != b"x-okou-codex-model-catalog-prefetch"
             for name, _ in flow.request.headers.fields
         )
         assert (
@@ -662,7 +662,7 @@ async def test_prefetch_marker_requires_one_exact_raw_value_across_request_hooks
         await mitm_addon.request(flow)
 
     assert all(
-        name.lower() != b"x-vm0-codex-model-catalog-prefetch"
+        name.lower() != b"x-okou-codex-model-catalog-prefetch"
         for name, _ in flow.request.headers.fields
     )
     assert (flow.metadata.get("_codex_model_catalog_prefetch_request") is True) is expected_prefetch

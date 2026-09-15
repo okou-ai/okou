@@ -6,7 +6,7 @@ import type {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cookieSignals, refreshCookies$ } from "./external/cookie.ts";
 import { featureSwitchState$ } from "./external/feature-switch-state.ts";
-import { clerk$ } from "./auth.ts";
+import { clerk$, clerkUser$ } from "./auth.ts";
 import {
   updateUserPreference$,
   userPreferences$,
@@ -106,9 +106,11 @@ export const updateColorThemePreference$ = command(
  */
 export const syncColorThemePreference$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const user = await get(clerkUser$);
+    signal.throwIfAborted();
     const clerk = await get(clerk$);
     signal.throwIfAborted();
-    if (!clerk.user || !clerk.organization) {
+    if (!user || !clerk.organization) {
       return;
     }
 

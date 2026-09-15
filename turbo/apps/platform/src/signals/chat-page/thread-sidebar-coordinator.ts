@@ -1,15 +1,4 @@
-import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
 import { command, computed } from "ccstate";
-
-import {
-  classifyChatAttachment,
-  previewAttachmentFromUrl,
-} from "./parse-body-blocks.ts";
-import {
-  createTextPreviewComputed,
-  isTextPreviewKind,
-} from "../text-preview.ts";
-import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
@@ -17,12 +6,11 @@ import {
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import type { MailDraftSignals } from "./mail-draft.ts";
 import type {
-  ArtifactRef,
   ArtifactRefInput,
+  ThreadSidebarOpenTarget,
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
-import { createObjectUrlResource } from "../object-url-resource.ts";
-import { resetSignal } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
 
 // ---------------------------------------------------------------------------
 // Page-level coordinator for the thread-owned utility sidebar. Sidebar state
@@ -68,26 +56,51 @@ export const syncActiveBrowserFitAction$ = command(({ get, set }) => {
   set(active.thread.browserSessionSignals.syncFitActionVisibility$);
 });
 
-const openOnThread$ = command(
-  ({ get, set }, thread: ChatPanelSignals, target: ThreadSidebarTarget) => {
+const closeOtherThreadSidebars$ = command(
+  ({ get, set }, thread: ChatPanelSignals): void => {
     for (const other of [get(currentLeftThread$), get(currentRightThread$)]) {
       if (other && other.threadId !== thread.threadId) {
         set(other.sidebar.close$);
       }
     }
-    set(thread.sidebar.open$, target);
+  },
+);
+
+const openOnThread$ = command(
+  (
+    { set },
+    thread: ChatPanelSignals,
+    target: ThreadSidebarOpenTarget,
+    signal: AbortSignal,
+  ): void => {
+    signal.throwIfAborted();
+    set(closeOtherThreadSidebars$, thread);
+    set(thread.sidebar.open$, target, signal);
+  },
+);
+
+const openAttachmentOnThread$ = command(
+  (
+    { set },
+    thread: ChatPanelSignals,
+    input: ArtifactRefInput,
+    signal: AbortSignal,
+  ): void => {
+    signal.throwIfAborted();
+    set(closeOtherThreadSidebars$, thread);
+    set(thread.sidebar.openAttachment$, input, signal);
   },
 );
 
 export const openThreadArtifacts$ = command(
-  ({ set }, thread: ChatPanelSignals) => {
-    set(openOnThread$, thread, { type: "artifacts" });
+  ({ get, set }, thread: ChatPanelSignals) => {
+    set(openOnThread$, thread, { type: "artifacts" }, get(pageSignal$));
   },
 );
 
 export const openThreadAutomations$ = command(
-  ({ set }, thread: ChatPanelSignals) => {
-    set(openOnThread$, thread, { type: "automations" });
+  ({ get, set }, thread: ChatPanelSignals) => {
+    set(openOnThread$, thread, { type: "automations" }, get(pageSignal$));
   },
 );
 
@@ -106,7 +119,12 @@ export const openThreadMailDraft$ = command(
     if (!thread) {
       return;
     }
-    set(openOnThread$, thread, { type: "email-draft", signals });
+    set(
+      openOnThread$,
+      thread,
+      { type: "email-draft", signals },
+      get(pageSignal$),
+    );
   },
 );
 
@@ -120,95 +138,7 @@ export const openThreadBrowserSession$ = command(
     if (!thread) {
       return;
     }
-    set(openOnThread$, thread, { type: "browser" });
-  },
-);
-
-export function artifactRefFromUrl(url: string): ArtifactRef {
-  const attachment = previewAttachmentFromUrl(url);
-  return {
-    url,
-    ...createAttachmentPreviewSignals(url),
-    kind: classifyChatAttachment(attachment),
-    filename: attachment.filename,
-  };
-}
-
-/**
- * Text-kind refs always carry their preview content: the caller's computed
- * when it handed one over (reusing its fetch cache), a fresh one otherwise.
- * Markdown refs additionally carry their prepared tree. The sidebar renders
- * from the ref alone.
- */
-function withTextPreview(
-  ref: ArtifactRef,
-  ownerSignal: AbortSignal,
-): ArtifactRef {
-  if (!isTextPreviewKind(ref.kind)) {
-    return ref;
-  }
-  const text$ =
-    ref.text$ ?? createTextPreviewComputed(ref.url, ref.resourceUrl$);
-  return {
-    ...ref,
-    text$,
-    ...(ref.kind === "markdown"
-      ? { markdownTree$: createMarkdownPreviewTree(text$, ownerSignal) }
-      : {}),
-  };
-}
-
-const materializeArtifactRef$ = command(
-  ({ set }, input: ArtifactRefInput, ownerSignal: AbortSignal): ArtifactRef => {
-    const resetResources$ = resetSignal();
-    const previewSignal = set(resetResources$, ownerSignal);
-    if (typeof input === "string") {
-      return withTextPreview(
-        {
-          ...artifactRefFromUrl(input),
-          resetResources$,
-        },
-        previewSignal,
-      );
-    }
-    if (!("file" in input)) {
-      return withTextPreview(
-        {
-          url: input.url,
-          ...createAttachmentPreviewSignals(input.url),
-          kind: classifyChatAttachment({
-            contentType: input.contentType,
-            filename: input.filename,
-            url: input.url,
-          }),
-          filename: input.filename,
-          resetResources$,
-          ...(input.text$ === undefined ? {} : { text$: input.text$ }),
-          ...(input.shareAvailable === undefined
-            ? {}
-            : { shareAvailable: input.shareAvailable }),
-        },
-        previewSignal,
-      );
-    }
-    const resource = createObjectUrlResource(input.file, previewSignal);
-    return withTextPreview(
-      {
-        url: resource.url,
-        ...createAttachmentPreviewSignals(resource.url),
-        kind: classifyChatAttachment({
-          contentType: input.file.type,
-          filename: input.file.name,
-          url: resource.url,
-        }),
-        filename: input.file.name,
-        resetResources$,
-        ...(input.shareAvailable === undefined
-          ? {}
-          : { shareAvailable: input.shareAvailable }),
-      },
-      previewSignal,
-    );
+    set(openOnThread$, thread, { type: "browser" }, get(pageSignal$));
   },
 );
 
@@ -218,24 +148,11 @@ const materializeArtifactRef$ = command(
  */
 export const openThreadArtifactSplitView$ = command(
   ({ get, set }, input: ArtifactRefInput) => {
-    const leftThread = get(currentLeftThread$);
-    const rightThread = get(currentRightThread$);
-    const thread =
-      leftThread && !leftThread.signal.aborted
-        ? leftThread
-        : rightThread && !rightThread.signal.aborted
-          ? rightThread
-          : null;
+    const thread = get(currentLeftThread$) ?? get(currentRightThread$);
     if (!thread) {
       return;
     }
-    set(openOnThread$, thread, {
-      type: "artifact",
-      source: {
-        kind: "attachment",
-        ref: set(materializeArtifactRef$, input, thread.signal),
-      },
-    });
+    set(openAttachmentOnThread$, thread, input, get(pageSignal$));
   },
 );
 
@@ -253,18 +170,9 @@ export const openArtifactInOpenSidebar$ = command(
     ) {
       return false;
     }
-    if (active.thread.signal.aborted) {
-      return false;
-    }
     // The owning thread already holds the page's only utility sidebar, so this
     // swaps its content without closing and reopening the pane.
-    set(active.thread.sidebar.open$, {
-      type: "artifact",
-      source: {
-        kind: "attachment",
-        ref: set(materializeArtifactRef$, input, active.thread.signal),
-      },
-    });
+    set(active.thread.sidebar.openAttachment$, input, get(pageSignal$));
     return true;
   },
 );

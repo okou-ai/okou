@@ -101,6 +101,7 @@ class UsageEventBuffer:
         self._timer_factory = timer_factory if timer_factory is not None else self._make_timer
         self._timer: _TimerHandle | None = None
         self._flush_generation = 0
+        self._draining = False
 
     def configure(self, *, flush_interval_seconds: float) -> None:
         """Update runtime buffer settings."""
@@ -158,8 +159,9 @@ class UsageEventBuffer:
         Return the number of webhook batches admitted by this invocation. Zero
         does not prove that the buffer is empty. Admission does not wait for
         final delivery or retained-retry completion. Non-shutdown triggers
-        schedule retained work for a later timer when timers are enabled;
-        shutdown does not schedule another timer.
+        schedule retained work for a later timer when timers are enabled, until
+        the first shutdown flush begins. Shutdown stops timer scheduling and
+        leaves retained work for the final post-executor drain.
         """
         return self._flush_usage_events(trigger=trigger)
 
@@ -173,14 +175,20 @@ class UsageEventBuffer:
 
         The caller must first shut down and join the usage executor so no
         earlier asynchronous delivery can retain another batch after this
-        method observes an empty schedulable state. New deliveries then use
-        the webhook layer's synchronous fallback.
+        method observes an empty schedulable state. Flush ownership also waits
+        for any timer already delivering through synchronous fallback, including
+        its callback and counter cleanup. New deliveries use that same fallback.
         """
-        while True:
-            with self._lock:
-                if not self._state.has_schedulable_work():
-                    return
-            self._flush_usage_events(trigger="shutdown")
+        self._begin_shutdown()
+        self._flush_owner_lock.acquire()
+        try:
+            while True:
+                with self._lock:
+                    if not self._state.has_schedulable_work():
+                        return
+                self._flush_usage_events_owned(trigger="shutdown")
+        finally:
+            self._flush_owner_lock.release()
 
     def close(self) -> None:
         """Cancel the pending timer and discard buffered usage state.
@@ -197,11 +205,14 @@ class UsageEventBuffer:
         with self._lock:
             timer = self._pop_timer_locked()
             self._state.clear()
+            self._draining = False
             self._sync_buffered_counter_locked()
         if timer is not None:
             timer.cancel()
 
     def _flush_usage_events(self, *, trigger: UsageFlushTrigger) -> int:
+        if trigger == "shutdown":
+            self._begin_shutdown()
         if not self._acquire_flush_ownership(trigger):
             self._defer_unowned_flush(trigger)
             return 0
@@ -210,6 +221,15 @@ class UsageEventBuffer:
             return self._flush_usage_events_owned(trigger=trigger)
         finally:
             self._flush_owner_lock.release()
+
+    def _begin_shutdown(self) -> None:
+        # Stop callback-owned retries before waiting for an active flush or the
+        # executor. Timer cancellation alone cannot stop an entered callback.
+        with self._lock:
+            self._draining = True
+            timer = self._pop_timer_locked()
+        if timer is not None:
+            timer.cancel()
 
     def _acquire_flush_ownership(self, trigger: UsageFlushTrigger) -> bool:
         return self._flush_owner_lock.acquire(blocking=trigger in ("runner", "shutdown"))
@@ -229,6 +249,10 @@ class UsageEventBuffer:
             self._start_timer(timer_to_start)
 
     def _flush_usage_events_owned(self, *, trigger: UsageFlushTrigger) -> int:
+        if trigger == "timer":
+            with self._lock:
+                if self._draining:
+                    return 0
         flushed_batch_count = 0
         snapshot_live = True
         self._flush_generation += 1
@@ -469,7 +493,7 @@ class UsageEventBuffer:
         set_buffered_usage_events(self._state.buffered_source_event_count())
 
     def _schedule_timer_locked(self) -> _TimerHandle | None:
-        if not self._timer_enabled or self._timer is not None:
+        if self._draining or not self._timer_enabled or self._timer is not None:
             return None
         delay = self._next_delay_seconds()
         timer = self._timer_factory(delay, self._flush_from_timer)

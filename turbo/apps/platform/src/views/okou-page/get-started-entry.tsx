@@ -61,7 +61,7 @@ const RING_RADIUS = 7;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 function QuestRing({ completed, total }: { completed: number; total: number }) {
-  const fraction = total === 0 ? 0 : completed / total;
+  const fraction = completed / total;
   return (
     <svg
       viewBox="0 0 16 16"
@@ -70,18 +70,13 @@ function QuestRing({ completed, total }: { completed: number; total: number }) {
       strokeWidth={2}
       aria-hidden="true"
     >
-      <circle
-        cx={8}
-        cy={8}
-        r={RING_RADIUS}
-        className="stroke-[hsl(var(--gray-300))]"
-      />
+      <circle cx={8} cy={8} r={RING_RADIUS} className="stroke-divider" />
       {fraction > 0 && (
         <circle
           cx={8}
           cy={8}
           r={RING_RADIUS}
-          className="stroke-[hsl(var(--primary))]"
+          className="stroke-primary"
           strokeLinecap="round"
           strokeDasharray={RING_CIRCUMFERENCE}
           strokeDashoffset={RING_CIRCUMFERENCE * (1 - fraction)}
@@ -281,9 +276,7 @@ function QuestRow({
     return <div className={`flex items-center ${QUEST_ROW_CLASS}`}>{body}</div>;
   }
 
-  // The X quest is the only row that opens a dialog, so it hands the menu a
-  // select handler rather than a click: the menu has to finish closing before
-  // the dialog takes focus.
+  // Keep the share dialog on the shared modal-item composition path.
   if (quest.key === "share") {
     return (
       <DropdownMenuModalItem
@@ -318,7 +311,7 @@ function ShareOnXDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth="sm" maxWidth={420} contentClassName="okou-app">
+      <DialogContent smMaxWidth="sm" maxWidth={420}>
         <DialogHeader>
           <DialogTitle>
             {t(
@@ -422,8 +415,7 @@ function GetStartedPanel({
   const { t } = useTranslation();
   const copy = useQuestCopy();
   const actions = useQuestActions();
-  const percent =
-    summary.total === 0 ? 0 : (summary.completed / summary.total) * 100;
+  const percent = (summary.completed / summary.total) * 100;
   // Checking in is the one quest that never finishes, so it sits below a
   // divider instead of competing with the steps that can be completed.
   const oneTimeQuests = quests.filter((quest) => {
@@ -465,7 +457,7 @@ function GetStartedPanel({
           aria-valuemin={0}
           aria-valuemax={summary.total}
           aria-valuenow={summary.completed}
-          className="block h-1 overflow-hidden rounded-full bg-[hsl(var(--gray-200))]"
+          className="block h-1 overflow-hidden rounded-full bg-divider"
         >
           <span
             className="block h-full rounded-full bg-primary"
@@ -533,7 +525,7 @@ export function GetStartedEntry() {
             type="button"
             variant="quiet"
             size="sm"
-            className="h-8 gap-2 rounded-[12px] border border-[hsl(var(--gray-400))] bg-card px-[11px] text-foreground shadow-[var(--okou-card-shadow)] data-popup-open:bg-state-hover"
+            className="h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover"
             data-testid="get-started-entry"
           >
             <QuestRing completed={summary.completed} total={summary.total} />
@@ -542,10 +534,7 @@ export function GetStartedEntry() {
                 return $.chat.agentPage.getStarted.title;
               })}
             </span>
-            <span
-              aria-hidden="true"
-              className="h-4 w-px shrink-0 bg-[hsl(var(--gray-300))]"
-            />
+            <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
             <span className="text-xs font-semibold tabular-nums text-muted-foreground">
               {t(
                 ($) => {

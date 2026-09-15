@@ -4,7 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   arrowAnnotation,
@@ -138,14 +143,14 @@ test("A user can click an annotation note, edit it, and close only the note", as
   await openAnnotationEditor("annotated-plan.png");
   await user.click(screen.getByTestId("annotation-note-label-editable-note"));
 
-  const note = await screen.findByPlaceholderText("What should change?");
+  const note = await screen.findByLabelText("What should change?");
   await waitFor(() => {
     expect(note).toHaveFocus();
   });
   await fill(note, "Align the total with the heading");
   await user.keyboard("{Escape}");
 
-  expect(screen.queryByTestId("annotation-note-popover")).toBeNull();
+  expect(screen.queryByTestId("annotation-inline-editor")).toBeNull();
   expect(screen.getByTestId("image-annotation-editor")).toBeVisible();
   const label = screen.getByTestId("annotation-note-label-editable-note");
   expect(label).toHaveTextContent("Align the total with the heading");
@@ -191,8 +196,11 @@ test("A tool shortcut works on open and text is typed onto the image", async () 
     expect(input).toHaveFocus();
   });
   // The label used to be typed into a popover below the picture while the words
-  // appeared on it, so one string was shown in two places.
-  expect(screen.queryByTestId("annotation-note-popover")).toBeNull();
+  // appeared on it, so one string was shown in two places. Both kinds of mark
+  // are written in the same field on the image now.
+  expect(screen.getByTestId("annotation-inline-editor")).toContainElement(
+    input,
+  );
 
   await user.keyboard("Raise this");
   await user.keyboard("{Enter}");
@@ -283,6 +291,276 @@ test("Clicking a second text mark moves the caret to it", async () => {
   await waitFor(() => {
     expect(second).toHaveFocus();
   });
+});
+
+/**
+ * A mark drag ends where the button is released, including over the field that
+ * has just opened underneath the pointer. That field used to swallow the
+ * release, so the drag never ended and the mark went on following an unpressed
+ * mouse — Tong: *"只是松开鼠标，text还是跟着鼠标走"*.
+ */
+test("Releasing a drag over the mark's own field ends the drag", async () => {
+  const image = draftAttachment("dragged-label.png", {
+    annotatedFileId: "draft-dragged-label-annotated",
+    annotations: {
+      marks: [
+        {
+          id: "dragged-label",
+          ordinal: 1,
+          shape: "text" as const,
+          at: { x: 0.2, y: 0.3 },
+          text: "Move me",
+          ink: "#5E6AD2" as const,
+        },
+      ],
+    },
+  });
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
+  });
+
+  const surface = await openAnnotationEditor("dragged-label.png");
+  // Grabbing the mark opens its field under the pointer, mid-gesture.
+  fireEvent.pointerDown(screen.getByTestId("annotation-mark-1"), {
+    clientX: 160,
+    clientY: 150,
+    pointerId: 9,
+  });
+  fireEvent.pointerMove(surface, { clientX: 300, clientY: 250, pointerId: 9 });
+
+  const field = await screen.findByTestId("annotation-inline-editor");
+  fireEvent.pointerUp(field, { clientX: 300, clientY: 250, pointerId: 9 });
+  const released = field.style.left;
+
+  // Nothing is held now, so the pointer moving on is not the mark moving on.
+  fireEvent.pointerMove(surface, { clientX: 600, clientY: 420, pointerId: 9 });
+
+  expect(field.style.left).toBe(released);
+});
+
+/**
+ * A note is written on the image in the field it will be printed in, so a long
+ * one wraps instead of scrolling out of a fixed-width box, and Shift+Enter
+ * breaks a line — neither of which the single-line popover input could do.
+ */
+test("A note can be written over more than one line", async () => {
+  const user = userEvent.setup();
+  const image = draftAttachment("long-note.png", {
+    annotatedFileId: "draft-long-note-annotated",
+    annotations: boxAnnotation([{ id: "wordy-mark", ordinal: 1 }]),
+  });
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
+  });
+
+  await openAnnotationEditor("long-note.png");
+  fireEvent.click(screen.getByTestId("annotation-mark-1"));
+
+  const field = await screen.findByLabelText("What should change?");
+  await fill(field, "Align the total with the heading");
+  await user.keyboard("{Shift>}{Enter}{/Shift}");
+  await user.keyboard("and drop the divider");
+
+  expect(field).toHaveValue(
+    "Align the total with the heading\nand drop the divider",
+  );
+
+  await user.keyboard("{Enter}");
+
+  expect(
+    screen.getByTestId("annotation-note-label-wordy-mark").textContent,
+  ).toBe("Align the total with the heading\nand drop the divider");
+});
+
+/** One text mark with words in it, for the tests that resize or delete one. */
+function labelAttachment(filename: string, id: string) {
+  return draftAttachment(filename, {
+    annotatedFileId: `draft-${id}-annotated`,
+    annotations: {
+      marks: [
+        {
+          id,
+          ordinal: 1,
+          shape: "text" as const,
+          at: { x: 0.2, y: 0.3 },
+          text: "Raise this",
+          ink: "#5E6AD2" as const,
+        },
+      ],
+    },
+  });
+}
+
+/**
+ * A label is resized by its corners — Tong: *"text 也应该有四角拖动的标记吧？拖四角
+ * 可以放大缩小文字"*. The corner opposite the one in hand stays put, so dragging
+ * the bottom-right grip away from the words enlarges them without moving where
+ * the label starts.
+ */
+test("Dragging a label's corner resizes its type", async () => {
+  const image = labelAttachment("resizable-label.png", "sized-label");
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
+  });
+
+  const surface = await openAnnotationEditor("resizable-label.png");
+  fireEvent.click(screen.getByTestId("annotation-mark-1"));
+
+  const field = await screen.findByTestId("annotation-inline-editor");
+  // One fixed selection colour, never the mark's own ink: in the ink the frame
+  // reads as part of the annotation, and the yellow one disappears.
+  expect(field.style.outline).toBe("#2F6FED dashed 1px");
+  const before = field.style.fontSize;
+  vi.spyOn(field, "getBoundingClientRect").mockReturnValue({
+    x: 160,
+    y: 150,
+    top: 150,
+    left: 160,
+    right: 260,
+    bottom: 175,
+    width: 100,
+    height: 25,
+    toJSON: () => {
+      return {};
+    },
+  });
+
+  fireEvent.pointerDown(screen.getByTestId("annotation-label-handle-br"), {
+    clientX: 260,
+    clientY: 175,
+    pointerId: 11,
+  });
+  fireEvent.pointerMove(surface, { clientX: 420, clientY: 250, pointerId: 11 });
+  fireEvent.pointerUp(surface, { clientX: 420, clientY: 250, pointerId: 11 });
+
+  await waitFor(() => {
+    expect(
+      Number.parseFloat(
+        screen.getByTestId("annotation-inline-editor").style.fontSize,
+      ),
+    ).toBeGreaterThan(Number.parseFloat(before || "14"));
+  });
+  // The grabbed corner moved; the opposite one is what the label grew from.
+  expect(screen.getByTestId("annotation-inline-editor").style.left).toBe("20%");
+});
+
+/**
+ * There is no bin any more — Tong: *"所有text 都不需要加delete button，让用户直接
+ * 退回删除或者全选text删除就成"*. Emptying the field and pressing backspace once
+ * more is the delete path.
+ */
+test("Emptying a mark's words and backspacing again removes it", async () => {
+  const user = userEvent.setup();
+  const image = labelAttachment("deletable-label.png", "spare-label");
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
+  });
+
+  await openAnnotationEditor("deletable-label.png");
+  fireEvent.click(screen.getByTestId("annotation-mark-1"));
+  const editor = await screen.findByTestId("annotation-inline-editor");
+  // The bin that used to sit beside the words is gone; the one in the pill is
+  // the only delete control, and it is not on the picture.
+  expect(queryAllByRoleFast("button", editor)).toHaveLength(0);
+
+  const field = await screen.findByDisplayValue("Raise this");
+  await fill(field, "");
+  await user.keyboard("{Backspace}");
+
+  await waitFor(() => {
+    expect(screen.queryByTestId("annotation-inline-editor")).toBeNull();
+  });
+  expect(screen.queryByTestId("annotation-mark-1")).toBeNull();
+  expect(screen.getByText("0 marks")).toBeVisible();
+});
+
+/**
+ * Undo, redo and delete sit together in the pill, next to the tools. Delete
+ * only means something while a mark is open, so it says so until one is.
+ */
+test("The pill deletes the open mark and is dead until one is", async () => {
+  const image = draftAttachment("pill-delete.png", {
+    annotatedFileId: "draft-pill-delete-annotated",
+    annotations: boxAnnotation([{ id: "doomed-mark", ordinal: 1 }]),
+  });
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
+  });
+
+  await openAnnotationEditor("pill-delete.png");
+  await expect(findNamedButton("Remove mark")).resolves.toBeDisabled();
+
+  fireEvent.click(screen.getByTestId("annotation-mark-1"));
+  const remove = await findNamedButton("Remove mark");
+  await waitFor(() => {
+    expect(remove).toBeEnabled();
+  });
+
+  click(remove);
+
+  await waitFor(() => {
+    expect(screen.queryByTestId("annotation-mark-1")).toBeNull();
+  });
+  expect(screen.getByText("0 marks")).toBeVisible();
+});
+
+/**
+ * Switching tools throws the open mark away, so a tool letter is only a tool
+ * letter while nothing is open — Tong: *"我在输入文字的时候，如果按到了快捷按钮，
+ * 也不应该直接切换mark啊，只有为未选中任何mark的情况，按快捷按钮才会切换功能项"*.
+ * The caret can be a frame late on the field, and a keystroke landing in that
+ * gap must not cost the mark.
+ */
+test("A tool letter is ignored while a mark is open", async () => {
+  const user = userEvent.setup();
+  const image = draftAttachment("busy-typing.png", {
+    annotatedFileId: "draft-busy-typing-annotated",
+    annotations: boxAnnotation([{ id: "typing-mark", ordinal: 1 }]),
+  });
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
+  });
+
+  const surface = await openAnnotationEditor("busy-typing.png");
+  fireEvent.click(screen.getByTestId("annotation-mark-1"));
+  const note = await screen.findByLabelText("What should change?");
+  await waitFor(() => {
+    expect(note).toHaveFocus();
+  });
+
+  // The keystroke that misses the field, because the caret has not landed yet.
+  note.blur();
+  await user.keyboard("t");
+
+  expect(screen.getByTestId("annotation-inline-editor")).toBeVisible();
+  // Still the box tool: a drag draws a second box, not a label.
+  drawBox(surface);
+  await expect(screen.findByTestId("annotation-mark-2")).resolves.toBeVisible();
+  expect(screen.getByTestId("annotation-mark-2")).toHaveStyle({ left: "5%" });
 });
 
 test("A confirmed annotation blocks sending while its image uploads", async () => {
@@ -594,10 +872,10 @@ test("A freehand stroke can be selected and moved", async () => {
   const surface = await openAnnotationEditor("sketch.png");
   fireEvent.click(screen.getByTestId("annotation-mark-1"));
 
-  // A stroke draws no selection furniture of its own — its note popover opening
+  // A stroke draws no selection furniture of its own — its note field opening
   // is what says the click landed on it.
   await waitFor(() => {
-    expect(screen.getByTestId("annotation-note-popover")).toBeVisible();
+    expect(screen.getByTestId("annotation-inline-editor")).toBeVisible();
   });
   expect(firstPenPoint()).toStrictEqual([20, 25]);
 
@@ -636,12 +914,12 @@ test("Enter confirms a note and one drag is a single undo step", async () => {
   const surface = await openAnnotationEditor("keyboard-plan.png");
   fireEvent.click(screen.getByTestId("annotation-mark-1"));
 
-  const note = await screen.findByPlaceholderText("What should change?");
+  const note = await screen.findByLabelText("What should change?");
   await fill(note, "Raise this panel");
   // Enter had no binding at all: the only way out of the field was Escape or
   // clicking off it.
   await user.keyboard("{Enter}");
-  expect(screen.queryByTestId("annotation-note-popover")).toBeNull();
+  expect(screen.queryByTestId("annotation-inline-editor")).toBeNull();
   expect(
     screen.getByTestId("annotation-note-label-keyboard-mark"),
   ).toHaveTextContent("Raise this panel");

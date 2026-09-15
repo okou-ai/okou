@@ -7,7 +7,6 @@ import { apiClient$ } from "./api-client.ts";
 import { accept } from "../lib/accept.ts";
 import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
-import { stableChatThreadNavigationEnabled$ } from "./external/feature-switch.ts";
 import { reloadChatIndicatorsCounter$ } from "./chat-thread-list-reload.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import {
@@ -108,9 +107,6 @@ function createChatThreadListSignals(
         (filteredThreadIds === null || filteredThreadIds.has(thread.id))
       );
     });
-    if (!get(stableChatThreadNavigationEnabled$)) {
-      return threads;
-    }
     return threads.sort((left, right) => {
       if (left.pinnedAt === null) {
         return right.pinnedAt === null ? 0 : 1;

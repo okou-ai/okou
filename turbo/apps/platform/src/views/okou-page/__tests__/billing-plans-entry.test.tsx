@@ -22,7 +22,7 @@ function prepareUpgradeFlow(): void {
     {
       agentId: AGENT_ID,
       ownerId: "test-user-123",
-      displayName: "Zero",
+      displayName: "Nova",
       description: null,
       sound: null,
       avatarUrl: null,
@@ -31,6 +31,7 @@ function prepareUpgradeFlow(): void {
   ]);
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,

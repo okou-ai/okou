@@ -58,7 +58,7 @@ function stubAgent(): ReturnType<typeof http.get> {
     return HttpResponse.json({
       agentId: AGENT_ID,
       ownerId: "owner-1",
-      displayName: "Zero",
+      displayName: "Nova",
       description: null,
       sound: null,
       avatarUrl: null,

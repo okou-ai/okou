@@ -8,8 +8,11 @@ export const isPiAgentModelSupported: (config: PiAgentModelConfig) => boolean =
 export {
   assertPiNativeCredential,
   materializePiAgentModelConfig,
+  materializePiExecutionRoute,
   resolvePiAgentCredential,
 } from "./credential";
+export { normalizePiExecutionRoute } from "./execution-route";
+export type { PiExecutionRoute } from "./execution-route";
 export { PI_AGENT_THINKING_LEVELS } from "./types";
 export type {
   PiAgentCredentialHeaderTemplate,

@@ -10,6 +10,9 @@ import {
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { executeSsh } from "./rpc";
+import { createSessionCommand } from "./sessions";
+import { createFileCommand } from "./files";
+import { FILE_LIMIT_HELP } from "./file-protocol";
 
 function requireCapability(capability: "ssh:read" | "ssh:write") {
   if (!decodeSandboxTokenPayload()?.capabilities.includes(capability)) {
@@ -101,9 +104,28 @@ const exec = new Command("exec")
 
 export const sshCommand = new Command("ssh")
   .description("Access owner-configured SSH hosts from an authorized Run")
+  .addHelpText(
+    "after",
+    `\nConnections use the owner's saved Direct or Cloudflare Access configuration; no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port. Ask the owner to check connection diagnostics in /connectors/ssh when setup fails.\n\nFile transfers (upload/download): ${FILE_LIMIT_HELP}\n`,
+  )
   .addCommand(
     new Command("host")
       .description("Inspect authorized SSH hosts")
       .addCommand(list),
   )
-  .addCommand(exec);
+  .addCommand(exec)
+  .addCommand(
+    createFileCommand("upload", () => {
+      requireCapability("ssh:write");
+    }),
+  )
+  .addCommand(
+    createFileCommand("download", () => {
+      requireCapability("ssh:write");
+    }),
+  )
+  .addCommand(
+    createSessionCommand(() => {
+      return requireCapability("ssh:write");
+    }),
+  );

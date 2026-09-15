@@ -16,6 +16,7 @@ import brotli  # type: ignore[import-untyped]
 import zstandard
 from mitmproxy import http
 
+import content_encoding
 from body_limits import (
     DEFAULT_BODY_DECODE_LIMIT,
     LARGE_RESPONSE_DECOMPRESS_LIMIT,
@@ -23,6 +24,7 @@ from body_limits import (
     STREAM_DECODE_EXPANSION_GRACE,
     STREAM_DECODE_MAX_EXPANSION_RATIO,
 )
+from stream_capture import CapturedStreamBody
 from zlib_decoding import decode_zlib_bounded
 from zlib_input import ZlibInputCursor
 
@@ -43,6 +45,7 @@ INVALID_COMPRESSED_BODY = "invalid compressed body"
 INCOMPLETE_COMPRESSED_BODY = "incomplete compressed body"
 DECODED_BODY_LIMIT_EXCEEDED = "decoded body limit exceeded"
 COMPRESSED_FRAME_LIMIT_EXCEEDED = "compressed frame limit exceeded"
+_CONTENT_ENCODING_HEADER_LIMIT_EXCEEDED = "content encoding header inspection limit exceeded"
 _STREAM_ZLIB_WBITS_BY_ENCODING = {
     "gzip": 16 + zlib.MAX_WBITS,
     "deflate": zlib.MAX_WBITS,
@@ -270,7 +273,9 @@ def stream_decodable_content_encodings() -> tuple[str, ...]:
     return _STREAM_DECODABLE_CONTENT_ENCODINGS
 
 
-def _stream_decode_skip_reason(encoding: str) -> str | None:
+def _stream_decode_skip_reason(encoding: str | None) -> str | None:
+    if encoding is None:
+        return _CONTENT_ENCODING_HEADER_LIMIT_EXCEEDED
     if not encoding or encoding in stream_decodable_content_encodings():
         return None
     if encoding == "zstd":
@@ -280,7 +285,7 @@ def _stream_decode_skip_reason(encoding: str) -> str | None:
 
 def stream_decode_skip_reason(headers: http.Headers) -> str | None:
     """Return a fixed reason when usage streams cannot decode the response."""
-    encoding = headers.get("content-encoding", "").strip().lower()
+    encoding = content_encoding.read_folded(headers)
     return _stream_decode_skip_reason(encoding)
 
 
@@ -291,8 +296,10 @@ def can_stream_decode_usage(headers: http.Headers) -> bool:
 
 def can_decode_json_usage_body(headers: http.Headers) -> bool:
     """Return whether bounded terminal JSON usage decoding supports the response."""
-    encoding = headers.get("content-encoding", "").strip().lower()
-    return not encoding or encoding == "identity" or encoding in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS
+    encoding = content_encoding.read_folded(headers)
+    return encoding is not None and (
+        not encoding or encoding == "identity" or encoding in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS
+    )
 
 
 def create_stream_decode_session(
@@ -319,7 +326,8 @@ def create_stream_decode_session(
     expansion budget, but this helper does not promise a byte-exact bound on
     the Brotli binding's temporary output allocation.
 
-    Returns None when a content encoding cannot be decoded incrementally.
+    Returns None when a content encoding cannot be decoded incrementally or
+    its raw headers exceed the inspection budget.
 
     The returned session exposes ``finish_error()`` so billing paths can reject
     parser state from compressed streams that never reached a valid frame/member
@@ -333,8 +341,8 @@ def create_stream_decode_session(
     """
     if max_decoded_chunk <= 0:
         raise ValueError("max_decoded_chunk must be positive")
-    encoding = headers.get("content-encoding", "").strip().lower()
-    if not can_stream_decode_usage(headers):
+    encoding = content_encoding.read_folded(headers)
+    if _stream_decode_skip_reason(encoding) is not None:
         return None
     if not encoding or encoding == "identity":
         if should_continue is None:
@@ -390,11 +398,15 @@ def decompress_body(
       exceed that soft threshold and are sliced to the exact cap.
 
     Returns the original data unchanged when the encoding is missing,
-    ``identity``, unrecognised, or invalid before any compressed member
-    completes. Once a member has completed, later invalid trailing data is
-    ignored on this best-effort path. A valid frame that decodes to an empty
-    body returns ``b""`` — callers that short-circuit via ``if not body`` rely
-    on that (see #10287).
+    ``identity``, unrecognised, or beyond the header inspection budget.
+    On decoding errors, gzip/deflate return the original data if no member has
+    completed, or preserve the decoded prefix otherwise. Brotli/zstd decoder
+    exceptions return the original data; for Brotli, this includes errors from
+    further input inspected after a completed stream. Reaching the output cap
+    may return a decoded prefix without inspecting later input.
+
+    A valid frame that decodes to an empty body returns ``b""`` — callers that
+    short-circuit via ``if not body`` rely on that (see #10287).
     """
     return _decode_body_bounded(data, headers, max_output=max_output).body
 
@@ -483,7 +495,9 @@ def decode_response_body_for_network_log_capture(
     retained streaming buffers, which can preserve original wire bytes or
     partial decoded output after a decode problem.
     """
-    encoding = headers.get("content-encoding", "").strip().lower()
+    encoding = content_encoding.read_folded(headers)
+    if encoding is None:
+        return None
     if not encoding or encoding == "identity":
         return data
     if encoding == "gzip":
@@ -575,14 +589,19 @@ def _decode_body_bounded(
 
     Missing and ``identity`` encodings return original bytes. Unsupported
     encodings also pass through original bytes because unsupported encoding is a
-    caller policy decision, not a codec failure. Supported invalid compressed
-    bodies return ``failed=True`` with original bytes when no compressed member
-    completed. Gzip/deflate trailing garbage after a completed member keeps the
-    decoded prefix. Truncated gzip/deflate may return partial decoded output.
+    caller policy decision, not a codec failure. Gzip/deflate decoding errors
+    return ``failed=True`` with original bytes before any member completes;
+    after a completed member, they preserve the decoded prefix without marking
+    failure. Truncated gzip/deflate may return partial decoded output.
+    Brotli/zstd decoder exceptions return ``failed=True`` with original bytes,
+    including Brotli errors from further input inspected after a completed
+    stream.
+
     Valid empty compressed frames return ``b""``. ``max_output`` caps decoded
-    output and may return a truncated decoded prefix without marking failure.
+    output and may return a truncated decoded prefix without inspecting later
+    input or marking failure.
     """
-    encoding = headers.get("content-encoding", "").strip().lower()
+    encoding = content_encoding.read_folded(headers)
     if not encoding or encoding == "identity":
         return _BodyDecodeResult(data, False)
     try:
@@ -774,7 +793,9 @@ def decode_request_body_for_network_log_capture(
     intentionally separate from billing inspection, which has a stricter
     fail-closed policy.
     """
-    encoding = headers.get("content-encoding", "").strip().lower()
+    encoding = content_encoding.read_folded(headers)
+    if encoding is None:
+        return None
     if not encoding or encoding == "identity":
         return data
     if encoding not in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS:
@@ -784,6 +805,26 @@ def decode_request_body_for_network_log_capture(
     if error is not None and error != DECODED_BODY_LIMIT_EXCEEDED:
         return None
     return body
+
+
+def decode_captured_json_usage_body(
+    captured_body: CapturedStreamBody,
+    headers: http.Headers,
+) -> tuple[bytes, str | None]:
+    """Admit only complete captured responses to bounded JSON usage decoding.
+
+    A retained prefix may contain complete compressed frames and valid JSON
+    even when an unseen suffix invalidates the response. Reject capture
+    truncation before decoding; incremental inspectors own their completion
+    checks independently of this forensic buffer.
+    """
+    if captured_body.truncated:
+        return b"", INCOMPLETE_COMPRESSED_BODY
+    if not captured_body.buffer:
+        return b"", None
+    return decompress_json_usage_body(
+        bytes(captured_body.buffer), headers, max_output=LARGE_RESPONSE_DECOMPRESS_LIMIT
+    )
 
 
 def decompress_json_usage_body(
@@ -801,7 +842,9 @@ def decompress_json_usage_body(
     rejects bodies that exceed its per-body frame budget.
 
     """
-    encoding = headers.get("content-encoding", "").strip().lower()
+    encoding = content_encoding.read_folded(headers)
+    if encoding is None:
+        return b"", _CONTENT_ENCODING_HEADER_LIMIT_EXCEEDED
     if encoding in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS:
         return _decode_supported_body_with_complete_status(
             data,
@@ -810,4 +853,4 @@ def decompress_json_usage_body(
         )
     if encoding and encoding != "identity" and data:
         return b"", "unsupported content encoding"
-    return decompress_body(data, headers, max_output=max_output), None
+    return data, None

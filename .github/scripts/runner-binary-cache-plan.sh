@@ -96,13 +96,14 @@ while IFS= read -r encoded_entry; do
       EXPECTED_TARGET="$target" \
       EXPECTED_BINARY_INPUT_DIGEST="$digest" \
       RESOLVE_OUTPUT_DIR="${RESOLVE_OUTPUT_DIR}/${target}" \
-      "$CACHE" active-resolve \
+      "$CACHE" resolve-reference \
       >"$result_file" 2>"$error_file" &
   pids+=("$!")
 done < <(jq -cr '.[] | @base64' <<<"$RUNNER_HOST_GROUPS_MATRIX")
 
 miss_matrix='[]'
 hit_targets='[]'
+hit_references='{}'
 resolution_json='[]'
 hit_count=0
 miss_count=0
@@ -125,8 +126,6 @@ for index in "${!targets[@]}"; do
     reason=resolve-timeout
     producer_run_id=""
     candidate_inspections=0
-    runner_size=0
-    object_size=0
   elif [ "$status" -ne 0 ]; then
     echo "runner binary resolution failed for ${target}" >&2
     sed 's/^/  /' "$error_file" >&2
@@ -138,11 +137,7 @@ for index in "${!targets[@]}"; do
     reason=$(output_value resolve-reason "$result_file")
     producer_run_id=$(output_value resolve-producer-run-id "$result_file")
     candidate_inspections=$(output_value candidate-inspections "$result_file")
-    runner_size=$(output_value runner-size-bytes "$result_file")
-    object_size=$(output_value object-size-bytes "$result_file")
     candidate_inspections=${candidate_inspections:-0}
-    runner_size=${runner_size:-0}
-    object_size=${object_size:-0}
     if [ "$outcome" != "hit" ] && [ "$outcome" != "miss" ]; then
       echo "runner binary resolution returned an invalid outcome for ${target}: ${outcome}" >&2
       hard_failure=true
@@ -151,13 +146,15 @@ for index in "${!targets[@]}"; do
   fi
 
   if [ "$outcome" = "hit" ]; then
-    if [ ! -f "${RESOLVE_OUTPUT_DIR}/${target}/runner" ] ||
-      [ ! -f "${RESOLVE_OUTPUT_DIR}/${target}/metadata.json" ]; then
-      echo "runner binary hit transport is incomplete for ${target}" >&2
+    if [ ! -f "${RESOLVE_OUTPUT_DIR}/${target}/reference.json" ]; then
+      echo "runner binary cache reference is missing for ${target}" >&2
       hard_failure=true
       continue
     fi
     hit_targets=$(jq -c --arg target "$target" '. + [$target]' <<<"$hit_targets")
+    hit_references=$(jq -c --arg target "$target" \
+      --slurpfile reference "${RESOLVE_OUTPUT_DIR}/${target}/reference.json" \
+      '. + {($target): $reference[0]}' <<<"$hit_references")
     hit_count=$((hit_count + 1))
   else
     miss_matrix=$(jq -c --argjson entry "$entry" '. + [$entry]' <<<"$miss_matrix")
@@ -171,9 +168,7 @@ for index in "${!targets[@]}"; do
     --arg reason "$reason" \
     --arg producer_run_id "$producer_run_id" \
     --argjson duration "$duration" \
-    --argjson candidate_inspections "$candidate_inspections" \
-    --argjson runner_size "$runner_size" \
-    --argjson object_size "$object_size" '
+    --argjson candidate_inspections "$candidate_inspections" '
       . + [{
         target: $target,
         binaryInputDigest: $digest,
@@ -182,9 +177,7 @@ for index in "${!targets[@]}"; do
         reason: $reason,
         producerRunId: $producer_run_id,
         durationSeconds: $duration,
-        candidateInspections: $candidate_inspections,
-        runnerSizeBytes: $runner_size,
-        objectSizeBytes: $object_size
+        candidateInspections: $candidate_inspections
       }]
     ' <<<"$resolution_json")
 done
@@ -199,6 +192,7 @@ fi
 
 emit "compile-matrix" "$miss_matrix"
 emit "hit-targets" "$hit_targets"
+emit "hit-references" "$hit_references"
 emit "hit-count" "$hit_count"
 emit "miss-count" "$miss_count"
 printf 'resolution-json=%s\n' "$resolution_json"
@@ -207,9 +201,9 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
   {
     echo "### Runner binary cache plan"
     echo
-    echo "| Target | Outcome | Source | Reason | Producer run | Candidates | R2 bytes | Duration |"
-    echo "| --- | --- | --- | --- | --- | ---: | ---: | ---: |"
-    jq -r '.[] | "| `\(.target)` | `\(.outcome)` | `\(.source // "")` | `\(.reason)` | `\(.producerRunId // "")` | \(.candidateInspections) | \(.objectSizeBytes) | \(.durationSeconds)s |"' \
+    echo "| Target | Outcome | Source | Reason | Index run | Candidates | Duration |"
+    echo "| --- | --- | --- | --- | --- | ---: | ---: |"
+    jq -r '.[] | "| `\(.target)` | `\(.outcome)` | `\(.source // "")` | `\(.reason)` | `\(.producerRunId // "")` | \(.candidateInspections) | \(.durationSeconds)s |"' \
       <<<"$resolution_json"
   } >> "$GITHUB_STEP_SUMMARY"
 fi

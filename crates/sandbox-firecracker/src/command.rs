@@ -1188,6 +1188,41 @@ mod tests {
 
     #[tokio::test]
     async fn exec_with_timeout_aborts_only_remaining_pipe_reader() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("pid");
+        let marker = dir.path().join("marker");
+        let pid_file = pid_file.to_str().unwrap();
+        let marker = marker.to_str().unwrap();
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            exec_with_timeout(
+                "sh",
+                &[
+                    "-c",
+                    "printf ready; (exec 1>&-; sleep 30; touch \"$2\") & echo $! > \"$1\"",
+                    "_",
+                    pid_file,
+                    marker,
+                ],
+                Duration::from_millis(250),
+            ),
+        )
+        .await;
+
+        // Check cleanup even when the watchdog cancels a regressed command.
+        let pid = read_pid_file(pid_file).await;
+        assert_pid_not_running(pid).await;
+        assert!(!std::path::Path::new(marker).exists());
+        let error = result
+            .expect("capture command exceeded its outer test bound")
+            .unwrap_err();
+        assert_eq!(error.detail, "timed out after 250ms");
+        assert_eq!(error.exit_code, None);
+    }
+
+    #[tokio::test]
+    async fn exec_ignore_errors_with_timeout_bounds_stderr_drain_after_parent_exits() {
         if !pidfd_available_or_skip("single-pipe process-group cleanup") {
             return;
         }
@@ -1354,6 +1389,60 @@ mod tests {
         ];
         dropped.sort_unstable();
         assert_eq!(dropped, ["stderr", "stdout"]);
+    }
+
+    #[tokio::test]
+    async fn collect_with_deadline_aborts_only_remaining_pipe_reader() {
+        // The public timeout error cannot expose whether stdout was consumed.
+        // Synchronize task lifetimes here alongside the real-command coverage.
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (dropped_tx, mut dropped_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut pipe_tasks = PipeTasks::new(
+            Some(tokio::spawn(async {
+                Ok(PipeReadOutput {
+                    output: CapturedPipeOutput {
+                        bytes: b"ready".to_vec(),
+                        truncated: false,
+                    },
+                    overflow: None,
+                })
+            })),
+            Some(pending_pipe_task("stderr", started_tx, dropped_tx)),
+        );
+
+        assert_eq!(recv_pipe_start(&mut started_rx).await, "stderr");
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !pipe_tasks.stdout.as_ref().unwrap().is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("stdout reader did not complete");
+        assert!(!pipe_tasks.stderr.as_ref().unwrap().is_finished());
+
+        // Model a command that used its budget before pipe collection. A ready
+        // stdout must still be collected, without granting stderr a new budget.
+        let timeout = Duration::from_secs(60);
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            pipe_tasks.collect_with_deadline(tokio::time::Instant::now(), timeout),
+        )
+        .await
+        .expect("remaining stderr reader exceeded the original deadline");
+
+        assert!(
+            matches!(result, Err(CommandRunError::Timeout(60_000))),
+            "result was: {result:?}"
+        );
+        assert!(pipe_tasks.stdout.is_none(), "stdout was not collected");
+        assert!(pipe_tasks.stderr.is_some(), "stderr ownership was lost");
+
+        tokio::time::timeout(Duration::from_secs(1), pipe_tasks.abort_all())
+            .await
+            .expect("remaining pipe cleanup did not finish");
+        assert!(pipe_tasks.stdout.is_none());
+        assert!(pipe_tasks.stderr.is_none());
+        assert_eq!(recv_pipe_drop(&mut dropped_rx).await, "stderr");
     }
 
     struct PipeDropNotify {

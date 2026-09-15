@@ -956,23 +956,42 @@ def test_indexed_matches_linear_for_encoded_slash_under_static_base():
     assert result.params == {"owner": "acme%2Fteam", "repo": "project"}
 
 
-def test_indexed_matching_long_path_does_not_use_prefix_key_helpers(monkeypatch):
-    if hasattr(matching, "_request_api_index_keys"):
-        monkeypatch.setattr(
-            matching,
-            "_request_api_index_keys",
-            lambda _url_parts: (_ for _ in ()).throw(
-                AssertionError("request prefix keys should not be materialized")
-            ),
+def test_indexed_matching_long_path_bounds_rule_candidate_segment_work(monkeypatch):
+    class CountingPathSegments(list[str]):
+        def __init__(self, segments):
+            super().__init__(segments)
+            self.segment_reads = 0
+
+        def __iter__(self):
+            for segment in super().__iter__():
+                self.segment_reads += 1
+                yield segment
+
+        def __getitem__(self, key):
+            if isinstance(key, slice):
+                self.segment_reads += len(range(*key.indices(len(self))))
+            else:
+                self.segment_reads += 1
+            return super().__getitem__(key)
+
+    original_candidates = matching._indexed_rule_candidates
+    candidate_lookups = 0
+
+    # The allow result cannot expose cumulative prefix copying. Observe only
+    # candidate selection so downstream greedy parameter capture stays unrestricted.
+    def bounded_candidates(api_entry, upper_method, rel_path_segs):
+        nonlocal candidate_lookups
+        segments = CountingPathSegments(rel_path_segs)
+        candidates = original_candidates(api_entry, upper_method, segments)
+        # Allow both method tries and extra linear scans/copies, but not prefix sums.
+        assert segments.segment_reads > 0
+        assert segments.segment_reads <= 4 * len(segments), (
+            "rule candidate segment work exceeded the linear budget"
         )
-    if hasattr(matching, "_path_prefix_index_keys"):
-        monkeypatch.setattr(
-            matching,
-            "_path_prefix_index_keys",
-            lambda _path_segs: (_ for _ in ()).throw(
-                AssertionError("rule prefix keys should not be materialized")
-            ),
-        )
+        candidate_lookups += 1
+        return candidates
+
+    monkeypatch.setattr(matching, "_indexed_rule_candidates", bounded_candidates)
 
     firewalls = wrap_firewalls(
         [
@@ -995,6 +1014,7 @@ def test_indexed_matching_long_path_does_not_use_prefix_key_helpers(monkeypatch)
 
     assert isinstance(result, matching.FirewallAllow)
     assert result.permission == "files-read"
+    assert candidate_lookups > 0
 
 
 def test_oversized_slash_paths_do_not_materialize_complete_segment_lists(monkeypatch):

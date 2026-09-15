@@ -19,7 +19,6 @@ import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
 import { artifactFileReference } from "./private-artifact-storage.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
-const PROVIDER_REFERENCE_URL_TTL_SECONDS = 60 * 60;
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
 const PUBLIC_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
@@ -216,13 +215,7 @@ export const resolveProviderReferenceUrls$ = command(
         }
         resolved.push(
           await get(
-            generatePresignedGetUrl(
-              object.bucket,
-              object.key,
-              PROVIDER_REFERENCE_URL_TTL_SECONDS,
-              undefined,
-              true,
-            ),
+            generatePresignedGetUrl(object.bucket, object.key, undefined, true),
           ),
         );
         signal.throwIfAborted();
@@ -239,7 +232,6 @@ export const resolveProviderReferenceUrls$ = command(
             generatePresignedGetUrl(
               env("R2_USER_ARTIFACTS_BUCKET_NAME"),
               artifactKey,
-              PROVIDER_REFERENCE_URL_TTL_SECONDS,
               undefined,
               true,
             ),
@@ -270,7 +262,6 @@ export const resolveProviderReferenceUrls$ = command(
           generateHostedSitesPresignedGetUrl(
             hostedBucket,
             `${deployment.r2Prefix}${hostedTarget.path}`,
-            PROVIDER_REFERENCE_URL_TTL_SECONDS,
             true,
           ),
         ),

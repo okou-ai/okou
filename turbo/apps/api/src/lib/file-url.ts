@@ -48,7 +48,7 @@ export function buildArtifactPrefix(userId: string, id: string): string {
   return `${ARTIFACTS_PREFIX}/${encodeURIComponent(userId)}/${id}/`;
 }
 
-function artifactHash(id: string, variant?: string): string {
+export function artifactHash(id: string, variant?: string): string {
   const seed = variant === undefined ? id : `${id}\0${variant}`;
   const digestPrefix = createHash("sha256")
     .update(seed)

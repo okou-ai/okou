@@ -63,29 +63,16 @@ create_fixture() {
     --arg digest "$digest" \
     --arg target "$target" \
     --arg toolchain "$RUNNER_BINARY_TOOLCHAIN_IMAGE" \
-    --arg runner_sha "$runner_sha" \
-    --argjson runner_size "$runner_size" \
     --argjson guests "$guest_json" \
     --arg object_key "runner-binaries/${target}/${runner_sha}.zst" \
-    --argjson object_size "$object_size" \
-    --arg head "$main_head" '
+    --argjson object_size "$object_size" '
       {
         schemaVersion: 1,
         binaryInputDigest: $digest,
         target: $target,
         toolchainImage: $toolchain,
-        runner: {sha256: $runner_sha, sizeBytes: $runner_size},
         guests: $guests,
         object: {key: $object_key, compression: "zstd", sizeBytes: $object_size},
-        producer: {
-          repository: "vm0-ai/vm0",
-          workflowPath: ".github/workflows/runner-image.yml",
-          runId: 20,
-          runAttempt: 1,
-          event: "push",
-          headSha: $head,
-          prNumber: null
-        },
         createdAt: "2026-07-22T00:00:00Z"
       }
     ' > "${TMPDIR}/fixtures/${name}.json"
@@ -93,10 +80,6 @@ create_fixture() {
 
 create_fixture "$arm_target" "$arm_digest" "$arm_artifact"
 create_fixture "$x86_target" "$x86_digest" "$x86_artifact"
-
-cat > "${TMPDIR}/fixtures/run-20.json" <<JSON
-{"id":20,"run_attempt":1,"event":"push","status":"completed","conclusion":"success","head_branch":"main","head_sha":"${main_head}","path":".github/workflows/runner-image.yml","repository":{"full_name":"vm0-ai/vm0"},"pull_requests":[]}
-JSON
 
 cat > "${TMPDIR}/bin/gh" <<'BASH'
 #!/usr/bin/env bash
@@ -116,8 +99,7 @@ if [ "$1" = "api" ]; then
     fi
     exit 0
   fi
-  cp "${FIXTURES}/run-20.json" /dev/stdout
-  exit 0
+  exit 2
 fi
 if [ "$1" = "run" ] && [ "$2" = "download" ]; then
   artifact_name=""
@@ -142,6 +124,7 @@ cat > "${TMPDIR}/bin/aws" <<'BASH'
 set -euo pipefail
 [ "$1" = "s3api" ] || exit 2
 operation=$2
+printf '%s\n' "$*" >> "$AWS_LOG"
 shift 2
 key=""
 destination=""
@@ -157,22 +140,22 @@ target=${key#runner-binaries/}
 target=${target%%/*}
 object="${OBJECTS}/${target}.zst"
 case "$operation" in
-  head-object) printf '{"ContentLength":%s}\n' "$(stat -c '%s' "$object")" ;;
-  get-object) cp "$object" "$destination"; printf '{}\n' ;;
+  head-object) test -f "$object"; printf '{"ContentLength":%s}\n' "$(stat -c '%s' "$object")" ;;
+  get-object)
+    [ "${AWS_MODE:-success}" != "get-fail" ] || exit 7
+    cp "$object" "$destination"
+    printf '{}\n'
+    ;;
   *) exit 2 ;;
 esac
 BASH
 chmod +x "${TMPDIR}/bin/aws"
 
 run_plan() {
-  local scenario=$1 output_dir=$2 event=${3:-pull_request}
-  local pr_number=123 pr_head_ref=feature
-  if [ "$event" = "push" ]; then
-    pr_number=""
-    pr_head_ref=""
-  fi
+  local scenario=$1 output_dir=$2
   PATH="${TMPDIR}/bin:${PATH}" \
   GH_LOG="${TMPDIR}/gh.log" \
+  AWS_LOG="${TMPDIR}/aws.log" \
   GH_SCENARIO="$scenario" \
   FIXTURES="${TMPDIR}/fixtures" \
   OBJECTS="${TMPDIR}/objects" \
@@ -185,11 +168,6 @@ run_plan() {
   R2_BUCKET_NAME=test-bucket \
   RUNNER_TEMP="${TMPDIR}/runner-temp" \
   REPO=vm0-ai/vm0 \
-  CURRENT_RUN_ID=99 \
-  CURRENT_EVENT="$event" \
-  CURRENT_PR_NUMBER="$pr_number" \
-  CURRENT_PR_HEAD_REF="$pr_head_ref" \
-  DEFAULT_BRANCH=main \
   RUNNER_HOST_GROUPS_MATRIX="$matrix" \
   RESOLVE_OUTPUT_DIR="$output_dir" \
     "$PLAN"
@@ -206,20 +184,23 @@ assert_contains "$all_hit" 'hit-count=2'
 assert_contains "$all_hit" 'miss-count=0'
 assert_contains "$all_hit" 'resolution-json=['
 plan_output_keys=$(cut -d= -f1 "$plan_output" | LC_ALL=C sort -u | paste -sd, -)
-[ "$plan_output_keys" = "compile-matrix,hit-count,hit-targets,miss-count" ] ||
+[ "$plan_output_keys" = "compile-matrix,hit-count,hit-references,hit-targets,miss-count" ] ||
   fail "unexpected plan output keys: ${plan_output_keys}"
 grep -qF '### Runner binary cache plan' "$plan_summary" || fail "expected plan summary"
 grep -qF "\`${arm_target}\`" "$plan_summary" || fail "expected arm target in plan summary"
 grep -qF "\`${x86_target}\`" "$plan_summary" || fail "expected x86 target in plan summary"
-cmp -s "$runner" "${TMPDIR}/all-hit/${arm_target}/runner" || fail "arm hit bytes were not staged"
-cmp -s "$runner" "${TMPDIR}/all-hit/${x86_target}/runner" || fail "x86 hit bytes were not staged"
+references=$(sed -n 's/^hit-references=//p' "$plan_output")
+jq -e --arg arm "$arm_target" --arg x86 "$x86_target" \
+  'keys == ([$arm, $x86] | sort) and .[$arm].target == $arm and .[$x86].target == $x86' \
+  <<<"$references" >/dev/null || fail "each target must receive its own cache reference"
+[ "$(wc -l < "${TMPDIR}/aws.log")" -eq 2 ] || fail "prepare should only inspect the two R2 objects"
 
 mixed=$(run_plan mixed "${TMPDIR}/mixed")
 assert_contains "$mixed" 'hit-count=1'
 assert_contains "$mixed" 'miss-count=1'
 mixed_matrix=$(sed -n 's/^compile-matrix=//p' <<<"$mixed")
 [ "$(jq -r '.[0].target' <<<"$mixed_matrix")" = "$x86_target" ] || fail "mixed plan must compile x86 only"
-[ -f "${TMPDIR}/mixed/${arm_target}/runner" ] || fail "mixed plan must stage the arm hit"
+[ -f "${TMPDIR}/mixed/${arm_target}/reference.json" ] || fail "mixed plan must resolve the arm hit"
 [ ! -e "${TMPDIR}/mixed/${x86_target}" ] || fail "mixed plan must not stage a missed target"
 
 all_miss=$(run_plan all-miss "${TMPDIR}/all-miss")
@@ -235,26 +216,56 @@ assert_contains "$forced" 'miss-count=2'
 assert_contains "$forced" '"reason":"force-miss"'
 [ ! -s "${TMPDIR}/gh.log" ] || fail "force-miss plan must not query GitHub"
 
-: > "${TMPDIR}/gh.log"
-main_all_hit=$(run_plan all-hit "${TMPDIR}/main-all-hit" push)
-assert_contains "$main_all_hit" 'compile-matrix=[]'
-assert_contains "$main_all_hit" 'hit-count=2'
-assert_contains "$main_all_hit" 'miss-count=0'
-assert_contains "$main_all_hit" '"source":"protected-main"'
+run_download() {
+  local target=$1 digest=$2 output_dir=$3 mode=${4:-success}
+  PATH="${TMPDIR}/bin:${PATH}" \
+  AWS_LOG="${TMPDIR}/aws.log" \
+  AWS_MODE="$mode" \
+  OBJECTS="${TMPDIR}/objects" \
+  AWS_ACCESS_KEY_ID=test-access \
+  AWS_SECRET_ACCESS_KEY=test-secret \
+  R2_ACCOUNT_ID=test-account \
+  R2_BUCKET_NAME=test-bucket \
+  RUNNER_TEMP="${TMPDIR}/runner-temp" \
+  EXPECTED_TARGET="$target" \
+  EXPECTED_BINARY_INPUT_DIGEST="$digest" \
+  CACHE_REFERENCE="$(jq -c --arg target "$target" '.[$target]' <<<"$references")" \
+  RESOLVE_OUTPUT_DIR="$output_dir" \
+    "${SCRIPT_DIR}/runner-binary-cache.sh" download-reference
+}
 
-main_mixed=$(run_plan mixed "${TMPDIR}/main-mixed" push)
-assert_contains "$main_mixed" 'hit-count=1'
-assert_contains "$main_mixed" 'miss-count=1'
-main_mixed_matrix=$(sed -n 's/^compile-matrix=//p' <<<"$main_mixed")
-[ "$(jq -r '.[0].target' <<<"$main_mixed_matrix")" = "$x86_target" ] ||
-  fail "mixed main plan must compile x86 only"
+: > "${TMPDIR}/aws.log"
+arm_download=$(run_download "$arm_target" "$arm_digest" "${TMPDIR}/download-arm")
+x86_download=$(run_download "$x86_target" "$x86_digest" "${TMPDIR}/download-x86")
+assert_contains "$arm_download" 'resolve-outcome=hit'
+assert_contains "$x86_download" 'resolve-outcome=hit'
+assert_contains "$arm_download" "runner-size-bytes=${runner_size}"
+cmp "$runner" "${TMPDIR}/download-arm/runner" || fail "arm build must receive cached bytes"
+cmp "$runner" "${TMPDIR}/download-x86/runner" || fail "x86 build must receive cached bytes"
+[ "$(wc -l < "${TMPDIR}/aws.log")" -eq 2 ] || fail "builds should perform one R2 download per target"
+[ "$(grep -c 's3api get-object' "${TMPDIR}/aws.log")" -eq 2 ] || fail "expected two target downloads"
+FRESH_METADATA_PATH="${TMPDIR}/download-arm/metadata.json" \
+RUNNER_PATH="${TMPDIR}/download-arm/runner" \
+EXPECTED_TARGET="$arm_target" \
+EXPECTED_BINARY_INPUT_DIGEST="$arm_digest" \
+  "${SCRIPT_DIR}/runner-binary-cache.sh" fresh-validate >/dev/null
 
-main_all_miss=$(run_plan all-miss "${TMPDIR}/main-all-miss" push)
-assert_contains "$main_all_miss" 'hit-count=0'
-assert_contains "$main_all_miss" 'miss-count=2'
-main_all_miss_matrix=$(sed -n 's/^compile-matrix=//p' <<<"$main_all_miss")
-[ "$(jq 'length' <<<"$main_all_miss_matrix")" -eq 2 ] ||
-  fail "all-miss main plan must compile both targets"
+mv "${TMPDIR}/objects/${arm_target}.zst" "${TMPDIR}/arm-unavailable.zst"
+unavailable=$(run_plan all-hit "${TMPDIR}/unavailable")
+assert_contains "$unavailable" 'hit-count=1'
+assert_contains "$unavailable" 'miss-count=1'
+unavailable_matrix=$(sed -n 's/^compile-matrix=//p' <<<"$unavailable")
+[ "$(jq -r '.[0].target' <<<"$unavailable_matrix")" = "$arm_target" ] || fail "missing arm object must select arm compilation"
+if run_download "$arm_target" "$arm_digest" "${TMPDIR}/late-missing" >/dev/null 2>&1; then
+  fail "a selected object that disappears must fail the download"
+fi
+[ ! -e "${TMPDIR}/late-missing" ] || fail "failed download must not expose partial transport"
+mv "${TMPDIR}/arm-unavailable.zst" "${TMPDIR}/objects/${arm_target}.zst"
+
+if run_download "$arm_target" "$arm_digest" "${TMPDIR}/download-failed" get-fail >/dev/null 2>&1; then
+  fail "a required cache download failure must propagate"
+fi
+[ ! -e "${TMPDIR}/download-failed" ] || fail "failed download must not expose partial transport"
 
 mkdir -p "${TMPDIR}/timeout-bin"
 cat > "${TMPDIR}/timeout-bin/timeout" <<'BASH'
@@ -267,11 +278,6 @@ timed_out=$(PATH="${TMPDIR}/timeout-bin:${TMPDIR}/bin:${PATH}" \
   RUNNER_HOST_GROUPS_MATRIX="$matrix" \
   RESOLVE_OUTPUT_DIR="${TMPDIR}/timed-out" \
   REPO=vm0-ai/vm0 \
-  CURRENT_RUN_ID=99 \
-  CURRENT_EVENT=pull_request \
-  CURRENT_PR_NUMBER=123 \
-  CURRENT_PR_HEAD_REF=feature \
-  DEFAULT_BRANCH=main \
   "$PLAN")
 assert_contains "$timed_out" 'hit-count=0'
 assert_contains "$timed_out" 'miss-count=2'
@@ -283,11 +289,6 @@ killed=$(TIMEOUT_STATUS=137 \
   RUNNER_HOST_GROUPS_MATRIX="$matrix" \
   RESOLVE_OUTPUT_DIR="${TMPDIR}/killed" \
   REPO=vm0-ai/vm0 \
-  CURRENT_RUN_ID=99 \
-  CURRENT_EVENT=pull_request \
-  CURRENT_PR_NUMBER=123 \
-  CURRENT_PR_HEAD_REF=feature \
-  DEFAULT_BRANCH=main \
   "$PLAN")
 assert_contains "$killed" 'hit-count=0'
 assert_contains "$killed" 'miss-count=2'

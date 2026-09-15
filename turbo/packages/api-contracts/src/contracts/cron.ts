@@ -260,18 +260,16 @@ const cronRenewGoogleWorkspaceEventSubscriptionsResponseSchema = z.object({
   failed: z.number(),
 });
 
-const storagePresignedUrlRefreshResultSchema = z.object({
-  due: z.number(),
-  refreshed: z.number(),
+const storagePresignedUrlPruneResultSchema = z.object({
   pruned: z.number(),
 });
 
-const cronRefreshStoragePresignedUrlsResponseSchema = z.object({
+const cronPruneStoragePresignedUrlsResponseSchema = z.object({
   success: z.literal(true),
-  system: storagePresignedUrlRefreshResultSchema,
-  workflowSkill: storagePresignedUrlRefreshResultSchema,
-  readOnly: storagePresignedUrlRefreshResultSchema,
-  presentationTemplatePreview: storagePresignedUrlRefreshResultSchema,
+  system: storagePresignedUrlPruneResultSchema,
+  workflowSkill: storagePresignedUrlPruneResultSchema,
+  readOnly: storagePresignedUrlPruneResultSchema,
+  presentationTemplatePreview: storagePresignedUrlPruneResultSchema,
 });
 
 const cronMaterializeMemorySummariesResponseSchema = z.object({
@@ -611,16 +609,16 @@ export const cronExecuteWorkflowAutomationsContract = c.router({
   },
 });
 
-export const cronRefreshStoragePresignedUrlsContract = c.router({
-  refresh: {
+export const cronPruneStoragePresignedUrlsContract = c.router({
+  prune: {
     method: "GET",
-    path: "/api/cron/refresh-storage-presigned-urls",
+    path: "/api/cron/prune-storage-presigned-urls",
     headers: authHeadersSchema,
     responses: {
-      200: cronRefreshStoragePresignedUrlsResponseSchema,
+      200: cronPruneStoragePresignedUrlsResponseSchema,
       401: apiErrorSchema,
     },
-    summary: "Refresh cached storage presigned URLs",
+    summary: "Prune expired storage presigned URL cache entries",
   },
 });
 
@@ -634,6 +632,26 @@ export const cronMaterializeMemorySummariesContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Materialize immutable memory summary projections",
+  },
+});
+
+export const cronMaterializePiResourceIndexesContract = c.router({
+  materialize: {
+    method: "GET",
+    path: "/api/cron/materialize-pi-resource-indexes",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        success: z.literal(true),
+        claimed: z.number().int().nonnegative(),
+        ready: z.number().int().nonnegative(),
+        unindexable: z.number().int().nonnegative(),
+        retried: z.number().int().nonnegative(),
+        stale: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Materialize a bounded batch of immutable Pi resource indexes",
   },
 });
 
@@ -673,8 +691,8 @@ export type CronMonitorChatEventQueueContract =
   typeof cronMonitorChatEventQueueContract;
 export type CronReconcileBillingEntitlementsContract =
   typeof cronReconcileBillingEntitlementsContract;
-export type CronRefreshStoragePresignedUrlsContract =
-  typeof cronRefreshStoragePresignedUrlsContract;
+export type CronPruneStoragePresignedUrlsContract =
+  typeof cronPruneStoragePresignedUrlsContract;
 export type CronMaterializeMemorySummariesContract =
   typeof cronMaterializeMemorySummariesContract;
 export type CronExtractPiMemoryStage1Contract =
@@ -726,7 +744,7 @@ export {
   cronRenewGoogleFormsWatchesResponseSchema,
   cronRenewGoogleCalendarWatchesResponseSchema,
   cronRenewGoogleWorkspaceEventSubscriptionsResponseSchema,
-  cronRefreshStoragePresignedUrlsResponseSchema,
+  cronPruneStoragePresignedUrlsResponseSchema,
   cronMaterializeMemorySummariesResponseSchema,
   cronExtractPiMemoryStage1ResponseSchema,
 };

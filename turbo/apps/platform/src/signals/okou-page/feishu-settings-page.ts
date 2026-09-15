@@ -1,19 +1,17 @@
 import { command } from "ccstate";
 import { createElement } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 
 import { i18n } from "../../i18n/index.ts";
 import { FeishuSettingsPage } from "../../views/okou-page/feishu-card.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import {
-  featureSwitch$,
-  initialFeatureSwitchHydration$,
-} from "../external/feature-switch.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { updatePage$ } from "../react-router.ts";
 import {
+  feishuPlatform$,
   reloadFeishuInstallations$,
   resetFeishuSettingsUi$,
   showFeishuSettingsResult$,
@@ -26,12 +24,11 @@ import {
 
 export const setupFeishuSettingsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const platform = get(feishuPlatform$);
     const isAccountConnect = get(hasFeishuConnectParams$);
     if (!isAccountConnect) {
-      await get(initialFeatureSwitchHydration$);
-      signal.throwIfAborted();
       const features = get(featureSwitch$);
-      if (!features[FeatureSwitchKey.FeishuIntegration]) {
+      if (!features[FEISHU_PLATFORMS[platform].featureSwitch]) {
         set(detachedNavigateTo$, ROUTES.home, { replace: true });
         return;
       }
@@ -49,7 +46,7 @@ export const setupFeishuSettingsPage$ = command(
     set(
       updateDocumentTitle$,
       i18n.t(($) => {
-        return $.connectors.providerSettings.feishu.documentTitle;
+        return $.connectors.providerSettings[platform].documentTitle;
       }),
     );
 

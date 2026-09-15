@@ -67,6 +67,13 @@ export function setMockUserPreferences(
 }
 
 export const apiUserPreferencesHandlers = [
+  mockApi(userPreferencesContract.initialize, ({ body, respond }) => {
+    mockPreferences = {
+      ...mockPreferences,
+      timezone: mockPreferences.timezone ?? body.timezone ?? null,
+    };
+    return respond(200, mockPreferences);
+  }),
   mockApi(userPreferencesContract.get, ({ respond }) => {
     return respond(200, mockPreferences);
   }),

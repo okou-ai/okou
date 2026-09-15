@@ -82,8 +82,10 @@ done
 
 browser_page_call_log="$(mktemp)"
 otp_call_log="$(mktemp)"
+consent_call_log="$(mktemp)"
+next_step_call_log="$(mktemp)"
 api_url_side_effect_log="$(mktemp)"
-trap 'rm -f "$browser_page_call_log" "$otp_call_log" "$api_url_side_effect_log"' EXIT
+trap 'rm -f "$browser_page_call_log" "$otp_call_log" "$consent_call_log" "$next_step_call_log" "$api_url_side_effect_log"' EXIT
 
 api_url_status=0
 # The child shell, not this test process, expands the quoted side-effect log.
@@ -198,6 +200,55 @@ OTP_CALL_LOG="$otp_call_log" bash -c '
 expected_otp_calls=$'tab 0\nget count input[autocomplete="one-time-code"], input[name="code"], input[inputmode="numeric"]\ntab 0\nfill input[autocomplete="one-time-code"], input[name="code"], input[inputmode="numeric"] 424242'
 if [[ "$(<"$otp_call_log")" != "$expected_otp_calls" ]]; then
   echo "browser helper must leave OTP submission to Clerk" >&2
+  exit 1
+fi
+
+CONSENT_CALL_LOG="$consent_call_log" bash -c '
+  source "$1"
+  agent-browser() {
+    printf "%s\n" "$*" >> "$CONSENT_CALL_LOG"
+    if [[ "$1" == "get" && "$2" == "count" ]]; then
+      printf "1\n"
+    fi
+  }
+  BROWSER_PAGE_INDEX=0
+  accept_legal_consent
+' _ "$browser_helper"
+expected_consent_calls=$'tab 0\nget count input[name="legalAccepted"]:not(:checked)\ntab 0\nclick input[name="legalAccepted"]:not(:checked)'
+if [[ "$(<"$consent_call_log")" != "$expected_consent_calls" ]]; then
+  echo "browser helper must accept Clerk native legal consent" >&2
+  exit 1
+fi
+
+next_step_status=0
+NEXT_STEP_CALL_LOG="$next_step_call_log" bash -c '
+  source "$1"
+  wait_for_browser_target() {
+    printf "wait %s\n" "$*" >> "$NEXT_STEP_CALL_LOG"
+    return 1
+  }
+  report_auth_page_failure() {
+    printf "report\n" >> "$NEXT_STEP_CALL_LOG"
+  }
+  agent_browser_on_page() {
+    printf "unexpected %s\n" "$*" >> "$NEXT_STEP_CALL_LOG"
+  }
+  wait_for_auth_next_step sign-in
+' _ "$browser_helper" || next_step_status=$?
+if [[ "$next_step_status" -ne 1 ]]; then
+  echo "browser helper must propagate a failed next-step wait" >&2
+  exit 1
+fi
+if ! grep -Fq "signIn?.status === 'needs_first_factor'" "$next_step_call_log"; then
+  echo "browser helper must distinguish the initial password field from a prepared factor" >&2
+  exit 1
+fi
+if grep -q '^unexpected ' "$next_step_call_log"; then
+  echo "browser helper inspected a next step after its readiness wait failed" >&2
+  exit 1
+fi
+if [[ "$(tail -n 1 "$next_step_call_log")" != "report" ]]; then
+  echo "browser helper must report a failed next-step wait" >&2
   exit 1
 fi
 

@@ -61,6 +61,7 @@ function startApplication(rootSignal: AbortSignal): void {
       Reason.Daemon,
       "app realtime subscriptions",
     );
+    detach(runtime.clerkIdentityDaemon, Reason.Daemon, "clerk identity");
     await runtime.ready;
   }
 

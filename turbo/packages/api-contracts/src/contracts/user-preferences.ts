@@ -139,6 +139,20 @@ export type UpdateUserPreferencesRequest = z.infer<
  * POST: Update user preferences
  */
 export const userPreferencesContract = c.router({
+  initialize: {
+    method: "POST",
+    path: "/api/user-preferences/initialize",
+    headers: authHeadersSchema,
+    body: z.object({ timezone: z.string().min(1).optional() }),
+    responses: {
+      200: userPreferencesResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary:
+      "Initialize missing member preferences and Morning Brief enrollment",
+  },
   get: {
     method: "GET",
     path: "/api/user-preferences",

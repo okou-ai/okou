@@ -169,33 +169,23 @@ export interface DesktopComputerUseState {
   readonly plugins?: DesktopComputerUsePluginsState;
 }
 
-export type ComputerUseDriverId = "okou" | "cua";
-
-export interface ComputerUseDriverPreference {
-  readonly experimentalCuaEnabled: boolean;
-  readonly selectedDriver: ComputerUseDriverId;
-}
-
 export interface ComputerUseExecutionIdentity {
   readonly id: string;
   readonly generation: number;
   readonly version: string | null;
 }
 
-export interface DesktopComputerUseDriverState extends ComputerUseDriverPreference {
-  readonly developerAvailability: "unresolved" | "available" | "unavailable";
+export interface DesktopComputerUseDriverState {
   readonly actual: ComputerUseExecutionIdentity | null;
   readonly phase:
     | "stopped"
     | "starting"
     | "ready"
-    | "switching"
+    | "recovering"
     | "retiring"
-    | "blocked"
     | "error";
   readonly lifecycleElapsedMs: number;
   readonly cleanupPending: boolean;
-  readonly expectedCuaVersion: string;
   readonly error: string | null;
   readonly canRetry: boolean;
 }

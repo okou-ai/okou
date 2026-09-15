@@ -94,6 +94,7 @@ describe("email subscription settings", () => {
     context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
       return respond(200, {
         enabled: briefEnabled,
+        status: briefEnabled ? "enabled" : "paused",
         nextRunAt: briefEnabled ? "2030-01-02T23:00:00.000Z" : null,
         timezone: "Asia/Shanghai",
         unavailableReason: null,
@@ -105,6 +106,7 @@ describe("email subscription settings", () => {
         briefEnabled = body.enabled;
         return respond(200, {
           enabled: briefEnabled,
+          status: briefEnabled ? "enabled" : "paused",
           nextRunAt: null,
           timezone: "Asia/Shanghai",
           unavailableReason: null,
@@ -285,6 +287,7 @@ describe("email subscription settings", () => {
       context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
         return respond(200, {
           enabled: true,
+          status: "enabled",
           nextRunAt: "2030-01-02T07:00:00.000Z",
           timezone: "UTC",
           unavailableReason: null,

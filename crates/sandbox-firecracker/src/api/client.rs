@@ -428,9 +428,15 @@ impl ApiClient {
 
     /// Configure the balloon device via PUT /balloon.
     ///
-    /// Must be called before starting the instance. With `deflate_on_oom` enabled,
-    /// the balloon automatically deflates to return memory to the guest when it
-    /// faces OOM pressure, preventing the OOM killer from terminating processes.
+    /// Must be called before starting the instance.
+    ///
+    /// With `deflate_on_oom` enabled, the balloon can return memory to the guest
+    /// to mitigate OOM pressure. This does not guarantee protection from OOM kills:
+    /// an empty or exhausted balloon has no pages to return, and an allocation
+    /// can exceed the remaining releasable pages. See [Firecracker's balloon
+    /// documentation][balloon-docs] for other allocation restrictions.
+    ///
+    /// [balloon-docs]: https://github.com/firecracker-microvm/firecracker/blob/v1.16.2/docs/ballooning.md#what-is-the-balloon-device
     pub async fn configure_balloon(
         &self,
         amount_mib: u32,

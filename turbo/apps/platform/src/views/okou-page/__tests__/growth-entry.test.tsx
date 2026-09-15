@@ -21,6 +21,7 @@ import {
   testContext,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const GROWTH_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const context = testContext();
@@ -92,6 +93,7 @@ function billingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "pro",
+    ...billingPlanCapabilities("pro"),
     credits: 0,
     onboardingPaymentPending: false,
     subscriptionStatus: null,

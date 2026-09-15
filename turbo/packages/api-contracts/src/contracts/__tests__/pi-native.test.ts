@@ -16,6 +16,23 @@ import {
 import fixtures from "./fixtures/pi-native.json";
 
 describe("native Pi generation and egress contract", () => {
+  it("rejects US Messages for user keys and unsupported models", () => {
+    const fixture = fixtures.find(({ name }) => {
+      return name === "built-in US anthropic/claude-sonnet-4.6";
+    });
+    if (!fixture) throw new Error("Missing US native fixture");
+    for (const changed of [
+      { credentialOwner: "organization", billingOwner: "user" },
+      { credentialOwner: "member", billingOwner: "user" },
+      { model: "anthropic/claude-fable-5.1", catalogModel: "claude-fable-5-1" },
+      { baseUrl: "https://us.openrouter.ai/api/v1" },
+    ]) {
+      expect(
+        piModelConfigV4Schema.safeParse({ ...fixture.config, ...changed })
+          .success,
+      ).toBe(false);
+    }
+  });
   it.each(fixtures)("reads $name only as generation 4", ({ config }) => {
     expect(piModelConfigSchema.parse(config)).toStrictEqual(config);
     expect(piModelConfigV2Schema.safeParse(config).success).toBe(false);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -650,7 +651,7 @@ const canonicalSlackUploadInitResponseSchema = z.object({
   operationId: z.string().uuid(),
   uploadUrl: z.string().url().optional(),
   uploadHeaders: z.record(z.string(), z.string()).optional(),
-  url: z.string().url(),
+  url: artifactUrlSchema,
 });
 
 const slackUploadInitResponseSchema = z.union([
@@ -686,7 +687,7 @@ const slackUploadMaterializeBodySchema = z.object({
 
 const slackUploadMaterializeResponseSchema = z.object({
   assetId: z.string().uuid(),
-  url: z.string().url(),
+  url: artifactUrlSchema,
   delivery: z.discriminatedUnion("status", [
     z.object({
       status: z.literal("pending"),
@@ -1288,5 +1289,48 @@ export const integrationsSlackUploadCompleteContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Finalize Slack file upload and share to channel",
+  },
+});
+
+// Lark uses separate endpoints so older APIs fail closed instead of routing to Feishu.
+export const integrationsLarkMessageContract = c.router({
+  sendMessage: {
+    ...integrationsFeishuMessageContract.sendMessage,
+    summary: integrationsFeishuMessageContract.sendMessage.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/message",
+  },
+});
+export const integrationsLarkDownloadFileContract = c.router({
+  download: {
+    ...integrationsFeishuDownloadFileContract.download,
+    summary: integrationsFeishuDownloadFileContract.download.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/download-file",
+  },
+});
+export const integrationsLarkUploadInitContract = c.router({
+  init: {
+    ...integrationsFeishuUploadInitContract.init,
+    summary: integrationsFeishuUploadInitContract.init.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/upload-file/init",
+  },
+});
+export const integrationsLarkUploadCompleteContract = c.router({
+  complete: {
+    ...integrationsFeishuUploadCompleteContract.complete,
+    summary:
+      integrationsFeishuUploadCompleteContract.complete.summary.replaceAll(
+        "Feishu",
+        "Lark",
+      ),
+    path: "/api/integrations/lark/upload-file/complete",
   },
 });

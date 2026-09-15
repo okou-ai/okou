@@ -207,7 +207,9 @@ function connectProtocolTransport(
 
 test("share one Worker realtime subscription until tabs disconnect", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const firstOwner = createChildAbortController(context.signal);
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const secondOwner = createChildAbortController(context.signal);
   const first = connectProtocolTransport(firstOwner.signal);
   const second = connectProtocolTransport(secondOwner.signal);
@@ -286,6 +288,7 @@ test("share one Worker realtime subscription until tabs disconnect", async () =>
 
 test("route workspace realtime subscriptions through the organization channel", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const { bridge } = connectProtocolTransport(owner.signal);
   const messages: unknown[] = [];
@@ -397,6 +400,7 @@ test.each([401, 426])(
 
 test("Keep concurrent shared chat loads independent", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const { bridge } = connectProtocolTransport(owner.signal);
   await bridge.registerTab(owner.signal);
@@ -455,7 +459,9 @@ test("Keep concurrent shared chat loads independent", async () => {
 
 test("Authenticate worker requests through the tab with the latest heartbeat", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const firstOwner = createChildAbortController(context.signal);
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const secondOwner = createChildAbortController(context.signal);
   const first = connectProtocolTransport(firstOwner.signal, () => {
     return Promise.resolve("first-tab-token");
@@ -526,6 +532,7 @@ test("Authenticate worker requests through the tab with the latest heartbeat", a
 
 test("Cancel one shared chat load without cancelling worker progress", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const { bridge, workerPort } = connectProtocolTransport(owner.signal);
   await bridge.registerTab(owner.signal);
@@ -554,6 +561,7 @@ test("Cancel one shared chat load without cancelling worker progress", async () 
     },
   );
 
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const caller = createChildAbortController(owner.signal);
   const pending = bridge.query(
     { dataKey: key, afterSeqId: null, consistency: "catch-up" },
@@ -577,7 +585,9 @@ test("Cancel one shared chat load without cancelling worker progress", async () 
 
 test("Disconnect one tab without interrupting another tab", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const firstOwner = createChildAbortController(context.signal);
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const secondOwner = createChildAbortController(context.signal);
   const first = connectProtocolTransport(firstOwner.signal);
   const second = connectProtocolTransport(secondOwner.signal);
@@ -616,6 +626,7 @@ test("Send a heartbeat immediately after tab registration", async () => {
 
 test("Keep sending heartbeats while the tab bridge is active", async () => {
   const [platformPort] = messagePortPair();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
@@ -659,6 +670,7 @@ test("Reject shared-data access before the tab is registered", async () => {
 
 test("Validate shared chat results received from the worker", async () => {
   const [platformPort, workerPort] = messagePortPair();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
@@ -702,6 +714,7 @@ test("Validate shared chat results received from the worker", async () => {
 
 test("Stop pending requests when the bridge lifecycle ends", async () => {
   const [platformPort, workerPort] = messagePortPair();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
@@ -732,6 +745,7 @@ test("Stop pending requests when the bridge lifecycle ends", async () => {
   workerPort.start();
   await bridge.registerTab(owner.signal);
 
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const caller = createChildAbortController(context.signal);
   const pendingQuery = bridge.query(
     {
@@ -768,117 +782,121 @@ function mockUnreadIndicators(threadId: string): void {
   });
 }
 
-test.each([
-  { boundary: "before", firstRead: 999, nextRead: 999 },
-  { boundary: "across", firstRead: 999, nextRead: 1000 },
-  { boundary: "at", firstRead: 1000, nextRead: 1000 },
-])(
-  "Continue warming unread chats when indicator catch-up reads time $boundary the throttle boundary",
-  async ({ firstRead, nextRead }) => {
-    const startedAt = 10_000;
-    mockNow(startedAt, context.signal);
-    const threadId = crypto.randomUUID();
-    const rows = [row(threadId, 1), row(threadId, 2), row(threadId, 3)];
-    let availableRows = rows.slice(0, 1);
-    let refreshing = false;
-    mockUnreadIndicators(threadId);
-    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-      if (refreshing) {
-        // Arm the clock after the HTTP request so telemetry cannot consume the
-        // boundary read. The scheduler may cross the threshold without yielding.
-        let time = startedAt + firstRead;
-        mockNow(() => {
-          const sampledAt = time;
-          time = startedAt + nextRead;
-          return sampledAt;
-        }, context.signal);
-      }
-      return respond(200, { agents: {}, threads: { [threadId]: "unread" } });
+/** The Worker channel the credential-scoped subscriptions attach to. */
+function credentialChannel(): string {
+  const { userId, orgId } = identity();
+  return `user-org:${userId}:${orgId}`;
+}
+
+function mockChatEventCatchUp(
+  availableRows: () => readonly ChatEventRow[],
+  onRequest: () => void = () => {},
+): void {
+  context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
+    onRequest();
+    return respond(200, {
+      events: Object.fromEntries(
+        body.map(([id, sinceSeqId]) => {
+          return [
+            id,
+            availableRows().filter((event) => {
+              return event.chatThreadId === id && event.seqId > sinceSeqId;
+            }),
+          ];
+        }),
+      ),
+      notFoundThreads: [],
     });
-    context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
-      return respond(200, {
-        events: Object.fromEntries(
-          body.map(([id, sinceSeqId]) => {
-            return [
-              id,
-              availableRows.filter((event) => {
-                return event.chatThreadId === id && event.seqId > sinceSeqId;
-              }),
-            ];
-          }),
-        ),
-        notFoundThreads: [],
-      });
-    });
-    initializeWorker();
-    const subscriptionCatchUpFinished = context.mocks.deferred<void>();
-    const { bridge } = connectProtocolTransport(context.signal, undefined, {
+  });
+}
+
+/**
+ * Warming lands in the cache before the Worker invalidates the thread, so the
+ * invalidation is the synchronization point for "this thread is warm now".
+ */
+function chatEventInvalidations(threadId: string): {
+  readonly events: SharedDatabaseBridgeEvents;
+  readonly next: () => Promise<void>;
+} {
+  let pending: ReturnType<typeof context.mocks.deferred<void>> | null = null;
+  return {
+    events: {
       ...bridgeEvents(),
-      computedReloaded: (computedKey) => {
+      databaseInvalidated: (invalidated: SharedDatabaseDataKey) => {
         if (
-          computedKey === "chat-thread-indicators" &&
-          !subscriptionCatchUpFinished.settled()
+          invalidated.kind === "chat-event" &&
+          invalidated.threadId === threadId
         ) {
-          subscriptionCatchUpFinished.resolve();
+          pending?.resolve();
+          pending = null;
         }
       },
-    });
-    await bridge.registerTab(context.signal);
-    // The initial realtime subscription also refreshes indicators. Observe its
-    // completion before scheduling a new refresh with the boundary clock.
-    await Promise.all([
-      bridge.getComputed("chat-thread-indicators"),
-      subscriptionCatchUpFinished.promise,
-    ]);
+    },
+    next: () => {
+      const deferred = context.mocks.deferred<void>();
+      pending = deferred;
+      return deferred.promise;
+    },
+  };
+}
 
-    availableRows = rows.slice(0, 2);
-    refreshing = true;
-    context.workerStore.set(refreshWorkerComputed$, "chat-thread-indicators");
-    const indicators = await Promise.all([
-      bridge.getComputed("chat-thread-indicators"),
-      bridge.getComputed("chat-thread-indicators"),
-    ]);
-    expect(indicators).toStrictEqual([
-      { agents: {}, threads: { [threadId]: "unread" } },
-      { agents: {}, threads: { [threadId]: "unread" } },
-    ]);
-    const second = await bridge.query(
-      {
-        dataKey: dataKey(threadId),
-        afterSeqId: null,
-        consistency: "cache-only",
-      },
-      context.signal,
-    );
-    expect(second).toStrictEqual(rows.slice(0, 2));
+function cachedRows(
+  bridge: MessagePortSharedDatabaseBridge,
+  threadId: string,
+): Promise<unknown> {
+  return bridge.query(
+    { dataKey: dataKey(threadId), afterSeqId: null, consistency: "cache-only" },
+    context.signal,
+  );
+}
 
-    availableRows = rows;
-    refreshing = false;
-    mockNow(startedAt + 2000, context.signal);
-    context.workerStore.set(refreshWorkerComputed$, "chat-thread-indicators");
-    await bridge.getComputed("chat-thread-indicators");
-    const third = await bridge.query(
-      {
-        dataKey: dataKey(threadId),
-        afterSeqId: null,
-        consistency: "cache-only",
-      },
-      context.signal,
-    );
-    expect(third).toStrictEqual(rows);
-  },
-);
+test("Warm unread chats on connect and on every indicator refresh", async () => {
+  const startedAt = 10_000;
+  mockNow(startedAt, context.signal);
+  const threadId = crypto.randomUUID();
+  const rows = [row(threadId, 1), row(threadId, 2)];
+  let availableRows = rows.slice(0, 1);
+  mockUnreadIndicators(threadId);
+  mockChatEventCatchUp(() => {
+    return availableRows;
+  });
+  initializeWorker();
+  const warming = chatEventInvalidations(threadId);
+  const connectWarmed = warming.next();
+  const { bridge } = connectProtocolTransport(
+    context.signal,
+    undefined,
+    warming.events,
+  );
+  await bridge.registerTab(context.signal);
+  // The `threadListChanged` subscription primes warming when it attaches.
+  await connectWarmed;
+  await expect(cachedRows(bridge, threadId)).resolves.toStrictEqual(
+    rows.slice(0, 1),
+  );
 
-test("Recover indicator catch-up after a shared trailing request fails", async () => {
+  availableRows = rows;
+  const refreshWarmed = warming.next();
+  mockNow(startedAt + 2000, context.signal);
+  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  await refreshWarmed;
+  await expect(cachedRows(bridge, threadId)).resolves.toStrictEqual(rows);
+});
+
+test("Keep indicators readable when chat warming fails", async () => {
   const startedAt = 20_000;
   mockNow(startedAt, context.signal);
   const threadId = crypto.randomUUID();
-  const recoveredRows = [row(threadId, 1), row(threadId, 2)];
-  let availableRows = recoveredRows.slice(0, 1);
+  const rows = [row(threadId, 1), row(threadId, 2)];
+  let availableRows = rows.slice(0, 1);
   let failCatchUp = false;
+  const failedCatchUp = context.mocks.deferred<void>();
   mockUnreadIndicators(threadId);
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
     if (failCatchUp) {
+      if (!failedCatchUp.settled()) {
+        failedCatchUp.resolve();
+      }
       return respond(500, {
         error: { message: "Catch-up failed", code: "INTERNAL_SERVER_ERROR" },
       });
@@ -898,42 +916,43 @@ test("Recover indicator catch-up after a shared trailing request fails", async (
     });
   });
   initializeWorker();
-  const { bridge } = connectProtocolTransport(context.signal);
+  const warming = chatEventInvalidations(threadId);
+  const connectWarmed = warming.next();
+  const { bridge } = connectProtocolTransport(
+    context.signal,
+    undefined,
+    warming.events,
+  );
   await bridge.registerTab(context.signal);
-  await bridge.getComputed("chat-thread-indicators");
+  await connectWarmed;
 
+  // Warming is a head start for readers that fall back to their own catch-up,
+  // so its failure must stay inside the Worker instead of failing every tab's
+  // unread indicators.
   failCatchUp = true;
-  mockNow(startedAt + 999, context.signal);
-  context.workerStore.set(refreshWorkerComputed$, "chat-thread-indicators");
-  await Promise.all([
-    expect(bridge.getComputed("chat-thread-indicators")).rejects.toThrow(
-      "Shared database request failed with status 500",
-    ),
-    expect(bridge.getComputed("chat-thread-indicators")).rejects.toThrow(
-      "Shared database request failed with status 500",
-    ),
-  ]);
-
-  failCatchUp = false;
-  availableRows = recoveredRows;
   mockNow(startedAt + 2000, context.signal);
-  context.workerStore.set(refreshWorkerComputed$, "chat-thread-indicators");
+  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  await failedCatchUp.promise;
   await expect(
     bridge.getComputed("chat-thread-indicators"),
   ).resolves.toStrictEqual({
     agents: {},
     threads: { [threadId]: "unread" },
   });
-  const cached = await bridge.query(
-    { dataKey: dataKey(threadId), afterSeqId: null, consistency: "cache-only" },
-    context.signal,
-  );
-  expect(cached).toStrictEqual(recoveredRows);
+
+  failCatchUp = false;
+  availableRows = rows;
+  const recoveredWarming = warming.next();
+  mockNow(startedAt + 4000, context.signal);
+  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  await recoveredWarming;
+  await expect(cachedRows(bridge, threadId)).resolves.toStrictEqual(rows);
 });
 
 test("Cancel waiting indicator reads when their Worker lifecycle ends", async () => {
   mockNow(30_000, context.signal);
   const threadId = crypto.randomUUID();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const worker = createChildAbortController(context.signal);
   const refreshLoaded = context.mocks.deferred<void>();
   let refreshing = false;

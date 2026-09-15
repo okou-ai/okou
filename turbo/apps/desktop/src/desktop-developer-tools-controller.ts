@@ -60,9 +60,7 @@ export class DeveloperToolsController {
 
   private available = false;
   private enabled = false;
-  private resolved = false;
   private revision = 0;
-  private authorization: { readonly session: object } | null = null;
   private readonly refresh = latestWinsSingleFlight(
     () => this.refreshAvailability(),
     {
@@ -89,18 +87,6 @@ export class DeveloperToolsController {
     };
   }
 
-  getAvailability(): "unresolved" | "available" | "unavailable" {
-    if (!this.resolved) return "unresolved";
-    return this.getAuthorization() ? "available" : "unavailable";
-  }
-
-  getAuthorization(): object | null {
-    return this.available &&
-      this.authorization?.session === this.options.getSessionAuthority()
-      ? this.authorization
-      : null;
-  }
-
   setEnabled(enabled: boolean): DesktopDeveloperToolsState {
     const nextEnabled = this.available && enabled;
     if (this.enabled !== nextEnabled) {
@@ -117,8 +103,6 @@ export class DeveloperToolsController {
    */
   requestRefresh(): void {
     this.revision++;
-    this.resolved = false;
-    this.authorization = null;
     // Withdrawal is synchronous; no old response can authorize a new session.
     this.available = false;
     // Keep the independent panel preference across a same-session refresh;
@@ -147,7 +131,6 @@ export class DeveloperToolsController {
       const response = await this.fetchFeatureSwitches();
       if (!current()) return;
       if (response.status === 401) {
-        this.resolved = true;
         this.setAvailability(false);
         this.setFilesystemPluginFeatureEnabled(false);
         this.setScreenRecordingFeatureEnabled(false);
@@ -161,8 +144,6 @@ export class DeveloperToolsController {
       }
       const body: unknown = await response.json();
       if (!current()) return;
-      this.resolved = true;
-      this.authorization = session ? { session } : null;
       this.setAvailability(
         session !== null &&
           featureSwitchEnabledFromBody(body, OKOU_DEBUG_FEATURE_SWITCH_KEY),
@@ -179,8 +160,6 @@ export class DeveloperToolsController {
       this.onChange();
     } catch (error) {
       if (!current()) return;
-      this.resolved = true;
-      this.authorization = null;
       this.setAvailability(false);
       this.setFilesystemPluginFeatureEnabled(false);
       this.setScreenRecordingFeatureEnabled(false);

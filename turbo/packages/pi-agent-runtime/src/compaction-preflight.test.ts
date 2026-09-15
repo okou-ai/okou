@@ -20,6 +20,7 @@ function terraModel() {
     apiKey: "test-key",
     model: "gpt-5.6-terra",
     dialect: "openai-responses",
+    transport: "sse",
   });
   if (!model) {
     throw new Error("Expected pinned Pi to catalog Terra");

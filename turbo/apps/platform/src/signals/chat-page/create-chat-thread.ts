@@ -1,3 +1,4 @@
+import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import { literalHistoryTree } from "../../lib/markdown/literal-history.ts";
 import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
@@ -84,17 +85,14 @@ import {
 } from "@okouai/api-contracts/contracts/chat-events";
 
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { compatibleReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
-  agentMessageMathEnabled$,
-  chatReasoningEffortEnabled$,
+  chatEffortEnabled$,
   codexFastModeEnabled$,
   featureSwitch$,
-  initialFeatureSwitchHydration$,
 } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
@@ -230,14 +228,22 @@ import {
 import { createChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
 import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
+import {
+  createRunDetailSignalsRegistry,
+  type RunDetailSignals,
+} from "./run-detail.ts";
 import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
-import type {
-  ChatEventSignals,
-  SendChatEventInput,
-  SendChatEventResult,
-  SendInputChatEvent,
+import {
+  createChatEventSignals,
+  type ChatEventSignals,
+  type SendChatEventInput,
+  type SendChatEventResult,
+  type SendInputChatEvent,
 } from "./chat-event-signals.ts";
-import { registerChatEventChangeHandler$ } from "./chat-event-change-registry.ts";
+import {
+  registerChatEventChangeHandler$,
+  type ChatEventChangeHandler,
+} from "./chat-event-change-registry.ts";
 import {
   canonicalUserMessageFileUrl,
   userMessageFileAttachments,
@@ -249,6 +255,7 @@ import {
 } from "../okou-page/connectors.ts";
 
 const L = logger("ChatThread");
+
 const noOpComposerDraftAction$ = command(
   (_context, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
@@ -270,26 +277,6 @@ function isInputChatEvent(
 // ---------------------------------------------------------------------------
 // Thinking-indicator constants and helpers
 // ---------------------------------------------------------------------------
-
-const BLOCK_COLORS = [
-  "#e8a0b4",
-  "#c4705a",
-  "#f5b88a",
-  "#a8b560",
-  "#6bb5a0",
-  "#7baed4",
-  "#b09eda",
-  "#d4a87b",
-  "#e07878",
-  "#82c4c2",
-] as const;
-
-function shuffleBlockColors(): [string, string, string] {
-  const shuffled = [...BLOCK_COLORS].sort(() => {
-    return Math.random() - 0.5;
-  });
-  return [shuffled[0]!, shuffled[1]!, shuffled[2]!];
-}
 
 const THINKING_PHRASE_COUNT = 10;
 const DONE_PHRASE_COUNT = 8;
@@ -483,13 +470,10 @@ function createModelSelection(
     },
   );
 
-  const reasoningEffort$ = computed((get) => {
-    return get(chatReasoningEffortEnabled$)
-      ? compatibleReasoningEffort(
-          get(selectedModel$),
-          get(threadMeta$)?.reasoningEffort,
-        )
-      : undefined;
+  const modelSettings$ = computed((get) => {
+    return get(chatEffortEnabled$)
+      ? (get(threadMeta$)?.modelSettings ?? {})
+      : {};
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
@@ -518,7 +502,7 @@ function createModelSelection(
   return {
     selectedModel$,
     codexFastModeActive$,
-    reasoningEffort$,
+    modelSettings$,
     selectedModelOauthAvailable$,
     configureSelectedModel$,
     setModelSelection$,
@@ -1107,6 +1091,7 @@ function createRenderedChatGroups(
               userMessage: isInputChatEvent(event)
                 ? event.userMessage
                 : undefined,
+              userMessageRenderDocument: event.userMessageRenderDocument,
               tree: event.tree,
             };
           }),
@@ -1124,6 +1109,7 @@ function createRenderedChatGroups(
 
 interface RegisteredChatEvent {
   readonly event: ChatEvent;
+  readonly runDetail: RunDetailSignals | undefined;
   readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
 }
 
@@ -1236,6 +1222,7 @@ const registerUserMessageRenderPart$ = command(
           signals: set(artifactCardSignals.register$, {
             filename: part.filenameSnapshot,
             url,
+            contentType: renderContentType,
             kind: classifyChatAttachment({
               filename: part.filenameSnapshot,
               url,
@@ -1861,9 +1848,10 @@ function createCardRefRegistrar({
 
 interface EventTree {
   readonly content: string;
-  readonly mathEnabled: boolean;
   readonly tree: Root | undefined;
   readonly error: boolean;
+  /** Diagram sources this event shows, prepared when it becomes visible. */
+  readonly diagramCodes?: readonly string[];
 }
 
 interface RichEventTreePlan {
@@ -1871,7 +1859,6 @@ interface RichEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
-  readonly mathEnabled: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1882,40 +1869,46 @@ function createEventTreeParser(registries: EventTreeRegistries) {
     imageLoads,
   } = registries;
   const registerCardRef$ = createCardRefRegistrar(registries);
-  return command(({ set }, plan: RichEventTreePlan): Root => {
-    const cards = new Map<string, MarkdownCardRef>();
-    for (const descriptor of plan.descriptors) {
-      cards.set(
-        markdownCardKey(cardSlotUrl(descriptor)),
-        set(registerCardRef$, descriptor),
+  return command(
+    (
+      { set },
+      plan: RichEventTreePlan,
+    ): { tree: Root; diagramCodes: string[] } => {
+      const cards = new Map<string, MarkdownCardRef>();
+      for (const descriptor of plan.descriptors) {
+        cards.set(
+          markdownCardKey(cardSlotUrl(descriptor)),
+          set(registerCardRef$, descriptor),
+        );
+      }
+      const tree = parseMarkdownTree(plan.treeSource, {
+        math: true,
+        mermaid: true,
+        cards,
+      });
+      const diagramCodes: string[] = [];
+      embedMermaidSignals(tree, (code) => {
+        diagramCodes.push(code);
+        return set(mermaidDiagrams.register$, code);
+      });
+      set(
+        embedMarkdownArtifacts$,
+        tree,
+        artifactCardSignals,
+        chatActionContext.threadId,
       );
-    }
-    const tree = parseMarkdownTree(plan.treeSource, {
-      math: plan.mathEnabled,
-      mermaid: true,
-      cards,
-    });
-    embedMermaidSignals(tree, (code) => {
-      return set(mermaidDiagrams.register$, code);
-    });
-    set(
-      embedMarkdownArtifacts$,
-      tree,
-      artifactCardSignals,
-      chatActionContext.threadId,
-    );
-    embedImageLoadSignals(tree, (url) => {
-      return set(imageLoads.register$, url);
-    });
-    return tree;
-  });
+      embedImageLoadSignals(tree, (url) => {
+        return set(imageLoads.register$, url);
+      });
+      return { tree, diagramCodes };
+    },
+  );
 }
 
 function planEventTreeUpdates(
   events: readonly ChatEvent[],
   current: ReadonlyMap<string, EventTree>,
   chatActionContext: ChatActionContext,
-  mathEnabled: boolean,
 ): {
   readonly next: Map<string, EventTree> | undefined;
   readonly richPlans: RichEventTreePlan[];
@@ -1924,11 +1917,7 @@ function planEventTreeUpdates(
   const richPlans: RichEventTreePlan[] = [];
   for (const event of events) {
     const content = chatEventTreeContent(event);
-    const previous = current.get(event.id);
-    if (
-      content === null ||
-      (previous?.content === content && previous.mathEnabled === mathEnabled)
-    ) {
+    if (content === null || current.get(event.id)?.content === content) {
       continue;
     }
     // Raw-row projection already checked every 1094 provenance field. Keep
@@ -1945,7 +1934,6 @@ function planEventTreeUpdates(
       next ??= new Map(current);
       next.set(event.id, {
         content,
-        mathEnabled,
         tree: literalHistoryTree(content),
         error: false,
       });
@@ -1956,13 +1944,12 @@ function planEventTreeUpdates(
       continue;
     }
     const plainTree = createPlainMarkdownTree(plan.treeSource, {
-      mathEnabled,
+      mathEnabled: true,
     });
     next ??= new Map(current);
     if (plainTree !== null) {
       next.set(event.id, {
         content: plan.content,
-        mathEnabled,
         tree: plainTree,
         error: false,
       });
@@ -1972,11 +1959,10 @@ function planEventTreeUpdates(
     // body loads. This pending identity also deduplicates concurrent ensures.
     next.set(event.id, {
       content: plan.content,
-      mathEnabled,
       tree: undefined,
       error: false,
     });
-    richPlans.push({ eventId: event.id, ...plan, mathEnabled });
+    richPlans.push({ eventId: event.id, ...plan });
   }
   return { next, richPlans };
 }
@@ -1990,7 +1976,6 @@ function markPendingEventTreesFailed(
     const entry = current.get(plan.eventId);
     if (
       entry?.content === plan.content &&
-      entry.mathEnabled === plan.mathEnabled &&
       entry.tree === undefined &&
       !entry.error
     ) {
@@ -2001,8 +1986,48 @@ function markPendingEventTreesFailed(
   return failed;
 }
 
+/**
+ * Re-parse one failed rich body. Preparation is push-based, so the retry also
+ * lays out the body's diagrams; nothing else visits this event until the
+ * render window moves.
+ */
+function createRetryRichEventTree({
+  internalEventTrees$,
+  ensureEventTrees$,
+  diagramCodesForEvents$,
+  ensureDiagrams$,
+}: {
+  readonly internalEventTrees$: State<ReadonlyMap<string, EventTree>>;
+  readonly ensureEventTrees$: Command<
+    Promise<void>,
+    [readonly ChatEvent[], AbortSignal]
+  >;
+  readonly diagramCodesForEvents$: Command<
+    readonly string[],
+    [readonly ChatEvent[]]
+  >;
+  readonly ensureDiagrams$: MermaidDiagramRegistry["ensureDiagrams$"];
+}): Command<Promise<void>, [ChatEvent, AbortSignal]> {
+  return command(
+    async ({ get, set }, event: ChatEvent, signal: AbortSignal) => {
+      const current = get(internalEventTrees$);
+      const entry = current.get(event.id);
+      const content = chatEventTreeContent(event);
+      if (!entry?.error || content === null || entry.content !== content) {
+        return;
+      }
+      const next = new Map(current);
+      next.delete(event.id);
+      set(internalEventTrees$, next);
+      await set(ensureEventTrees$, [event], signal);
+      signal.throwIfAborted();
+      await set(ensureDiagrams$, set(diagramCodesForEvents$, [event]), signal);
+    },
+  );
+}
+
 function createEventTreeSignals(registries: EventTreeRegistries) {
-  const { chatActionContext } = registries;
+  const { chatActionContext, mermaidDiagrams } = registries;
 
   const internalEventTrees$ = state<ReadonlyMap<string, EventTree>>(new Map());
   const eventTrees$ = computed((get): ReadonlyMap<string, Root> => {
@@ -2040,19 +2065,18 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         const pendingEntry = pending.get(plan.eventId);
         if (
           pendingEntry?.content !== plan.content ||
-          pendingEntry.mathEnabled !== plan.mathEnabled ||
           pendingEntry.tree !== undefined ||
           pendingEntry.error
         ) {
           continue;
         }
-        const tree = set(parseEventTree$, plan);
+        const { tree, diagramCodes } = set(parseEventTree$, plan);
         parsed ??= new Map(pending);
         parsed.set(plan.eventId, {
           content: plan.content,
-          mathEnabled: plan.mathEnabled,
           tree,
           error: false,
+          diagramCodes,
         });
       }
       signal.throwIfAborted();
@@ -2081,7 +2105,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         events,
         current,
         chatActionContext,
-        get(agentMessageMathEnabled$),
       );
       if (next) {
         set(internalEventTrees$, next);
@@ -2104,51 +2127,46 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
     },
   );
 
-  const retryRichEventTree$ = command(
-    async (
-      { get, set },
-      event: ChatEvent,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const current = get(internalEventTrees$);
-      const entry = current.get(event.id);
-      const content = chatEventTreeContent(event);
-      if (!entry?.error || content === null || entry.content !== content) {
-        return;
-      }
-      const next = new Map(current);
-      next.delete(event.id);
-      set(internalEventTrees$, next);
-      await set(ensureEventTrees$, [event], signal);
+  const diagramCodesForEvents$ = command(
+    ({ get }, events: readonly ChatEvent[]): readonly string[] => {
+      const trees = get(internalEventTrees$);
+      return events.flatMap((event) => {
+        return trees.get(event.id)?.diagramCodes ?? [];
+      });
     },
   );
+
+  const retryRichEventTree$ = createRetryRichEventTree({
+    internalEventTrees$,
+    ensureEventTrees$,
+    diagramCodesForEvents$,
+    ensureDiagrams$: mermaidDiagrams.ensureDiagrams$,
+  });
 
   return {
     eventTrees$,
     eventTreeErrors$,
     ensureEventTrees$,
     retryRichEventTree$,
+    diagramCodesForEvents$,
   };
 }
 
-function createPagedEventResources(
-  {
-    chatActionContext,
-    chatEvents$,
-    previewImageUrlsByUrl$,
-    browserLifecycleOptimisticEvents,
-    connector,
-  }: {
-    readonly chatActionContext: ChatActionContext;
-    readonly chatEvents$: Computed<ChatEvent[]>;
-    readonly previewImageUrlsByUrl$: Computed<
-      Promise<ReadonlyMap<string, string>>
-    >;
-    readonly browserLifecycleOptimisticEvents: BrowserLifecycleOptimisticEvents;
-    readonly connector: ComposerConnectorSignals;
-  },
-  ownerSignal: AbortSignal,
-) {
+function createPagedEventResources({
+  chatActionContext,
+  chatEvents$,
+  previewImageUrlsByUrl$,
+  browserLifecycleOptimisticEvents,
+  connector,
+}: {
+  readonly chatActionContext: ChatActionContext;
+  readonly chatEvents$: Computed<ChatEvent[]>;
+  readonly previewImageUrlsByUrl$: Computed<
+    Promise<ReadonlyMap<string, string>>
+  >;
+  readonly browserLifecycleOptimisticEvents: BrowserLifecycleOptimisticEvents;
+  readonly connector: ComposerConnectorSignals;
+}) {
   const { threadId } = chatActionContext;
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
   const browserSessionSignals = createBrowserSessionSignals(
@@ -2159,6 +2177,7 @@ function createPagedEventResources(
     previewImageUrlsByUrl$,
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
+  const runDetailSignals = createRunDetailSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
   const connectorAccountActionCardSignals =
     createConnectorAccountActionCardSignalsRegistry(connector);
@@ -2167,13 +2186,16 @@ function createPagedEventResources(
   const computerUseAuthorizationCardSignals =
     createComputerUseAuthorizationCardSignalsRegistry();
   const planUpgradeCardSignals = createPlanUpgradeCardSignalsRegistry();
-  const mermaidDiagrams = createMermaidDiagramRegistry(ownerSignal);
+  const mermaidDiagrams = createMermaidDiagramRegistry();
   const imageLoads = createImageLoadRegistry();
 
   const registerChatEvent$ = command(
     ({ set }, event: ChatEvent): RegisteredChatEvent => {
       return {
         event,
+        runDetail: event.runId
+          ? set(runDetailSignals.register$, event.runId)
+          : undefined,
         userMessageRenderDocument: set(
           registerUserMessageRenderDocument$,
           event,
@@ -2191,6 +2213,7 @@ function createPagedEventResources(
     eventTreeErrors$,
     ensureEventTrees$,
     retryRichEventTree$,
+    diagramCodesForEvents$,
   } = createEventTreeSignals({
     chatActionContext,
     artifactCardSignals,
@@ -2207,6 +2230,13 @@ function createPagedEventResources(
   });
 
   const registeredEvents$ = state<RegisteredChatEvent[]>([]);
+  const runDetails$ = computed((get) => {
+    return new Map(
+      get(registeredEvents$).flatMap(({ runDetail }) => {
+        return runDetail ? [[runDetail.runId, runDetail] as const] : [];
+      }),
+    );
+  });
   // Tree parsing is not part of the sync: the render window decides which
   // events need trees, so the ensure step runs at the window's write points.
   const syncRegisteredEvents$ = command(
@@ -2233,7 +2263,10 @@ function createPagedEventResources(
     eventTrees$,
     eventTreeErrors$,
     ensureEventTrees$,
+    diagramCodesForEvents$,
+    ensureDiagrams$: mermaidDiagrams.ensureDiagrams$,
     publicSignals: {
+      runDetails$,
       browserSessionSignals,
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
       retryRichEventTree$,
@@ -2325,29 +2358,26 @@ function createMarkThreadReadIfNeeded({
   });
 }
 
-function createEventChangeEffects(
-  {
-    threadId,
-    chatEvents,
-    projections,
-    scroll,
-    syncVisibleEventTrees$,
-  }: {
-    readonly threadId: string;
-    readonly chatEvents: ChatEventSignals;
-    readonly projections: Pick<
-      ReturnType<typeof createPagedEventProjections>,
-      "rawEvents$" | "latestRunFinishCreatedAt$"
-    >;
-    readonly scroll: ChatThreadScrollSignals;
-    readonly syncVisibleEventTrees$: Command<
-      Promise<void>,
-      [boolean, AbortSignal]
-    >;
-  },
-  ownerSignal: AbortSignal,
-) {
-  const sidebar = createThreadSidebarSignals(threadId, ownerSignal);
+function createEventChangeEffects({
+  threadId,
+  chatEvents,
+  projections,
+  scroll,
+  syncVisibleEventTrees$,
+}: {
+  readonly threadId: string;
+  readonly chatEvents: ChatEventSignals;
+  readonly projections: Pick<
+    ReturnType<typeof createPagedEventProjections>,
+    "rawEvents$" | "latestRunFinishCreatedAt$"
+  >;
+  readonly scroll: ChatThreadScrollSignals;
+  readonly syncVisibleEventTrees$: Command<
+    Promise<void>,
+    [boolean, AbortSignal]
+  >;
+}) {
+  const sidebar = createThreadSidebarSignals(threadId);
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,
@@ -2378,7 +2408,7 @@ function createEventChangeEffects(
       if (!set(sidebar.claimAutoOpenCandidate$, candidateKey)) {
         return;
       }
-      set(sidebar.open$, { type: "browser" });
+      set(sidebar.open$, { type: "browser" }, signal);
     },
   );
   const updateEventPresentation$ = command(
@@ -2394,7 +2424,12 @@ function createEventChangeEffects(
     },
   );
   const afterEventsChange$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async (
+      { get, set },
+      _handler: ChatEventChangeHandler,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
       const hasOptimisticUserMessage = get(
         chatEvents.hasOptimisticUserMessage$,
       );
@@ -2423,18 +2458,21 @@ function createEventChangeEffects(
       signal.throwIfAborted();
     },
   );
-  return { sidebar, afterEventsChange$ };
+  const eventChangeHandler: ChatEventChangeHandler = Object.freeze({
+    command$: afterEventsChange$,
+  });
+  return { sidebar, eventChangeHandler };
 }
 
 function createChatEventPresentationLifecycle({
   chatEvents,
-  afterEventsChange$,
+  eventChangeHandler,
   syncVisibleEventTrees$,
   enableSidebarEntryAnimations$,
   initialEventsReady$,
 }: {
   readonly chatEvents: ChatEventSignals;
-  readonly afterEventsChange$: Command<Promise<void>, [AbortSignal]>;
+  readonly eventChangeHandler: ChatEventChangeHandler;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
     [boolean, AbortSignal]
@@ -2442,19 +2480,12 @@ function createChatEventPresentationLifecycle({
   readonly enableSidebarEntryAnimations$: Command<void, []>;
   readonly initialEventsReady$: State<boolean>;
 }) {
-  const syncHydratedEventTrees$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      await get(initialFeatureSwitchHydration$);
-      signal.throwIfAborted();
-      await set(syncVisibleEventTrees$, false, signal);
-    },
-  );
   const setup$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
       set(
         registerChatEventChangeHandler$,
         chatEvents.chatEvents$,
-        afterEventsChange$,
+        eventChangeHandler,
         signal,
       );
       await set(syncVisibleEventTrees$, false, signal);
@@ -2475,7 +2506,7 @@ function createChatEventPresentationLifecycle({
       }
     },
   );
-  return { setup$, catchUp$, syncHydratedEventTrees$ };
+  return { setup$, catchUp$ };
 }
 
 function createReadyScrollAfterRenderRequest(
@@ -2523,35 +2554,31 @@ function createBrowserLifecycleOptimisticEvents(
   };
 }
 
-function createChatThreadMessagePipeline(
-  {
-    chatActionContext,
-    chatEvents,
-    previewImageUrlsByUrl$,
-    connector,
-  }: {
-    chatActionContext: ChatActionContext;
-    chatEvents: ChatEventSignals;
-    previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
-    connector: ComposerConnectorSignals;
-  },
-  ownerSignal: AbortSignal,
-) {
+interface ChatThreadMessagePipelineOptions {
+  chatActionContext: ChatActionContext;
+  chatEvents: ChatEventSignals;
+  previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
+  connector: ComposerConnectorSignals;
+}
+
+function createChatThreadMessagePipeline({
+  chatActionContext,
+  chatEvents,
+  previewImageUrlsByUrl$,
+  connector,
+}: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
   const browserLifecycleOptimisticEvents =
     createBrowserLifecycleOptimisticEvents(chatEvents);
   // Position is created before scroll writers are wired to the render window.
   const position = createThreadScrollPositionSignals(threadId);
-  const resources = createPagedEventResources(
-    {
-      chatActionContext,
-      chatEvents$: chatEvents.chatEvents$,
-      previewImageUrlsByUrl$,
-      browserLifecycleOptimisticEvents,
-      connector,
-    },
-    ownerSignal,
-  );
+  const resources = createPagedEventResources({
+    chatActionContext,
+    chatEvents$: chatEvents.chatEvents$,
+    previewImageUrlsByUrl$,
+    browserLifecycleOptimisticEvents,
+    connector,
+  });
   const projections = createPagedEventProjections({
     chatEvents$: chatEvents.chatEvents$,
     registeredEvents$: resources.registeredEvents$,
@@ -2568,6 +2595,8 @@ function createChatThreadMessagePipeline(
     threadScrollPosition$: position.threadScrollPosition$,
     awayFromBottom$: position.awayFromBottom$,
     ensureEventTrees$: resources.ensureEventTrees$,
+    diagramCodesForEvents$: resources.diagramCodesForEvents$,
+    ensureDiagrams$: resources.ensureDiagrams$,
     initialEventsReady$,
   });
   const syncVisibleEventTrees$ = command(
@@ -2598,19 +2627,16 @@ function createChatThreadMessagePipeline(
     chatEvents.chatEvents$,
     initialEventsReadyView$,
   );
-  const effects = createEventChangeEffects(
-    {
-      threadId,
-      chatEvents,
-      projections,
-      scroll,
-      syncVisibleEventTrees$,
-    },
-    ownerSignal,
-  );
+  const effects = createEventChangeEffects({
+    threadId,
+    chatEvents,
+    projections,
+    scroll,
+    syncVisibleEventTrees$,
+  });
   const lifecycle = createChatEventPresentationLifecycle({
     chatEvents,
-    afterEventsChange$: effects.afterEventsChange$,
+    eventChangeHandler: effects.eventChangeHandler,
     syncVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
     initialEventsReady$,
@@ -2619,6 +2645,7 @@ function createChatThreadMessagePipeline(
     threadId,
     chatEvents,
     visibleRenderedChatGroups$: renderWindow.visibleRenderedChatGroups$,
+    runDetails$: resources.publicSignals.runDetails$,
   });
   const readyScrollAfterRenderRequest$ = createReadyScrollAfterRenderRequest(
     scroll.pendingScrollAfterRenderRequest$,
@@ -2660,17 +2687,17 @@ function createChatThreadMessagePipeline(
 const draftCache$ = state(new Map<string, DraftSignals>());
 
 export const ensureDraft$ = command(
-  ({ get, set }, threadId: string): { draft: DraftSignals; isNew: boolean } => {
+  ({ get, set }, threadId: string): DraftSignals => {
     const cache = get(draftCache$);
     const existing = cache.get(threadId);
     if (existing) {
-      return { draft: existing, isNew: false };
+      return existing;
     }
     const draft = createDraftSignals();
     const next = new Map(cache);
     next.set(threadId, draft);
     set(draftCache$, next);
-    return { draft, isNew: true };
+    return draft;
   },
 );
 
@@ -2686,14 +2713,19 @@ function createEventRunIndicatorState(chatEvents$: Computed<ChatEvent[]>) {
 // Factory: createRunTracking
 // ---------------------------------------------------------------------------
 
+type ThreadActivitySummarySignals = ReturnType<
+  typeof createThreadActivitySummarySignals
+>;
+
 interface RunTrackingDeps {
   threadId: string;
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
-  syncHydratedEventTrees$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
   subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
-  subscribeThinkingSummaries$: Command<Promise<void>, [AbortSignal]>;
+  subscribeSessionOutput$: Command<Promise<void>, [AbortSignal]>;
+  subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
+  thinkingSummarySubscription: ThreadActivitySummarySignals["subscription"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccounts$: Command<void, []>;
@@ -2796,6 +2828,14 @@ interface ChatRenderWindowOptions {
     Promise<void>,
     [readonly ChatEvent[], AbortSignal]
   >;
+  readonly diagramCodesForEvents$: Command<
+    readonly string[],
+    [readonly ChatEvent[]]
+  >;
+  readonly ensureDiagrams$: Command<
+    Promise<void>,
+    [readonly string[], AbortSignal]
+  >;
   readonly initialEventsReady$: State<boolean>;
 }
 
@@ -2861,12 +2901,58 @@ function createPreloadPreviousRenderWindowForEvent({
   );
 }
 
+/**
+ * Prepare the rich content of everything the render window shows. Diagrams are
+ * laid out here, for the events on screen, so their blob URLs are owned by this
+ * run rather than by whichever view happens to read them.
+ */
+function createEnsureVisibleEventTrees({
+  visibleRenderedChatGroups$,
+  ensureEventTrees$,
+  diagramCodesForEvents$,
+  ensureDiagrams$,
+  initialEventsReady$,
+}: {
+  readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
+  readonly ensureEventTrees$: ChatRenderWindowOptions["ensureEventTrees$"];
+  readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
+  readonly ensureDiagrams$: ChatRenderWindowOptions["ensureDiagrams$"];
+  readonly initialEventsReady$: State<boolean>;
+}): Command<Promise<void>, [boolean, AbortSignal]> {
+  return command(
+    async (
+      { get, set },
+      revealPreparedEvents: boolean,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const groups = await get(visibleRenderedChatGroups$);
+      signal.throwIfAborted();
+      const visibleEvents = groups.flatMap((group) => {
+        return group.events;
+      });
+      const richContentReady = set(ensureEventTrees$, visibleEvents, signal);
+      if (revealPreparedEvents) {
+        set(initialEventsReady$, true);
+      }
+      await richContentReady;
+      signal.throwIfAborted();
+      await set(
+        ensureDiagrams$,
+        set(diagramCodesForEvents$, visibleEvents),
+        signal,
+      );
+    },
+  );
+}
+
 function createChatRenderWindow({
   threadId,
   allRenderedChatGroups$,
   threadScrollPosition$,
   awayFromBottom$,
   ensureEventTrees$,
+  diagramCodesForEvents$,
+  ensureDiagrams$,
   initialEventsReady$,
 }: ChatRenderWindowOptions) {
   const visibleRenderedChatGroups$ = computed(
@@ -2901,27 +2987,13 @@ function createChatRenderWindow({
    * afterwards: the event sync, the load-more cursor, and the scroll position
    * commands. Parsing stays command-driven — reading the window never parses.
    */
-  const ensureVisibleEventTrees$ = command(
-    async (
-      { get, set },
-      revealPreparedEvents: boolean,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const groups = await get(visibleRenderedChatGroups$);
-      signal.throwIfAborted();
-      const richContentReady = set(
-        ensureEventTrees$,
-        groups.flatMap((group) => {
-          return group.events;
-        }),
-        signal,
-      );
-      if (revealPreparedEvents) {
-        set(initialEventsReady$, true);
-      }
-      await richContentReady;
-    },
-  );
+  const ensureVisibleEventTrees$ = createEnsureVisibleEventTrees({
+    visibleRenderedChatGroups$,
+    ensureEventTrees$,
+    diagramCodesForEvents$,
+    ensureDiagrams$,
+    initialEventsReady$,
+  });
 
   const preloadPreviousRenderWindowForEvent$ =
     createPreloadPreviousRenderWindowForEvent({
@@ -3041,14 +3113,22 @@ function createOnSubscribedCommand({
   });
 }
 
+const onWorkflowsChanged$ = command(
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    await set(reloadMountedComposerWorkflows$, signal);
+    return false;
+  },
+);
+
 function createRunTracking({
   threadId,
   setupChatEvents$,
   catchUpChatEvents$,
-  syncHydratedEventTrees$,
   reloadArtifacts$,
   subscribeBrowserSessions$,
+  subscribeSessionOutput$,
   subscribeThinkingSummaries$,
+  thinkingSummarySubscription,
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccounts$,
@@ -3067,48 +3147,25 @@ function createRunTracking({
     await set(setupChatEvents$, signal);
     signal.throwIfAborted();
 
-    // eslint-disable-next-line ccstate/no-command-in-command -- migrate this runtime callback to the static command graph
-    const onThreadDetailChanged$ = command(({ set }) => {
-      L.debug("onThreadDetailChanged$ fired", { threadId });
-      set(cancellationRecovery.reload$);
-      set(reloadConnectorAccountPreference$);
-      return false;
-    });
-
-    // eslint-disable-next-line ccstate/no-command-in-command -- migrate this runtime callback to the static command graph
-    const onAutomationsChanged$ = command(({ set }) => {
-      set(automationSignals.headerAutomations.reload$);
-      return false;
-    });
-
-    // eslint-disable-next-line ccstate/no-command-in-command -- migrate this runtime callback to the static command graph
-    const onArtifactsChanged$ = command(({ set }) => {
-      L.debug("onArtifactsChanged$ fired", { threadId });
-      set(reloadArtifacts$);
-      return false;
-    });
-
-    // eslint-disable-next-line ccstate/no-command-in-command -- migrate this runtime callback to the static command graph
-    const onWorkflowsChanged$ = command(
-      async ({ set }, signal: AbortSignal): Promise<boolean> => {
-        L.debug("onWorkflowsChanged$ fired", { threadId });
-        await set(reloadMountedComposerWorkflows$, signal);
-        return false;
-      },
-    );
-
     await Promise.all([
-      set(syncHydratedEventTrees$, signal),
       set(subscribeBrowserSessions$, signal),
-      set(subscribeThinkingSummaries$, signal),
+      set(subscribeSessionOutput$, signal),
+      set(subscribeThinkingSummaries$, thinkingSummarySubscription, signal),
       set(
         subscribeChatThreadRealtime$,
         {
           threadId,
+          invalidations: {
+            threadDetail: [
+              cancellationRecovery.reload$,
+              reloadConnectorAccountPreference$,
+            ],
+            automations: [
+              automationSignals.headerAutomations.reloadAutomations$,
+            ],
+            artifacts: [reloadArtifacts$],
+          },
           handlers: {
-            onThreadDetailChanged$,
-            onAutomationsChanged$,
-            onArtifactsChanged$,
             onWorkflowsChanged$,
             onSubscribed$,
           },
@@ -3643,10 +3700,6 @@ function createThinkingIndicatorSignals(
   activity: ReturnType<typeof createThreadActivitySummarySignals>,
   messages: Pick<MessageListSignals, "thinkingText$" | "thinkingEventId$">,
 ) {
-  const blockColors = shuffleBlockColors();
-  const blockColors$ = computed(() => {
-    return blockColors;
-  });
   const thinkingPhraseIndex = Math.floor(Math.random() * THINKING_PHRASE_COUNT);
   const thinkingPhrase$ = computed((get) => {
     get(locale$);
@@ -3668,10 +3721,6 @@ function createThinkingIndicatorSignals(
       }
       return {
         runId: eventId,
-        summaryRevision: eventId,
-        summarySequence: null,
-        summaryMessageCursor: null,
-        summarizedAt: null,
         messages: [
           ...new Set(
             text
@@ -3692,7 +3741,7 @@ function createThinkingIndicatorSignals(
       ? get(activity.thinkingRunId$)
       : await get(messages.thinkingEventId$);
   });
-  return { blockColors$, thinkingPhrase$, thinkingSummaries$, thinkingRunId$ };
+  return { thinkingPhrase$, thinkingSummaries$, thinkingRunId$ };
 }
 
 // ---------------------------------------------------------------------------
@@ -3701,6 +3750,7 @@ function createThinkingIndicatorSignals(
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
+    runDetails$: events.runDetails$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
@@ -3846,13 +3896,13 @@ function createChatThreadComposerSignals(
       if (!isSupportedRunModel(selectedModel)) {
         return null;
       }
-      const reasoningEffort = get(modelSelection.reasoningEffort$);
+      const modelSettings = get(modelSelection.modelSettings$);
       return {
         selectedModel,
         ...((await get(modelSelection.codexFastModeActive$))
           ? { codexServiceTier: "fast" as const }
           : {}),
-        ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+        modelSettings,
       };
     },
   );
@@ -3983,17 +4033,24 @@ export function createThreadComposerSignals(
   );
 }
 
-function createChatPanelSignalsWithDraft(
-  chatEvents: ChatEventSignals,
+/**
+ * Creates the complete signal graph of one chat panel. The graph carries no
+ * AbortSignal, so a pane can derive it from the thread it shows.
+ */
+export function createChatPanelSignals(
+  threadId: string,
   agentId: string,
   draft: DraftSignals,
-  signal: AbortSignal,
 ): ChatPanelSignals {
-  const threadId = chatEvents.threadId;
+  const chatEvents = createChatEventSignals(threadId);
   const artifact = createArtifacts(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
   const threadTitle = createThreadTitleParts(threadMeta$);
+  const sessionOutput = createSessionOutputStreamSignals(
+    threadId,
+    chatEvents.chatEvents$,
+  );
   const activity = createThreadActivitySummarySignals(
     threadId,
     chatEvents.chatEvents$,
@@ -4013,17 +4070,12 @@ function createChatPanelSignalsWithDraft(
     },
     draft,
   );
-  const messagePipeline = createChatThreadMessagePipeline(
-    {
-      chatActionContext: { threadId, agentId },
-      chatEvents,
-      previewImageUrlsByUrl$: createArtifactPreviewImageUrls(
-        artifact.artifacts$,
-      ),
-      connector: composer.connector,
-    },
-    signal,
-  );
+  const messagePipeline = createChatThreadMessagePipeline({
+    chatActionContext: { threadId, agentId },
+    chatEvents,
+    previewImageUrlsByUrl$: createArtifactPreviewImageUrls(artifact.artifacts$),
+    connector: composer.connector,
+  });
   const messages: MessageListSignals = {
     ...messagePipeline,
     ...artifact,
@@ -4045,10 +4097,11 @@ function createChatPanelSignalsWithDraft(
     threadId,
     setupChatEvents$: messages.setup$,
     catchUpChatEvents$: messages.catchUp$,
-    syncHydratedEventTrees$: messagePipeline.syncHydratedEventTrees$,
     reloadArtifacts$: messages.reloadArtifacts$,
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
+    subscribeSessionOutput$: sessionOutput.subscribe$,
+    thinkingSummarySubscription: activity.subscription,
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccounts$: composer.connector.accounts.reload$,
@@ -4058,7 +4111,6 @@ function createChatPanelSignalsWithDraft(
   return {
     threadId,
     agentId,
-    signal,
     threadDraft$,
     threadMeta$,
     ...threadTitle,
@@ -4092,23 +4144,3 @@ function createChatPanelSignalsWithDraft(
     reloadArtifacts$: messages.reloadArtifacts$,
   };
 }
-
-export const createCachedChatPanelSignals$ = command(
-  (
-    { set },
-    chatEvents: ChatEventSignals,
-    agentId: string,
-    signal: AbortSignal,
-  ) => {
-    const { draft, isNew } = set(ensureDraft$, chatEvents.threadId);
-    return {
-      thread: createChatPanelSignalsWithDraft(
-        chatEvents,
-        agentId,
-        draft,
-        signal,
-      ),
-      isNew,
-    };
-  },
-);

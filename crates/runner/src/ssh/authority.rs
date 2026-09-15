@@ -25,8 +25,33 @@ pub(super) struct Credential {
     pub(super) username: String,
     pub(super) generation: i64,
     pub(super) pin: Option<ResolveResponseResolvedLearnedHostKey>,
-    pub(super) private_key: api_contracts::SecretText<65536>,
-    pub(super) passphrase: Option<api_contracts::SecretText<4096>>,
+    pub(super) auth: CredentialAuth,
+    pub(super) transport: Transport,
+}
+
+pub(super) enum Transport {
+    Direct,
+    CloudflareAccess(ResolveResponseResolvedAccessAccess),
+}
+
+impl Transport {
+    pub(super) fn same_authority(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Direct, Self::Direct) => true,
+            (Self::CloudflareAccess(a), Self::CloudflareAccess(b)) => {
+                a.config_id == b.config_id && a.generation == b.generation
+            }
+            _ => false,
+        }
+    }
+}
+
+pub(super) enum CredentialAuth {
+    PrivateKey {
+        private_key: api_contracts::SecretText<65536>,
+        passphrase: Option<api_contracts::SecretText<4096>>,
+    },
+    Password(api_contracts::SecretText<4096>),
 }
 
 pub(super) struct PreparedCredential {
@@ -34,7 +59,13 @@ pub(super) struct PreparedCredential {
     pub(super) port: u16,
     pub(super) username: String,
     pub(super) trust: Mutex<Trust>,
-    pub(super) key: SigningKey,
+    pub(super) auth: PreparedAuth,
+    pub(super) transport: Transport,
+}
+
+pub(super) enum PreparedAuth {
+    PrivateKey(SigningKey),
+    Password(api_contracts::SecretText<4096>),
 }
 
 pub(super) struct Trust {
@@ -161,17 +192,76 @@ impl Authority {
                 &body,
             )
             .await?;
-        let ResolveResponse::Resolved {
-            host,
-            port,
-            username,
-            generation,
-            learned_host_key,
-            private_key,
-            passphrase,
-        } = response
-        else {
-            return Err(FailureReason::Unavailable);
+        let (host, port, username, generation, learned_host_key, auth, transport) = match response {
+            ResolveResponse::Unavailable => return Err(FailureReason::Unavailable),
+            ResolveResponse::ResolvedAccess {
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                authentication,
+                access,
+            } => {
+                super::access::validate(&host, port, &access)?;
+                let auth = match authentication {
+                    ResolveResponseResolvedAccessAuthentication::PrivateKey {
+                        private_key,
+                        passphrase,
+                    } => CredentialAuth::PrivateKey {
+                        private_key,
+                        passphrase,
+                    },
+                    ResolveResponseResolvedAccessAuthentication::Password { password } => {
+                        CredentialAuth::Password(password)
+                    }
+                };
+                (
+                    host,
+                    port,
+                    username,
+                    generation,
+                    learned_host_key,
+                    auth,
+                    Transport::CloudflareAccess(access),
+                )
+            }
+            ResolveResponse::Resolved {
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                private_key,
+                passphrase,
+            } => (
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                CredentialAuth::PrivateKey {
+                    private_key,
+                    passphrase,
+                },
+                Transport::Direct,
+            ),
+            ResolveResponse::ResolvedPassword {
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                password,
+            } => (
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                CredentialAuth::Password(password),
+                Transport::Direct,
+            ),
         };
         let port = u16::try_from(port).map_err(|_| FailureReason::AuthorityFailure)?;
         if port == 0
@@ -192,8 +282,8 @@ impl Authority {
             username,
             generation,
             pin: learned_host_key,
-            private_key,
-            passphrase,
+            auth,
+            transport,
         })
     }
 

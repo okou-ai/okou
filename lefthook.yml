@@ -56,10 +56,6 @@ pre-commit:
             root: crates/
             glob: "crates/**/*.{rs,toml}"
             stage_fixed: true
-          - name: cargo-clippy
-            run: cargo clippy --profile local --all-targets --all-features
-            root: crates/
-            glob: "crates/**/*.{rs,toml}"
           - name: cargo-doc
             run: cargo doc --profile local --workspace --all-features --no-deps
             root: crates/

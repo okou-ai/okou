@@ -98,6 +98,34 @@ describe("GET /api/integrations/slack", () => {
     context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
   });
 
+  async function startStatusOAuth(url: string, orgId: string): Promise<URL> {
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          organization: { id: orgId },
+          role: "org:admin",
+          createdAt: 1,
+        },
+      ],
+    });
+    const entry = new URL(url);
+    const query = Object.fromEntries(entry.searchParams);
+    const client = setupApp({
+      baseUrl: entry.origin,
+      context,
+      routes: slackOauthRoutes,
+    })(slackOauthContract);
+    const response = entry.pathname.endsWith("/install")
+      ? await client.install({ query })
+      : await client.connect({ query });
+    const redirect = await accept(Promise.resolve(response), [307]);
+    const location = redirect.headers.get("location");
+    if (!location) {
+      throw new Error("Expected Slack OAuth authorization redirect");
+    }
+    return new URL(location);
+  }
+
   it("returns 401 when the request is unauthenticated", async () => {
     const client = setupApp({ context, routes: integrationsSlackRoutes })(
       integrationsSlackContract,
@@ -128,7 +156,7 @@ describe("GET /api/integrations/slack", () => {
   it("returns isConnected=false when user has no connection", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    await track(
+    const fixture = await track(
       store.set(seedSlackOrgInstallation$, { orgId }, context.signal),
     );
     mocks.clerk.session(userId, orgId);
@@ -150,8 +178,17 @@ describe("GET /api/integrations/slack", () => {
     expect(`${connectUrl.origin}${connectUrl.pathname}`).toBe(
       "https://api.okou.ai/api/slack/oauth/connect",
     );
-    expect(connectUrl.searchParams.get("orgId")).toBe(orgId);
-    expect(connectUrl.searchParams.get("userId")).toBe(userId);
+    const authorizationUrl = await startStatusOAuth(
+      connectUrl.toString(),
+      orgId,
+    );
+    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
+      "https://slack.com/oauth/v2/authorize",
+    );
+    expect(authorizationUrl.searchParams.get("team")).toBe(
+      fixture.slackWorkspaceId,
+    );
+    expect(authorizationUrl.searchParams.has("user_scope")).toBeTruthy();
   });
 
   it("returns Okou install URLs on the API origin when Slack is not installed", async () => {
@@ -175,8 +212,15 @@ describe("GET /api/integrations/slack", () => {
     expect(`${installUrl.origin}${installUrl.pathname}`).toBe(
       "https://api.okou.ai/api/slack/oauth/install",
     );
-    expect(installUrl.searchParams.get("orgId")).toBe(orgId);
-    expect(installUrl.searchParams.get("userId")).toBe(userId);
+    const authorizationUrl = await startStatusOAuth(
+      installUrl.toString(),
+      orgId,
+    );
+    expect(`${authorizationUrl.origin}${authorizationUrl.pathname}`).toBe(
+      "https://slack.com/oauth/v2/authorize",
+    );
+    expect(authorizationUrl.searchParams.has("scope")).toBeTruthy();
+    expect(authorizationUrl.searchParams.has("user_scope")).toBeTruthy();
   });
 
   it("returns Okou install URLs on the Okou API origin", async () => {
@@ -469,7 +513,15 @@ describe("GET /api/integrations/slack", () => {
     expect(`${reinstallUrl.origin}${reinstallUrl.pathname}`).toBe(
       "https://api.okou.ai/api/slack/oauth/install",
     );
-    expect(reinstallUrl.searchParams.get("reinstall")).toBe("1");
+    const authorizationUrl = await startStatusOAuth(
+      reinstallUrl.toString(),
+      orgId,
+    );
+    expect(authorizationUrl.searchParams.get("team")).toBe(
+      fixture.slackWorkspaceId,
+    );
+    expect(authorizationUrl.searchParams.has("scope")).toBeTruthy();
+    expect(authorizationUrl.searchParams.has("user_scope")).toBeTruthy();
   });
 
   it("returns Okou reinstall URLs on the Okou API origin", async () => {
@@ -504,7 +556,13 @@ describe("GET /api/integrations/slack", () => {
     expect(`${reinstallUrl.origin}${reinstallUrl.pathname}`).toBe(
       "https://api.okou.ai/api/slack/oauth/install",
     );
-    expect(reinstallUrl.searchParams.get("reinstall")).toBe("1");
+    const authorizationUrl = await startStatusOAuth(
+      reinstallUrl.toString(),
+      orgId,
+    );
+    expect(authorizationUrl.searchParams.get("team")).toBe(slackWorkspaceId);
+    expect(authorizationUrl.searchParams.has("scope")).toBeTruthy();
+    expect(authorizationUrl.searchParams.has("user_scope")).toBeTruthy();
   });
 
   it("treats null bot_scopes as mismatch (requires reinstall)", async () => {
@@ -573,7 +631,7 @@ describe("GET /api/integrations/slack", () => {
   it("returns scopeMismatch for admin when user is not connected", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    await track(
+    const fixture = await track(
       store.set(
         seedSlackOrgInstallation$,
         { orgId, botScopes: JSON.stringify(["chat:write"]) },
@@ -595,6 +653,15 @@ describe("GET /api/integrations/slack", () => {
 
     expect(response.body.isConnected).toBeFalsy();
     expect(response.body.scopeMismatch).toBeTruthy();
-    expect(response.body.reinstallUrl).toContain("reinstall=1");
+    expect(response.body.reinstallUrl).not.toBeNull();
+    const authorizationUrl = await startStatusOAuth(
+      response.body.reinstallUrl!,
+      orgId,
+    );
+    expect(authorizationUrl.searchParams.get("team")).toBe(
+      fixture.slackWorkspaceId,
+    );
+    expect(authorizationUrl.searchParams.has("scope")).toBeTruthy();
+    expect(authorizationUrl.searchParams.has("user_scope")).toBeTruthy();
   });
 });

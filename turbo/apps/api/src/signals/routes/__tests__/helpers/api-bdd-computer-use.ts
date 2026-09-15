@@ -237,7 +237,7 @@ function hostRuntimeBody(options: ComputerUseHostStartOptions = {}) {
     ...(options.installationId
       ? { installationId: options.installationId }
       : {}),
-    hostName: options.hostName ?? "Zero Desktop",
+    hostName: options.hostName ?? "BDD Desktop",
     appVersion: "0.1.0",
     osVersion: "macOS 15",
     supportedCapabilities: [

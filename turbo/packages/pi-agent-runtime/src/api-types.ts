@@ -1,54 +1,17 @@
 import type { PiAgentModelConfig } from "./types";
 import type { PiApiModelFailureDiagnostic } from "./api-failure";
 import type { PiApiFirstTurnOwnership } from "./provider-ownership";
+import type { PiPreparationObserver } from "./preparation-timing";
 import type { PiMemoryCitation } from "@okouai/api-contracts/contracts/pi-memory-citations";
+import type { PiResourceSnapshot } from "@okouai/api-contracts/contracts/runners";
 
-export interface PiPreheatedAgentsFile {
-  readonly path: string;
-  readonly content: string;
-}
-
-export interface PiPreheatedSkill {
-  readonly name: string;
-  readonly description: string;
-  readonly filePath: string;
-  readonly baseDir: string;
-  readonly scope: "user" | "project" | "temporary";
-  readonly disableModelInvocation: boolean;
-}
-
-export type PiMemoryRecallSelection =
-  | {
-      readonly status: "no-content";
-      readonly memoryStorageId: string;
-      readonly storageVersionId: string;
-    }
-  | {
-      readonly status: "ready";
-      readonly memoryStorageId: string;
-      readonly storageVersionId: string;
-      readonly content: string;
-      readonly sourceHash: string;
-      readonly sourceSize: number;
-      readonly tokenCount: number;
-    };
-
-export interface PiPreheatedResourceSnapshotV1 {
-  readonly schemaVersion: 1;
-  readonly agentsFiles: readonly PiPreheatedAgentsFile[];
-  readonly skills: readonly PiPreheatedSkill[];
-}
-
-export interface PiPreheatedResourceSnapshotV2 {
-  readonly schemaVersion: 2;
-  readonly agentsFiles: readonly PiPreheatedAgentsFile[];
-  readonly skills: readonly PiPreheatedSkill[];
-  readonly memoryRecall: PiMemoryRecallSelection;
-}
-
-export type PiPreheatedResourceSnapshot =
-  | PiPreheatedResourceSnapshotV1
-  | PiPreheatedResourceSnapshotV2;
+export type PiMemoryRecallSelection = Extract<
+  PiResourceSnapshot,
+  { readonly schemaVersion: 2 }
+>["memoryRecall"];
+export type PiPreheatedAgentsFile = PiResourceSnapshot["agentsFiles"][number];
+export type PiPreheatedSkill = PiResourceSnapshot["skills"][number];
+export type PiPreheatedResourceSnapshot = PiResourceSnapshot;
 
 export type PiMemoryRecallOutcomeStatus = "hit" | "miss" | "invalid" | "stale";
 
@@ -77,7 +40,6 @@ export interface PiMemoryRecallOutcome {
     | "size-mismatch"
     | "symlink"
     | "token-mismatch"
-    | "token-overflow"
     | "v1";
   readonly memoryStorageId?: string;
   readonly storageVersionId?: string;
@@ -123,6 +85,16 @@ export interface PiMemoryToolSourceUse {
 export interface PiApiAssistantTextContent {
   readonly type: "text";
   readonly text: string;
+  readonly runEventId?: string;
+}
+
+export interface PiApiTextStream {
+  readonly eventIdPrefix: string;
+  readonly onDelta: (chunk: {
+    readonly runEventId: string;
+    readonly chunkIndex: number;
+    readonly delta: string;
+  }) => void;
 }
 
 export interface PiApiAssistantToolCallContent {
@@ -183,6 +155,7 @@ export type PiApiAssistantMessage = PiApiAssistantMessageFields &
 export type PiObservedServiceTier = string | null | undefined;
 
 export interface PiApiFirstTurnArgs {
+  readonly textStream?: PiApiTextStream;
   readonly cwd: string;
   readonly agentDir: string;
   readonly sessionId: string;
@@ -193,6 +166,7 @@ export interface PiApiFirstTurnArgs {
   readonly resourceSnapshot: PiPreheatedResourceSnapshot;
   readonly ownership: PiApiFirstTurnOwnership;
   readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
+  readonly onPreparationTiming?: PiPreparationObserver;
   /**
    * Optional durable gate run immediately before the provider transport.
    * The gate must invoke the marker while it owns its commit boundary.
@@ -200,6 +174,26 @@ export interface PiApiFirstTurnArgs {
   readonly providerRequestBoundary?: (
     markProviderRequestMayHaveStarted: () => void,
   ) => Promise<void>;
+}
+
+/** Preparation has no provider ownership or durable publication authority. */
+export type PiApiTurnPreparationArgs = Omit<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary" | "textStream"
+>;
+
+export type PiApiTurnExecutionArgs = Pick<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary" | "textStream"
+>;
+
+/** A private, single-use session; never serialize or cache across attempts. */
+export interface PreparedPiApiTurn {
+  readonly execute: (
+    args: PiApiTurnExecutionArgs,
+    signal?: AbortSignal,
+  ) => Promise<PiApiFirstTurnResult>;
+  readonly dispose: () => void;
 }
 
 export interface PiApiFirstTurnResult {

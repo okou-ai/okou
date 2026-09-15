@@ -1,3 +1,4 @@
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
@@ -29,10 +30,7 @@ import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
 } from "./internal-run-callback";
-import {
-  PI_MEMORY_PHASE2_RETRY_DELAY_MS,
-  piMemoryPhase2SelectionDigest,
-} from "./pi-memory-phase2-job.service";
+import { PI_MEMORY_PHASE2_RETRY_DELAY_MS } from "./pi-memory-phase2-job.service";
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 

@@ -254,7 +254,7 @@ import {
   automationKindLabel,
   workflowTitle,
 } from "./workflow-shared.tsx";
-import { WorkflowHoverContent } from "./workflows-page.tsx";
+import { WorkflowTooltip } from "./workflows-page.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
@@ -1125,28 +1125,14 @@ function DetailHeader({
             <div className="flex min-w-0 items-center gap-3">
               <WorkflowHeaderIcon automation={detail.automations[0]} />
               <div className="flex min-w-0 flex-col justify-center">
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <h1 className="w-fit max-w-full cursor-help truncate text-lg font-semibold tracking-tight text-foreground underline decoration-foreground/40 decoration-dotted decoration-[1px] underline-offset-2 sm:text-xl">
-                        {workflowTitle(detail)}
-                      </h1>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      align="start"
-                      className="rounded-lg border border-[hsl(var(--gray-400))] p-3"
-                      style={{
-                        backgroundColor: "hsl(var(--card))",
-                        color: "hsl(var(--card-foreground))",
-                        boxShadow:
-                          "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                      }}
-                    >
-                      <WorkflowHoverContent workflow={detail} />
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <WorkflowTooltip workflow={detail}>
+                  <h1
+                    tabIndex={0}
+                    className="w-fit max-w-full cursor-help truncate text-lg font-semibold tracking-tight text-foreground underline decoration-foreground/40 decoration-dotted decoration-[1px] underline-offset-2 sm:text-xl"
+                  >
+                    {workflowTitle(detail)}
+                  </h1>
+                </WorkflowTooltip>
                 <p className="mt-1.5 max-w-full truncate text-sm text-muted-foreground">
                   /{detail.name}
                 </p>
@@ -1287,11 +1273,11 @@ function WorkflowChatButton({
 
   return (
     <Button
-      variant="outline"
+      variant="neutral"
       size="sm"
       type="button"
       aria-label={chatLabel}
-      className="okou-btn-morandi max-w-[220px] shrink-0 gap-1.5"
+      className="max-w-[220px] shrink-0 gap-1.5"
       disabled={opening}
       onClick={() => {
         detach(
@@ -1417,9 +1403,9 @@ function WorkflowInfoTab({
           >
             <Button
               type="button"
-              variant="outline"
+              variant="neutral"
               size="sm"
-              className="okou-btn-morandi h-9 gap-2 rounded-lg"
+              className="h-9 gap-2 rounded-lg"
               onClick={() => {
                 setActionDialog("copy");
               }}
@@ -1563,9 +1549,9 @@ function OfficialWorkflowReconfigureCard({
         >
           <Button
             type="button"
-            variant="outline"
+            variant="neutral"
             size="sm"
-            className="okou-btn-morandi h-9 rounded-lg"
+            className="h-9 rounded-lg"
             disabled={!definition || loading}
             onClick={() => {
               if (!definition) {
@@ -4538,9 +4524,10 @@ function AutomationCreateMenu({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button
+        <Button
           type="button"
-          className="okou-btn-morandi inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium"
+          variant="neutral"
+          className="shrink-0 gap-1.5 px-3 hover:bg-control-surface active:bg-control-surface [&_svg]:size-3.5"
         >
           <Plus size={14} />
           <span>
@@ -4548,7 +4535,7 @@ function AutomationCreateMenu({
               return $.workflows.automations.common.addAutomation;
             })}
           </span>
-        </button>
+        </Button>
       </DialogTrigger>
       <DialogContent smMaxWidth={880}>
         <DialogHeader>
@@ -6749,8 +6736,8 @@ function signedWebhookCurlExample(
     `SIGNATURE=$(printf "%s.%s" "$TIMESTAMP" "$BODY" | openssl dgst -sha256 -hmac "${secret}" -hex | awk '{print $2}')`,
     `curl -X POST "${webhookUrl}" \\`,
     '  -H "Content-Type: application/json" \\',
-    '  -H "X-VM0-Timestamp: $TIMESTAMP" \\',
-    '  -H "X-VM0-Signature: $SIGNATURE" \\',
+    '  -H "X-Okou-Timestamp: $TIMESTAMP" \\',
+    '  -H "X-Okou-Signature: $SIGNATURE" \\',
     '  --data "$BODY"',
   ].join("\n");
 }
@@ -9026,7 +9013,7 @@ function AutomationControls({
   return (
     <div className="flex min-w-0 items-center justify-end pr-1.5">
       <TooltipProvider delayDuration={200}>
-        <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
+        <div className="flex items-center justify-end gap-1 opacity-100 pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

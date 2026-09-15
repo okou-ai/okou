@@ -15,7 +15,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
-import { bench } from "vitest";
+import { test } from "vitest";
 import {
   chatThreadByIdContract,
   type UserMessageDocument,
@@ -57,6 +57,7 @@ import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { orgReadRoutes } from "../org-read";
 import { userPreferencesRoutes } from "../user-preferences";
+import { ensureOrgMetadataPlanEntitlement } from "../../services/org-plan-entitlements.service";
 
 const personalModelProvidersMainTestRoutes = Object.freeze([
   ...meModelProvidersListRoutes,
@@ -68,10 +69,8 @@ const personalModelProvidersMainTestRoutes = Object.freeze([
 // GET requests during benchmark iterations, so samples do not mutate state or
 // require resetting the database between cases.
 //
-// Fixture seeding runs lazily inside the first bench iteration (not in
-// `beforeAll`) because vitest 4 does not bridge `beforeAll` into bench mode:
-// iterations would otherwise see an unseeded DB, error silently in
-// tinybench, and produce empty samples without failing the suite.
+// Fixture seeding runs lazily during the first measurement and is reused by
+// all six measurements within the same test lifecycle.
 //
 // The fixture bulks up agent_runs / chat_events and the
 // user-visible GET data sets well past planner cross-over so Postgres uses the
@@ -640,14 +639,25 @@ async function seedSideEffectFreeGetData(
     context.signal,
   );
 
-  await db.insert(orgMetadataCanonicalWrites).values({
-    orgId: fixture.orgId,
-    credits: 125_000,
-    tier: "pro",
-    stripeCustomerId: `cus_${randomUUID()}`,
-    stripeSubscriptionId: `sub_${randomUUID()}`,
-    subscriptionStatus: "active",
-    currentPeriodEnd: new Date("2099-01-01T00:00:00.000Z"),
+  await db.transaction(async (tx) => {
+    const metadataRows = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({
+        orgId: fixture.orgId,
+        credits: 125_000,
+        tier: "pro",
+        stripeCustomerId: `cus_${randomUUID()}`,
+        stripeSubscriptionId: `sub_${randomUUID()}`,
+        subscriptionStatus: "active",
+        currentPeriodEnd: new Date("2099-01-01T00:00:00.000Z"),
+      })
+      .returning({
+        orgId: orgMetadataCanonicalWrites.orgId,
+        tier: orgMetadataCanonicalWrites.tier,
+      });
+    for (const metadata of metadataRows) {
+      await ensureOrgMetadataPlanEntitlement(tx, metadata);
+    }
   });
   await db.insert(creditExpiresRecord).values({
     orgId: fixture.orgId,
@@ -808,10 +818,12 @@ const ensureSeeded: () => Promise<BenchChatThreadFixture> = (() => {
 const benchOptions = { time: 5000, warmupIterations: 5, throws: true } as const;
 const authHeaders = { authorization: "Bearer clerk-session" } as const;
 
-describe("bench side-effect-free GET API routes", () => {
-  bench(
-    "GET /api/chat-threads/:id",
-    async () => {
+// Six five-second measurements share one test-owned fixture and mock lifetime.
+test(
+  "bench side-effect-free GET API routes",
+  { timeout: 120_000 },
+  async ({ bench }) => {
+    await bench("GET /api/chat-threads/:id", async () => {
       const fixture = await ensureSeeded();
       const response = await chatThreadClient.get({
         params: { id: fixture.threadId },
@@ -820,25 +832,17 @@ describe("bench side-effect-free GET API routes", () => {
       if (response.status !== 200) {
         throw new Error(`unexpected status ${String(response.status)}`);
       }
-    },
-    benchOptions,
-  );
+    }).run(benchOptions);
 
-  bench(
-    "GET /api/connectors",
-    async () => {
+    await bench("GET /api/connectors", async () => {
       await ensureSeeded();
       const response = await connectorsClient.list({ headers: authHeaders });
       if (response.status !== 200) {
         throw new Error(`unexpected status ${String(response.status)}`);
       }
-    },
-    benchOptions,
-  );
+    }).run(benchOptions);
 
-  bench(
-    "GET /api/user-preferences",
-    async () => {
+    await bench("GET /api/user-preferences", async () => {
       await ensureSeeded();
       const response = await userPreferencesClient.get({
         headers: authHeaders,
@@ -846,37 +850,25 @@ describe("bench side-effect-free GET API routes", () => {
       if (response.status !== 200) {
         throw new Error(`unexpected status ${String(response.status)}`);
       }
-    },
-    benchOptions,
-  );
+    }).run(benchOptions);
 
-  bench(
-    "GET /api/billing/status",
-    async () => {
+    await bench("GET /api/billing/status", async () => {
       await ensureSeeded();
       const response = await billingStatusClient.get({ headers: authHeaders });
       if (response.status !== 200) {
         throw new Error(`unexpected status ${String(response.status)}`);
       }
-    },
-    benchOptions,
-  );
+    }).run(benchOptions);
 
-  bench(
-    "GET /api/org",
-    async () => {
+    await bench("GET /api/org", async () => {
       await ensureSeeded();
       const response = await orgClient.get({ headers: authHeaders });
       if (response.status !== 200) {
         throw new Error(`unexpected status ${String(response.status)}`);
       }
-    },
-    benchOptions,
-  );
+    }).run(benchOptions);
 
-  bench(
-    "GET /api/me/model-providers",
-    async () => {
+    await bench("GET /api/me/model-providers", async () => {
       await ensureSeeded();
       const response = await personalModelProvidersClient.list({
         headers: authHeaders,
@@ -884,7 +876,6 @@ describe("bench side-effect-free GET API routes", () => {
       if (response.status !== 200) {
         throw new Error(`unexpected status ${String(response.status)}`);
       }
-    },
-    benchOptions,
-  );
-});
+    }).run(benchOptions);
+  },
+);

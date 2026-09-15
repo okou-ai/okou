@@ -41,13 +41,6 @@ const desktopAuthApi: DesktopAuthApi = {
 };
 
 const desktopComputerUseApi: DesktopComputerUseApi = {
-  setExperimentalCuaEnabled: (enabled) =>
-    ipcRenderer.invoke(
-      COMPUTER_USE_CHANNELS.setExperimentalCuaEnabled,
-      enabled,
-    ),
-  selectDriver: (driver) =>
-    ipcRenderer.invoke(COMPUTER_USE_CHANNELS.selectDriver, driver),
   getState(): Promise<DesktopComputerUseState> {
     return ipcRenderer.invoke(COMPUTER_USE_CHANNELS.getState);
   },
@@ -229,10 +222,13 @@ const desktopIdentity = ipcRenderer.sendSync(
 ) as DesktopIdentityInfo;
 
 contextBridge.exposeInMainWorld("vm0DesktopAuth", desktopAuthApi);
-contextBridge.exposeInMainWorld("vm0DesktopComputerUse", desktopComputerUseApi);
 contextBridge.exposeInMainWorld(
-  "vm0DesktopDeveloperTools",
+  "okouDesktopComputerUse",
+  desktopComputerUseApi,
+);
+contextBridge.exposeInMainWorld(
+  "okouDesktopDeveloperTools",
   desktopDeveloperToolsApi,
 );
-contextBridge.exposeInMainWorld("vm0DesktopIdentity", desktopIdentity);
-contextBridge.exposeInMainWorld("vm0DesktopRecorder", desktopRecorderApi);
+contextBridge.exposeInMainWorld("okouDesktopIdentity", desktopIdentity);
+contextBridge.exposeInMainWorld("okouDesktopRecorder", desktopRecorderApi);

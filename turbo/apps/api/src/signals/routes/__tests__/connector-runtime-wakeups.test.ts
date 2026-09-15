@@ -290,7 +290,6 @@ describe("connector runtime wakeups", () => {
     let active = 0;
     let peak = 0;
     let calls = 0;
-    let failedWakeups = 0;
     context.mocks.ably.batchPublish.mockImplementation(async (spec) => {
       calls += 1;
       const reject = calls === 1;
@@ -302,7 +301,6 @@ describe("connector runtime wakeups", () => {
       await release.promise;
       active -= 1;
       if (reject) {
-        failedWakeups = spec.messages.length;
         throw new Error("Rejected atomic batch");
       }
       return acceptedBatch(spec);
@@ -341,16 +339,6 @@ describe("connector runtime wakeups", () => {
           });
         }),
       ),
-    );
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "Failed to publish connector runtime sync wakeups",
-      ),
-      expect.objectContaining({
-        failedWakeupCount: failedWakeups,
-        failedBatchCount: 1,
-        batchCount: calls,
-      }),
     );
     await expect(
       connectors.readAgentCustomConnectors(actor, agentId),
@@ -466,24 +454,6 @@ describe("connector runtime wakeups", () => {
       await expect(
         connectors.readAgentCustomConnectors(actor, agentId),
       ).resolves.toStrictEqual([custom.id]);
-      if (outcome === "accepted") {
-        expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalledWith(
-          expect.stringContaining(
-            "Failed to publish connector runtime sync wakeups",
-          ),
-          expect.anything(),
-        );
-      } else {
-        expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-          expect.stringContaining(
-            "Failed to publish connector runtime sync wakeups",
-          ),
-          expect.objectContaining({
-            failedBatchCount: 1,
-            failedWakeupCount: 1,
-          }),
-        );
-      }
     },
   );
 });

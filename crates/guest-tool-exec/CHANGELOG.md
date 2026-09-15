@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.66](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.65...guest-tool-exec-v0.1.66) (2026-09-15)
+
+## [0.1.65](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.64...guest-tool-exec-v0.1.65) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** prefer managed tools as oom victims ([#34237](https://github.com/vm0-ai/vm0/issues/34237)) ([7872a2a](https://github.com/vm0-ai/vm0/commit/7872a2afb7ed5779ec62823d45808ab65bf762f8))
+
+## [0.1.64](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.63...guest-tool-exec-v0.1.64) (2026-09-15)
+
+## [0.1.63](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.62...guest-tool-exec-v0.1.63) (2026-09-14)
+
+## [0.1.62](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.61...guest-tool-exec-v0.1.62) (2026-09-11)
+
 ## [0.1.61](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.60...guest-tool-exec-v0.1.61) (2026-09-11)
 
 ## [0.1.60](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.59...guest-tool-exec-v0.1.60) (2026-09-10)

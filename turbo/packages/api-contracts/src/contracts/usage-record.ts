@@ -46,15 +46,12 @@ export type UsageRecordKind = z.infer<typeof usageRecordKindSchema>;
 const usageRecordProviderBreakdownSchema = z.object({
   provider: z.string(),
   credits: z.number(),
-  // Optional while app and API promotions can serve different versions.
-  usageKinds: z
-    .array(
-      z.object({
-        kind: z.string(),
-        credits: z.number(),
-      }),
-    )
-    .optional(),
+  usageKinds: z.array(
+    z.object({
+      kind: z.string(),
+      credits: z.number(),
+    }),
+  ),
 });
 
 const usageRecordKindBreakdownSchema = z.object({

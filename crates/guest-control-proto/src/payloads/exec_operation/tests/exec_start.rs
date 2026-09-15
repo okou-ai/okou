@@ -32,6 +32,48 @@ const EXEC_CONTROL_POLICIES: [ExecControlPolicy; 3] = [
     },
 ];
 
+#[test]
+fn exec_process_diagnostic_labels_preserve_role_lifecycle_matrix() {
+    for (role, process_class, one_shot_kind, supervised_kind) in [
+        (
+            ExecProcessRole::Workload,
+            "contained_workload",
+            "exec",
+            "start_process",
+        ),
+        (
+            ExecProcessRole::Agent,
+            "controlled_agent",
+            "invalid",
+            "start_agent_process",
+        ),
+        (
+            ExecProcessRole::SessionHistoryIdentityVerifier,
+            "session_history_identity_verifier",
+            "verify_session_history_identity",
+            "invalid",
+        ),
+        (
+            ExecProcessRole::CodexSessionCleanup,
+            "codex_session_cleanup",
+            "cleanup_codex_session",
+            "invalid",
+        ),
+    ] {
+        assert_eq!(role.process_class(), process_class, "role={role:?}");
+        for (lifecycle, operation_kind) in [
+            (ExecLifecyclePolicy::OneShot, one_shot_kind),
+            (ExecLifecyclePolicy::Supervised, supervised_kind),
+        ] {
+            assert_eq!(
+                role.operation_kind(lifecycle),
+                operation_kind,
+                "role={role:?}, lifecycle={lifecycle:?}"
+            );
+        }
+    }
+}
+
 fn exec_start_payload(command: &str, env: &[(&str, &str)], label: &str) -> Vec<u8> {
     encode_exec_start(
         1,

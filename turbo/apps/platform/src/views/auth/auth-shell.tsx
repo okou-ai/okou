@@ -83,7 +83,7 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
             { brandName: authBrand.brandName },
           )}
           className={cn(
-            "absolute flex items-center gap-2 transition-opacity hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
+            "absolute flex items-center gap-2 hover:opacity-75 focus-visible:opacity-75 focus-visible:outline-none",
             "left-6 top-6",
           )}
         >

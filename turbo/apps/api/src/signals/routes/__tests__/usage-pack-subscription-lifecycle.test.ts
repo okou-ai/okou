@@ -432,111 +432,120 @@ describe("usage pack subscription Stripe lifecycle", () => {
     );
   });
 
-  it("waits for invoice.paid, grants member buckets once, and renews while the switch is off", async () => {
-    const userId = `user_${randomUUID()}`;
-    const invitationId = `inv_${randomUUID()}`;
-    const fixture = await seedUsagePackLifecycle([
-      { userId, usagePackUsd: 20 },
-      { invitationId, usagePackUsd: 20 },
-    ]);
-    const quantities = new Map([[TEST_PRICE_PACK_20, 2]]);
-    let paidPeriod = period(0);
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      stripeSubscription(fixture, paidPeriod, quantities),
-    );
-
-    await postStripeEvent(
-      stripeEvent("checkout.session.completed", {
-        id: fixture.checkoutSessionId,
-        customer: fixture.customerId,
-        subscription: fixture.subscriptionId,
-        metadata: usagePackMetadata(fixture),
-      }),
-      200,
-    );
-    await postStripeEvent(
-      stripeEvent(
-        "customer.subscription.created",
+  it.each(["initial payment", "renewal"] as const)(
+    "grants usage pack buckets once for %s while the switch is off",
+    async (phase) => {
+      const userId = `user_${randomUUID()}`;
+      const invitationId = `inv_${randomUUID()}`;
+      const fixture = await seedUsagePackLifecycle([
+        { userId, usagePackUsd: 20 },
+        { invitationId, usagePackUsd: 20 },
+      ]);
+      const quantities = new Map([[TEST_PRICE_PACK_20, 2]]);
+      let paidPeriod = period(0);
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
         stripeSubscription(fixture, paidPeriod, quantities),
-      ),
-      200,
-    );
+      );
 
-    await expect(grantRows(fixture)).resolves.toHaveLength(0);
-    const beforePayment = (await readUsagePackState(fixture)).org;
-    expect(beforePayment).toStrictEqual(
-      expect.objectContaining({
-        tier: "limited-free-1",
-        stripeSubscriptionId: fixture.subscriptionId,
-      }),
-    );
-
-    const firstInvoiceId = `in_${randomUUID()}`;
-    const firstInvoice = paidInvoice(fixture, {
-      invoiceId: firstInvoiceId,
-      paidPeriod,
-      quantities,
-    });
-    await postStripeEvent(stripeEvent("invoice.paid", firstInvoice), 200);
-    await postStripeEvent(stripeEvent("invoice.paid", firstInvoice), 200);
-
-    await expect(grantRows(fixture)).resolves.toStrictEqual([
-      {
-        userId,
-        grantType: "bonus",
-        originalAmount: 400,
-        expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
-      },
-      {
-        userId,
-        grantType: "purchased",
-        originalAmount: 20_000,
-        expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
-      },
-    ]);
-    const allocationRows = (await readUsagePackState(fixture)).allocations;
-    expect(allocationRows).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          userId,
-          invitationId: null,
-          status: "active",
+      await postStripeEvent(
+        stripeEvent("checkout.session.completed", {
+          id: fixture.checkoutSessionId,
+          customer: fixture.customerId,
+          subscription: fixture.subscriptionId,
+          metadata: usagePackMetadata(fixture),
         }),
-        expect.objectContaining({
-          userId: null,
-          invitationId,
-          status: "pending_invitation",
-        }),
-      ]),
-    );
-    const activatedOrg = (await readUsagePackState(fixture)).org;
-    expect(activatedOrg).toStrictEqual(
-      expect.objectContaining({ tier: "pro", credits: 0 }),
-    );
+        200,
+      );
+      await postStripeEvent(
+        stripeEvent(
+          "customer.subscription.created",
+          stripeSubscription(fixture, paidPeriod, quantities),
+        ),
+        200,
+      );
 
-    paidPeriod = period(30);
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      stripeSubscription(fixture, paidPeriod, quantities),
-    );
-    const renewalInvoice = paidInvoice(fixture, {
-      invoiceId: `in_${randomUUID()}`,
-      paidPeriod,
-      quantities,
-    });
-    await postStripeEvent(stripeEvent("invoice.paid", renewalInvoice), 200);
-    await expect(grantRows(fixture)).resolves.toHaveLength(4);
-    const renewalGrantRows = await grantRows(fixture);
-    expect(
-      renewalGrantRows.filter((grant) => {
-        return (
-          grant.expiresAt === new Date(paidPeriod.end * 1000).toISOString()
+      if (phase === "initial payment") {
+        await expect(grantRows(fixture)).resolves.toHaveLength(0);
+        const beforePayment = (await readUsagePackState(fixture)).org;
+        expect(beforePayment).toStrictEqual(
+          expect.objectContaining({
+            tier: "limited-free-1",
+            stripeSubscriptionId: fixture.subscriptionId,
+          }),
         );
-      }),
-    ).toHaveLength(2);
-    expect(
-      (await readUsagePackState(fixture)).fulfillmentInvoiceIds,
-    ).toHaveLength(2);
-  });
+      }
+
+      const firstInvoiceId = `in_${randomUUID()}`;
+      const firstInvoice = paidInvoice(fixture, {
+        invoiceId: firstInvoiceId,
+        paidPeriod,
+        quantities,
+      });
+      await postStripeEvent(stripeEvent("invoice.paid", firstInvoice), 200);
+      if (phase === "initial payment") {
+        await postStripeEvent(stripeEvent("invoice.paid", firstInvoice), 200);
+
+        await expect(grantRows(fixture)).resolves.toStrictEqual([
+          {
+            userId,
+            grantType: "bonus",
+            originalAmount: 400,
+            expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+          },
+          {
+            userId,
+            grantType: "purchased",
+            originalAmount: 20_000,
+            expiresAt: new Date(paidPeriod.end * 1000).toISOString(),
+          },
+        ]);
+        const allocationRows = (await readUsagePackState(fixture)).allocations;
+        expect(allocationRows).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              userId,
+              invitationId: null,
+              status: "active",
+            }),
+            expect.objectContaining({
+              userId: null,
+              invitationId,
+              status: "pending_invitation",
+            }),
+          ]),
+        );
+        const activatedOrg = (await readUsagePackState(fixture)).org;
+        expect(activatedOrg).toStrictEqual(
+          expect.objectContaining({ tier: "pro", credits: 0 }),
+        );
+
+        return;
+      }
+
+      paidPeriod = period(30);
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        stripeSubscription(fixture, paidPeriod, quantities),
+      );
+      const renewalInvoice = paidInvoice(fixture, {
+        invoiceId: `in_${randomUUID()}`,
+        paidPeriod,
+        quantities,
+      });
+      await postStripeEvent(stripeEvent("invoice.paid", renewalInvoice), 200);
+      await expect(grantRows(fixture)).resolves.toHaveLength(4);
+      const renewalGrantRows = await grantRows(fixture);
+      expect(
+        renewalGrantRows.filter((grant) => {
+          return (
+            grant.expiresAt === new Date(paidPeriod.end * 1000).toISOString()
+          );
+        }),
+      ).toHaveLength(2);
+      expect(
+        (await readUsagePackState(fixture)).fulfillmentInvoiceIds,
+      ).toHaveLength(2);
+    },
+  );
 
   it("floors prorated purchased and bonus grants independently", async () => {
     const userId = `user_${randomUUID()}`;

@@ -189,7 +189,7 @@
   /* ===================================
    * Icon System
    * =================================== */
-  --icon-stroke-width: 1.5;
+  --stroke-width-icon: 1.5;
 
   /* Running indicator — the breathing dot's two animated layers. The keyframes
      animate `transform`, so consumers must set `transform` rather than the
@@ -234,6 +234,11 @@
     var(--state-layer) / var(--state-selected-hover-alpha)
   );
   --color-state-pressed: hsl(var(--state-layer) / var(--state-pressed-alpha));
+  /* Pressed counterpart of the hover overlay, for the same opaque fills. */
+  --background-image-state-pressed-overlay: linear-gradient(
+    var(--color-state-pressed),
+    var(--color-state-pressed)
+  );
 
   --color-background-hover: color-mix(
     in srgb,
@@ -669,7 +674,7 @@
    * that default while preserving explicit strokeWidth props; intentional
    * 2px call sites opt out with data-stroke. */
   svg[class*="lucide"][stroke-width="2"]:not([data-stroke]) {
-    stroke-width: var(--icon-stroke-width);
+    stroke-width: var(--stroke-width-icon);
   }
 
   /* More icons are dots, not hollow rings. */

@@ -28,6 +28,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -85,6 +86,7 @@ function activeProBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "pro",
+    ...billingPlanCapabilities("pro"),
     credits: 25_000,
     onboardingPaymentPending: false,
     subscriptionStatus: "active",
@@ -121,6 +123,7 @@ function activeTeamBillingStatus(): BillingStatusResponse {
   return {
     ...activeProBillingStatus(),
     tier: "team",
+    ...billingPlanCapabilities("team"),
     credits: 130_000,
     currentPeriodEnd: "2026-05-01T00:00:00Z",
     concurrencyLimit: 10,
@@ -144,6 +147,7 @@ function activeCustomBillingStatus(): BillingStatusResponse {
   return {
     ...activeProBillingStatus(),
     tier: "custom",
+    ...billingPlanCapabilities("custom"),
     credits: 0,
     subscriptionStatus: null,
     currentPeriodEnd: null,
@@ -157,6 +161,7 @@ function noActiveBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "pro-suspend",
+    ...billingPlanCapabilities("pro-suspend"),
     credits: 0,
     onboardingPaymentPending: false,
     subscriptionStatus: null,
@@ -176,9 +181,9 @@ function noActiveBillingStatus(): BillingStatusResponse {
   };
 }
 
-function usagePackCatalogResponse(supportsFreeMembers?: boolean) {
+function usagePackCatalogResponse() {
   return {
-    ...(supportsFreeMembers === undefined ? {} : { supportsFreeMembers }),
+    supportsFreeMembers: true as const,
     usagePacks: [
       {
         usagePackUsd: 20 as const,
@@ -332,7 +337,7 @@ async function waitForAnimationFrame(): Promise<void> {
   await frame.promise;
 }
 
-function mockInitialUsagePackPurchase(supportsFreeMembers?: boolean): void {
+function mockInitialUsagePackPurchase(): void {
   context.mocks.data.org({
     id: "org_1",
     name: "Usage Pack Org",
@@ -342,7 +347,7 @@ function mockInitialUsagePackPurchase(supportsFreeMembers?: boolean): void {
     return respond(200, noActiveBillingStatus());
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, usagePackCatalogResponse(supportsFreeMembers));
+    return respond(200, usagePackCatalogResponse());
   });
   context.mocks.data.orgMembers({
     name: "Usage Pack Org",
@@ -380,14 +385,16 @@ function mockInitialUsagePackPurchase(supportsFreeMembers?: boolean): void {
   });
 }
 
-async function openUsagePackPlanSelection(): Promise<{
+async function openUsagePackPlanSelection(
+  path = "/?settings=billing",
+): Promise<{
   choosePlanHeading: HTMLElement;
   proPlan: HTMLElement;
   teamPlan: HTMLElement;
 }> {
   await setupPage({
     context,
-    path: "/?settings=billing",
+    path,
     auth: {
       user: {
         id: "user_1",
@@ -441,8 +448,8 @@ async function selectMemberUsagePack(
   click(await screen.findByRole("option", { name: optionName }));
 }
 
-test("Compare usage-pack plans before choosing one", async () => {
-  mockInitialUsagePackPurchase(true);
+test("Compare usage-pack plan pricing before choosing one", async () => {
+  mockInitialUsagePackPurchase();
   const { choosePlanHeading, proPlan, teamPlan } =
     await openUsagePackPlanSelection();
   expect(choosePlanHeading).toBeInTheDocument();
@@ -467,17 +474,16 @@ test("Compare usage-pack plans before choosing one", async () => {
   expect(
     screen.queryByRole("group", { name: "Member usage" }),
   ).not.toBeInTheDocument();
+});
 
+test("Show the included Pro usage-pack plan features", async () => {
+  mockInitialUsagePackPurchase();
+  const { proPlan } = await openUsagePackPlanSelection();
   expect(
     within(proPlan).getByText("Everyday agent work, priced per member."),
   ).toBeInTheDocument();
   expect(within(proPlan).queryByText("20,000 credits / month")).toBeNull();
   expect(within(proPlan).queryByText("Pay as you go after that")).toBeNull();
-  expect(
-    within(teamPlan).getByText("For a team that keeps agents running all day."),
-  ).toBeInTheDocument();
-  expect(within(teamPlan).queryByText("120,000 credits / month")).toBeNull();
-
   // Pro carries the whole list.
   expect(within(proPlan).getByText("Included")).toBeInTheDocument();
   for (const item of [
@@ -493,7 +499,15 @@ test("Compare usage-pack plans before choosing one", async () => {
   ]) {
     expect(within(proPlan).getByText(item)).toBeInTheDocument();
   }
+});
 
+test("Show the additional Team usage-pack plan features", async () => {
+  mockInitialUsagePackPurchase();
+  const { teamPlan } = await openUsagePackPlanSelection();
+  expect(
+    within(teamPlan).getByText("For a team that keeps agents running all day."),
+  ).toBeInTheDocument();
+  expect(within(teamPlan).queryByText("120,000 credits / month")).toBeNull();
   /* Concurrency, webhooks and the voice caps are the real entitlement
        differences; the middle rows are shared capability the label inherits with
        "Everything in Pro", each phrased as an outcome rather than a setting. */
@@ -528,9 +542,9 @@ test("Compare usage-pack plans before choosing one", async () => {
 });
 
 test.each(["pro", "team"] as const)(
-  "Default a new %s plan to the $20 member package",
+  "Default new '%s' member packages through 'checkout preview'",
   async (tier) => {
-    mockInitialUsagePackPurchase(true);
+    mockInitialUsagePackPurchase();
     context.mocks.api(
       billingUsagePackCheckoutContract.create,
       ({ body, respond }) => {
@@ -555,12 +569,13 @@ test.each(["pro", "team"] as const)(
         });
       },
     );
-    const { proPlan, teamPlan } = await openUsagePackPlanSelection();
+    const { proPlan, teamPlan } = await openUsagePackPlanSelection(
+      "/agents?settings=billing",
+    );
     const plan = tier === "pro" ? proPlan : teamPlan;
     click(
       buttonByText(tier === "pro" ? "Start with Pro" : "Start with Team", plan),
     );
-
     const memberUsage = await screen.findByRole("group", {
       name: "Member usage",
     });
@@ -576,7 +591,6 @@ test.each(["pro", "team"] as const)(
       ).toHaveTextContent("21,234 credits · 6% off");
     }
     expect(buttonByText(upgradeLabel, orderSummary)).toBeEnabled();
-
     click(buttonByText(upgradeLabel, orderSummary));
     const confirmation = await screen.findByRole("dialog", {
       name: "Order summary",
@@ -587,7 +601,59 @@ test.each(["pro", "team"] as const)(
         screen.queryByRole("dialog", { name: "Order summary" }),
       ).not.toBeInTheDocument();
     });
+  },
+);
 
+test.each(["pro", "team"] as const)(
+  "Default new '%s' member packages through 'empty selection recovery'",
+  async (tier) => {
+    mockInitialUsagePackPurchase();
+    context.mocks.api(
+      billingUsagePackCheckoutContract.create,
+      ({ body, respond }) => {
+        expect(body).toMatchObject({
+          tier,
+          supportsInAppPreview: true,
+          memberUsagePacks: [
+            { memberId: "user_1", usagePackUsd: 20 },
+            { memberId: "user_2", usagePackUsd: 20 },
+            { memberId: "invitation_1", usagePackUsd: 20 },
+          ],
+        });
+        return respond(200, {
+          status: "preview",
+          purchaseType: "usage_pack",
+          tier,
+          immediateAmountCents: tier === "pro" ? 6000 : 22_000,
+          nextRecurringAmountCents: tier === "pro" ? 6000 : 22_000,
+          currency: "usd",
+          expiresAt: "2026-03-16T00:15:00Z",
+          previewToken: `usage-pack-${tier}-preview`,
+        });
+      },
+    );
+    const { proPlan, teamPlan } = await openUsagePackPlanSelection(
+      "/agents?settings=billing",
+    );
+    const plan = tier === "pro" ? proPlan : teamPlan;
+    click(
+      buttonByText(tier === "pro" ? "Start with Pro" : "Start with Team", plan),
+    );
+    const memberUsage = await screen.findByRole("group", {
+      name: "Member usage",
+    });
+    const orderSummary = screen.getByRole("region", {
+      name: "Order summary",
+    });
+    const upgradeLabel = tier === "pro" ? "Upgrade to Pro" : "Upgrade to Team";
+    for (const memberName of ["Alex Chen", "Sam Lee", "pending@example.com"]) {
+      expect(
+        within(memberUsage).getByRole("combobox", {
+          name: `Usage for ${memberName}`,
+        }),
+      ).toHaveTextContent("21,234 credits · 6% off");
+    }
+    expect(buttonByText(upgradeLabel, orderSummary)).toBeEnabled();
     for (const memberName of ["Alex Chen", "Sam Lee", "pending@example.com"]) {
       await selectMemberUsagePack(memberUsage, memberName, "No package");
     }
@@ -597,7 +663,6 @@ test.each(["pro", "team"] as const)(
         "Select a paid package for at least one member to continue.",
       ),
     ).toBeVisible();
-
     await selectMemberUsagePack(
       memberUsage,
       "Alex Chen",
@@ -822,163 +887,155 @@ test("Leave a member-package flow without keeping unfinished choices", async () 
   expect(purchaseSubmitted).toBeFalsy();
 });
 
-test.each([false, true])(
-  "Add a package for a member without an allocation (no package supported: %s)",
-  async (supportsFreeMembers) => {
-    context.mocks.data.org({
-      id: "org_1",
-      name: "Managed Usage Pack Org",
-      role: "admin",
-    });
-    context.mocks.data.orgMembers({
-      name: "Managed Usage Pack Org",
-      role: "admin",
-      members: [
+test("Add a package for a member without an allocation", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Managed Usage Pack Org",
+    role: "admin",
+  });
+  context.mocks.data.orgMembers({
+    name: "Managed Usage Pack Org",
+    role: "admin",
+    members: [
+      {
+        userId: "user_1",
+        email: "alex@example.com",
+        firstName: "Alex",
+        lastName: "Chen",
+        imageUrl: "",
+        role: "admin",
+        joinedAt: "2026-01-01T00:00:00Z",
+      },
+      {
+        userId: "user_2",
+        email: "sam@example.com",
+        firstName: "Sam",
+        lastName: "Lee",
+        imageUrl: "",
+        role: "member",
+        joinedAt: "2026-01-02T00:00:00Z",
+      },
+    ],
+    pendingInvitations: [
+      {
+        id: "invitation_paid_pending",
+        email: "paid.pending@example.com",
+        role: "member",
+        createdAt: "2026-01-03T00:00:00Z",
+        usagePackUsd: 100,
+      },
+    ],
+    membershipRequests: [],
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, activeProBillingStatus());
+  });
+  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
+    return respond(200, usagePackCatalogResponse());
+  });
+  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
+    return respond(200, {
+      tier: "pro",
+      currentPeriodEnd: "2026-04-01T00:00:00Z",
+      supportsMemberAdditions: true,
+      supportsFreeMembers: true,
+      allocations: [
         {
-          userId: "user_1",
-          email: "alex@example.com",
-          firstName: "Alex",
-          lastName: "Chen",
-          imageUrl: "",
-          role: "admin",
-          joinedAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          userId: "user_2",
-          email: "sam@example.com",
-          firstName: "Sam",
-          lastName: "Lee",
-          imageUrl: "",
-          role: "member",
-          joinedAt: "2026-01-02T00:00:00Z",
+          id: "b5235934-83df-4f16-bf41-f46890db7d40",
+          memberId: "user_1",
+          usagePackUsd: 20,
+          currentPeriodEnd: "2026-04-01T00:00:00Z",
+          pendingChange: null,
         },
       ],
-      pendingInvitations: [
-        {
-          id: "invitation_paid_pending",
-          email: "paid.pending@example.com",
-          role: "member",
-          createdAt: "2026-01-03T00:00:00Z",
-          usagePackUsd: 100,
-        },
-      ],
-      membershipRequests: [],
-      createdAt: "2026-01-01T00:00:00Z",
     });
-    context.mocks.api(billingStatusContract.get, ({ respond }) => {
-      return respond(200, activeProBillingStatus());
-    });
-    context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...usagePackCatalogResponse(),
-        supportsFreeMembers,
-      });
-    });
-    context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-      return respond(200, {
-        tier: "pro",
-        currentPeriodEnd: "2026-04-01T00:00:00Z",
-        supportsMemberAdditions: true,
-        supportsFreeMembers,
-        allocations: [
-          {
-            id: "b5235934-83df-4f16-bf41-f46890db7d40",
-            memberId: "user_1",
-            usagePackUsd: 20,
-            currentPeriodEnd: "2026-04-01T00:00:00Z",
-            pendingChange: null,
-          },
+  });
+  context.mocks.api(
+    billingUsagePackManagementContract.previewSubscriptionChange,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({
+        targetTier: "pro",
+        memberUsagePacks: [
+          { memberId: "user_1", usagePackUsd: 20 },
+          { memberId: "user_2", usagePackUsd: 50 },
         ],
+        ...inAppBillingPreviewFields(),
       });
-    });
-    context.mocks.api(
-      billingUsagePackManagementContract.previewSubscriptionChange,
-      ({ body, respond }) => {
-        expect(body).toStrictEqual({
-          targetTier: "pro",
-          memberUsagePacks: [
-            { memberId: "user_1", usagePackUsd: 20 },
-            { memberId: "user_2", usagePackUsd: 50 },
-          ],
-          ...inAppBillingPreviewFields(),
-        });
-        return respond(200, {
-          changeId: "ad3bd64c-7237-436d-a221-61b14ed719e7",
-          sourceTier: "pro",
-          targetTier: "pro",
-          immediateAmountCents: 2500,
-          immediateCreditGrant: {
-            purchasedCredits: 25_000,
-            bonusCredits: 2160,
-            totalCredits: 27_160,
-            expiresAt: "2026-04-01T00:00:00Z",
-          },
-          nextRecurringAmountCents: 7000,
-          currency: "usd",
-          effectiveAt: "2026-03-16T00:00:00Z",
-          prorationDate: "2026-03-16T00:00:00Z",
-          expiresAt: "2026-03-16T00:15:00Z",
-        });
-      },
-    );
-
-    await setupPage({
-      context,
-      path: "/?settings=billing",
-      auth: {
-        user: {
-          id: "user_1",
-          fullName: "Alex Chen",
-          email: "alex@example.com",
+      return respond(200, {
+        changeId: "ad3bd64c-7237-436d-a221-61b14ed719e7",
+        sourceTier: "pro",
+        targetTier: "pro",
+        immediateAmountCents: 2500,
+        immediateCreditGrant: {
+          purchasedCredits: 25_000,
+          bonusCredits: 2160,
+          totalCredits: 27_160,
+          expiresAt: "2026-04-01T00:00:00Z",
         },
+        nextRecurringAmountCents: 7000,
+        currency: "usd",
+        effectiveAt: "2026-03-16T00:00:00Z",
+        prorationDate: "2026-03-16T00:00:00Z",
+        expiresAt: "2026-03-16T00:15:00Z",
+      });
+    },
+  );
+
+  await setupPage({
+    context,
+    path: "/?settings=billing",
+    auth: {
+      user: {
+        id: "user_1",
+        fullName: "Alex Chen",
+        email: "alex@example.com",
       },
-    });
+    },
+  });
 
-    await screen.findByText("Pro plan");
-    click(buttonByText("Compare all plans"));
-    const proPlan = await screen.findByRole("article", { name: "Pro plan" });
-    click(buttonByText("Manage", proPlan));
-    const memberUsage = await screen.findByRole("group", {
-      name: "Member usage",
-    });
-    expect(within(memberUsage).getByText("Alex Chen")).toBeInTheDocument();
-    expect(within(memberUsage).getByText("Sam Lee")).toBeInTheDocument();
-    expect(
-      within(memberUsage).getByText("paid.pending@example.com"),
-    ).toBeInTheDocument();
-    expect(within(memberUsage).getByText("Pending")).toBeInTheDocument();
-    const paidPendingUsage = within(memberUsage).getByRole("combobox", {
-      name: "Usage for paid.pending@example.com",
-    });
-    expect(paidPendingUsage).toHaveTextContent("109,999 credits · 9% off");
-    expect(paidPendingUsage).toBeDisabled();
-    const samUsage = within(memberUsage).getByRole("combobox", {
-      name: "Usage for Sam Lee",
-    });
-    expect(samUsage).toHaveTextContent(
-      supportsFreeMembers ? "No package" : "21,234 credits · 6% off",
-    );
-    click(samUsage);
-    click(
-      await screen.findByRole("option", {
-        name: "$50 · 54,321 credits · 8% off",
-      }),
-    );
-    const orderSummary = screen.getByRole("region", {
-      name: "Order summary",
-    });
-    const confirmButton = buttonByText("Confirm", orderSummary);
-    click(confirmButton);
-    const reviewDialog = await screen.findByRole("dialog", {
-      name: "Review package change",
-    });
-    expect(reviewDialog).toBeInTheDocument();
-    expect(confirmButton).toHaveTextContent("Updating...");
-    expect(confirmButton).toBeDisabled();
-  },
-);
+  await screen.findByText("Pro plan");
+  click(buttonByText("Compare all plans"));
+  const proPlan = await screen.findByRole("article", { name: "Pro plan" });
+  click(buttonByText("Manage", proPlan));
+  const memberUsage = await screen.findByRole("group", {
+    name: "Member usage",
+  });
+  expect(within(memberUsage).getByText("Alex Chen")).toBeInTheDocument();
+  expect(within(memberUsage).getByText("Sam Lee")).toBeInTheDocument();
+  expect(
+    within(memberUsage).getByText("paid.pending@example.com"),
+  ).toBeInTheDocument();
+  expect(within(memberUsage).getByText("Pending")).toBeInTheDocument();
+  const paidPendingUsage = within(memberUsage).getByRole("combobox", {
+    name: "Usage for paid.pending@example.com",
+  });
+  expect(paidPendingUsage).toHaveTextContent("109,999 credits · 9% off");
+  expect(paidPendingUsage).toBeDisabled();
+  const samUsage = within(memberUsage).getByRole("combobox", {
+    name: "Usage for Sam Lee",
+  });
+  expect(samUsage).toHaveTextContent("No package");
+  click(samUsage);
+  click(
+    await screen.findByRole("option", {
+      name: "$50 · 54,321 credits · 8% off",
+    }),
+  );
+  const orderSummary = screen.getByRole("region", {
+    name: "Order summary",
+  });
+  const confirmButton = buttonByText("Confirm", orderSummary);
+  click(confirmButton);
+  const reviewDialog = await screen.findByRole("dialog", {
+    name: "Review package change",
+  });
+  expect(reviewDialog).toBeInTheDocument();
+  expect(confirmButton).toHaveTextContent("Updating...");
+  expect(confirmButton).toBeDisabled();
+});
 
-test("Offer a safe conversion path for a legacy plan", async () => {
+async function openLegacyConversionEligibility() {
   const migrationReady = createDeferredPromise<void>(context.signal);
   context.mocks.data.org({
     id: "org_1",
@@ -1038,7 +1095,11 @@ test("Offer a safe conversion path for a legacy plan", async () => {
 
   await screen.findByText("Team plan");
   click(buttonByText("Compare all plans"));
+  return migrationReady;
+}
 
+test("Gate legacy conversion eligibility and return from Pro configuration", async () => {
+  const migrationReady = await openLegacyConversionEligibility();
   expect(screen.getByRole("status")).toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Choose a plan" }),
@@ -1110,7 +1171,20 @@ test("Offer a safe conversion path for a legacy plan", async () => {
   expect(screen.getByText("Legacy")).toBeInTheDocument();
   expect(screen.queryByText("Move to member packages")).not.toBeInTheDocument();
   expect(buttonByText("Convert plan")).toBeEnabled();
+});
 
+test("Cancel a legacy downgrade and reopen conversion choices", async () => {
+  const migrationReady = await openLegacyConversionEligibility();
+  migrationReady.resolve(undefined);
+  const choosePlanDialog = await screen.findByRole("dialog", {
+    name: "Choose a plan",
+  });
+  click(within(choosePlanDialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Choose a plan" }),
+    ).not.toBeInTheDocument();
+  });
   click(screen.getByText("Downgrade"));
   const downgradeDialog = await screen.findByRole("dialog", {
     name: "Downgrade plan",
@@ -1473,7 +1547,7 @@ async function openLegacyTeamConversion(scheduled = false): Promise<void> {
   await screen.findByText("Team plan");
 }
 
-test("Schedule a legacy Team conversion after reviewing member packages", async () => {
+async function configureLegacyTeamConversion() {
   await openLegacyTeamConversion();
   click(buttonByText("Compare all plans"));
   const choosePlanDialog = await screen.findByRole("dialog", {
@@ -1500,6 +1574,11 @@ test("Schedule a legacy Team conversion after reviewing member packages", async 
   expect(
     within(memberUsage).getByText("pending@example.com"),
   ).toBeInTheDocument();
+  await selectMemberUsagePack(
+    memberUsage,
+    "Alex Chen",
+    "$20 · 21,234 credits · 6% off",
+  );
   const pendingUsage = within(memberUsage).getByRole("combobox", {
     name: "Usage for pending@example.com",
   });
@@ -1513,6 +1592,11 @@ test("Schedule a legacy Team conversion after reviewing member packages", async 
   const orderSummary = screen.getByRole("region", {
     name: "Order summary",
   });
+  return orderSummary;
+}
+
+test("Compare legacy Team packages and review conversion totals", async () => {
+  const orderSummary = await configureLegacyTeamConversion();
   expect(
     within(orderSummary).queryByRole("table", {
       name: "Current and new subscription comparison",
@@ -1608,7 +1692,14 @@ test("Schedule a legacy Team conversion after reviewing member packages", async 
   expect(reviewConversionNotice.parentElement).toContainElement(
     buttonByText("Confirm", reviewDialog),
   );
+});
 
+test("Retain legacy Team packages through Back and confirm conversion", async () => {
+  const orderSummary = await configureLegacyTeamConversion();
+  click(buttonByText("Review conversion", orderSummary));
+  const reviewDialog = await screen.findByRole("dialog", {
+    name: "Review plan conversion",
+  });
   click(within(reviewDialog).getByLabelText("Back"));
   const returnedPackagesDialog = await screen.findByRole("dialog", {
     name: "Configure member packages",
@@ -1720,6 +1811,7 @@ test("Upgrade a current member package in the app", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [
@@ -2008,6 +2100,7 @@ test("Hide retained package records for people who left the workspace", async ()
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [
@@ -2110,10 +2203,7 @@ test.each([50, 0] as const)(
       return respond(200, activeProBillingStatus());
     });
     context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...usagePackCatalogResponse(),
-        supportsFreeMembers: true,
-      });
+      return respond(200, usagePackCatalogResponse());
     });
     context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
       return respond(200, {
@@ -2302,10 +2392,7 @@ test.each([
       return respond(200, activeProBillingStatus());
     });
     context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...usagePackCatalogResponse(),
-        supportsFreeMembers: true,
-      });
+      return respond(200, usagePackCatalogResponse());
     });
     context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
       return respond(200, {
@@ -2450,7 +2537,7 @@ test.each([
   },
 );
 
-test("Upgrade Pro to Team without repurchasing member packages", async () => {
+async function openProToTeamUpgrade() {
   context.mocks.data.org({
     id: "org_1",
     name: "Usage Pack Upgrade Org",
@@ -2464,6 +2551,7 @@ test("Upgrade Pro to Team without repurchasing member packages", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [
@@ -2545,6 +2633,11 @@ test("Upgrade Pro to Team without repurchasing member packages", async () => {
   const orderSummary = screen.getByRole("region", {
     name: "Order summary",
   });
+  return { packageSelect, orderSummary };
+}
+
+test("Update Pro-to-Team pricing when editing and restoring a member package", async () => {
+  const { packageSelect, orderSummary } = await openProToTeamUpgrade();
   let comparison = within(await hoverSubscriptionComparison()).getByRole(
     "table",
     {
@@ -2599,6 +2692,13 @@ test("Upgrade Pro to Team without repurchasing member packages", async () => {
     }),
   ).toBeInTheDocument();
 
+  click(confirmButton);
+  await screen.findByRole("dialog", { name: "Review package change" });
+});
+
+test("Confirm a Pro-to-Team upgrade without repurchasing existing packages", async () => {
+  const { orderSummary } = await openProToTeamUpgrade();
+  const confirmButton = buttonByText("Confirm", orderSummary);
   const locationBeforeConfirmation = window.location.href;
   click(confirmButton);
   const confirmationDialog = await screen.findByRole("dialog", {
@@ -2616,7 +2716,7 @@ test("Upgrade Pro to Team without repurchasing member packages", async () => {
   expect(window.location.href).toBe(locationBeforeConfirmation);
 });
 
-test("Schedule a Team-to-Pro downgrade", async () => {
+async function openTeamToProDowngrade() {
   let billingStatus: BillingStatusResponse = activeTeamBillingStatus();
   context.mocks.data.org({
     id: "org_1",
@@ -2627,7 +2727,7 @@ test("Schedule a Team-to-Pro downgrade", async () => {
     return respond(200, billingStatus);
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, usagePackCatalogResponse(true));
+    return respond(200, usagePackCatalogResponse());
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
@@ -2719,7 +2819,12 @@ test("Schedule a Team-to-Pro downgrade", async () => {
   });
   const confirmDowngradeButton = buttonByText("Confirm", orderSummary);
   expect(confirmDowngradeButton).toBeEnabled();
+  return { memberUsage, orderSummary, confirmDowngradeButton };
+}
 
+test("Require a paid member package before previewing a Team-to-Pro downgrade", async () => {
+  const { memberUsage, orderSummary, confirmDowngradeButton } =
+    await openTeamToProDowngrade();
   await selectMemberUsagePack(memberUsage, "Alex Chen", "No package");
   expect(confirmDowngradeButton).toBeDisabled();
   expect(
@@ -2739,6 +2844,13 @@ test("Schedule a Team-to-Pro downgrade", async () => {
       "Select a paid package for at least one member to continue.",
     ),
   ).not.toBeInTheDocument();
+  click(confirmDowngradeButton);
+  await screen.findByRole("dialog", { name: "Review package change" });
+});
+
+test("Review and confirm a scheduled Team-to-Pro downgrade", async () => {
+  const { orderSummary, confirmDowngradeButton } =
+    await openTeamToProDowngrade();
   const comparison = within(await hoverSubscriptionComparison()).getByRole(
     "table",
     {
@@ -2812,6 +2924,7 @@ test("Replace a Team cancellation with a Pro downgrade", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "team",
       currentPeriodEnd: "2026-05-01T00:00:00Z",
       allocations: [
@@ -3142,6 +3255,7 @@ test("Keep usage-pack plans unavailable for custom workspaces", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "team",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [],

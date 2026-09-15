@@ -125,7 +125,7 @@ export function testOAuthPreviewBypassHeaders(): Record<string, string> {
     ? {
         "x-vercel-protection-bypass":
           process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
-        "x-vm0-test-endpoint-bypass":
+        "x-okou-test-endpoint-bypass":
           process.env.VERCEL_AUTOMATION_BYPASS_SECRET,
       }
     : {};

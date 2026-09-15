@@ -9,6 +9,10 @@ import {
   artifactSharePolicySchema,
   type ArtifactSharePolicy,
 } from "@okouai/api-contracts/contracts/artifact-shares";
+import {
+  sharedThreadArtifactPolicyKey,
+  sharedThreadArtifactPolicySchema,
+} from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 
 interface R2ObjectBody {
   readonly size: number;
@@ -489,6 +493,58 @@ function artifactFileAlias(
   return pathname.slice(1);
 }
 
+async function serveGrantedArtifactDelivery(
+  request: Request,
+  env: Env,
+  delivery: {
+    readonly record: Extract<
+      ArtifactDeliveryRecord,
+      { kind: "publication" | "thread-resource" }
+    >;
+    readonly pathname: string;
+    readonly fileHost: boolean;
+  },
+  execution: ExecutionContext,
+): Promise<Response> {
+  const { record, pathname, fileHost } = delivery;
+  if ((record.targetKind === "file") !== fileHost)
+    return privateResponse(notFoundResponse());
+  // The legacy one-year cache rule excludes only canonical share paths.
+  // Decoding or trimming a different path must not expose share bytes there.
+  if (
+    fileHost &&
+    !isArtifactPublicationFilePath(
+      `/${artifactFileAlias(new URL(request.url).pathname, env.PUBLIC_ARTIFACT_HOST)}`,
+    )
+  )
+    return privateResponse(notFoundResponse());
+  const policy =
+    record.kind === "thread-resource"
+      ? await readSharedThreadResource(env, record)
+      : await readPublicShare(
+          env,
+          [record.publicBrand],
+          record.shareId,
+          record.publicToken,
+        );
+  if (policy instanceof Response) return policy;
+  if (!policy || policy.target.kind !== record.targetKind)
+    return privateResponse(notFoundResponse());
+  const response = await serveAuthorizedArtifact(
+    request,
+    env,
+    fileHost ? "/" : pathname,
+    policy,
+    execution,
+  );
+  if (record.kind === "thread-resource" && response.ok)
+    response.headers.set(
+      "Cache-Control",
+      "private, max-age=31536000, immutable",
+    );
+  return response;
+}
+
 async function serveArtifactDelivery(
   request: Request,
   env: Env,
@@ -522,32 +578,11 @@ async function serveArtifactDelivery(
   );
   if (registered.length > 1) return privateResponse(notFoundResponse());
   const record = registered[0];
-  if (record?.kind === "publication") {
-    if ((record.targetKind === "file") !== fileHost)
-      return privateResponse(notFoundResponse());
-    // The legacy one-year cache rule excludes only canonical share paths.
-    // Decoding or trimming a different path must not expose share bytes there.
-    if (
-      fileHost &&
-      !isArtifactPublicationFilePath(
-        `/${artifactFileAlias(new URL(request.url).pathname, env.PUBLIC_ARTIFACT_HOST)}`,
-      )
-    )
-      return privateResponse(notFoundResponse());
-    const policy = await readPublicShare(
-      env,
-      [record.publicBrand],
-      record.shareId,
-      record.publicToken,
-    );
-    if (policy instanceof Response) return policy;
-    if (!policy || policy.target.kind !== record.targetKind)
-      return privateResponse(notFoundResponse());
-    return await serveAuthorizedArtifact(
+  if (record?.kind === "publication" || record?.kind === "thread-resource") {
+    return await serveGrantedArtifactDelivery(
       request,
       env,
-      fileHost ? "/" : pathname,
-      policy,
+      { record, pathname, fileHost },
       execution,
     );
   }
@@ -812,7 +847,9 @@ interface PrivatePreviewGrant {
 function privateResponse(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, no-store");
-  headers.set("Referrer-Policy", "no-referrer");
+  // Let this isolated origin identify its own CSS/JS/image requests to the
+  // hosted-site WAF. Cross-origin requests must not disclose preview tokens.
+  headers.set("Referrer-Policy", "same-origin");
   // Generated code receives only its own short-lived origin, never app cookies.
   // Prevent service workers from bypassing the network authorization expiry.
   headers.set(
@@ -982,11 +1019,36 @@ async function readPublicShare(
 }
 
 /** Callers must read current authorization before every content-cache hit. */
+async function readSharedThreadResource(
+  env: Env,
+  record: Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
+): Promise<Pick<ArtifactSharePolicy, "publicBrand" | "target"> | null> {
+  const object = await env.HOSTED_SITES_BUCKET.get(
+    sharedThreadArtifactPolicyKey(record.publicBrand, record.threadId),
+  );
+  if (!object) return null;
+  const parsed = sharedThreadArtifactPolicySchema.safeParse(
+    await new Response(object.body).json(),
+  );
+  if (
+    !parsed.success ||
+    parsed.data.threadId !== record.threadId ||
+    parsed.data.publicBrand !== record.publicBrand ||
+    parsed.data.status !== "active"
+  )
+    return null;
+  const target = parsed.data.resources[record.publicToken];
+  return target?.kind === record.targetKind
+    ? { publicBrand: record.publicBrand, target }
+    : null;
+}
+
+/** Authorization is evaluated before reading these immutable cached bytes. */
 async function serveAuthorizedArtifact(
   request: Request,
   env: Env,
   pathname: string,
-  policy: ArtifactSharePolicy,
+  policy: Pick<ArtifactSharePolicy, "publicBrand" | "target">,
   execution: ExecutionContext,
 ): Promise<Response> {
   const denied = () => {
@@ -1001,11 +1063,11 @@ async function serveAuthorizedArtifact(
   )
     return denied();
   const cacheUrl = new URL(request.url);
-  cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? target.snapshotId : encodeURIComponent(target.key)}${pathname}`;
+  cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? `${target.snapshotId}/${target.id}` : encodeURIComponent(target.key)}${pathname}`;
   cacheUrl.search = `?html=${acceptsHtml(request)}`;
   const key = new Request(cacheUrl);
-  // Cache only bytes on this Worker's own host. Browser/CDN caches outside
-  // this Worker must re-enter authorization; public responses are no-store.
+  // Cache bytes separately from authorization. Delivery applies its browser
+  // cache policy after this lookup; every network request checks the grant.
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
   const rangedFile = target.kind === "file" && request.headers.has("Range");
   const cached = rangedFile ? undefined : await cache.match(key);

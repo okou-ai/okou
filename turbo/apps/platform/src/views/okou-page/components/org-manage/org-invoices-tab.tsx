@@ -100,7 +100,7 @@ function InvoiceRowsSkeleton() {
       {[0, 1, 2].map((row) => {
         return (
           <div key={row}>
-            {row > 0 && <div className="h-0 okou-border-t mx-4" />}
+            {row > 0 && <div className="h-0 border-t border-t-gray-400 mx-4" />}
             <div className={cn(ROW_GRID, "px-4 py-3")}>
               <div className="flex items-center gap-3">
                 <Skeleton className="h-4 w-28" />
@@ -304,9 +304,6 @@ export function OrgInvoicesTab() {
 
   const invoices =
     invoicesLoadable.state === "hasData" ? invoicesLoadable.data.invoices : [];
-  const receiptDownloadsSupported =
-    invoicesLoadable.state === "hasData" &&
-    invoicesLoadable.data.receiptDownloadsSupported === true;
   const months = invoiceMonths(invoices);
 
   if (!loading && invoices.length === 0) {
@@ -323,7 +320,7 @@ export function OrgInvoicesTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      {!loading && receiptDownloadsSupported && (
+      {!loading && (
         <div className="flex justify-end">
           <DownloadReceiptsDialog months={months} />
         </div>
@@ -355,7 +352,7 @@ export function OrgInvoicesTab() {
           </div>
           <div />
         </div>
-        <div className="h-0 okou-border-t mx-4" />
+        <div className="h-0 border-t border-t-gray-400 mx-4" />
 
         {loading && <InvoiceRowsSkeleton />}
 
@@ -363,7 +360,7 @@ export function OrgInvoicesTab() {
           const invoiceMonth = formatInvoiceMonth(inv.date);
           return (
             <div key={inv.id}>
-              {i > 0 && <div className="h-0 okou-border-t mx-4" />}
+              {i > 0 && <div className="h-0 border-t border-t-gray-400 mx-4" />}
               <div className={cn(ROW_GRID, "px-4 py-3")}>
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="text-sm font-medium text-foreground truncate">

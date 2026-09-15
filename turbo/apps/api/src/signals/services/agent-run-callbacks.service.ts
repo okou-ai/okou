@@ -145,8 +145,8 @@ export const dispatchProgressCallbacks$ = command(
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-VM0-Signature": signature,
-            "X-VM0-Timestamp": timestamp.toString(),
+            "X-Okou-Signature": signature,
+            "X-Okou-Timestamp": timestamp.toString(),
           },
           body,
           signal,

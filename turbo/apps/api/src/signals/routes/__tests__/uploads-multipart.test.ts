@@ -144,6 +144,15 @@ describe("multipart user artifact uploads", () => {
     expect(response.body.url).toMatch(
       /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.mp4$/u,
     );
+    expect(
+      context.mocks.s3.getSignedUrl.mock.calls.map((call) => {
+        return call[2];
+      }),
+    ).toStrictEqual(
+      Array.from({ length: 4 }, () => {
+        return { expiresIn: 172_800 };
+      }),
+    );
     const createCommand = context.mocks.s3.send.mock.calls
       .map(([command]) => {
         return command;
@@ -161,6 +170,46 @@ describe("multipart user artifact uploads", () => {
         "public-brand": "okou",
         "user-id": encodeURIComponent(userId),
       },
+    });
+  });
+
+  it("stores the declared text charset when preparing a multipart artifact", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({ Contents: [] });
+      }
+      if (command instanceof PutObjectCommand) {
+        expect(JSON.parse(String(command.input.Body))).toMatchObject({
+          kind: "legacy-file",
+          contentType: "text/csv; charset=utf-8",
+        });
+        return Promise.resolve({});
+      }
+      if (command instanceof CreateMultipartUploadCommand) {
+        expect(command.input.ContentType).toBe("text/csv; charset=utf-8");
+        return Promise.resolve({ UploadId: "text-multipart-upload" });
+      }
+      throw new Error("Unexpected storage command");
+    });
+
+    const response = await accept(
+      apiClient().prepare({
+        headers: authHeaders(),
+        body: {
+          filename: "report.csv",
+          contentType: 'Text/CSV; Charset="UTF-8"',
+          size: 6 * 1024 * 1024,
+          purpose: "artifact",
+          multipart: true,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toMatchObject({
+      contentType: "text/csv; charset=utf-8",
+      multipart: { uploadId: "text-multipart-upload" },
     });
   });
 

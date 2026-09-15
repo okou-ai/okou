@@ -1,8 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { TestModule } from "vitest/node";
-import type { Reporter, TestRunEndReason } from "vitest/reporters";
+import type { Reporter, TestModule, TestRunEndReason } from "vitest/node";
 
 interface BenchmarkJson {
   files: {
@@ -22,21 +21,6 @@ function percentile(sortedSamples: number[], percentileValue: number): number {
   return sortedSamples[Math.max(0, Math.min(sortedSamples.length - 1, index))]!;
 }
 
-function fullName(task: { name?: string; suite?: unknown }): string {
-  const names: string[] = [];
-  let current: unknown = task;
-
-  while (current && typeof current === "object") {
-    const candidate = current as { name?: string; suite?: unknown };
-    if (candidate.name) {
-      names.push(candidate.name);
-    }
-    current = candidate.suite;
-  }
-
-  return names.reverse().join(" > ");
-}
-
 // Vitest custom reporters are loaded from the default export.
 export default class BenchP90Reporter implements Reporter {
   onTestRunEnd(
@@ -50,39 +34,35 @@ export default class BenchP90Reporter implements Reporter {
       const groupsByName = new Map<string, Record<string, unknown>[]>();
 
       for (const test of mod.children.allTests()) {
-        const task = test.task as {
-          id?: string;
-          name?: string;
-          suite?: { name?: string };
-          meta?: { benchmark?: boolean };
-          result?: { benchmark?: Record<string, unknown> };
-        };
-        const result = task.result?.benchmark;
-        if (!task.meta?.benchmark || !result) {
-          continue;
+        const groupName =
+          test.parent.type === "suite"
+            ? test.parent.fullName
+            : mod.relativeModuleId;
+        const results = test.benchmarks().flatMap((group) => {
+          return group.tasks;
+        });
+        for (const result of results) {
+          const samples = result.latency.samples;
+          if (!samples || samples.length === 0) {
+            throw new Error(
+              `Benchmark ${result.name} has no retained latency samples`,
+            );
+          }
+          const sortedSamples = [...samples].sort((a, b) => {
+            return a - b;
+          });
+          const benchmarks = groupsByName.get(groupName) ?? [];
+          benchmarks.push({
+            id: test.id,
+            name: result.name,
+            ...result.latency,
+            hz: result.throughput.mean,
+            totalTime: result.totalTime,
+            p90: percentile(sortedSamples, 0.9),
+            sampleCount: samples.length,
+          });
+          groupsByName.set(groupName, benchmarks);
         }
-
-        const samples = Array.isArray(result.samples)
-          ? result.samples.filter((sample): sample is number => {
-              return typeof sample === "number" && Number.isFinite(sample);
-            })
-          : [];
-        const sortedSamples = [...samples].sort((a, b) => {
-          return a - b;
-        });
-        const groupName = task.suite
-          ? fullName(task.suite)
-          : mod.relativeModuleId;
-        const benchmarks = groupsByName.get(groupName) ?? [];
-
-        benchmarks.push({
-          id: task.id,
-          name: task.name,
-          ...result,
-          p90: percentile(sortedSamples, 0.9),
-          sampleCount: samples.length,
-        });
-        groupsByName.set(groupName, benchmarks);
       }
 
       if (groupsByName.size > 0) {

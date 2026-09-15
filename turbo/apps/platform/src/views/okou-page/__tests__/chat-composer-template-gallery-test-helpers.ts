@@ -55,7 +55,7 @@ export function mockTemplateChat(options?: {
   mockAgent({ selectedModel: "claude-sonnet-4-6" });
   mockOrgModelRoutes("claude-sonnet-4-6");
   mockBillingCapabilities(
-    { supportByok: true, restrictedVm0Models: false },
+    { supportByok: true, restrictedBuiltInModels: false },
     options?.tier ?? "pro",
   );
   const lifecycle = mockChatLifecycle(context, {

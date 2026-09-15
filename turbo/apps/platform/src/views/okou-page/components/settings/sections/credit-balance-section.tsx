@@ -375,7 +375,7 @@ function UsagePackMemberCard({ row }: { row: UsagePackMemberRow }) {
     <div
       role="listitem"
       data-testid={`usage-pack-member-credit-${member.userId}`}
-      className="overflow-hidden rounded-xl bg-card okou-border"
+      className="overflow-hidden rounded-xl bg-card border border-surface-border"
     >
       <div className="px-5 py-4">
         <UsagePackMemberHeader credits={credits} member={member} />
@@ -574,7 +574,7 @@ function UsagePackCreditCard({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div
       data-testid="usage-pack-credit-card"
-      className="overflow-hidden rounded-xl bg-card px-5 py-4 okou-border"
+      className="overflow-hidden rounded-xl bg-card px-5 py-4 border border-surface-border"
     >
       {creditsLoadable.state === "loading" && !data ? (
         <div className="space-y-2">

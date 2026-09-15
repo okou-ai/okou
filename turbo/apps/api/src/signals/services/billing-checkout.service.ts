@@ -1,3 +1,7 @@
+import {
+  marketingImpactEnabled,
+  retireImpactMetadata,
+} from "../../lib/impact-marketing";
 import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { randomUUID } from "node:crypto";
 
@@ -11,7 +15,7 @@ import type {
   UsagePackUsd,
 } from "@okouai/api-contracts/contracts/billing";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -29,7 +33,10 @@ import {
 } from "../external/stripe-client";
 import { getOrCreateStripeCustomer$ } from "./billing-customer.service";
 import { persistOrgAcquisitionAttribution$ } from "./acquisition-attribution.service";
-import { impactStripeMetadata$ } from "./impact-attribution.service";
+import {
+  impactStripeMetadata$,
+  readOrgImpactMetadata,
+} from "./impact-attribution.service";
 import {
   addStripeConcurrencySubscriptionItem$,
   previewStripeConcurrencySubscriptionChange$,
@@ -59,6 +66,7 @@ interface CreateCheckoutSessionArgs {
   readonly cancelUrl: string;
   readonly adAttribution?: Readonly<Record<string, string | undefined>>;
   readonly checkoutIdempotencyKey?: string;
+  readonly purchaseCreatedAt?: string;
 }
 
 interface StartPlanPurchaseArgs extends CreateCheckoutSessionArgs {
@@ -111,6 +119,7 @@ interface CreateCreditCheckoutSessionArgs {
   readonly successUrl: string;
   readonly cancelUrl: string;
   readonly checkoutIdempotencyKey?: string;
+  readonly purchaseCreatedAt?: string;
 }
 
 interface PreviewExistingBillingCreditPurchaseArgs {
@@ -229,6 +238,14 @@ type PlanPurchasePreviewToken = z.infer<typeof planPurchasePreviewTokenSchema>;
 type CreditPurchasePreviewToken = z.infer<
   typeof creditPurchasePreviewTokenSchema
 >;
+
+function purchasePreviewCreatedAt(preview: {
+  readonly expiresAt: string;
+}): string {
+  return new Date(
+    Date.parse(preview.expiresAt) - CREDIT_PURCHASE_PREVIEW_TTL_MS,
+  ).toISOString();
+}
 
 function legacyPriceIdsForTier(
   tier: SubscriptionCheckoutTier,
@@ -598,7 +615,15 @@ export const previewExistingBillingCreditPurchase$ = command(
       quantity,
       credits,
       amountCents,
-      impactMetadata: await set(impactStripeMetadata$, args.orgId, signal),
+      ...(!marketingImpactEnabled()
+        ? {
+            impactMetadata: await set(
+              impactStripeMetadata$,
+              args.orgId,
+              signal,
+            ),
+          }
+        : {}),
       currency: invoice.currency,
       successUrl: args.successUrl,
       cancelUrl: args.cancelUrl,
@@ -706,6 +731,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
           successUrl: preview.successUrl,
           cancelUrl: preview.cancelUrl,
           checkoutIdempotencyKey: `credit-purchase:${preview.purchaseId}:checkout`,
+          purchaseCreatedAt: purchasePreviewCreatedAt(preview),
         },
         signal,
       );
@@ -728,7 +754,9 @@ export const confirmExistingBillingCreditPurchase$ = command(
       creditsAmountMode: "amount_subtotal",
       requestedCreditsAmount: String(preview.credits),
       creditPurchaseId: preview.purchaseId,
-      ...preview.impactMetadata,
+      ...(marketingImpactEnabled()
+        ? { purchaseCreatedAt: purchasePreviewCreatedAt(preview) }
+        : preview.impactMetadata),
       ...stripePreviewMetadata(),
     };
     const invoice = await stripe.invoices.create(
@@ -796,6 +824,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
 
 function checkoutSessionMetadata(args: {
   readonly orgId: string;
+  readonly purchaseCreatedAt?: string;
   readonly tier: SubscriptionCheckoutTier;
   readonly priceId: string;
   readonly adAttribution:
@@ -806,9 +835,14 @@ function checkoutSessionMetadata(args: {
     orgId: args.orgId,
     tier: args.tier,
     priceId: args.priceId,
+    ...(marketingImpactEnabled()
+      ? { purchaseCreatedAt: args.purchaseCreatedAt ?? nowDate().toISOString() }
+      : {}),
   };
   for (const [key, value] of Object.entries(
-    compatibleGoogleAdsAttribution(args.adAttribution ?? {}),
+    compatibleGoogleAdsAttribution(
+      retireImpactMetadata(args.adAttribution ?? {}),
+    ),
   )) {
     if (value) {
       metadata[key] = value;
@@ -835,7 +869,7 @@ function definedAttribution(
   attribution: Readonly<Record<string, string | undefined>> | undefined,
 ): Record<string, string> | undefined {
   const entries = Object.entries(
-    compatibleGoogleAdsAttribution(attribution ?? {}),
+    compatibleGoogleAdsAttribution(retireImpactMetadata(attribution ?? {})),
   ).filter((entry): entry is [string, string] => {
     return entry[1] !== undefined;
   });
@@ -1057,6 +1091,7 @@ async function createConfirmedPlanSubscription(
       tier: preview.tier,
       priceId: preview.priceId,
       adAttribution: preview.adAttribution,
+      purchaseCreatedAt: purchasePreviewCreatedAt(preview),
     }),
     billingPurchaseId: preview.purchaseId,
   };
@@ -1208,6 +1243,7 @@ async function confirmPlanPurchaseTransaction(
         cancelUrl: preview.cancelUrl,
         adAttribution: preview.adAttribution,
         checkoutIdempotencyKey: `plan-purchase:${preview.purchaseId}:checkout`,
+        purchaseCreatedAt: purchasePreviewCreatedAt(preview),
       },
       signal,
     );
@@ -1281,6 +1317,7 @@ async function createPlanCheckoutSession(
     tier: args.tier,
     priceId: args.priceId,
     adAttribution: args.adAttribution,
+    purchaseCreatedAt: args.purchaseCreatedAt,
   });
   const params: StripeCheckoutSessionCreateParams = {
     mode: "subscription",
@@ -1450,7 +1487,13 @@ export const createCreditCheckoutSession$ = command(
     const baseMetadata = {
       purpose: "credit_purchase",
       orgId: args.orgId,
-      ...(await set(impactStripeMetadata$, args.orgId, signal)),
+      ...(marketingImpactEnabled()
+        ? {
+            purchaseCreatedAt:
+              args.purchaseCreatedAt ?? nowDate().toISOString(),
+          }
+        : {}),
+      ...(await readOrgImpactMetadata(set(writeDb$), args.orgId, signal)),
       ...stripePreviewMetadata(),
     };
     const customCreditUnitPriceId = activeCustomCreditUnitPriceId();

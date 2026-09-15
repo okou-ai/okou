@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { randomUUID } from "node:crypto";
 
 import { testBrowserReconcileContract } from "@okouai/api-contracts/contracts/test-browser-reconcile";
@@ -66,36 +68,6 @@ function commandInput(command: unknown): Record<string, unknown> {
     return {};
   }
   return command.input as Record<string, unknown>;
-}
-
-function browserScreenshotResults() {
-  const schema = z.strictObject({
-    _time: z.iso.datetime(),
-    type: z.literal("managed_browser_screenshot"),
-    source: z.literal("api"),
-    outcome: z.enum(["success", "failure"]),
-    duration_ms: z.number().finite().nonnegative(),
-    failure_stage: z.enum(["prepare", "capture", "upload", "save"]).optional(),
-    failure_kind: z.string().optional(),
-  });
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap(
-    ([dataset, events]) => {
-      if (dataset !== "vm0-web-logs-dev" || !Array.isArray(events)) {
-        return [];
-      }
-      return events.flatMap((event: unknown) => {
-        if (
-          typeof event !== "object" ||
-          event === null ||
-          !("type" in event) ||
-          event.type !== "managed_browser_screenshot"
-        ) {
-          return [];
-        }
-        return [schema.parse(event)];
-      });
-    },
-  );
 }
 
 aroundEach(async (runTest) => {
@@ -655,7 +627,7 @@ describe("okou browser route", () => {
     expect(created.body.browser).toMatchObject({
       name: "booking",
       status: "active",
-      // Zero always requests the provider's longest lifetime and manages
+      // The API always requests the provider's longest lifetime and manages
       // reclamation through the idle lease instead.
       timeoutMinutes: 240,
       idleExpiresAt: isoAt(10 * MINUTE_MS),
@@ -2108,9 +2080,8 @@ describe("okou browser route", () => {
   }, 120_000);
 
   it.each(["no_page_target", "target_disappeared", "other", "timeout"])(
-    "records a %s screenshot failure once without warnings and keeps the browser usable",
+    "absorbs a %s screenshot failure and keeps the browser usable",
     async (failureKind) => {
-      context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
       const { routeMocks, runs, chat, actor, agent } =
         await setupBrowserScenario();
       const current = await createClaimedChatRun(
@@ -2225,19 +2196,6 @@ describe("okou browser route", () => {
           return input.ContentType === "image/webp" || "Delete" in input;
         }),
       ).toHaveLength(failureKind === "timeout" ? 1 : 0);
-      expect(browserScreenshotResults()).toStrictEqual([
-        {
-          _time: isoAt(0),
-          type: "managed_browser_screenshot",
-          source: "api",
-          outcome: "failure",
-          duration_ms: 0,
-          failure_stage: failureKind === "timeout" ? "upload" : "capture",
-          failure_kind: failureKind,
-        },
-      ]);
-      expect(context.mocks.axiomLogging.warn.mock.calls).toStrictEqual([]);
-      expect(context.mocks.axiomLogging.error.mock.calls).toStrictEqual([]);
       expect(context.mocks.sentry.captureException.mock.calls).toStrictEqual(
         [],
       );
@@ -2245,368 +2203,387 @@ describe("okou browser route", () => {
     120_000,
   );
 
-  it("captures the foreground tab and keeps previous screenshot objects when updating or deleting a thread", async () => {
-    context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
-    const { routeMocks, runs, chat, actor, agent } =
-      await setupBrowserScenario();
-    const current = await createClaimedChatRun(
-      chat,
-      runs,
-      actor,
-      agent.agentId,
-      "Open a managed browser for screenshot capture",
-    );
-    const providerId = randomUUID();
-    acceptBrowserUseCdpSessions([providerId]);
-    server.use(
-      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
-        const body = z
-          .strictObject({ name: z.string() })
-          .parse(await request.json());
-        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
-          status: 201,
-        });
-      }),
-      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
-        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
-      }),
-      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(providerBrowser(String(params.id)));
-      }),
-      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
-        return HttpResponse.json(
-          providerBrowser(String(params.id), { status: "stopped" }),
-        );
-      }),
-    );
-    const releaseSecondScreenshotUpload = createDeferredPromise<void>(
-      context.signal,
-    );
-    const releaseThirdScreenshotUpload = createDeferredPromise<void>(
-      context.signal,
-    );
-    let screenshotUploadCount = 0;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const input = commandInput(command);
-      if (input.ContentType === "image/webp") {
-        screenshotUploadCount += 1;
-        if (screenshotUploadCount === 2) {
-          return releaseSecondScreenshotUpload.promise;
-        }
-        if (screenshotUploadCount === 3) {
-          return releaseThirdScreenshotUpload.promise;
-        }
+  it.each([false, true])(
+    "captures the foreground tab and retains screenshots across updates and flag changes (private=%s)",
+    async (privateFiles) => {
+      const { routeMocks, runs, chat, actor, agent } =
+        await setupBrowserScenario();
+      const current = await createClaimedChatRun(
+        chat,
+        runs,
+        actor,
+        agent.agentId,
+        "Open a managed browser for screenshot capture",
+      );
+      if (!actor.orgId) {
+        throw new Error("Expected organization");
       }
-      return Promise.resolve({});
-    });
-    let captureCount = 0;
-    let failNextCapture = false;
-    context.mocks.browserUseCdp.command.mockImplementation((command) => {
-      if (command.method === "Target.getTargets") {
-        return {
-          targetInfos: [
-            {
-              targetId: "background-page",
-              type: "page",
-              url: "https://background.example.com",
-            },
-            {
-              targetId: "foreground-page",
-              type: "page",
-              url: "https://foreground.example.com",
-            },
-          ],
-        };
-      }
-      if (command.method === "Target.attachToTarget") {
-        return {
-          sessionId:
-            command.params.targetId === "foreground-page"
-              ? "foreground-session"
-              : "background-session",
-        };
-      }
-      if (command.method === "Runtime.evaluate") {
-        return {
-          result: {
-            type: "boolean",
-            value: command.sessionId === "foreground-session",
-          },
-        };
-      }
-      if (command.method === "Page.getLayoutMetrics") {
-        return {
-          cssVisualViewport: {
-            pageX: 0,
-            pageY: 24,
-            clientWidth: 1280,
-            clientHeight: 720,
-          },
-        };
-      }
-      if (command.method === "Page.captureScreenshot") {
-        if (failNextCapture) {
-          return new Error("Screenshot capture unavailable");
-        }
-        captureCount += 1;
-        return {
-          data: Buffer.from(`screenshot-${String(captureCount)}`).toString(
-            "base64",
-          ),
-        };
-      }
-      return undefined;
-    });
-
-    await accept(
-      client().use({ headers: current.claim.browserHeaders, body: {} }),
-      [200],
-    );
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-
-    const firstLease = await accept(
-      client().leaseByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-        body: {},
-      }),
-      [200],
-    );
-    expect(firstLease.body.browser.screenshotUrl).toBeNull();
-    await flushWaitUntilForTest();
-    expect(captureCount).toBe(0);
-    expect(browserScreenshotResults()).toStrictEqual([]);
-
-    const afterViewerLease = await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-      }),
-      [200],
-    );
-    expect(afterViewerLease.body.browser.screenshotUrl).toBeNull();
-
-    const firstReconcile = await reconcileBrowsers(current.threadId);
-    expect(firstReconcile.body).toMatchObject({
-      errors: 0,
-    });
-    await flushWaitUntilForTest();
-
-    const afterFirstCapture = await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-      }),
-      [200],
-    );
-    const firstScreenshotUrl = afterFirstCapture.body.browser.screenshotUrl;
-    expect(firstScreenshotUrl).toMatch(/^https:\/\/a\.okou\.io\/.+\.webp$/u);
-    if (!firstScreenshotUrl) {
-      throw new Error("Expected the first browser screenshot URL");
-    }
-    const firstScreenshotKey = `artifacts/${new URL(firstScreenshotUrl).pathname.slice(1)}`;
-    const screenshotPut = context.mocks.s3.send.mock.calls
-      .map(([command]) => {
-        return commandInput(command);
-      })
-      .find((input) => {
-        return input.ContentType === "image/webp";
+      const flagActor = { ...actor, orgId: actor.orgId };
+      await updateFeatureSwitchesForUser(context, flagActor, {
+        [FeatureSwitchKey.PrivateArtifacts]: privateFiles,
       });
-    expect(screenshotPut?.Metadata).toMatchObject({
-      "public-brand": "okou",
-    });
+      if (privateFiles) {
+        context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
+          const input = commandInput(command);
+          expect(input.Bucket).toBe("test-private-artifacts");
+          return Promise.resolve(
+            `https://screenshot-r2.example/${String(input.Bucket)}/${String(input.Key)}?signature=preview`,
+          );
+        });
+      }
+      const providerId = randomUUID();
+      acceptBrowserUseCdpSessions([providerId]);
+      server.use(
+        http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+          const body = z
+            .strictObject({ name: z.string() })
+            .parse(await request.json());
+          return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+            status: 201,
+          });
+        }),
+        http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+          return HttpResponse.json(providerBrowser(providerId), {
+            status: 201,
+          });
+        }),
+        http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+          return HttpResponse.json(providerBrowser(String(params.id)));
+        }),
+        http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+          return HttpResponse.json(
+            providerBrowser(String(params.id), { status: "stopped" }),
+          );
+        }),
+      );
+      const releaseSecondScreenshotUpload = createDeferredPromise<void>(
+        context.signal,
+      );
+      const releaseThirdScreenshotUpload = createDeferredPromise<void>(
+        context.signal,
+      );
+      let screenshotUploadCount = 0;
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        const input = commandInput(command);
+        if (input.ContentType === "image/webp") {
+          screenshotUploadCount += 1;
+          if (screenshotUploadCount === 2) {
+            return releaseSecondScreenshotUpload.promise;
+          }
+          if (screenshotUploadCount === 3) {
+            return releaseThirdScreenshotUpload.promise;
+          }
+        }
+        return Promise.resolve({});
+      });
+      let captureCount = 0;
+      let failNextCapture = false;
+      context.mocks.browserUseCdp.command.mockImplementation((command) => {
+        if (command.method === "Target.getTargets") {
+          return {
+            targetInfos: [
+              {
+                targetId: "background-page",
+                type: "page",
+                url: "https://background.example.com",
+              },
+              {
+                targetId: "foreground-page",
+                type: "page",
+                url: "https://foreground.example.com",
+              },
+            ],
+          };
+        }
+        if (command.method === "Target.attachToTarget") {
+          return {
+            sessionId:
+              command.params.targetId === "foreground-page"
+                ? "foreground-session"
+                : "background-session",
+          };
+        }
+        if (command.method === "Runtime.evaluate") {
+          return {
+            result: {
+              type: "boolean",
+              value: command.sessionId === "foreground-session",
+            },
+          };
+        }
+        if (command.method === "Page.getLayoutMetrics") {
+          return {
+            cssVisualViewport: {
+              pageX: 0,
+              pageY: 24,
+              clientWidth: 1280,
+              clientHeight: 720,
+            },
+          };
+        }
+        if (command.method === "Page.captureScreenshot") {
+          if (failNextCapture) {
+            return new Error("Screenshot capture unavailable");
+          }
+          captureCount += 1;
+          return {
+            data: Buffer.from(`screenshot-${String(captureCount)}`).toString(
+              "base64",
+            ),
+          };
+        }
+        return undefined;
+      });
 
-    const secondLease = await accept(
-      client().leaseByThread({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-        body: {},
-      }),
-      [200],
-    );
-    expect(secondLease.body.browser.screenshotUrl).toBe(firstScreenshotUrl);
-    await flushWaitUntilForTest();
-    expect(captureCount).toBe(1);
+      await accept(
+        client().use({ headers: current.claim.browserHeaders, body: {} }),
+        [200],
+      );
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
 
-    const secondReconcile = await reconcileBrowsers(current.threadId);
-    expect(secondReconcile.body).toMatchObject({
-      errors: 0,
-    });
-    let flushedScreenshotResults = browserScreenshotResults();
-    context.mocks.axiom.flush.mockImplementation(() => {
-      flushedScreenshotResults = browserScreenshotResults();
-      return Promise.resolve();
-    });
-    releaseSecondScreenshotUpload.resolve(undefined);
-    await flushWaitUntilForTest();
-    // The response already completed while upload was blocked. Its flush
-    // cannot deliver the screenshot result; the background task must flush it.
-    expect(flushedScreenshotResults).toHaveLength(2);
+      const firstLease = await accept(
+        client().leaseByThread({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: current.threadId },
+          body: {},
+        }),
+        [200],
+      );
+      expect(firstLease.body.browser.screenshotUrl).toBeNull();
+      await flushWaitUntilForTest();
+      expect(captureCount).toBe(0);
 
-    const afterSecondCapture = await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-      }),
-      [200],
-    );
-    const secondScreenshotUrl = afterSecondCapture.body.browser.screenshotUrl;
-    expect(secondScreenshotUrl).not.toBe(firstScreenshotUrl);
-    if (!secondScreenshotUrl) {
-      throw new Error("Expected the second browser screenshot URL");
-    }
-    const secondScreenshotKey = `artifacts/${new URL(secondScreenshotUrl).pathname.slice(1)}`;
-    expect(captureCount).toBe(2);
-    expect(
-      context.mocks.browserUseCdp.command.mock.calls
+      const afterViewerLease = await accept(
+        client().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: current.threadId },
+        }),
+        [200],
+      );
+      expect(afterViewerLease.body.browser.screenshotUrl).toBeNull();
+
+      const firstReconcile = await reconcileBrowsers(current.threadId);
+      expect(firstReconcile.body).toMatchObject({
+        errors: 0,
+      });
+      await flushWaitUntilForTest();
+
+      const afterFirstCapture = await accept(
+        client().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: current.threadId },
+        }),
+        [200],
+      );
+      const firstScreenshotUrl = afterFirstCapture.body.browser.screenshotUrl;
+      expect(firstScreenshotUrl).toMatch(
+        privateFiles
+          ? /^https:\/\/screenshot-r2\.example\/test-private-artifacts\/private-artifacts\/.+\?signature=preview$/u
+          : /^https:\/\/a\.okou\.io\/.+\.webp$/u,
+      );
+      if (!firstScreenshotUrl) {
+        throw new Error("Expected the first browser screenshot URL");
+      }
+      const firstScreenshotKey = privateFiles
+        ? new URL(firstScreenshotUrl).pathname.slice(
+            "/test-private-artifacts/".length,
+          )
+        : `artifacts/${new URL(firstScreenshotUrl).pathname.slice(1)}`;
+      const screenshotPut = context.mocks.s3.send.mock.calls
         .map(([command]) => {
-          return command;
+          return commandInput(command);
         })
-        .filter((command) => {
-          return command.method === "Page.captureScreenshot";
+        .find((input) => {
+          return input.ContentType === "image/webp";
+        });
+      expect(screenshotPut?.Bucket).toBe(
+        privateFiles ? "test-private-artifacts" : "test-user-artifacts",
+      );
+      expect(screenshotPut?.Metadata).toMatchObject(
+        privateFiles
+          ? { "artifact-id": expect.any(String) }
+          : { "public-brand": "okou" },
+      );
+
+      const secondLease = await accept(
+        client().leaseByThread({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: current.threadId },
+          body: {},
         }),
-    ).toStrictEqual([
-      {
-        id: 7,
-        method: "Page.captureScreenshot",
-        params: {
-          format: "webp",
-          quality: 80,
-          fromSurface: true,
-          captureBeyondViewport: false,
-          clip: {
-            x: 0,
-            y: 24,
-            width: 1280,
-            height: 720,
-            scale: 0.5,
+        [200],
+      );
+      expect(secondLease.body.browser.screenshotUrl).toBe(firstScreenshotUrl);
+      await flushWaitUntilForTest();
+      expect(captureCount).toBe(1);
+
+      const secondReconcile = await reconcileBrowsers(current.threadId);
+      expect(secondReconcile.body).toMatchObject({
+        errors: 0,
+      });
+      releaseSecondScreenshotUpload.resolve(undefined);
+      await flushWaitUntilForTest();
+
+      const afterSecondCapture = await accept(
+        client().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: current.threadId },
+        }),
+        [200],
+      );
+      const secondScreenshotUrl = afterSecondCapture.body.browser.screenshotUrl;
+      expect(secondScreenshotUrl).not.toBe(firstScreenshotUrl);
+      if (!secondScreenshotUrl) {
+        throw new Error("Expected the second browser screenshot URL");
+      }
+      const secondScreenshotKey = privateFiles
+        ? new URL(secondScreenshotUrl).pathname.slice(
+            "/test-private-artifacts/".length,
+          )
+        : `artifacts/${new URL(secondScreenshotUrl).pathname.slice(1)}`;
+      expect(captureCount).toBe(2);
+      expect(
+        context.mocks.browserUseCdp.command.mock.calls
+          .map(([command]) => {
+            return command;
+          })
+          .filter((command) => {
+            return command.method === "Page.captureScreenshot";
+          }),
+      ).toStrictEqual([
+        {
+          id: 7,
+          method: "Page.captureScreenshot",
+          params: {
+            format: "webp",
+            quality: 80,
+            fromSurface: true,
+            captureBeyondViewport: false,
+            clip: {
+              x: 0,
+              y: 24,
+              width: 1280,
+              height: 720,
+              scale: 0.5,
+            },
           },
+          sessionId: "foreground-session",
         },
-        sessionId: "foreground-session",
-      },
-      {
-        id: 7,
-        method: "Page.captureScreenshot",
-        params: {
-          format: "webp",
-          quality: 80,
-          fromSurface: true,
-          captureBeyondViewport: false,
-          clip: {
-            x: 0,
-            y: 24,
-            width: 1280,
-            height: 720,
-            scale: 0.5,
+        {
+          id: 7,
+          method: "Page.captureScreenshot",
+          params: {
+            format: "webp",
+            quality: 80,
+            fromSurface: true,
+            captureBeyondViewport: false,
+            clip: {
+              x: 0,
+              y: 24,
+              width: 1280,
+              height: 720,
+              scale: 0.5,
+            },
           },
+          sessionId: "foreground-session",
         },
-        sessionId: "foreground-session",
-      },
-    ]);
+      ]);
 
-    expect(
-      context.mocks.s3.send.mock.calls.filter(([command]) => {
-        const input = commandInput(command);
-        return (JSON.stringify(input.Delete) ?? "").includes(
-          firstScreenshotKey,
-        );
-      }),
-    ).toHaveLength(0);
-    const thirdReconcile = await reconcileBrowsers(current.threadId);
-    expect(thirdReconcile.body).toMatchObject({
-      errors: 0,
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.filter(([command]) => {
-        const input = commandInput(command);
-        return (JSON.stringify(input.Delete) ?? "").includes(
-          firstScreenshotKey,
-        );
-      }),
-    ).toHaveLength(0);
-    releaseThirdScreenshotUpload.resolve(undefined);
-    await flushWaitUntilForTest();
-
-    const afterThirdCapture = await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-      }),
-      [200],
-    );
-    const finalScreenshotUrl = afterThirdCapture.body.browser.screenshotUrl;
-    expect(finalScreenshotUrl).not.toBe(secondScreenshotUrl);
-    if (!finalScreenshotUrl) {
-      throw new Error("Expected the third browser screenshot URL");
-    }
-    const finalScreenshotKey = `artifacts/${new URL(finalScreenshotUrl).pathname.slice(1)}`;
-    expect(captureCount).toBe(3);
-    expect(browserScreenshotResults()).toStrictEqual(
-      Array.from({ length: 3 }, () => {
-        return {
-          _time: isoAt(0),
-          type: "managed_browser_screenshot",
-          source: "api",
-          outcome: "success",
-          duration_ms: 0,
-        };
-      }),
-    );
-    failNextCapture = true;
-    const failedCapture = await reconcileBrowsers(current.threadId);
-    expect(failedCapture.body).toMatchObject({ healthy: 1, errors: 0 });
-    await flushWaitUntilForTest();
-    const retainedPreview = await accept(
-      client().get({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId: current.threadId },
-      }),
-      [200],
-    );
-    expect(retainedPreview.body.browser).toMatchObject({
-      status: "active",
-      screenshotUrl: finalScreenshotUrl,
-    });
-    expect(browserScreenshotResults()).toHaveLength(4);
-    expect(browserScreenshotResults().at(-1)).toMatchObject({
-      outcome: "failure",
-      failure_stage: "capture",
-      failure_kind: "other",
-    });
-    expect(context.mocks.axiomLogging.warn.mock.calls).toStrictEqual([]);
-    expect(context.mocks.axiomLogging.error.mock.calls).toStrictEqual([]);
-    expect(context.mocks.sentry.captureException.mock.calls).toStrictEqual([]);
-    expect(
-      context.mocks.s3.send.mock.calls.filter(([command]) => {
-        const input = commandInput(command);
-        return (JSON.stringify(input.Delete) ?? "").includes(
-          secondScreenshotKey,
-        );
-      }),
-    ).toHaveLength(0);
-
-    await chat.deleteThread(actor, current.threadId);
-    await flushWaitUntilForTest();
-    expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: expect.objectContaining({
-          Delete: { Objects: [{ Key: finalScreenshotKey }] },
+      expect(
+        context.mocks.s3.send.mock.calls.filter(([command]) => {
+          const input = commandInput(command);
+          return (JSON.stringify(input.Delete) ?? "").includes(
+            firstScreenshotKey,
+          );
         }),
-      }),
-    );
-
-    const reconciled = await reconcileBrowsers(current.threadId);
-    expect(reconciled.body).toMatchObject({
-      errors: 0,
-    });
-    expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: expect.objectContaining({
-          Delete: { Objects: [{ Key: finalScreenshotKey }] },
+      ).toHaveLength(0);
+      const thirdReconcile = await reconcileBrowsers(current.threadId);
+      expect(thirdReconcile.body).toMatchObject({
+        errors: 0,
+      });
+      expect(
+        context.mocks.s3.send.mock.calls.filter(([command]) => {
+          const input = commandInput(command);
+          return (JSON.stringify(input.Delete) ?? "").includes(
+            firstScreenshotKey,
+          );
         }),
-      }),
-    );
-  }, 120_000);
+      ).toHaveLength(0);
+      releaseThirdScreenshotUpload.resolve(undefined);
+      await flushWaitUntilForTest();
+
+      const afterThirdCapture = await accept(
+        client().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: current.threadId },
+        }),
+        [200],
+      );
+      const finalScreenshotUrl = afterThirdCapture.body.browser.screenshotUrl;
+      expect(finalScreenshotUrl).not.toBe(secondScreenshotUrl);
+      if (!finalScreenshotUrl) {
+        throw new Error("Expected the third browser screenshot URL");
+      }
+      const finalScreenshotKey = privateFiles
+        ? new URL(finalScreenshotUrl).pathname.slice(
+            "/test-private-artifacts/".length,
+          )
+        : `artifacts/${new URL(finalScreenshotUrl).pathname.slice(1)}`;
+      expect(captureCount).toBe(3);
+      await updateFeatureSwitchesForUser(context, flagActor, {
+        [FeatureSwitchKey.PrivateArtifacts]: !privateFiles,
+      });
+      failNextCapture = true;
+      const failedCapture = await reconcileBrowsers(current.threadId);
+      expect(failedCapture.body).toMatchObject({ healthy: 1, errors: 0 });
+      await flushWaitUntilForTest();
+      const retainedPreview = await accept(
+        client().get({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: current.threadId },
+        }),
+        [200],
+      );
+      expect(retainedPreview.body.browser).toMatchObject({
+        status: "active",
+        screenshotUrl: finalScreenshotUrl,
+      });
+      expect(context.mocks.sentry.captureException.mock.calls).toStrictEqual(
+        [],
+      );
+      expect(
+        context.mocks.s3.send.mock.calls.filter(([command]) => {
+          const input = commandInput(command);
+          return (JSON.stringify(input.Delete) ?? "").includes(
+            secondScreenshotKey,
+          );
+        }),
+      ).toHaveLength(0);
+
+      await chat.deleteThread(actor, current.threadId);
+      await flushWaitUntilForTest();
+      expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Delete: { Objects: [{ Key: finalScreenshotKey }] },
+          }),
+        }),
+      );
+
+      const reconciled = await reconcileBrowsers(current.threadId);
+      expect(reconciled.body).toMatchObject({
+        errors: 0,
+      });
+      expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            Delete: { Objects: [{ Key: finalScreenshotKey }] },
+          }),
+        }),
+      );
+    },
+    120_000,
+  );
 
   it("reclaims an active browser after its thread is already deleted", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();

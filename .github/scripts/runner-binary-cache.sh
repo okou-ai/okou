@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 . "${SCRIPT_DIR}/runner-image-target.sh"
+. "${SCRIPT_DIR}/runner-binary-download.sh"
 . "${SCRIPT_DIR}/runner-guest-binaries.sh"
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 
@@ -210,11 +211,10 @@ artifact_name() {
   emit "artifact-name" "$(reusable_artifact_name "$EXPECTED_TARGET" "$EXPECTED_BINARY_INPUT_DIGEST")"
 }
 
-publish_soft_failure() {
+publish_failure() {
   local reason=$1 message=$2
-  echo "::warning::Runner binary cache publication skipped (${reason}): ${message}"
-  emit "published" "false"
-  emit "publish-reason" "$reason"
+  echo "::error::Runner binary publication failed (${reason}): ${message}" >&2
+  exit 1
 }
 
 fetch_verified_r2_runner() {
@@ -353,16 +353,13 @@ publish() {
 
   if [ -z "${R2_ACCOUNT_ID:-}" ] || [ -z "${R2_BUCKET_NAME:-}" ] ||
     [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-    publish_soft_failure "missing-r2-config" "required R2 configuration is unavailable"
-    return 0
+    publish_failure "missing-r2-config" "required R2 configuration is unavailable"
   fi
   if ! command -v aws >/dev/null; then
-    publish_soft_failure "aws-unavailable" "AWS CLI is unavailable"
-    return 0
+    publish_failure "aws-unavailable" "AWS CLI is unavailable"
   fi
   if ! command -v zstd >/dev/null; then
-    publish_soft_failure "zstd-unavailable" "zstd is unavailable"
-    return 0
+    publish_failure "zstd-unavailable" "zstd is unavailable"
   fi
 
   local temp_root compressed retained decompressed error_log
@@ -375,14 +372,12 @@ publish() {
   trap 'rm -rf "$PUBLISH_TEMP_ROOT"' EXIT
 
   if ! zstd -q -3 -T0 -f -o "$compressed" "$RUNNER_PATH"; then
-    publish_soft_failure "compression-failed" "runner compression failed"
-    return 0
+    publish_failure "compression-failed" "runner compression failed"
   fi
   local compressed_size
   compressed_size=$(stat -c '%s' "$compressed")
   if [ "$compressed_size" -le 0 ] || [ "$compressed_size" -gt "$RUNNER_BINARY_MAX_COMPRESSED_BYTES" ]; then
-    publish_soft_failure "compressed-size-invalid" "compressed runner is outside the configured bound"
-    return 0
+    publish_failure "compressed-size-invalid" "compressed runner is outside the configured bound"
   fi
 
   local object_key endpoint put_status
@@ -397,10 +392,10 @@ publish() {
     --content-type application/zstd \
     --cache-control 'private, max-age=259200' \
     --if-none-match '*' \
+    --cli-connect-timeout 5 --cli-read-timeout 30 \
     >/dev/null 2>"$error_log" || put_status=$?
   if [ "$put_status" -ne 0 ] && ! grep -Eq 'PreconditionFailed|precondition|412' "$error_log"; then
-    publish_soft_failure "put-failed" "R2 rejected the runner object upload"
-    return 0
+    publish_failure "put-failed" "R2 rejected the runner object upload"
   fi
 
   local retained_size publish_reason
@@ -413,8 +408,7 @@ publish() {
       content-mismatch) publish_reason="retained-content-mismatch" ;;
       *) publish_reason="$R2_VERIFICATION_REASON" ;;
     esac
-    publish_soft_failure "$publish_reason" "$R2_VERIFICATION_MESSAGE"
-    return 0
+    publish_failure "$publish_reason" "$R2_VERIFICATION_MESSAGE"
   fi
   retained_size="$R2_VERIFIED_OBJECT_SIZE"
 
@@ -806,7 +800,6 @@ collect_trusted_candidates() {
   TRUSTED_CANDIDATES_FILE="$trusted_file"
   TRUSTED_CANDIDATE_COUNT="$trusted_count"
   TRUSTED_IDENTITY_COUNT="$identity_count"
-  TRUSTED_INSPECTION_COUNT="$inspected"
   if [ "$trusted_count" -eq 0 ]; then
     if [ "$limit_reached" = "true" ]; then
       CANDIDATE_DISCOVERY_REASON="candidate-limit-exhausted"
@@ -878,7 +871,7 @@ resolve_result() {
   emit "resolve-producer-run-id" "$run_id"
 }
 
-active_resolve() {
+validate_cache_request() {
   require_env EXPECTED_TARGET
   require_env EXPECTED_BINARY_INPUT_DIGEST
   require_env RESOLVE_OUTPUT_DIR
@@ -891,103 +884,156 @@ active_resolve() {
     echo "runner binary resolve output already exists or is unsafe: ${RESOLVE_OUTPUT_DIR}" >&2
     exit 2
   fi
-  validate_resolution_context
+}
 
+r2_available() {
+  [ -n "${R2_ACCOUNT_ID:-}" ] && [ -n "${R2_BUCKET_NAME:-}" ] &&
+    [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ] &&
+    command -v aws >/dev/null
+}
+
+cache_temp_directory() {
+  local output_parent
+  output_parent=$(dirname "$RESOLVE_OUTPUT_DIR")
+  mkdir -p "$output_parent"
+  RUNNER_CACHE_TEMP_ROOT=$(mktemp -d "${RUNNER_TEMP:-$output_parent}/runner-binary-cache.XXXXXX")
+  trap 'rm -rf "$RUNNER_CACHE_TEMP_ROOT"' EXIT
+}
+
+validate_cache_reference() {
+  jq -e \
+    --arg target "$EXPECTED_TARGET" \
+    --arg digest "$EXPECTED_BINARY_INPUT_DIGEST" \
+    --arg toolchain "$RUNNER_BINARY_TOOLCHAIN_IMAGE" \
+    --argjson guests "$(guest_keys_json)" '
+      .schemaVersion == 1 and
+      .target == $target and
+      .binaryInputDigest == $digest and
+      .toolchainImage == $toolchain and
+      (.objectKey | type == "string" and
+        test("^runner-binaries/" + $target + "/[0-9a-f]{64}\\.zst$")) and
+      (.guestSha256 | type == "object") and
+      ((.guestSha256 | keys | sort) == $guests) and
+      all(.guestSha256[]; type == "string" and test("^[0-9a-f]{64}$"))
+    ' <<<"$CACHE_REFERENCE" >/dev/null
+}
+
+resolve_reference() {
+  validate_cache_request
+  require_env REPO
   case "${RUNNER_BINARY_CACHE_FORCE_MISS:-false}" in
     true)
       resolve_result "miss" "" "force-miss"
       return 0
       ;;
     false|"") ;;
-    *)
-      echo "invalid RUNNER_BINARY_CACHE_FORCE_MISS: ${RUNNER_BINARY_CACHE_FORCE_MISS}" >&2
-      exit 2
-      ;;
+    *) echo "invalid RUNNER_BINARY_CACHE_FORCE_MISS" >&2; exit 2 ;;
   esac
-  if [ -z "${R2_ACCOUNT_ID:-}" ] || [ -z "${R2_BUCKET_NAME:-}" ] ||
-    [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+  if ! r2_available; then
     resolve_result "miss" "" "missing-r2-config"
     return 0
   fi
-  if ! command -v aws >/dev/null; then
-    resolve_result "miss" "" "aws-unavailable"
+
+  local name artifacts candidates run_id artifact_id inspected=0 reason=no-candidate
+  name=$(reusable_artifact_name "$EXPECTED_TARGET" "$EXPECTED_BINARY_INPUT_DIGEST")
+  if ! artifacts=$(gh api --paginate --slurp \
+    "repos/${REPO}/actions/artifacts?name=${name}&per_page=100" 2>/dev/null); then
+    resolve_result "miss" "" "artifact-api-unavailable"
     return 0
   fi
-  if ! command -v zstd >/dev/null; then
-    resolve_result "miss" "" "zstd-unavailable"
+  if ! candidates=$(jq -ce --arg name "$name" \
+    --argjson max_size "$RUNNER_BINARY_MAX_MANIFEST_ARTIFACT_BYTES" \
+    --argjson limit "$RUNNER_BINARY_MAX_CANDIDATE_INSPECTIONS" '
+      [ .[] | .artifacts[] |
+        select(.name == $name and .expired == false) |
+        select(.size_in_bytes > 0 and .size_in_bytes <= $max_size) |
+        select(.id | type == "number" and . > 0) |
+        select(.workflow_run.id | type == "number" and . > 0)
+      ] | sort_by(.created_at) | reverse | .[:$limit]
+    ' <<<"$artifacts" 2>/dev/null); then
+    resolve_result "miss" "" "artifact-api-malformed"
     return 0
   fi
 
-  local output_parent temp_root candidate_dir
-  output_parent=$(dirname "$RESOLVE_OUTPUT_DIR")
-  mkdir -p "$output_parent"
-  temp_root=$(mktemp -d "${RUNNER_TEMP:-${output_parent}}/runner-binary-resolve.XXXXXX")
-  candidate_dir="${temp_root}/candidates"
-  ACTIVE_RESOLVE_TEMP_ROOT="$temp_root"
-  trap 'rm -rf "$ACTIVE_RESOLVE_TEMP_ROOT"' EXIT
-
-  if ! collect_trusted_candidates \
-    "$EXPECTED_TARGET" "$EXPECTED_BINARY_INPUT_DIGEST" "$candidate_dir"; then
-    emit "candidate-inspections" "0"
-    resolve_result "miss" "" "$CANDIDATE_DISCOVERY_REASON"
+  cache_temp_directory
+  while IFS=$'\t' read -r run_id artifact_id; do
+    [ -n "$run_id" ] || continue
+    inspected=$((inspected + 1))
+    local candidate_dir="${RUNNER_CACHE_TEMP_ROOT}/${artifact_id}"
+    mkdir -p "$candidate_dir"
+    # GitHub is only the existing cache index; R2 does not need run/ancestry proof.
+    if ! gh run download "$run_id" -n "$name" -D "$candidate_dir" >/dev/null 2>&1; then
+      continue
+    fi
+    if ! CACHE_REFERENCE=$(jq -c '{
+      schemaVersion, binaryInputDigest, target, toolchainImage,
+      objectKey: .object.key, guestSha256: .guests
+    }' "${candidate_dir}/manifest.json" 2>/dev/null) ||
+      ! validate_cache_reference 2>/dev/null; then
+      continue
+    fi
+    local object_key
+    object_key=$(jq -r '.objectKey' <<<"$CACHE_REFERENCE")
+    if ! aws s3api head-object \
+      --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+      --bucket "$R2_BUCKET_NAME" --key "$object_key" \
+      --cli-connect-timeout 5 --cli-read-timeout 30 >/dev/null 2>&1; then
+      reason=r2-unavailable
+      continue
+    fi
+    mkdir -p "$RESOLVE_OUTPUT_DIR"
+    printf '%s\n' "$CACHE_REFERENCE" > "${RESOLVE_OUTPUT_DIR}/reference.json"
+    emit "candidate-inspections" "$inspected"
+    resolve_result "hit" "r2" "reference" "$run_id"
     return 0
-  fi
-  emit "candidate-inspections" "$TRUSTED_INSPECTION_COUNT"
-  if [ "$TRUSTED_IDENTITY_COUNT" -gt 1 ]; then
-    resolve_result "miss" "" "trusted-output-conflict"
-    return 0
-  fi
-  if [ "$TRUSTED_CANDIDATE_COUNT" -eq 0 ]; then
-    resolve_result "miss" "" "$CANDIDATE_DISCOVERY_REASON"
-    return 0
-  fi
-  first_trusted_candidate
+  done < <(jq -r '.[] | [.workflow_run.id, .id] | @tsv' <<<"$candidates")
+  emit "candidate-inspections" "$inspected"
+  resolve_result "miss" "" "$reason"
+}
 
-  local object_key object_size runner_sha runner_size
-  object_key=$(jq -r '.object.key' "$TRUSTED_MANIFEST_PATH")
-  object_size=$(jq -r '.object.sizeBytes' "$TRUSTED_MANIFEST_PATH")
-  runner_sha=$(jq -r '.runner.sha256' "$TRUSTED_MANIFEST_PATH")
-  runner_size=$(jq -r '.runner.sizeBytes' "$TRUSTED_MANIFEST_PATH")
-  local compressed decompressed
-  compressed="${temp_root}/runner.zst"
-  decompressed="${temp_root}/runner"
-  if ! fetch_verified_r2_runner \
-    "$object_key" "$object_size" "$runner_size" "$runner_sha" \
-    "$compressed" "$decompressed"; then
-    resolve_result "miss" "$TRUSTED_SOURCE" \
-      "r2-${R2_VERIFICATION_REASON}" "$TRUSTED_RUN_ID"
-    return 0
+download_reference() {
+  validate_cache_request
+  require_env CACHE_REFERENCE
+  require_env R2_ACCOUNT_ID
+  require_env R2_BUCKET_NAME
+  require_env AWS_ACCESS_KEY_ID
+  require_env AWS_SECRET_ACCESS_KEY
+  if ! validate_cache_reference; then
+    echo "invalid cached runner reference" >&2
+    exit 2
   fi
-
-  local transport_dir
-  transport_dir="${temp_root}/transport"
-  mkdir -p "$transport_dir"
-  install -m 755 "$decompressed" "${transport_dir}/runner"
-  jq '{
-    schemaVersion,
-    binaryInputDigest,
-    target,
-    toolchainImage,
-    runnerSha256: .runner.sha256,
-    runnerSizeBytes: .runner.sizeBytes,
-    guestSha256: .guests
-  }' "$TRUSTED_MANIFEST_PATH" > "${transport_dir}/metadata.json"
-  env GITHUB_OUTPUT= \
-    FRESH_METADATA_PATH="${transport_dir}/metadata.json" \
-    RUNNER_PATH="${transport_dir}/runner" \
-    EXPECTED_TARGET="$EXPECTED_TARGET" \
-    EXPECTED_BINARY_INPUT_DIGEST="$EXPECTED_BINARY_INPUT_DIGEST" \
-    "$0" fresh-validate >/dev/null
-  mv "$transport_dir" "$RESOLVE_OUTPUT_DIR"
-
+  cache_temp_directory
+  local object_key compressed runner transport runner_size runner_sha
+  object_key=$(jq -r '.objectKey' <<<"$CACHE_REFERENCE")
+  compressed="${RUNNER_CACHE_TEMP_ROOT}/runner.zst"
+  transport="${RUNNER_CACHE_TEMP_ROOT}/transport"
+  mkdir -p "$transport"
+  runner="${transport}/runner"
+  runner_binary_download cached-binary "$object_key" \
+    "bytes=0-${RUNNER_BINARY_MAX_COMPRESSED_BYTES}" "$compressed" 60 198
+  zstd -q -d -c "$compressed" |
+    head -c "$((RUNNER_BINARY_MAX_SIZE_BYTES + 1))" > "$runner"
+  runner_size=$(stat -c '%s' "$runner")
+  if [ "$runner_size" -eq 0 ] || [ "$runner_size" -gt "$RUNNER_BINARY_MAX_SIZE_BYTES" ]; then
+    echo "cached runner size is invalid: ${runner_size}" >&2
+    exit 1
+  fi
+  # Record local transport identity, without comparing trusted R2 bytes to GitHub.
+  runner_sha=$(sha256sum "$runner" | awk '{print $1}')
+  jq --arg sha "$runner_sha" --argjson size "$runner_size" '{
+    schemaVersion, binaryInputDigest, target, toolchainImage, guestSha256,
+    runnerSha256: $sha, runnerSizeBytes: $size
+  }' <<<"$CACHE_REFERENCE" > "${transport}/metadata.json"
+  chmod 755 "$runner"
+  mv "$transport" "$RESOLVE_OUTPUT_DIR"
   emit "runner-size-bytes" "$runner_size"
-  emit "object-size-bytes" "$object_size"
-  resolve_result "hit" "$TRUSTED_SOURCE" "validated" "$TRUSTED_RUN_ID"
+  emit "object-size-bytes" "$(stat -c '%s' "$compressed")"
+  resolve_result "hit" "r2" "downloaded"
 }
 
 usage() {
   cat <<'USAGE'
-Usage: runner-binary-cache.sh <fresh-validate|artifact-name|manifest-validate|publish|shadow-resolve|active-resolve>
+Usage: runner-binary-cache.sh <fresh-validate|artifact-name|manifest-validate|publish|shadow-resolve|resolve-reference|download-reference>
 USAGE
 }
 
@@ -997,7 +1043,8 @@ case "${1:-}" in
   manifest-validate) manifest_validate ;;
   publish) publish ;;
   shadow-resolve) shadow_resolve ;;
-  active-resolve) active_resolve ;;
+  resolve-reference) resolve_reference ;;
+  download-reference) download_reference ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit 2 ;;
 esac

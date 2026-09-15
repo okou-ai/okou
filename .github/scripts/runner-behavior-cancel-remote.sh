@@ -105,27 +105,40 @@ ACTIVE_RELEASE=$8
 REQUIRED_POOL_INDEXES=$9
 CAPACITY_TIMEOUT_SECONDS=${10}
 declare -a RESERVED_FDS=()
+declare -a FIXTURE_FDS=()
 declare -a RESERVED_INDEXES=()
 
 reserve_index() {
   local index=$1
   local path="/var/lock/vm0-netns-pool-${index}.lock"
-  local candidate_fd
+  local fixture_path="/var/lock/vm0-ci-cancel-pool-${index}.lock"
+  local candidate_fd fixture_fd
+  # Kernel locks are deliberately released during reconciliation. Keep a
+  # separate CI claim until this helper exits so another cancel fixture cannot
+  # reserve that same index during the handoff. Never unlink these lock files.
+  exec {fixture_fd}>>"$fixture_path"
+  if ! flock -n "$fixture_fd"; then
+    exec {fixture_fd}>&-
+    return 0
+  fi
   exec {candidate_fd}>>"$path"
   if flock -n "$candidate_fd"; then
     RESERVED_FDS+=("$candidate_fd")
+    FIXTURE_FDS+=("$fixture_fd")
     RESERVED_INDEXES+=("$index")
   else
     exec {candidate_fd}>&-
+    exec {fixture_fd}>&-
   fi
 }
 
 release_reserved_indexes() {
   local fd
-  for fd in "${RESERVED_FDS[@]}"; do
+  for fd in "${RESERVED_FDS[@]}" "${FIXTURE_FDS[@]}"; do
     exec {fd}>&-
   done
   RESERVED_FDS=()
+  FIXTURE_FDS=()
   RESERVED_INDEXES=()
 }
 

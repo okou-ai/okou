@@ -2,6 +2,7 @@
 //! representation without changing the complete local normalized event.
 
 mod common;
+use common::delivery_image;
 
 use base64::Engine as _;
 use guest_agent::masker::SecretMasker;
@@ -46,6 +47,41 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         RUN_ID,
         Duration::ZERO,
     )?;
+    let small_image = format!(
+        "data:image/png;base64,{}",
+        delivery_image::png_base64(1, 1)?
+    );
+    let half_image = format!(
+        "data:image/png;base64,{}",
+        delivery_image::png_base64(1024, 512)?
+    );
+    let large_image = format!(
+        "data:image/png;base64,{}",
+        delivery_image::png_base64(1024, 1024)?
+    );
+    let image = |url: &str| serde_json::json!({"type":"input_image","image_url":url});
+    let mut delivery_items = serde_json::json!([
+        {"type":"functionCallOutput","id":"small-image","name":"read","output":[image(&small_image)]},
+        {"type":"functionCallOutput","id":"large-image","name":"read","namespace":"tools","output":[image(&large_image)]},
+        {"type":"functionCallOutput","id":"aggregate-images","name":"read","output":[image(&half_image),image(&half_image),image(&small_image)]},
+        {"type":"functionCallOutput","id":"structure-output","name":"read","namespace":"tools","output":std::iter::once(image(&half_image)).chain(std::iter::repeat_n(serde_json::json!({"type":"input_text","text":"bounded-content"}),100_000)).collect::<Vec<_>>()},
+        {"type":"commandExecution","id":"failed-command","command":"false","status":"failed","exitCode":7,"durationMs":42,"aggregatedOutput":format!("failed-output-head-{}-failed-output-tail", "x".repeat(MAX_REQUEST_BYTES))}
+    ]);
+    let collaboration_items = [
+        collaboration_item("large-collaboration", 1, 850_000),
+        collaboration_item("aggregate-collaboration", 8, 80_000),
+        collaboration_item("fallback-collaboration", 40, 24_000),
+    ];
+    delivery_items
+        .as_array_mut()
+        .ok_or("delivery items must be an array")?
+        .extend(collaboration_items.iter().cloned());
+    let items_path = tmp.path().join("delivery-items.json");
+    std::fs::write(&items_path, serde_json::to_vec(&delivery_items)?)?;
+    runtime.config.user_env.insert(
+        "MOCK_CODEX_DELIVERY_ITEMS_PATH".into(),
+        items_path.to_string_lossy().into_owned(),
+    );
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
     let _system_log = common::SystemLogOverrideGuard::set(runtime.paths.system_log_file());
     let encoded_secret = base64::engine::general_purpose::STANDARD.encode(SECRET);
@@ -60,7 +96,8 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
 
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
     assert!(result.control_error.is_none());
-    assert_eq!(result.last_event_sequence, Some(11));
+    assert!(result.event_delivery.is_none());
+    assert_eq!(result.last_event_sequence, Some(19));
 
     server
         .wait_for_quiet(Duration::from_millis(50), Duration::from_secs(5))
@@ -90,13 +127,13 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
                 .unwrap_or_default()
         })
         .collect::<Vec<_>>();
-    assert_eq!(delivered.len(), 12);
+    assert_eq!(delivered.len(), 20);
     assert_eq!(
         delivered
             .iter()
             .map(|event| event["sequenceNumber"].as_u64())
             .collect::<Vec<_>>(),
-        (0..12).map(Some).collect::<Vec<_>>()
+        (0..20).map(Some).collect::<Vec<_>>()
     );
 
     for item_id in [
@@ -226,7 +263,105 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         .ok_or("normal warning was not delivered")?;
     assert_eq!(warning["message"], "codex-mock warning 999");
 
+    let failed = delivered_item(&delivered, "failed-command")?;
+    assert_eq!(failed["item"]["status"], "failed");
+    assert_eq!(failed["item"]["exit_code"], 7);
+    assert_eq!(failed["item"]["duration_ms"], 42);
+    assert_eq!(failed["item"]["command"], "false");
+    assert!(
+        failed["item"]["aggregated_output"]
+            .as_str()
+            .is_some_and(|text| text.starts_with("failed-output-head-")
+                && text.ends_with("-failed-output-tail")
+                && text.contains(DELIVERY_MARKER))
+    );
+
+    let small = delivered_item(&delivered, "small-image")?;
+    assert_eq!(
+        small["item"]["output"],
+        serde_json::json!([image(&small_image)])
+    );
+    let large = delivered_item(&delivered, "large-image")?;
+    assert_eq!(large["item"]["name"], "read");
+    assert_eq!(large["item"]["namespace"], "tools");
+    assert_eq!(
+        large["item"]["output"],
+        serde_json::json!([{"type":"input_text","text":"[image omitted for delivery]"}])
+    );
+    let aggregate = delivered_item(&delivered, "aggregate-images")?;
+    assert_eq!(
+        aggregate["item"]["output"],
+        serde_json::json!([
+            {"type":"input_text","text":"[image omitted for delivery]"},image(&half_image),image(&small_image)
+        ])
+    );
+    let structure = delivered_item(&delivered, "structure-output")?;
+    assert_eq!(structure["item"]["name"], "read");
+    assert_eq!(structure["item"]["namespace"], "tools");
+    assert_eq!(
+        structure["item"]["output"],
+        serde_json::json!([{"type":"input_text","text":FALLBACK_MARKER},{"type":"input_text","text":"[image omitted for delivery]"}])
+    );
+    assert_eq!(
+        std::fs::read(&items_path)?,
+        serde_json::to_vec(&delivery_items)?
+    );
+    let history = common::read_codex_session_history_events_for_runtime(&runtime)?;
+    let inputs = history
+        .iter()
+        .filter(|event| event["type"] == "mock.app_server.input")
+        .collect::<Vec<_>>();
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(inputs[0]["text"], runtime.config.prompt);
+    assert!(!serde_json::to_string(&history)?.contains("for delivery"));
     let local_events = read_jsonl(runtime.paths.agent_log_file())?;
+    for original in &collaboration_items {
+        let item_id = original["id"]
+            .as_str()
+            .ok_or("collaboration item omitted id")?;
+        let item = &delivered_item(&delivered, item_id)?["item"];
+        assert_eq!(item["type"], "collab_agent_tool_call");
+        assert_eq!(item["tool"], "wait");
+        assert_eq!(item["status"], original["status"]);
+        assert_eq!(item["sender_thread_id"], original["senderThreadId"]);
+        assert_eq!(item["receiver_thread_ids"], original["receiverThreadIds"]);
+        assert_eq!(item["prompt"], Value::Null);
+        assert_eq!(item["model"], Value::Null);
+        assert_eq!(item["reasoning_effort"], Value::Null);
+        let states = item["agents_states"]
+            .as_object()
+            .ok_or("missing child states")?;
+        let original_states = original["agentsStates"]
+            .as_object()
+            .ok_or("missing original states")?;
+        assert_eq!(states.len(), original_states.len());
+        let mut reduced_messages = 0;
+        for (child_id, state) in original_states {
+            let actual = states.get(child_id).ok_or("child identity was lost")?;
+            assert_eq!(actual["status"], state["status"]);
+            if let Some(text) = state["message"].as_str().filter(|text| !text.is_empty()) {
+                let actual_text = actual["message"].as_str().ok_or("child message was lost")?;
+                assert!(!actual_text.contains(SECRET));
+                if item_id == "fallback-collaboration" {
+                    assert_eq!(actual_text, FALLBACK_MARKER);
+                    reduced_messages += 1;
+                } else if actual_text.contains(DELIVERY_MARKER) {
+                    assert!(actual_text.starts_with("child-head-***-"));
+                    assert!(actual_text.ends_with("-child-tail"));
+                    reduced_messages += 1;
+                } else {
+                    assert_eq!(actual_text, text.replace(SECRET, "***"));
+                }
+            } else {
+                assert_eq!(actual["message"], state["message"]);
+            }
+        }
+        assert!(reduced_messages > 0);
+        assert_eq!(
+            delivered_item(&local_events, item_id)?["item"]["agents_states"],
+            original["agentsStates"]
+        );
+    }
     let local_agent = delivered_item(&local_events, "oversized-agent-message")?;
     let local_text = local_agent["item"]["text"]
         .as_str()
@@ -257,12 +392,22 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             }))
     );
 
+    assert_eq!(
+        delivered_item(&local_events, "large-image")?["item"]["output"],
+        serde_json::json!([image(&large_image)])
+    );
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
     assert_eq!(
         system_log
             .matches("Codex event reduced for delivery")
             .count(),
-        8
+        15
+    );
+    assert!(
+        system_log
+            .lines()
+            .filter(|line| line.contains("Codex event reduced for delivery"))
+            .all(|line| line.contains("[INFO]"))
     );
     assert!(system_log.contains("event_type=turn.plan.updated"));
     assert!(system_log.contains("fallback=true"));
@@ -271,6 +416,34 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     assert!(!system_log.contains("large.txt"));
 
     Ok(())
+}
+
+fn collaboration_item(item_id: &str, child_count: usize, repetitions: usize) -> Value {
+    let message = format!(
+        "child-head-{SECRET}-{}-child-tail",
+        "α\"\\\n".repeat(repetitions)
+    );
+    let mut states = serde_json::Map::new();
+    for index in 0..child_count {
+        states.insert(
+            format!("child-{index:02}"),
+            serde_json::json!({"status": "errored", "message": message}),
+        );
+    }
+    states.insert(
+        "null-child".into(),
+        serde_json::json!({"status": "running", "message": null}),
+    );
+    states.insert(
+        "empty-child".into(),
+        serde_json::json!({"status": "completed", "message": ""}),
+    );
+    let receivers = states.keys().collect::<Vec<_>>();
+    serde_json::json!({
+        "id": item_id, "type": "collabAgentToolCall", "tool": "wait", "status": "completed",
+        "senderThreadId": "parent", "receiverThreadIds": receivers,
+        "prompt": null, "model": null, "reasoningEffort": null, "agentsStates": states,
+    })
 }
 
 fn delivered_item<'a>(events: &'a [Value], item_id: &str) -> Result<&'a Value, String> {

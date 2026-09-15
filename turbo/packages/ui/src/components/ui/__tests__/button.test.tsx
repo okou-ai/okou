@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { Button } from "../button";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "../dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +34,18 @@ describe("Button", () => {
     render(<Button disabled>Disabled</Button>);
     const button = screen.getByRole("button");
     expect(button).toBeDisabled();
+  });
+
+  it("states the neutral fill with overlays so the fill survives", () => {
+    // A translucent `bg-state-*` sets `background-color` and would replace
+    // `bg-control-surface`, dropping the fill's warm cast on hover.
+    render(<Button variant="neutral">Neutral</Button>);
+    const button = screen.getByRole("button");
+    expect(button).toHaveClass("bg-control-surface");
+    expect(button).toHaveClass("[&:hover]:bg-state-hover-overlay");
+    expect(button).toHaveClass("[&:active]:bg-state-pressed-overlay");
+    expect(button).not.toHaveClass("hover:bg-state-hover");
+    expect(button).not.toHaveClass("active:bg-state-pressed");
   });
 
   it("shows the accessible label in a tooltip", async () => {
@@ -80,7 +93,7 @@ describe("Button", () => {
     render(
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button showTooltip aria-label="More actions">
+          <Button variant="neutral" showTooltip aria-label="More actions">
             More icon
           </Button>
         </DropdownMenuTrigger>
@@ -115,15 +128,51 @@ describe("Button", () => {
     expect(await screen.findByText("Details panel")).toBeVisible();
   });
 
-  it("composes an anchor without adding a nested button", () => {
-    render(
-      <Button asChild>
+  it("preserves a composed link's element, destination, ref, and keyboard focus", async () => {
+    const user = userEvent.setup();
+    const ref = { current: null as HTMLAnchorElement | null };
+    const { container } = render(
+      <Button variant="neutral" asChild ref={ref}>
         <a href="/settings">Settings</a>
       </Button>,
     );
 
     const link = screen.getByRole("link", { name: "Settings" });
     expect(link).toHaveAttribute("href", "/settings");
-    expect(link.querySelector("button")).toBeNull();
+    expect(container.firstElementChild).toBe(link);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(ref.current).toBe(link);
+    await user.tab();
+    expect(link).toHaveFocus();
+  });
+
+  it("opens a composed dialog and restores focus to its trigger", async () => {
+    const user = userEvent.setup();
+    render(
+      <Dialog>
+        <DialogTrigger asChild>
+          <Button type="button" variant="neutral">
+            Add automation
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogTitle>Choose automation</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Add automation" });
+    expect(trigger).toHaveAttribute("type", "button");
+    await user.click(trigger);
+    expect(
+      screen.getByRole("dialog", { name: "Choose automation" }),
+    ).toBeVisible();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Choose automation" }),
+      ).toBeNull();
+      expect(trigger).toHaveFocus();
+    });
   });
 });

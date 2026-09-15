@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import indexHtml from "../../index.html?raw";
 import { setupPage } from "./page-helper.ts";
@@ -51,9 +51,11 @@ test("App-started Clerk keeps browser navigation until a route owns it", async (
 const BOOTSTRAP_SCRIPT_SELECTOR = "[data-okou-clerk-bootstrap]";
 
 interface InlineBootstrapLoadOptions {
+  readonly afterSignOutUrl: string;
   readonly routerPush: InlineClerkRouter;
   readonly routerReplace: InlineClerkRouter;
   readonly signInUrl: string;
+  readonly signUpUrl: string;
 }
 
 interface InlineClerkRouterMetadata {
@@ -65,11 +67,20 @@ type InlineClerkRouter = (
   metadata: InlineClerkRouterMetadata,
 ) => unknown;
 
+interface InlineClerk {
+  readonly load: (options: InlineBootstrapLoadOptions) => Promise<void>;
+  readonly on: () => void;
+}
+
 interface InlineBootstrapConfiguration {
-  readonly loadOptions: InlineBootstrapLoadOptions;
+  readonly runtime: Promise<{
+    readonly clerk: InlineClerk;
+    readonly loaded: Promise<void>;
+  }>;
 }
 
 interface InlineBootstrapWindow {
+  Clerk?: InlineClerk;
   __okouClerkBootstrap?: InlineBootstrapConfiguration;
   __okouClerkRouter?: {
     readonly push: InlineClerkRouter;
@@ -141,7 +152,32 @@ function runInlineBootstrap(hostname: string, pathname = "/sign-in") {
   if (!bootstrap) {
     throw new Error("The inline Clerk bootstrap published no configuration");
   }
-  return { bootstrap, bootstrapWindow, appendedScripts };
+  return { bootstrap, bootstrapWindow, appendedScripts, script };
+}
+
+async function startInlineClerkRuntime(hostname: string, pathname = "/agents") {
+  const page = runInlineBootstrap(hostname, pathname);
+  const loaded = Promise.resolve();
+  let loadOptions: InlineBootstrapLoadOptions | undefined;
+  const clerk: InlineClerk = {
+    load(options) {
+      loadOptions = options;
+      return loaded;
+    },
+    on() {
+      return;
+    },
+  };
+  page.bootstrapWindow.Clerk = clerk;
+  page.script.onload?.();
+
+  const runtime = await page.bootstrap.runtime;
+  if (!loadOptions) {
+    throw new Error(
+      "The inline Clerk bootstrap did not initialize the runtime",
+    );
+  }
+  return { ...page, clerk, loaded, loadOptions, runtime };
 }
 
 const PAGE_HOSTNAMES = [
@@ -152,13 +188,43 @@ const PAGE_HOSTNAMES = [
   "pr-30199-app.omby.ai",
 ];
 
-test("The inline Clerk bootstrap uses the current page sign-in URL", () => {
+test("The inline bootstrap owns the Clerk runtime", async () => {
+  const { clerk, loaded, loadOptions, runtime } =
+    await startInlineClerkRuntime("app.okou.ai");
+
+  expect(runtime).toStrictEqual({ clerk, loaded });
+  expect(loadOptions).toMatchObject({
+    afterSignOutUrl: "https://app.okou.ai/sign-in",
+    signInUrl: "https://app.okou.ai/sign-in",
+    signUpUrl: "https://app.okou.ai/sign-up",
+  });
+});
+
+test("The inline bootstrap rejects an unavailable Clerk core resource", async () => {
+  const consoleError = vi.spyOn(console, "error");
+  const unexpectedError = consoleError.getMockImplementation();
+  consoleError.mockImplementation((...args) => {
+    if (args[0] === "Clerk core bootstrap failed") {
+      return;
+    }
+    unexpectedError?.(...args);
+  });
+  const { bootstrap, script } = runInlineBootstrap("app.okou.ai", "/agents");
+
+  script.onerror?.();
+
+  await expect(bootstrap.runtime).rejects.toThrow(
+    "Clerk core resource is unavailable",
+  );
+});
+
+test("The inline Clerk bootstrap uses the current page sign-in URL", async () => {
   for (const hostname of PAGE_HOSTNAMES) {
-    const { bootstrap } = runInlineBootstrap(hostname);
+    const { loadOptions } = await startInlineClerkRuntime(hostname);
 
     expect({
       hostname,
-      pageSignInUrl: bootstrap.loadOptions.signInUrl,
+      pageSignInUrl: loadOptions.signInUrl,
     }).toStrictEqual({
       hostname,
       pageSignInUrl: `https://${hostname}/sign-in`,
@@ -166,11 +232,11 @@ test("The inline Clerk bootstrap uses the current page sign-in URL", () => {
   }
 });
 
-test("The inline bootstrap loads installed UI only for v1 auth routes", () => {
+test("The inline bootstrap loads installed UI only for auth routes", () => {
   for (const pathname of [
     "/agents",
-    "/sign-in",
-    "/sign-up",
+    "/v1/sign-in",
+    "/v1/sign-up",
     "/v1/sign-invader",
   ]) {
     expect(
@@ -178,10 +244,10 @@ test("The inline bootstrap loads installed UI only for v1 auth routes", () => {
     ).toStrictEqual([]);
   }
   for (const pathname of [
-    "/v1/sign-in",
-    "/v1/sign-in/tasks/choose-organization",
-    "/v1/sign-up",
-    "/v1/sign-up/tasks/choose-organization",
+    "/sign-in",
+    "/sign-in/tasks/choose-organization",
+    "/sign-up",
+    "/sign-up/tasks/choose-organization",
   ]) {
     const { appendedScripts } = runInlineBootstrap("app.okou.ai", pathname);
     expect(appendedScripts).toHaveLength(1);
@@ -189,8 +255,9 @@ test("The inline bootstrap loads installed UI only for v1 auth routes", () => {
   }
 });
 
-test("The inline Clerk router delegates only while an app route owns it", () => {
-  const { bootstrap, bootstrapWindow } = runInlineBootstrap("app.okou.ai");
+test("The inline Clerk router delegates only while an app route owns it", async () => {
+  const { bootstrapWindow, loadOptions } =
+    await startInlineClerkRuntime("app.okou.ai");
   const windowNavigations: string[] = [];
   const metadata = {
     windowNavigate(to: URL | string) {
@@ -198,8 +265,8 @@ test("The inline Clerk router delegates only while an app route owns it", () => 
     },
   };
 
-  bootstrap.loadOptions.routerPush("/v1/sign-in/factor-one", metadata);
-  expect(windowNavigations).toStrictEqual(["/v1/sign-in/factor-one"]);
+  loadOptions.routerPush("/sign-in/factor-one", metadata);
+  expect(windowNavigations).toStrictEqual(["/sign-in/factor-one"]);
 
   const routeNavigations: string[] = [];
   bootstrapWindow.__okouClerkRouter = {
@@ -210,12 +277,12 @@ test("The inline Clerk router delegates only while an app route owns it", () => 
       routeNavigations.push(`replace:${url}`);
     },
   };
-  bootstrap.loadOptions.routerPush("/v1/sign-in/factor-one", metadata);
-  bootstrap.loadOptions.routerReplace("/v1/sign-in", metadata);
+  loadOptions.routerPush("/sign-in/factor-one", metadata);
+  loadOptions.routerReplace("/sign-in", metadata);
 
   expect(routeNavigations).toStrictEqual([
-    "push:/v1/sign-in/factor-one",
-    "replace:/v1/sign-in",
+    "push:/sign-in/factor-one",
+    "replace:/sign-in",
   ]);
-  expect(windowNavigations).toStrictEqual(["/v1/sign-in/factor-one"]);
+  expect(windowNavigations).toStrictEqual(["/sign-in/factor-one"]);
 });

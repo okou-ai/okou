@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.22.8](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.7...sandbox-v0.22.8) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
+## [0.22.7](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.6...sandbox-v0.22.7) (2026-09-14)
+
+
+### Bug Fixes
+
+* retain exec-control replies after guest deadlines ([#33839](https://github.com/vm0-ai/vm0/issues/33839)) ([70117f0](https://github.com/vm0-ai/vm0/commit/70117f01afcc1cb97297db62bf65b62caef6f06f))
+
+## [0.22.6](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.5...sandbox-v0.22.6) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ssh:** release guest park protection when rpc closes ([#33534](https://github.com/vm0-ai/vm0/issues/33534)) ([1fb21f7](https://github.com/vm0-ai/vm0/commit/1fb21f794131078cdfc87c970eaf7f2c5d9f1c6f))
+
 ## [0.22.5](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.4...sandbox-v0.22.5) (2026-09-10)
 
 

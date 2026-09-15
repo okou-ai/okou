@@ -66,6 +66,7 @@ const CONFIG: PiSandboxAgentConfig = {
     baseUrl: "https://api.deepseek.com/",
     model: "deepseek-v4-flash",
     dialect: "openai-responses",
+    transport: "sse",
     apiKey: "test-api-key",
   },
 };
@@ -711,10 +712,15 @@ describe("sandbox Pi agent loop", () => {
   it.each(
     // Only the output-validation and mounted-apply fixtures are reproducible
     // by this scenario. Session-lifecycle fixtures are covered by the engine
-    // tests and the shared serializer boundary.
+    // tests and the shared serializer boundary. `summary_tokens` is a historical
+    // diagnostic: a valid source above the prompt injection budget now publishes
+    // in full, so the runtime cannot produce it. Its fixture stays for the
+    // parsers that must keep reading old terminal records.
     terminalFixtures.filter((fixture) => {
       return (
-        fixture.diagnostic && fixture.errorClass === "agent_output_invalid"
+        fixture.diagnostic &&
+        fixture.errorClass === "agent_output_invalid" &&
+        fixture.diagnostic.reason !== "summary_tokens"
       );
     }),
   )(
@@ -737,9 +743,7 @@ describe("sandbox Pi agent loop", () => {
       const isApply = fixture.diagnostic?.stage === "mounted_apply";
       const summary = isApply
         ? "v1\nValid summary"
-        : fixture.name === "summary_tokens"
-          ? `v1\n${" token".repeat(2605)}`
-          : "V1\nPRIVATE_SUMMARY_SENTINEL";
+        : "V1\nPRIVATE_SUMMARY_SENTINEL";
       await mkdir(memoryRoot);
       await writeFile(join(memoryRoot, "MEMORY.md"), memory);
       await writeFile(join(memoryRoot, "memory_summary.md"), summary);
@@ -795,6 +799,7 @@ describe("sandbox Pi agent loop", () => {
               apiKey: "SYNTHETIC_KEY",
               model: "gpt-5.6-terra",
               dialect: "openai-responses",
+              transport: "sse",
             },
             launchPayload: {
               ...CONFIG.launchPayload,
@@ -847,7 +852,6 @@ describe("sandbox Pi agent loop", () => {
         candidateCount: 0,
         fileCount: 0,
         totalBytes: 0,
-        heartbeatCount: 0,
       });
       expect(() => {
         return reportPiSandboxAgentLoopFailure(failure);
@@ -953,6 +957,33 @@ describe("sandbox Pi agent loop", () => {
     ).resolves.toEqual(CONFIG);
   });
 
+  it("uses run authentication and the first-party relay without Langfuse keys", async () => {
+    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+    Object.assign(env, {
+      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
+      OKOU_API_BACKEND_URL: "https://api.okou.test",
+      OKOU_TOKEN: "run-scoped-token",
+      LANGFUSE_BASE_URL: "https://user-langfuse.example",
+      LANGFUSE_PUBLIC_KEY: "user-project",
+      LANGFUSE_SECRET_KEY: "user-secret",
+      LANGFUSE_USER_ID: "anonymous-user",
+      LANGFUSE_TRACING_ENVIRONMENT: "internal-debug",
+    });
+    const resolved = await piSandboxAgentConfigFromEnv(env);
+    expect(resolved.langfuseConfig).toStrictEqual({
+      relay: {
+        endpoint: `https://api.okou.test/api/webhooks/agent/${RUN_ID}/langfuse/traces`,
+        token: "run-scoped-token",
+      },
+      userId: "anonymous-user",
+      environment: "internal-debug",
+    });
+    env.OKOU_PI_LANGFUSE_DEBUG_ENABLED = "false";
+    expect(
+      (await piSandboxAgentConfigFromEnv(env)).langfuseConfig,
+    ).toBeUndefined();
+  });
+
   it("carries the frozen memory epoch through the private launch file", async () => {
     const memoryRecall = {
       status: "no-content" as const,
@@ -974,38 +1005,30 @@ describe("sandbox Pi agent loop", () => {
     });
   });
 
-  it.each([
-    undefined,
-    "openai-completions",
-    "openai-responses",
-    "openai-codex-responses",
-  ] as const)(
-    "normalizes legacy %s config while preserving request policy",
-    async (api) => {
-      const env = piEnv({ OKOU_RUN_ID: RUN_ID });
-      env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
-        api,
-        thinkingLevel: "low",
-        serviceTier: "priority",
-        apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENAI_API_KEY",
-      });
+  it("preserves canonical Gen1 request policy at launch", async () => {
+    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+    env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5.6-terra",
+      thinkingLevel: "low",
+      serviceTier: "priority",
+      apiKeyEnv: "OPENAI_API_KEY",
+      credentialSecretName: "OPENAI_API_KEY",
+    });
 
-      const resolved = await piSandboxAgentConfigFromEnv(env);
-      expect(resolved.model).toStrictEqual({
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
-        dialect: "openai-responses",
-        thinkingLevel: "low",
-        serviceTier: "priority",
-        apiKey: "test-api-key",
-      });
-    },
-  );
+    const resolved = await piSandboxAgentConfigFromEnv(env);
+    expect(resolved.model).toStrictEqual({
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5.6-terra",
+      dialect: "openai-responses",
+      transport: "sse",
+      thinkingLevel: "low",
+      serviceTier: "priority",
+      apiKey: "test-api-key",
+    });
+  });
 
   it("resolves a custom gateway model without exposing its header template to Pi", async () => {
     const env = piEnv({ OKOU_RUN_ID: RUN_ID });
@@ -1014,7 +1037,6 @@ describe("sandbox Pi agent loop", () => {
       baseUrl: "https://gateway.example.com/v1",
       model: "company-deepseek-production",
       catalogModel: "deepseek-v4-flash",
-      api: "openai-responses",
       apiKeyEnv: "OPENAI_API_KEY",
       credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
       credentialHeader: {
@@ -1127,6 +1149,26 @@ describe("sandbox Pi agent loop", () => {
         model: "gpt-5.6-terra",
       });
       await expect(piSandboxAgentConfigFromEnv(env)).rejects.toThrow();
+    },
+  );
+
+  it.each(["openai-responses", "openai-completions", "openai-codex-responses"])(
+    "rejects an extra api key (%s) at the private launch boundary",
+    async (api) => {
+      const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+      env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5.6-terra",
+        api,
+        apiKeyEnv: "OPENAI_API_KEY",
+        credentialSecretName: "OPENAI_API_KEY",
+      });
+      await expect(piSandboxAgentConfigFromEnv(env)).rejects.toMatchObject({
+        issues: [
+          expect.objectContaining({ code: "unrecognized_keys", keys: ["api"] }),
+        ],
+      });
     },
   );
 

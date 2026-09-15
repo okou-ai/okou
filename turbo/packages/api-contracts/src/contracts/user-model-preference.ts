@@ -5,12 +5,17 @@ import { imageModelIdSchema } from "./image-models";
 import { supportedRunModelSchema } from "./model-providers";
 import { videoModelIdSchema } from "./video-models";
 import { chatThreadServiceTierSchema } from "./chat-threads";
+import {
+  modelSettingsPatchSchema,
+  modelSettingsSchema,
+} from "./model-reasoning-effort";
 
 const c = initContract();
 
 export const userModelPreferenceResponseSchema = z.object({
   selectedModel: supportedRunModelSchema.nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
+  modelSettings: modelSettingsSchema.default({}),
   selectedVideoModel: videoModelIdSchema.nullable(),
   selectedImageModel: imageModelIdSchema.nullable(),
   updatedAt: z.string().nullable(),
@@ -23,6 +28,8 @@ export type UserModelPreferenceResponse = z.infer<
 export const updateUserModelPreferenceRequestSchema = z.object({
   selectedModel: supportedRunModelSchema.nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
+  /** Patch only the named model; omitted preserves every stored model setting. */
+  modelSettingsPatch: modelSettingsPatchSchema.optional(),
   /**
    * Partial-update semantics, not a rollout fallback: the preferences are
    * independent, so absent means "leave it alone" and null clears it. This is

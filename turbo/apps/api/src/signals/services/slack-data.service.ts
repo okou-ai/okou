@@ -10,6 +10,7 @@ import { db$ } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import type { ApiOrgRole } from "../../types/auth";
 import { userFeatureSwitchContext } from "./feature-switches.service";
+import { buildSlackConnectorOAuthStartUrl } from "./slack-connector-oauth-state";
 
 export const SLACK_BOT_SCOPES: readonly string[] = [
   "app_mentions:read",
@@ -46,33 +47,37 @@ function buildSlackInstallUrl(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly reinstall: boolean;
+  readonly workspaceId?: string;
 }): string | null {
   const clientId = env("SLACK_OAUTH_CLIENT_ID");
   if (!clientId) {
     return null;
   }
-  const url = new URL("/api/slack/oauth/install", args.apiOrigin);
-  url.searchParams.set("orgId", args.orgId);
-  url.searchParams.set("userId", args.userId);
-  if (args.reinstall) {
-    url.searchParams.set("reinstall", "1");
-  }
-  return url.toString();
+  return buildSlackConnectorOAuthStartUrl(args.apiOrigin, {
+    flow: "install",
+    orgId: args.orgId,
+    userId: args.userId,
+    reinstall: args.reinstall,
+    workspaceId: args.workspaceId,
+  });
 }
 
 function buildSlackConnectUrl(args: {
   readonly apiOrigin: string;
   readonly orgId: string;
   readonly userId: string;
+  readonly workspaceId: string;
 }): string | null {
   const clientId = env("SLACK_OAUTH_CLIENT_ID");
   if (!clientId) {
     return null;
   }
-  const url = new URL("/api/slack/oauth/connect", args.apiOrigin);
-  url.searchParams.set("orgId", args.orgId);
-  url.searchParams.set("userId", args.userId);
-  return url.toString();
+  return buildSlackConnectorOAuthStartUrl(args.apiOrigin, {
+    flow: "connect",
+    orgId: args.orgId,
+    userId: args.userId,
+    workspaceId: args.workspaceId,
+  });
 }
 
 interface SlackOrgStatusResult {
@@ -138,6 +143,7 @@ export function slackOrgStatus(args: {
             orgId: args.orgId,
             userId: args.userId,
             reinstall: true,
+            workspaceId: installationRow.slackWorkspaceId,
           })
         : null;
       return { scopeMismatch, reinstallUrl };
@@ -185,6 +191,7 @@ export function slackOrgStatus(args: {
         apiOrigin: args.apiOrigin,
         orgId: args.orgId,
         userId: args.userId,
+        workspaceId: installation.slackWorkspaceId,
       });
 
       return {

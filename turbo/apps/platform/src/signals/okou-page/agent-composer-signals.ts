@@ -1,5 +1,6 @@
 import { command, computed, state, type Command } from "ccstate";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -62,6 +63,24 @@ const chatEvents$ = computed((): ChatEvent[] => {
   return [];
 });
 
+function changedModelSettingsPatch(
+  selection: ModelProviderSelection | null,
+  previous: ModelProviderSelection | null,
+): ModelSettingsPatch | undefined {
+  const selectedModel = selection?.selectedModel;
+  if (!selection || !isSupportedRunModel(selectedModel)) {
+    return undefined;
+  }
+  const selectedEffort = selection.modelSettings?.[selectedModel]?.effort;
+  if (
+    selectedEffort === undefined ||
+    previous?.modelSettings?.[selectedModel]?.effort === selectedEffort
+  ) {
+    return undefined;
+  }
+  return { model: selectedModel, effort: selectedEffort };
+}
+
 const setModelSelection$ = command(
   async (
     { get, set },
@@ -71,13 +90,15 @@ const setModelSelection$ = command(
     const previous = await get(chatPageModelSelection$);
     signal.throwIfAborted();
     set(setChatPageModelSelection$, selection);
+    const selectedModel = selection?.selectedModel;
+    const modelSettingsPatch = changedModelSettingsPatch(selection, previous);
     if (
       previous?.selectedModel === selection?.selectedModel &&
-      previous?.codexServiceTier === selection?.codexServiceTier
+      previous?.codexServiceTier === selection?.codexServiceTier &&
+      modelSettingsPatch === undefined
     ) {
       return;
     }
-    const selectedModel = selection?.selectedModel;
     const explicitDefaultActionEnabled =
       get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
     if (!explicitDefaultActionEnabled && isSupportedRunModel(selectedModel)) {
@@ -87,6 +108,7 @@ const setModelSelection$ = command(
           selectedModel,
           serviceTier:
             selection?.codexServiceTier === "fast" ? "priority" : null,
+          ...(modelSettingsPatch === undefined ? {} : { modelSettingsPatch }),
         },
         signal,
       );

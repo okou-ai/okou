@@ -3,6 +3,26 @@ import { i18n } from "../i18n/index.ts";
 
 export function localizedSshError(code: string): string | undefined {
   switch (code) {
+    case SSH_ERROR_CODES.CREDENTIAL_NOT_FOUND: {
+      return i18n.t(($) => {
+        return $.ssh.errors.credentialUnavailable;
+      });
+    }
+    case SSH_ERROR_CODES.CREDENTIAL_IN_USE: {
+      return i18n.t(($) => {
+        return $.ssh.errors.credentialInUse;
+      });
+    }
+    case SSH_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT: {
+      return i18n.t(($) => {
+        return $.ssh.errors.credentialChanged;
+      });
+    }
+    case SSH_ERROR_CODES.REVISION_EXHAUSTED: {
+      return i18n.t(($) => {
+        return $.ssh.errors.revisionExhausted;
+      });
+    }
     case SSH_ERROR_CODES.UNAVAILABLE: {
       return i18n.t(($) => {
         return $.ssh.unavailable;

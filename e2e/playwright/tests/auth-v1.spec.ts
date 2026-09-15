@@ -3,7 +3,6 @@ import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "../fixtures";
 import { expectClerkTestInstance } from "../lib/auth";
-import { openAuthV2 } from "../lib/auth-v2-ui";
 import {
   createUser,
   deleteUserByEmail,
@@ -12,7 +11,7 @@ import {
 
 async function openAuth(
   page: Page,
-  path: "/v1/sign-in" | "/v1/sign-up",
+  path: "/sign-in" | "/sign-up",
   theme: "light" | "dark",
 ): Promise<void> {
   await page.goto(path, { waitUntil: "domcontentloaded" });
@@ -153,8 +152,8 @@ for (const theme of ["light", "dark"] as const) {
     });
 
     for (const route of [
-      { path: "/v1/sign-up", action: "Sign in", target: "/v1/sign-in" },
-      { path: "/v1/sign-in", action: "Sign up", target: "/v1/sign-up" },
+      { path: "/sign-up", action: "Sign in", target: "/sign-in" },
+      { path: "/sign-in", action: "Sign up", target: "/sign-up" },
     ] as const) {
       test(`${route.path} keeps its native footer action in the viewport and keyboard reachable`, async ({
         page,
@@ -207,7 +206,7 @@ for (const device of [
       viewport: { width: device.width, height: device.height },
     });
 
-    test("default auth does not download the optional UI and v1 recovers from a resource failure", async ({
+    test("hosted auth recovers from a UI resource failure", async ({
       page,
     }) => {
       const uiRequests: string[] = [];
@@ -216,21 +215,13 @@ for (const device of [
           uiRequests.push(request.url());
         }
       });
-      for (const path of ["/sign-in", "/sign-up"]) {
-        await openAuthV2(page, path);
-        expect(uiRequests).toHaveLength(0);
-      }
-
       const uiAsset = "**/assets/clerk-ui-*.js";
       await page.route(uiAsset, (route) => route.abort());
-      await page.goto("/v1/sign-in", { waitUntil: "domcontentloaded" });
+      await page.goto("/sign-in", { waitUntil: "domcontentloaded" });
       const failure = page.getByRole("alert");
       await expect(failure).toContainText("Oops! Something went sideways");
       await expect(page.locator(".cl-signIn-root")).toHaveCount(0);
-      await expect(page.locator("#app-bootstrap-skeleton")).toHaveAttribute(
-        "aria-hidden",
-        "true",
-      );
+      await expect(page.locator("#app-bootstrap-skeleton")).toBeHidden();
       await expectPrimary(
         page,
         failure.getByRole("button", { exact: true, name: "Refresh" }),
@@ -251,7 +242,7 @@ for (const device of [
     test("hosted entry logos follow theme changes without resetting the form", async ({
       page,
     }) => {
-      for (const path of ["/v1/sign-in", "/v1/sign-up"] as const) {
+      for (const path of ["/sign-in", "/sign-up"] as const) {
         await openAuth(page, path, "light");
         const logo = page.locator(".cl-logoImage");
         const lightLogoSrc = await logo.getAttribute("src");
@@ -288,7 +279,7 @@ for (const device of [
     test("hosted password feedback remains clear after reflow", async ({
       page,
     }) => {
-      await openAuth(page, "/v1/sign-up", device.theme);
+      await openAuth(page, "/sign-up", device.theme);
       const password = page.getByLabel("Password", { exact: true });
       const error = page.locator(".cl-formFieldErrorText:visible");
       const legalConsent = page.getByRole("checkbox");
@@ -319,7 +310,7 @@ for (const device of [
     test("hosted password reveal preserves the password and fits a short viewport", async ({
       page,
     }) => {
-      await openAuth(page, "/v1/sign-up", device.theme);
+      await openAuth(page, "/sign-up", device.theme);
       await page.setViewportSize({ width: 375, height: 568 });
       const password = page.getByLabel("Password", { exact: true });
       const longPassword = "A-Long-Password-For-Reveal-Layout!2026";
@@ -347,7 +338,7 @@ for (const device of [
     test("hosted legal consent remains keyboard accessible in a short viewport", async ({
       page,
     }) => {
-      await openAuth(page, "/v1/sign-up", device.theme);
+      await openAuth(page, "/sign-up", device.theme);
       await page.setViewportSize({ width: 375, height: 568 });
       const legalConsent = page.getByRole("checkbox");
       await legalConsent.focus();
@@ -366,14 +357,16 @@ for (const device of [
     test("hosted signup keeps native OTP feedback clear of inputs and resend on retry", async ({
       page,
     }) => {
-      await openAuth(page, "/v1/sign-up", device.theme);
+      await openAuth(page, "/sign-up", device.theme);
       await page
         .getByLabel("Email address", { exact: true })
         .fill(`auth-v1-${randomUUID()}+clerk_test@example.com`);
       await page
         .getByLabel("Password", { exact: true })
         .fill("A-Strong-Password-For-OTP-Layout!2026");
-      await page.getByRole("checkbox").check();
+      const legalConsent = page.getByRole("checkbox");
+      await legalConsent.click();
+      await expect(legalConsent).toBeChecked();
       await expect(
         page.getByRole("button", { exact: true, name: "Continue" }),
       ).toBeEnabled();
@@ -443,7 +436,7 @@ for (const device of [
       }
       try {
         await createUser(email, password);
-        await openAuth(page, "/v1/sign-in", device.theme);
+        await openAuth(page, "/sign-in", device.theme);
         const documentMarker = randomUUID();
         await page.evaluate((marker) => {
           Reflect.set(window, "__okouAuthV1DocumentMarker", marker);

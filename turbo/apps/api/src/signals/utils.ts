@@ -260,9 +260,9 @@ type Settled<T> =
   | { readonly ok: false; readonly error: unknown };
 
 /**
- * Settle `p` without propagating AbortError. Use only after an irreversible
- * provider operation has started and cancellation is itself an ambiguous
- * outcome that the caller must persist explicitly.
+ * Settle `p` without propagating AbortError. Use when cancellation is an
+ * explicitly owned outcome: observing and releasing a prepared resource, or
+ * persisting an ambiguous result after an irreversible provider operation.
  */
 export async function settleIncludingAbort<T>(
   p: Promise<T>,
@@ -274,6 +274,22 @@ export async function settleIncludingAbort<T>(
   } catch (error) {
     return { ok: false, error };
   }
+}
+
+/** Join every started branch before propagating Promise.all's result or error. */
+export function joinAll<T extends readonly unknown[] | []>(
+  operations: T,
+): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }>;
+export async function joinAll(
+  operations: readonly unknown[],
+): Promise<unknown[]> {
+  // Normalize once so joining cannot execute a lazy thenable a second time.
+  const promises = operations.map((operation) => {
+    return Promise.resolve(operation);
+  });
+  const result = Promise.all(promises);
+  await Promise.allSettled([result, ...promises]);
+  return await result;
 }
 
 interface PromiseResolvers<T> {

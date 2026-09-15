@@ -8,13 +8,11 @@ import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { logger } from "../log.ts";
 import {
-  onDomEventFn,
   onRef,
   onRejection,
   settle,
   createChildAbortController,
 } from "../utils.ts";
-import { voiceInputV2Enabled$ } from "../external/feature-switch.ts";
 import {
   readVoiceDraftRecording,
   createVoiceDraftRecording,
@@ -28,11 +26,6 @@ import {
   audioInputAvailable$,
   audioInputQuota$,
   openAudioInputQuotaRecovery$,
-  sttRecording$,
-  sttStarting$,
-  sttTranscribing$,
-  startRecording$,
-  stopAndTranscribe$,
 } from "../voice-io/voice-io-stt.ts";
 
 const L = logger("Composer:VoiceDraft");
@@ -83,36 +76,6 @@ function voiceDraftStorageFailedMessage(): string {
   });
 }
 
-function createLegacyVoiceToggle(appendText$: Command<void, [string]>) {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    if (
-      !get(audioInputAvailable$) ||
-      get(sttStarting$) ||
-      get(sttTranscribing$)
-    ) {
-      return;
-    }
-    if (get(sttRecording$)) {
-      await set(stopAndTranscribe$, signal);
-      return;
-    }
-    const quota = await get(audioInputQuota$);
-    signal.throwIfAborted();
-    if (!quota.allowed) {
-      await set(openAudioInputQuotaRecovery$, signal);
-      return;
-    }
-    await set(
-      startRecording$,
-      onDomEventFn((text: string) => {
-        set(appendText$, text);
-      }),
-      { autoSegment: quota.limit === null, autoStopOnSilence: true },
-      signal,
-    );
-  });
-}
-
 function createVoiceDraftData(draftTarget: string) {
   const storageKey$ = computed(async (get): Promise<string> => {
     const identity = await get(authenticatedIdentity$);
@@ -129,9 +92,6 @@ function createVoiceDraftData(draftTarget: string) {
   // second storage read after this composer has changed it.
   const recording$ = computed(
     async (get): Promise<VoiceDraftRecordingRecord | null> => {
-      if (!get(voiceInputV2Enabled$)) {
-        return null;
-      }
       const owned = get(ownedRecording$);
       const key = await get(storageKey$);
       return owned?.key === key ? owned.recording : await get(storedRecording$);
@@ -381,7 +341,6 @@ function createVoiceDraftMutations(
 function createVoiceActionBindings(
   data: VoiceDraftData,
   mutations: ReturnType<typeof createVoiceDraftMutations>,
-  legacyToggle$: ReturnType<typeof createLegacyVoiceToggle>,
   watch$: VoiceDraftCommand,
 ) {
   const { state$, capture, restoreRecording$ } = data;
@@ -407,10 +366,6 @@ function createVoiceActionBindings(
       action: ComposerVoiceAction,
       parentSignal: AbortSignal,
     ) => {
-      if (!get(voiceInputV2Enabled$)) {
-        await set(legacyToggle$, parentSignal);
-        return;
-      }
       const owner = get(owner$);
       if (!owner || !get(audioInputAvailable$)) {
         return;
@@ -444,6 +399,7 @@ function createVoiceActionBindings(
   const mount$ = onRef(
     command(async ({ set }, element: HTMLElement, signal: AbortSignal) => {
       set(element$, element);
+      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
       set(internalOwner$, createChildAbortController(signal));
       signal.addEventListener(
         "abort",
@@ -468,7 +424,6 @@ function createVoiceActionBindings(
 }
 
 export function createComposerVoiceInputSignals(
-  appendText$: Command<void, [string]>,
   deliverText$: DeliverVoiceTextCommand,
   readEditorContext$: Command<VoiceIoEditorContext, []>,
   lastAssistantMessage$: Computed<string | undefined>,
@@ -490,7 +445,6 @@ export function createComposerVoiceInputSignals(
       transcription.append$,
       transcription.cancel$,
     ),
-    createLegacyVoiceToggle(appendText$),
     transcription.watch$,
   );
   return {

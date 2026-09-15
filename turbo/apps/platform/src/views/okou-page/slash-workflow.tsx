@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 // Slash-workflow domain helpers and the suggestion menu, shared by the chat
 // composer. Kept in its own module so the textarea composer and the TipTap
 // workflow composer can both reuse them without an import cycle.
@@ -31,7 +31,7 @@ export const COMPOSER_CREATE_ICONS = {
   presentation: Presentation,
 } as const;
 
-function slashWorkflowOptionId(workflowId: string): string {
+export function slashWorkflowOptionId(workflowId: string): string {
   return `slash-workflow-option-${workflowId}`;
 }
 
@@ -91,7 +91,7 @@ function SlashCreateGroup({
     return null;
   }
   return (
-    <div className="px-1.5 py-1.5">
+    <div className="px-1 py-1">
       {modes.map((mode, index) => {
         const Icon = COMPOSER_CREATE_ICONS[mode];
         return (
@@ -101,7 +101,7 @@ function SlashCreateGroup({
             type="button"
             aria-label={composerCreateCommandLabel(mode)}
             className={cn(
-              "flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors",
+              "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors",
               index === selectedIndex ? "bg-accent" : "hover:bg-state-hover",
             )}
             onPointerDown={(event) => {
@@ -130,14 +130,20 @@ function SlashCreateGroup({
   );
 }
 
-function SlashWorkflowName({
+/**
+ * The name with the typed query emphasized. Shared with the slash panel so both
+ * menus show the same match feedback while typing.
+ */
+export function SlashWorkflowName({
   workflow,
+  className,
 }: {
   readonly workflow: ComposerSlashWorkflowMatch;
+  readonly className?: string;
 }) {
   return (
     <span
-      className="w-full truncate font-mono text-sm text-foreground"
+      className={cn("truncate font-mono text-foreground", className)}
       data-slot="slash-workflow-name"
     >
       <span className="text-brand-text">/</span>
@@ -161,6 +167,71 @@ function SlashWorkflowName({
   );
 }
 
+/** The flat menu's workflow rows, split out to keep the menu within its size. */
+function SlashWorkflowRows({
+  workflows,
+  loading,
+  selectedIndex,
+  indexOffset,
+  onSelect,
+}: {
+  readonly workflows: readonly ComposerSlashWorkflowMatch[];
+  readonly loading: boolean;
+  readonly selectedIndex: number;
+  /** How many rows precede these, so the shared index still lines up. */
+  readonly indexOffset: number;
+  readonly onSelect: (workflow: ComposerSlashWorkflow) => void;
+}) {
+  const { t } = useTranslation();
+  if (loading) {
+    return (
+      <div className="px-2.5 py-2 text-sm text-muted-foreground">
+        {t(($) => {
+          return $.chat.composer.workflows.loading;
+        })}
+      </div>
+    );
+  }
+  if (workflows.length === 0) {
+    return (
+      <div className="px-2.5 pt-1 pb-2.5 text-sm text-muted-foreground">
+        {t(($) => {
+          return $.chat.composer.workflows.empty;
+        })}
+      </div>
+    );
+  }
+  return (
+    <div className="px-1 pb-1">
+      {workflows.map((workflow, index) => {
+        const selected = index + indexOffset === selectedIndex;
+        return (
+          <button
+            id={slashWorkflowOptionId(workflow.id)}
+            key={workflow.id}
+            type="button"
+            className={cn(
+              "flex w-full flex-col items-start gap-0.5 rounded-lg px-2 py-1.5 text-left transition-colors",
+              selected ? "bg-accent" : "hover:bg-state-hover",
+            )}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onSelect(workflow);
+            }}
+          >
+            <SlashWorkflowName workflow={workflow} className="w-full text-sm" />
+            {workflow.description && (
+              <span className="w-full truncate text-xs text-muted-foreground/70">
+                {workflow.description}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SlashWorkflowMenu({
   anchor,
   workflows,
@@ -170,6 +241,7 @@ export function SlashWorkflowMenu({
   selectedIndex,
   showWorkflowsPageLink,
   onSelect,
+  panel,
 }: {
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
@@ -179,6 +251,11 @@ export function SlashWorkflowMenu({
   readonly selectedIndex: number;
   readonly showWorkflowsPageLink: boolean;
   readonly onSelect: (workflow: ComposerSlashWorkflow) => void;
+  /**
+   * The two-pane template panel. When present it replaces the flat list and
+   * owns its own scrolling, workflow rows and footer.
+   */
+  readonly panel?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -194,86 +271,64 @@ export function SlashWorkflowMenu({
       initialFocus={false}
       // The selected command owns focus, including the Create type chooser.
       finalFocus={false}
-      className="flex h-[min(16rem,var(--available-height))] w-[300px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0 md:h-[min(20rem,var(--available-height))]"
+      className={cn(
+        "flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0",
+        panel
+          ? "h-[min(380px,var(--available-height))] w-auto"
+          : "h-[min(16rem,var(--available-height))] w-[300px] md:h-[min(20rem,var(--available-height))]",
+      )}
       data-testid="slash-workflow-menu"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <SlashCreateGroup
-          modes={createModes}
-          selectedIndex={selectedIndex}
-          onSelect={onSelectCreate}
-        />
-        <div className="px-2.5 pt-2 pb-2 text-xs font-medium text-muted-foreground">
-          {t(($) => {
-            return $.chat.composer.workflows.title;
-          })}
-        </div>
-        {loading ? (
-          <div className="px-2.5 py-2 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.chat.composer.workflows.loading;
-            })}
-          </div>
-        ) : workflows.length > 0 ? (
-          <div className="px-1.5 pb-1.5">
-            {workflows.map((workflow, index) => {
-              const selected = index + createModes.length === selectedIndex;
-              return (
-                <button
-                  id={slashWorkflowOptionId(workflow.id)}
-                  key={workflow.id}
-                  type="button"
-                  className={cn(
-                    "flex w-full flex-col items-start gap-0.5 rounded px-2 py-1.5 text-left transition-colors",
-                    selected ? "bg-accent" : "hover:bg-state-hover",
-                  )}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    onSelect(workflow);
-                  }}
-                >
-                  <SlashWorkflowName workflow={workflow} />
-                  {workflow.description && (
-                    <span className="w-full truncate text-xs text-muted-foreground/70">
-                      {workflow.description}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="px-2.5 pt-1 pb-2.5 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.chat.composer.workflows.empty;
-            })}
-          </div>
-        )}
-      </div>
-      {showWorkflowsPageLink && (
-        <div className="shrink-0 border-t border-border/60 bg-popover/95 p-1">
-          <Link
-            pathname={ROUTES.workflows}
-            onMouseDown={(event) => {
-              // Keep the composer focused until Link handles the click.
-              event.preventDefault();
-            }}
-            className="flex h-8 w-full items-center justify-between rounded px-2 text-sm font-medium text-popover-foreground transition-colors hover:bg-state-hover"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <FileText size={16} className="shrink-0 text-muted-foreground" />
-              <span className="truncate">
-                {t(($) => {
-                  return $.chat.composer.workflows.viewAll;
-                })}
-              </span>
-            </span>
-            <ChevronRight
-              size={16}
-              className="shrink-0 text-muted-foreground"
+      {panel ?? (
+        <>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <SlashCreateGroup
+              modes={createModes}
+              selectedIndex={selectedIndex}
+              onSelect={onSelectCreate}
             />
-          </Link>
-        </div>
+            <div className="px-2.5 pt-2 pb-2 text-xs font-medium text-muted-foreground">
+              {t(($) => {
+                return $.chat.composer.workflows.title;
+              })}
+            </div>
+            <SlashWorkflowRows
+              workflows={workflows}
+              loading={loading}
+              selectedIndex={selectedIndex}
+              indexOffset={createModes.length}
+              onSelect={onSelect}
+            />
+          </div>
+          {showWorkflowsPageLink && (
+            <div className="shrink-0 border-t border-border/60 bg-popover/95 p-1">
+              <Link
+                pathname={ROUTES.workflows}
+                onMouseDown={(event) => {
+                  // Keep the composer focused until Link handles the click.
+                  event.preventDefault();
+                }}
+                className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-sm font-medium text-popover-foreground transition-colors hover:bg-state-hover"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <FileText
+                    size={16}
+                    className="shrink-0 text-muted-foreground"
+                  />
+                  <span className="truncate">
+                    {t(($) => {
+                      return $.chat.composer.workflows.viewAll;
+                    })}
+                  </span>
+                </span>
+                <ChevronRight
+                  size={16}
+                  className="shrink-0 text-muted-foreground"
+                />
+              </Link>
+            </div>
+          )}
+        </>
       )}
     </PopoverContent>
   );

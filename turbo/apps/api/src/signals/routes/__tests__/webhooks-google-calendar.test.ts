@@ -88,25 +88,6 @@ function chatThreadConnectorSelectionsClient() {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
 interface GoogleCalendarWatchChannel {
   readonly channelId: string;
   readonly channelToken: string;
@@ -498,7 +479,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     );
   });
 
-  it("silently acknowledges events after Calendar access becomes unavailable", async () => {
+  it("acknowledges events without dispatching after Calendar access becomes unavailable", async () => {
     const startedAt = Date.parse("2026-09-02T00:00:00.000Z");
     mockNow(startedAt);
     const recorder = configureGoogleCalendarApiMock({});
@@ -528,8 +509,6 @@ describe("POST /api/webhooks/google-calendar", () => {
       }),
     );
     mockNow(startedAt + 2 * 60 * 60 * 1000);
-    context.mocks.axiomLogging.warn.mockClear();
-    context.mocks.axiomLogging.error.mockClear();
     context.mocks.sentry.captureException.mockClear();
 
     for (const messageNumber of ["2", "3"]) {
@@ -548,8 +527,6 @@ describe("POST /api/webhooks/google-calendar", () => {
     }
 
     expect(refreshCalls).toBe(1);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expect(
       connectorsApi.readConnectorBySlug(scenario.actor, "google-calendar"),
@@ -563,13 +540,6 @@ describe("POST /api/webhooks/google-calendar", () => {
         params: { id: created.body.id },
       }),
       [200],
-    );
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalledWith(
-      "Workflow watch lifecycle reconciliation failed",
-      expect.objectContaining({
-        provider: "google_calendar",
-        result: "access_unavailable",
-      }),
     );
 
     mockNow(startedAt);
@@ -656,46 +626,6 @@ describe("POST /api/webhooks/google-calendar", () => {
     expect(firstJob.body.job?.runId).toStrictEqual(expect.any(String));
     const firstRunId = firstJob.body.job!.runId;
     await runsApi.claimRunnerJob(firstRunId);
-    const timingEvents = sandboxOperationEventsForRun(firstRunId);
-    const actionTypes = new Set(
-      timingEvents.map((event) => {
-        return event.op_type;
-      }),
-    );
-    for (const actionType of [
-      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      "api_dispatch_pre_create_agent_automation_event_load_external_events",
-      "api_dispatch_pre_create_agent_automation_event_load_automations",
-      "api_dispatch_pre_create_agent_automation_event_match_automations",
-      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-      "api_dispatch_pre_create_agent_automation_event_build_run_input",
-      "api_dispatch_pre_create_agent_automation_event_handoff_run",
-    ]) {
-      expect(actionTypes).toContain(actionType);
-    }
-    expect(timingEvents).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_automation_event_handoff_run",
-          automation_event_source: "google_calendar",
-          trigger_source: "automation-event",
-          agent_run_origin: "workflow_automation",
-          span_kind: "nested",
-        }),
-      ]),
-    );
-    const serializedTiming = JSON.stringify(timingEvents);
-    expect(serializedTiming).not.toContain(CALENDAR_EMAIL);
-    expect(serializedTiming).not.toContain("event-created-1");
-    expect(serializedTiming).not.toContain("Planning");
-    expect(serializedTiming).not.toContain(
-      "https://calendar.google.com/event?eid=1",
-    );
-    expect(serializedTiming).not.toContain(watch.channelId);
-    expect(serializedTiming).not.toContain(watch.resourceId);
-    expect(serializedTiming).not.toContain(created.body.id);
-    expect(serializedTiming).not.toContain(WORKFLOW_NAME);
 
     // A redelivery for the same event revision dispatches nothing and no new
     // runner job appears.

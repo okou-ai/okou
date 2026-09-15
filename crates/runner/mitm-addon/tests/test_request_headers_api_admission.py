@@ -80,8 +80,8 @@ async def test_api_destination_derivation_reuses_and_refreshes_effective_option(
         assert parsed_api_hosts == ["api.okou.ai"]
 
         updated_api_url = "http://API.PREVIEW.OKOU.AI:8080"
-        mitm_addon.ctx.options.vm0_api_url = updated_api_url
-        mitm_addon.configure({"vm0_api_url"})
+        mitm_addon.ctx.options.okou_api_url = updated_api_url
+        mitm_addon.configure({"okou_api_url"})
         updated_flow = api_flow(
             host="jobs.api.preview.okou.ai",
             scheme="http",
@@ -100,8 +100,8 @@ async def test_api_destination_derivation_reuses_and_refreshes_effective_option(
         assert parsed_api_hosts == ["api.okou.ai", "api.preview.okou.ai"]
 
         invalid_api_url = "ftp://api.invalid.okou.ai"
-        mitm_addon.ctx.options.vm0_api_url = invalid_api_url
-        mitm_addon.configure({"vm0_api_url"})
+        mitm_addon.ctx.options.okou_api_url = invalid_api_url
+        mitm_addon.configure({"okou_api_url"})
         invalid_flows = [
             api_flow(host="api.invalid.okou.ai"),
             api_flow(host="jobs.api.invalid.okou.ai"),

@@ -1,3 +1,4 @@
+import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 import {
   agentsByIdContract,
@@ -138,8 +139,7 @@ describe("owner SSH grants and live Run inventory", () => {
         body: {
           displayName: "Deployment",
           host,
-          username: "deploy",
-          privateKey: "test-private-key",
+          credential: inlineSshKey("deploy", "test-private-key"),
         },
       }),
       [201],
@@ -237,8 +237,7 @@ describe("owner SSH grants and live Run inventory", () => {
         body: {
           displayName: "Maintenance",
           host: "SSH.example.com.",
-          username: "ubuntu",
-          privateKey: "maintenance-private-key",
+          credential: inlineSshKey("ubuntu", "maintenance-private-key"),
         },
       }),
       [201],
@@ -376,8 +375,7 @@ describe("owner SSH grants and live Run inventory", () => {
         body: {
           displayName: "Deployment",
           host: "ssh.example.com",
-          username: "deploy",
-          privateKey: "test-private-key",
+          credential: inlineSshKey("deploy", "test-private-key"),
         },
       }),
       [201],
@@ -439,9 +437,11 @@ describe("owner SSH grants and live Run inventory", () => {
           body: {
             displayName: "Deployment",
             host: "ssh.example.com",
-            username: "deploy",
-            privateKey: " secret-canary\n",
-            passphrase: " passphrase-canary ",
+            credential: inlineSshKey(
+              "deploy",
+              " secret-canary\n",
+              " passphrase-canary ",
+            ),
           },
         }),
         [201],

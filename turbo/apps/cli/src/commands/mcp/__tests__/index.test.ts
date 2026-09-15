@@ -74,7 +74,7 @@ function stubMcpServer(options: McpServerOptions): SeenMcpRequest[] {
 
   server.use(
     http.all(MCP_ENDPOINT, async ({ request }) => {
-      const intent = request.headers.get("x-vm0-connector-intent");
+      const intent = request.headers.get("x-okou-connector-intent");
       if (request.method === "DELETE") {
         seen.push({ httpMethod: request.method, intent });
         if (options.deleteResponse) {

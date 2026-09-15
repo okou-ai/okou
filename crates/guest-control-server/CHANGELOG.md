@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.21.10](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.9...guest-control-server-v0.21.10) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
+## [0.21.9](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.8...guest-control-server-v0.21.9) (2026-09-15)
+
+## [0.21.8](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.7...guest-control-server-v0.21.8) (2026-09-14)
+
+## [0.21.7](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.6...guest-control-server-v0.21.7) (2026-09-14)
+
+## [0.21.6](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.5...guest-control-server-v0.21.6) (2026-09-14)
+
+
+### Refactoring
+
+* **rust:** centralize exec process diagnostic labels ([#33938](https://github.com/vm0-ai/vm0/issues/33938)) ([cd8acd3](https://github.com/vm0-ai/vm0/commit/cd8acd3a7019ece7f5ba031529e508d929b0a1b1))
+
+## [0.21.5](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.4...guest-control-server-v0.21.5) (2026-09-11)
+
+## [0.21.4](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.3...guest-control-server-v0.21.4) (2026-09-11)
+
 ## [0.21.3](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.2...guest-control-server-v0.21.3) (2026-09-11)
 
 ## [0.21.2](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.1...guest-control-server-v0.21.2) (2026-09-10)

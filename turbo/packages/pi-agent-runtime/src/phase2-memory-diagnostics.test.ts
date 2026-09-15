@@ -14,7 +14,6 @@ const counts = {
   candidateCount: 0,
   fileCount: 0,
   totalBytes: 0,
-  heartbeatCount: 0,
 };
 
 const FIXTURE_ERROR_CLASSES: Readonly<

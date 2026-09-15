@@ -1,3 +1,6 @@
+import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
+import * as accountErasureSchema from "./schema/account-erasure";
+import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
@@ -6,6 +9,7 @@ import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as desktopAuthHandoffCodeSchema from "./schema/desktop-auth-handoff-code";
 import * as agentSchema from "./schema/agent";
+import * as agentRunInferenceSchema from "./schema/agent-run-inference";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as conversationSchema from "./schema/conversation";
@@ -76,7 +80,7 @@ import * as feishuChatThreadRouteSchema from "./schema/feishu-chat-thread-route"
 import * as feishuChatIngressSchema from "./schema/feishu-chat-ingress";
 import * as feishuUserAgentPreferenceSchema from "./schema/feishu-user-agent-preference";
 import * as orgSchema from "./schema/org-metadata";
-import * as orgPlanEntitlementSchema from "./schema/org-plan-entitlement";
+import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
 import * as orgConcurrencySubscriptionSchema from "./schema/org-concurrency-subscription";
 import * as orgUsageAllowanceSchema from "./schema/org-usage-allowance";
@@ -130,18 +134,21 @@ import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catal
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
-import * as imageReferenceSchema from "./schema/image-reference";
 import * as piResourceSnapshotSchema from "./schema/pi-resource-snapshot";
+import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
 import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
 import * as piMemoryPhase2CheckpointSchema from "./schema/pi-memory-phase2-checkpoint";
 import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
 import * as sshConnectionSchema from "./schema/ssh-connection";
-import * as sshConnectionCredentialSchema from "./schema/ssh-connection-credential";
+import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
+import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...accountErasureSchema,
+  ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,
   ...userSchema,
   ...privacyChoiceSchema,
@@ -151,6 +158,7 @@ export const schema = {
   ...desktopAuthHandoffCodeSchema,
   ...agentSchema,
   ...agentRunSchema,
+  ...agentRunInferenceSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
   ...conversationSchema,
   ...checkpointSchema,
@@ -199,6 +207,7 @@ export const schema = {
   ...modelProviderAuthSessionSchema,
   ...connectorOauthDeviceAuthorizationSessionSchema,
   ...connectorOauthStateSchema,
+  ...billingRunAttributionSchema,
   ...usageEventSchema,
   ...usageEventHourlyRollupSchema,
   ...usagePackCreditGrantSchema,
@@ -274,16 +283,17 @@ export const schema = {
   ...mailDraftSchema,
   ...browserSessionSchema,
   ...presentationTemplateSchema,
-  ...imageReferenceSchema,
   ...piResourceSnapshotSchema,
+  ...piResourceVersionIndexSchema,
   ...memorySummaryProjectionSchema,
   ...piMemoryStage1CandidateSchema,
   ...piMemoryPhase2JobSchema,
   ...piMemoryPhase2CheckpointSchema,
   ...piMemoryPublicationProvenanceSchema,
   ...sshConnectionSchema,
-  ...sshConnectionCredentialSchema,
+  ...sshCredentialSchema,
   ...agentSshAccessSchema,
+  ...cloudflareAccessConfigSchema,
 };
 
 export type DatabaseSchema = typeof schema;

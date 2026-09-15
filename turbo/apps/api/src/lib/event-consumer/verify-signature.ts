@@ -15,10 +15,10 @@ export function verifyCallbackRequest(
   timestamp: string | null,
 ): VerifyResult {
   if (!signature) {
-    return { valid: false, error: "Missing X-VM0-Signature header" };
+    return { valid: false, error: "Missing X-Okou-Signature header" };
   }
   if (!timestamp) {
-    return { valid: false, error: "Missing X-VM0-Timestamp header" };
+    return { valid: false, error: "Missing X-Okou-Timestamp header" };
   }
 
   const timestampNum = Number.parseInt(timestamp, 10);

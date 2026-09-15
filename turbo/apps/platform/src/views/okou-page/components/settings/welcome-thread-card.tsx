@@ -3,7 +3,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { MessageCircle } from "lucide-react";
 import { Button } from "@okouai/ui/components/ui/button";
-import { ApiError } from "../../../../lib/api-error.ts";
 import { settingsActionSignal$ } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { createWelcomeThread$ } from "../../../../signals/okou-page/settings/welcome-thread.ts";
 import { detach, isAbortError, Reason } from "../../../../signals/utils.ts";
@@ -15,7 +14,6 @@ export function WelcomeThreadCard() {
   const actionSignal = useGet(settingsActionSignal$);
   const pending = result.state === "loading";
   const error = result.state === "hasError" ? result.error : undefined;
-  const errorCode = error instanceof ApiError ? error.code : undefined;
 
   return (
     <section
@@ -59,14 +57,9 @@ export function WelcomeThreadCard() {
       </div>
       {error !== undefined && !isAbortError(error) && (
         <p role="alert" className="text-sm text-destructive">
-          {errorCode === "DEFAULT_AGENT_NOT_READY"
-            ? t(($) => {
-                return $.settings.preferences.debug.welcomeThread
-                  .defaultAgentNotReady;
-              })
-            : t(($) => {
-                return $.settings.preferences.debug.welcomeThread.failed;
-              })}
+          {t(($) => {
+            return $.settings.preferences.debug.welcomeThread.failed;
+          })}
         </p>
       )}
     </section>

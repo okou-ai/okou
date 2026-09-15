@@ -4,14 +4,16 @@ import { describe, expect, it } from "vitest";
 import { schema } from "../index";
 import { agentSshAccess } from "../schema/agent-ssh-access";
 import { agents } from "../schema/agent";
-import { sshConnectionCredentials } from "../schema/ssh-connection-credential";
+import { sshCredentials } from "../schema/ssh-credential";
 import { sshConnections } from "../schema/ssh-connection";
+import { cloudflareAccessConfigs } from "../schema/cloudflare-access-config";
 
 describe("SSH connection schema", () => {
   it("exports the standalone SSH tables", () => {
     expect(schema.sshConnections).toBe(sshConnections);
-    expect(schema.sshConnectionCredentials).toBe(sshConnectionCredentials);
+    expect(schema.sshCredentials).toBe(sshCredentials);
     expect(schema.agentSshAccess).toBe(agentSshAccess);
+    expect(schema.cloudflareAccessConfigs).toBe(cloudflareAccessConfigs);
   });
 
   it("defines bounded owner-scoped connection storage", () => {
@@ -27,7 +29,8 @@ describe("SSH connection schema", () => {
       "display_name",
       "host",
       "port",
-      "username",
+      "credential_id",
+      "cloudflare_access_id",
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
       "generation",
@@ -42,6 +45,8 @@ describe("SSH connection schema", () => {
         };
       }),
     ).toStrictEqual([
+      { name: "idx_ssh_connections_cloudflare_access", unique: false },
+      { name: "idx_ssh_connections_credential", unique: false },
       { name: "idx_ssh_connections_owner_created", unique: false },
     ]);
 
@@ -52,10 +57,10 @@ describe("SSH connection schema", () => {
       }),
     );
     expect(Object.keys(checks)).toStrictEqual([
+      "chk_ssh_connections_cloudflare_access_destination",
       "chk_ssh_connections_display_name",
       "chk_ssh_connections_host",
       "chk_ssh_connections_port",
-      "chk_ssh_connections_username",
       "chk_ssh_connections_generation",
       "chk_ssh_connections_learned_host_key_pair",
     ]);
@@ -66,15 +71,25 @@ describe("SSH connection schema", () => {
     );
   });
 
-  it("owns one cascading credential row per connection", () => {
-    const config = getTableConfig(sshConnectionCredentials);
-    expect(config.primaryKeys).toHaveLength(0);
-    expect(sshConnectionCredentials.connectionId.primary).toBe(true);
-    expect(config.foreignKeys).toHaveLength(1);
-    expect(config.foreignKeys[0]?.onDelete).toBe("cascade");
-    expect(config.foreignKeys[0]?.reference().foreignTable).toBe(
-      sshConnections,
-    );
+  it("requires a same-owner credential and restricts deletion while referenced", () => {
+    const config = getTableConfig(sshConnections);
+    const credentialForeignKey = config.foreignKeys.find((key) => {
+      return key.getName() === "ssh_connections_credential_owner_fk";
+    });
+    expect(credentialForeignKey?.onDelete).toBe("restrict");
+    expect(credentialForeignKey?.reference().foreignTable).toBe(sshCredentials);
+    expect(
+      credentialForeignKey?.reference().columns.map((column) => {
+        return column.name;
+      }),
+    ).toStrictEqual(["credential_id", "org_id", "user_id"]);
+    expect(sshConnections.credentialId.notNull).toBe(true);
+    const credentialConfig = getTableConfig(sshCredentials);
+    expect(
+      credentialConfig.checks.map((check) => {
+        return check.name;
+      }),
+    ).toContain("chk_ssh_credentials_auth");
   });
 
   it("keys sparse SSH access by user and cascades from the referenced Agent", () => {

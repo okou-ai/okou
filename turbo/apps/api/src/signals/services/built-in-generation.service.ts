@@ -70,6 +70,8 @@ export interface BuiltInGenerationWebhookJob {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string | null;
+  readonly billingRunId: string | null;
+  readonly billingContext: string;
   readonly request: Record<string, unknown>;
 }
 
@@ -315,11 +317,12 @@ function isStuckBuiltInGenerationJob(
   },
   referenceTime: Date,
 ): boolean {
-  // Video Agent sessions can remain active beyond the generic video timeout.
+  // Managed HeyGen jobs can remain active beyond the generic video timeout.
   // Only an authoritative provider failure ends these resumable jobs.
   if (
-    readBuiltInGenerationRequestInternal(job.request).providerTask ===
-    "intro-video-agent"
+    ["intro-video-agent", "intro-video-render"].includes(
+      readBuiltInGenerationRequestInternal(job.request).providerTask ?? "",
+    )
   ) {
     return false;
   }
@@ -538,6 +541,8 @@ export const getBuiltInGenerationWebhookJob$ = command(
         orgId: builtInGenerationJobs.orgId,
         userId: builtInGenerationJobs.userId,
         runId: builtInGenerationJobs.runId,
+        billingRunId: builtInGenerationJobs.billingRunId,
+        billingContext: builtInGenerationJobs.billingContext,
         request: builtInGenerationJobs.request,
       })
       .from(builtInGenerationJobs)
@@ -578,6 +583,8 @@ export const getBuiltInGenerationWebhookJobByProviderJobId$ = command(
         orgId: builtInGenerationJobs.orgId,
         userId: builtInGenerationJobs.userId,
         runId: builtInGenerationJobs.runId,
+        billingRunId: builtInGenerationJobs.billingRunId,
+        billingContext: builtInGenerationJobs.billingContext,
         request: builtInGenerationJobs.request,
       })
       .from(builtInGenerationJobs)

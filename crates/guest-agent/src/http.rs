@@ -1,4 +1,4 @@
-//! HTTP client with retry logic for webhook calls and S3 uploads.
+//! HTTP client for webhook calls and single-attempt S3 uploads.
 
 use crate::constants;
 use crate::env;
@@ -10,6 +10,7 @@ use api_contracts::generated::constants::client::headers::{
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_GUEST_AGENT;
 use api_contracts::generated::types::runners::runs::active_inputs::receipt::Response as ActiveInputReceiptResponse;
 use bytes::{Bytes, BytesMut};
+use guest_contracts::diagnostics::{HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic};
 use guest_telemetry::log_warn;
 use http_body::{Frame, SizeHint};
 use pin_project_lite::pin_project;
@@ -23,7 +24,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
+use tokio::io::{AsyncRead, ReadBuf};
 use tokio::time::Instant;
 use uuid::Uuid;
 
@@ -60,6 +61,31 @@ pub(crate) struct HttpAttemptFinished {
     pub outcome: HttpAttemptOutcome,
 }
 
+impl HttpAttemptFinished {
+    /// Retain completed failure facts without recording successful attempts.
+    pub(crate) fn into_failure_diagnostic(self) -> Option<HttpCompletedAttemptDiagnostic> {
+        let HttpAttemptOutcome::Failure {
+            kind,
+            http_status,
+            timeout_observed,
+            connect_observed,
+        } = self.outcome
+        else {
+            return None;
+        };
+
+        Some(HttpCompletedAttemptDiagnostic {
+            attempt: self.attempt,
+            client_request_id: self.client_request_id,
+            elapsed_ms: self.elapsed_ms,
+            failure_kind: kind,
+            http_status,
+            timeout_observed,
+            connect_observed,
+        })
+    }
+}
+
 /// Transport outcome for an observed request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HttpAttemptOutcome {
@@ -70,15 +96,6 @@ pub(crate) enum HttpAttemptOutcome {
         timeout_observed: Option<bool>,
         connect_observed: Option<bool>,
     },
-}
-
-/// Content-safe failure classification for an observed request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HttpAttemptFailureKind {
-    Timeout,
-    Connect,
-    HttpStatus,
-    Transport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,15 +149,6 @@ impl RetryableFailure {
                 timeout_observed: Some(false),
                 connect_observed: Some(false),
             },
-        }
-    }
-
-    fn terminal_cause(self) -> String {
-        match self {
-            Self::HttpStatus(status) => format!("HTTP {status}"),
-            Self::Timeout { .. } => "timeout".to_string(),
-            Self::Connect => "connect".to_string(),
-            Self::Transport => "transport".to_string(),
         }
     }
 }
@@ -454,13 +462,6 @@ struct RetryRequest {
 }
 
 impl RetryRequest {
-    fn unobserved(builder: RequestBuilder) -> Self {
-        Self {
-            builder,
-            client_request_id: None,
-        }
-    }
-
     fn observed(builder: RequestBuilder, client_request_id: String) -> Self {
         Self {
             builder,
@@ -547,20 +548,6 @@ where
     }
 
     Err(build_final_error(last_retryable_failure))
-}
-
-fn presigned_retry_exhausted_error(
-    max_attempts: u32,
-    last_failure: Option<RetryableFailure>,
-) -> AgentError {
-    let message = match last_failure {
-        Some(failure) => format!(
-            "PUT presigned failed after {max_attempts} attempts; last failure: {}",
-            failure.terminal_cause()
-        ),
-        None => format!("PUT presigned failed after {max_attempts} attempts"),
-    };
-    AgentError::Http(message)
 }
 
 fn observe_attempt_finished(
@@ -823,47 +810,33 @@ impl HttpClient {
         .await
     }
 
-    /// PUT raw bytes to a presigned S3 URL with retry.
+    /// PUT raw bytes to a presigned S3 URL.
     ///
     /// No auth headers — the URL itself carries the authorization.
     /// Uses a per-request timeout override for longer uploads.
-    /// Accepts `Bytes` for O(1) clone on retry.
     pub async fn put_presigned(
         &self,
         url: &str,
         data: Bytes,
         content_type: &str,
     ) -> Result<(), AgentError> {
-        let max_attempts = constants::HTTP_MAX_ATTEMPTS;
-        let client = self.inner()?;
-
-        send_with_retry(
-            "PUT presigned",
-            max_attempts,
-            self.retry_delay,
-            move |last_failure| presigned_retry_exhausted_error(max_attempts, last_failure),
-            move || {
-                let data = data.clone();
-                std::future::ready(Ok(RetryRequest::unobserved(
-                    client
-                        .put(url)
-                        .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
-                        .header("Content-Type", content_type)
-                        .body(data),
-                )))
-            },
-            |resp, attempt, max_attempts| async move {
-                let status = resp.status();
-                log_warn!(
-                    LOG_TAG,
-                    "HTTP PUT presigned failed (attempt {attempt}/{max_attempts}): HTTP {status}",
-                );
-                AgentError::Http(format!("PUT presigned: HTTP {status}"))
-            },
-            None,
-        )
-        .await?;
-
+        let response = self
+            .inner()?
+            .put(url)
+            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
+            .header("Content-Type", content_type)
+            .body(data)
+            .send()
+            .await
+            .map_err(|error| {
+                AgentError::Http(format!("PUT presigned: {}", format_reqwest_error(error)))
+            })?;
+        if !response.status().is_success() {
+            return Err(AgentError::Http(format!(
+                "PUT presigned: HTTP {}",
+                response.status()
+            )));
+        }
         Ok(())
     }
 }
@@ -972,53 +945,33 @@ impl HttpClient {
     ///
     /// Unlike [`Self::put_presigned`], this avoids loading the entire file into
     /// memory. A `SizedBody` streams bounded chunks and reports the file size via
-    /// `size_hint`, so hyper sets `Content-Length` automatically. On each retry the
-    /// original file handle is cloned, producing a fresh body with stable file
-    /// identity and length.
+    /// `size_hint`, so hyper sets `Content-Length` automatically.
     pub async fn put_presigned_file(
         &self,
         url: &str,
         path: &Path,
         content_type: &str,
     ) -> Result<(), AgentError> {
-        let max_attempts = constants::HTTP_MAX_ATTEMPTS;
         let client = self.inner()?;
-        let source_file = Arc::new(tokio::fs::File::open(path).await?);
-        let file_len = source_file.metadata().await?.len();
-
-        send_with_retry(
-            "PUT presigned",
-            max_attempts,
-            self.retry_delay,
-            move |last_failure| presigned_retry_exhausted_error(max_attempts, last_failure),
-            move || {
-                let source_file = Arc::clone(&source_file);
-                async move {
-                    let mut file = source_file.try_clone().await?;
-                    file.seek(std::io::SeekFrom::Start(0)).await?;
-                    let body = reqwest::Body::wrap(SizedBody::new(file, file_len));
-
-                    Ok(RetryRequest::unobserved(
-                        client
-                            .put(url)
-                            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
-                            .header("Content-Type", content_type)
-                            .body(body),
-                    ))
-                }
-            },
-            |resp, attempt, max_attempts| async move {
-                let status = resp.status();
-                log_warn!(
-                    LOG_TAG,
-                    "HTTP PUT presigned failed (attempt {attempt}/{max_attempts}): HTTP {status}",
-                );
-                AgentError::Http(format!("PUT presigned: HTTP {status}"))
-            },
-            None,
-        )
-        .await?;
-
+        let file = tokio::fs::File::open(path).await?;
+        let file_len = file.metadata().await?.len();
+        let body = reqwest::Body::wrap(SizedBody::new(file, file_len));
+        let response = client
+            .put(url)
+            .timeout(Duration::from_secs(constants::HTTP_UPLOAD_TIMEOUT_SECS))
+            .header("Content-Type", content_type)
+            .body(body)
+            .send()
+            .await
+            .map_err(|error| {
+                AgentError::Http(format!("PUT presigned: {}", format_reqwest_error(error)))
+            })?;
+        if !response.status().is_success() {
+            return Err(AgentError::Http(format!(
+                "PUT presigned: HTTP {}",
+                response.status()
+            )));
+        }
         Ok(())
     }
 }
@@ -1028,6 +981,81 @@ mod tests {
     use super::*;
     use http_body::Body as _;
     use std::future::poll_fn;
+
+    #[test]
+    fn completed_http_failures_preserve_diagnostic_wire_facts() {
+        let cases = [
+            (
+                RetryableFailure::HttpStatus(503),
+                serde_json::json!({ "failureKind": "http_status", "httpStatus": 503 }),
+            ),
+            (
+                RetryableFailure::Timeout {
+                    connect_observed: false,
+                },
+                serde_json::json!({
+                    "failureKind": "timeout",
+                    "timeoutObserved": true,
+                    "connectObserved": false
+                }),
+            ),
+            (
+                RetryableFailure::Timeout {
+                    connect_observed: true,
+                },
+                serde_json::json!({
+                    "failureKind": "timeout",
+                    "timeoutObserved": true,
+                    "connectObserved": true
+                }),
+            ),
+            (
+                RetryableFailure::Connect,
+                serde_json::json!({
+                    "failureKind": "connect",
+                    "timeoutObserved": false,
+                    "connectObserved": true
+                }),
+            ),
+            (
+                RetryableFailure::Transport,
+                serde_json::json!({
+                    "failureKind": "transport",
+                    "timeoutObserved": false,
+                    "connectObserved": false
+                }),
+            ),
+        ];
+
+        for (failure, mut expected) in cases {
+            let diagnostic = HttpAttemptFinished {
+                attempt: 3,
+                client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
+                elapsed_ms: 12_345,
+                outcome: failure.attempt_outcome(),
+            }
+            .into_failure_diagnostic()
+            .expect("failed attempt should retain its diagnostic");
+
+            expected["attempt"] = serde_json::json!(3);
+            expected["clientRequestId"] = serde_json::json!("11111111-1111-4111-8111-111111111111");
+            expected["elapsedMs"] = serde_json::json!(12_345);
+            assert_eq!(diagnostic.failure_kind.as_str(), expected["failureKind"]);
+            assert_eq!(serde_json::to_value(&diagnostic).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn completed_http_success_has_no_failure_diagnostic() {
+        let attempt = HttpAttemptFinished {
+            attempt: 2,
+            client_request_id: "22222222-2222-4222-8222-222222222222".to_string(),
+            elapsed_ms: 17,
+            outcome: HttpAttemptOutcome::Success,
+        };
+
+        assert_eq!(attempt.into_failure_diagnostic(), None);
+    }
 
     async fn sized_body_from_bytes(data: &[u8]) -> (tempfile::TempDir, SizedBody) {
         let dir = tempfile::tempdir().unwrap();

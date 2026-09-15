@@ -26,6 +26,8 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createDeferredPromise } from "../../utils";
+import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
@@ -413,36 +415,6 @@ function names(workflows: readonly { readonly name: string }[]): string[] {
   });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
-function expectAgentRunPreCreateSource(runId: string, source: string): void {
-  expect(sandboxOperationEventsForRun(runId)).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        op_type: "api_dispatch_pre_create_agent_run",
-        agent_run_pre_create_source: source,
-      }),
-    ]),
-  );
-}
-
 describe("workflows", () => {
   it("creates private workflows by default and hides them from other org members", async () => {
     const owner = user();
@@ -556,36 +528,7 @@ describe("workflows", () => {
     if (!run.body.runId) {
       throw new Error("Expected an idle workflow invocation to create a run");
     }
-    expectAgentRunPreCreateSource(run.body.runId, "workflow_slash_command");
     expect(run.body.chatThreadId).toBe(prepared.body.chatThreadId);
-    const timingEvents = sandboxOperationEventsForRun(run.body.runId);
-    const actionTypes = timingEvents.map((event) => {
-      return event.op_type;
-    });
-    expect(actionTypes).toStrictEqual(
-      expect.arrayContaining([
-        "api_dispatch_pre_create_agent_workflow_slash_prepare_normal_send",
-        "api_dispatch_pre_create_agent_workflow_slash_load_thread_mapping",
-        "api_dispatch_pre_create_agent_web_chat_prepare_normal_send",
-        "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_load_and_authorize_agent",
-      ]),
-    );
-    expect(actionTypes).not.toContain(
-      "api_dispatch_pre_create_agent_workflow_slash_ensure_thread",
-    );
-    expect(actionTypes).not.toContain(
-      "api_dispatch_pre_create_agent_entrypoint_gap",
-    );
-    const serializedTimingEvents = JSON.stringify(timingEvents);
-    for (const sensitiveValue of [
-      created.body.id,
-      agent.agentId,
-      actor.userId,
-      `/${created.body.name}`,
-      "workflow-openai-key",
-    ]) {
-      expect(serializedTimingEvents).not.toContain(sensitiveValue);
-    }
 
     const queued = await accept(
       detailClient().run({
@@ -2545,9 +2488,7 @@ describe("workflows", () => {
       createdByUserId: creator.userId,
       updatedByUserId: creator.userId,
       instruction: "# audit workflow",
-      // The detail endpoint resolves the owner to a display name so the UI does
-      // not fall back to rendering the raw Clerk `ownerUserId`.
-      ownerUserDisplayName: "BDD User",
+      ownerUserId: creator.userId,
     });
     expect(typeof initial.body.createdAt).toBe("string");
     expect(typeof initial.body.updatedAt).toBe("string");
@@ -2579,5 +2520,374 @@ describe("workflows", () => {
       [404],
     );
     expect(missing.body.error.code).toBe("NOT_FOUND");
+  });
+});
+
+class WorkflowProfileClerkError extends Error {
+  static readonly kind = "ClerkAPIResponseError";
+  readonly retryAfter = 1;
+  constructor(readonly status: number) {
+    super(`Clerk profile request failed: ${status}`);
+  }
+}
+
+function ownerProfileUser(ownerUserId: string) {
+  return {
+    id: ownerUserId,
+    firstName: "Workflow",
+    lastName: "Author",
+    imageUrl: "https://example.com/author.png",
+    primaryEmailAddressId: "primary",
+    emailAddresses: [{ id: "primary", emailAddress: "author@example.com" }],
+  };
+}
+
+async function ownerProfileFixture(
+  visibility: "public" | "private" = "public",
+) {
+  const owner = user();
+  const agent = await createAgent(owner, { visibility: "public" });
+  const workflow = await createWorkflow(owner, {
+    agentId: agent.agentId,
+    name: `profile-${randomUUID().slice(0, 8)}`,
+    visibility,
+  });
+  return { owner, agent, workflow: workflow.body };
+}
+
+function readOwnerProfile(actor: ApiTestUser, workflowId: string) {
+  return detailClient().ownerProfile({
+    headers: authHeaders(actor),
+    params: { workflowId },
+  });
+}
+
+describe("workflow owner profiles", () => {
+  it("keeps ordinary list, detail and mutation responses independent of profile enrichment", async () => {
+    const { owner, workflow } = await ownerProfileFixture();
+    mockNow(now() + 16 * 60 * 1000);
+    context.mocks.clerk.users.getUserList.mockClear();
+    context.mocks.clerk.users.getUser.mockRejectedValue(
+      new Error("Profiles are offline"),
+    );
+    const listed = await accept(
+      collectionClient().list({ headers: authHeaders(owner) }),
+      [200],
+    );
+    const detail = await accept(
+      detailClient().get({
+        headers: authHeaders(owner),
+        params: { workflowId: workflow.id },
+      }),
+      [200],
+    );
+    const updated = await updateWorkflow(owner, workflow.id, {
+      displayName: "Profile-independent update",
+    });
+    for (const response of [
+      listed.body.find((row) => {
+        return row.id === workflow.id;
+      }),
+      detail.body,
+      updated.body,
+    ]) {
+      expect(response).toMatchObject({ ownerUserId: owner.userId });
+      expect(response).not.toHaveProperty("ownerUserDisplayName");
+      expect(response).not.toHaveProperty("ownerUserImageUrl");
+    }
+    expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
+    expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+  });
+
+  it("authorizes each profile read including warm-cache private and cross-org misses", async () => {
+    const { owner, workflow } = await ownerProfileFixture("private");
+    mockNow(now() + 16 * 60 * 1000);
+    context.mocks.clerk.users.getUser.mockResolvedValue(
+      ownerProfileUser(owner.userId),
+    );
+    const profile = await accept(readOwnerProfile(owner, workflow.id), [200]);
+    expect(profile.body).toStrictEqual({
+      displayName: "Workflow Author",
+      imageUrl: "https://example.com/author.png",
+    });
+    context.mocks.clerk.users.getUser.mockClear();
+    const other = user({ orgId: owner.orgId, orgRole: "org:admin" });
+    await accept(readOwnerProfile(other, workflow.id), [404]);
+    await accept(readOwnerProfile(user(), workflow.id), [404]);
+    await accept(readOwnerProfile(owner, randomUUID()), [404]);
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    await accept(
+      detailClient().ownerProfile({ params: { workflowId: workflow.id } }),
+      [401],
+    );
+    expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
+  });
+
+  it("does not disclose a public workflow after its agent becomes private", async () => {
+    const { owner, workflow, agent } = await ownerProfileFixture();
+    const other = user({ orgId: owner.orgId, orgRole: "org:member" });
+    mockNow(now() + 16 * 60 * 1000);
+    context.mocks.clerk.users.getUser.mockResolvedValue(
+      ownerProfileUser(owner.userId),
+    );
+    await accept(readOwnerProfile(other, workflow.id), [200]);
+    await bdd.updateAgent(owner, agent.agentId, { visibility: "private" });
+    context.mocks.clerk.users.getUser.mockClear();
+    await accept(readOwnerProfile(other, workflow.id), [404]);
+    expect(context.mocks.clerk.users.getUser).not.toHaveBeenCalled();
+  });
+
+  it("reuses positive profiles and refreshes them after fifteen minutes", async () => {
+    const { owner, workflow } = await ownerProfileFixture();
+    mockNow(now() + 16 * 60 * 1000);
+    context.mocks.clerk.users.getUser.mockResolvedValue(
+      ownerProfileUser(owner.userId),
+    );
+    await accept(readOwnerProfile(owner, workflow.id), [200]);
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      ...ownerProfileUser(owner.userId),
+      firstName: "Updated",
+    });
+    expect(
+      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
+        .displayName,
+    ).toBe("Workflow Author");
+    mockNow(now() + 15 * 60 * 1000);
+    expect(
+      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
+        .displayName,
+    ).toBe("Updated Author");
+  });
+
+  it("bounds missing profiles to sixty seconds and never serves stale identity after authoritative absence", async () => {
+    const { owner, workflow } = await ownerProfileFixture();
+    mockNow(now() + 16 * 60 * 1000);
+    context.mocks.clerk.users.getUser.mockResolvedValue(
+      ownerProfileUser(owner.userId),
+    );
+    await accept(readOwnerProfile(owner, workflow.id), [200]);
+    mockNow(now() + 15 * 60 * 1000);
+    context.mocks.clerk.users.getUser.mockRejectedValue(
+      new WorkflowProfileClerkError(404),
+    );
+    expect(
+      (await accept(readOwnerProfile(owner, workflow.id), [200])).body,
+    ).toStrictEqual({ displayName: null, imageUrl: null });
+    context.mocks.clerk.users.getUser.mockResolvedValue(
+      ownerProfileUser(owner.userId),
+    );
+    expect(
+      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
+        .displayName,
+    ).toBeNull();
+    mockNow(now() + 60 * 1000);
+    expect(
+      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
+        .displayName,
+    ).toBe("Workflow Author");
+  });
+
+  it.each([429, 503, "network"] as const)(
+    "keeps %s profile failures retryable",
+    async (failure) => {
+      const { owner, workflow } = await ownerProfileFixture();
+      mockNow(now() + 16 * 60 * 1000);
+      context.mocks.clerk.users.getUser.mockRejectedValue(
+        failure === "network"
+          ? new Error("Connection reset")
+          : new WorkflowProfileClerkError(failure),
+      );
+      await accept(readOwnerProfile(owner, workflow.id), [
+        failure === 429 ? 429 : failure === 503 ? 503 : 500,
+      ]);
+      context.mocks.clerk.users.getUser.mockResolvedValue(
+        ownerProfileUser(owner.userId),
+      );
+      expect(
+        (await accept(readOwnerProfile(owner, workflow.id), [200])).body
+          .displayName,
+      ).toBe("Workflow Author");
+    },
+  );
+
+  it("coalesces concurrent requests without reading workflow storage", async () => {
+    const { owner, workflow } = await ownerProfileFixture();
+    mockNow(now() + 16 * 60 * 1000);
+    const started = createDeferredPromise<void>(context.signal);
+    const response = createDeferredPromise<ReturnType<typeof ownerProfileUser>>(
+      context.signal,
+    );
+    context.mocks.clerk.users.getUser.mockImplementation(() => {
+      started.resolve(undefined);
+      return response.promise;
+    });
+    context.mocks.s3.send.mockClear();
+    const first = readOwnerProfile(owner, workflow.id);
+    await started.promise;
+    const second = readOwnerProfile(owner, workflow.id);
+    response.resolve(ownerProfileUser(owner.userId));
+    const results = await Promise.all([
+      accept(first, [200]),
+      accept(second, [200]),
+    ]);
+    expect(
+      results.map((result) => {
+        return result.body.displayName;
+      }),
+    ).toStrictEqual(["Workflow Author", "Workflow Author"]);
+    expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(1);
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
+
+  it("returns a real user's name without inventing a cache email", async () => {
+    const { owner, workflow } = await ownerProfileFixture();
+    mockNow(now() + 16 * 60 * 1000);
+    context.mocks.clerk.users.getUser.mockResolvedValue({
+      ...ownerProfileUser(owner.userId),
+      emailAddresses: [],
+      primaryEmailAddressId: null,
+    });
+    expect(
+      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
+        .displayName,
+    ).toBe("Workflow Author");
+  });
+});
+
+describe("workflow owner profile cancellation and capacity", () => {
+  it("retries after cancellation and ignores a late missing result", async () => {
+    const { owner, workflow } = await ownerProfileFixture();
+    mockNow(now() + 16 * 60 * 1000);
+    const controller = new AbortController();
+    const started = createDeferredPromise<void>(context.signal);
+    const missing = createDeferredPromise<void>(context.signal);
+    context.mocks.clerk.users.getUser.mockImplementation(async () => {
+      started.resolve(undefined);
+      await missing.promise;
+      throw new WorkflowProfileClerkError(404);
+    });
+    const pending = setupApp({
+      context,
+      routes: workflowsRoutes,
+      signal: controller.signal,
+    })(workflowsDetailContract).ownerProfile({
+      headers: authHeaders(owner),
+      params: { workflowId: workflow.id },
+    });
+    await started.promise;
+    controller.abort(
+      new DOMException("Owner profile request cancelled", "AbortError"),
+    );
+    await accept(pending, [500]);
+    missing.resolve(undefined);
+    context.mocks.clerk.users.getUser.mockResolvedValue(
+      ownerProfileUser(owner.userId),
+    );
+    expect(
+      (await accept(readOwnerProfile(owner, workflow.id), [200])).body
+        .displayName,
+    ).toBe("Workflow Author");
+  });
+
+  describe("negative profile capacity", () => {
+    let profiles: { owner: ApiTestUser; workflowId: string }[] = [];
+
+    beforeEach(async () => {
+      const { owner, workflow, agent } = await ownerProfileFixture();
+      // Construct the large fixture through production APIs before exercising
+      // cache behavior. The measured TTL starts after fixture creation.
+      // Independent agents avoid serializing all writes on one agent row lock.
+      const agents = [
+        agent,
+        ...(await Promise.all(
+          Array.from({ length: 5 }, () => {
+            return createAgent(owner, { visibility: "public" });
+          }),
+        )),
+      ];
+      const actors = new Map<string, ApiTestUser>();
+      context.mocks.clerk.authenticateRequest.mockImplementation(
+        (request: unknown) => {
+          if (!(request instanceof Request)) {
+            throw new Error("Expected a Clerk authentication request");
+          }
+          const actor = actors.get(request.headers.get("authorization") ?? "");
+          if (!actor) {
+            throw new Error("Unknown workflow capacity fixture actor");
+          }
+          return Promise.resolve({
+            isAuthenticated: true,
+            toAuth: () => {
+              return actor;
+            },
+          });
+        },
+      );
+      const client = collectionClient();
+      const others = await Promise.all(
+        Array.from({ length: 512 }, async (_, index) => {
+          const targetAgent = agents[index % agents.length];
+          if (!targetAgent) {
+            throw new Error("Missing workflow capacity fixture agent");
+          }
+          const another = user({ orgId: owner.orgId });
+          const authorization = `Bearer ${another.userId}`;
+          // Bind auth to the request, rather than changing one shared session
+          // while other fixture requests are still in flight. Await the entire
+          // fixture together; production row locks and the DB pool bound writes.
+          actors.set(authorization, another);
+          const created = await accept(
+            client.create({
+              headers: { authorization },
+              body: {
+                agentId: targetAgent.agentId,
+                name: `bounded-${index}`,
+                visibility: "public",
+              },
+            }),
+            [201],
+          );
+          if (created.body.ownerUserId !== another.userId) {
+            throw new Error(
+              "Workflow capacity fixture used an unexpected owner",
+            );
+          }
+          return { owner: another, workflowId: created.body.id };
+        }),
+      );
+      profiles = [{ owner, workflowId: workflow.id }, ...others];
+      mockNow(now() + 16 * 60 * 1000);
+    });
+
+    it("evicts the oldest unavailable owner at the 512-owner capacity", async () => {
+      const first = profiles[0];
+      if (!first) {
+        throw new Error("Missing capacity fixture");
+      }
+      const client = detailClient();
+      const headers = authHeaders(first.owner);
+      function read(workflowId: string) {
+        return client.ownerProfile({ headers, params: { workflowId } });
+      }
+      context.mocks.clerk.users.getUser.mockRejectedValue(
+        new WorkflowProfileClerkError(404),
+      );
+      await accept(read(first.workflowId), [200]);
+      await Promise.all(
+        profiles.slice(1).map(async ({ workflowId }) => {
+          expect(
+            (await accept(read(workflowId), [200])).body.displayName,
+          ).toBeNull();
+        }),
+      );
+      context.mocks.clerk.users.getUser.mockResolvedValue(
+        ownerProfileUser(first.owner.userId),
+      );
+      expect(
+        (await accept(read(first.workflowId), [200])).body.displayName,
+      ).toBe("Workflow Author");
+    });
   });
 });

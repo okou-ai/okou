@@ -78,6 +78,7 @@ export class SharedDatabaseMessagePortServer {
     workerSignal: AbortSignal,
   ) {
     workerSignal.throwIfAborted();
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     this.connectionController = createChildAbortController(workerSignal);
     this.connectionSignal = this.connectionController.signal;
     L.debug("connection.connect", { connectionId: this.connectionId });
@@ -205,7 +206,9 @@ export class SharedDatabaseMessagePortServer {
         "Shared database tab registration is required before query",
       );
     }
-    const signal = AbortSignal.any([callerSignal, registeredSignal]);
+    const signal = callerSignal
+      ? AbortSignal.any([callerSignal, registeredSignal])
+      : registeredSignal;
     signal.throwIfAborted();
     const deferred = createDeferredPromise<string | null>(signal);
     const requestId = crypto.randomUUID();

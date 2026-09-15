@@ -5,7 +5,6 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
@@ -57,7 +56,9 @@ test.each([false, true])(
   "Finish voice without waiting for conversation creation confirmation (reload: %s)",
   async (reloadBeforeRetry) => {
     const auth = chatListAuth(49);
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const initialPage = createChildAbortController(context.signal);
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const refreshedPage = createChildAbortController(refreshedContext.signal);
     await seedPersistentChatListCache(49, auth, []);
     let createdThreadId: string | undefined;
@@ -68,6 +69,7 @@ test.each([false, true])(
     context.mocks.data.userModelPreference({
       selectedModel: "gpt-5.6-luna",
       serviceTier: null,
+      modelSettings: {},
       selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: "2026-08-01T00:00:00.000Z",
@@ -144,10 +146,10 @@ test.each([false, true])(
     }
 
     await setupPage({
+      locale: "en-US",
       context: { ...context, signal: initialPage.signal },
       path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
       auth,
-      featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },
     });
     await fill(
       await screen.findByRole("textbox", { name: "Message" }),
@@ -180,10 +182,10 @@ test.each([false, true])(
       unloadPage(initialPage);
       publishThreadConfirmation();
       await setupPage({
+        locale: "en-US",
         context: { ...refreshedContext, signal: refreshedPage.signal },
         path: `/chats/${createdThreadId}`,
         auth,
-        featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },
       });
     } else {
       publishThreadConfirmation();

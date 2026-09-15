@@ -16,7 +16,6 @@ function packagedAppPaths(options = {}) {
 
   return {
     appBundlePath,
-    cuaRuntimePath: path.join(appBundlePath, "Contents", "Resources", "cua"),
     executablePath: path.join(appBundlePath, "Contents", "MacOS", appName),
     mainBundlePath: path.join(
       appBundlePath,

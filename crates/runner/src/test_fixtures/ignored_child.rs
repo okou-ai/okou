@@ -7,7 +7,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 #[cfg(target_os = "linux")]
 use crate::process::{ProcessStatRead, process_stat_is_live, read_process_stat_checked};
@@ -26,6 +26,7 @@ struct ChildOutput {
     head: Vec<u8>,
     tail: Vec<u8>,
     truncated_bytes: usize,
+    error: Option<String>,
 }
 
 struct IgnoredChildSession {
@@ -74,6 +75,43 @@ impl IgnoredChildSession {
         {
             let _ = child;
             Self {}
+        }
+    }
+
+    async fn wait_for_exit(&self, child: &mut tokio::process::Child) -> io::Result<()> {
+        #[cfg(target_os = "linux")]
+        {
+            use nix::sys::wait::{Id, WaitPidFlag, WaitStatus, waitid};
+            use tokio::signal::unix::{SignalKind, signal};
+
+            // Keep Child owned and unpolled: reaping the session leader before
+            // output collection/cleanup would allow its numeric SID to be reused.
+            let _ = child;
+            // Subscribe before querying so an exit between the query and recv
+            // cannot be lost. Coalesced/unrelated signals only trigger a recheck.
+            let mut exits = signal(SignalKind::child())?;
+            loop {
+                match waitid(
+                    Id::Pid(nix::unistd::Pid::from_raw(self.session_id)),
+                    WaitPidFlag::WEXITED | WaitPidFlag::WNOWAIT | WaitPidFlag::WNOHANG,
+                ) {
+                    Ok(WaitStatus::Exited(..) | WaitStatus::Signaled(..)) => return Ok(()),
+                    Ok(WaitStatus::StillAlive) => {
+                        exits.recv().await;
+                    }
+                    Err(nix::errno::Errno::EINTR) => continue,
+                    Err(error) => return Err(error.into()),
+                    Ok(status) => {
+                        return Err(io::Error::other(format!(
+                            "unexpected ignored child wait status: {status:?}"
+                        )));
+                    }
+                }
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            child.wait().await.map(drop)
         }
     }
 
@@ -402,49 +440,101 @@ async fn run_ignored_child_test_with_readiness(
         .stderr
         .take()
         .expect("ignored child test stderr must be piped");
-    let stdout_task = tokio::spawn(read_child_output(stdout));
-    let stderr_task = tokio::spawn(read_child_output(stderr));
+    let output_stop = CancellationToken::new();
+    let reader_stop = output_stop.clone();
+    let mut output_task = tokio::spawn(async move {
+        tokio::join!(
+            read_child_output(stdout, &reader_stop),
+            read_child_output(stderr, &reader_stop),
+        )
+    });
+    let mut failures = Vec::new();
 
     if let Some(readiness_path) = readiness_path
         && let Err(error) = wait_for_child_readiness(readiness_path).await
     {
-        let cleanup = kill_ignored_child(&mut child, &child_session).await;
-        let (stdout, stderr) = collect_child_output(stdout_task, stderr_task).await;
-        panic!(
-            "ignored child test {child_test_name} readiness failed: {error}; cleanup result: {cleanup:?}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-        );
+        failures.push(format!("readiness failed: {error}"));
     }
 
-    let status = match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(Ok(status)) => status,
-        Ok(Err(error)) => {
-            let kill_error = kill_ignored_child(&mut child, &child_session).await.err();
-            let (stdout, stderr) = collect_child_output(stdout_task, stderr_task).await;
-            match kill_error {
-                Some(kill_error) => panic!(
-                    "ignored child test {child_test_name} wait failed: {error}; {kill_error}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                ),
-                None => panic!(
-                    "ignored child test {child_test_name} wait failed: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                ),
-            }
+    if failures.is_empty() {
+        match tokio::time::timeout(timeout, child_session.wait_for_exit(&mut child)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => failures.push(format!("wait failed: {error}")),
+            Err(_) => failures.push(format!("timed out after {}ms", timeout.as_millis())),
         }
+    }
+
+    // A cleanup result also records that the leader may have been reaped. Never
+    // scan the saved SID again after this operation, even if output then fails.
+    let mut cleanup = if failures.is_empty() {
+        None
+    } else {
+        Some(kill_ignored_child(&mut child, &child_session).await)
+    };
+    let output_result = match tokio::time::timeout(CHILD_OUTPUT_TIMEOUT, &mut output_task).await {
+        Ok(result) => result,
         Err(_) => {
-            let killed_status = kill_ignored_child(&mut child, &child_session).await;
-            let (stdout, stderr) = collect_child_output(stdout_task, stderr_task).await;
-            let timeout_ms = timeout.as_millis();
-            match killed_status {
-                Ok(status) => panic!(
-                    "ignored child test {child_test_name} timed out after {timeout_ms}ms; killed child status: {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                ),
-                Err(error) => panic!(
-                    "ignored child test {child_test_name} timed out after {timeout_ms}ms; cleanup after kill failed: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                ),
+            failures.push(format!(
+                "collect ignored child test output timed out after {}ms",
+                CHILD_OUTPUT_TIMEOUT.as_millis()
+            ));
+            if cleanup.is_none() {
+                cleanup = Some(kill_ignored_child(&mut child, &child_session).await);
             }
+            // Return partial buffers even if cleanup could not close every pipe.
+            // Both readers observe cancellation before their next read.
+            output_stop.cancel();
+            output_task.await
         }
     };
 
-    let (stdout, stderr) = collect_child_output(stdout_task, stderr_task).await;
+    let (stdout, stderr) = match output_result {
+        Ok((mut stdout, mut stderr)) => {
+            if let Some(error) = stdout.error.take() {
+                failures.push(format!("read ignored child test stdout: {error}"));
+            }
+            if let Some(error) = stderr.error.take() {
+                failures.push(format!("read ignored child test stderr: {error}"));
+            }
+            (
+                format_child_output("stdout", stdout),
+                format_child_output("stderr", stderr),
+            )
+        }
+        Err(error) => {
+            failures.push(format!("join ignored child test output readers: {error}"));
+            (
+                "[stdout unavailable: output reader task failed]".to_owned(),
+                "[stderr unavailable: output reader task failed]".to_owned(),
+            )
+        }
+    };
+    if !failures.is_empty() && cleanup.is_none() {
+        cleanup = Some(kill_ignored_child(&mut child, &child_session).await);
+    }
+    let status = match cleanup {
+        Some(Ok(status)) => {
+            failures.push(format!("killed child status: {status}"));
+            Ok(status)
+        }
+        Some(Err(error)) => Err(format!("cleanup after kill failed: {error}")),
+        None => {
+            // Normal EOF can leave quiet descendants alive. Finalize the session
+            // before reaping its leader, while the saved SID is still owned.
+            kill_ignored_child(&mut child, &child_session).await
+        }
+    };
+    let status = status.unwrap_or_else(|error| {
+        panic!(
+            "ignored child test {child_test_name} {}; {error}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            failures.join("; ")
+        )
+    });
+    assert!(
+        failures.is_empty(),
+        "ignored child test {child_test_name} {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        failures.join("; ")
+    );
     assert!(
         status.success(),
         "ignored child test {child_test_name} failed\nstatus: {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
@@ -488,14 +578,14 @@ async fn wait_for_child_until(
     match child.try_wait() {
         Ok(Some(status)) => return Ok(status),
         Ok(None) => {}
-        Err(error) => return Err(format!("wait after kill failed: {error}")),
+        Err(error) => return Err(format!("wait failed: {error}")),
     }
 
     match tokio::time::timeout_at(deadline, child.wait()).await {
         Ok(Ok(status)) => Ok(status),
-        Ok(Err(error)) => Err(format!("wait after kill failed: {error}")),
+        Ok(Err(error)) => Err(format!("wait failed: {error}")),
         Err(_) => Err(format!(
-            "wait after kill timed out after {}ms",
+            "wait timed out after {}ms",
             CHILD_KILL_WAIT_TIMEOUT.as_millis()
         )),
     }
@@ -551,7 +641,7 @@ pub(crate) fn ignored_child_test_env_guard_enabled(env_guard: (&str, &str)) -> b
     true
 }
 
-async fn read_child_output<R>(mut output: R) -> io::Result<ChildOutput>
+async fn read_child_output<R>(mut output: R, stop: &CancellationToken) -> ChildOutput
 where
     R: AsyncRead + Unpin,
 {
@@ -559,9 +649,23 @@ where
     let mut tail = Vec::new();
     let mut total_bytes = 0usize;
     let mut chunk = [0u8; CHILD_OUTPUT_READ_CHUNK_BYTES];
+    let mut error = None;
 
     loop {
-        let read = output.read(&mut chunk).await?;
+        let read = tokio::select! {
+            biased;
+            () = stop.cancelled() => {
+                error = Some("output collection stopped before EOF".to_owned());
+                break;
+            }
+            result = output.read(&mut chunk) => match result {
+                Ok(read) => read,
+                Err(read_error) => {
+                    error = Some(read_error.to_string());
+                    break;
+                }
+            },
+        };
         if read == 0 {
             break;
         }
@@ -581,64 +685,11 @@ where
         }
     }
 
-    Ok(ChildOutput {
+    ChildOutput {
         truncated_bytes: total_bytes.saturating_sub(head.len() + tail.len()),
         head,
         tail,
-    })
-}
-
-async fn collect_child_output(
-    mut stdout_task: JoinHandle<io::Result<ChildOutput>>,
-    mut stderr_task: JoinHandle<io::Result<ChildOutput>>,
-) -> (String, String) {
-    let timeout = tokio::time::sleep(CHILD_OUTPUT_TIMEOUT);
-    tokio::pin!(timeout);
-
-    let mut stdout = None;
-    let mut stderr = None;
-
-    loop {
-        tokio::select! {
-            biased;
-
-            result = &mut stdout_task, if stdout.is_none() => {
-                stdout = Some(child_output("stdout", result));
-            }
-            result = &mut stderr_task, if stderr.is_none() => {
-                stderr = Some(child_output("stderr", result));
-            }
-            _ = &mut timeout => {
-                stdout_task.abort();
-                stderr_task.abort();
-                panic!(
-                    "collect ignored child test output timed out after {}ms",
-                    CHILD_OUTPUT_TIMEOUT.as_millis()
-                );
-            }
-        }
-
-        if stdout.is_some() && stderr.is_some() {
-            break;
-        }
-    }
-
-    let stdout = stdout.expect("stdout reader result must be set");
-    let stderr = stderr.expect("stderr reader result must be set");
-    (
-        format_child_output("stdout", stdout),
-        format_child_output("stderr", stderr),
-    )
-}
-
-fn child_output(
-    stream_name: &str,
-    result: Result<io::Result<ChildOutput>, tokio::task::JoinError>,
-) -> ChildOutput {
-    match result {
-        Ok(Ok(output)) => output,
-        Ok(Err(error)) => panic!("read ignored child test {stream_name}: {error}"),
-        Err(error) => panic!("join ignored child test {stream_name} reader: {error}"),
+        error,
     }
 }
 
@@ -667,6 +718,14 @@ mod tests {
     const LARGE_SUCCESS_OUTPUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_LARGE_SUCCESS_OUTPUT_TEST";
     const LARGE_OUTPUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_LARGE_OUTPUT_TEST";
     const TIMEOUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_TIMEOUT_TEST";
+    #[cfg(target_os = "linux")]
+    const OUTPUT_TIMEOUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_OUTPUT_TIMEOUT_TEST";
+    #[cfg(target_os = "linux")]
+    const OUTPUT_TIMEOUT_EXIT_ENV: &str = "OKOU_RUN_IGNORED_CHILD_OUTPUT_TIMEOUT_EXIT";
+    #[cfg(target_os = "linux")]
+    const QUIET_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_QUIET_TEST";
+    #[cfg(target_os = "linux")]
+    const QUIET_CHILD_FAIL_ENV: &str = "OKOU_RUN_IGNORED_CHILD_QUIET_FAIL";
 
     #[tokio::test]
     async fn run_ignored_child_test_preserves_tail_after_large_output() {
@@ -720,6 +779,222 @@ mod tests {
             ];
         std::io::Write::write_all(&mut std::io::stdout().lock(), &output)
             .expect("write large ignored child stdout");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn run_ignored_child_test_quiet_descendant_after_successful_exit() {
+        assert_quiet_descendant_cleaned_up(false).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn run_ignored_child_test_quiet_descendant_after_failed_exit() {
+        assert_quiet_descendant_cleaned_up(true).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn assert_quiet_descendant_cleaned_up(fail: bool) {
+        let dir = tempfile::tempdir().unwrap();
+        let readiness_path = dir.path().join("descendant-ready");
+        let readiness_value = readiness_path.to_str().unwrap().to_owned();
+        let child_test_name =
+            "test_fixtures::ignored_child::tests::run_ignored_child_test_quiet_child";
+        let task = tokio::spawn(async move {
+            run_ignored_child_test(
+                child_test_name,
+                (QUIET_CHILD_ENV, &readiness_value),
+                &[(QUIET_CHILD_FAIL_ENV, Some(if fail { "1" } else { "0" }))],
+                Duration::from_secs(5),
+            )
+            .await;
+        });
+        let result = task.await;
+        let identity = read_descendant_identity(&readiness_path);
+        assert_descendant_exited(&identity).await;
+
+        if fail {
+            let panic = result
+                .expect_err("failed child test must fail the fixture")
+                .into_panic();
+            let message = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .expect("fixture panic must contain a string");
+            for expected in [
+                &format!("ignored child test {child_test_name} failed"),
+                "status: exit status: 101",
+                "quiet child failed intentionally",
+                "quiet-child stdout marker",
+                "quiet-child stderr marker",
+                "[truncated ",
+            ] {
+                assert!(
+                    message.contains(expected),
+                    "missing {expected:?}: {message}"
+                );
+            }
+        } else {
+            result.expect("successful child test must pass after descendant cleanup");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore]
+    fn run_ignored_child_test_quiet_child() {
+        let Ok(readiness_path) = std::env::var(QUIET_CHILD_ENV) else {
+            return;
+        };
+        if !ignored_child_test_env_guard_enabled((QUIET_CHILD_ENV, &readiness_path)) {
+            return;
+        }
+        let fail = std::env::var(QUIET_CHILD_FAIL_ENV).expect("quiet child failure mode");
+        // The parent fixture owns this descendant after the child test exits.
+        let descendant = std::process::Command::new("sleep")
+            .arg("60")
+            .process_group(0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn quiet descendant");
+        let pid = descendant.id();
+        let ProcessStatRead::Found(stat) = crate::process::read_process_stat_checked_blocking(pid)
+        else {
+            panic!("quiet descendant stat must be readable");
+        };
+        assert!(process_stat_is_live(&stat));
+        assert_eq!(stat.pgid, pid);
+        assert_eq!(
+            process_session_id(libc::pid_t::try_from(pid).unwrap()),
+            Ok(nix::unistd::getsid(None).unwrap().as_raw())
+        );
+        write_large_ignored_child_stdout();
+        println!("quiet-child stdout marker");
+        eprintln!("quiet-child stderr marker");
+        std::fs::write(
+            &readiness_path,
+            format!("{pid} {} {}\n", stat.pgid, stat.starttime),
+        )
+        .expect("publish quiet descendant readiness");
+        // Relinquish the child handle without waiting; the fixture must finish cleanup.
+        drop(descendant);
+        assert_ne!(fail, "1", "quiet child failed intentionally");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn run_ignored_child_test_output_timeout_cleans_up_after_failed_exit() {
+        assert_output_timeout_cleans_up_descendant("1").await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn run_ignored_child_test_output_timeout_cleans_up_after_successful_exit() {
+        assert_output_timeout_cleans_up_descendant("0").await;
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn assert_output_timeout_cleans_up_descendant(exit_code: &'static str) {
+        let dir = tempfile::tempdir().unwrap();
+        let readiness_path = dir.path().join("descendant-ready");
+        let task_readiness_path = readiness_path.clone();
+        let readiness_value = readiness_path.to_str().unwrap().to_owned();
+        let child_test_name =
+            "test_fixtures::ignored_child::tests::run_ignored_child_test_output_timeout_child";
+        let task = tokio::spawn(async move {
+            run_ignored_child_test_with_readiness(
+                child_test_name,
+                (OUTPUT_TIMEOUT_CHILD_ENV, &readiness_value),
+                &[(OUTPUT_TIMEOUT_EXIT_ENV, Some(exit_code))],
+                Duration::from_secs(5),
+                Some(&task_readiness_path),
+            )
+            .await;
+        });
+        let result = task.await;
+        let identity = read_descendant_identity(&readiness_path);
+        assert_descendant_exited(&identity).await;
+
+        let panic = result
+            .expect_err("inherited output pipe must fail the fixture")
+            .into_panic();
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .expect("fixture panic must contain a string");
+        for expected in [
+            child_test_name,
+            "collect ignored child test output timed out after",
+            &format!("exit status: {exit_code}"),
+            "output-timeout stdout marker",
+            "output-timeout stderr marker",
+            "[truncated ",
+        ] {
+            assert!(
+                message.contains(expected),
+                "missing {expected:?}: {message}"
+            );
+        }
+        assert!(
+            !message.contains("session cleanup failed"),
+            "unexpected cleanup failure: {message}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore]
+    fn run_ignored_child_test_output_timeout_child() {
+        let Ok(readiness_path) = std::env::var(OUTPUT_TIMEOUT_CHILD_ENV) else {
+            return;
+        };
+        if !ignored_child_test_env_guard_enabled((OUTPUT_TIMEOUT_CHILD_ENV, &readiness_path)) {
+            return;
+        }
+        let exit_code: i32 = std::env::var(OUTPUT_TIMEOUT_EXIT_ENV)
+            .expect("output timeout exit code")
+            .parse()
+            .unwrap();
+        let mut command = std::process::Command::new("sleep");
+        command
+            .arg("60")
+            .process_group(0)
+            .stdin(Stdio::null())
+            .stdout(if exit_code == 1 {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            })
+            .stderr(if exit_code == 0 {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            });
+        // This ignored child exits below; the parent fixture owns descendant cleanup.
+        let descendant = command.spawn().expect("spawn output-holding descendant");
+        let pid = descendant.id();
+        let ProcessStatRead::Found(stat) = crate::process::read_process_stat_checked_blocking(pid)
+        else {
+            panic!("output-holding descendant stat must be readable");
+        };
+        assert_eq!(stat.pgid, pid);
+        assert_eq!(
+            process_session_id(libc::pid_t::try_from(pid).unwrap()),
+            Ok(nix::unistd::getsid(None).unwrap().as_raw())
+        );
+        write_large_ignored_child_stdout();
+        println!("output-timeout stdout marker");
+        eprintln!("output-timeout stderr marker");
+        std::fs::write(
+            &readiness_path,
+            format!("{pid} {} {}\n", stat.pgid, stat.starttime),
+        )
+        .expect("publish output-holding descendant readiness");
+        std::process::exit(exit_code);
     }
 
     #[cfg(target_os = "linux")]
@@ -838,6 +1113,36 @@ mod tests {
         pid: u32,
         pgid: u32,
         starttime: u64,
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn assert_descendant_exited(identity: &DescendantIdentity) {
+        // Clean up the controlled descendant even when a regression fails.
+        // Bind it before checking its generation, then signal only via the pidfd.
+        let pidfd = open_pidfd(libc::pid_t::try_from(identity.pid).unwrap()).unwrap();
+        let remained_live = match read_process_stat_checked(identity.pid).await {
+            ProcessStatRead::Found(stat) => {
+                stat.starttime == identity.starttime && process_stat_is_live(&stat)
+            }
+            ProcessStatRead::Missing => false,
+            ProcessStatRead::Unreadable(error) => panic!("read descendant state: {error}"),
+            ProcessStatRead::Invalid => panic!("parse descendant state"),
+        };
+        if remained_live {
+            let pidfd = pidfd.expect("live descendant must have a pidfd");
+            signal_pidfd(&pidfd, libc::SIGKILL).expect("clean up leaked test descendant");
+            let exit = tokio::io::unix::AsyncFd::new(pidfd).unwrap();
+            let _ready = tokio::time::timeout(CHILD_KILL_WAIT_TIMEOUT, exit.readable())
+                .await
+                .expect("test descendant cleanup must finish")
+                .expect("observe test descendant exit");
+        }
+        assert!(
+            !remained_live,
+            "descendant {} remained live after fixture completion",
+            identity.pid
+        );
+        assert_eq!(identity.pgid, identity.pid);
     }
 
     #[cfg(target_os = "linux")]

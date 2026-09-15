@@ -93,10 +93,12 @@ const MOCK_UNREACHABLE_MESSAGE = "Unable to connect (network unreachable)";
 let capturedAuthCallback: AuthCallback | null = null;
 let tokenBodies: AuthCallbackToken[] = [];
 let nextSubscribeError: Error | null = null;
-let nextSubscribeGate: {
+interface SubscribeGate {
   readonly started: ReturnType<typeof createDeferredPromise<void>>;
   readonly release: ReturnType<typeof createDeferredPromise<void>>;
-} | null = null;
+}
+let nextSubscribeGate: SubscribeGate | null = null;
+const channelSubscribeGates = new Map<string, SubscribeGate>();
 const realtimeInstances = new Set<Realtime>();
 const chatDatabaseEventListeners = new Set<ChatDatabaseEventListener>();
 const userRealtimeEventListeners = new Set<UserRealtimeEventListener>();
@@ -138,7 +140,10 @@ class FakeChannel {
   attachOnSubscribe = true;
   private readonly stateListeners = new Set<ChannelStateListener>();
 
-  constructor(private readonly connectionState: () => MockConnectionState) {}
+  constructor(
+    private readonly connectionState: () => MockConnectionState,
+    private readonly name: string,
+  ) {}
 
   trigger(topic: string, data?: unknown): void {
     const message = { name: topic, data };
@@ -165,6 +170,11 @@ class FakeChannel {
     this.subscriptions.clear();
     this.channelSubscriptions.clear();
     this.transition("detached");
+  }
+
+  detach(): Promise<void> {
+    this.transition("detached");
+    return Promise.resolve();
   }
 
   fail(reason: MockErrorInfo): void {
@@ -245,8 +255,14 @@ class FakeChannel {
       callbacks.add(callback);
     }
 
-    const subscribeGate = nextSubscribeGate;
-    nextSubscribeGate = null;
+    const gateKey = JSON.stringify([this.name, topicOrCallback]);
+    const subscribeGate =
+      channelSubscribeGates.get(gateKey) ?? nextSubscribeGate;
+    if (channelSubscribeGates.has(gateKey)) {
+      channelSubscribeGates.delete(gateKey);
+    } else {
+      nextSubscribeGate = null;
+    }
     await Promise.resolve();
     if (subscribeGate) {
       subscribeGate.started.resolve(undefined);
@@ -308,6 +324,7 @@ export class Realtime {
     off: ConnectionOff;
   };
   readonly channels: {
+    release: (name: string) => void;
     get: (
       _name: string,
       options?: { attachOnSubscribe?: boolean },
@@ -379,6 +396,9 @@ export class Realtime {
     };
     this.channel = this.getChannel("user:test-user-123");
     this.channels = {
+      release: (name) => {
+        this.channelsByName.delete(name);
+      },
       get: (name, options) => {
         const channel = this.getChannel(name);
         if (options?.attachOnSubscribe !== undefined) {
@@ -493,7 +513,7 @@ export class Realtime {
     }
     const channel = new FakeChannel(() => {
       return this.connection.state;
-    });
+    }, name);
     this.channelsByName.set(name, channel);
     return channel;
   }
@@ -534,6 +554,7 @@ export const XHRPolling = Symbol("XHRPolling");
 
 function isSharedDatabaseRealtimeTopic(topic: string): boolean {
   return (
+    topic === "morningBriefChanged" ||
     topic === "chatThreadReadCursorUpdated" ||
     topic === "threadListChanged" ||
     topic.startsWith("chatThreadMessageCreated:")
@@ -827,6 +848,34 @@ export function rejectAblySubscribe(
   return observed.promise;
 }
 
+/** Delay one external channel/topic registration without blocking other scopes. */
+export function deferAblySubscribeOnChannel(
+  channelName: string,
+  topic: string,
+  signal: AbortSignal,
+): {
+  readonly started: Promise<void>;
+  readonly attach: () => void;
+  readonly fail: (error: Error) => void;
+} {
+  const key = JSON.stringify([channelName, topic]);
+  if (channelSubscribeGates.has(key)) {
+    throw new Error("This Ably subscription is already deferred");
+  }
+  const started = createDeferredPromise<void>(signal);
+  const release = createDeferredPromise<void>(signal);
+  channelSubscribeGates.set(key, { started, release });
+  return {
+    started: started.promise,
+    attach: () => {
+      release.resolve();
+    },
+    fail: (error) => {
+      release.reject(error);
+    },
+  };
+}
+
 /** Track a topic subscribed through the in-process direct worker bridge. */
 export function registerDirectRealtimeSubscription(
   channelName: string,
@@ -892,6 +941,12 @@ export function hasSubscriptionOnChannel(
   return false;
 }
 
+export function hasRealtimeChannel(channelName: string): boolean {
+  return [...realtimeInstances].some((realtime) => {
+    return realtime.getExistingChannel(channelName) !== undefined;
+  });
+}
+
 /** Debug: check if a user channel has an active catch-all subscription. */
 export function hasChannelSubscription(): boolean {
   for (const realtime of realtimeInstances) {
@@ -933,6 +988,7 @@ export function resetAblySubscriptions(): void {
   tokenBodies = [];
   nextSubscribeError = null;
   nextSubscribeGate = null;
+  channelSubscribeGates.clear();
   subscribeErrors.clear();
 }
 

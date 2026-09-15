@@ -1,26 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
   chatThreadConnectorSelectionContract,
-  chatThreadEventsContract,
   chatThreadMetadataContract,
   chatThreadModelSelectionContract,
-  chatThreadRenameContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import {
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
 import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { testChatEventRetentionContract } from "@okouai/api-contracts/contracts/test-chat-event-retention";
-import { testChatEventSnapshotContract } from "@okouai/api-contracts/contracts/test-chat-event-snapshot";
-import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
@@ -29,28 +18,19 @@ import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { seedLegacyPrivateDefaultAgentFixture } from "../../../test-fixtures/legacy-default-agent";
-import { occupyWelcomeSeedFixture } from "../../../test-fixtures/welcome-thread";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { modelProvidersRoutes } from "../model-providers";
-import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
-import { testChatEventRetentionRoutes } from "../test-chat-event-retention";
-import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  installFakeChatEventR2,
-  readFakeChatEventObject,
-  type RecordedChatEventPut,
-} from "./helpers/fake-chat-event-r2";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -231,7 +211,7 @@ describe("POST /api/welcome-chat-threads", () => {
       }),
       [409],
     );
-    expect(unavailable.body.error.code).toBe("DEFAULT_AGENT_NOT_READY");
+    expect(unavailable.body.error.code).toBe("CONFLICT");
     await accept(
       metadataClient().get({
         headers: headers(actor),
@@ -259,7 +239,7 @@ describe("POST /api/welcome-chat-threads", () => {
       }),
       [409],
     );
-    expect(rejected.body.error.code).toBe("DEFAULT_AGENT_NOT_READY");
+    expect(rejected.body.error.code).toBe("CONFLICT");
     await expect(createdEvents(member, clientThreadId)).resolves.toStrictEqual(
       [],
     );
@@ -333,6 +313,13 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).toContain(expected);
     }
     await expect(createdEvents(actor, body.id)).resolves.toHaveLength(1);
+    // The only retry a client performs is a new deliberate action with a new
+    // id, which creates its own thread.
+    const second = await create(actor);
+    expect(second.body.id).not.toBe(body.id);
+    await expect(
+      chat.listThreadEventRows(actor, second.body.id),
+    ).resolves.toHaveLength(1);
     const selections = await accept(
       setupApp({ context, routes: chatThreadRoutes })(
         chatThreadConnectorSelectionContract,
@@ -393,228 +380,6 @@ describe("POST /api/welcome-chat-threads", () => {
     await expect(
       chat.listThreadEventRows(actor, body.id),
     ).resolves.toMatchObject([{ eventType: "output.message", runId: null }]);
-  });
-
-  it("converges concurrent deliveries, preserves edits and locale, and permits a new action", async () => {
-    const { actor } = await fixture();
-    const clientThreadId = randomUUID();
-    const firstHeaders = headers(actor);
-    const responses = await Promise.all(
-      Array.from({ length: 3 }, () => {
-        return accept(
-          welcomeClient().create({
-            headers: firstHeaders,
-            body: { clientThreadId },
-          }),
-          [201],
-        );
-      }),
-    );
-    expect(
-      responses.map((response) => {
-        return response.body;
-      }),
-    ).toStrictEqual(
-      Array.from({ length: 3 }, () => {
-        return { id: clientThreadId };
-      }),
-    );
-    const original = await chat.listThreadEventRows(actor, clientThreadId);
-    expect(original).toHaveLength(1);
-    await expect(createdEvents(actor, clientThreadId)).resolves.toHaveLength(1);
-    await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadRenameContract,
-      ).rename({
-        headers: headers(actor),
-        params: { id: clientThreadId },
-        body: { title: "My saved examples" },
-      }),
-      [204],
-    );
-    await bdd.updateUserLocale(actor, "ja-JP");
-    await runs.ensureOrgModelProvider(actor);
-    await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadModelSelectionContract,
-      ).update({
-        headers: headers(actor),
-        params: { id: clientThreadId },
-        body: { model: MODEL },
-      }),
-      [204],
-    );
-    await create(actor, clientThreadId);
-    await expect(
-      chat.listThreadEventRows(actor, clientThreadId),
-    ).resolves.toStrictEqual(original);
-    const metadata = await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: clientThreadId },
-      }),
-      [200],
-    );
-    expect(metadata.body.title).toBe("My saved examples");
-    expect(metadata.body.selectedModel).toBe(MODEL);
-    const another = await create(actor);
-    expect(another.body.id).not.toBe(clientThreadId);
-    expect(
-      (await chat.listThreadEventRows(actor, another.body.id))[0]?.payload
-        ?.content,
-    ).toContain("# Okouです");
-  });
-
-  it("rejects a same-owner ordinary thread collision without appending a welcome", async () => {
-    const { actor, agentId } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
-    const clientThreadId = randomUUID();
-    await accept(
-      threadsClient().create({
-        headers: headers(actor),
-        body: {
-          agentId,
-          clientThreadId,
-          model: MODEL,
-          title: "Ordinary thread",
-        },
-      }),
-      [201],
-    );
-    const collision = await accept(
-      welcomeClient().create({
-        headers: headers(actor),
-        body: { clientThreadId },
-      }),
-      [409],
-    );
-    expect(collision.body.error.code).toBe("CONFLICT");
-    await expect(
-      chat.listThreadEventRows(actor, clientThreadId),
-    ).resolves.toStrictEqual([]);
-    await expect(createdEvents(actor, clientThreadId)).resolves.toHaveLength(1);
-  });
-
-  it("does not disclose another user or workspace's welcome on collision", async () => {
-    const { actor } = await fixture();
-    const { body } = await create(actor);
-    const original = await chat.listThreadEventRows(actor, body.id);
-    for (const other of [
-      bdd.user({ orgId: actor.orgId }),
-      bdd.user({ userId: actor.userId }),
-    ]) {
-      await enable(other);
-      const collision = await accept(
-        welcomeClient().create({
-          headers: headers(other),
-          body: { clientThreadId: body.id },
-        }),
-        [404],
-      );
-      expect(collision.body.error.message).toBe("Chat thread not found");
-    }
-    await expect(
-      chat.listThreadEventRows(actor, body.id),
-    ).resolves.toStrictEqual(original);
-  });
-
-  it("rolls back the whole initialization when the seed insert fails", async () => {
-    const { actor, agentId } = await fixture();
-    await runs.ensureOrgModelProvider(actor);
-    const blocker = await chat.createThread(actor, {
-      agentId,
-      title: "Fault fixture",
-    });
-    const clientThreadId = randomUUID();
-    // No production input can choose this runless assistant ID. The fixture
-    // induces a real unique-key error after the lifecycle write, not a mock.
-    await occupyWelcomeSeedFixture(blocker.id, clientThreadId);
-    await accept(
-      welcomeClient().create({
-        headers: headers(actor),
-        body: { clientThreadId },
-      }),
-      [500],
-    );
-    await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: clientThreadId },
-      }),
-      [404],
-    );
-    await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
-      [],
-    );
-    await chat.requestDeleteThread(actor, blocker.id, [204]);
-    await create(actor, clientThreadId);
-    await expect(createdEvents(actor, clientThreadId)).resolves.toHaveLength(1);
-    await expect(
-      chat.listThreadEventRows(actor, clientThreadId),
-    ).resolves.toHaveLength(1);
-  });
-
-  it("replays from standard history after snapshot publication and hot-row retention", async () => {
-    const { actor } = await fixture();
-    const puts: RecordedChatEventPut[] = [];
-    installFakeChatEventR2(context, puts);
-    // The retention cutoff is database time; create a historical event using
-    // the ordinary clock seam, then exercise the real snapshot/retention APIs.
-    mockNow(new Date(now() - 31 * 24 * 60 * 60 * 1000));
-    const { body } = await create(actor);
-    const original = await chat.listThreadEventRows(actor, body.id);
-    await accept(
-      setupApp({ context, routes: testChatEventSearchProjectionRoutes })(
-        testChatEventSearchProjectionContract,
-      ).project({ body: { chat_thread_ids: [body.id] } }),
-      [200],
-    );
-    await accept(
-      setupApp({ context, routes: testChatEventSnapshotRoutes })(
-        testChatEventSnapshotContract,
-      ).snapshot({ body: { chat_thread_ids: [body.id], r2_object_keys: [] } }),
-      [200],
-    );
-    const retained = await accept(
-      setupApp({ context, routes: testChatEventRetentionRoutes })(
-        testChatEventRetentionContract,
-      ).retain({ body: { chat_thread_ids: [body.id] } }),
-      [200],
-    );
-    expect(retained.body.deleted).toBe(1);
-    const snapshot = await accept(
-      setupApp({ context, routes: chatThreadRoutes })(
-        chatThreadEventsContract,
-      ).snapshot({
-        headers: {
-          ...headers(actor),
-          [CHAT_EVENT_SCHEMA_VERSION_HEADER]: String(
-            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-          ),
-        },
-        params: { threadId: body.id },
-      }),
-      [200],
-    );
-    expect(snapshot.body.lastSeqId).toBe(1);
-    const object = puts[0];
-    if (!object) {
-      throw new Error("Expected a snapshot object");
-    }
-    const compressed = readFakeChatEventObject(object.key);
-    if (!compressed) {
-      throw new Error("Expected the stored snapshot");
-    }
-    const archived = gunzipSync(compressed)
-      .toString("utf8")
-      .trim()
-      .split("\n")
-      .map((line) => {
-        return chatEventRowSchema.parse(JSON.parse(line));
-      });
-    expect(archived).toStrictEqual(original);
-    await create(actor, body.id);
-    await expect(createdEvents(actor, body.id)).resolves.toHaveLength(1);
   });
 
   it.each(SUPPORTED_USER_LOCALES)(

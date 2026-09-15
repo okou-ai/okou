@@ -1,8 +1,10 @@
 import { nowDate } from "../../lib/time";
 import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
-import { registerArtifactDelivery$ } from "./artifact-delivery.service";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactReferencePath,
+  artifactShareReferencePath,
+} from "@okouai/api-contracts/contracts/artifact-references";
 import { command, computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
@@ -19,7 +21,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { settle } from "../utils";
 import { env } from "../../lib/env";
-import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
@@ -31,6 +32,7 @@ import {
 } from "../external/s3";
 import { privateArtifactRecord } from "./private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
+import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 
 interface ShareCandidate {
   readonly targetId: string;
@@ -223,7 +225,28 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
   if (!domain || !scheme) {
     throw new Error("Public HTML delivery is not configured");
   }
-  return `${scheme}://${policy.publicToken}.${domain}/`;
+  // Preserve requested durable token links without publishing during reads.
+  // Retire only after #32492 accounts for the remaining old share policies.
+  return `${scheme}://${policy.publicSlug ?? policy.publicToken}.${domain}/`;
+}
+
+function shortShareUrl(policy: ArtifactSharePolicy | null): string | null {
+  if (!policy || policy.status !== "active") {
+    return null;
+  }
+  if (policy.audience === "public") {
+    return policy.publicSlug ? publicShareUrl(policy) : null;
+  }
+  if (policy.audience !== "organization" || !policy.organizationReference) {
+    return null;
+  }
+  return new URL(
+    artifactShareReferencePath(
+      policy.organizationReference,
+      policy.target.kind === "file" ? policy.target.filename : "index.html",
+    ),
+    env("APP_URL"),
+  ).href;
 }
 
 const shareStatus$ = command(
@@ -252,6 +275,7 @@ const shareStatus$ = command(
         : null,
       selectedVersion:
         policy?.target.kind === "html" ? policy.target.deploymentVersion : null,
+      shortUrl: shortShareUrl(policy),
       url:
         !policy || policy.status === "revoked"
           ? null
@@ -464,26 +488,12 @@ export const updateArtifactShare$ = command(
       });
       if (next.publicToken) {
         publicShareUrl(next);
-        await set(
-          registerArtifactDelivery$,
-          {
-            alias:
-              next.target.kind === "file"
-                ? `${next.publicToken}${artifactFilenameExtension(next.target.filename)}`
-                : next.publicToken,
-            targetKind: next.target.kind,
-            record: {
-              version: 1,
-              kind: "publication",
-              publicBrand: next.publicBrand,
-              shareId: next.shareId,
-              publicToken: next.publicToken,
-              targetKind: next.target.kind,
-            },
-          },
-          signal,
-        );
       }
+      const prepared = await set(
+        prepareArtifactShareAliases$,
+        { policy: next, previous },
+        signal,
+      );
       // R2 is the only mutable authority. Acknowledge only after its strongly
       // consistent write completes. No database commit can resurrect old scope.
       // The row lock serializes owner changes, including different site versions.
@@ -491,12 +501,12 @@ export const updateArtifactShare$ = command(
         writeArtifactSharePolicyObject(
           policyBucket(),
           policyKey(row),
-          JSON.stringify(next),
+          JSON.stringify(prepared),
           stored?.etag ?? null,
           signal,
         ),
       );
-      return next;
+      return prepared;
     });
     signal.throwIfAborted();
     if (!policy && args.audience !== "private") {
@@ -576,7 +586,6 @@ export const resolveArtifactShare$ = command(
     }
     const preview = await get(
       generateArtifactPreviewUrl(file.bucket, policy.target.key, {
-        expiresIn: PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS,
         signingDate: nowDate(),
         filename: file.filename,
       }),

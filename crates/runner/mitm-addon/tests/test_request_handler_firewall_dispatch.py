@@ -96,7 +96,7 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
         path="/items/123",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", primary_name),
+            ("X-Okou-Connector-Intent", primary_name),
         ),
     )
 
@@ -111,7 +111,7 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
     assert auth_request.auth_headers == {"Authorization": "Bearer ${{ secrets.PRIMARY_TOKEN }}"}
     assert flow.response is None
     assert flow.request.headers["Authorization"] == "Bearer resolved-primary"
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert flow.metadata[metadata_keys.FIREWALL_NAME] == primary_name
     assert flow.metadata[metadata_keys.FIREWALL_PERMISSION] == "items-read"
 
@@ -134,7 +134,7 @@ async def test_invalid_captured_connector_intent_fails_ambiguous_route_before_au
         path="/items/123",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "primary"),
+            ("X-Okou-Connector-Intent", "primary"),
         ),
     )
     connector_intent.capture_and_strip(flow)
@@ -167,25 +167,25 @@ async def test_invalid_captured_connector_intent_fails_ambiguous_route_before_au
         ((), "connector_intent_required"),
         (
             (
-                ("X-VM0-Connector-Intent", "primary"),
-                ("X-VM0-Connector-Intent", "auditor"),
+                ("X-Okou-Connector-Intent", "primary"),
+                ("X-Okou-Connector-Intent", "auditor"),
             ),
             "malformed_connector_intent",
         ),
         (
-            (("X-VM0-Connector-Intent", "primary,auditor"),),
+            (("X-Okou-Connector-Intent", "primary,auditor"),),
             "malformed_connector_intent",
         ),
         (
-            (("X-VM0-Connector-Intent", ""),),
+            (("X-Okou-Connector-Intent", ""),),
             "malformed_connector_intent",
         ),
         (
-            (("X-VM0-Connector-Intent", "   "),),
+            (("X-Okou-Connector-Intent", "   "),),
             "malformed_connector_intent",
         ),
         (
-            (("X-VM0-Connector-Intent", "inactive"),),
+            (("X-Okou-Connector-Intent", "inactive"),),
             "connector_intent_not_candidate",
         ),
     ],
@@ -218,7 +218,7 @@ async def test_ambiguous_connector_route_fails_before_auth_and_logs_candidates(
     auth_fetch.assert_not_awaited()
     assert flow.response is not None
     assert flow.response.status_code == 409
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.FIREWALL_BASE not in flow.metadata
     assert metadata_keys.FIREWALL_NAME not in flow.metadata
     assert metadata_keys.FIREWALL_PERMISSION not in flow.metadata
@@ -257,7 +257,7 @@ async def test_oversized_connector_intent_is_malformed_without_decoding_or_auth(
     request_headers = mitm_addon.http.Headers(
         [
             (b"Host", b"shared.example.com"),
-            (b"x-VM0-Connector-Intent", oversized_intent),
+            (b"x-Okou-Connector-Intent", oversized_intent),
         ]
     )
     flow = real_flow(
@@ -278,7 +278,9 @@ async def test_oversized_connector_intent_is_malformed_without_decoding_or_auth(
     auth_fetch.assert_not_awaited()
     assert flow.response is not None
     assert flow.response.status_code == 409
-    assert all(name.lower() != b"x-vm0-connector-intent" for name, _ in flow.request.headers.fields)
+    assert all(
+        name.lower() != b"x-okou-connector-intent" for name, _ in flow.request.headers.fields
+    )
     assert connector_intent.from_flow(flow) == connector_intent.MALFORMED
     assert connector_intent._VALUE_METADATA_KEY not in flow.metadata
     body = json.loads(flow.response.content)

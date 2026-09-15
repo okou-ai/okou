@@ -5,12 +5,14 @@ import {
   readFile,
   rename,
   rm,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -163,6 +165,70 @@ describe("Pi memory Phase 2 maintenance tools", () => {
     expect(await readFile(join(fixture.memoryRoot, "legacy.md"), "utf8")).toBe(
       "legacy needle",
     );
+  });
+
+  it("reports bounded summary numbers and leaves other outputs unchanged", async () => {
+    const fixture = await roots();
+    const tools = createPiMemoryPhase2Tools(fixture);
+
+    expect(
+      await executeText(tools, "phase2_write", {
+        path: "memory/MEMORY.md",
+        content: "# Task Group: unchanged feedback\n",
+      }),
+    ).toBe("written");
+    expect(
+      await executeText(tools, "phase2_write", {
+        path: "memory/skills/reusable/SKILL.md",
+        content: "---\nname: reusable\ndescription: reusable\n---\n",
+      }),
+    ).toBe("written");
+
+    const summary = `v1\n## User Profile\n${" token".repeat(2936)}`;
+    expect(encode(summary).length).toBe(2943);
+    const written = await executeText(tools, "phase2_write", {
+      path: "memory/memory_summary.md",
+      content: summary,
+    });
+    expect(written).toBe(
+      `written summary_bytes=${Buffer.byteLength(summary).toString()} summary_byte_limit=65536 summary_tokens=2943 summary_injection_target=2500`,
+    );
+    expect(written).not.toContain("token token");
+
+    // The feedback describes the whole resulting file, not the edited fragment.
+    const edited = await executeText(tools, "phase2_edit", {
+      path: "memory/memory_summary.md",
+      old_text: "## User Profile",
+      new_text: "## User Profile\n- kept",
+    });
+    const updated = await readFile(
+      join(fixture.memoryRoot, "memory_summary.md"),
+      "utf8",
+    );
+    expect(edited).toBe(
+      `edited summary_bytes=${Buffer.byteLength(updated).toString()} summary_byte_limit=65536 summary_tokens=${encode(updated).length.toString()} summary_injection_target=2500`,
+    );
+    expect(encode(updated).length).toBeGreaterThan(2500);
+  });
+
+  it("keeps summary feedback bounded above the source byte ceiling", async () => {
+    const fixture = await roots();
+    const tools = createPiMemoryPhase2Tools(fixture);
+    // Tokenizing a multi-megabyte temporary source only to report that it
+    // exceeds the byte ceiling would be unbounded work; bytes decide it.
+    const oversized = `v1\n${"x".repeat(4 * 1024 * 1024)}`;
+
+    expect(
+      await executeText(tools, "phase2_write", {
+        path: "memory/memory_summary.md",
+        content: oversized,
+      }),
+    ).toBe(
+      `written summary_bytes=${Buffer.byteLength(oversized).toString()} summary_byte_limit=65536 summary_tokens=unmeasured summary_injection_target=2500`,
+    );
+    expect(
+      (await stat(join(fixture.memoryRoot, "memory_summary.md"))).size,
+    ).toBe(Buffer.byteLength(oversized));
   });
 
   it("rejects every path escape and mutation outside the exact allowlist", async () => {

@@ -1,7 +1,4 @@
-import type {
-  ComputerUseDriver,
-  ComputerUseDriverController,
-} from "./computer-use-driver";
+import type { ComputerUseDriverController } from "./computer-use-driver";
 import type { ComputerUseNativeShutdownReason } from "./computer-use-native";
 import {
   ComputerUseNativePermissionTimeoutError,
@@ -57,8 +54,6 @@ interface ComputerUseRuntimeControllerOptions {
   readonly onPermissionRecovery?: (
     diagnostic: ComputerUsePermissionRecoveryDiagnostic,
   ) => void;
-  readonly prepareNative?: () => Promise<ComputerUsePermissionState>;
-  readonly nativeBlockReason?: (driver: ComputerUseDriver) => string | null;
   /**
    * Runtime factory invoked when the startup gate is ready and no runtime
    * exists. The production implementation wires all Electron/session
@@ -104,17 +99,11 @@ export class ComputerUseRuntimeController {
   private intent = 0;
   private stopping: Promise<void> = Promise.resolve();
   private starting: Promise<void> | null = null;
-  private transitionCount = 0;
-  private selectionRevision = 0;
-  private lastTransition: {
-    driver: ComputerUseDriver;
-    promise: Promise<void>;
-  } | null = null;
-  private requestedDriver: ComputerUseDriver | undefined;
+  private recoveryCount = 0;
   private runningRequested = false;
   private nativeError: string | null = null;
   private phaseStartedAt = performance.now();
-  private transitionTail: Promise<void> = Promise.resolve();
+  private recoveryTail: Promise<void> = Promise.resolve();
   private readonly driver: ComputerUseDriverController | undefined;
   private readonly transitionTimeoutMs: number;
   private readonly lifecycleTimers: ComputerUseLifecycleTimers | undefined;
@@ -137,7 +126,6 @@ export class ComputerUseRuntimeController {
     this.preparePlugins = options.preparePlugins ?? (async () => {});
     this.lifecycleTimers = options.lifecycleTimers;
     this.driver = options.driver;
-    this.requestedDriver = options.driver?.selectedDriver;
     this.transitionTimeoutMs = options.transitionTimeoutMs ?? 30_000;
     this.createRuntime = options.createRuntime;
     this.refreshPermissions = options.refreshPermissions;
@@ -180,7 +168,7 @@ export class ComputerUseRuntimeController {
     const refresh = this.backgroundAuthRefresh;
     if (refresh?.signal !== event.signal) return;
     if (event.phase === "failed" || event.identity === "changed") {
-      // A changed identity must not inherit online intent through a later CUA grant.
+      // A changed identity must not inherit the previous session's online intent.
       this.runningRequested = false;
       this.backgroundAuthRefresh = null;
       return;
@@ -208,7 +196,7 @@ export class ComputerUseRuntimeController {
         this.lifecycleTimers,
       );
       await withComputerUseDeadline(
-        this.transitionTail,
+        this.recoveryTail,
         this.transitionTimeoutMs,
         this.lifecycleTimers,
       );
@@ -271,16 +259,14 @@ export class ComputerUseRuntimeController {
     const intent = this.intent;
     const authority = this.options.getAuthAuthority?.();
     const generation = this.driver?.generation ?? null;
-    const selected = this.driver?.selectedDriver;
     const eligible =
-      !!selected &&
-      selected.id === "okou" &&
+      !!this.driver &&
       this.runningRequested &&
       !!this.runtime &&
       !this.manualStopRequested &&
       !this.quitStopStarted &&
       !this.starting &&
-      !this.transitionCount &&
+      !this.recoveryCount &&
       (this.driver?.getCapabilities().length ?? 0) > 0;
     const startedAt = performance.now();
     let cancelled = false;
@@ -317,13 +303,11 @@ export class ComputerUseRuntimeController {
         if (
           !(error instanceof ComputerUseNativePermissionTimeoutError) ||
           !eligible ||
-          !selected ||
           auth?.status !== "signed_in" ||
           !auth.organization
         )
           throw error;
         return this.retryPermissionProbe({
-          selected,
           auth,
           check,
           read,
@@ -371,14 +355,13 @@ export class ComputerUseRuntimeController {
   }
 
   private async retryPermissionProbe(options: {
-    readonly selected: ComputerUseDriver;
     readonly auth: Extract<DesktopAuthState, { status: "signed_in" }>;
     readonly check: () => void;
     readonly read: () => Promise<ComputerUsePermissionState | null>;
     readonly remaining: () => number;
     readonly report: (outcome: "failed" | "recovered") => void;
   }): Promise<ComputerUsePermissionState | null> {
-    const { selected, auth, check, read, remaining, report } = options;
+    const { auth, check, read, remaining, report } = options;
     let outcome: "failed" | "recovered" = "failed";
     try {
       check();
@@ -386,7 +369,7 @@ export class ComputerUseRuntimeController {
       // retirement and any separately claimed command's completion reporting.
       let fresh: ComputerUsePermissionState | null = null;
       this.driver?.resetFailure();
-      await this.replaceDriver(selected, {
+      await this.recoverNativeBackend({
         check,
         remaining,
         probe: async () => {
@@ -415,38 +398,21 @@ export class ComputerUseRuntimeController {
     }
   }
 
-  private nativeBlockReason(): string | null {
-    return this.requestedDriver
-      ? (this.options.nativeBlockReason?.(this.requestedDriver) ?? null)
-      : null;
-  }
-
-  getDriverState(): Pick<
-    DesktopComputerUseDriverState,
-    | "actual"
-    | "phase"
-    | "lifecycleElapsedMs"
-    | "cleanupPending"
-    | "error"
-    | "canRetry"
-  > {
+  getDriverState(): DesktopComputerUseDriverState {
     const state = this.driver?.getState();
-    const blocked = this.nativeBlockReason();
-    const error = this.nativeError ?? state?.error ?? blocked;
+    const error = this.nativeError ?? state?.error ?? null;
     const phase =
       this.nativeError || state?.error
         ? "error"
-        : this.transitionCount > 0
-          ? "switching"
+        : this.recoveryCount > 0
+          ? "recovering"
           : state?.cleanupPending
             ? "retiring"
             : this.starting
               ? "starting"
-              : blocked
-                ? "blocked"
-                : state?.ready
-                  ? "ready"
-                  : "stopped";
+              : state?.ready
+                ? "ready"
+                : "stopped";
     return {
       actual: state?.actual ?? null,
       phase,
@@ -457,36 +423,8 @@ export class ComputerUseRuntimeController {
       cleanupPending: state?.cleanupPending ?? false,
       error,
       canRetry:
-        !this.quitStopStarted &&
-        !this.isTransitioning() &&
-        !blocked &&
-        !state?.ready,
+        !this.quitStopStarted && !this.isTransitioning() && !state?.ready,
     };
-  }
-
-  /** Availability changes use the same replacement queue, never a fresh owner. */
-  async refreshDriverAuthorization(): Promise<void> {
-    if (!this.requestedDriver?.getAuthorization || this.quitStopStarted) return;
-    if (this.nativeBlockReason()) {
-      this.supersede();
-      this.driver?.withdrawAdmission();
-      void this.driver?.forceRetire().catch(() => {});
-      await this.transitionDriver(this.requestedDriver);
-    } else if (
-      this.runningRequested &&
-      !this.manualStopRequested &&
-      !this.nativeError &&
-      !this.driver?.getState().error
-    ) {
-      if (
-        this.backgroundAuthRefresh &&
-        !this.backgroundAuthRefresh.signal.aborted
-      )
-        this.reconcileAuthRecovery();
-      else if (this.runtime) await this.transitionDriver(this.requestedDriver);
-      else await this.start();
-    }
-    this.onChange();
   }
 
   /**
@@ -534,11 +472,9 @@ export class ComputerUseRuntimeController {
       this.detachRuntime();
     };
     options.signal?.addEventListener("abort", abort, { once: true });
-    const selection = this.selectionRevision;
     const start = this.startRuntime(
       intent,
-      selection,
-      this.transitionTail,
+      this.recoveryTail,
       options.userInitiated,
     );
     this.starting = start;
@@ -546,9 +482,8 @@ export class ComputerUseRuntimeController {
     try {
       await start;
     } catch (error) {
-      if (intent === this.intent && selection === this.selectionRevision)
-        this.nativeError =
-          "Driver startup failed. Retry after cleanup, or use Okou.";
+      if (intent === this.intent)
+        this.nativeError = "Driver startup failed. Retry after cleanup.";
       throw error;
     } finally {
       if (this.pluginStartupIntent === intent) {
@@ -563,7 +498,6 @@ export class ComputerUseRuntimeController {
 
   private async startRuntime(
     intent: number,
-    selection: number,
     transitions: Promise<void>,
     userInitiated = false,
   ): Promise<void> {
@@ -577,34 +511,11 @@ export class ComputerUseRuntimeController {
       this.transitionTimeoutMs,
       this.lifecycleTimers,
     );
-    if (intent !== this.intent || selection !== this.selectionRevision) return;
-    if (
-      this.driver &&
-      this.requestedDriver &&
-      this.driver.selectedDriver !== this.requestedDriver
-    ) {
-      await withComputerUseDeadline(
-        this.driver.retire(),
-        this.transitionTimeoutMs,
-        this.lifecycleTimers,
-      );
-      if (intent !== this.intent || selection !== this.selectionRevision)
-        return;
-      this.driver.select(this.requestedDriver);
-    }
+    if (intent !== this.intent) return;
     const authState = await this.getAuthState();
-    if (intent !== this.intent || selection !== this.selectionRevision) return;
-    const permissions = await this.prepareStartupPermissions(
-      authState,
-      intent,
-      selection,
-    );
-    if (
-      !permissions ||
-      intent !== this.intent ||
-      selection !== this.selectionRevision
-    )
-      return;
+    if (intent !== this.intent) return;
+    const permissions = await this.prepareStartupPermissions(authState, intent);
+    if (!permissions || intent !== this.intent) return;
     const startupGate = resolveComputerUseStartupGate({
       authState,
       permissions,
@@ -612,8 +523,7 @@ export class ComputerUseRuntimeController {
     });
     if (startupGate.status !== "ready") {
       await this.detachRuntime();
-      if (intent !== this.intent || selection !== this.selectionRevision)
-        return;
+      if (intent !== this.intent) return;
       if (startupGate.status === "blocked") {
         this.blockedHostState = startupGate.host;
         this.onChange();
@@ -621,26 +531,21 @@ export class ComputerUseRuntimeController {
       return;
     }
     this.blockedHostState = null;
-    if (
-      hasRequiredComputerUsePermissions(permissions) &&
-      !this.nativeBlockReason()
-    )
-      this.driver?.activate();
+    if (hasRequiredComputerUsePermissions(permissions)) this.driver?.activate();
     const runtime = (this.runtime ??= this.createRuntime({
       refreshRegistrationAuth: !this.backgroundAuthRefresh?.refreshed,
     }));
     await runtime.start({ userInitiated });
-    if (intent !== this.intent || selection !== this.selectionRevision) return;
+    if (intent !== this.intent) return;
     this.setHostRuntimeOnline(runtime.getState().status === "online");
   }
 
   private async prepareStartupPermissions(
     authState: DesktopAuthState,
     intent: number,
-    selection: number,
   ): Promise<ComputerUsePermissionState | null> {
     this.driver?.resumePermissions();
-    let permissions = await withComputerUseDeadline(
+    const permissions = await withComputerUseDeadline(
       this.refreshPermissions(),
       this.transitionTimeoutMs,
       this.lifecycleTimers,
@@ -648,44 +553,7 @@ export class ComputerUseRuntimeController {
       void this.driver?.forceRetire().catch(() => {});
       return { accessibility: false, screenRecording: false };
     });
-    if (intent !== this.intent || selection !== this.selectionRevision)
-      return null;
-    if (this.nativeBlockReason()) {
-      permissions = { accessibility: false, screenRecording: false };
-    } else if (
-      authState.status === "signed_in" &&
-      authState.organization &&
-      hasRequiredComputerUsePermissions(permissions) &&
-      this.options.prepareNative
-    ) {
-      try {
-        permissions = await withComputerUseDeadline(
-          this.options.prepareNative(),
-          this.transitionTimeoutMs,
-          this.lifecycleTimers,
-        );
-      } catch {
-        if (intent === this.intent && selection === this.selectionRevision)
-          this.nativeError =
-            "Driver startup failed. Retry after cleanup, or use Okou.";
-        void this.driver?.forceRetire().catch(() => {});
-        permissions = { accessibility: false, screenRecording: false };
-      }
-      if (intent !== this.intent || selection !== this.selectionRevision)
-        return null;
-      if (!hasRequiredComputerUsePermissions(permissions) && !this.nativeError)
-        this.nativeError =
-          "Driver permissions are unavailable. Check host permissions and retry.";
-    }
-    if (
-      !hasRequiredComputerUsePermissions(permissions) &&
-      this.requestedDriver?.id === "cua" &&
-      !this.nativeBlockReason() &&
-      authState.status === "signed_in"
-    ) {
-      this.nativeError ??=
-        "Driver permissions are unavailable. Check host permissions and retry.";
-    }
+    if (intent !== this.intent) return null;
     if (
       !hasRequiredComputerUsePermissions(permissions) &&
       authState.status === "signed_in" &&
@@ -697,17 +565,9 @@ export class ComputerUseRuntimeController {
         this.transitionTimeoutMs,
         this.lifecycleTimers,
       );
-      if (intent !== this.intent || selection !== this.selectionRevision)
-        return null;
+      if (intent !== this.intent) return null;
     }
     return permissions;
-  }
-
-  /** Serialized native replacement; it never changes host/plugin online state on success. */
-  transitionDriver(driver: ComputerUseDriver): Promise<void> {
-    // Supersede the probe; the replacement owner still drains healthy claims.
-    this.cancelPermissionRefresh("drain");
-    return this.replaceDriver(driver);
   }
 
   /** The auth owner calls this synchronously when its session proof changes. */
@@ -716,45 +576,24 @@ export class ComputerUseRuntimeController {
     this.permissionRefresh = null;
   }
 
-  private replaceDriver(
-    driver: ComputerUseDriver,
-    recovery?: PermissionRecovery,
-  ): Promise<void> {
-    if (this.lastTransition?.driver === driver)
-      return this.lastTransition.promise;
+  private recoverNativeBackend(recovery: PermissionRecovery): Promise<void> {
     if (!this.driver || this.quitStopStarted) {
-      return Promise.reject(
-        new Error("Computer Use driver transitions are unavailable"),
-      );
+      return Promise.reject(new Error("Native helper recovery is unavailable"));
     }
-    this.requestedDriver = driver;
-    const selection = ++this.selectionRevision;
     const intent = this.intent;
-    const pendingStart = this.starting;
     const initialRuntime = this.runtime;
     // Close admission before awaiting any preceding transition.
     const initialDrain = initialRuntime?.pauseAndDrainCommands();
     this.driver.pausePermissions();
     let expired = false;
     const checkIntent = () => {
-      recovery?.check();
-      if (
-        expired ||
-        intent !== this.intent ||
-        selection !== this.selectionRevision
-      )
-        throw new Error("Computer Use driver transition was superseded");
+      recovery.check();
+      if (expired || intent !== this.intent)
+        throw new Error("Native helper recovery was superseded");
     };
-    const previous = this.transitionTail;
+    const previous = this.recoveryTail;
     const work = (async () => {
       await previous;
-      // Startup reports its own bounded failure; replacement still has to
-      // retire that owner and install the requested lane for explicit recovery.
-      await pendingStart?.catch(() => {});
-      // Only the latest accepted selection activates. Earlier callers still
-      // retain their work/cleanup, but do not publish obsolete readiness.
-      if (selection !== this.selectionRevision && intent === this.intent)
-        return;
       checkIntent();
       const runtime = this.runtime;
       this.driver?.pausePermissions();
@@ -764,66 +603,38 @@ export class ComputerUseRuntimeController {
       checkIntent();
       await this.driver?.retire();
       checkIntent();
-      this.driver?.select(driver);
-      if (
-        !runtime &&
-        pendingStart &&
-        this.runningRequested &&
-        !this.manualStopRequested &&
-        !this.nativeError &&
-        !this.driver?.getState().error
-      ) {
-        // Preserve the already-running Start intent, while only its latest
-        // selection may register a host. Do not await our own transition tail.
-        await this.startRuntime(intent, selection, Promise.resolve());
-        return;
-      }
+      this.driver?.resumePermissions();
       if (runtime && !this.manualStopRequested)
-        await this.resumeSelectedDriver(resume, checkIntent, recovery?.probe);
+        await this.resumeNativeBackend(resume, checkIntent, recovery.probe);
     })();
     const transition = withComputerUseDeadline(
       work,
-      Math.min(
-        this.transitionTimeoutMs,
-        recovery?.remaining() ?? this.transitionTimeoutMs,
-      ),
+      Math.min(this.transitionTimeoutMs, recovery.remaining()),
       this.lifecycleTimers,
     ).catch((error: unknown) => {
       expired = true;
-      this.handleDriverTransitionFailure(error, intent, selection, !!recovery);
+      this.handleNativeRecoveryFailure(error, intent);
     });
-    this.transitionCount++;
+    this.recoveryCount++;
     this.phaseStartedAt = performance.now();
-    this.lastTransition = { driver, promise: transition };
     // The caller-facing deadline is not proof the underlying work retired.
-    this.transitionTail = work.then(
+    this.recoveryTail = work.then(
       () => {},
       () => {},
     );
-    void this.transitionTail.then(() => {
-      this.transitionCount--;
+    void this.recoveryTail.then(() => {
+      this.recoveryCount--;
       this.onChange();
     });
-    const finish = () => {
-      if (this.lastTransition?.promise === transition)
-        this.lastTransition = null;
-      this.onChange();
-    };
-    void transition.then(finish, finish);
+    void transition.then(this.onChange, this.onChange);
     this.onChange();
     return transition;
   }
 
-  private handleDriverTransitionFailure(
-    error: unknown,
-    intent: number,
-    selection: number,
-    recovering: boolean,
-  ): void {
+  private handleNativeRecoveryFailure(error: unknown, intent: number): void {
     // A failure withdraws the host rather than advertising empty legacy capabilities.
-    if (intent === this.intent && selection === this.selectionRevision) {
-      this.nativeError =
-        "Driver transition failed. Retry after cleanup, or use Okou.";
+    if (intent === this.intent) {
+      this.nativeError = "Native helper recovery failed. Retry after cleanup.";
       void this.driver?.forceRetire().catch(() => {});
       if (this.getPluginCapabilities().length > 0 && this.runtime) {
         // The rejected transition keeps its native owner retired. Existing
@@ -832,7 +643,7 @@ export class ComputerUseRuntimeController {
         throw error;
       }
       this.manualStopRequested = true;
-      this.supersede(!recovering);
+      this.supersede(false);
       this.detachRuntime();
       this.blockedHostState = {
         ...OFFLINE_COMPUTER_USE_HOST_STATE,
@@ -840,20 +651,15 @@ export class ComputerUseRuntimeController {
         lastError: this.nativeError,
       };
     }
-    if (intent === this.intent && selection !== this.selectionRevision) return;
     throw error;
   }
 
-  private async resumeSelectedDriver(
+  private async resumeNativeBackend(
     resume: (() => void) | undefined,
     checkIntent: () => void,
-    probe?: () => Promise<ComputerUsePermissionState>,
+    probe: () => Promise<ComputerUsePermissionState>,
   ): Promise<void> {
-    if (
-      this.nativeError ||
-      this.driver?.getState().error ||
-      this.nativeBlockReason()
-    ) {
+    if (this.nativeError || this.driver?.getState().error) {
       if (this.getPluginCapabilities().length > 0) resume?.();
       else await this.detachRuntime();
       return;
@@ -864,14 +670,7 @@ export class ComputerUseRuntimeController {
       await this.detachRuntime();
       return;
     }
-    let permissions = await (probe ? probe() : this.refreshPermissions());
-    checkIntent();
-    if (
-      hasRequiredComputerUsePermissions(permissions) &&
-      this.options.prepareNative &&
-      !probe
-    )
-      permissions = await this.options.prepareNative();
+    const permissions = await probe();
     checkIntent();
     if (!hasRequiredComputerUsePermissions(permissions)) {
       this.nativeError =
@@ -885,7 +684,7 @@ export class ComputerUseRuntimeController {
 
   isTransitioning(): boolean {
     return (
-      this.transitionCount > 0 ||
+      this.recoveryCount > 0 ||
       this.starting !== null ||
       (this.driver?.cleanupPending ?? false)
     );
@@ -985,7 +784,6 @@ export class ComputerUseRuntimeController {
       this.cancelPermissionRefresh();
     }
     this.intent++;
-    this.lastTransition = null;
     this.phaseStartedAt = performance.now();
     this.starting = null;
     this.driver?.pausePermissions();

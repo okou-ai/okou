@@ -13,6 +13,7 @@ import {
   mockPushBrowserSupport,
   setupPage,
 } from "./chat-lifecycle-test-helpers.ts";
+import { buildModelPolicy } from "./chat-composer-test-helpers.ts";
 import {
   assistantEvent,
   context,
@@ -53,8 +54,26 @@ function fileParts(document: UserMessageDocument | undefined) {
   });
 }
 
-test("Enable completion notifications after a visible send", async () => {
+test("Register the notification worker when the chat opens", async () => {
   const push = mockPushBrowserSupport();
+  installRunChat();
+
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    env: { VITE_VAPID_PUBLIC_KEY_PREVIEW: "AQIDBA" },
+  });
+
+  await readyChat();
+  await waitFor(() => {
+    expect(push.register).toHaveBeenCalledWith("/sw.js", {
+      updateViaCache: "none",
+    });
+  });
+});
+
+test("Enable completion notifications after a visible send", async () => {
+  mockPushBrowserSupport();
   let registeredEndpoint: string | null = null;
   let runStarted = false;
   context.mocks.api(pushSubscriptionsContract.register, ({ body, respond }) => {
@@ -74,18 +93,17 @@ test("Enable completion notifications after a visible send", async () => {
   });
 
   await readyChat();
-  await waitFor(() => {
-    expect(push.register).toHaveBeenCalledWith("/sw.js", {
-      updateViaCache: "none",
-    });
-  });
+  const composer = screen.getByRole("textbox", { name: "Message" });
+  await fill(composer, "Notify me when the launch review is complete");
+  click(await findEnabledButton("Send"));
 
-  await sendText("Notify me when the launch review is complete");
-
-  await expect(
-    screen.findByText("Notify me when the launch review is complete"),
-  ).resolves.toBeVisible();
   await waitFor(() => {
+    expect(
+      screen.getByRole("textbox", { name: "Message" }).textContent?.trim(),
+    ).toBe("");
+    expect(
+      screen.getByText("Notify me when the launch review is complete"),
+    ).toBeVisible();
     expect(runStarted).toBeTruthy();
     expect(registeredEndpoint).toBe(
       "https://push.example.test/subscriptions/chat-send",
@@ -217,10 +235,21 @@ test("Send a large image with a fallback-enabled text model", async () => {
       }
     | undefined;
   installRunChat({
+    selectedModel: "deepseek-v4-pro",
     onRunCreate(body) {
       sentMessage = { model: body.model, userMessage: body.userMessage };
     },
   });
+  context.mocks.data.orgModelPolicies([
+    buildModelPolicy({
+      model: "deepseek-v4-pro",
+      modelLabel: "DeepSeek V4 Pro",
+      isDefault: true,
+      defaultProviderType: "built-in",
+      credentialScope: "org",
+      modelProviderId: null,
+    }),
+  ]);
   context.mocks.upload.success({
     id: "large-image-upload",
     filename: "launch-board.png",

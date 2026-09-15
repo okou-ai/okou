@@ -74,6 +74,7 @@ jobs:
       runner-host-groups-configured: ${{ steps.host-group-presence.outputs.configured }}
       runner-binary-compile-matrix: ${{ steps.binary-plan.outputs.compile-matrix }}
       runner-binary-hit-targets: ${{ steps.binary-plan.outputs.hit-targets }}
+      runner-binary-hit-references: ${{ steps.binary-plan.outputs.hit-references }}
       runner-binary-miss-count: ${{ steps.binary-plan.outputs.miss-count }}
     steps:
       - uses: actions/checkout@v7.0.1
@@ -202,7 +203,7 @@ jobs:
           set -euo pipefail
 
           runner_image_ci_changed=false
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-download|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
             runner_image_ci_changed=true
           fi
 
@@ -277,30 +278,14 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_DEFAULT_REGION: auto
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          CURRENT_EVENT: ${{ github.event_name }}
-          CURRENT_PR_HEAD_REF: ${{ steps.identity.outputs.pr-head-ref }}
-          CURRENT_PR_NUMBER: ${{ steps.identity.outputs.pr-number }}
-          CURRENT_RUN_ID: ${{ github.run_id }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-          RESOLVE_OUTPUT_DIR: runner-binary-hits
+          RESOLVE_OUTPUT_DIR: runner-binary-references
           RUNNER_BINARY_CACHE_FORCE_MISS: ${{ vars.RUNNER_BINARY_CACHE_FORCE_MISS }}
           RUNNER_HOST_GROUPS_MATRIX: ${{ steps.host-groups.outputs.matrix }}
         run: .github/scripts/runner-binary-cache-plan.sh
-
-      - name: Upload validated runner binary hits
-        if: steps.binary-plan.outputs.hit-count != '0'
-        uses: actions/upload-artifact@v7
-        with:
-          name: runner-binary-hits-${{ github.run_id }}
-          overwrite: true
-          path: runner-binary-hits/
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 1
 
   compile:
     name: Compile runner binary (${{ matrix.label }})
@@ -379,15 +364,39 @@ jobs:
             "$RUNNER_PATH"
           .github/scripts/runner-binary-cache.sh fresh-validate
 
-      - name: Upload compiled runner binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: runner-binary-compiled-${{ github.run_id }}-${{ matrix.target }}
-          overwrite: true
-          path: runner-binary-fresh/
-          if-no-files-found: error
-          retention-days: 1
-          compression-level: 1
+      - name: Install AWS CLI
+        shell: bash
+        run: |
+          installer_dir=$(mktemp -d "${RUNNER_TEMP}/awscli.XXXXXX")
+          trap 'rm -rf "$installer_dir"' EXIT
+          # Both Rust targets compile on x86_64 GitHub-hosted workers.
+          curl -fsSL --retry 3 \
+            https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+            --output "${installer_dir}/awscliv2.zip"
+          python3 -m zipfile -e "${installer_dir}/awscliv2.zip" "$installer_dir"
+          chmod +x "${installer_dir}/aws/install" "${installer_dir}/aws/dist/aws"
+          "${installer_dir}/aws/install"
+          aws --version
+
+      - name: Publish compiled runner binary to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
+          RUNNER_PATH: runner-binary-fresh/runner
+          OUTPUT_DIR: runner-binary-published
+          PRODUCER_EVENT: ${{ github.event_name }}
+          PRODUCER_HEAD_SHA: ${{ needs.prepare.outputs.source-head-sha }}
+          PRODUCER_PR_NUMBER: ${{ needs.prepare.outputs.pr-number }}
+          PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: .github/scripts/runner-binary-transport.sh publish
 
       - name: Report peak memory
         if: always()
@@ -428,19 +437,34 @@ jobs:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: .github/scripts/runner-binary-build/digest.sh "$TARGET_TRIPLE"
 
-      - name: Download validated runner binary hit
+      - name: Download cached runner binary from R2
         if: contains(fromJSON(needs.prepare.outputs.runner-binary-hit-targets), matrix.target)
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: runner-binary-hits-${{ github.run_id }}
-          path: runner-binary-transport
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          CACHE_REFERENCE: ${{ toJSON(fromJSON(needs.prepare.outputs.runner-binary-hit-references)[matrix.target]) }}
+          RESOLVE_OUTPUT_DIR: runner-binary-transport/${{ matrix.target }}
+        run: .github/scripts/runner-binary-cache.sh download-reference
 
-      - name: Download compiled runner binary
+      - name: Download compiled runner binary from R2
         if: ${{ !contains(fromJSON(needs.prepare.outputs.runner-binary-hit-targets), matrix.target) }}
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: runner-binary-compiled-${{ github.run_id }}-${{ matrix.target }}
-          path: runner-binary-transport/${{ matrix.target }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          OUTPUT_DIR: runner-binary-transport/${{ matrix.target }}
+        run: .github/scripts/runner-binary-transport.sh download
 
       - name: Validate runner binary transport
         env:
@@ -558,11 +582,20 @@ jobs:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: .github/scripts/runner-binary-build/digest.sh "$TARGET_TRIPLE"
 
-      - name: Download compiled runner binary
-        uses: actions/download-artifact@v8.0.1
-        with:
-          name: runner-binary-compiled-${{ github.run_id }}-${{ matrix.target }}
-          path: runner-binary-fresh
+      - name: Download compiled runner binary from R2
+        id: transport
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_DEFAULT_REGION: auto
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+          REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
+          EXPECTED_TARGET: ${{ matrix.target }}
+          OUTPUT_DIR: runner-binary-fresh
+        run: .github/scripts/runner-binary-transport.sh download
 
       - name: Validate fresh runner binary
         id: fresh
@@ -593,34 +626,8 @@ jobs:
           .github/scripts/runner-binary-cache.sh shadow-resolve
           echo "duration-seconds=$(($(date +%s) - started_at))" >> "$GITHUB_OUTPUT"
 
-      - name: Publish runner binary cache object
-        id: publish
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_DEFAULT_REGION: auto
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
-          EXPECTED_TARGET: ${{ matrix.target }}
-          FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
-          OUTPUT_DIR: runner-binary-asset
-          PRODUCER_EVENT: ${{ github.event_name }}
-          PRODUCER_HEAD_SHA: ${{ needs.prepare.outputs.source-head-sha }}
-          PRODUCER_PR_NUMBER: ${{ needs.prepare.outputs.pr-number }}
-          PRODUCER_REPOSITORY: ${{ github.repository }}
-          PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
-          PRODUCER_RUN_ID: ${{ github.run_id }}
-          PRODUCER_WORKFLOW_PATH: .github/workflows/runner-image.yml
-          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-          R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-          RUNNER_PATH: runner-binary-fresh/runner
-        run: |
-          started_at=$(date +%s)
-          .github/scripts/runner-binary-cache.sh publish
-          echo "duration-seconds=$(($(date +%s) - started_at))" >> "$GITHUB_OUTPUT"
-
       - name: Resolve reusable artifact name
         id: artifact
-        if: steps.publish.outputs.published == 'true'
         env:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
           EXPECTED_TARGET: ${{ matrix.target }}
@@ -628,12 +635,11 @@ jobs:
 
       - name: Upload reusable runner binary manifest
         id: manifest-upload
-        if: steps.publish.outputs.published == 'true'
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.artifact.outputs.artifact-name }}
-          path: runner-binary-asset/manifest.json
+          path: runner-binary-fresh/manifest.json
           if-no-files-found: error
           retention-days: 7
 
@@ -643,10 +649,7 @@ jobs:
           BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
           FRESH_VALIDATION: ${{ steps.fresh.outcome }}
           MANIFEST_UPLOAD: ${{ steps.manifest-upload.outcome }}
-          OBJECT_SIZE_BYTES: ${{ steps.publish.outputs.object-size-bytes }}
-          PUBLISHED: ${{ steps.publish.outputs.published }}
-          PUBLISH_REASON: ${{ steps.publish.outputs.publish-reason }}
-          PUBLISH_SECONDS: ${{ steps.publish.outputs.duration-seconds }}
+          TRANSPORT_OUTCOME: ${{ steps.transport.outcome }}
           RUNNER_SIZE_BYTES: ${{ steps.fresh.outputs.runner-size-bytes }}
           SHADOW_OUTCOME: ${{ steps.shadow.outputs.shadow-outcome }}
           SHADOW_REASON: ${{ steps.shadow.outputs.shadow-reason }}
@@ -665,11 +668,6 @@ jobs:
             echo "- Shadow source: \`${SHADOW_SOURCE:-none}\`"
             echo "- Shadow reason: \`${SHADOW_REASON:-not-run}\`"
             echo "- Shadow duration: \`${SHADOW_SECONDS:-0}s\`"
-            echo "- Published: \`${PUBLISHED:-false}\`"
-            echo "- Publish reason: \`${PUBLISH_REASON:-not-run}\`"
-            echo "- Publish duration: \`${PUBLISH_SECONDS:-0}s\`"
+            echo "- R2 transport: \`${TRANSPORT_OUTCOME:-not-run}\`"
             echo "- Manifest upload: \`${MANIFEST_UPLOAD:-not-run}\`"
-            if [ -n "$OBJECT_SIZE_BYTES" ]; then
-              echo "- R2 object bytes: \`${OBJECT_SIZE_BYTES}\`"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"

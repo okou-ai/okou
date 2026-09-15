@@ -23,7 +23,7 @@ Use this boundary for behavior in:
 
 Mock the external bridge objects on `window`:
 
-- `window.vm0DesktopComputerUse`
+- `window.okouDesktopComputerUse`
 - `window.vm0DesktopAuth`
 
 Keep renderer modules real. Assert visible user behavior and bridge outcomes:

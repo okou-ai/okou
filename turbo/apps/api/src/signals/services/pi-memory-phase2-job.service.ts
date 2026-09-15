@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import {
   MEMORY_ARTIFACT_NAME,
@@ -12,6 +12,7 @@ import {
 } from "@okouai/db/schema/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import {
   and,
   asc,
@@ -30,12 +31,9 @@ import {
 import type { ApiDb, Tx } from "../../lib/db-types";
 
 export const PI_MEMORY_PHASE2_LEASE_DURATION_MS = 60 * 60 * 1000;
-export const PI_MEMORY_PHASE2_EXPECTED_HEARTBEAT_CADENCE_MS = 90 * 1000;
 export const PI_MEMORY_PHASE2_RETRY_DELAY_MS = 60 * 60 * 1000;
 export const PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 export const PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-
-const PI_MEMORY_PHASE2_SELECTION_ENCODING = "vm0.pi-memory.phase2.selection.v1";
 
 export interface PiMemoryPhase2OwnerScope {
   readonly memoryStorageId: string;
@@ -91,37 +89,6 @@ interface PiMemoryPhase2SelectionMetadata {
   readonly digest: string;
   readonly count: number;
   readonly utf8Bytes: number;
-}
-
-function uint32Buffer(value: number): Buffer {
-  const buffer = Buffer.alloc(4);
-  buffer.writeUInt32BE(value);
-  return buffer;
-}
-
-export function piMemoryPhase2SelectionDigest(
-  selected: readonly Pick<
-    PiMemoryPhase2SelectedCandidate,
-    "piSessionId" | "sourceHistoryHash"
-  >[],
-): string {
-  const version = Buffer.from(PI_MEMORY_PHASE2_SELECTION_ENCODING, "utf8");
-  const parts: Buffer[] = [
-    uint32Buffer(version.length),
-    version,
-    uint32Buffer(selected.length),
-  ];
-  for (const candidate of selected) {
-    const piSessionId = Buffer.from(candidate.piSessionId, "utf8");
-    const sourceHistoryHash = Buffer.from(candidate.sourceHistoryHash, "utf8");
-    parts.push(
-      uint32Buffer(piSessionId.length),
-      piSessionId,
-      uint32Buffer(sourceHistoryHash.length),
-      sourceHistoryHash,
-    );
-  }
-  return createHash("sha256").update(Buffer.concat(parts)).digest("hex");
 }
 
 function candidateUtf8Bytes(
@@ -770,23 +737,6 @@ function exactLeaseCondition(args: PiMemoryPhase2LeaseFence) {
               ),
         ]),
   );
-}
-
-export async function heartbeatPiMemoryPhase2Job(
-  db: ApiDb,
-  args: PiMemoryPhase2LeaseFence,
-): Promise<boolean> {
-  const [heartbeat] = await db
-    .update(piMemoryPhase2Jobs)
-    .set({
-      leaseExpiresAt: new Date(
-        args.currentTime.getTime() + PI_MEMORY_PHASE2_LEASE_DURATION_MS,
-      ),
-      updatedAt: args.currentTime,
-    })
-    .where(exactLeaseCondition(args))
-    .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
-  return heartbeat !== undefined;
 }
 
 export async function failPiMemoryPhase2Job(

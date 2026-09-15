@@ -5,8 +5,8 @@ import { logger } from "./log.ts";
 
 const L = logger("Promise");
 
-export const NEVER_RESOLVED_PROMISE: Promise<unknown> =
-  Promise.withResolvers<unknown>().promise;
+export const NEVER_RESOLVED_PROMISE: Promise<never> =
+  Promise.withResolvers<never>().promise;
 
 export enum Reason {
   DomCallback = "dom_callback",
@@ -83,23 +83,6 @@ export const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-/**
- * Treat cancellation by a nested lifecycle as successful completion while
- * preserving parent cancellation and unrelated failures.
- */
-export function completeOnLocalAbort(
-  completion: Promise<void>,
-  localSignal: AbortSignal,
-  parentSignal: AbortSignal,
-): Promise<void> {
-  return completion.then(undefined, (error) => {
-    parentSignal.throwIfAborted();
-    if (!localSignal.aborted || !isAbortError(error)) {
-      throw error;
-    }
-  });
-}
-
 export function throwIfAbort(e: unknown) {
   if (isAbortError(e)) {
     throw e;
@@ -118,16 +101,6 @@ export function isNonArrayRecord(
   value: unknown,
 ): value is Record<string, unknown> {
   return isRecord(value) && !Array.isArray(value);
-}
-
-export function stringProperty(
-  value: Record<string, unknown>,
-  property: string,
-): string | undefined {
-  const candidate = value[property];
-  return typeof candidate === "string" && candidate.length > 0
-    ? candidate
-    : undefined;
 }
 
 export function jsonParseOr<T>(value: string, fallback: T): T {
@@ -243,6 +216,19 @@ export async function withCleanup<T>(
   } finally {
     await cleanup();
   }
+}
+
+/** Stop waiting for a shared operation without cancelling its other owners. */
+export function waitForOperation<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  const cancelled = createDeferredPromise<never>(signal);
+  return withCleanup(Promise.race([operation, cancelled.promise]), () => {
+    if (!cancelled.settled()) {
+      cancelled.reject(new DOMException("Operation settled", "AbortError"));
+    }
+  });
 }
 // ---------------------------------------------------------------------------
 // Bounded async load retry
@@ -402,6 +388,8 @@ export function resetSignal(): Command<AbortSignal, AbortSignal[]> {
 /**
  * Create a local cancellation owner that always cascades its parent signal.
  * Aborting the child also removes its listener from the parent immediately.
+ *
+ * @deprecated Inherit an existing owner or use a stable resetSignal() command.
  */
 export function createChildAbortController(
   parentSignal: AbortSignal,
@@ -452,12 +440,16 @@ export function onRef<T extends HTMLElement | SVGSVGElement>(
  * Create a deferred promise that can be resolved/rejected externally.
  * The promise is automatically rejected when the abort signal is triggered.
  */
-export function createDeferredPromise<T>(signal: AbortSignal): {
+export interface DeferredPromise<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
   reject: (reason?: unknown) => void;
   settled: () => boolean;
-} {
+}
+
+export function createDeferredPromise<T>(
+  signal: AbortSignal,
+): DeferredPromise<T> {
   const { promise, resolve, reject } = Promise.withResolvers<T>();
   let settled = false;
   let removeAbortListener = () => {};

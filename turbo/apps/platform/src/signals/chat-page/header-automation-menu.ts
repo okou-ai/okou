@@ -32,7 +32,7 @@ export interface HeaderAutomationSignals {
   readonly automations$: Computed<
     Promise<readonly HeaderWorkflowAutomationEntry[]>
   >;
-  readonly reload$: Command<void, []>;
+  readonly reloadAutomations$: Command<void, []>;
   readonly updateSchedule$: Command<
     Promise<void>,
     [
@@ -195,17 +195,17 @@ function workflowAutomationSummary(
 export function createHeaderAutomationSignals(
   threadId: string,
 ): HeaderAutomationSignals {
-  const reloadVersion$ = state(0);
+  const internalReloadAutomations$ = state(0);
 
-  const reload$ = command(({ set }) => {
-    set(reloadVersion$, (version) => {
+  const reloadAutomations$ = command(({ set }) => {
+    set(internalReloadAutomations$, (version) => {
       return version + 1;
     });
   });
 
   const automations$ = computed(
     async (get): Promise<readonly HeaderWorkflowAutomationEntry[]> => {
-      get(reloadVersion$);
+      get(internalReloadAutomations$);
       get(locale$);
       const automations = await listThreadWorkflowAutomations(get(apiClient$), {
         threadId,
@@ -249,7 +249,7 @@ export function createHeaderAutomationSignals(
         [200],
       );
       signal.throwIfAborted();
-      set(reload$);
+      set(reloadAutomations$);
     },
   );
 
@@ -272,7 +272,7 @@ export function createHeaderAutomationSignals(
         [200],
       );
       signal.throwIfAborted();
-      set(reload$);
+      set(reloadAutomations$);
     },
   );
 
@@ -295,7 +295,7 @@ export function createHeaderAutomationSignals(
         [200],
       );
       signal.throwIfAborted();
-      set(reload$);
+      set(reloadAutomations$);
     },
   );
 
@@ -310,13 +310,13 @@ export function createHeaderAutomationSignals(
         [201],
       );
       signal.throwIfAborted();
-      set(reload$);
+      set(reloadAutomations$);
     },
   );
 
   return {
     automations$,
-    reload$,
+    reloadAutomations$,
     updateSchedule$,
     updateGmailNewMessage$,
     updateGmailLabelApplied$,

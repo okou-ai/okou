@@ -187,6 +187,37 @@ test("A connected Slack workspace shows success and next actions", async () => {
   expect(getAction("link", "Back to settings")).toBeInTheDocument();
 });
 
+test("Slack Connect continues to user OAuth before opening Slack", async () => {
+  const authorizationUrl =
+    "https://api.okou.ai/api/slack/oauth/connect?connectorState=signed-entry";
+  let submitted: unknown;
+  context.mocks.api(slackConnectContract.getStatus, ({ respond }) => {
+    return respond(200, { isConnected: false, isAdmin: false });
+  });
+  context.mocks.api(slackConnectContract.connect, ({ body, respond }) => {
+    submitted = body;
+    return respond(202, { authorizationUrl });
+  });
+  await setupPage({
+    context,
+    path: "/settings/slack?w=T_WORKSPACE&u=U_MEMBER&c=C_ORIGIN&t=42.0",
+  });
+  await expect(screen.findByText("Connect to Slack")).resolves.toBeVisible();
+  const connect = getAction("button", "Connect");
+  expect(connect).toBeEnabled();
+  click(connect);
+  await waitFor(() => {
+    expect(window.location.href).toBe(authorizationUrl);
+  });
+  expect(submitted).toStrictEqual({
+    workspaceId: "T_WORKSPACE",
+    slackUserId: "U_MEMBER",
+    channelId: "C_ORIGIN",
+    threadTs: "42.0",
+    requestUserScopes: true,
+  });
+});
+
 test("An invalid Telegram connection link is rejected", async () => {
   await setupPage({ context, path: telegramConnectPath("invalid") });
 

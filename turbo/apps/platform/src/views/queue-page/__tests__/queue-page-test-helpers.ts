@@ -6,6 +6,7 @@ import { runsQueueContract } from "@okouai/api-contracts/contracts/run-routes";
 import type { QueueResponse } from "@okouai/api-contracts/contracts/runs";
 
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 export const QUEUE_AGENT_ID = "c0000000-0000-4000-a000-000000000091";
 
@@ -26,6 +27,7 @@ export function billingStatus(
   return {
     showUsagePack: false,
     tier: "team",
+    ...billingPlanCapabilities("team"),
     credits: 10_000,
     onboardingPaymentPending: false,
     subscriptionStatus: "active",

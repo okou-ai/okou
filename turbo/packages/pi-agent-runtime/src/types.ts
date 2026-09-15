@@ -53,7 +53,7 @@ export type PiAgentBedrockAuth =
     };
 
 /** Model endpoint and credential resolved at a Pi execution edge. */
-export interface PiAgentModelConfig {
+interface PiAgentModelCommon {
   /** Native provider identity used for trusted catalog metadata. */
   readonly provider: string;
   readonly baseUrl: string;
@@ -64,19 +64,66 @@ export interface PiAgentModelConfig {
   readonly catalogModel?: string;
   /** Execution-edge headers that override provider defaults case-insensitively. */
   readonly requestHeaders?: PiAgentRequestHeaders;
-  /** Authoritative native adapter selected by the materialized route. */
-  readonly dialect: PiAgentDialect;
-  /** Explicit ChatGPT account identity required by the Codex dialect. */
-  readonly accountId?: string;
-  readonly region?: string;
-  readonly bedrockAuth?: PiAgentBedrockAuth;
-  /** Route-owned transport policy. Codex subscriptions are SSE-only. */
-  readonly transport?: PiAgentTransport;
   /** Omitted by legacy launch payloads, which retain Pi's medium default. */
   readonly thinkingLevel?: PiAgentThinkingLevel;
-  /**
-   * Omitted by legacy and standard launches. Applied to every request in this
-   * run.
-   */
-  readonly serviceTier?: PiAgentServiceTier;
 }
+
+/** Secret-bearing configuration exists only at the owning execution edge. */
+export type PiAgentModelConfig = PiAgentModelCommon &
+  (
+    | {
+        readonly dialect: "openai-responses";
+        readonly transport: "sse";
+        readonly serviceTier?: "priority";
+        readonly accountId?: never;
+        readonly region?: never;
+        readonly bedrockAuth?: never;
+      }
+    | {
+        readonly dialect: "openai-codex-responses";
+        readonly provider: "openai-codex";
+        readonly catalogModel?: never;
+        readonly transport: "sse";
+        readonly accountId: string;
+        readonly serviceTier?: "fast";
+        readonly region?: never;
+        readonly bedrockAuth?: never;
+      }
+    | {
+        readonly dialect: "anthropic-messages";
+        readonly provider: "anthropic";
+        readonly transport: "sse";
+        readonly catalogModel: string;
+        readonly requestHeaders: PiAgentRequestHeaders;
+        readonly serviceTier?: never;
+        readonly accountId?: never;
+        readonly region?: never;
+        readonly bedrockAuth?: never;
+      }
+    | {
+        readonly dialect: "bedrock-converse-stream";
+        readonly provider: "amazon-bedrock";
+        readonly transport: "aws-event-stream";
+        readonly catalogModel: string;
+        readonly region: string;
+        readonly bedrockAuth: PiAgentBedrockAuth;
+        readonly serviceTier?: never;
+        readonly accountId?: never;
+      }
+  );
+
+/** Distribute before picking so every helper retains dialect requirements. */
+export type PiAgentStreamConfig<T = PiAgentModelConfig> =
+  T extends PiAgentModelConfig
+    ? Pick<
+        T,
+        | "accountId"
+        | "dialect"
+        | "requestHeaders"
+        | "serviceTier"
+        | "transport"
+        | "catalogModel"
+        | "region"
+        | "bedrockAuth"
+      >
+    : never;

@@ -1,4 +1,13 @@
 import {
+  isPiExecutionRoute,
+  isPiNativeModel,
+  isPiGptModel,
+} from "@okouai/core/pi-execution";
+import {
+  piThinkingLevelForEffort,
+  type ReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   type PiModelConfig,
@@ -19,17 +28,15 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
+import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
 
 import {
-  isPiNativeModel,
-  isPiNativeRoute,
   resolvePiNativeModelConfig,
   type PiNativeModelProviderInput,
 } from "./pi-native-model-config";
 
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { GATEWAY_RUNTIME_SECRET_NAME } from "./model-provider-gateway-runtime";
-import { isPiGptModel } from "./pi-gpt-model";
 
 /**
  * Resolve non-secret model metadata shared by the sandbox Pi runtime and the
@@ -90,7 +97,7 @@ export function isGptApiKeyPiProviderType(
   );
 }
 
-function gptApiKeyPiRoute(
+export function gptApiKeyPiRoute(
   value: string | null | undefined,
 ): (typeof GPT_API_KEY_PI_ROUTES)[GptApiKeyPiProviderType] | null {
   return isGptApiKeyPiProviderType(value) ? GPT_API_KEY_PI_ROUTES[value] : null;
@@ -150,27 +157,6 @@ function piProvider(
   }
 }
 
-function isFastGptPiProvider(
-  modelProviderType: string | null | undefined,
-  builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined,
-): boolean {
-  return (
-    modelProviderType === "codex-oauth-token" ||
-    modelProviderType === "custom-openai-responses" ||
-    isGptApiKeyPiProviderType(modelProviderType) ||
-    (isBuiltInModelProviderType(modelProviderType) &&
-      (builtInModelRuntimeRoute?.providerType === "openai-api-key" ||
-        builtInModelRuntimeRoute?.providerType === "openrouter-codex"))
-  );
-}
-
-function isDeepSeekByokRoute(
-  type: string | null | undefined,
-  deepseek: boolean,
-): boolean {
-  return deepseek && (type === "deepseek" || type === "openrouter-codex");
-}
-
 /**
  * Route canonical chat threads by model and provider policy. Trigger source is
  * intentionally absent so every thread-bound launch shares the same admission.
@@ -183,37 +169,20 @@ export function shouldUsePiExecution(args: {
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
 }): boolean {
-  const catalogProvider = piCatalogProvider(args.selectedModel);
-  const isExistingPiModel = catalogProvider === "deepseek";
-  const isStandardGpt =
-    catalogProvider === "openai" && args.codexServiceTier === undefined;
-  const isFastGpt =
-    catalogProvider === "openai" &&
-    args.codexServiceTier === "fast" &&
-    isFastGptPiProvider(
-      args.modelProviderType,
-      args.builtInModelRuntimeRoute,
-    ) &&
-    isCodexFastModeEnabled(args.featureSwitchContext);
-  const isNative = isPiNativeRoute(args.modelProviderType, args.selectedModel);
-  const isDeepSeekByok = isDeepSeekByokRoute(
-    args.modelProviderType,
-    isExistingPiModel,
-  );
-  const isPiModelProvider =
-    isNative ||
-    isDeepSeekByok ||
-    isBuiltInModelProviderType(args.modelProviderType) ||
-    args.modelProviderType === "custom-openai-responses" ||
-    ((args.modelProviderType === "codex-oauth-token" ||
-      gptApiKeyPiRoute(args.modelProviderType) !== null) &&
-      (isStandardGpt || isFastGpt));
   return (
-    args.chatThreadId !== undefined &&
-    args.chatThreadId.length > 0 &&
-    isPiModelProvider &&
-    (isExistingPiModel || isStandardGpt || isFastGpt || isNative) &&
-    isFeatureEnabled(FeatureSwitchKey.PiLoop, args.featureSwitchContext)
+    Boolean(args.chatThreadId) &&
+    isPiExecutionRoute({
+      selectedModel: args.selectedModel,
+      modelProviderType: args.modelProviderType,
+      runtimeProviderType:
+        args.builtInModelRuntimeRoute?.providerType ?? args.modelProviderType,
+      codexServiceTier: args.codexServiceTier,
+      piEnabled: isFeatureEnabled(
+        FeatureSwitchKey.PiLoop,
+        args.featureSwitchContext,
+      ),
+      codexFastModeEnabled: isCodexFastModeEnabled(args.featureSwitchContext),
+    })
   );
 }
 
@@ -339,6 +308,7 @@ function resolveCustomGatewayPiModelConfig(
     catalogModel: config.catalogModel,
     apiKey: "sandbox-secret",
     dialect: "openai-responses",
+    transport: "sse",
     ...runtimeContract,
   })
     ? config
@@ -414,7 +384,7 @@ function resolveGptApiKeyPiModelConfig(
     : null;
 }
 
-export function resolvePiSandboxModelConfig(
+function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
   codexServiceTier: "fast" | undefined = undefined,
 ): PiModelConfig | null {
@@ -475,6 +445,15 @@ function resolveResponsesPiModelConfig(
   const endpoint = getModelProviderPiEndpoint(
     concreteType.data,
     "openai-responses",
+    provider.credentialOwner
+      ? {
+          credentialOwner: provider.credentialOwner,
+          model,
+          usRoutingEnabled:
+            provider.environment.OPENAI_BASE_URL ===
+            `${OPENROUTER_US_ORIGIN}/api/v1`,
+        }
+      : undefined,
   );
   if (!endpoint) {
     return null;
@@ -507,8 +486,25 @@ function resolveResponsesPiModelConfig(
     model: config.model,
     apiKey: "sandbox-secret",
     dialect: "openai-responses",
+    transport: "sse",
     ...runtimeContract,
   })
     ? config
     : null;
+}
+
+/** Apply the run's effective effort to every Pi dialect before capturing its launch context. */
+export function resolvePiSandboxModelConfig(
+  provider: PiModelProviderConfigInput | null,
+  codexServiceTier: "fast" | undefined = undefined,
+  reasoningEffort: ReasoningEffort | null | undefined = undefined,
+): PiModelConfig | null {
+  const config = resolvePiRouteModelConfig(provider, codexServiceTier);
+  if (!config || reasoningEffort === null || reasoningEffort === undefined) {
+    return config;
+  }
+  return {
+    ...config,
+    thinkingLevel: piThinkingLevelForEffort(reasoningEffort),
+  };
 }

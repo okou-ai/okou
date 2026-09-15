@@ -20,6 +20,7 @@
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "./tsconfig.gateways.json" },
-    { "path": "./tsconfig.core.json" }
+    { "path": "./tsconfig.core.json" },
+    { "path": "./tsconfig.routes.json" }
   ]
 }

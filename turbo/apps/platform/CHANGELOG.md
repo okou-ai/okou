@@ -11,6 +11,711 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.900.0](https://github.com/vm0-ai/vm0/compare/app-v0.899.2...app-v0.900.0) (2026-09-15)
+
+
+### Features
+
+* **platform:** name the ends of the effort scale ([#34316](https://github.com/vm0-ai/vm0/issues/34316)) ([631e34c](https://github.com/vm0-ai/vm0/commit/631e34c12525161192f9271b16d38b4c1fcffd9e))
+
+
+### Bug Fixes
+
+* **app:** contain the catalog loading label inside its scroller ([#34297](https://github.com/vm0-ai/vm0/issues/34297)) ([7eee4f3](https://github.com/vm0-ai/vm0/commit/7eee4f347101eeb3bb0309d20499c6e73a76859d))
+* **app:** drop the empty uploaded-template status message ([#34307](https://github.com/vm0-ai/vm0/issues/34307)) ([2660c02](https://github.com/vm0-ai/vm0/commit/2660c02c54c92dfcf1999ecfe6293a754c8a047b))
+* **app:** merge the duplicated unsaved bars and localize their labels ([#34301](https://github.com/vm0-ai/vm0/issues/34301)) ([eaecc82](https://github.com/vm0-ai/vm0/commit/eaecc8296c2baa25d08137cd22f400ece90255d6))
+* **app:** play intro video style previews on hover ([#34322](https://github.com/vm0-ai/vm0/issues/34322)) ([902a346](https://github.com/vm0-ai/vm0/commit/902a346566fc01104cf873e0946eec15fd325030))
+* honor private artifact storage for attachments and integrations ([#34310](https://github.com/vm0-ai/vm0/issues/34310)) ([cb833bf](https://github.com/vm0-ai/vm0/commit/cb833bfcc55dca9e58a85bae4b4b1a0663febd0a))
+* **platform:** give the intro video tab its own icon ([#34314](https://github.com/vm0-ai/vm0/issues/34314)) ([233a2d5](https://github.com/vm0-ai/vm0/commit/233a2d50d29334d6d5103f8fc3b39eca0c102123))
+* use mime types for attachment thumbnails ([#34313](https://github.com/vm0-ai/vm0/issues/34313)) ([58685d3](https://github.com/vm0-ai/vm0/commit/58685d3dda2abe907742b0855631a7307098c681))
+
+
+### Refactoring
+
+* **ads:** retire browser account routing api compatibility ([#34312](https://github.com/vm0-ai/vm0/issues/34312)) ([7b1a7df](https://github.com/vm0-ai/vm0/commit/7b1a7df1b8091d79f326b17bd2bbde6298657d31))
+* **app:** drain the shimmer text selector ([#34287](https://github.com/vm0-ai/vm0/issues/34287)) ([948a8ae](https://github.com/vm0-ai/vm0/commit/948a8ae636d7467ac80c0330e696694a536089a6))
+* **platform:** retire the inert wmde-markdown-color class ([#34196](https://github.com/vm0-ai/vm0/issues/34196)) ([0309ec0](https://github.com/vm0-ai/vm0/commit/0309ec079765e29125df228a54e882c8fdeab50f))
+* **slack:** retire oauth rollout compatibility ([#34306](https://github.com/vm0-ai/vm0/issues/34306)) ([ee68573](https://github.com/vm0-ai/vm0/commit/ee685730e7281057c0c6939a89e31d4716043ce9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.3
+    * @okouai/core bumped to 8.666.4
+    * @okouai/ui bumped to 1.9.1
+
+## [0.899.2](https://github.com/vm0-ai/vm0/compare/app-v0.899.1...app-v0.899.2) (2026-09-15)
+
+
+### Refactoring
+
+* **app:** drain the fixed viewport shell and markdown card selectors ([#34233](https://github.com/vm0-ai/vm0/issues/34233)) ([c0e6c3f](https://github.com/vm0-ai/vm0/commit/c0e6c3f7438d92b699e0f80b57e7af390f101f11))
+* give effort its own switch ([#34269](https://github.com/vm0-ai/vm0/issues/34269)) ([df5644a](https://github.com/vm0-ai/vm0/commit/df5644a8cb7e7905813ba4d1dc40aa9b98e4de92))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.2
+    * @okouai/core bumped to 8.666.3
+
+## [0.899.1](https://github.com/vm0-ai/vm0/compare/app-v0.899.0...app-v0.899.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* align artifact viewer and shorten sharing urls ([#34249](https://github.com/vm0-ai/vm0/issues/34249)) ([f833361](https://github.com/vm0-ai/vm0/commit/f833361a484782b0d85ea6dd6d4929f0a6034d14))
+* **app:** stabilize workflow hover author layout ([#34265](https://github.com/vm0-ai/vm0/issues/34265)) ([4829306](https://github.com/vm0-ai/vm0/commit/4829306b59c97df01f66d81dec4957be13376ba6))
+* persist sidebar section collapse preferences ([#34257](https://github.com/vm0-ai/vm0/issues/34257)) ([ebdf3a4](https://github.com/vm0-ai/vm0/commit/ebdf3a425766e6f00da4e2cb5f59198d315682fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.1
+    * @okouai/core bumped to 8.666.2
+
+## [0.899.0](https://github.com/vm0-ai/vm0/compare/app-v0.898.0...app-v0.899.0) (2026-09-15)
+
+
+### Features
+
+* **attribution:** keep impact data exclusively in marketing ([#33929](https://github.com/vm0-ai/vm0/issues/33929)) ([d72ff4b](https://github.com/vm0-ai/vm0/commit/d72ff4b88be43dbc571777858d4b688140d9835c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.0
+    * @okouai/core bumped to 8.666.1
+
+## [0.898.0](https://github.com/vm0-ai/vm0/compare/app-v0.897.0...app-v0.898.0) (2026-09-15)
+
+
+### Features
+
+* give intro video its own generation template type ([#34221](https://github.com/vm0-ai/vm0/issues/34221)) ([776735a](https://github.com/vm0-ai/vm0/commit/776735a14e2d2c8d3fe482b3c8b92b9dd66f5ce8))
+* **platform:** pin the connectors scope and search while the page scrolls ([#34222](https://github.com/vm0-ai/vm0/issues/34222)) ([f3473d2](https://github.com/vm0-ai/vm0/commit/f3473d28ba2891d67d600b46db3e01dbb147c0a3))
+
+
+### Bug Fixes
+
+* **api:** include the project in langfuse trace links ([#34215](https://github.com/vm0-ai/vm0/issues/34215)) ([fda0a6e](https://github.com/vm0-ai/vm0/commit/fda0a6ef129d7c6edb21452c4f4660e52fc5b63d))
+* **app:** replace the last idea prompt instead of stacking prompts ([#34217](https://github.com/vm0-ai/vm0/issues/34217)) ([5920b1d](https://github.com/vm0-ai/vm0/commit/5920b1d9163798afc0816587fb1b8b83b145aaca))
+* **app:** reveal user message actions without opacity transitions ([#33785](https://github.com/vm0-ai/vm0/issues/33785)) ([634e340](https://github.com/vm0-ai/vm0/commit/634e340c6aff0f30bd0b9ea1ee3d557ce49c51e9))
+* **app:** update lark integration guide creation image ([#34218](https://github.com/vm0-ai/vm0/issues/34218)) ([4af04bf](https://github.com/vm0-ai/vm0/commit/4af04bfc0a597a31d546ddaf9a7757d04c9503cc))
+* **mail:** handle recognized gmail draft-send rejections ([#34210](https://github.com/vm0-ai/vm0/issues/34210)) ([9a09a5c](https://github.com/vm0-ai/vm0/commit/9a09a5c95e02784281bd3f92689f49a85811c1b3))
+* **platform:** mark the effort scale with dots and bring the bar down ([#34216](https://github.com/vm0-ai/vm0/issues/34216)) ([74a9273](https://github.com/vm0-ai/vm0/commit/74a92733f712af438ff868aa39de607a08049e37))
+
+
+### Refactoring
+
+* **platform:** drain the language-mermaid legacy class from the mermaid fence ([#34226](https://github.com/vm0-ai/vm0/issues/34226)) ([7247fe0](https://github.com/vm0-ai/vm0/commit/7247fe035f88b8e5c59d0151c9a1ef44a411a238))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.442.0
+    * @okouai/core bumped to 8.666.0
+
+## [0.897.0](https://github.com/vm0-ai/vm0/compare/app-v0.896.2...app-v0.897.0) (2026-09-15)
+
+
+### Features
+
+* **app:** finish the composer's second level and quiet the chart picker ([#34161](https://github.com/vm0-ai/vm0/issues/34161)) ([2d18df5](https://github.com/vm0-ai/vm0/commit/2d18df55c4a751a296808d8393a2e77241b54641))
+* **ssh:** add reusable cloudflare access configuration ([#34105](https://github.com/vm0-ai/vm0/issues/34105)) ([21f7e6a](https://github.com/vm0-ai/vm0/commit/21f7e6a3d2870791cb705ebd37217457d9118890))
+
+
+### Bug Fixes
+
+* **app:** let the pointer own the slash panel's row mark ([#34163](https://github.com/vm0-ai/vm0/issues/34163)) ([c9cf287](https://github.com/vm0-ai/vm0/commit/c9cf2878a655c9be71ff0b3de5167607bef1e930))
+* report and label intro video as its own template kind ([#34096](https://github.com/vm0-ai/vm0/issues/34096)) ([8d01e1a](https://github.com/vm0-ai/vm0/commit/8d01e1a9832cd0e73330d85e55709abe515acfe7))
+
+
+### Refactoring
+
+* **app:** drain chat thinking-state legacy selectors ([#33843](https://github.com/vm0-ai/vm0/issues/33843)) ([e4a6743](https://github.com/vm0-ai/vm0/commit/e4a67435cedb4d8c57fcb99dc349b077c5c33dda))
+* **app:** drain pwa safe-area cover legacy styles ([#33952](https://github.com/vm0-ai/vm0/issues/33952)) ([5b5de1c](https://github.com/vm0-ai/vm0/commit/5b5de1c241dafb9f21d1ee8520312ac2b68c308c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.441.0
+    * @okouai/core bumped to 8.665.0
+
+## [0.896.2](https://github.com/vm0-ai/vm0/compare/app-v0.896.1...app-v0.896.2) (2026-09-15)
+
+
+### Refactoring
+
+* **platform:** move transcript chat cards onto a shared card component ([#33964](https://github.com/vm0-ai/vm0/issues/33964)) ([1794ce2](https://github.com/vm0-ai/vm0/commit/1794ce2989368ab4a25fbe97fe3bd42b64961bd0))
+
+## [0.896.1](https://github.com/vm0-ai/vm0/compare/app-v0.896.0...app-v0.896.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* include prompt attachments in shared threads ([#34156](https://github.com/vm0-ai/vm0/issues/34156)) ([0dc6484](https://github.com/vm0-ai/vm0/commit/0dc64849580cca94d34130c6a8d232a940e8d8ac))
+
+
+### Refactoring
+
+* **platform:** retire the model picker's chat settings page ([#34160](https://github.com/vm0-ai/vm0/issues/34160)) ([4096576](https://github.com/vm0-ai/vm0/commit/4096576d4a18e8c117bfec0b4a59a38f7e4ad276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.1
+    * @okouai/core bumped to 8.664.2
+
+## [0.896.0](https://github.com/vm0-ai/vm0/compare/app-v0.895.3...app-v0.896.0) (2026-09-14)
+
+
+### Features
+
+* add debug langfuse links to run actions ([#34148](https://github.com/vm0-ai/vm0/issues/34148)) ([b7ca117](https://github.com/vm0-ai/vm0/commit/b7ca1179ef140b045ed72cf4e857625678c0cb89))
+
+
+### Bug Fixes
+
+* default new workspaces to luna ([#34155](https://github.com/vm0-ai/vm0/issues/34155)) ([da449c9](https://github.com/vm0-ai/vm0/commit/da449c979a1a8efe95ba30d261746c4bf3ff3ff8))
+* **platform:** unify chat scrollbars with shadcn styling ([#34150](https://github.com/vm0-ai/vm0/issues/34150)) ([b677eee](https://github.com/vm0-ai/vm0/commit/b677eee09365a6dd132e4cf7fef28054fb3ee26b))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#34153](https://github.com/vm0-ai/vm0/issues/34153)) ([3eca7a9](https://github.com/vm0-ai/vm0/commit/3eca7a941b02a0da8254f79e671e22e697743040))
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.0
+    * @okouai/core bumped to 8.664.1
+    * @okouai/ui bumped to 1.9.0
+
+## [0.895.3](https://github.com/vm0-ai/vm0/compare/app-v0.895.2...app-v0.895.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* **platform:** notify thread indicators before chat warming ([#34147](https://github.com/vm0-ai/vm0/issues/34147)) ([1990ab3](https://github.com/vm0-ai/vm0/commit/1990ab34c4f62d5a79f10c6fa49bc1b0f7dda31f))
+
+## [0.895.2](https://github.com/vm0-ai/vm0/compare/app-v0.895.1...app-v0.895.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* **platform:** restore the effort control's agreed geometry and chrome ([#34120](https://github.com/vm0-ai/vm0/issues/34120)) ([76d7f69](https://github.com/vm0-ai/vm0/commit/76d7f69ba00d512c1f2d1810461f229ee59e54ef))
+* **platform:** retain template preview errors during renewal ([#34082](https://github.com/vm0-ai/vm0/issues/34082)) ([ee5a07d](https://github.com/vm0-ai/vm0/commit/ee5a07d91e603cfeccb379075e86bb26558819b7))
+
+
+### Refactoring
+
+* unify model selection feature switches ([#34133](https://github.com/vm0-ai/vm0/issues/34133)) ([252e116](https://github.com/vm0-ai/vm0/commit/252e1163a515c7f212cd0b31c7c59b3d385f3a38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.439.0
+    * @okouai/core bumped to 8.664.0
+
+## [0.895.1](https://github.com/vm0-ai/vm0/compare/app-v0.895.0...app-v0.895.1) (2026-09-14)
+
+
+### Refactoring
+
+* **app:** make the selected task chip one control ([#34116](https://github.com/vm0-ai/vm0/issues/34116)) ([cf2fd84](https://github.com/vm0-ai/vm0/commit/cf2fd84684f74d6439802e59d6fcd37ed4e52059))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.2
+    * @okouai/core bumped to 8.663.2
+
+## [0.895.0](https://github.com/vm0-ai/vm0/compare/app-v0.894.0...app-v0.895.0) (2026-09-14)
+
+
+### Features
+
+* **app:** give every create type one cover shelf under the composer ([#34122](https://github.com/vm0-ai/vm0/issues/34122)) ([ce77b40](https://github.com/vm0-ai/vm0/commit/ce77b404c09d05b9c32a6d1e165d68f34ea9f983))
+
+
+### Bug Fixes
+
+* **platform:** drop the custom scope's breadcrumb and move its create action ([#34118](https://github.com/vm0-ai/vm0/issues/34118)) ([aac0d27](https://github.com/vm0-ai/vm0/commit/aac0d27ed25f898d387ae18fe1b79adb34bf368b))
+
+
+### Refactoring
+
+* **app:** draw the task chips as the neutral button ([#34115](https://github.com/vm0-ai/vm0/issues/34115)) ([f52f92f](https://github.com/vm0-ai/vm0/commit/f52f92f14ac3de7bb14ac9cfaec035953f495cad))
+* remove voice input v2 feature switch ([#33884](https://github.com/vm0-ai/vm0/issues/33884)) ([be1af01](https://github.com/vm0-ai/vm0/commit/be1af014b3329820ca167fec5238e02c73d6bc7d))
+* **voice:** finish voice input v2 cleanup ([#34119](https://github.com/vm0-ai/vm0/issues/34119)) ([6958a1e](https://github.com/vm0-ai/vm0/commit/6958a1e767281f3a958ee0e853b159fe56525f7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.1
+    * @okouai/core bumped to 8.663.1
+    * @okouai/ui bumped to 1.8.7
+
+## [0.894.0](https://github.com/vm0-ai/vm0/compare/app-v0.893.12...app-v0.894.0) (2026-09-14)
+
+
+### Features
+
+* **app:** add a standalone artifact viewer ([#34088](https://github.com/vm0-ai/vm0/issues/34088)) ([c49b23f](https://github.com/vm0-ai/vm0/commit/c49b23f072d00dd9e51d2279ebd606f0b83556e2))
+* **platform:** give custom connectors their own scope on the connectors page ([#34083](https://github.com/vm0-ai/vm0/issues/34083)) ([9866bc0](https://github.com/vm0-ai/vm0/commit/9866bc0c72322c5ca4ab02e22bb4363219e72b34))
+* **platform:** redesign the chat reasoning-effort bar ([#34104](https://github.com/vm0-ai/vm0/issues/34104)) ([deec8ae](https://github.com/vm0-ai/vm0/commit/deec8aeeb647d3dede5182ce551d9c3d070ae767))
+
+
+### Bug Fixes
+
+* **app:** align lark app creation link with feishu ([#34094](https://github.com/vm0-ai/vm0/issues/34094)) ([b27dc6c](https://github.com/vm0-ai/vm0/commit/b27dc6c0437714290cf7d2e1f12cf4ebe8888c0a))
+* **app:** refresh expired artifact previews on demand ([#34085](https://github.com/vm0-ai/vm0/issues/34085)) ([2bf1efd](https://github.com/vm0-ai/vm0/commit/2bf1efd3716e811f396e7b4abe58841fd3441bc3))
+
+
+### Refactoring
+
+* **platform:** retire the markdown code-fence copy contract ([#34059](https://github.com/vm0-ai/vm0/issues/34059)) ([2a91b89](https://github.com/vm0-ai/vm0/commit/2a91b894841c3de5d4834a0f1efac0519849b416))
+* remove chat thinking spinner feature switch ([#34069](https://github.com/vm0-ai/vm0/issues/34069)) ([379454f](https://github.com/vm0-ai/vm0/commit/379454fc8965991e2898f6a9d8530db140c378b2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.0
+    * @okouai/core bumped to 8.663.0
+
+## [0.893.12](https://github.com/vm0-ai/vm0/compare/app-v0.893.11...app-v0.893.12) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** handle artifact sharing on selection with toast feedback ([#34048](https://github.com/vm0-ai/vm0/issues/34048)) ([86d00b2](https://github.com/vm0-ai/vm0/commit/86d00b27446ecb0eaa204d11074cd96b9de9a8fd))
+
+
+### Refactoring
+
+* **app:** drop the category description in the slash template pane ([#34043](https://github.com/vm0-ai/vm0/issues/34043)) ([9756082](https://github.com/vm0-ai/vm0/commit/9756082f319752a35fc25a75b6849c9f0837a8ee))
+* remove agentMessageMath feature switch ([#34051](https://github.com/vm0-ai/vm0/issues/34051)) ([66cd8df](https://github.com/vm0-ai/vm0/commit/66cd8df66d3e3231a71bebb00fe8e21fb8b2c1ba))
+* remove composer workflow fuzzy search feature switch ([#34033](https://github.com/vm0-ai/vm0/issues/34033)) ([b812218](https://github.com/vm0-ai/vm0/commit/b8122187980a96ad51e376bca047f5e49479035a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.437.0
+    * @okouai/core bumped to 8.662.2
+    * @okouai/ui bumped to 1.8.6
+
+## [0.893.11](https://github.com/vm0-ai/vm0/compare/app-v0.893.10...app-v0.893.11) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** scope video controls to creative video drafts ([#33934](https://github.com/vm0-ai/vm0/issues/33934)) ([dc5ccdf](https://github.com/vm0-ai/vm0/commit/dc5ccdf653935b778d77fe120d62f3e20cc2b4e5))
+
+
+### Refactoring
+
+* **platform:** replace mermaid diagram selectors with utilities ([#33979](https://github.com/vm0-ai/vm0/issues/33979)) ([857cc5d](https://github.com/vm0-ai/vm0/commit/857cc5d3fdcd9e1a4eb041d8519f2612886e3f58))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+    * @okouai/core bumped to 8.662.1
+
+## [0.893.10](https://github.com/vm0-ai/vm0/compare/app-v0.893.9...app-v0.893.10) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** keep quote boundary navigation in editable text ([#33876](https://github.com/vm0-ai/vm0/issues/33876)) ([08a4b06](https://github.com/vm0-ai/vm0/commit/08a4b06c202c5e870cc4f2bc882314244cccb2e3))
+* **app:** separate slash menu hover and keyboard selection ([#33837](https://github.com/vm0-ai/vm0/issues/33837)) ([c5567e5](https://github.com/vm0-ai/vm0/commit/c5567e5e04e1bb0e0dc80add3d52a36172138595))
+* **platform:** load feature switches before routes ([#33893](https://github.com/vm0-ai/vm0/issues/33893)) ([1a02988](https://github.com/vm0-ai/vm0/commit/1a029885873904e1a0a1d197535a12c090327f04))
+
+
+### Refactoring
+
+* **app:** make clerk bootstrap own the runtime ([#33865](https://github.com/vm0-ai/vm0/issues/33865)) ([913086e](https://github.com/vm0-ai/vm0/commit/913086ee5a33ca0d0c35fe63e85ac5571b40cad9))
+* **app:** make ssh clients lazy ([#33872](https://github.com/vm0-ai/vm0/issues/33872)) ([379a9f8](https://github.com/vm0-ai/vm0/commit/379a9f80f94419bd136ac494135cea2cdc805d9e))
+* **app:** remove api client root signal fallback ([#33786](https://github.com/vm0-ai/vm0/issues/33786)) ([baf3981](https://github.com/vm0-ai/vm0/commit/baf39810cb9f0e025d73859e9b4820e383089592))
+* **app:** remove viewport shell classes from existing layouts ([#33845](https://github.com/vm0-ai/vm0/issues/33845)) ([8f4bd1a](https://github.com/vm0-ai/vm0/commit/8f4bd1a94462c2aaf07a6bd90f0de0e2a62ab141))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.1
+    * @okouai/core bumped to 8.662.0
+
+## [0.893.9](https://github.com/vm0-ai/vm0/compare/app-v0.893.8...app-v0.893.9) (2026-09-14)
+
+
+### Bug Fixes
+
+* **api:** remove the morning brief data-source gate ([#33858](https://github.com/vm0-ai/vm0/issues/33858)) ([042e874](https://github.com/vm0-ai/vm0/commit/042e8744647369967585cb42b5c406f98290ca5d))
+
+
+### Refactoring
+
+* **app:** drain the live desktop titlebar declarations ([#33838](https://github.com/vm0-ai/vm0/issues/33838)) ([14451c7](https://github.com/vm0-ai/vm0/commit/14451c741c895b762d5d6af1636efb3adb179a3c))
+* **platform:** prepare chat diagrams with the render window ([#33781](https://github.com/vm0-ai/vm0/issues/33781)) ([1aec195](https://github.com/vm0-ai/vm0/commit/1aec195c60332e14a96b4e112bef481cc081004a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.0
+    * @okouai/core bumped to 8.661.1
+    * @okouai/ui bumped to 1.8.5
+
+## [0.893.8](https://github.com/vm0-ai/vm0/compare/app-v0.893.7...app-v0.893.8) (2026-09-14)
+
+
+### Refactoring
+
+* **app:** reuse platform API client for feature switches ([#33840](https://github.com/vm0-ai/vm0/issues/33840)) ([203ecd0](https://github.com/vm0-ai/vm0/commit/203ecd00d617e52193155f04258eba9a51256d8f))
+* remove markdown time feature switch ([#33831](https://github.com/vm0-ai/vm0/issues/33831)) ([29c2fa6](https://github.com/vm0-ai/vm0/commit/29c2fa6d0de7ce9a391d594af7b3c252ef396471))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.434.0
+    * @okouai/connectors bumped to 3.11.1
+    * @okouai/core bumped to 8.661.0
+
+## [0.893.7](https://github.com/vm0-ai/vm0/compare/app-v0.893.6...app-v0.893.7) (2026-09-13)
+
+
+### Bug Fixes
+
+* **app:** hide user message actions while sharing ([#33782](https://github.com/vm0-ai/vm0/issues/33782)) ([dcf5041](https://github.com/vm0-ai/vm0/commit/dcf504103ba465246750be8741f919a4abdf2cc1))
+* **app:** share Clerk auth appearance with add-account dialog ([#33752](https://github.com/vm0-ai/vm0/issues/33752)) ([f993a0f](https://github.com/vm0-ai/vm0/commit/f993a0ff2abb4f7be9914cf31486d48e6650e9ae))
+
+## [0.893.6](https://github.com/vm0-ai/vm0/compare/app-v0.893.5...app-v0.893.6) (2026-09-13)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#33779](https://github.com/vm0-ai/vm0/issues/33779)) ([2e9ebba](https://github.com/vm0-ai/vm0/commit/2e9ebbaf3150cdcba6204ae11f294a6b8d094cfa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.1
+    * @okouai/core bumped to 8.660.3
+
+## [0.893.5](https://github.com/vm0-ai/vm0/compare/app-v0.893.4...app-v0.893.5) (2026-09-13)
+
+
+### Bug Fixes
+
+* **app:** simplify thread sharing while preserving reading position ([#33751](https://github.com/vm0-ai/vm0/issues/33751)) ([4522708](https://github.com/vm0-ai/vm0/commit/4522708a19896ebcb27eeb48c322d9d4ee4c15ab))
+
+
+### Refactoring
+
+* **app:** remove obsolete clerk drawer styles ([#33746](https://github.com/vm0-ai/vm0/issues/33746)) ([a9952cd](https://github.com/vm0-ai/vm0/commit/a9952cd950694871bd0bf64c0613f92b849333b8))
+* **platform:** own the chat panel graph outside command execution ([#33583](https://github.com/vm0-ai/vm0/issues/33583)) ([3807171](https://github.com/vm0-ai/vm0/commit/38071713890d7b3b6049df033501e501946ea76f))
+
+## [0.893.4](https://github.com/vm0-ai/vm0/compare/app-v0.893.3...app-v0.893.4) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.0
+    * @okouai/core bumped to 8.660.2
+
+## [0.893.3](https://github.com/vm0-ai/vm0/compare/app-v0.893.2...app-v0.893.3) (2026-09-13)
+
+
+### Bug Fixes
+
+* **app:** show chat header shortcut hints ([#33727](https://github.com/vm0-ai/vm0/issues/33727)) ([3025a87](https://github.com/vm0-ai/vm0/commit/3025a87b94af94a5e4ca08f4866d456d0f9e3d13))
+* move banking rollout to alpha ([#33724](https://github.com/vm0-ai/vm0/issues/33724)) ([c3e7211](https://github.com/vm0-ai/vm0/commit/c3e7211fec24c53fae7b5d4e9d13e8dc5bc8be56))
+
+
+### Refactoring
+
+* **auth:** remove remaining v2 helper branches ([#33725](https://github.com/vm0-ai/vm0/issues/33725)) ([850c17b](https://github.com/vm0-ai/vm0/commit/850c17bcb85103b5003266346bdcb9b8cd5defd9))
+* **auth:** remove unused v2 mocks and clerk environment type ([#33728](https://github.com/vm0-ai/vm0/issues/33728)) ([93d16f9](https://github.com/vm0-ai/vm0/commit/93d16f9861cfe4c670d234e48cbda139714b345e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.1
+    * @okouai/core bumped to 8.660.1
+
+## [0.893.2](https://github.com/vm0-ai/vm0/compare/app-v0.893.1...app-v0.893.2) (2026-09-12)
+
+
+### Refactoring
+
+* **auth:** replace auth v2 with hosted clerk ([#33450](https://github.com/vm0-ai/vm0/issues/33450)) ([3b1bca6](https://github.com/vm0-ai/vm0/commit/3b1bca622a808b130516b6d058050466a20369a9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.0
+
+## [0.893.1](https://github.com/vm0-ai/vm0/compare/app-v0.893.0...app-v0.893.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ssh:** show configured credential count ([#33696](https://github.com/vm0-ai/vm0/issues/33696)) ([9ac81fd](https://github.com/vm0-ai/vm0/commit/9ac81fd04b0950df3484348136e11582327f696b))
+
+
+### Refactoring
+
+* **app:** drain session list title legacy classes ([#33693](https://github.com/vm0-ai/vm0/issues/33693)) ([42d0e08](https://github.com/vm0-ai/vm0/commit/42d0e08f024389c97ac2b091f06ac23c76541a97))
+* **app:** drop dead entrance-motion classes ([#33691](https://github.com/vm0-ai/vm0/issues/33691)) ([7489a1c](https://github.com/vm0-ai/vm0/commit/7489a1cdb49505c55376fa1086823868f26b66f2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.659.0
+
+## [0.893.0](https://github.com/vm0-ai/vm0/compare/app-v0.892.0...app-v0.893.0) (2026-09-12)
+
+
+### Features
+
+* **chat:** support model-aware reasoning effort in pi ([#33683](https://github.com/vm0-ai/vm0/issues/33683)) ([ab64ece](https://github.com/vm0-ai/vm0/commit/ab64ece13b139daa0ca67e4049273e4e79ba4e76))
+
+
+### Refactoring
+
+* **ui:** move the sidebar nav copy tint to the variable layer ([#33302](https://github.com/vm0-ai/vm0/issues/33302)) ([73ab20c](https://github.com/vm0-ai/vm0/commit/73ab20c50c53a1f0e99bf46cb887b97bb41e733f)), closes [#32402](https://github.com/vm0-ai/vm0/issues/32402)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.0
+    * @okouai/core bumped to 8.658.0
+
+## [0.892.0](https://github.com/vm0-ai/vm0/compare/app-v0.891.0...app-v0.892.0) (2026-09-12)
+
+
+### Features
+
+* **chat:** persist model-aware reasoning effort settings ([#33551](https://github.com/vm0-ai/vm0/issues/33551)) ([1aa1036](https://github.com/vm0-ai/vm0/commit/1aa10365da1d277a04b4968a5e4218fc5c74b2a1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.431.0
+    * @okouai/core bumped to 8.657.0
+
+## [0.891.0](https://github.com/vm0-ai/vm0/compare/app-v0.890.0...app-v0.891.0) (2026-09-12)
+
+
+### Features
+
+* **app:** add visualization task options ([#33296](https://github.com/vm0-ai/vm0/issues/33296)) ([14e6b13](https://github.com/vm0-ai/vm0/commit/14e6b137590d53ce02c173ff99437f677410f724))
+
+
+### Refactoring
+
+* **api:** rename restricted vm0 models to restricted built-in models ([#33670](https://github.com/vm0-ai/vm0/issues/33670)) ([c07f349](https://github.com/vm0-ai/vm0/commit/c07f349dd5bf75d500939daa87569e40905b0e18))
+* **api:** slim the activity-summary contract to the fields the platform reads ([#33630](https://github.com/vm0-ai/vm0/issues/33630)) ([198d38f](https://github.com/vm0-ai/vm0/commit/198d38f7a6a674672aa66c0053f40e783c424793))
+* **app:** migrate the mic spinner and volume meter to utilities ([#33345](https://github.com/vm0-ai/vm0/issues/33345)) ([767110b](https://github.com/vm0-ai/vm0/commit/767110bf5c0f781dd909efd62707f6ecd960175b))
+* remove graduated chat experience switches ([#33612](https://github.com/vm0-ai/vm0/issues/33612)) ([8e51714](https://github.com/vm0-ai/vm0/commit/8e517146fbe73026d88d0a3f508150ae6ddf04a2))
+* remove inert retired-brand vm0 residue ([#33660](https://github.com/vm0-ai/vm0/issues/33660)) ([9c83c9b](https://github.com/vm0-ai/vm0/commit/9c83c9b87ac2f910145cd9f66c350dd7006fb23c))
+* **runner:** rename sandbox-internal and preview-only x-vm0 headers ([#33663](https://github.com/vm0-ai/vm0/issues/33663)) ([9375cec](https://github.com/vm0-ai/vm0/commit/9375cec4abaa342c41b17cc54275f9cb59031b64))
+* **ui:** use neutral button and select variants ([#33335](https://github.com/vm0-ai/vm0/issues/33335)) ([10212cb](https://github.com/vm0-ai/vm0/commit/10212cb80127aef11d0e12e12b0e4980e108fa98))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.430.1
+    * @okouai/connectors bumped to 3.11.0
+    * @okouai/core bumped to 8.656.0
+    * @okouai/ui bumped to 1.8.4
+
+## [0.890.0](https://github.com/vm0-ai/vm0/compare/app-v0.889.1...app-v0.890.0) (2026-09-12)
+
+
+### Features
+
+* add deepseek v4.1 flash ([#33591](https://github.com/vm0-ai/vm0/issues/33591)) ([b7b8854](https://github.com/vm0-ai/vm0/commit/b7b885498764b690c4a194f86da198815daae4c9))
+* **artifacts:** share presigned thumbnails across composer and chat ([#33288](https://github.com/vm0-ai/vm0/issues/33288)) ([c21ce81](https://github.com/vm0-ai/vm0/commit/c21ce817535587b323a523abcef983f689365e9d))
+
+
+### Bug Fixes
+
+* **app:** show specific clerk authentication and password errors ([#33509](https://github.com/vm0-ai/vm0/issues/33509)) ([1088d9c](https://github.com/vm0-ai/vm0/commit/1088d9c6db489a743487ff3a751cdbebe18b324f))
+
+
+### Refactoring
+
+* **api:** remove the retired zero desktop auth callback schemes ([#33615](https://github.com/vm0-ai/vm0/issues/33615)) ([60653a2](https://github.com/vm0-ai/vm0/commit/60653a23fdb82dbe96a1aa2affcafdad8a8a1388))
+* **platform:** remove the dead default-agent branch from the welcome thread card ([#33609](https://github.com/vm0-ai/vm0/issues/33609)) ([01eb73f](https://github.com/vm0-ai/vm0/commit/01eb73fc332a404f76ce802ab9cfb947186f98a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.430.0
+    * @okouai/core bumped to 8.655.0
+
+## [0.889.1](https://github.com/vm0-ai/vm0/compare/app-v0.889.0...app-v0.889.1) (2026-09-12)
+
+
+### Refactoring
+
+* **platform:** route chat realtime invalidations directly ([#33586](https://github.com/vm0-ai/vm0/issues/33586)) ([a89a9b4](https://github.com/vm0-ai/vm0/commit/a89a9b45feb52774623ab2c2c9664ed5b18ccc7a))
+* **platform:** simplify activity summary polling ([#33577](https://github.com/vm0-ai/vm0/issues/33577)) ([b2dc30a](https://github.com/vm0-ai/vm0/commit/b2dc30a0f22d263c4ad0a4d7f764932e38fa3aeb))
+* remove expired deployment compatibility ([#33582](https://github.com/vm0-ai/vm0/issues/33582)) ([d5ae0e3](https://github.com/vm0-ai/vm0/commit/d5ae0e331d31465b7302bc63e1557420caf7358b))
+* **test:** replace the remaining retired-brand agent fixtures ([#33587](https://github.com/vm0-ai/vm0/issues/33587)) ([fee7c56](https://github.com/vm0-ai/vm0/commit/fee7c56bfb3f3b62bda69a1409dbc2486e937003))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.429.1
+    * @okouai/core bumped to 8.654.3
+
+## [0.889.0](https://github.com/vm0-ai/vm0/compare/app-v0.888.0...app-v0.889.0) (2026-09-11)
+
+
+### Features
+
+* **ssh:** manage reusable key and password credentials ([#33553](https://github.com/vm0-ai/vm0/issues/33553)) ([c51d8ca](https://github.com/vm0-ai/vm0/commit/c51d8ca3cc39eb8aa1b82f3919fcc816846890c8))
+
+
+### Bug Fixes
+
+* **platform:** keep unread indicators readable when chat warming fails ([#33564](https://github.com/vm0-ai/vm0/issues/33564)) ([41842ae](https://github.com/vm0-ai/vm0/commit/41842ae3291ad9be710f540984a0f2cd53bcb88f))
+* **platform:** let each chat thread list catch-up own its lifetime ([#33557](https://github.com/vm0-ai/vm0/issues/33557)) ([85b31f1](https://github.com/vm0-ai/vm0/commit/85b31f126553f3590e075ddef42d1f729ddd57a5))
+
+
+### Refactoring
+
+* **api:** emit x-okou signature headers and drop the legacy names ([#33561](https://github.com/vm0-ai/vm0/issues/33561)) ([2cdbdcf](https://github.com/vm0-ai/vm0/commit/2cdbdcf65cba3504828108a675056b4963cbe3a5))
+* make activity summary polling thread-owned ([#33574](https://github.com/vm0-ai/vm0/issues/33574)) ([d568c0d](https://github.com/vm0-ai/vm0/commit/d568c0d26533336da14795d781490125da9f70bb))
+* **platform:** stabilize oauth and prohibit child abort controllers ([#33573](https://github.com/vm0-ai/vm0/issues/33573)) ([ba5f919](https://github.com/vm0-ai/vm0/commit/ba5f919bcfd0c124a5633a17b8cee8cc35a86c1c))
+* **platform:** stabilize workflow realtime handler ([#33333](https://github.com/vm0-ai/vm0/issues/33333)) ([65da1fc](https://github.com/vm0-ai/vm0/commit/65da1fcc06a0b2a2738cb164ce099c6a6a89a89c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.429.0
+    * @okouai/connectors bumped to 3.10.0
+    * @okouai/core bumped to 8.654.2
+
+## [0.888.0](https://github.com/vm0-ai/vm0/compare/app-v0.887.1...app-v0.888.0) (2026-09-11)
+
+
+### Features
+
+* **app:** narrow the slash panel and scroll its index as one list ([#33544](https://github.com/vm0-ai/vm0/issues/33544)) ([15955e5](https://github.com/vm0-ai/vm0/commit/15955e559159871e588a068c30d922fc03f6599e))
+
+
+### Bug Fixes
+
+* **app:** write every annotation note on the image ([#33418](https://github.com/vm0-ai/vm0/issues/33418)) ([461ab76](https://github.com/vm0-ai/vm0/commit/461ab76a89de2b55b86f06f92a72afb93c6f085c))
+* **guest-agent:** bound pi and codex event delivery ([#33532](https://github.com/vm0-ai/vm0/issues/33532)) ([c42da19](https://github.com/vm0-ai/vm0/commit/c42da19f700479f51954f2012106a211fe4f97c6))
+* **platform:** let the composer focus veil fade past the scrollport ([#33514](https://github.com/vm0-ai/vm0/issues/33514)) ([b70d0a4](https://github.com/vm0-ai/vm0/commit/b70d0a4046487a8787b8d7b68507fa2fca717c6e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.428.2
+    * @okouai/core bumped to 8.654.1
+
+## [0.887.1](https://github.com/vm0-ai/vm0/compare/app-v0.887.0...app-v0.887.1) (2026-09-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.654.0
+
+## [0.887.0](https://github.com/vm0-ai/vm0/compare/app-v0.886.0...app-v0.887.0) (2026-09-11)
+
+
+### Features
+
+* **app:** add the two-pane slash template panel behind a switch ([#33405](https://github.com/vm0-ai/vm0/issues/33405)) ([5a9d5e8](https://github.com/vm0-ai/vm0/commit/5a9d5e8022e17b4db5236c98e49e6ff7a8c7693a))
+* **platform:** split the connectors page into discover and your-connectors scopes ([#33435](https://github.com/vm0-ai/vm0/issues/33435)) ([ef3a544](https://github.com/vm0-ai/vm0/commit/ef3a544e2aae690cb2b724b42a46d39896b77e77))
+
+
+### Bug Fixes
+
+* **app:** update primary buttons with the selected color theme ([#33466](https://github.com/vm0-ai/vm0/issues/33466)) ([5b41b64](https://github.com/vm0-ai/vm0/commit/5b41b6487c1c4d6d30a20453f56d1632b56d5400))
+* **platform:** align pinned agent collars with okou ([#33453](https://github.com/vm0-ai/vm0/issues/33453)) ([3e4a5d0](https://github.com/vm0-ai/vm0/commit/3e4a5d0c1957d0673d3774dd585630bcde0f2833))
+* **platform:** align workflow errors with recovery cards ([#33350](https://github.com/vm0-ai/vm0/issues/33350)) ([1cb0817](https://github.com/vm0-ai/vm0/commit/1cb0817c9227759e1dd04b208034f0a302f1a4bf))
+* **platform:** let flyout rows clip at the panel's own edge ([#33480](https://github.com/vm0-ai/vm0/issues/33480)) ([f158889](https://github.com/vm0-ai/vm0/commit/f158889d9fc2bfbc9058eebf369753f9367b718c))
+* **ssh:** allow multiple login configurations per endpoint ([#33473](https://github.com/vm0-ai/vm0/issues/33473)) ([54efc25](https://github.com/vm0-ai/vm0/commit/54efc258e9b0d6df4b9c49ed7cedb92fbe4fec44))
+
+
+### Refactoring
+
+* **test:** replace residual retired-brand fixtures and a missed comment ([#33489](https://github.com/vm0-ai/vm0/issues/33489)) ([5877266](https://github.com/vm0-ai/vm0/commit/58772661b6889713ed3b090f04adc22e0e28d711)), closes [#33475](https://github.com/vm0-ai/vm0/issues/33475)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.428.1
+    * @okouai/core bumped to 8.653.0
+
 ## [0.886.0](https://github.com/vm0-ai/vm0/compare/app-v0.885.0...app-v0.886.0) (2026-09-11)
 
 

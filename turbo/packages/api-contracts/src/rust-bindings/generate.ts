@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import {
   type RustConstantValue,
@@ -1792,7 +1793,10 @@ function renderSensitiveTaggedEnum(
   }
   context.declarationNames.add(typeName);
   const doc = typeDeclarationDoc(context, typeName);
-  const fields = new Map<string, { rustName: string; rustType: string }>();
+  const fields = new Map<
+    string,
+    { rustName: string; rustType: string; schema: JsonObject }
+  >();
   const lines = [
     ...renderOuterRustDoc(doc.rustDoc, ""),
     `pub enum ${typeName} {`,
@@ -1812,24 +1816,27 @@ function renderSensitiveTaggedEnum(
     }
     lines.push(`    ${name} {`);
     for (const [wireName, schema] of entries) {
-      if (
-        !isJsonObject(schema) ||
-        fields.has(wireName) ||
-        !variant.required.includes(wireName)
-      ) {
+      if (!isJsonObject(schema) || !variant.required.includes(wireName)) {
         throw new Error(
-          `${context.label}: sensitive variants require distinct, required fields`,
+          `${context.label}: sensitive variants require required object schemas`,
         );
       }
       const rustName = toRustFieldName(wireName);
+      const existing = fields.get(wireName);
+      if (existing && !isDeepStrictEqual(existing.schema, schema)) {
+        throw new Error(
+          `${context.label}: sensitive shared field ${wireName} has incompatible schemas`,
+        );
+      }
       const rustType =
+        existing?.rustType ??
         context.fieldTypeOverrides[wireName] ??
         rustTypeForSchema(
           schema,
           nestedTypeNameForField(`${typeName}${name}`, wireName, schema),
           context,
         );
-      fields.set(wireName, { rustName, rustType });
+      fields.set(wireName, { rustName, rustType, schema });
       lines.push(
         ...renderOuterRustDoc(
           typeFieldDoc(context, typeName, wireName, doc),

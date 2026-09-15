@@ -53,7 +53,7 @@ import {
   PI_MEMORY_PHASE2_PREPARED_MAX_BYTES,
   PI_MEMORY_PHASE2_WORKSPACE_DIFF_MAX_BYTES,
   type PiMemoryPhase2BaseFile,
-  type PiMemoryPhase2ConsolidationArgs,
+  type PiMemoryPhase2LocalConsolidationArgs,
   type PiMemoryPhase2SelectedSnapshot,
 } from "./phase2-memory-types";
 
@@ -104,13 +104,9 @@ function selected(
 function consolidationArgs(
   baseFiles: readonly PiMemoryPhase2BaseFile[],
   selectedSnapshots: readonly PiMemoryPhase2SelectedSnapshot[] = [],
-): PiMemoryPhase2ConsolidationArgs {
+): PiMemoryPhase2LocalConsolidationArgs {
   return {
-    orgId: "org-phase2",
-    userId: "user-phase2",
     memoryStorageId: "storage-phase2",
-    claimedRevision: 7,
-    leaseToken: "lease-phase2",
     baseFiles,
     selected: selectedSnapshots,
     model: {
@@ -119,9 +115,7 @@ function consolidationArgs(
       apiKey: "unused-test-key",
       model: "gpt-5.6-terra",
       dialect: "openai-responses",
-    },
-    heartbeat: async () => {
-      return true;
+      transport: "sse",
     },
   };
 }
@@ -160,6 +154,124 @@ const VALID_BASE = [
 ] as const;
 
 describe("Pi memory Phase 2 filesystem", () => {
+  it("preserves binary, Unicode and empty bytes with fixed manifest identities", async () => {
+    const base = [
+      baseFile("memory_summary.md", "v1\n用户偏好\n"),
+      baseFile("legacy-empty", ""),
+      baseFile("MEMORY.md", "# Task Group: café\n你好 🌍\n"),
+      baseFile(".git/objects/data", Uint8Array.from([0, 255, 128, 10])),
+    ];
+    const workspace = await freshWorkspace(base);
+    const prepared = await validatePiMemoryPhase2Output(
+      workspace,
+      "storage-phase2",
+    );
+    // These values come from an independent SHA-256 and uint32-BE encoder.
+    expect(prepared.manifest).toEqual({
+      version: 1,
+      files: [
+        {
+          path: ".git/objects/data",
+          hash: "6d6f7836f1e146dc0204afb5133dae52fdc05603d8ac2dc793b481b0e0829fd1",
+          size: 4,
+        },
+        {
+          path: "MEMORY.md",
+          hash: "d7fcd3ab3d9c22852455a6aed5a1e5c27eb929d8f1aa69df94697853994cbd84",
+          size: 32,
+        },
+        {
+          path: "legacy-empty",
+          hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          size: 0,
+        },
+        {
+          path: "memory_summary.md",
+          hash: "a254bd86fbea5c5109477168ae9a66ba8a09838f752b9769a11b059ef906877e",
+          size: 16,
+        },
+      ],
+      fileCount: 4,
+      pathBytes: 55,
+      totalBytes: 52,
+      digest:
+        "f10125c3425160b1cabdeeb41443897ac697ee5ad18136dea620618e590eea3c",
+    });
+    expect(prepared.contentIdentity).toBe(
+      "36253330ddc58ade098ac294536f6cd990f1768a2c7386b96fd765e830085142",
+    );
+    const expected = new Map(
+      base.map(({ path, bytes }) => {
+        return [path, Buffer.from(bytes)] as const;
+      }),
+    );
+    for (const file of base) {
+      file.bytes.fill(0);
+    }
+    const baseFiles = await snapshotMountedPiMemoryPhase2Base(
+      workspace.memoryRoot,
+    );
+    const applying = applyValidatedPiMemoryPhase2Result({
+      memoryRoot: workspace.memoryRoot,
+      memoryStorageId: "storage-phase2",
+      baseFiles,
+      ...prepared,
+    });
+    // The application boundary must own both snapshots before its first await.
+    for (const file of [...baseFiles, ...prepared.files]) {
+      file.bytes.fill(0);
+    }
+    await applying;
+    for (const [path, bytes] of expected) {
+      expect(await readFile(join(workspace.memoryRoot, path))).toEqual(bytes);
+    }
+  });
+
+  it.each(["bytes", "hash", "size"] as const)(
+    "rejects mutated prepared %s before changing the mounted tree",
+    async (field) => {
+      const workspace = await freshWorkspace(VALID_BASE);
+      const baseFiles = await snapshotMountedPiMemoryPhase2Base(
+        workspace.memoryRoot,
+      );
+      const prepared = await validatePiMemoryPhase2Output(
+        workspace,
+        "storage-phase2",
+      );
+      const files = prepared.files.map((file) => {
+        if (file.path !== "MEMORY.md") {
+          return file;
+        }
+        if (field === "bytes") {
+          file.bytes.fill(0);
+          return file;
+        }
+        return {
+          ...file,
+          ...(field === "hash"
+            ? { hash: "0".repeat(64) }
+            : { size: file.size + 1 }),
+        };
+      });
+      await expect(
+        applyValidatedPiMemoryPhase2Result({
+          memoryRoot: workspace.memoryRoot,
+          memoryStorageId: "storage-phase2",
+          baseFiles,
+          files,
+          contentIdentity: prepared.contentIdentity,
+        }),
+      ).rejects.toMatchObject({
+        diagnostic: { stage: "mounted_apply", reason: "file_integrity" },
+      });
+      for (const file of baseFiles) {
+        expect(await readFile(join(workspace.memoryRoot, file.path))).toEqual(
+          Buffer.from(file.bytes),
+        );
+      }
+    },
+  );
+
   it.each([0o444, 0o600])(
     "applies changes without rewriting unchanged immutable files (mode %s), including no-diff",
     async (mode) => {
@@ -219,8 +331,8 @@ describe("Pi memory Phase 2 filesystem", () => {
           return [path, bytes.toString()];
         }),
       ).toEqual(
-        prepared.files.map(({ path, contentBase64 }) => {
-          return [path, Buffer.from(contentBase64, "base64").toString()];
+        prepared.files.map(({ path, bytes }) => {
+          return [path, Buffer.from(bytes).toString()];
         }),
       );
       expect(
@@ -328,7 +440,6 @@ describe("Pi memory Phase 2 filesystem", () => {
 
   it.each([
     ["summary_header", "V1\nPRIVATE_SUMMARY_SENTINEL"],
-    ["summary_tokens", `v1\n${" token".repeat(2605)}`],
     ["summary_bytes", `v1\n${" ".repeat(PI_MEMORY_SUMMARY_MAX_BYTES - 2)}`],
   ])(
     "classifies %s without exposing generated content",
@@ -346,14 +457,6 @@ describe("Pi memory Phase 2 filesystem", () => {
             fileClass: "summary",
           },
         });
-        if (reason === "summary_tokens") {
-          expect(Buffer.byteLength(content)).toBeLessThan(
-            PI_MEMORY_SUMMARY_MAX_BYTES,
-          );
-          expect(error).toMatchObject({
-            diagnostic: { actual: encode(content).length, limit: 2500 },
-          });
-        }
         if (reason === "summary_bytes")
           expect(error).toMatchObject({
             diagnostic: { actual: 65537, limit: 65536 },
@@ -363,16 +466,51 @@ describe("Pi memory Phase 2 filesystem", () => {
     },
   );
 
-  it("keeps inclusive summary token and byte boundaries", async () => {
+  it("keeps the inclusive summary byte boundary", async () => {
     const workspace = await freshWorkspace(VALID_BASE);
-    const tokenBoundary = `v1\n${" token".repeat(2497)}`;
-    expect(encode(tokenBoundary).length).toBe(2500);
-    for (const content of [tokenBoundary, `v1\n${" ".repeat(65533)}`]) {
-      await put(workspace, "memory_summary.md", content);
-      await expect(
-        validatePiMemoryPhase2Output(workspace, "storage-phase2"),
-      ).resolves.toBeDefined();
-    }
+    await put(workspace, "memory_summary.md", `v1\n${" ".repeat(65533)}`);
+    await expect(
+      validatePiMemoryPhase2Output(workspace, "storage-phase2"),
+    ).resolves.toBeDefined();
+  });
+
+  it("publishes a summary above the prompt injection budget in full", async () => {
+    const workspace = await freshWorkspace(VALID_BASE);
+    // The production failures reported exactly 2943 source tokens; the prompt
+    // budget belongs to the injected excerpt, not to the stored artifact.
+    const summary = `v1\n${" token".repeat(2940)}`;
+    expect(encode(summary).length).toBe(2943);
+    expect(Buffer.byteLength(summary)).toBeLessThanOrEqual(
+      PI_MEMORY_SUMMARY_MAX_BYTES,
+    );
+    await put(workspace, "memory_summary.md", summary);
+    await put(workspace, "MEMORY.md", "# Task Group: larger consolidation\n");
+    const baseFiles = await snapshotMountedPiMemoryPhase2Base(
+      workspace.memoryRoot,
+    );
+
+    const prepared = await validatePiMemoryPhase2Output(
+      workspace,
+      "storage-phase2",
+    );
+    const published = prepared.files.find((file) => {
+      return file.path === "memory_summary.md";
+    });
+    expect(published?.size).toBe(Buffer.byteLength(summary));
+    expect(published?.bytes).toEqual(Buffer.from(summary, "utf8"));
+
+    await applyValidatedPiMemoryPhase2Result({
+      memoryRoot: workspace.memoryRoot,
+      memoryStorageId: "storage-phase2",
+      baseFiles,
+      ...prepared,
+    });
+    expect(
+      await readFile(join(workspace.memoryRoot, "memory_summary.md"), "utf8"),
+    ).toBe(summary);
+    expect(
+      await readFile(join(workspace.memoryRoot, "MEMORY.md"), "utf8"),
+    ).toBe("# Task Group: larger consolidation\n");
   });
 
   it("pins every frozen size and count boundary", () => {
@@ -722,10 +860,7 @@ describe("Pi memory Phase 2 filesystem", () => {
     );
     const files = new Map(
       prepared.files.map((file) => {
-        return [
-          file.path,
-          Buffer.from(file.contentBase64, "base64").toString(),
-        ];
+        return [file.path, Buffer.from(file.bytes).toString()];
       }),
     );
     expect(files.get("MEMORY.md")).toContain("updated");
@@ -768,15 +903,6 @@ describe("Pi memory Phase 2 filesystem", () => {
           "memory_summary.md",
           `v1\n${"s".repeat(PI_MEMORY_SUMMARY_MAX_BYTES)}`,
         );
-      },
-      async (workspace) => {
-        const tooManyTokens = `v1\n${" token".repeat(
-          PI_MEMORY_SUMMARY_MAX_TOKENS + 100,
-        )}`;
-        expect(encode(tooManyTokens).length).toBeGreaterThan(
-          PI_MEMORY_SUMMARY_MAX_TOKENS,
-        );
-        await put(workspace, "memory_summary.md", tooManyTokens);
       },
       async (workspace) => {
         await put(workspace, "skills/missing-manifest/reference.md", "x");

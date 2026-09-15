@@ -287,9 +287,10 @@ async fn execute_inner_does_not_prefetch_after_early_guest_state_failure() {
 async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
+    let cache = config.decoded_cache.clone();
     let factory = Arc::new(CreateGateFactory::new());
     let server = httpmock::MockServer::start_async().await;
-    let body = b"fresh archive".to_vec();
+    let body = storage_archive(b"fresh archive");
     let full_get = server
         .mock_async(|when, then| {
             when.method(httpmock::Method::GET)
@@ -328,6 +329,8 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
                 tokio_util::sync::CancellationToken::new(),
             )
             .await;
+            config.background_fill.wait_idle_for_test().await;
+            config.background_fill.shutdown().await;
             (outcome, telemetry)
         }
     });
@@ -349,6 +352,13 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
         !task.is_finished(),
         "sandbox create gate should keep the run from reaching guest download"
     );
+    assert!(
+        cache
+            .get_ready("fresh-overlap", "v1")
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     factory.release.notify_one();
     let (outcome, telemetry) = tokio::time::timeout(Duration::from_secs(5), task)
@@ -357,12 +367,180 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
         .expect("run task should not panic");
     assert_eq!(outcome.unwrap().exit_code(), 0);
     full_get.assert_calls_async(1).await;
-    assert_telemetry_action(
-        &telemetry,
-        "storage_cache_fresh_delivery_staged",
-        true,
-        None,
+    assert_no_telemetry_action(&telemetry, "storage_cache_decoded");
+    assert_telemetry_action(&telemetry, "storage_cache_hit", true, None);
+    assert!(
+        cache
+            .get_ready("fresh-overlap", "v1")
+            .await
+            .unwrap()
+            .is_some()
     );
+    cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn fresh_decoded_delivery_pins_before_prefetch_and_retires_only_after_spawn() {
+    for state in ["both", "decoded-only", "replacement-evicted"] {
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let start_gate = MockLifecycleGate::new();
+        overrides.set_start_process_lifecycle_gate(start_gate.clone());
+        let factory = Arc::new(CreateGateFactory {
+            inner: MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
+            ..CreateGateFactory::new()
+        });
+        let server = httpmock::MockServer::start_async().await;
+        let body = storage_archive(b"pinned final file");
+        let get = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET).path("/decoded.tar.gz");
+                then.status(200).body(body.clone());
+            })
+            .await;
+        let archive_dir = config.home.storage_cache_dir("decoded", "v1");
+        let archive = archive_dir.join("archive.tar.gz");
+        std::fs::create_dir_all(&archive_dir).unwrap();
+        std::fs::write(&archive, &body).unwrap();
+        drop(
+            crate::lock::acquire(config.home.storage_lock("decoded", "v1"))
+                .await
+                .unwrap(),
+        );
+        config
+            .decoded_cache
+            .warm_from_archive("decoded", "v1")
+            .await
+            .unwrap();
+        if state == "decoded-only" {
+            std::fs::remove_file(&archive).unwrap();
+        }
+        let replacement = config
+            .home
+            .storages_dir()
+            .join(crate::paths::short_digest("decoded"))
+            .join(format!("decoded-v1-{}", crate::paths::short_digest("v1")));
+        let mut ctx = minimal_context();
+        let mut storage = api_storage("decoded", "/data", "v1", &server.url("/decoded.tar.gz"));
+        storage.archive_size = Some(body.len() as u64);
+        ctx.storage_manifest = Some(StorageManifest {
+            storages: vec![storage],
+            artifacts: Vec::new(),
+        });
+        let task = tokio::spawn({
+            let factory = Arc::clone(&factory);
+            async move {
+                let mut telemetry = test_telemetry(&config, &ctx);
+                let result = execute_new_sandbox(
+                    factory.as_ref(),
+                    &ctx,
+                    NewSandboxDispatch {
+                        id: SandboxId::new_v4(),
+                        reuse_result: SandboxReuseResult::PoolMiss,
+                    },
+                    &config,
+                    &default_params(),
+                    &mut telemetry,
+                    CancellationToken::new(),
+                )
+                .await;
+                config.background_fill.wait_idle_for_test().await;
+                config.background_fill.shutdown().await;
+                config.decoded_cache.shutdown().await;
+                (result, telemetry)
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(5), factory.entered.notified())
+            .await
+            .unwrap();
+        // Selection has finished, but no Guest exists yet. Later disk eviction
+        // must not invalidate the owned payload or trigger archive delivery.
+        if state == "replacement-evicted" {
+            std::fs::rename(&replacement, dir.path().join("evicted")).unwrap();
+        }
+        get.assert_calls_async(0).await;
+        factory.release.notify_one();
+        start_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(
+            archive.exists(),
+            state != "decoded-only",
+            "retired before spawn"
+        );
+        assert!(overrides.write_files_calls().is_empty());
+        let calls = overrides.storage_manifest_calls();
+        assert_eq!(calls.len(), 1);
+        let (_, payload) =
+            guest_contracts::storage_files::split_input(&calls[0].manifest_json).unwrap();
+        let groups = guest_contracts::storage_files::decode(payload).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].files[0].content, b"pinned final file");
+        start_gate.release_one();
+        let (result, telemetry) = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(result.unwrap().exit_code(), 0, "{state}");
+        get.assert_calls_async(0).await;
+        assert_eq!(archive.exists(), state == "replacement-evicted");
+        assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
+        assert_no_telemetry_action(&telemetry, "storage_cache_fresh_delivery_single_request");
+    }
+}
+
+#[tokio::test]
+async fn cancelled_storage_preparation_releases_pinned_files_without_retirement() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let archive_dir = config.home.storage_cache_dir("decoded", "v1");
+    let archive = archive_dir.join("archive.tar.gz");
+    std::fs::create_dir_all(&archive_dir).unwrap();
+    std::fs::write(&archive, storage_archive(b"cancelled files")).unwrap();
+    drop(
+        crate::lock::acquire(config.home.storage_lock("decoded", "v1"))
+            .await
+            .unwrap(),
+    );
+    config
+        .decoded_cache
+        .warm_from_archive("decoded", "v1")
+        .await
+        .unwrap();
+    let mut ctx = minimal_context();
+    ctx.storage_manifest = Some(StorageManifest {
+        storages: vec![api_storage(
+            "decoded",
+            "/data",
+            "v1",
+            "https://storage.invalid/unused",
+        )],
+        artifacts: Vec::new(),
+    });
+    let cancel = CancellationToken::new();
+    let mut telemetry = test_telemetry(&config, &ctx);
+    let prepared =
+        crate::executor::sandbox_run::prepare_storage(&ctx, None, &config, &cancel, &mut telemetry)
+            .await
+            .unwrap()
+            .unwrap();
+    let mut cloned_plan = prepared.plan.clone();
+    let files = cloned_plan.take_decoded();
+    assert_eq!(files.len(), 1);
+    let pinned = Arc::downgrade(&files[0].1);
+    drop(files);
+    let mut controls = RunControls::new(cancel.clone(), None);
+    controls.prepared_storage = Some(prepared);
+    assert!(pinned.upgrade().is_some());
+    cancel.cancel();
+    crate::executor::sandbox_run::cancel_prepared_storage(&mut controls, &mut telemetry).await;
+    assert!(pinned.upgrade().is_none());
+    config.background_fill.wait_idle_for_test().await;
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
+    assert!(archive.is_file());
 }
 
 #[tokio::test]
@@ -900,7 +1078,7 @@ async fn dns_readiness_retry_keeps_one_fresh_archive_owner() {
     )));
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let server = httpmock::MockServer::start_async().await;
-    let body = b"fresh archive across DNS retry".to_vec();
+    let body = storage_archive(b"fresh archive across DNS retry");
     let full_get = server
         .mock_async(|when, then| {
             when.method(httpmock::Method::GET)
@@ -1754,6 +1932,15 @@ async fn execute_inner_with_storage_manifest() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let factory = MockSandboxFactory::new();
+    let server = httpmock::MockServer::start_async().await;
+    let full_get = server
+        .mock_async(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/data.tar.gz")
+                .header_missing("range");
+            then.status(200).body(b"storage archive");
+        })
+        .await;
 
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
@@ -1761,14 +1948,15 @@ async fn execute_inner_with_storage_manifest() {
             "data",
             "/data",
             "v1",
-            "https://example.com/data.tar.gz",
+            &server.url("/data.tar.gz"),
         )],
         artifacts: vec![],
     });
-    let (exit_code, _) = run_new_sandbox_status(&factory, &ctx, &config, &default_params())
+    let (exit_code, error_msg) = run_new_sandbox_status(&factory, &ctx, &config, &default_params())
         .await
         .unwrap();
-    assert_eq!(exit_code, 0);
+    assert_eq!(exit_code, 0, "error={error_msg:?}");
+    full_get.assert_async().await;
 }
 
 #[tokio::test]

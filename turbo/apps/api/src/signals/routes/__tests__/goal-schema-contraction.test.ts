@@ -539,24 +539,6 @@ test.each(
         thinking: "Preparing this ordinary reply",
       },
     ]);
-    const firstAssistant = context.mocks.axiom.sdkIngest.mock.calls.flatMap(
-      (call) => {
-        const records: unknown = call[1];
-        return Array.isArray(records)
-          ? records.filter((record: unknown) => {
-              return (
-                typeof record === "object" &&
-                record !== null &&
-                "run_id" in record &&
-                record.run_id === run.runId &&
-                "op_type" in record &&
-                record.op_type === "api_to_first_assistant_message"
-              );
-            })
-          : [];
-      },
-    );
-    expect(firstAssistant).toHaveLength(1);
   },
   60_000,
 );

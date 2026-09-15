@@ -1,3 +1,4 @@
+import { sessionOutputChannelName } from "@okouai/api-contracts/contracts/realtime";
 import { command, type Store } from "ccstate";
 
 import {
@@ -116,8 +117,12 @@ const holdHeartbeatLoop: SharedDatabaseHeartbeatLoop = async (
 function directRealtimeChannelName(
   identity: SharedDatabaseIdentity,
   scope: SharedDatabaseRealtimeScope,
+  topic: string,
 ): string {
   switch (scope) {
+    case "run-output": {
+      return sessionOutputChannelName(identity.userId, identity.orgId, topic);
+    }
     case "credential": {
       return `user-org:${identity.userId}:${identity.orgId}`;
     }
@@ -135,6 +140,7 @@ function waitForWorkerOperation<T>(
   signal: AbortSignal,
 ): Promise<T> {
   signal.throwIfAborted();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const waitController = createChildAbortController(signal);
   const aborted = createDeferredPromise<never>(waitController.signal);
   return withCleanup(Promise.race([operation, aborted.promise]), () => {
@@ -199,12 +205,17 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     channelName: string,
     message: DirectRealtimeMessage,
   ): void {
-    const scope = (["credential", "org", "user"] as const).find((candidate) => {
-      return (
-        directRealtimeChannelName(this.options.identity, candidate) ===
-        channelName
-      );
-    });
+    const scope = (["credential", "org", "user", "run-output"] as const).find(
+      (candidate) => {
+        return (
+          directRealtimeChannelName(
+            this.options.identity,
+            candidate,
+            message.name,
+          ) === channelName
+        );
+      },
+    );
     if (scope) {
       this.handleRealtimeMessage(scope, message);
     }
@@ -246,6 +257,7 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     if (this.connectionSignal) {
       throw new Error("Shared database tab is already registered");
     }
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const connectionController = createChildAbortController(signal);
     const connectionSignal = connectionController.signal;
     this.connectionSignal = this.workerStore.set(
@@ -284,7 +296,7 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
       throw new Error("Shared database realtime subscription already exists");
     }
     const release = registerDirectRealtimeSubscription(
-      directRealtimeChannelName(this.options.identity, scope),
+      directRealtimeChannelName(this.options.identity, scope, topic),
       topic,
     );
     this.realtimeSubscriptions.set(subscriptionId, {

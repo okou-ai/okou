@@ -21,9 +21,94 @@ import { mockApi } from "../msw-contract.ts";
 
 let mockBillingInvoices: BillingInvoice[] = [];
 
+type BillingPlanCapabilities = Pick<
+  BillingStatusResponse,
+  | "status"
+  | "canBuyConcurrency"
+  | "concurrencyPurchaseReviewAvailable"
+  | "canBuyCredits"
+  | "autoRechargeAllowed"
+  | "supportByok"
+  | "videoGenerationAllowed"
+  | "workflowWebhookAutomationAllowed"
+  | "canRestorePlan"
+>;
+
+export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
+  switch (tier) {
+    case "free": {
+      return {
+        status: "active",
+        canBuyConcurrency: false,
+        concurrencyPurchaseReviewAvailable: false,
+        canBuyCredits: true,
+        autoRechargeAllowed: false,
+        supportByok: true,
+        videoGenerationAllowed: true,
+        workflowWebhookAutomationAllowed: false,
+        canRestorePlan: false,
+      };
+    }
+    case "limited-free-1": {
+      return {
+        status: "active",
+        canBuyConcurrency: false,
+        concurrencyPurchaseReviewAvailable: false,
+        canBuyCredits: false,
+        autoRechargeAllowed: false,
+        supportByok: false,
+        videoGenerationAllowed: false,
+        workflowWebhookAutomationAllowed: false,
+        canRestorePlan: false,
+      };
+    }
+    case "pro-suspend": {
+      return {
+        status: "suspended",
+        canBuyConcurrency: false,
+        concurrencyPurchaseReviewAvailable: false,
+        canBuyCredits: false,
+        autoRechargeAllowed: false,
+        supportByok: true,
+        videoGenerationAllowed: false,
+        workflowWebhookAutomationAllowed: false,
+        canRestorePlan: false,
+      };
+    }
+    case "team":
+    case "custom": {
+      return {
+        status: "active",
+        canBuyConcurrency: true,
+        concurrencyPurchaseReviewAvailable: false,
+        canBuyCredits: true,
+        autoRechargeAllowed: true,
+        supportByok: true,
+        videoGenerationAllowed: true,
+        workflowWebhookAutomationAllowed: true,
+        canRestorePlan: false,
+      };
+    }
+    default: {
+      return {
+        status: "active",
+        canBuyConcurrency: false,
+        concurrencyPurchaseReviewAvailable: false,
+        canBuyCredits: true,
+        autoRechargeAllowed: true,
+        supportByok: true,
+        videoGenerationAllowed: true,
+        workflowWebhookAutomationAllowed: false,
+        canRestorePlan: false,
+      };
+    }
+  }
+}
+
 function defaultBillingStatus(): BillingStatusResponse {
   return {
     tier: "pro-suspend",
+    ...billingPlanCapabilities("pro-suspend"),
     showUsagePack: false,
     credits: 0,
     onboardingPaymentPending: true,

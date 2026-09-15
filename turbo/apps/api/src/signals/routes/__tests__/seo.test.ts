@@ -257,8 +257,6 @@ describe("SEO routes", () => {
             },
           ),
         );
-        context.mocks.axiomLogging.warn.mockClear();
-        context.mocks.axiomLogging.error.mockClear();
         context.mocks.sentry.captureException.mockClear();
 
         const response = await accept(
@@ -274,14 +272,12 @@ describe("SEO routes", () => {
           '"United States" or "US"',
         );
         expect(providerRequests).toBe(0);
-        expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-        expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
         expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
         await expect(credits(actor)).resolves.toBe(beforeCredits);
       },
     );
 
-    it("keeps diagnostics when the provider rejects a validated location without retrying or charging", async () => {
+    it("surfaces a provider rejection of a validated location without retrying or charging", async () => {
       const actor = await seedActor();
       configureProviders();
       const beforeCredits = await credits(actor);
@@ -307,7 +303,6 @@ describe("SEO routes", () => {
           },
         ),
       );
-      context.mocks.axiomLogging.warn.mockClear();
 
       const response = await accept(
         requestLabsLocation(actor, operation, "United States"),
@@ -319,10 +314,6 @@ describe("SEO routes", () => {
         message: "Invalid Field: 'location_code'.",
       });
       expect(providerRequests).toBe(1);
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-        "DataForSEO task failed",
-        expect.objectContaining({ operation, taskStatusCode: 40_501 }),
-      );
       await expect(credits(actor)).resolves.toBe(beforeCredits);
     });
   });
@@ -404,7 +395,6 @@ describe("SEO routes", () => {
     const actor = await seedActor();
     configureProviders();
     const beforeCredits = await credits(actor);
-    context.mocks.axiomLogging.warn.mockClear();
     server.use(
       http.post(
         `${DATAFORSEO_BASE_URL}/v3/serp/google/organic/live/advanced`,
@@ -443,26 +433,6 @@ describe("SEO routes", () => {
       message: "DataForSEO authentication failed",
     });
     await expect(credits(actor)).resolves.toBe(beforeCredits);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledTimes(1);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "DataForSEO API request failed",
-      expect.objectContaining({
-        operation: "serp",
-        endpoint: "/v3/serp/google/organic/live/advanced",
-        httpStatus: 401,
-        httpStatusText: "Unauthorized",
-        providerStatusCode: 40_100,
-        providerStatusMessage:
-          "You are not authorized. Check your login and password.",
-      }),
-    );
-    const warningCalls = JSON.stringify(
-      context.mocks.axiomLogging.warn.mock.calls,
-    );
-    expect(warningCalls).not.toContain("technical seo");
-    expect(warningCalls).not.toContain("test-dataforseo-login");
-    expect(warningCalls).not.toContain("test-dataforseo-password");
-    expect(warningCalls).not.toContain("Basic ");
   });
 
   it("reports an unverified DataForSEO account without charging credits", async () => {
@@ -558,10 +528,6 @@ describe("SEO routes", () => {
       });
       expect(providerRequests).toBe(1);
       expect(beforeCredits - (await credits(actor))).toBe(creditsCharged);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalledWith(
-        "DataForSEO task failed",
-        expect.anything(),
-      );
     },
   );
 

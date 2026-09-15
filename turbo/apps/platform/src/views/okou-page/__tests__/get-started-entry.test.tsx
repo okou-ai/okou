@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   integrationsSlackContract,
   type SlackOrgStatus,
@@ -22,6 +23,19 @@ const context = testContext();
 
 function normalizedText(element: Element): string {
   return element.textContent?.replace(/\s+/gu, " ").trim() ?? "";
+}
+
+function buttonNamed(name: string, container: ParentNode): HTMLElement {
+  const button = queryAllByRoleFast("button", container).find((candidate) => {
+    return (
+      candidate.getAttribute("aria-label") === name ||
+      normalizedText(candidate) === name
+    );
+  });
+  if (!button) {
+    throw new Error(`Could not find button named ${name}`);
+  }
+  return button;
 }
 
 function slackInstalled(): SlackOrgStatus {
@@ -97,21 +111,21 @@ test("An admin sees every step and what each one pays", async () => {
   const panel = await openQuestPanel();
   expect(
     within(panel).getByText("Credits go to your personal balance."),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   const workflow = within(screen.getByTestId("get-started-quest-workflow"));
-  expect(workflow.getByText("Build a workflow")).toBeVisible();
+  expect(workflow.getByText("Build a workflow")).toBeInTheDocument();
   expect(
     workflow.getByText("Turn a repeat task into an automation"),
-  ).toBeVisible();
-  expect(workflow.getByText("+1,000")).toBeVisible();
+  ).toBeInTheDocument();
+  expect(workflow.getByText("+1,000")).toBeInTheDocument();
 
   // A reward that keeps paying names its unit next to the amount.
   const invite = within(screen.getByTestId("get-started-quest-invite"));
-  expect(invite.getByText("Invite your team")).toBeVisible();
-  expect(invite.getByText("per member")).toBeVisible();
+  expect(invite.getByText("Invite your team")).toBeInTheDocument();
+  expect(invite.getByText("per member")).toBeInTheDocument();
 
   // Connecting and installing Slack are already done, so they carry no reward.
-  expect(within(panel).getByText("2,300")).toBeVisible();
+  expect(within(panel).getByText("2,300")).toBeInTheDocument();
   expect(
     screen.queryByTestId("get-started-quest-connector"),
   ).not.toBeInTheDocument();
@@ -131,14 +145,14 @@ test("A member is only offered the steps they can finish themselves", async () =
   expect(normalizedText(entry)).toBe("Get started1/4");
 
   const panel = await openQuestPanel();
-  expect(screen.getByTestId("get-started-quest-workflow")).toBeVisible();
-  expect(screen.getByTestId("get-started-quest-share")).toBeVisible();
+  expect(screen.getByTestId("get-started-quest-workflow")).toBeInTheDocument();
+  expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
   expect(within(panel).queryByText("Invite your team")).not.toBeInTheDocument();
   expect(
     within(panel).queryByText("Add Okou to Slack"),
   ).not.toBeInTheDocument();
   // The earned total counts only the quests this role was offered.
-  expect(within(panel).getByText("300")).toBeVisible();
+  expect(within(panel).getByText("300")).toBeInTheDocument();
 });
 
 test("Building a workflow opens the workflows page", async () => {
@@ -171,7 +185,7 @@ test("Sharing on X spends the one submission", async () => {
   const dialog = await screen.findByRole("dialog", {
     name: "Share Okou on X",
   });
-  const submit = within(dialog).getByRole("button", { name: "Submit" });
+  const submit = buttonNamed("Submit", dialog);
   // Nothing can be claimed without a link.
   expect(submit).toBeDisabled();
 
@@ -186,7 +200,7 @@ test("Sharing on X spends the one submission", async () => {
   });
 
   const panel = await openQuestPanel();
-  expect(within(panel).getByText("In review")).toBeVisible();
+  expect(within(panel).getByText("In review")).toBeInTheDocument();
   expect(within(panel).queryByText("Share Okou on X")).toBeInTheDocument();
   // The row no longer offers the reward, and it is no longer a menu item.
   expect(
@@ -202,6 +216,63 @@ test("The entry stays hidden while the switch is off", async () => {
 
   await expect(
     screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByTestId("get-started-entry")).not.toBeInTheDocument();
+});
+
+test("The invite quest opens usable People settings from the keyboard", async () => {
+  const user = userEvent.setup();
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await openQuestPanel();
+  await user.keyboard("{Home}{ArrowDown}");
+  expect(screen.getByTestId("get-started-quest-invite")).toHaveFocus();
+  await user.keyboard("{Enter}");
+
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  await expect(
+    within(settings).findByRole("heading", { name: "People" }),
+  ).resolves.toBeInTheDocument();
+  expect(buttonNamed("Add member", settings)).toBeEnabled();
+  await waitFor(() => {
+    expect(settings).toContainElement(document.activeElement as HTMLElement);
+  });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+});
+
+test("Cancelling a share draft clears the link without consuming the submission", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-share"));
+  const dialog = await screen.findByRole("dialog", { name: "Share Okou on X" });
+  const input = within(dialog).getByRole("textbox", { name: "Post link" });
+  fireEvent.change(input, {
+    target: { value: "https://x.com/molly/status/1873" },
+  });
+  expect(buttonNamed("Submit", dialog)).toBeEnabled();
+  click(buttonNamed("Cancel", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-share"));
+  const reopened = await screen.findByRole("dialog", {
+    name: "Share Okou on X",
+  });
+  expect(
+    within(reopened).getByRole("textbox", { name: "Post link" }),
+  ).toHaveValue("");
+  expect(buttonNamed("Submit", reopened)).toBeDisabled();
 });

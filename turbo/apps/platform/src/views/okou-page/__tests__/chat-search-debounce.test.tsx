@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -15,9 +14,6 @@ const context = testContext();
 const SEARCH_LABEL = "Search workspace...";
 const SEARCH_BUTTON_LABEL = "Search workspace";
 const THREAD_TITLE = "Workspace notes";
-const featureSwitches = {
-  [FeatureSwitchKey.StableChatThreadNavigation]: true,
-} as const;
 
 async function openSearch() {
   const searchButton = await screen.findByLabelText(SEARCH_BUTTON_LABEL, {
@@ -69,7 +65,6 @@ test("Search messages only after the latest input settles", async () => {
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   const chatThreads = await screen.findByLabelText("Chat threads");
   await within(chatThreads).findByText(THREAD_TITLE);
@@ -98,7 +93,6 @@ test("Clearing or closing search discards a pending message search", async () =>
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   const chatThreads = await screen.findByLabelText("Chat threads");
   await within(chatThreads).findByText(THREAD_TITLE);

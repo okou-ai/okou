@@ -1,4 +1,9 @@
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  modelSettingsPatchSchema,
+  modelSettingsSchema,
+  type ModelSettings,
+  type ModelSettingsPatch,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { and, asc, eq, exists, gt, notExists, sql } from "drizzle-orm";
 import { alias, unionAll } from "drizzle-orm/pg-core";
 import type {
@@ -66,7 +71,8 @@ export async function appendChatThreadEvent(
     readonly title?: string | null;
     readonly pinOrder?: string | null;
     readonly selectedModel?: string | null;
-    readonly reasoningEffort?: ReasoningEffort | null;
+    readonly modelSettings?: ModelSettings;
+    readonly modelSettingsPatch?: ModelSettingsPatch;
     readonly serviceTier?: ChatThreadServiceTier | null;
     readonly computerUseHostId?: string | null;
     readonly cloudBrowserEnabled?: boolean;
@@ -104,10 +110,8 @@ export async function appendChatThreadEvent(
       title: args.title ?? null,
       pinOrder: args.pinOrder ?? null,
       selectedModel: args.selectedModel ?? null,
-      reasoningEffort:
-        args.kind === "model_selection_updated" && args.reasoningEffort === null
-          ? "default"
-          : (args.reasoningEffort ?? null),
+      modelSettings: args.modelSettings,
+      modelSettingsPatch: args.modelSettingsPatch,
       serviceTier: args.serviceTier ?? null,
       computerUseHostId: args.computerUseHostId ?? null,
       cloudBrowserEnabled: args.cloudBrowserEnabled ?? false,
@@ -150,6 +154,7 @@ export async function getChatThreadSnapshot(
         return {
           ...thread,
           selectedModel: thread.selectedModel ?? null,
+          modelSettings: modelSettingsSchema.parse(thread.modelSettings ?? {}),
           serviceTier: thread.serviceTier ?? null,
           computerUseHostId: thread.computerUseHostId ?? null,
           cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
@@ -175,7 +180,8 @@ type ChatThreadEventRow = {
   readonly title: string | null;
   readonly pinOrder: string | null;
   readonly selectedModel: string | null;
-  readonly reasoningEffort: ReasoningEffort | "default" | null;
+  readonly modelSettings: ModelSettings | null;
+  readonly modelSettingsPatch: ModelSettingsPatch | null;
   readonly serviceTier: ChatThreadServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -193,7 +199,8 @@ const chatThreadEventSelection = Object.freeze({
   title: chatThreadEvents.title,
   pinOrder: chatThreadEvents.pinOrder,
   selectedModel: chatThreadEvents.selectedModel,
-  reasoningEffort: chatThreadEvents.reasoningEffort,
+  modelSettings: chatThreadEvents.modelSettings,
+  modelSettingsPatch: chatThreadEvents.modelSettingsPatch,
   serviceTier: chatThreadEvents.serviceTier,
   computerUseHostId: chatThreadEvents.computerUseHostId,
   cloudBrowserEnabled: chatThreadEvents.cloudBrowserEnabled,
@@ -211,7 +218,8 @@ const pageChatThreadEventSelection = Object.freeze({
   title: pageChatThreadEvent.title,
   pinOrder: pageChatThreadEvent.pinOrder,
   selectedModel: pageChatThreadEvent.selectedModel,
-  reasoningEffort: pageChatThreadEvent.reasoningEffort,
+  modelSettings: pageChatThreadEvent.modelSettings,
+  modelSettingsPatch: pageChatThreadEvent.modelSettingsPatch,
   serviceTier: pageChatThreadEvent.serviceTier,
   computerUseHostId: pageChatThreadEvent.computerUseHostId,
   cloudBrowserEnabled: pageChatThreadEvent.cloudBrowserEnabled,
@@ -244,11 +252,15 @@ function toApiChatThreadEvent(
     title: row.title,
     pinOrder: row.pinOrder,
     selectedModel: row.selectedModel,
-    ...(row.reasoningEffort === null
+    ...(row.modelSettings === null
+      ? {}
+      : { modelSettings: modelSettingsSchema.parse(row.modelSettings) }),
+    ...(row.modelSettingsPatch === null
       ? {}
       : {
-          reasoningEffort:
-            row.reasoningEffort === "default" ? null : row.reasoningEffort,
+          modelSettingsPatch: modelSettingsPatchSchema.parse(
+            row.modelSettingsPatch,
+          ),
         }),
     serviceTier: row.serviceTier,
     computerUseHostId: row.computerUseHostId,

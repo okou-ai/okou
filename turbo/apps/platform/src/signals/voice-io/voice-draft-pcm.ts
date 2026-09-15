@@ -245,6 +245,7 @@ async function waitForSafariCaptureStart(
 ): Promise<void> {
   // Safari can initially supply only zeros after capture has started.
   // Bound the extra wait so a quiet room still becomes ready.
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const startupController = createChildAbortController(signal);
   timeout(
     () => {

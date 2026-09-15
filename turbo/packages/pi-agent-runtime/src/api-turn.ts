@@ -3,6 +3,10 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { piAgentStreamForConfig } from "./model";
+import {
+  measurePiPreparation,
+  measurePiPreparationSync,
+} from "./preparation-timing";
 import { assertPiApiFirstTurnCompactionSafe } from "./compaction-preflight";
 import { MemoryPiSession, runPiFirstModelTurn } from "./session-memory";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
@@ -11,15 +15,22 @@ import type {
   PiApiAssistantMessage,
   PiApiFirstTurnArgs,
   PiApiFirstTurnResult,
+  PiApiTurnPreparationArgs,
+  PiApiTurnExecutionArgs,
+  PreparedPiApiTurn,
   PiObservedServiceTier,
 } from "./api-types";
 import { UnsupportedPiResourceSnapshotError } from "./errors";
+import { createPiApiTextStream } from "./api-text-stream";
 import {
   classifyPiApiProviderFailure,
   projectPiApiModelFailure,
 } from "./api-failure";
 
-function projectAssistantContent(message: AssistantMessage): {
+function projectAssistantContent(
+  message: AssistantMessage,
+  eventIdPrefix?: string,
+): {
   readonly content: PiApiAssistantContent[];
   readonly memoryCitation?: PiApiAssistantMessage["memoryCitation"];
 } {
@@ -29,12 +40,20 @@ function projectAssistantContent(message: AssistantMessage): {
   const projection = projectPiMemoryCitationSegments(textBlocks);
   let textIndex = 0;
   const content = message.content.flatMap(
-    (content): PiApiAssistantContent[] => {
+    (content, contentIndex): PiApiAssistantContent[] => {
       switch (content.type) {
         case "text": {
           const text = projection.visibleSegments[textIndex] ?? "";
           textIndex += 1;
-          return [{ type: "text", text }];
+          return [
+            {
+              type: "text",
+              text,
+              ...(eventIdPrefix
+                ? { runEventId: `${eventIdPrefix}:${contentIndex}` }
+                : {}),
+            },
+          ];
         }
         case "toolCall": {
           return [
@@ -65,8 +84,9 @@ function projectAssistantContent(message: AssistantMessage): {
 export function projectPiApiAssistantMessage(
   message: AssistantMessage,
   responseStatus?: number,
+  eventIdPrefix?: string,
 ): PiApiAssistantMessage {
-  const projection = projectAssistantContent(message);
+  const projection = projectAssistantContent(message, eventIdPrefix);
   const failureReason =
     message.stopReason === "error" &&
     message.api === "openai-codex-responses" &&
@@ -105,33 +125,54 @@ export function projectPiApiAssistantMessage(
   return { ...projected, stopReason: message.stopReason };
 }
 
-/** Run exactly one provider request using Pi's official prompt and tool schemas. */
-export async function runPiApiFirstTurn(
-  args: PiApiFirstTurnArgs,
+/** Build the official session without any provider or publication authority. */
+export async function preparePiApiTurn(
+  args: PiApiTurnPreparationArgs,
   signal?: AbortSignal,
-): Promise<PiApiFirstTurnResult> {
-  const memorySession = args.sessionJsonl
-    ? MemoryPiSession.fromJsonl(args.sessionJsonl)
-    : MemoryPiSession.create({ cwd: args.cwd, id: args.sessionId });
-  if (memorySession.getSessionId() !== args.sessionId) {
-    throw new Error(
-      "Pi resume session id does not match the launch session id",
-    );
-  }
+): Promise<PreparedPiApiTurn> {
+  signal?.throwIfAborted();
+  const memorySession = measurePiPreparationSync(
+    args.onPreparationTiming,
+    "history",
+    () => {
+      const memorySession = args.sessionJsonl
+        ? MemoryPiSession.fromJsonl(args.sessionJsonl)
+        : MemoryPiSession.create({ cwd: args.cwd, id: args.sessionId });
+      if (memorySession.getSessionId() !== args.sessionId) {
+        throw new Error(
+          "Pi resume session id does not match the launch session id",
+        );
+      }
+
+      return memorySession;
+    },
+    signal,
+  );
 
   let shell: Awaited<ReturnType<typeof createPiAgentSessionForRuntime>>;
   try {
-    shell = await createPiAgentSessionForRuntime({
-      cwd: args.cwd,
-      agentDir: args.agentDir,
-      sessionManager: SessionManager.inMemory(args.cwd, {
-        id: args.sessionId,
-      }),
-      model: args.model,
-      appendSystemPrompt: args.appendSystemPrompt,
-      resourceSnapshot: args.resourceSnapshot,
-      onMemoryRecallOutcome: args.onMemoryRecallOutcome,
-    });
+    shell = await measurePiPreparation(
+      args.onPreparationTiming,
+      "runtime_initialize",
+      () => {
+        return createPiAgentSessionForRuntime(
+          {
+            cwd: args.cwd,
+            agentDir: args.agentDir,
+            sessionManager: SessionManager.inMemory(args.cwd, {
+              id: args.sessionId,
+            }),
+            model: args.model,
+            appendSystemPrompt: args.appendSystemPrompt,
+            resourceSnapshot: args.resourceSnapshot,
+            onMemoryRecallOutcome: args.onMemoryRecallOutcome,
+            onPreparationTiming: args.onPreparationTiming,
+          },
+          signal,
+        );
+      },
+      signal,
+    );
   } catch (error) {
     throw new UnsupportedPiResourceSnapshotError(
       "Pi could not load the preheated resource snapshot",
@@ -139,47 +180,103 @@ export async function runPiApiFirstTurn(
     );
   }
   try {
-    assertPiApiFirstTurnCompactionSafe({
-      model: shell.model,
-      session: memorySession,
-      settings: shell.services.settingsManager.getCompactionSettings(),
-    });
-    let observedServiceTier: PiObservedServiceTier;
-    const turn = await runPiFirstModelTurn({
-      model: shell.model,
-      session: memorySession,
-      stream: piAgentStreamForConfig(args.model),
-      systemPrompt: shell.session.systemPrompt,
-      tools: shell.session.agent.state.tools,
-      prompt: args.prompt,
-      thinkingLevel: args.model.thinkingLevel,
-      streamOptions: {
-        apiKey: args.model.apiKey,
-        signal,
-        ...(args.model.provider === "openrouter"
-          ? {
-              onObservedServiceTier: (serviceTier: PiObservedServiceTier) => {
-                observedServiceTier = serviceTier;
-              },
-            }
-          : {}),
-        ...(args.model.serviceTier === undefined
-          ? {}
-          : { serviceTier: args.model.serviceTier }),
+    signal?.throwIfAborted();
+    measurePiPreparationSync(
+      args.onPreparationTiming,
+      "compaction_preflight",
+      () => {
+        return assertPiApiFirstTurnCompactionSafe({
+          model: shell.model,
+          session: memorySession,
+          settings: shell.services.settingsManager.getCompactionSettings(),
+        });
       },
-      ownership: args.ownership,
-      providerRequestBoundary: args.providerRequestBoundary,
-    });
-    return {
-      assistantMessage: projectPiApiAssistantMessage(
-        turn.assistantMessage,
-        turn.responseStatus,
-      ),
-      handoffRequired: turn.handoffRequired,
-      observedServiceTier,
-      sessionJsonl: memorySession.toJsonl(),
-    };
-  } finally {
+      signal,
+    );
+  } catch (error) {
     shell.session.dispose();
+    throw error;
   }
+  let state: "ready" | "executing" | "disposed" = "ready";
+  return {
+    dispose() {
+      if (state === "ready") {
+        state = "disposed";
+        shell.session.dispose();
+      }
+    },
+    async execute(execution, executionSignal) {
+      if (state !== "ready") {
+        throw new Error(
+          "Pi prepared turn has already been consumed or disposed",
+        );
+      }
+      state = "executing";
+      try {
+        executionSignal?.throwIfAborted();
+        let observedServiceTier: PiObservedServiceTier;
+        const turn = await runPiFirstModelTurn({
+          model: shell.model,
+          session: memorySession,
+          stream: piAgentStreamForConfig(args.model),
+          systemPrompt: shell.session.systemPrompt,
+          tools: shell.session.agent.state.tools,
+          prompt: args.prompt,
+          thinkingLevel: args.model.thinkingLevel,
+          streamOptions: {
+            apiKey: args.model.apiKey,
+            signal: executionSignal,
+            ...(args.model.provider === "openrouter"
+              ? {
+                  onObservedServiceTier: (
+                    serviceTier: PiObservedServiceTier,
+                  ) => {
+                    observedServiceTier = serviceTier;
+                  },
+                }
+              : {}),
+            ...(args.model.serviceTier === undefined
+              ? {}
+              : { serviceTier: args.model.serviceTier }),
+          },
+          ownership: execution.ownership,
+          providerRequestBoundary: execution.providerRequestBoundary,
+          onPreparationTiming: args.onPreparationTiming,
+          onEvent: execution.textStream
+            ? createPiApiTextStream(execution.textStream)
+            : undefined,
+        });
+        return {
+          assistantMessage: projectPiApiAssistantMessage(
+            turn.assistantMessage,
+            turn.responseStatus,
+            execution.textStream?.eventIdPrefix,
+          ),
+          handoffRequired: turn.handoffRequired,
+          observedServiceTier,
+          sessionJsonl: memorySession.toJsonl(),
+        };
+      } finally {
+        state = "disposed";
+        shell.session.dispose();
+      }
+    },
+  };
+}
+
+export async function executePreparedPiApiTurn(
+  prepared: PreparedPiApiTurn,
+  args: PiApiTurnExecutionArgs,
+  signal?: AbortSignal,
+): Promise<PiApiFirstTurnResult> {
+  return await prepared.execute(args, signal);
+}
+
+/** Combined entry retained for callers without creator-owned preparation. */
+export async function runPiApiFirstTurn(
+  args: PiApiFirstTurnArgs,
+  signal?: AbortSignal,
+): Promise<PiApiFirstTurnResult> {
+  const prepared = await preparePiApiTurn(args, signal);
+  return await executePreparedPiApiTurn(prepared, args, signal);
 }

@@ -1,4 +1,4 @@
-import { IMPACT_PRIVACY_RECEIPT_KEY } from "@okouai/api-contracts/contracts/marketing-privacy";
+import { marketingImpactEnabled } from "../../lib/impact-marketing";
 import { command } from "ccstate";
 import { eq, isNull, lt, or, sql } from "drizzle-orm";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -15,11 +15,13 @@ import {
 } from "../external/stripe-client";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import { optionalEnv } from "../../lib/env";
+import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 import { authContext$ } from "../auth/auth-context";
 import { clerk$ } from "../external/clerk";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 
 const log = logger("impact-attribution");
 
@@ -31,29 +33,44 @@ const persistOrgImpactAttribution$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const auth = get(authContext$);
-    if (auth.orgId !== orgId || auth.orgRole !== "admin") {
+    if (
+      marketingImpactEnabled() ||
+      auth.orgId !== orgId ||
+      auth.orgRole !== "admin"
+    ) {
       return;
     }
     const capturedAt = new Date(attribution.capturedAt);
-    await set(writeDb$)
-      .insert(orgMetadataCanonicalWrites)
-      .values({
+    await set(writeDb$).transaction(async (tx) => {
+      await writeOrgMetadataWithDefaultPlanEntitlement(
+        tx,
         orgId,
-        impactClickId: attribution.clickId,
-        impactClickAt: capturedAt,
-      })
-      .onConflictDoUpdate({
-        target: orgMetadataCanonicalWrites.orgId,
-        set: {
-          impactClickId: attribution.clickId,
-          impactClickAt: capturedAt,
-          updatedAt: nowDate(),
+        async (writeTx) => {
+          return await writeTx
+            .insert(orgMetadataCanonicalWrites)
+            .values({
+              orgId,
+              impactClickId: attribution.clickId,
+              impactClickAt: capturedAt,
+            })
+            .onConflictDoUpdate({
+              target: orgMetadataCanonicalWrites.orgId,
+              set: {
+                impactClickId: attribution.clickId,
+                impactClickAt: capturedAt,
+                updatedAt: nowDate(),
+              },
+              setWhere: or(
+                isNull(orgMetadata.impactClickAt),
+                lt(orgMetadata.impactClickAt, capturedAt),
+              ),
+            })
+            .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
         },
-        setWhere: or(
-          isNull(orgMetadata.impactClickAt),
-          lt(orgMetadata.impactClickAt, capturedAt),
-        ),
-      });
+      );
+
+      signal.throwIfAborted();
+    });
     signal.throwIfAborted();
   },
 );
@@ -63,6 +80,9 @@ export async function readOrgImpactMetadata(
   orgId: string,
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
+  if (marketingImpactEnabled()) {
+    return {};
+  }
   const [row] = await db
     .select({
       clickId: orgMetadata.impactClickId,
@@ -89,7 +109,14 @@ export const impactStripeMetadata$ = command(
     signal: AbortSignal,
   ): Promise<Record<string, string>> => {
     const auth = get(authContext$);
-    if (auth.orgId !== orgId || auth.orgRole !== "admin") {
+    if (
+      marketingImpactEnabled() ||
+      auth.orgId !== orgId ||
+      auth.orgRole !== "admin"
+    ) {
+      return {};
+    }
+    if (clerkAttributionDisabled()) {
       return {};
     }
     const result = await settle(
@@ -117,51 +144,18 @@ export const impactStripeMetadata$ = command(
     if (impact) {
       await set(persistOrgImpactAttribution$, orgId, impact, signal);
     }
-    const metadata = await readOrgImpactMetadata(set(writeDb$), orgId, signal);
-    const receipt = user?.privateMetadata?.[IMPACT_PRIVACY_RECEIPT_KEY];
-    return {
-      ...metadata,
-      ...(impact &&
-      metadata.impact_click_id === impact.clickId &&
-      metadata.impact_click_at === impact.capturedAt &&
-      typeof receipt === "string"
-        ? {
-            impact_privacy_receipt: receipt,
-            impact_privacy_user_id: auth.userId,
-          }
-        : {}),
-    };
+    return readOrgImpactMetadata(set(writeDb$), orgId, signal);
   },
 );
-
-function shouldUpdateImpactMetadata(
-  previous: Readonly<Record<string, string>>,
-  next: {
-    readonly impact_click_id: string;
-    readonly impact_click_at: string;
-    readonly impact_privacy_receipt: string;
-    readonly impact_privacy_user_id: string;
-  },
-): boolean {
-  if (
-    !previous.impact_click_at ||
-    previous.impact_click_at < next.impact_click_at
-  ) {
-    return true;
-  }
-  return (
-    previous.impact_click_at === next.impact_click_at &&
-    previous.impact_click_id === next.impact_click_id &&
-    ((previous.impact_privacy_receipt ?? "") !== next.impact_privacy_receipt ||
-      (previous.impact_privacy_user_id ?? "") !== next.impact_privacy_user_id)
-  );
-}
 
 export async function updateImpactCustomer(
   customerId: string,
   metadata: Readonly<Record<string, string>>,
   signal: AbortSignal,
 ): Promise<void> {
+  if (marketingImpactEnabled()) {
+    return;
+  }
   const capturedAt = metadata.impact_click_at;
   if (!metadata.impact_click_id || !capturedAt) {
     return;
@@ -170,27 +164,19 @@ export async function updateImpactCustomer(
   const customer = await stripe.customers.retrieve(customerId);
   signal.throwIfAborted();
   if (
+    !customer.deleted &&
+    (!customer.metadata.impact_click_at ||
+      customer.metadata.impact_click_at < capturedAt)
+  ) {
+    await stripe.customers.update(customerId, { metadata: { ...metadata } });
+    signal.throwIfAborted();
+  }
+  if (
     customer.deleted ||
     (customer.metadata.impact_click_at &&
-      (customer.metadata.impact_click_at > capturedAt ||
-        (customer.metadata.impact_click_at === capturedAt &&
-          customer.metadata.impact_click_id !== metadata.impact_click_id)))
+      customer.metadata.impact_click_at > capturedAt)
   ) {
     return;
-  }
-  // Stripe merges metadata updates. Clear absent proof on every caller path so
-  // a click cannot inherit the previous purchaser's receipt. Proof can also
-  // change without a newer click when the current purchaser has no receipt.
-  const nextMetadata = {
-    ...metadata,
-    impact_click_id: metadata.impact_click_id,
-    impact_click_at: capturedAt,
-    impact_privacy_receipt: metadata.impact_privacy_receipt ?? "",
-    impact_privacy_user_id: metadata.impact_privacy_user_id ?? "",
-  };
-  if (shouldUpdateImpactMetadata(customer.metadata, nextMetadata)) {
-    await stripe.customers.update(customerId, { metadata: nextMetadata });
-    signal.throwIfAborted();
   }
   // Stripe copies subscription metadata onto each newly created invoice.
   // Refresh future renewals while existing invoices retain their own snapshot.
@@ -206,13 +192,12 @@ export async function updateImpactCustomer(
     ) {
       continue;
     }
-    if (
-      !shouldUpdateImpactMetadata(subscription.metadata ?? {}, nextMetadata)
-    ) {
+    const previous = subscription.metadata?.impact_click_at;
+    if (previous && previous >= capturedAt) {
       continue;
     }
     await stripe.subscriptions.update(subscription.id, {
-      metadata: nextMetadata,
+      metadata: { ...metadata },
     });
     signal.throwIfAborted();
   }
@@ -227,7 +212,7 @@ export const syncImpactStripeCustomer$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const auth = get(authContext$);
-    if (!auth.orgId || auth.orgRole !== "admin") {
+    if (marketingImpactEnabled() || !auth.orgId || auth.orgRole !== "admin") {
       return;
     }
     const orgId = auth.orgId;
@@ -257,20 +242,7 @@ export const syncImpactStripeCustomer$ = command(
       signal.throwIfAborted();
       if (row?.stripeCustomerId) {
         const current = await readOrgImpactMetadata(tx, orgId, signal);
-        await updateImpactCustomer(
-          row.stripeCustomerId,
-          {
-            ...current,
-            ...(current.impact_click_id === metadata.impact_click_id &&
-            current.impact_click_at === metadata.impact_click_at
-              ? {
-                  impact_privacy_receipt: metadata.impact_privacy_receipt ?? "",
-                  impact_privacy_user_id: metadata.impact_privacy_user_id ?? "",
-                }
-              : {}),
-          },
-          signal,
-        );
+        await updateImpactCustomer(row.stripeCustomerId, current, signal);
       }
     });
     signal.throwIfAborted();

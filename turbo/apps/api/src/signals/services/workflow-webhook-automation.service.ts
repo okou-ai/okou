@@ -245,8 +245,8 @@ function sanitizedHeaders(
     if (
       lower === "authorization" ||
       lower === "cookie" ||
-      lower === "x-vm0-signature" ||
-      lower === "x-vm0-timestamp" ||
+      lower === "x-okou-signature" ||
+      lower === "x-okou-timestamp" ||
       lower.includes("secret") ||
       lower.includes("token") ||
       lower.includes("key")
@@ -284,7 +284,7 @@ function deliveryKeyForRequest(args: {
   readonly timestamp: string;
   readonly headers: Readonly<Record<string, string>>;
 }): string {
-  const explicitKey = headerValue(args.headers, "x-vm0-idempotency-key");
+  const explicitKey = headerValue(args.headers, "x-okou-idempotency-key");
   if (explicitKey && explicitKey.trim().length > 0) {
     return explicitKey.trim();
   }

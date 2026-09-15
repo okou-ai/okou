@@ -137,7 +137,7 @@ export function TimezoneSettings() {
             onValueChange={handleChange}
             disabled={loading}
           >
-            <SelectTrigger className="border-control-border bg-control-surface [&:hover]:bg-state-hover-overlay">
+            <SelectTrigger variant="neutral">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

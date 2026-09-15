@@ -1,3 +1,4 @@
+import { writeUsagePackPendingSnapshots } from "../services/usage-pack-pending-snapshot.service";
 import {
   BILLING_RECONCILIATION_FIXTURE_KINDS,
   testBillingReconciliationStateContract,
@@ -9,7 +10,7 @@ import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { usagePackCreditRefunds } from "@okouai/db/schema/usage-pack-credit-refund";
@@ -39,6 +40,7 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
+import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -185,64 +187,73 @@ async function insertOrganizationFixtures(
   times: FixtureTimes,
   mode: FixtureMode,
 ): Promise<void> {
-  await tx.insert(orgMetadataCanonicalWrites).values(
-    fixtures.map((fixture) => {
-      switch (fixture.kind) {
-        case "plan-subscription": {
-          if (mode === "unbound") {
+  const metadataRows = await tx
+    .insert(orgMetadataCanonicalWrites)
+    .values(
+      fixtures.map((fixture) => {
+        switch (fixture.kind) {
+          case "plan-subscription": {
+            if (mode === "unbound") {
+              return {
+                orgId: fixture.orgId,
+                tier: "limited-free-1",
+                stripeCustomerId: `cus_${fixture.orgId}`,
+                subscriptionStatus: "missing",
+                updatedAt: times.old,
+              };
+            }
             return {
               orgId: fixture.orgId,
-              tier: "limited-free-1",
-              stripeCustomerId: `cus_${fixture.orgId}`,
-              subscriptionStatus: "missing",
+              tier: "pro",
+              stripeSubscriptionId: fixture.stripeSubscriptionId,
+              subscriptionStatus: mode === "active" ? "active" : "past_due",
+              currentPeriodEnd: mode === "active" ? times.future : times.old,
               updatedAt: times.old,
             };
           }
-          return {
-            orgId: fixture.orgId,
-            tier: "pro",
-            stripeSubscriptionId: fixture.stripeSubscriptionId,
-            subscriptionStatus: mode === "active" ? "active" : "past_due",
-            currentPeriodEnd: mode === "active" ? times.future : times.old,
-            updatedAt: times.old,
-          };
-        }
-        case "atom-grant": {
-          if (mode === "unbound") {
+          case "atom-grant": {
+            if (mode === "unbound") {
+              return {
+                orgId: fixture.orgId,
+                tier: "limited-free-1",
+                credits: 0,
+                stripeCustomerId: `cus_${fixture.orgId}`,
+                subscriptionStatus: "missing",
+                updatedAt: times.old,
+              };
+            }
             return {
               orgId: fixture.orgId,
-              tier: "limited-free-1",
-              credits: 0,
-              stripeCustomerId: `cus_${fixture.orgId}`,
-              subscriptionStatus: "missing",
+              tier: "team",
+              credits: 100,
+              subscriptionStatus: "atom_grant",
+              currentPeriodEnd: times.old,
               updatedAt: times.old,
             };
           }
-          return {
-            orgId: fixture.orgId,
-            tier: "team",
-            credits: 100,
-            subscriptionStatus: "atom_grant",
-            currentPeriodEnd: times.old,
-            updatedAt: times.old,
-          };
+          case "concurrency":
+          case "usage-allowance":
+          case "usage-pack-subscription":
+          case "usage-pack-subscription-change":
+          case "usage-pack-allocation-change":
+          case "usage-pack-refund":
+          case "usage-pack-migration":
+          case "usage-pack-invitation": {
+            return { orgId: fixture.orgId, updatedAt: times.old };
+          }
         }
-        case "concurrency":
-        case "usage-allowance":
-        case "usage-pack-subscription":
-        case "usage-pack-subscription-change":
-        case "usage-pack-allocation-change":
-        case "usage-pack-refund":
-        case "usage-pack-migration":
-        case "usage-pack-invitation": {
-          return { orgId: fixture.orgId, updatedAt: times.old };
-        }
-      }
-      throw new Error(
-        `Unsupported billing reconciliation fixture ${fixture.kind}`,
-      );
-    }),
-  );
+        throw new Error(
+          `Unsupported billing reconciliation fixture ${fixture.kind}`,
+        );
+      }),
+    )
+    .returning({
+      orgId: orgMetadataCanonicalWrites.orgId,
+      tier: orgMetadataCanonicalWrites.tier,
+    });
+  for (const metadata of metadataRows) {
+    await ensureOrgMetadataPlanEntitlement(tx, metadata);
+  }
 }
 
 async function insertCoreBillingFixtures(
@@ -504,11 +515,17 @@ async function seedBillingReconciliationState(
     future: new Date(at.getTime() + 30 * DAY_MS),
   };
 
-  await db.transaction(async (tx) => {
-    await insertOrganizationFixtures(tx, fixtures, times, mode);
-    await insertCoreBillingFixtures(tx, fixtures, times, mode);
-    await insertUsagePackFixtures(tx, fixtures, marker, times, mode);
-  });
+  await writeUsagePackPendingSnapshots(
+    db,
+    fixtures.map((fixture) => {
+      return fixture.orgId;
+    }),
+    async (tx) => {
+      await insertOrganizationFixtures(tx, fixtures, times, mode);
+      await insertCoreBillingFixtures(tx, fixtures, times, mode);
+      await insertUsagePackFixtures(tx, fixtures, marker, times, mode);
+    },
+  );
   signal.throwIfAborted();
   return fixtures;
 }
@@ -780,7 +797,7 @@ async function cleanupBillingReconciliationState(
   const orgIds = fixtureReferences(marker).map((fixture) => {
     return fixture.orgId;
   });
-  await db.transaction(async (tx) => {
+  await writeUsagePackPendingSnapshots(db, orgIds, async (tx) => {
     await tx
       .delete(usagePackSubscriptionMigrations)
       .where(inArray(usagePackSubscriptionMigrations.orgId, orgIds));

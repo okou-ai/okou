@@ -17,7 +17,9 @@ use tracing_test_support::{CapturedEvent, CapturedEvents};
 
 mod guest_connection_timing;
 mod guest_rpc;
+mod managed_exit;
 mod private_write_diagnostics;
+mod process_exit;
 mod process_timeout_logging;
 mod process_write;
 
@@ -4556,7 +4558,7 @@ async fn process_monitor_fallback_does_not_kill_group_after_parent_reap() {
         child,
         context,
         readers,
-        ChildExitNotifier::unavailable_for_test(),
+        Some(ChildExitNotifier::unavailable_for_test()),
     );
 
     handle.wait().await;

@@ -1,6 +1,3 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import {
   afterAll,
@@ -27,9 +24,6 @@ import {
   type ComputerUseDriver,
 } from "./computer-use-driver";
 import { ComputerUseRuntimeController } from "./computer-use-runtime-controller";
-import { DesktopComputerUseDriverPreferences } from "./desktop-computer-use-driver-preferences";
-import { DesktopComputerUseDriverSelection } from "./desktop-computer-use-driver-selection";
-import type { ComputerUseDriverId } from "./computer-use-types";
 import { UNAVAILABLE_RECORDER_STATE } from "./desktop-recorder-types";
 
 const native = vi.hoisted(() => ({
@@ -78,16 +72,7 @@ function developerCheckbox() {
     : undefined;
 }
 
-async function desktop(selectedDriver: ComputerUseDriverId) {
-  const directory = mkdtempSync(path.join(tmpdir(), "desktop-auth-lifecycle-"));
-  const file = path.join(directory, "preferences.json");
-  if (selectedDriver === "cua")
-    writeFileSync(
-      file,
-      JSON.stringify({
-        computerUseDriver: { experimentalCuaEnabled: true, selectedDriver },
-      }),
-    );
+async function desktop() {
   const pending = new Set<Promise<unknown>>();
   const own = <T>(work: Promise<T>): Promise<T> => {
     pending.add(work);
@@ -105,7 +90,6 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
   const allReplies: typeof replies = [];
   const nativeStarts: string[] = [];
   let lastAuthority: object | null = null;
-  let lastDeveloper: object | null = null;
   let depth = 0;
   let maximumDepth = 0;
   let notifications = 0;
@@ -129,7 +113,7 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
       depth++;
       maximumDepth = Math.max(maximumDepth, depth);
       // main.ts orders authority withdrawal, real tray read-back, then the
-      // developer refresh. Both driver selections share that read-back.
+      // developer refresh. The native backend is not involved in that read-back.
       const authority = session.getAuthority();
       if (authority !== lastAuthority) {
         lastAuthority = authority;
@@ -147,11 +131,6 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
     setFilesystemPluginFeatureEnabled: () => {},
     setScreenRecordingFeatureEnabled: () => {},
     onChange: () => {
-      const authority = developer.getAuthorization();
-      if (authority !== lastDeveloper) {
-        lastDeveloper = authority;
-        own(runtime.refreshDriverAuthorization());
-      }
       menu.refresh();
     },
   });
@@ -164,12 +143,6 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
     buildVersion: "test",
     createBackend: () => backend("okou"),
   };
-  const cua: ComputerUseDriver = {
-    id: "cua",
-    buildVersion: "test",
-    createBackend: () => backend("cua"),
-    getAuthorization: () => developer.getAuthorization(),
-  };
   const driver = new ComputerUseDriverController(okou, "darwin");
   const runtime = new ComputerUseRuntimeController({
     driver,
@@ -180,19 +153,9 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
       accessibility: false,
       screenRecording: false,
     }),
-    nativeBlockReason: (selected) => selection.blockReason(selected),
     getAuthState: () => own(session.getAuthState()),
     getAuthAuthority: () => session.getAuthority(),
     setHostRuntimeOnline: () => {},
-  });
-  const preferences = new DesktopComputerUseDriverPreferences(() => file);
-  preferences.load();
-  const selection = new DesktopComputerUseDriverSelection({
-    preferences,
-    developer,
-    runtime,
-    drivers: { okou, cua },
-    onChange: () => menu.refresh(),
   });
   const menu = new DesktopApplicationMenu({
     displayName: "Okou",
@@ -207,7 +170,7 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
     disabledIconPath: "/disabled",
     runningIconPath: "/running",
     getComputerUseState: () => ({
-      driver: selection.getState(),
+      driver: runtime.getDriverState(),
       platform: "darwin",
       supported: true,
       permissions: { accessibility: false, screenRecording: false },
@@ -260,13 +223,10 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
     for (const reply of allReplies) reply.resolve(null);
     await settle();
     await runtime.stopForQuit();
-    rmSync(directory, { recursive: true, force: true });
   });
-  await runtime.transitionDriver(selection.requestedDriver());
   return {
     session,
     developer,
-    selection,
     runtime,
     tray,
     menu,
@@ -283,173 +243,168 @@ async function desktop(selectedDriver: ComputerUseDriverId) {
   };
 }
 
-describe.each(["okou", "cua"] as const)(
-  "%s auth/tray/developer composition",
-  (driver) => {
-    it("coalesces startup and signed-in restoration while revoking authority synchronously", async () => {
-      const app = await desktop(driver);
-      const first = app.reply();
+describe("auth/tray/developer composition", () => {
+  it("coalesces startup and signed-in restoration while revoking authority synchronously", async () => {
+    const app = await desktop();
+    const first = app.reply();
+    app.tray.install();
+    const windowsAtStartup = app.windows.length;
+    const startup = app.session.getAuthState();
+    first.resolve("startup");
+    await startup;
+    await app.settle();
+    expect(windowsAtStartup).toBe(1);
+    await vi.waitFor(() => expect(developerCheckbox()?.checked).toBe(false));
+    expect(app.windows).toHaveLength(1);
+    expect(app.metrics().maximumDepth).toBe(1);
+    expect(app.session.getAuthority()).not.toBeNull();
+    expect(app.developer.getState().available).toBe(true);
+    const next = app.reply();
+    const restore = app.session.getToken({ forceRefresh: true });
+    expect(app.session.getCachedToken()).toBeNull();
+    expect(app.session.getAuthority()).toBeNull();
+    expect(app.developer.getState().available).toBe(false);
+    const reopened = [app.session.getAuthState(), app.session.getAuthState()];
+    expect(app.windows).toHaveLength(2);
+    next.resolve("restored");
+    expect(await restore).toBe("restored");
+    expect(await Promise.all(reopened)).toEqual([
+      expect.objectContaining({ status: "signed_in" }),
+      expect.objectContaining({ status: "signed_in" }),
+    ]);
+    await app.settle();
+    await vi.waitFor(() =>
+      expect(app.developer.getState().available).toBe(true),
+    );
+    await nextTurn();
+    expect(app.nativeStarts).toEqual([]);
+    expect(app.metrics().notifications).toBeLessThan(12);
+    expect(native.application.length).toBeLessThan(8);
+    const before = native.tray.length;
+    app.tray.refresh();
+    app.tray.refresh();
+    expect(native.tray).toHaveLength(before);
+  });
+
+  it.each(["empty", "failed", "cancelled"] as const)(
+    "settles %s hidden restoration without reopening or granting authority",
+    async (outcome) => {
+      const app = await desktop();
+      const reply = app.reply();
       app.tray.install();
-      const windowsAtStartup = app.windows.length;
-      const startup = app.session.getAuthState();
-      first.resolve("startup");
-      await startup;
-      await app.settle();
-      expect(windowsAtStartup).toBe(1);
-      await vi.waitFor(() => expect(developerCheckbox()?.checked).toBe(false));
-      expect(app.windows).toHaveLength(1);
-      expect(app.metrics().maximumDepth).toBe(1);
-      expect(app.session.getAuthority()).not.toBeNull();
-      expect(app.developer.getAuthorization()).not.toBeNull();
-      const next = app.reply();
-      const restore = app.session.getToken({ forceRefresh: true });
-      expect(app.session.getCachedToken()).toBeNull();
-      expect(app.session.getAuthority()).toBeNull();
-      expect(app.developer.getAuthorization()).toBeNull();
-      const reopened = [app.session.getAuthState(), app.session.getAuthState()];
-      expect(app.windows).toHaveLength(2);
-      next.resolve("restored");
-      expect(await restore).toBe("restored");
-      expect(await Promise.all(reopened)).toEqual([
-        expect.objectContaining({ status: "signed_in" }),
-        expect.objectContaining({ status: "signed_in" }),
-      ]);
+      const state = app.session.getAuthState();
+      if (outcome === "cancelled") app.session.signOut();
+      if (outcome === "failed") reply.reject(new Error("Auth window failed"));
+      else reply.resolve(outcome === "cancelled" ? "late" : null);
+      expect(await state).toMatchObject({ status: "signed_out" });
       await app.settle();
       await vi.waitFor(() =>
-        expect(app.developer.getAuthorization()).not.toBeNull(),
+        expect(app.developer.getState().available).toBe(false),
       );
       await nextTurn();
-      expect(app.selection.getState().selectedDriver).toBe(driver);
+      expect(await app.session.getAuthState()).toMatchObject({
+        status: "signed_out",
+      });
+      expect(app.windows).toHaveLength(1);
+      expect(app.session.getAuthority()).toBeNull();
+      expect(app.developer.getState().available).toBe(false);
+      expect(developerCheckbox()).toBeUndefined();
       expect(app.nativeStarts).toEqual([]);
-      expect(app.metrics().notifications).toBeLessThan(12);
-      expect(native.application.length).toBeLessThan(8);
-      const before = native.tray.length;
-      app.tray.refresh();
-      app.tray.refresh();
-      expect(native.tray).toHaveLength(before);
-    });
+      expect(native.application.length).toBeLessThan(4);
+    },
+  );
 
-    it.each(["empty", "failed", "cancelled"] as const)(
-      "settles %s hidden restoration without reopening or granting authority",
-      async (outcome) => {
-        const app = await desktop(driver);
-        const reply = app.reply();
-        app.tray.install();
-        const state = app.session.getAuthState();
-        if (outcome === "cancelled") app.session.signOut();
-        if (outcome === "failed") reply.reject(new Error("Auth window failed"));
-        else reply.resolve(outcome === "cancelled" ? "late" : null);
-        expect(await state).toMatchObject({ status: "signed_out" });
-        await app.settle();
-        await vi.waitFor(() =>
-          expect(app.developer.getAvailability()).toBe("unavailable"),
-        );
-        await nextTurn();
-        expect(await app.session.getAuthState()).toMatchObject({
-          status: "signed_out",
-        });
-        expect(app.windows).toHaveLength(1);
-        expect(app.session.getAuthority()).toBeNull();
-        expect(app.developer.getAuthorization()).toBeNull();
-        expect(developerCheckbox()).toBeUndefined();
-        expect(app.nativeStarts).toEqual([]);
-        expect(native.application.length).toBeLessThan(4);
-      },
+  it("keeps interactive account and workspace changes when an older hidden reply arrives late", async () => {
+    const app = await desktop();
+    const old = app.reply();
+    app.tray.install();
+    const explicit = app.reply();
+    const signIn = app.session.consumeCode("new-account");
+    expect(app.windows[0]?.signal.aborted).toBe(true);
+    expect(await app.session.getAuthState()).toMatchObject({
+      status: "signing_in",
+    });
+    explicit.resolve("account");
+    await signIn;
+    const workspace = app.reply();
+    const switchOrg = app.session.selectOrganization();
+    expect(app.session.getAuthority()).toBeNull();
+    expect(app.developer.getState().available).toBe(false);
+    old.resolve("retired");
+    workspace.resolve("workspace");
+    await switchOrg;
+    await app.settle();
+    await vi.waitFor(() =>
+      expect(app.developer.getState().available).toBe(true),
     );
-
-    it("keeps interactive account and workspace changes when an older hidden reply arrives late", async () => {
-      const app = await desktop(driver);
-      const old = app.reply();
-      app.tray.install();
-      const explicit = app.reply();
-      const signIn = app.session.consumeCode("new-account");
-      expect(app.windows[0]?.signal.aborted).toBe(true);
-      expect(await app.session.getAuthState()).toMatchObject({
-        status: "signing_in",
-      });
-      explicit.resolve("account");
-      await signIn;
-      const workspace = app.reply();
-      const switchOrg = app.session.selectOrganization();
-      expect(app.session.getAuthority()).toBeNull();
-      expect(app.developer.getAuthorization()).toBeNull();
-      old.resolve("retired");
-      workspace.resolve("workspace");
-      await switchOrg;
-      await app.settle();
-      await vi.waitFor(() =>
-        expect(app.developer.getAuthorization()).not.toBeNull(),
-      );
-      expect(app.session.getCachedToken()).toBe("workspace");
-      expect(await app.session.getAuthState()).toMatchObject({
-        user: { userId: "Bearer workspace" },
-        organization: { id: "org-Bearer workspace" },
-      });
-      expect(app.selection.getState().selectedDriver).toBe(driver);
-      expect(app.nativeStarts).toEqual([]);
+    expect(app.session.getCachedToken()).toBe("workspace");
+    expect(await app.session.getAuthState()).toMatchObject({
+      user: { userId: "Bearer workspace" },
+      organization: { id: "org-Bearer workspace" },
     });
+    expect(app.nativeStarts).toEqual([]);
+  });
 
-    it("coalesces a 401 refresh and rejects a late developer grant after sign-out", async () => {
-      const app = await desktop(driver);
-      const initial = app.reply();
-      app.tray.install();
-      initial.resolve("expired");
-      await app.settle();
-      await vi.waitFor(() =>
-        expect(app.developer.getAuthorization()).not.toBeNull(),
-      );
-      const requested = deferred<void>();
-      const release = deferred<void>();
-      onTestFinished(() => release.resolve());
-      server.use(
-        // Token rotation preserves the server-verified account and workspace.
-        http.get(`${api}/api/auth/me`, () =>
-          HttpResponse.json({
-            userId: "Bearer expired",
-            email: "fixture@example.test",
-            orgId: "org-Bearer expired",
-          }),
-        ),
-        http.get(`${api}/api/org`, () =>
-          HttpResponse.json({ id: "org-Bearer expired", name: "Workspace" }),
-        ),
-        http.get(
-          `${api}/api/protected`,
-          ({ request }) =>
-            new HttpResponse(null, {
-              status:
-                request.headers.get("authorization") === "Bearer expired"
-                  ? 401
-                  : 200,
-            }),
-        ),
-        http.get(`${api}/api/feature-switches`, async () => {
-          requested.resolve();
-          await release.promise;
-          return HttpResponse.json({ effectiveSwitches: { _debug: true } });
+  it("coalesces a 401 refresh and rejects a late developer grant after sign-out", async () => {
+    const app = await desktop();
+    const initial = app.reply();
+    app.tray.install();
+    initial.resolve("expired");
+    await app.settle();
+    await vi.waitFor(() =>
+      expect(app.developer.getState().available).toBe(true),
+    );
+    const requested = deferred<void>();
+    const release = deferred<void>();
+    onTestFinished(() => release.resolve());
+    server.use(
+      // Token rotation preserves the server-verified account and workspace.
+      http.get(`${api}/api/auth/me`, () =>
+        HttpResponse.json({
+          userId: "Bearer expired",
+          email: "fixture@example.test",
+          orgId: "org-Bearer expired",
         }),
-      );
-      const fresh = app.reply();
-      const response = app.session.fetchWithSessionAuth(
-        new URL(`${api}/api/protected`),
-      );
-      await vi.waitFor(() => expect(app.windows).toHaveLength(2));
-      expect(app.session.getAuthority()).toBeNull();
-      expect(app.developer.getAuthorization()).toBeNull();
-      fresh.resolve("fresh");
-      expect((await response).status).toBe(200);
-      await requested.promise;
-      app.session.signOut();
-      expect(app.session.getAuthority()).toBeNull();
-      expect(app.developer.getAuthorization()).toBeNull();
-      release.resolve();
-      await app.settle();
-      await vi.waitFor(() =>
-        expect(app.developer.getAvailability()).toBe("unavailable"),
-      );
-      expect(app.session.getCachedToken()).toBeNull();
-      expect(app.developer.getAuthorization()).toBeNull();
-      expect(app.nativeStarts).toEqual([]);
-    });
-  },
-);
+      ),
+      http.get(`${api}/api/org`, () =>
+        HttpResponse.json({ id: "org-Bearer expired", name: "Workspace" }),
+      ),
+      http.get(
+        `${api}/api/protected`,
+        ({ request }) =>
+          new HttpResponse(null, {
+            status:
+              request.headers.get("authorization") === "Bearer expired"
+                ? 401
+                : 200,
+          }),
+      ),
+      http.get(`${api}/api/feature-switches`, async () => {
+        requested.resolve();
+        await release.promise;
+        return HttpResponse.json({ effectiveSwitches: { _debug: true } });
+      }),
+    );
+    const fresh = app.reply();
+    const response = app.session.fetchWithSessionAuth(
+      new URL(`${api}/api/protected`),
+    );
+    await vi.waitFor(() => expect(app.windows).toHaveLength(2));
+    expect(app.session.getAuthority()).toBeNull();
+    expect(app.developer.getState().available).toBe(false);
+    fresh.resolve("fresh");
+    expect((await response).status).toBe(200);
+    await requested.promise;
+    app.session.signOut();
+    expect(app.session.getAuthority()).toBeNull();
+    expect(app.developer.getState().available).toBe(false);
+    release.resolve();
+    await app.settle();
+    await vi.waitFor(() =>
+      expect(app.developer.getState().available).toBe(false),
+    );
+    expect(app.session.getCachedToken()).toBeNull();
+    expect(app.developer.getState().available).toBe(false);
+    expect(app.nativeStarts).toEqual([]);
+  });
+});

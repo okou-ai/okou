@@ -2,17 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { performance } from "node:perf_hooks";
 
 import {
   InMemoryCredentialStore,
-  registerSessionResourceCleanup,
   type AssistantMessage,
 } from "@earendil-works/pi-ai";
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
-  ModelRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
@@ -45,17 +42,19 @@ import {
   type Phase2MemoryToolTestHooks,
 } from "./phase2-memory-tools";
 import {
-  PI_MEMORY_PHASE2_EXPECTED_HEARTBEAT_CADENCE_MS,
-  PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
   PiMemoryPhase2EngineError,
-  type PiMemoryPhase2ConsolidationArgs,
+  type PiMemoryPhase2LocalConsolidationArgs,
   type PiMemoryPhase2ConsolidationResult,
   type PiMemoryPhase2FailureClass,
   type PiMemoryPhase2FailureCounts,
-  type PiMemoryPhase2LifecycleEvent,
   type PiMemoryPhase2ProviderUsage,
 } from "./phase2-memory-types";
-import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
+import { PI_MEMORY_PHASE2_MAINTENANCE_REASONING } from "./memory-background-config";
+import { resolvePiAgentModel } from "./model";
+import {
+  createPiModelRuntime,
+  initializePiSessionResourceRegistry,
+} from "./session-model";
 
 const ZERO_USAGE: PiMemoryPhase2ProviderUsage = Object.freeze({
   input: 0,
@@ -67,7 +66,6 @@ const ZERO_USAGE: PiMemoryPhase2ProviderUsage = Object.freeze({
 const PI_MEMORY_PHASE2_SESSION_CWD = "/phase2-memory";
 
 interface Phase2RuntimeState {
-  heartbeatCount: number;
   fileCount: number;
   totalBytes: number;
 }
@@ -96,23 +94,15 @@ type Phase2ModelTerminal = Readonly<{
   status: "completed" | "failed";
 }>;
 
-type Phase2HeartbeatTerminal =
-  | Readonly<{ source: "heartbeat"; status: "stopped" | "aborted" }>
-  | Readonly<{ source: "heartbeat"; status: "failed"; error: unknown }>;
-
 type Phase2CallerTerminal = Readonly<{
   source: "caller";
   status: "aborted" | "disposed";
 }>;
 
-type Phase2Terminal =
-  | Phase2ModelTerminal
-  | Phase2HeartbeatTerminal
-  | Phase2CallerTerminal;
+type Phase2Terminal = Phase2ModelTerminal | Phase2CallerTerminal;
 
 interface Phase2TerminalSettlement {
   readonly model: Phase2ModelTerminal;
-  readonly heartbeat: Phase2HeartbeatTerminal;
   readonly caller: Phase2CallerTerminal;
 }
 
@@ -125,7 +115,7 @@ interface Phase2CapturedFailure {
   readonly error: unknown;
 }
 
-export interface PiMemoryPhase2SessionSnapshot {
+interface PiMemoryPhase2SessionSnapshot {
   readonly toolNames: readonly string[];
   readonly thinkingLevel: string;
   readonly sessionFile: string | undefined;
@@ -138,11 +128,7 @@ export interface PiMemoryPhase2SessionSnapshot {
   readonly systemPromptDigest: string;
 }
 
-export interface PiMemoryPhase2EngineTestHooks {
-  readonly waitForHeartbeat?: (
-    signal: AbortSignal,
-    cadenceMs: number,
-  ) => Promise<void>;
+interface PiMemoryPhase2EngineTestHooks {
   readonly onSessionCreated?: (snapshot: PiMemoryPhase2SessionSnapshot) => void;
   readonly beforeOutputValidation?: (
     workspace: Phase2PrivateWorkspace,
@@ -153,42 +139,6 @@ export interface PiMemoryPhase2EngineTestHooks {
   readonly tools?: Phase2MemoryToolTestHooks;
 }
 
-function initializePiSessionResourceRegistry(): void {
-  const unregister = registerSessionResourceCleanup(() => {
-    return undefined;
-  });
-  unregister();
-}
-
-function registeredModelConfig(
-  model: NonNullable<ReturnType<typeof resolvePiAgentModel>>,
-  input: SnapshotPhase2Input,
-) {
-  return {
-    name: model.provider,
-    baseUrl: model.baseUrl,
-    apiKey: input.model.apiKey,
-    api: model.api,
-    streamSimple: piAgentStreamForConfig(input.model),
-    models: [
-      {
-        id: model.id,
-        name: model.name,
-        api: model.api,
-        baseUrl: model.baseUrl,
-        reasoning: model.reasoning,
-        thinkingLevelMap: model.thinkingLevelMap,
-        input: model.input,
-        cost: model.cost,
-        contextWindow: model.contextWindow,
-        maxTokens: model.maxTokens,
-        headers: model.headers,
-        compat: model.compat,
-      },
-    ],
-  };
-}
-
 function failureCounts(
   input: SnapshotPhase2Input | null,
   state: Phase2RuntimeState,
@@ -197,7 +147,6 @@ function failureCounts(
     candidateCount: input?.selected.length ?? 0,
     fileCount: state.fileCount,
     totalBytes: state.totalBytes,
-    heartbeatCount: state.heartbeatCount,
   };
 }
 
@@ -212,116 +161,6 @@ function engineError(
     failureCounts(input, state),
     diagnostic,
   );
-}
-
-function durationMs(startedAt: number): number {
-  return Math.max(0, Math.round(performance.now() - startedAt));
-}
-
-function lifecycleEvent(
-  input: SnapshotPhase2Input,
-  state: Phase2RuntimeState,
-  startedAt: number,
-  stage: PiMemoryPhase2LifecycleEvent["stage"],
-  extra: Pick<
-    PiMemoryPhase2LifecycleEvent,
-    "contentIdentity" | "errorClass" | "outcome"
-  > = {},
-): PiMemoryPhase2LifecycleEvent {
-  return {
-    stage,
-    orgId: input.orgId,
-    userId: input.userId,
-    memoryStorageId: input.memoryStorageId,
-    claimedRevision: input.claimedRevision,
-    selectionDigest: input.selectionDigest,
-    candidateCount: input.selected.length,
-    fileCount: state.fileCount,
-    totalBytes: state.totalBytes,
-    heartbeatCount: state.heartbeatCount,
-    durationMs: durationMs(startedAt),
-    ...(extra.outcome === undefined ? {} : { outcome: extra.outcome }),
-    ...(extra.errorClass === undefined ? {} : { errorClass: extra.errorClass }),
-    ...(extra.contentIdentity === undefined
-      ? {}
-      : { contentIdentity: extra.contentIdentity }),
-  };
-}
-
-function emitLifecycle(
-  input: SnapshotPhase2Input,
-  state: Phase2RuntimeState,
-  startedAt: number,
-  stage: PiMemoryPhase2LifecycleEvent["stage"],
-  extra?: Pick<
-    PiMemoryPhase2LifecycleEvent,
-    "contentIdentity" | "errorClass" | "outcome"
-  >,
-): void {
-  try {
-    input.onLifecycle?.(lifecycleEvent(input, state, startedAt, stage, extra));
-  } catch {
-    throw engineError("observer_failed", input, state);
-  }
-}
-
-function emitFailure(
-  input: SnapshotPhase2Input | null,
-  state: Phase2RuntimeState,
-  startedAt: number,
-  failure: PiMemoryPhase2EngineError,
-): void {
-  if (!input) {
-    return;
-  }
-  try {
-    input.onLifecycle?.(
-      lifecycleEvent(input, state, startedAt, "failed", {
-        errorClass: failure.errorClass,
-      }),
-    );
-  } catch {
-    // Preserve the primary bounded failure when best-effort failure telemetry fails.
-  }
-}
-
-function waitForHeartbeat(
-  signal: AbortSignal,
-  cadenceMs: number,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const timeout = setTimeout(() => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    }, cadenceMs);
-    const abort = (): void => {
-      clearTimeout(timeout);
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
-}
-
-async function confirmHeartbeat(
-  input: SnapshotPhase2Input,
-  state: Phase2RuntimeState,
-  startedAt: number,
-): Promise<void> {
-  let owned: boolean;
-  try {
-    owned = await input.heartbeat();
-  } catch {
-    throw engineError("heartbeat_failed", input, state);
-  }
-  state.heartbeatCount += 1;
-  if (!owned) {
-    throw engineError("lease_lost", input, state);
-  }
-  emitLifecycle(input, state, startedAt, "heartbeat");
 }
 
 function abortPromise(signal: AbortSignal): {
@@ -361,9 +200,6 @@ function abortPromise(signal: AbortSignal): {
 function createTerminalArbiter(args: {
   readonly session: AgentSession;
   readonly input: SnapshotPhase2Input;
-  readonly state: Phase2RuntimeState;
-  readonly startedAt: number;
-  readonly testHooks: PiMemoryPhase2EngineTestHooks | undefined;
 }): Phase2TerminalArbiter {
   const model = args.session
     .prompt("Consolidate the private Pi memory inputs now.", {
@@ -382,45 +218,13 @@ function createTerminalArbiter(args: {
   const caller = callerAbort.promise.then<Phase2CallerTerminal>((status) => {
     return { source: "caller", status };
   });
-  const heartbeatStop = new AbortController();
-  const heartbeatSignal = AbortSignal.any([
-    args.input.signal,
-    heartbeatStop.signal,
-  ]);
-  const heartbeat = (async (): Promise<Phase2HeartbeatTerminal> => {
-    while (!heartbeatStop.signal.aborted) {
-      try {
-        await (args.testHooks?.waitForHeartbeat ?? waitForHeartbeat)(
-          heartbeatSignal,
-          PI_MEMORY_PHASE2_EXPECTED_HEARTBEAT_CADENCE_MS,
-        );
-      } catch {
-        return {
-          source: "heartbeat",
-          status: heartbeatStop.signal.aborted ? "stopped" : "aborted",
-        };
-      }
-      try {
-        await confirmHeartbeat(args.input, args.state, args.startedAt);
-      } catch (error) {
-        return { source: "heartbeat", status: "failed", error };
-      }
-    }
-    return { source: "heartbeat", status: "stopped" };
-  })();
   return {
-    selected: Promise.race([model, heartbeat, caller]),
+    selected: Promise.race([model, caller]),
     async settle() {
-      heartbeatStop.abort();
       callerAbort.dispose();
-      const [modelResult, heartbeatResult, callerResult] = await Promise.all([
-        model,
-        heartbeat,
-        caller,
-      ]);
+      const [modelResult, callerResult] = await Promise.all([model, caller]);
       return {
         model: modelResult,
-        heartbeat: heartbeatResult,
         caller: callerResult,
       };
     },
@@ -445,22 +249,6 @@ function terminalFailure(
           }
         : undefined;
     }
-    case "heartbeat": {
-      if (terminal.status === "failed") {
-        return { error: terminal.error };
-      }
-      return {
-        error:
-          terminal.status === "aborted"
-            ? engineError("aborted", input, state)
-            : engineError(
-                "session_failed",
-                input,
-                state,
-                phase2StageDiagnostic("model_turn", "heartbeat_stopped"),
-              ),
-      };
-    }
     case "caller": {
       return {
         error:
@@ -482,13 +270,7 @@ function settlementFailure(
   input: SnapshotPhase2Input,
   state: Phase2RuntimeState,
 ): Phase2CapturedFailure | undefined {
-  if (settlement.heartbeat.status === "failed") {
-    return { error: settlement.heartbeat.error };
-  }
-  if (
-    settlement.heartbeat.status === "aborted" ||
-    settlement.caller.status === "aborted"
-  ) {
+  if (settlement.caller.status === "aborted") {
     return { error: engineError("aborted", input, state) };
   }
   if (settlement.model.status === "failed") {
@@ -520,16 +302,12 @@ async function runMaintenancePrompt(args: {
   readonly session: AgentSession;
   readonly input: SnapshotPhase2Input;
   readonly state: Phase2RuntimeState;
-  readonly startedAt: number;
   readonly testHooks: PiMemoryPhase2EngineTestHooks | undefined;
 }): Promise<Phase2ProviderResult> {
   let arbiter: Phase2TerminalArbiter | undefined;
   let failure: Phase2CapturedFailure | undefined;
   let provider: Phase2ProviderResult | undefined;
   try {
-    await confirmHeartbeat(args.input, args.state, args.startedAt);
-    args.input.signal.throwIfAborted();
-    emitLifecycle(args.input, args.state, args.startedAt, "model_started");
     args.input.signal.throwIfAborted();
     arbiter = createTerminalArbiter(args);
     const terminal = await arbiter.selected;
@@ -634,6 +412,62 @@ function providerResult(
   return { responseId: final.responseId ?? null, usage: Object.freeze(usage) };
 }
 
+type ResolvedPiAgentModel = NonNullable<ReturnType<typeof resolvePiAgentModel>>;
+
+/**
+ * The legacy catalog case this narrow maintenance correction adapts.
+ *
+ * The pinned catalog publishes `openai` / `gpt-5.6-terra` / `openai-responses`
+ * with a 272000 context window. 272000 is that model's long-context pricing
+ * threshold, above which the stated multipliers apply to the full request; the
+ * official specification states 1050000 context tokens and 128000 maximum
+ * output tokens: https://developers.openai.com/api/docs/models/gpt-5.6-terra
+ */
+const PI_MEMORY_PHASE2_LEGACY_CONTEXT_PROVIDER = "openai";
+const PI_MEMORY_PHASE2_LEGACY_CONTEXT_API = "openai-responses";
+const PI_MEMORY_PHASE2_LEGACY_CONTEXT_CATALOG_MODEL = "gpt-5.6-terra";
+const PI_MEMORY_PHASE2_LEGACY_CONTEXT_WINDOW = 272_000;
+const PI_MEMORY_PHASE2_OFFICIAL_CONTEXT_WINDOW = 1_050_000;
+
+/**
+ * Return the maintenance model with the stale catalog context window corrected.
+ *
+ * `buildBaseOptions` derives each request's output ceiling by subtracting the
+ * estimated context from `contextWindow`, so the pricing threshold above caps a
+ * long consolidation turn at the Responses adapter's minimum output budget. The
+ * turn then ends as `length`, which Phase 2 correctly refuses to publish.
+ *
+ * This adapts only that one legacy case, only for maintenance, and only as an
+ * immutable copy: the shared catalog object is never mutated, ordinary
+ * resolution is untouched, and a value that is already corrected or otherwise
+ * different is returned unchanged so newer metadata is never capped. Model
+ * identity, provider, route, credentials, headers, tier, transport, reasoning
+ * policy, `maxTokens` and pricing all stay exactly as resolved.
+ *
+ * Remove this correction once the pinned catalog publishes the official window:
+ * the guard then stops matching, so it is inert rather than wrong. The catalog
+ * identity is matched here instead of the caller's product model id because the
+ * stale value belongs to that catalog entry, not to Okou's model selection.
+ */
+function maintenanceModelWithOfficialContextWindow(
+  model: ResolvedPiAgentModel,
+  config: SnapshotPhase2Input["model"],
+): ResolvedPiAgentModel {
+  if (
+    model.provider !== PI_MEMORY_PHASE2_LEGACY_CONTEXT_PROVIDER ||
+    model.api !== PI_MEMORY_PHASE2_LEGACY_CONTEXT_API ||
+    (config.catalogModel ?? config.model) !==
+      PI_MEMORY_PHASE2_LEGACY_CONTEXT_CATALOG_MODEL ||
+    model.contextWindow !== PI_MEMORY_PHASE2_LEGACY_CONTEXT_WINDOW
+  ) {
+    return model;
+  }
+  return {
+    ...model,
+    contextWindow: PI_MEMORY_PHASE2_OFFICIAL_CONTEXT_WINDOW,
+  };
+}
+
 async function createMaintenanceSession(args: {
   readonly input: SnapshotPhase2Input;
   readonly workspace: Phase2PrivateWorkspace;
@@ -641,20 +475,23 @@ async function createMaintenanceSession(args: {
   readonly testHooks: PiMemoryPhase2EngineTestHooks | undefined;
 }): Promise<AgentSession> {
   initializePiSessionResourceRegistry();
-  const model = resolvePiAgentModel(args.input.model);
-  if (!model) {
+  const resolved = resolvePiAgentModel(args.input.model);
+  if (!resolved) {
     throw new Phase2InputInvalidError();
   }
-  const modelRuntime = await ModelRuntime.create({
-    allowModelNetwork: false,
-    credentials: new InMemoryCredentialStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-    signal: args.input.signal,
-  });
-  modelRuntime.registerProvider(
-    args.input.model.provider,
-    registeredModelConfig(model, args.input),
+  // One corrected model object reaches both provider registration and the real
+  // session, so the adapter cannot receive the stale window.
+  const model = maintenanceModelWithOfficialContextWindow(
+    resolved,
+    args.input.model,
+  );
+  const modelRuntime = await createPiModelRuntime(
+    {
+      model,
+      config: args.input.model,
+      credentials: new InMemoryCredentialStore(),
+    },
+    args.input.signal,
   );
   const services = await createAgentSessionServices({
     cwd: PI_MEMORY_PHASE2_SESSION_CWD,
@@ -769,7 +606,6 @@ function normalizeFailure(
 async function executeConsolidation(
   input: SnapshotPhase2Input,
   state: Phase2RuntimeState,
-  startedAt: number,
   root: string,
   testHooks: PiMemoryPhase2EngineTestHooks | undefined,
   signal: AbortSignal,
@@ -803,7 +639,6 @@ async function executeConsolidation(
     },
     0,
   );
-  emitLifecycle(input, state, startedAt, "staged");
   signal.throwIfAborted();
 
   if (
@@ -849,10 +684,8 @@ async function executeConsolidation(
     session,
     input,
     state,
-    startedAt,
     testHooks,
   });
-  emitLifecycle(input, state, startedAt, "model_completed");
   signal.throwIfAborted();
   await testHooks?.beforeOutputValidation?.(workspace);
   signal.throwIfAborted();
@@ -879,39 +712,13 @@ async function executeConsolidation(
   });
 }
 
-function commitConsolidationResult(
-  input: SnapshotPhase2Input,
-  state: Phase2RuntimeState,
-  startedAt: number,
-  result: PiMemoryPhase2ConsolidationResult,
+/** Prepare owned local bytes; the mounted boundary owns application and checkpoint identity. */
+export async function runPiMemoryPhase2LocalConsolidation(
+  args: PiMemoryPhase2LocalConsolidationArgs,
   signal: AbortSignal,
-): PiMemoryPhase2ConsolidationResult {
-  signal.throwIfAborted();
-  if (result.status === "no_diff") {
-    emitLifecycle(input, state, startedAt, "no_diff", {
-      outcome: "no_diff",
-      contentIdentity: result.contentIdentity,
-    });
-    signal.throwIfAborted();
-    return result;
-  }
-
-  emitLifecycle(input, state, startedAt, "validated", {
-    outcome: "prepared",
-    contentIdentity: result.contentIdentity,
-  });
-  signal.throwIfAborted();
-  return result;
-}
-
-export async function runPiMemoryPhase2ConsolidationForTest(
-  args: PiMemoryPhase2ConsolidationArgs,
-  testHooks: PiMemoryPhase2EngineTestHooks | undefined,
-  signal: AbortSignal,
+  testHooks?: PiMemoryPhase2EngineTestHooks,
 ): Promise<PiMemoryPhase2ConsolidationResult> {
-  const startedAt = performance.now();
   const state: Phase2RuntimeState = {
-    heartbeatCount: 0,
     fileCount: 0,
     totalBytes: 0,
   };
@@ -925,14 +732,7 @@ export async function runPiMemoryPhase2ConsolidationForTest(
     state.totalBytes = input.baseTotalBytes;
     signal.throwIfAborted();
     root = await mkdtemp(join(tmpdir(), "pi-memory-phase2-"));
-    result = await executeConsolidation(
-      input,
-      state,
-      startedAt,
-      root,
-      testHooks,
-      signal,
-    );
+    result = await executeConsolidation(input, state, root, testHooks, signal);
   } catch (error) {
     failure = normalizeFailure(error, input, state, signal);
   }
@@ -954,22 +754,11 @@ export async function runPiMemoryPhase2ConsolidationForTest(
     }
   }
 
-  if (!failure && result && input) {
-    try {
-      result = commitConsolidationResult(
-        input,
-        state,
-        startedAt,
-        result,
-        signal,
-      );
-    } catch (error) {
-      failure = normalizeFailure(error, input, state, signal);
-    }
+  if (!failure && signal.aborted) {
+    failure = engineError("aborted", input, state);
   }
 
   if (failure) {
-    emitFailure(input, state, startedAt, failure);
     throw failure;
   }
   if (!result) {
@@ -979,32 +768,18 @@ export async function runPiMemoryPhase2ConsolidationForTest(
       state,
       phase2StageDiagnostic("commit", "result_missing"),
     );
-    emitFailure(input, state, startedAt, missing);
     throw missing;
   }
   return result;
 }
 
-/**
- * Prepare one immutable Pi memory Phase 2 artifact without publishing Storage
- * state or marking the claimed database job complete.
- */
-export async function runPiMemoryPhase2Consolidation(
-  args: PiMemoryPhase2ConsolidationArgs,
-  signal: AbortSignal,
-): Promise<PiMemoryPhase2ConsolidationResult> {
-  return await runPiMemoryPhase2ConsolidationForTest(args, undefined, signal);
-}
-
 export interface PiMemoryPhase2MountedConsolidationArgs {
   readonly memoryRoot: string;
   readonly memoryStorageId: string;
-  readonly claimedRevision: number;
   readonly claimedBaseVersionId: string;
-  readonly leaseToken: string;
   readonly selectionDigest: string;
-  readonly selected: readonly PiMemoryPhase2ConsolidationArgs["selected"][number][];
-  readonly model: PiMemoryPhase2ConsolidationArgs["model"];
+  readonly selected: readonly PiMemoryPhase2LocalConsolidationArgs["selected"][number][];
+  readonly model: PiMemoryPhase2LocalConsolidationArgs["model"];
 }
 
 /**
@@ -1037,22 +812,14 @@ export async function runPiMemoryPhase2MountedConsolidation(
       totalBytes: baseFiles.reduce((sum, file) => {
         return sum + file.size;
       }, 0),
-      heartbeatCount: 0,
     });
   }
-  const result = await runPiMemoryPhase2Consolidation(
+  const result = await runPiMemoryPhase2LocalConsolidation(
     {
-      orgId: "sandbox",
-      userId: "sandbox",
       memoryStorageId: args.memoryStorageId,
-      claimedRevision: args.claimedRevision,
-      leaseToken: args.leaseToken,
       baseFiles,
       selected: args.selected,
       model: args.model,
-      heartbeat: async () => {
-        return true;
-      },
     },
     signal,
   );
@@ -1064,7 +831,6 @@ export async function runPiMemoryPhase2MountedConsolidation(
       totalBytes: baseFiles.reduce((sum, file) => {
         return sum + file.size;
       }, 0),
-      heartbeatCount: 0,
     });
   }
   try {
@@ -1082,7 +848,6 @@ export async function runPiMemoryPhase2MountedConsolidation(
         candidateCount: args.selected.length,
         fileCount: result.manifest.fileCount,
         totalBytes: result.manifest.totalBytes,
-        heartbeatCount: 0,
       },
       phase2DiagnosticForError(error, "mounted_apply"),
     );

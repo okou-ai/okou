@@ -1,3 +1,7 @@
+import {
+  getMemberModelPolicyRoute,
+  isMemberModelPolicyConfigurable,
+} from "@okouai/api-contracts/contracts/member-model-policy";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -37,6 +41,7 @@ import {
 } from "@okouai/ui";
 import {
   getCanonicalModelDisplayName,
+  getModelProviderPresentationLabel,
   getProvidersForModel,
   isBuiltInModelProviderType,
   isCodexFastModeModel,
@@ -57,7 +62,7 @@ import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelAllowedForPlan,
   modelPlanCapabilities$,
-  modelPolicyAllowedForPlan,
+  memberModelPolicyAllowedForPlan,
   type ModelPlanCapabilities,
 } from "../../../signals/okou-page/model-plan-capabilities";
 import {
@@ -79,17 +84,18 @@ import { settingsIconAssetUrl } from "./settings/settings-icon-assets";
 
 import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
+import { ModelFastImpact } from "./model-fast-impact.tsx";
 import {
   ModelPickerFlyoutContent,
   ModelPickerMenuContent,
 } from "./model-picker-menu.tsx";
 
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
 export interface ModelProviderSelection {
   selectedModel: SupportedRunModel;
   codexServiceTier?: CodexServiceTier;
-  reasoningEffort?: ReasoningEffort | null;
+  modelSettings?: ModelSettings;
 }
 
 export interface MediaModelPanelOption {
@@ -170,6 +176,14 @@ interface ModelProviderPickerProps {
   onSelected?: () => void;
   /** Model omitted from this caller's list of available choices. */
   excludedModel?: SupportedRunModel;
+  /**
+   * When true, the trigger leaves the Fast suffix off the model's name because
+   * the caller already shows that state. The composer's effort control sits
+   * beside the model and carries the bolt, so repeating the word on the model
+   * would say it twice and change the model's name as a side effect. The
+   * accessible name still carries it, for callers who cannot see the bolt.
+   */
+  fastShownByCaller?: boolean;
 }
 
 // Keep the inherit option distinct from an empty model identifier at the UI
@@ -186,19 +200,27 @@ const CODEX_FAST_SELECTED_PREFIX = "__codex_fast_selected__:";
 const MEASURABLE_HIDDEN_SELECT_ITEM_CLASS =
   "absolute left-0 top-0 h-8 w-px overflow-hidden opacity-0 data-[disabled]:opacity-0 pointer-events-none";
 
-function ByokBadge() {
+function ByokBadge({
+  subscriptionProvider,
+}: {
+  subscriptionProvider?: ModelProviderType;
+}) {
   const { t } = useTranslation();
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
-            BYOK
+            {subscriptionProvider
+              ? getModelProviderPresentationLabel(subscriptionProvider)
+              : "BYOK"}
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
-            return $.settings.models.picker.byokHelp;
+            return subscriptionProvider
+              ? $.settings.models.personal.description
+              : $.settings.models.picker.byokHelp;
           })}
         </TooltipContent>
       </Tooltip>
@@ -288,7 +310,7 @@ function selectionAllowedValue(
     return candidate.model === value.selectedModel;
   });
   const allowed = policy
-    ? modelPolicyAllowedForPlan(policy, modelCapabilities)
+    ? memberModelPolicyAllowedForPlan(policy, modelCapabilities)
     : modelAllowedForPlan(value.selectedModel, modelCapabilities);
   return allowed ? value : null;
 }
@@ -298,17 +320,22 @@ function selectionLabel({
   placeholder,
   codexFastModeEnabled,
   fastLabel,
+  fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
   codexFastModeEnabled: boolean;
   fastLabel: string;
+  /** See `ModelProviderPickerProps.fastShownByCaller`. */
+  fastShownByCaller?: boolean;
 }): string {
   if (!selection) {
     return placeholder;
   }
   const modelLabel = getCanonicalModelDisplayName(selection.selectedModel);
-  return codexFastModeEnabled && selection.codexServiceTier === "fast"
+  return codexFastModeEnabled &&
+    !fastShownByCaller &&
+    selection.codexServiceTier === "fast"
     ? `${modelLabel} ${fastLabel}`
     : modelLabel;
 }
@@ -319,12 +346,14 @@ function ModelFirstTriggerLabel({
   mobileIcon,
   codexFastModeEnabled,
   fastLabel,
+  fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
   mobileIcon: boolean;
   codexFastModeEnabled: boolean;
   fastLabel: string;
+  fastShownByCaller?: boolean;
 }) {
   if (!selection) {
     return (
@@ -347,6 +376,7 @@ function ModelFirstTriggerLabel({
             placeholder,
             codexFastModeEnabled,
             fastLabel,
+            fastShownByCaller,
           })}
         </span>
       }
@@ -470,12 +500,14 @@ function ModelFirstPolicyRowContent({
   showSelectedIndicator?: boolean;
 }) {
   const iconType = getModelFirstIconType(policy.model);
-  const builtInPriceTier = isBuiltInModelProviderType(
-    policy.defaultProviderType,
-  )
+  const route = getMemberModelPolicyRoute(policy);
+  const builtInPriceTier = isBuiltInModelProviderType(route.providerType)
     ? getBuiltInModelPriceTier(policy.model)
     : undefined;
-  const restricted = !modelPolicyAllowedForPlan(policy, modelCapabilities);
+  const restricted = !memberModelPolicyAllowedForPlan(
+    policy,
+    modelCapabilities,
+  );
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
@@ -488,7 +520,13 @@ function ModelFirstPolicyRowContent({
           description={getBuiltInModelPriceTierLabel(builtInPriceTier)}
         />
       ) : (
-        <ByokBadge />
+        <ByokBadge
+          subscriptionProvider={
+            policy.memberEffective && route.credentialScope === "member"
+              ? route.providerType
+              : undefined
+          }
+        />
       )}
       {restricted && <ProBadge />}
       {showSelectedIndicator && (
@@ -514,7 +552,7 @@ function ModelFirstPolicyRow({
   const { t } = useTranslation();
   const fastAvailable =
     codexFastModeEnabled &&
-    policy.routeStatus === "valid" &&
+    isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);
   if (fastAvailable) {
     const modelLabel =
@@ -523,9 +561,6 @@ function ModelFirstPolicyRow({
     const fastSelected = selected && selection.codexServiceTier === "fast";
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
-    });
-    const fastImpact = t(($) => {
-      return $.settings.models.picker.fastImpact;
     });
     return (
       <div
@@ -580,7 +615,7 @@ function ModelFirstPolicyRow({
               </SelectItem>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
-              {fastLabel} · {fastImpact}
+              {fastLabel} · <ModelFastImpact policy={policy} />
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -591,7 +626,7 @@ function ModelFirstPolicyRow({
     <SelectItem
       key={policy.id}
       value={policy.model}
-      disabled={policy.routeStatus !== "valid"}
+      disabled={!isMemberModelPolicyConfigurable(policy)}
     >
       <ModelFirstPolicyRowContent
         policy={policy}
@@ -1239,6 +1274,7 @@ function ModelFirstSelectPicker({
   mobileIconTrigger,
   codexFastModeEnabled,
   fastLabel,
+  fastShownByCaller,
   open,
   onOpenChange,
   modal,
@@ -1251,6 +1287,7 @@ function ModelFirstSelectPicker({
   mobileIconTrigger: boolean;
   codexFastModeEnabled: boolean;
   fastLabel: string;
+  fastShownByCaller: boolean;
   open: boolean | undefined;
   onOpenChange:
     | ((
@@ -1280,6 +1317,7 @@ function ModelFirstSelectPicker({
             mobileIcon={mobileIconTrigger}
             codexFastModeEnabled={codexFastModeEnabled}
             fastLabel={fastLabel}
+            fastShownByCaller={fastShownByCaller}
           />
         </SelectValue>
       </SelectTrigger>
@@ -1372,9 +1410,10 @@ function SubscribedExplicitModelFirstModelPickerContent({
 }) {
   const { t } = useTranslation();
   const policiesLoadable = useLastLoadable(orgModelPolicies$);
+  const policyResponse = useLastResolved(orgModelPolicies$);
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
-  if (policiesLoadable.state !== "hasData") {
+  if (policyResponse === undefined) {
     if (menuSignals) {
       return (
         <div className="px-2 py-2 text-sm text-muted-foreground" role="status">
@@ -1408,7 +1447,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
   }
   const state = resolveModelFirstModelPickerState({
     value,
-    policyResponse: policiesLoadable.data,
+    policyResponse,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     codexFastModeEnabled,
@@ -1438,11 +1477,12 @@ function SubscribedExplicitModelFirstModelPickerContent({
                 modelCapabilities={modelCapabilities}
               />
             ),
-            disabled: policy.routeStatus !== "valid",
+            disabled: !isMemberModelPolicyConfigurable(policy),
             fastAvailable:
               codexFastModeEnabled &&
-              policy.routeStatus === "valid" &&
+              isMemberModelPolicyConfigurable(policy) &&
               isCodexFastModeModel(policy.model),
+            fastImpact: <ModelFastImpact policy={policy} />,
           };
         })}
       />
@@ -1554,6 +1594,7 @@ function EnabledExplicitModelFirstModelPicker(
                 mobileIcon={props.mobileIconTrigger}
                 codexFastModeEnabled={props.codexFastModeEnabled ?? false}
                 fastLabel={props.fastLabel}
+                fastShownByCaller={props.fastShownByCaller ?? false}
               />
             </span>
             <span data-slot="select-icon">
@@ -1591,6 +1632,7 @@ function EnabledExplicitModelFirstModelPicker(
       triggerClassName={props.triggerClassName}
       mobileIconTrigger={props.mobileIconTrigger}
       codexFastModeEnabled={props.codexFastModeEnabled ?? false}
+      fastShownByCaller={props.fastShownByCaller ?? false}
       fastLabel={props.fastLabel}
       open={props.open}
       onOpenChange={props.onOpenChange}
@@ -1617,6 +1659,7 @@ export function ModelProviderPicker({
   flyoutLayout = false,
   onSelected,
   excludedModel,
+  fastShownByCaller,
 }: ModelProviderPickerProps) {
   const { t } = useTranslation();
   const resolvedPlaceholder =
@@ -1655,6 +1698,7 @@ export function ModelProviderPicker({
       excludedModel={excludedModel}
       menuSignals={menuSignals}
       flyoutLayout={flyoutLayout}
+      fastShownByCaller={fastShownByCaller ?? false}
       {...(onSelected ? { onSelected } : {})}
       {...(mediaModelPanel ? { mediaModelPanel } : {})}
     />

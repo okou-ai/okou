@@ -32,12 +32,56 @@ expired transition validator must be deleted.
 
 ### Active transition validators
 
+- `scripts/test-pi-inference-lifecycle.ts` protects migrations
+  `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):
+  old/new launch writes, sparse-table invariants, real lock and journal rollback,
+  bounded validation retry, unchanged historical records and indexed capacity
+  plans at representative retained-table scale. Retain it until all three
+  transition conditions above pass; current launch-shape and final schema
+  equivalence checks remain in the permanent migration suite.
+
+- `scripts/test-member-invitation-column-retirement.ts` protects migration
+  `1137_retire_legacy_invitation_columns` (#32575): persisted SQL and dependency
+  rejection, unchanged canonical values and ordinary constraints/indexes,
+  canonical INSERT/UPSERT/SELECT/RETURNING, default lock timeout, retry and
+  journal-failure rollback. Keep this validator and the older invitation
+  transition controls until the column contraction ships and all three
+  conditions above pass. Current billing/invitation route tests retain the
+  Free, suspended, administrator, reactivation and package-visibility contracts.
+
+- `scripts/test-prepared-domain-trigger-retirement.ts` protects migration
+  `1132_retire_prepared_domain_triggers` (#33747): all eight A–D drops in one
+  transaction, exact original catalogs, invariant rejection, unchanged data,
+  preserved ordinary constraints/privacy, grandfathered counts, default lock
+  timeout, retry and journal-failure rollback. The four private API write suites
+  retain shipped legacy functions in owned schemas alongside the contracted
+  variants. Keep these transition controls until the production journal and
+  completed rollout satisfy all three conditions above. Current API route
+  coverage, guard constraints and the exact remaining catalog are permanent.
+
+- `scripts/test-pi-candidate-trigger-retirement.ts` protects migration
+  `1121_retire_pi_candidate_reference_trigger` (#33975): original catalog
+  identity, single-snapshot candidate ownership, narrowly classified #33973
+  residuals, default timeouts, post-drop/journal rollback and content-free
+  migration receipts. Test-only B lock/decision coverage lives in the API
+  candidate accounting suite. Retain both until the contract migration has
+  shipped and the B rollback window is closed; permanent current-schema
+  trigger/function inventory and C ownership coverage remain.
+
 - `scripts/test-member-invitation-retirement.ts` protects migration
   `1098_retire_member_invitation_capability` (#32573). It checks removal of
   manual invitation overrides, legacy INSERT/UPSERT/RETURNING statements, and
-  current status-only writes observed by old API readers. The physical column
-  and derived-status trigger remain only for serving and rollback compatibility;
-  remove them with this validator after the gates in #32575 pass.
+  current status-only writes observed by old API readers. Migration 1132 removes
+  the derived-status trigger and shipped in API 1.603.1. Migration 1137 removes
+  the physical columns; keep this validator until that column transition
+  passes its production release gates. The current
+  application uses a canonical-only runtime mapping and no longer mirrors the
+  legacy usage-pack column. The validator also exercises that mapping's real
+  insert, conflict update, select and returning on an isolated contracted table.
+  This is readiness coverage, not evidence that production contraction shipped;
+  retain the validator until the
+  [remaining release gates](../../../docs/deployment-compatibility.md#invitation-and-free-member-contract-cleanup-2026-09-14)
+  pass.
 
 - `scripts/test-pi-memory-checkpoint-settlement.ts` protects migration
   `1079_pi_memory_checkpoint_settlement` (#31937): real PostgreSQL checks exact

@@ -1,15 +1,21 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { and, eq, inArray } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 
 import { db } from "../../../lib/db";
+import {
+  insertPiMemoryStage1Candidates,
+  deleteStoragesWithPiMemoryCandidates,
+} from "../pi-memory-stage1-candidate.service";
 
 const fixtureHashes = Symbol("fixtureHashes");
 
@@ -59,12 +65,6 @@ export interface Phase2CandidateInput {
 }
 
 type Phase2CandidateStatus = Exclude<Phase2CandidateInput["status"], undefined>;
-
-function candidateHash(scope: Phase2TestScope, piSessionId: string): string {
-  return createHash("sha256")
-    .update(`${scope.memoryStorageId}:${piSessionId}:${randomUUID()}`)
-    .digest("hex");
-}
 
 async function insertFixtureBlobs(
   scope: Phase2TestScope,
@@ -168,7 +168,12 @@ export async function createPhase2TestScope(
           ),
         );
     }
-    await db().delete(storages).where(eq(storages.id, scope.memoryStorageId));
+    await db().transaction(async (tx) => {
+      await deleteStoragesWithPiMemoryCandidates(
+        tx,
+        eq(storages.id, scope.memoryStorageId),
+      );
+    });
     const hashes = [...scope[fixtureHashes]];
     if (hashes.length > 0) {
       await db().delete(blobs).where(inArray(blobs.hash, hashes));
@@ -249,16 +254,18 @@ export async function insertPhase2Candidates(
 ): Promise<readonly string[]> {
   const now = new Date("2026-09-03T04:00:00.000Z");
   const hashes = inputs.map((input) => {
-    return input.sourceHistoryHash ?? candidateHash(scope, input.piSessionId);
+    // Synthetic blob identity: independent of the worker scope and credentials.
+    return input.sourceHistoryHash ?? randomBytes(32).toString("hex");
   });
   await insertFixtureBlobs(scope, hashes);
-  await db()
-    .insert(piMemoryStage1Candidates)
-    .values(
+  await db().transaction(async (tx) => {
+    await insertPiMemoryStage1Candidates(
+      tx,
       inputs.map((input, index) => {
         return phase2CandidateRow(scope, input, hashes[index] as string, now);
       }),
     );
+  });
   return hashes;
 }
 
@@ -360,4 +367,60 @@ export async function readPhase2Job(scope: Phase2TestScope) {
       ),
     );
   return job;
+}
+
+export interface Phase2SourceBinding {
+  readonly modelProvider: string | null;
+  readonly modelProviderId: string | null;
+  readonly modelProviderCredentialScope: string | null;
+}
+
+/** Historical source bindings and cron selections have no public authoring
+ * API. Seed them explicitly; the real worker must create its own maintenance run. */
+export async function insertPhase2CandidatesWithSources(
+  scope: Phase2TestScope,
+  inputs: readonly Phase2CandidateInput[],
+  binding: Phase2SourceBinding = {
+    modelProvider: "built-in",
+    modelProviderId: null,
+    modelProviderCredentialScope: null,
+  },
+) {
+  const sources = inputs.map((input) => {
+    return {
+      ...input,
+      sourceRunId: input.sourceRunId ?? randomUUID(),
+    };
+  });
+  for (const source of sources) {
+    const [existing] = await db()
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, source.sourceRunId));
+    if (existing) {
+      continue;
+    }
+    const sessionId = randomUUID();
+    await db()
+      .insert(agentSessions)
+      .values({ id: sessionId, orgId: scope.orgId, userId: scope.userId });
+    await db()
+      .insert(agentRuns)
+      .values({
+        id: source.sourceRunId,
+        sessionId,
+        orgId: scope.orgId,
+        userId: scope.userId,
+        status: "completed",
+        triggerSource: "web",
+        autonomyBudget: 0,
+        prompt: "Historical interactive source",
+        selectedModel: "gpt-5.6-terra",
+        ...binding,
+      });
+    onTestFinished(async () => {
+      await db().delete(agentSessions).where(eq(agentSessions.id, sessionId));
+    });
+  }
+  return await insertPhase2Candidates(scope, sources);
 }

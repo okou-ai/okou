@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use nbd_cow::PooledNbdCowDevice;
 
 use crate::network::NetnsLease;
+use crate::process::ProcessExitCompletion;
 
 /// Resources that require async cleanup when a sandbox is dropped without
 /// going through `factory.destroy()` or when create is dropped mid-allocation.
@@ -11,6 +12,8 @@ use crate::network::NetnsLease;
 /// drains them asynchronously.
 pub(crate) struct LeakedResources {
     pub(crate) sandbox_id: String,
+    /// None only for allocation cleanup that never launched a process.
+    pub(crate) process_exit: Option<ProcessExitCompletion>,
     pub(crate) cow_device: Option<PooledNbdCowDevice>,
     pub(crate) network: Option<NetnsLease>,
     pub(crate) sock_dir: PathBuf,
@@ -30,6 +33,7 @@ mod tests {
     fn test_leaked_resource(sandbox_id: &str) -> LeakedResources {
         LeakedResources {
             sandbox_id: sandbox_id.into(),
+            process_exit: None,
             cow_device: None,
             network: None,
             sock_dir: PathBuf::from("/nonexistent"),
@@ -44,6 +48,7 @@ mod tests {
 
         tx.send(LeakedResources {
             sandbox_id: "test-sandbox".into(),
+            process_exit: None,
             cow_device: None,
             network: Some(test_network()),
             sock_dir: PathBuf::from("/tmp/nonexistent-sock"),
@@ -67,6 +72,7 @@ mod tests {
 
         let resources = LeakedResources {
             sandbox_id: "test".into(),
+            process_exit: None,
             cow_device: None,
             network: Some(test_network()),
             sock_dir: PathBuf::from("/nonexistent"),

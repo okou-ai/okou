@@ -105,8 +105,8 @@ async def test_head_firewall_block_emits_no_response_data(
         taddons.context(Proxyserver(), mitm_addon) as addon_context,
     ):
         addon_context.options.update(
-            vm0_api_url="https://api.okou.ai",
-            vm0_proxy_registry_path=str(registry_path),
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
         )
         client, http2, http_layer, request_headers_hook = _start_head_firewall_request(
             addon_context,
@@ -189,11 +189,11 @@ async def test_head_connector_diagnostic_emits_no_response_data(
         taddons.context(Proxyserver(), mitm_addon) as addon_context,
     ):
         addon_context.options.update(
-            vm0_api_url="https://api.okou.ai",
-            vm0_builtin_firewall_catalog_cache_path=str(
+            okou_api_url="https://api.okou.ai",
+            okou_builtin_firewall_catalog_cache_path=str(
                 tmp_path / "builtin-firewall-catalog-cache.json"
             ),
-            vm0_proxy_registry_path=str(registry_path),
+            okou_proxy_registry_path=str(registry_path),
         )
         record_connector_diagnostic_requestheaders_context(flow)
         _, http_layer = start_http_layer(

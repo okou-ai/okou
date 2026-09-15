@@ -351,12 +351,12 @@ class _StubOptions:
         client_version: str,
         ssl_insecure: bool,
     ) -> None:
-        self.vm0_proxy_registry_path = registry_path
-        self.vm0_api_url = api_url
-        self.vm0_builtin_firewall_catalog_cache_path = builtin_firewall_catalog_cache_path
-        self.vm0_client_session_id = client_session_id
-        self.vm0_client_version = client_version
-        self.vm0_usage_flush_interval_seconds = usage.DEFAULT_FLUSH_INTERVAL_SECONDS
+        self.okou_proxy_registry_path = registry_path
+        self.okou_api_url = api_url
+        self.okou_builtin_firewall_catalog_cache_path = builtin_firewall_catalog_cache_path
+        self.okou_client_session_id = client_session_id
+        self.okou_client_version = client_version
+        self.okou_usage_flush_interval_seconds = usage.DEFAULT_FLUSH_INTERVAL_SECONDS
         self.ssl_insecure = ssl_insecure
 
 

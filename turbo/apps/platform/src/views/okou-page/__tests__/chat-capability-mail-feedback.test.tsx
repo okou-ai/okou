@@ -109,7 +109,9 @@ async function sendMailFeedback(
 ): Promise<CapturedChatSend> {
   await selectPassage("launch review to Monday morning");
   const editor = await quoteSelectedPassage();
-  await userEvent.setup({ delay: null }).type(editor, comment);
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.paste(comment);
   const composer = editor.closest<HTMLElement>("[data-chat-composer]");
   if (!composer) {
     throw new Error("Owning mail feedback composer was not available");
@@ -134,7 +136,7 @@ test("Keep inline feedback tied to the source email", async () => {
   });
   mockMail("draft");
 
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({ locale: "en-US", context, path: RUN_PATH });
 
   await readyChat();
   await openMailDetails();

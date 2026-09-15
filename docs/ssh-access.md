@@ -37,28 +37,68 @@ The management page follows the Agent and Workflow detail-page layout, with
 breadcrumb to return to the directory. Host management remains independent of
 Agent grants.
 
-Supply a display name, public hostname or IP, port, SSH username, and
-private key with an optional passphrase. Paste the key or use **Choose file** in
-Add host or Replace credentials to read a non-empty key file up to 64 KiB locally.
-File selection does not upload anything; Save submits the existing credential
-request. The browser does not parse the key format. Credentials are write-only and stay
-outside the sandbox. Preserve complete key material, including whitespace.
-Use a least-privilege remote SSH user for the Agent's intended work.
-The form clears credentials on submission, close and navigation; unsuccessful
-submissions require entering them again.
+The **Hosts** view configures a display name, public hostname or IP, port, and a
+credential. Select an existing credential or create a named credential inline with
+the host. The **Credentials** view manages reusable logins owned by the same
+organization and user. Each credential contains an SSH username and either a
+private key with an optional passphrase, or a password. Password authentication
+uses SSH password authentication, not keyboard-interactive prompts.
+
+Paste a key or use **Choose file** to read a non-empty key file up to 64 KiB
+locally. File selection does not upload anything or parse the key format; Save
+submits the credential. Keys, passphrases and passwords preserve whitespace.
+Secrets are write-only and stay outside the sandbox. Use a least-privilege
+remote SSH user. Submitted input stays only in the open form while saving;
+controls are disabled until the request completes. A retryable failure preserves
+the input so the user can correct it or click Save again. Successful saves close
+the form and clear its secrets, as do cancellation, navigation and owner changes.
+Changing authentication methods clears the previous method's inputs. Secrets
+are never stored in reactive state or browser caches. A background notification
+refreshes the lists without clearing an open form. Stale revisions still require
+reopening the refreshed item rather than retrying an outdated write.
 
 Each saved connection has its own ID. Multiple configurations may use the same
 host and port, with different usernames or different keys for the same username.
 Use display names to distinguish them. An authorized Run can use all of these
-configurations by their exact IDs. Credentials, learned host keys, configuration
-generations and connection observations remain independent for each configuration.
-Editing, resetting or deleting one does not modify another at the same endpoint.
+configurations by their exact IDs. Learned host keys, configuration generations
+and observations remain independent per host. Editing a host can change its
+credential reference without changing other hosts. Deleting a host keeps its
+credential; deleting an in-use credential is rejected until all hosts are
+rebound or deleted.
 
 Saving a host is not a connectivity test. Configuration does not establish an
-SSH session. Use **Replace credentials** to rotate a key or passphrase; ordinary
-metadata edits leave credentials unchanged. Host/port changes clear the learned
-host identity. A stale generation is not retried: the list refreshes automatically.
-Reopen the host to review the current settings before saving again.
+SSH session. **Edit credential** shows affected hosts. Changing its username or
+explicitly selecting **Replace authentication** updates the login for every host
+currently using that credential, atomically advancing their generations while
+preserving learned host keys. Renaming a credential leaves host generations
+unchanged. Host/port changes clear only that host's learned identity. Stale host
+generations or credential revisions are not retried; reopen the refreshed item
+and review current settings and affected hosts.
+
+### Owner storage and pre-GA cutover
+
+`/api/ssh/credentials` provides session-authenticated, feature-gated metadata
+listing and credential creation/update/deletion. Host writes select
+`credential: { id }` or atomically create `credential: { create: ... }`.
+Responses never return plaintext or ciphertext. A composite database foreign key
+requires the host and credential to have the same organization and user.
+
+Current encrypted storage is `ssh_credentials.encrypted_private_key` plus
+optional `encrypted_passphrase`, or `ssh_credentials.encrypted_password`.
+The selected method is enforced by a database check; changing methods clears
+the previous method's ciphertext columns. These fields use the normal stored
+secret encryption envelope. Historical KMS rotation scripts remain immutable
+records of the schema they migrated, not an inventory of current encrypted fields.
+
+Migration `1113_reusable_ssh_credentials` implements the explicitly approved
+pre-GA reset: it deletes old SSH hosts, their bound credentials, observations and
+learned pins. Agent SSH grants and unrelated data are retained. There is no
+backfill, legacy writer or rollback restoration; old hosts must be configured
+again. Applying this migration is destructive. A production cutover must stop
+outgoing owner API writers before applying the migration and starting the new
+API; ordinary overlapping API deployment is not supported for this reset.
+Already-loaded staff pages must reload. This is separate from the Runner's
+existing support for both key and password authority responses.
 
 Enable the **SSH** row in **Agent -> Authorization**, alongside connector rows
 with the same search and loading switch, not in Profile. The description explains
@@ -108,6 +148,68 @@ do not trigger extra reads. These refreshes do not close dialogs, clear unsaved
 keys or automatically grant access. Browser notifications are separate from
 Runner authority invalidation and do not tighten
 the accepted Run-lifetime cache window.
+
+## Cloudflare Access for SSH
+
+The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
+Token configurations as SSH connection settings, independently of SSH login
+credentials. It remains default-off
+behind `cloudflareAccess` and requires `sshAccess`. #34080 adds the native Runner
+carrier; the management UI and complete real-Run acceptance remain #34081.
+Neither merged code nor local tests establish real-provider acceptance or enable rollout.
+
+The carrier uses a customer-managed published SSH hostname on WSS/443 and a
+Service Token allowed by the application's **Service Auth** policy. The token's
+Client ID and Client Secret authenticate the gateway handshake; they are not SSH
+login credentials, Cloudflare management API tokens or Tunnel installation tokens.
+The origin SSH address/port belongs in Cloudflare. Okou does not install a Tunnel,
+start a client-side cloudflared process or join the customer's private network.
+The Runner uses verified TLS and then independently verifies the SSH host key
+before key/password login. Rejected Access connections never retry as Direct.
+
+Existing CLI commands use the saved connection ID with no proxy/token options.
+For a protected host, the hostname and port in `okou ssh host list` identify the
+gateway, not the origin SSH port. Exec, Sessions and SFTP share this transport and
+retain their existing limits. Ask the owner to inspect `/connectors/ssh` diagnostics
+when connection setup fails. An Access rejection can mean policy or token scope,
+not necessarily an expired token; gateway TLS/protocol failures remain distinct
+from SSH authentication and host-key failures.
+
+The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
+replace credentials and delete configurations. Client ID and
+Client Secret are write-only. Reads return metadata and referencing host IDs/names;
+updates/deletion require the expected edit revision, and referenced deletion is
+rejected. Names may change without invalidating Runs. Token replacement advances
+a separate authority generation and all referencing SSH host generations.
+Configurations have no separate enabled state; the saved host binding selects
+Access, the existing SSH Agent grant authorizes use, and the feature switch
+controls rollout. Switching to Direct is not a way to disable a protected host.
+
+An SSH host explicitly selects a same-owner configuration, published DNS hostname
+and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
+a configuration across hosts does not share it across users or workspaces.
+Protected execution uses the existing SSH Agent grant; there is no separate
+Access grant. Creating or changing an Access configuration does not create a
+host, grant SSH or restore a manual denial. Existing first-SSH-host onboarding
+remains unchanged, and later Agents can use bound configurations once authorized
+for SSH. SSH username/key/password and server host-key trust remain independent
+of the Service Token.
+
+Configuration mutations reuse the owner's `ssh:changed` notification. The later
+Platform delivery manages these settings inside `/connectors/ssh`, not through
+an independent connector card, Agent Authorization row or Chat service. Access
+configuration counts do not replace SSH host-based visibility and summaries.
+
+SSH management uses one canonical contract. Protected metadata includes
+`transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
+An omitted transport on edit preserves the current binding; switching to Direct
+must be explicit and requires the current host generation. Unrelated Direct hosts
+remain manageable when Access is off.
+
+See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
+and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
+The accepted missed-notification window still lasts until Run end; this feature
+does not promise immediate revocation.
 
 ## Recent connection failures
 
@@ -159,6 +261,12 @@ for feature-enabled Runs; newly eligible Runs must start with a fresh token.
 These commands are Run-only, not PAT commands. Agents cannot grant themselves
 access or send target addresses, credentials or host keys to the helper.
 
+Within the same Run, a command or session can automatically reuse an idle SSH
+connection after the previous channel finished. Each active process owns its
+connection exclusively; independent commands keep separate shell state. Up to
+eight idle connections are retained for 60 seconds. Run end and delivered
+authorization changes close retained connections. No extra CLI option is needed.
+
 The CLI sends exactly one version-1 `ssh.exec` request to the fixed packaged
 `/usr/local/bin/runner-rpc-client`, with no shell, extra arguments or retry.
 Commands must contain 1–65,536 UTF-8 bytes. Human output preserves binary
@@ -174,6 +282,116 @@ in JSON and cause CLI exit 1. Signals also cause CLI exit 1. `failed` carries
 use `type: rpc_error`, `code` and `delivery: not_dispatched | unknown`. Diagnose
 using these fields, never by matching error text. An uncertain result may have
 performed the remote command: do not automatically retry it.
+
+### Long commands and persistent shells
+
+For work spanning several CLI calls, use a managed session:
+
+```sh
+okou ssh session start <connection-id> --command 'sleep 90; uname -a' --json
+okou ssh session read <session-id>
+# Follow next_command; use --json for exact base64 chunks and structured metadata.
+okou ssh session read <session-id> --cursor <next_cursor> --wait 0 --max-bytes 32768 --json
+okou ssh session close <session-id> --json
+```
+
+Start returns a session ID immediately; read includes setup failure, running
+state, or observed exit, so a separate status poll is unnecessary. `--shell`
+starts a persistent shell instead of a command;
+later `write --text <text>` calls share its working directory, environment and
+stdin. Include newlines when submitting shell commands. Optional `--pty` requests
+a terminal. `write --base64 <data>` preserves binary input, and `--eof` closes
+stdin after the submitted bytes. Use `signal --signal TERM` to submit a signal.
+
+Read waits up to 10 seconds for output or terminal state, not process completion.
+`--wait` accepts 0–30 seconds with millisecond precision; `--wait 0` reads
+immediately. Available pages are collected without further waits until caught up
+or a budget is reached. `--max-bytes` defaults to 16384 (range 1–65536). Each
+invocation is also limited to 256 chunks, 64 page requests and 35 seconds
+collecting. Reporting gets at most 5 seconds, or 1 second after collection
+timeout/cancellation. Only two reads per Run may wait concurrently.
+
+Plain output shows readable UTF-8 on its original stream and labels binary or
+terminal-control bytes with base64 and their cursor range. Adjacent same-stream
+pieces are joined before decoding; a code point spanning separate reads may be
+shown as base64. JSON preserves the exact ordered base64 chunks. Both forms
+include the latest verified state, `next_cursor`, lost ranges and a continuation
+command when meaningful. JSON `more_available` is relative to that snapshot,
+not a guarantee about future output. Before any valid page, state and
+`more_available` are null. After a reader failure, prior pages and their cursor
+remain valid observations, not proof of current authority or state.
+
+`stop_reason` distinguishes `caught_up`, `wait_elapsed`, `byte_limit`,
+`chunk_limit`, `request_limit`, `time_limit`, `terminal` and `failed`. Terminal
+means the remote terminal state was observed **and its output was drained**;
+terminal backlog still gets a continuation. CLI exit 0 means reading succeeded,
+including quiet wait expiry and remote nonzero exit; reader/RPC/output failures
+exit 1. Inspect the separate remote exit or failure before deciding work succeeded.
+Cancelling a read or exhausting its budget does not stop the remote process.
+A disconnected reader may hold its Runner request/guest park reservation until
+the requested wait expires (up to 30 seconds plus bounded terminal reserve).
+If the output pipe fails, a complete result may be undeliverable; reuse a
+previously confirmed cursor, never replay the remote command to recover output.
+
+Continue output reads with the returned `next_cursor`. Reading does not consume
+output, and the `lost` array explicitly identifies discarded byte ranges. `session list`
+recovers the current Run's IDs after a lost start reply. All session commands
+require `ssh:write`. There are eight retained sessions per current Run; completed
+records remain for five minutes or until closed. Running sessions last at most
+two hours and always end with their Run; they cannot resume in another Run.
+
+Input/signal submission and closing SSH do not prove the remote process stopped
+or its effects completed. Never automatically replay uncertain starts or input.
+This staff-gated session-read contract replaces the earlier defaults and payload
+without an old-reader compatibility path or automatic conversion into independent
+exec calls. Observed authorization-notification disconnects cancel
+managed sessions and prevent new starts until the subscription recovers.
+
+### File upload and download
+
+```sh
+okou ssh upload <connection-id> <local-file> <remote-file> --json
+okou ssh download <connection-id> <remote-file> <local-file> --json
+```
+
+Both commands require the existing SSH grant and `ssh:write` Run capability.
+Credentials remain outside the sandbox. They transfer one regular file via the
+Runner's verified SFTP connection, without shell/scp fallback. Paths are literal:
+no expansion, recursion, resume, final symlinks or automatic creation of missing
+parent directories. Existing ancestor symlinks resolve normally.
+
+Limits are **1 GiB (1,073,741,824 bytes) per file**, **15 minutes total per helper
+invocation**, including setup and I/O waits, and **two simultaneous transfers per
+Run**, shared across upload and download. No option raises these bounds. The CLI
+overview, each subcommand's help, Agent guidance and JSON errors expose them.
+Split oversized files; wait for another transfer when both slots are occupied.
+
+Default publication never replaces an existing destination. `--overwrite`
+explicitly permits atomic replacement of a regular destination entry. Transfers
+stage a private file (0600) in an exclusive private directory (0700) in the
+existing destination parent. Remote publication requires advertised SFTP v3
+`hardlink@openssh.com` v1 for no-clobber, or `posix-rename@openssh.com` v1 for
+overwrite. Unsupported servers fail before file writes; there is no delete-first
+or truncate-first fallback. Local download publication waits for verified size,
+SHA-256, End, terminal, helper EOF and successful helper exit.
+
+JSON results include `type`, `direction`, `ssh_connection_id`, `bytes`, `sha256`,
+`failure_reason`, `effects`, `residue`, `actual_bytes`, `limits` and `guidance`.
+`effects` describes the final destination: `not_started`, `unknown` or
+`completed`. `residue` separately identifies possible private temporary staging.
+Losing a remote publication acknowledgement yields `unknown`: inspect the target
+before retrying, never automatically replay. Successful publication remains
+completed even if staging cleanup fails. File permission/path failures do not
+mark the SSH host as a failed connection.
+
+Keep the source unchanged throughout the transfer. Descriptor/metadata and size
+checks detect some concurrent changes, but SHA-256 describes streamed bytes, not
+a filesystem snapshot or durable fsync guarantee. The remote server/account and
+resolved directory namespace must behave honestly: SFTP v3 cannot prove inode
+identity or defend against a same-account process maliciously replacing private
+staging. Overwrite is intentional replacement, not compare-and-swap with the
+initially observed inode. Cancellation/invalidation closes the transport; it does
+not reconnect to delete guessed paths after a lost acknowledgement.
 
 ## Host identity, errors and revocation
 

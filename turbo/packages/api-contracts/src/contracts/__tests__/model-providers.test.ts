@@ -114,6 +114,7 @@ describe("model-first canonical catalog", () => {
       "gpt-5.6-terra",
       "gpt-5.6-luna",
       "gpt-5.5",
+      "deepseek-v4.1-flash",
       "deepseek-v4-pro",
       "deepseek-v4-flash",
     ]);
@@ -144,6 +145,9 @@ describe("model-first canonical catalog", () => {
     expect(supportedRunModelSchema.safeParse("claude-opus-5").success).toBe(
       true,
     );
+    expect(
+      supportedRunModelSchema.safeParse("deepseek-v4.1-flash").success,
+    ).toBe(true);
     expect(supportedRunModelSchema.safeParse("deepseek-v4-flash").success).toBe(
       true,
     );
@@ -186,6 +190,10 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-terra")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("gpt-5.6-luna")).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-luna")).toBe(false);
+    expect(isLimitedFree1RestrictedRunModel("deepseek-v4.1-flash")).toBe(false);
+    expect(
+      isLimitedFree1RestrictedRunModel("deepseek/deepseek-v4.1-flash"),
+    ).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("deepseek-v4-flash")).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("deepseek/deepseek-v4-flash")).toBe(
       false,
@@ -246,6 +254,9 @@ describe("model-first canonical catalog", () => {
     expect(getCanonicalModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
     expect(getCanonicalModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
     expect(getCanonicalModelDisplayName("gpt-5.5")).toBe("GPT 5.5");
+    expect(getCanonicalModelDisplayName("deepseek-v4.1-flash")).toBe(
+      "DeepSeek V4.1 Flash",
+    );
     expect(getCanonicalModelDisplayName("deepseek-v4-pro")).toBe(
       "DeepSeek V4 Pro",
     );
@@ -265,6 +276,9 @@ describe("model-first canonical catalog", () => {
     expect(normalizeRunModelId("anthropic/claude-opus-5")).toBe(
       "claude-opus-5",
     );
+    expect(normalizeRunModelId("deepseek/deepseek-v4.1-flash")).toBe(
+      "deepseek-v4.1-flash",
+    );
     expect(normalizeRunModelId("custom/model")).toBe("custom/model");
     expect(isSupportedRunModel("claude-fable-5-1")).toBe(true);
     expect(isSupportedRunModel("claude-fable-5")).toBe(true);
@@ -272,6 +286,7 @@ describe("model-first canonical catalog", () => {
     expect(isSupportedRunModel("gpt-6-astra")).toBe(true);
     expect(isSupportedRunModel("gpt-5.6-sol")).toBe(true);
     expect(isSupportedRunModel("openai/gpt-5.6-sol")).toBe(false);
+    expect(isSupportedRunModel("deepseek-v4.1-flash")).toBe(true);
     expect(isSupportedRunModel("deepseek-v4-flash")).toBe(true);
     expect(isSupportedRunModel("deepseek-v4-pro")).toBe(true);
   });
@@ -289,6 +304,7 @@ describe("model-first canonical catalog", () => {
       "gpt-5.6-terra",
       "gpt-5.6-luna",
       "gpt-5.5",
+      "deepseek-v4.1-flash",
       "deepseek-v4-pro",
       "deepseek-v4-flash",
     ]);
@@ -386,6 +402,10 @@ describe("model-first canonical catalog", () => {
       "vercel-ai-gateway-codex",
     ]);
     expect(getProvidersForModel("openai/gpt-5.6-sol")).toEqual([]);
+    expect(getProvidersForModel("deepseek-v4.1-flash")).toEqual([
+      "built-in",
+      "openrouter-codex",
+    ]);
     expect(getProvidersForModel("deepseek-v4-flash")).toEqual([
       "built-in",
       "deepseek",
@@ -435,6 +455,12 @@ describe("model-first canonical catalog", () => {
     ).toBe(true);
     expect(isModelSupportedByProvider("gpt-5.5", "openai-api-key")).toBe(true);
     expect(isModelSupportedByProvider("gpt-5.5", "anthropic-api-key")).toBe(
+      false,
+    );
+    expect(
+      isModelSupportedByProvider("deepseek-v4.1-flash", "openrouter-codex"),
+    ).toBe(true);
+    expect(isModelSupportedByProvider("deepseek-v4.1-flash", "deepseek")).toBe(
       false,
     );
     expect(isModelSupportedByProvider("deepseek-v4-pro", "deepseek")).toBe(
@@ -529,6 +555,12 @@ describe("model-first canonical catalog", () => {
       "openai-api-key",
     );
     expect(getBuiltInVendor("gpt-5.6-sol")).toBe("openai");
+    expect(
+      getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),
+    ).toBe("deepseek/deepseek-v4.1-flash");
+    expect(getProviderRuntimeModel("built-in", "deepseek-v4.1-flash")).toBe(
+      "deepseek-flash",
+    );
     expect(getProviderRuntimeModel("openrouter-api-key", "custom/model")).toBe(
       "custom/model",
     );
@@ -549,6 +581,27 @@ describe("model-first canonical catalog", () => {
         vendor: "openrouter",
       },
     ]);
+  });
+
+  it("routes DeepSeek V4.1 Flash through DeepSeek with an OpenRouter fallback", () => {
+    expect(getBuiltInModelRouteCandidates("deepseek-v4.1-flash")).toEqual([
+      {
+        selectedModel: "deepseek-v4.1-flash",
+        providerType: "deepseek",
+        upstreamModel: "deepseek-flash",
+        vendor: "deepseek",
+      },
+      {
+        selectedModel: "deepseek-v4.1-flash",
+        providerType: "openrouter-codex",
+        upstreamModel: "deepseek/deepseek-v4.1-flash",
+        vendor: "openrouter",
+      },
+    ]);
+    expect(getBuiltInConcreteProviderType("deepseek-v4.1-flash")).toBe(
+      "deepseek",
+    );
+    expect(getBuiltInVendor("deepseek-v4.1-flash")).toBe("deepseek");
   });
 
   it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
@@ -577,13 +630,14 @@ describe("model-first canonical catalog", () => {
     },
   );
 
-  it("defines two statically compilable built-in model routes for every active model", () => {
+  it("defines statically compilable built-in routes for every active model", () => {
     expect(Object.keys(BUILT_IN_MODEL_TO_PROVIDER)).toEqual([
       "claude-fable-5-1",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
+      "deepseek-v4.1-flash",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
       "gpt-6-astra",
@@ -631,10 +685,11 @@ describe("model-first canonical catalog", () => {
   });
 
   it.each([
+    ["deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash"],
     ["deepseek-v4-flash", "deepseek/deepseek-v4-flash"],
     ["deepseek-v4-pro", "deepseek/deepseek-v4-pro"],
   ] as const)(
-    "projects provider-owned Codex metadata for OpenRouter %s",
+    "projects Codex metadata for OpenRouter %s",
     (model, upstreamModel) => {
       const catalog = getModelProviderCodexCatalogForModel(
         model,
@@ -645,6 +700,8 @@ describe("model-first canonical catalog", () => {
         expect.objectContaining({
           slug: upstreamModel,
           apply_patch_tool_type: null,
+          input_modalities:
+            model === "deepseek-v4.1-flash" ? ["text", "image"] : ["text"],
         }),
       ]);
     },
@@ -652,12 +709,12 @@ describe("model-first canonical catalog", () => {
 
   it("builds the default org policy seed from the workspace defaults", () => {
     expect(DEFAULT_ORG_MODEL_POLICY_MODELS).toEqual([
+      "claude-fable-5-1",
       "gpt-6-astra",
       "gpt-5.6-luna",
-      "deepseek-v4-pro",
     ]);
-    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("deepseek-v4-pro");
-    expect(LIMITED_FREE1_DEFAULT_RUN_MODEL).toBe("deepseek-v4-pro");
+    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-5.6-luna");
+    expect(LIMITED_FREE1_DEFAULT_RUN_MODEL).toBe("gpt-5.6-luna");
     expect(getDefaultModel("built-in")).toBe(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
@@ -693,6 +750,7 @@ describe("model-first canonical catalog", () => {
         "gpt-5.6-luna": "$",
         "claude-opus-4-8": "$$$",
         "claude-sonnet-5": "$$",
+        "deepseek-v4.1-flash": "$",
         "deepseek-v4-flash": "$",
         "deepseek-v4-pro": "$",
       }),
@@ -706,6 +764,7 @@ describe("model-first canonical catalog", () => {
     expect(getBuiltInModelPriceTier("gpt-5.6-luna")).toBe("$");
     expect(getBuiltInModelPriceTier("claude-opus-4-8")).toBe("$$$");
     expect(getBuiltInModelPriceTier("claude-sonnet-5")).toBe("$$");
+    expect(getBuiltInModelPriceTier("deepseek-v4.1-flash")).toBe("$");
     expect(getBuiltInModelPriceTier("deepseek-v4-flash")).toBe("$");
     expect(getBuiltInModelPriceTier("deepseek-v4-pro")).toBe("$");
     expect(getBuiltInModelPriceTier("claude-opus-4-7")).toBeUndefined();
@@ -832,8 +891,30 @@ describe("normalizeBuiltInModelId", () => {
 
 describe("model image input support", () => {
   it.each([
+    ["deepseek-flash", "deepseek", "supported"],
+    ["deepseek-v4-flash", "deepseek", "supported"],
+    ["deepseek-v4-pro", "deepseek", "unsupported"],
+    ["deepseek-flash", undefined, "unknown"],
+    ["deepseek-v4-flash", undefined, "unsupported"],
+    ["deepseek-flash", "openrouter-codex", "unknown"],
+    ["deepseek-v4-flash", "openrouter-codex", "unsupported"],
+    ["deepseek-v4-flash", "custom-openai-responses", "unsupported"],
+    ["deepseek/deepseek-v4-flash", "deepseek", "unknown"],
+  ] as const)(
+    "resolves %s image support on %s as %s",
+    (model, providerType, support) => {
+      expect(getModelImageInputSupport(model, providerType)).toBe(support);
+      expect(modelSupportsImageInput(model, providerType)).toBe(
+        support === "supported",
+      );
+    },
+  );
+
+  it.each([
     "gpt-6-astra",
     "openai/gpt-6-astra",
+    "deepseek-v4.1-flash",
+    "deepseek/deepseek-v4.1-flash",
     "claude-fable-5-1",
     "anthropic/claude-fable-5.1",
     "claude-opus-5",
@@ -868,10 +949,76 @@ describe("deepseek Responses provider", () => {
     expect(getFrameworkForType("deepseek")).toBe("codex");
     expect(getSecretNameForType("deepseek")).toBe("DEEPSEEK_API_KEY");
     expect(getModels("deepseek")).toEqual([
+      "deepseek-flash",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
     ]);
-    expect(getDefaultModel("deepseek")).toBe("deepseek-v4-flash");
+    expect(getDefaultModel("deepseek")).toBe("deepseek-flash");
+  });
+
+  it("accepts the native default as a provider model with a matching runtime catalog", () => {
+    const defaultModel = MODEL_PROVIDER_TYPES.deepseek.defaultModel;
+    expect(
+      upsertModelProviderRequestSchema.safeParse({
+        type: "deepseek",
+        secret: "test-deepseek-key",
+        selectedModel: defaultModel,
+      }).success,
+    ).toBe(true);
+    expect(getProviderRuntimeModel("deepseek", defaultModel)).toBe(
+      "deepseek-flash",
+    );
+    expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
+      modelCatalog: {
+        models: expect.arrayContaining([
+          expect.objectContaining({
+            slug: defaultModel,
+            input_modalities: ["text", "image"],
+          }),
+        ]),
+      },
+    });
+    expect(normalizeRunModelId(defaultModel)).toBe("deepseek-flash");
+    expect(normalizeRunModelId("deepseek-v4-flash")).toBe("deepseek-v4-flash");
+    expect(normalizeRunModelId("deepseek-v4.1-flash")).toBe(
+      "deepseek-v4.1-flash",
+    );
+  });
+
+  it.each([
+    ["deepseek", "deepseek-v4-flash", ["text", "image"]],
+    ["custom-openai-responses", "custom-flash", ["text"]],
+  ] as const)(
+    "projects legacy Flash capabilities for the %s route",
+    (providerType, runtimeModel, modalities) => {
+      expect(
+        getModelProviderCodexCatalogForModel(
+          "deepseek-v4-flash",
+          runtimeModel,
+          providerType,
+        )?.models,
+      ).toEqual([
+        expect.objectContaining({
+          slug: runtimeModel,
+          input_modalities: modalities,
+        }),
+      ]);
+    },
+  );
+
+  it("retains the legacy Flash route and billing identity", () => {
+    expect(getBuiltInModelRouteCandidates("deepseek-v4-flash")).toEqual([
+      expect.objectContaining({
+        selectedModel: "deepseek-v4-flash",
+        providerType: "deepseek",
+        upstreamModel: "deepseek-v4-flash",
+      }),
+      expect.objectContaining({
+        selectedModel: "deepseek-v4-flash",
+        providerType: "openrouter-codex",
+        upstreamModel: "deepseek/deepseek-v4-flash",
+      }),
+    ]);
   });
 
   it("configures the official DeepSeek Responses model catalog", () => {
@@ -886,7 +1033,16 @@ describe("deepseek Responses provider", () => {
       modelCatalog: {
         models: [
           expect.objectContaining({
+            slug: "deepseek-flash",
+            display_name: "DeepSeek-V4.1-Flash",
+            context_window: 1_048_576,
+            input_modalities: ["text", "image"],
+            apply_patch_tool_type: "freeform",
+          }),
+          expect.objectContaining({
             slug: "deepseek-v4-flash",
+            display_name: "DeepSeek-V4.1-Flash",
+            input_modalities: ["text", "image"],
             default_reasoning_level: "high",
             context_window: 1_048_576,
             minimal_client_version: "0.144.0",
@@ -902,6 +1058,7 @@ describe("deepseek Responses provider", () => {
           expect.objectContaining({
             slug: "deepseek-v4-pro",
             display_name: "DeepSeek-V4-Pro",
+            input_modalities: ["text"],
             default_reasoning_level: "high",
             context_window: 1_048_576,
             model_messages: expect.objectContaining({
@@ -1344,6 +1501,7 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
         expect(getModels(type)).toEqual(
           expect.arrayContaining([
             "openai/gpt-6-astra",
+            "deepseek/deepseek-v4.1-flash",
             "deepseek/deepseek-v4-flash",
             "deepseek/deepseek-v4-pro",
           ]),
@@ -1362,13 +1520,16 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
     expect(selectable).toContain("vercel-ai-gateway-codex");
   });
 
-  it("translate canonical GPT models to vendor-prefixed runtime IDs", () => {
+  it("translates canonical models to vendor-prefixed runtime IDs", () => {
     expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-astra")).toBe(
       "openai/gpt-6-astra",
     );
     expect(getProviderRuntimeModel("openrouter-codex", "gpt-5.5")).toBe(
       "openai/gpt-5.5",
     );
+    expect(
+      getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),
+    ).toBe("deepseek/deepseek-v4.1-flash");
   });
 
   it("share the secretName with their claude-code twin gateway", () => {

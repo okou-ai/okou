@@ -33,11 +33,37 @@ if [ "$*" = "uname -m" ]; then
 fi
 if [ "$*" = "bash -s -- $BIN_DIR" ]; then
   cat >/dev/null
+  if [ "${MOCK_RECOVERY:-false}" = true ]; then
+    if [ -f "${MOCK_REMOTE_ROOT}/${host}/bin/runner" ]; then
+      sha256sum "${MOCK_REMOTE_ROOT}/${host}/bin/runner" | awk '{print $1}'
+    else
+      echo missing
+    fi
+    exit 0
+  fi
   jq -r --arg target "$target" '.[$target]' <<<"$RUNNER_SHA_MAP"
   exit 0
 fi
 if [ "$*" = "bash -s -- $RUNNER_DIR" ]; then
   bash -s -- "${MOCK_REMOTE_ROOT}/${host}"
+  exit 0
+fi
+if [[ "$*" == "bash -s -- ${BIN_DIR}/runner.recovery."* ]]; then
+  shift 3
+  mapped_args=()
+  for arg in "$@"; do
+    mapped_args+=("${arg//"$BIN_DIR"/"${MOCK_REMOTE_ROOT}/${host}/bin"}")
+  done
+  bash -s -- "${mapped_args[@]}"
+  exit 0
+fi
+if [ "$*" = "sudo mkdir -p -- $BIN_DIR" ]; then
+  mkdir -p "${MOCK_REMOTE_ROOT}/${host}/bin"
+  exit 0
+fi
+if [[ "$*" == "sudo install -m 755 /dev/stdin ${BIN_DIR}/runner.recovery."* ]]; then
+  destination=${*: -1}
+  install -m 755 /dev/stdin "${MOCK_REMOTE_ROOT}/${host}/bin/${destination##*/}"
   exit 0
 fi
 
@@ -84,6 +110,63 @@ exec "$@"
 SH
 chmod +x "${tmp_dir}/bin/sudo"
 
+cat >"${tmp_dir}/bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$1" = api ]; then
+  endpoint=${*: -1}
+  [[ "$endpoint" == *'/actions/artifacts?'* ]] || exit 2
+  name=${endpoint#*name=}
+  name=${name%%&*}
+  jq -cn --arg name "$name" '[{artifacts: [{
+    id: 120, name: $name, expired: false, size_in_bytes: 1000,
+    created_at: "2026-09-11T00:00:00Z", workflow_run: {id: 20}
+  }]}]'
+elif [ "$1" = run ] && [ "$2" = download ]; then
+  name="" output=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      -n) name=$2; shift 2 ;;
+      -D) output=$2; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  cp "${MOCK_CACHE_ROOT}/${name}.json" "${output}/manifest.json"
+else
+  exit 2
+fi
+SH
+cat >"${tmp_dir}/bin/aws" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = s3api ] || exit 2
+case "$2" in
+  head-object) printf '{}\n' ;;
+  get-object) cp "${MOCK_CACHE_ROOT}/cached-runner.zst" "${*: -1}" ;;
+  *) exit 2 ;;
+esac
+SH
+chmod +x "${tmp_dir}/bin/gh" "${tmp_dir}/bin/aws"
+
+printf '#!/usr/bin/env bash\nprintf "cached runner fixture\\n"\n' >"${tmp_dir}/cached-runner"
+zstd -q -3 -o "${tmp_dir}/cached-runner.zst" "${tmp_dir}/cached-runner"
+cached_sha=$(sha256sum "${tmp_dir}/cached-runner" | awk '{print $1}')
+guests=$(jq -c --arg sha "$cached_sha" \
+  'map({key: .binary, value: $sha}) | from_entries' \
+  "${repo_root}/crates/runner/guest-binaries.json")
+for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+  digest_output=$("${repo_root}/.github/scripts/runner-binary-build/digest.sh" "$target")
+  digest=$(sed -n 's/^binary-input-digest=//p' <<<"$digest_output")
+  toolchain=$(sed -n 's/^toolchain-image=//p' <<<"$digest_output")
+  jq -n --arg target "$target" --arg digest "$digest" \
+    --arg sha "$cached_sha" --arg toolchain "$toolchain" \
+    --argjson guests "$guests" '{
+      schemaVersion: 1, target: $target, binaryInputDigest: $digest,
+      toolchainImage: $toolchain, guests: $guests,
+      object: {key: ("runner-binaries/" + $target + "/" + $sha + ".zst")}
+    }' >"${tmp_dir}/runner-binary-asset-${target}-${digest}.json"
+done
+
 cat >"${tmp_dir}/run-deployment" <<'SH'
 #!/usr/bin/env bash
 export MOCK_DEPLOY_PID=$$
@@ -91,12 +174,15 @@ exec bash "$@"
 SH
 
 run_case() {
-  local case_name=$1 job_ref=$2 selected_host=$3 selected_index=$4 failure=$5
+  local case_name=$1 job_ref=$2 selected_host=$3 selected_index=$4 failure=$5 recovery=${6:-false}
   local case_dir="${tmp_dir}/${case_name}"
-  local service_ref=$job_ref current_event=pull_request
+  local runner_sha_map='{"aarch64-unknown-linux-musl":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","x86_64-unknown-linux-musl":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}'
+  if [ "$recovery" = true ]; then
+    runner_sha_map=$(jq -c --arg sha "$cached_sha" 'map_values($sha)' <<<"$runner_sha_map")
+  fi
+  local service_ref=$job_ref
   if [[ "$job_ref" == staging-* ]]; then
     service_ref=staging
-    current_event=push
   fi
   local host host_index=0
   if [ ! -d "$case_dir" ]; then
@@ -105,6 +191,10 @@ run_case() {
       mkdir -p "${case_dir}/${host}"
       printf 'existing-service\n' >"${case_dir}/${host}/${service_ref}-${host_index}"
       printf 'unrelated-service\n' >"${case_dir}/${host}/pr-999-${host_index}"
+      if [ "$recovery" = true ] && [ "$host" != x86-1 ]; then
+        mkdir -p "${case_dir}/${host}/bin"
+        cp "${tmp_dir}/cached-runner" "${case_dir}/${host}/bin/runner"
+      fi
     done
   fi
   : >"${case_dir}/service.log"
@@ -114,9 +204,6 @@ run_case() {
     PATH="${tmp_dir}/bin:$PATH" \
     AWS_METAL_RUNNER_HOSTS=arm-1,x86-1,x86-2 \
     BIN_DIR="/var/lib/vm0-runner/bin/${job_ref}" \
-    CURRENT_EVENT="$current_event" \
-    CURRENT_RUN_ID=123 \
-    DEFAULT_BRANCH=main \
     JOB_REF="$job_ref" \
     METAL_HOSTS=arm-1,x86-1,x86-2 \
     METAL_USER=ci \
@@ -127,9 +214,15 @@ run_case() {
     RUNNER_DIR="/var/lib/vm0-runner/runners/${job_ref}" \
     RUNNER_GROUP="vm0/development-${service_ref}" \
     RUNNER_SERVICE_REF="$service_ref" \
-    RUNNER_SHA_MAP='{"aarch64-unknown-linux-musl":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","x86_64-unknown-linux-musl":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}' \
+    RUNNER_SHA_MAP="$runner_sha_map" \
     SNAPSHOT_HASH_MAP='{"arm-1":"snapshot-arm","x86-1":"snapshot-x86-1","x86-2":"snapshot-x86-2"}' \
     VERCEL_BYPASS=test-bypass \
+    AWS_ACCESS_KEY_ID=test-access \
+    AWS_SECRET_ACCESS_KEY=test-secret \
+    R2_ACCOUNT_ID=test-account \
+    R2_BUCKET_NAME=test-bucket \
+    MOCK_CACHE_ROOT="$tmp_dir" \
+    MOCK_RECOVERY="$recovery" \
     MOCK_REMOTE_ROOT="$case_dir" \
     MOCK_SERVICE_LOG="${case_dir}/service.log" \
     MOCK_FAILURE="$failure" \
@@ -157,6 +250,10 @@ run_case() {
       .host == $host and .service == $service and
       .runnerId == "550e8400-e29b-41d4-a716-446655440000" and .heartbeatGeneration == 7
     ' <<<"$receipt" >/dev/null || fail "${case_name}: invalid deployment receipt"
+    if [ "$recovery" = true ]; then
+      cmp "${tmp_dir}/cached-runner" "${case_dir}/x86-1/bin/runner" ||
+        fail "${case_name}: missing binary was not restored from the cache reference"
+    fi
   fi
 
   [ "$(awk '!/runner service stop / {print $1}' "${case_dir}/service.log" | sort -u)" = "$selected_host" ] ||
@@ -187,6 +284,7 @@ run_case() {
 run_case x86 pr-1 x86-1 2 none
 run_case x86 pr-1 x86-1 2 none
 run_case arm pr-2 arm-1 1 none
+run_case recovered-binary pr-1 x86-1 2 none true
 run_case failed-start pr-9 x86-2 3 readiness
 run_case invalid-identity pr-9 x86-2 3 identity
 run_case failed-retirement pr-1 x86-1 2 retire

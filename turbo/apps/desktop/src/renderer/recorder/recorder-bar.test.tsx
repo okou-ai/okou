@@ -40,7 +40,7 @@ function installRecorder(): RecorderStub {
       return await Promise.resolve();
     },
   } as unknown as DesktopRecorderApi;
-  vi.stubGlobal("vm0DesktopRecorder", api);
+  vi.stubGlobal("okouDesktopRecorder", api);
   return {
     api,
     completeWindowSelection,

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { clerk$ } from "./auth.ts";
+import { clerkUser$ } from "./auth.ts";
 
 const reloadInvitations$ = state(0);
 
@@ -9,8 +9,7 @@ const reloadInvitations$ = state(0);
  */
 export const userInvitations$ = computed(async (get) => {
   get(reloadInvitations$);
-  const clerk = await get(clerk$);
-  const user = clerk.user;
+  const user = await get(clerkUser$);
   if (!user) {
     return [];
   }

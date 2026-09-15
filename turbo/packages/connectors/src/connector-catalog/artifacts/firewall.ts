@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 
 import { connectorSlugSchema, privateNameSchema } from "./common";
+import { ConnectorCatalogRelationshipError } from "./relationship-error";
 
 const TEMPLATE_REFERENCE_PATTERN = /\b(secrets|vars)\.([A-Z][A-Z0-9_]*)\b/gu;
 const DIRECT_TEMPLATE_PATTERN =
@@ -210,7 +211,8 @@ function firewallPermissionNames(firewall: FirewallConfig): Set<string> {
       names.add(permission.name);
       const duplicateRules = duplicateStrings(permission.rules);
       if (duplicateRules.length > 0) {
-        throw new Error(
+        throw new ConnectorCatalogRelationshipError(
+          "duplicate-firewall-permission-rule",
           `Duplicate rules for firewall permission ${permission.name}: ${duplicateRules.join(", ")}`,
         );
       }
@@ -293,7 +295,8 @@ function assertCanonicalFirewallBaseHostname(normalizedBase: string): void {
     rawHostname.endsWith(".") ||
     rawHostname !== parsedComparableBase.hostname
   ) {
-    throw new Error(
+    throw new ConnectorCatalogRelationshipError(
+      "noncanonical-firewall-hostname",
       "Firewall API base hostname literals must use canonical lowercase ASCII",
     );
   }
@@ -304,7 +307,10 @@ export function parseFirewallBaseUrl(
   connectorSlug = "connector-catalog",
 ): URL {
   if (BASE_SECRET_PATTERN.test(base)) {
-    throw new Error("Firewall API base URLs must use connector variables");
+    throw new ConnectorCatalogRelationshipError(
+      "firewall-base-secret",
+      "Firewall API base URLs must use connector variables",
+    );
   }
   validateBaseUrl(base, connectorSlug);
   const normalizedBase = normalizedFirewallBaseUrl(base);
@@ -317,7 +323,10 @@ export function parseFirewallBaseUrl(
     parsed.search !== "" ||
     parsed.hash !== ""
   ) {
-    throw new Error(`Firewall base URL must be a clean HTTPS URL: ${base}`);
+    throw new ConnectorCatalogRelationshipError(
+      "invalid-firewall-base-url",
+      `Firewall base URL must be a clean HTTPS URL: ${base}`,
+    );
   }
   assertCanonicalFirewallBaseHostname(normalizedBase);
   return parsed;
@@ -353,7 +362,8 @@ function validateHostPolicy(connectorSlug: string, api: FirewallApi): void {
     firewallBaseUrlTemplateNeedsHostPolicy(api.base)
   ) {
     if (api.hostPolicy === undefined) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "missing-firewall-host-policy",
         `Credentialed dynamic base URL requires hostPolicy for ${connectorSlug}: ${api.base}`,
       );
     }
@@ -387,7 +397,8 @@ export function validateFirewallGeneratorResult(
       return !permissionNames.has(name);
     });
     if (missing.length > 0 || unknown.length > 0) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "firewall-permission-categories",
         `Firewall categories do not match permissions for ${connectorSlug}`,
       );
     }
@@ -404,7 +415,8 @@ export function validateFirewallGeneratorResult(
         return !displayNames.includes(name);
       })
     ) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "firewall-category-order",
         `Firewall category order does not match categories for ${connectorSlug}`,
       );
     }
@@ -416,7 +428,8 @@ export function validateFirewallGeneratorResult(
       return !permissionNames.has(name);
     });
     if (duplicates.length > 0 || unknown.length > 0) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "firewall-default-allowlist",
         `Firewall default allowlist is invalid for ${connectorSlug}`,
       );
     }

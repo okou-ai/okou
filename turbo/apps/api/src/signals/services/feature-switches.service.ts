@@ -13,9 +13,11 @@ import { nowDate } from "../../lib/time";
 export const ORG_SENTINEL_USER_ID = "__org__";
 
 const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
-  FeatureSwitchKey.ChatErrorRecovery,
+  FeatureSwitchKey.PersonalSubscriptionPriority,
   FeatureSwitchKey.PiLoop,
-  FeatureSwitchKey.ReferenceImages,
+  FeatureSwitchKey.PiDeferredSandbox,
+  // Bot setup and native command availability must agree for all members.
+  FeatureSwitchKey.LarkIntegration,
 ];
 
 function isOrgScopedFeatureSwitchKey(key: string): boolean {

@@ -53,7 +53,7 @@ async function openPresentationThemePreview() {
   const capture = mockTemplateChat();
   const template = builtInTemplate();
   mockTemplateObjectUrls();
-  mockPresentationHtml(template.embedUrl, ["Opening", "Evidence", "Close"]);
+  mockPresentationHtml(template.embedUrl, ["Opening"]);
   installImmediateAnimationFrames();
   const user = userEvent.setup();
 
@@ -122,7 +122,7 @@ test("Use a presentation template's default theme", async () => {
   });
 
   await openTemplatePicker(user, "Presentation");
-  await user.click(screen.getByLabelText(`Select template ${template.title}`));
+  click(screen.getByLabelText(`Select template ${template.title}`));
   await expectInlineTemplate(template.title);
   await sendComposerMessage(user, "Create a presentation with this template");
   await waitFor(() => {

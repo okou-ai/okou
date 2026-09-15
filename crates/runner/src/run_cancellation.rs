@@ -360,7 +360,8 @@ impl RunCancellationHandle {
         self.inner.transfer_gate.clone().try_lock_owned().ok()
     }
 
-    fn same_registration(&self, other: &Self) -> bool {
+    /// Compare registration identity, even when a run ID has been reused.
+    pub(crate) fn same_registration(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 }

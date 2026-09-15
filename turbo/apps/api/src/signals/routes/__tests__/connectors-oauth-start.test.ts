@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorOauthStartResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
@@ -109,10 +109,9 @@ function mockAuthenticatedSession(): void {
 // #30570 pre-stages twenty launch-gated OAuth connectors on the direct Okou App
 // callback. Each case pins the provider-specific authorization and token
 // exchange contract that must survive the callback change.
-interface LaunchGatedDirectOkouCase {
+type LaunchGatedDirectOkouCase = {
   readonly connectorSlug: string;
   readonly label: string;
-  readonly clientEnvPrefix: string;
   readonly authorizationEndpoint: string;
   readonly tokenUrl: string;
   readonly tokenResponse: JsonBodyType;
@@ -126,7 +125,10 @@ interface LaunchGatedDirectOkouCase {
   // Datadog resolves its token host from a callback query parameter.
   readonly callbackQuery?: Readonly<Record<string, string>>;
   readonly mockUserInfo?: () => void;
-}
+} & (
+  | { readonly clientEnvPrefix: string }
+  | { readonly publicClientId: string }
+);
 
 const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
   {
@@ -158,7 +160,7 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
   {
     connectorSlug: "cal-com",
     label: "Cal.com",
-    clientEnvPrefix: "CALCOM",
+    clientEnvPrefix: "CAL_COM",
     authorizationEndpoint: "https://app.cal.com/auth/oauth2/authorize",
     tokenUrl: "https://api.cal.com/v2/auth/oauth2/token",
     tokenResponse: {
@@ -491,17 +493,20 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
   {
     connectorSlug: "posthog",
     label: "PostHog",
-    clientEnvPrefix: "POSTHOG",
-    authorizationEndpoint: "https://us.posthog.com/oauth/authorize",
-    tokenUrl: "https://us.posthog.com/oauth/token",
+    publicClientId: "https://app.okou.ai/connectors/posthog/metadata.json",
+    authorizationEndpoint: "https://oauth.posthog.com/oauth/authorize/",
+    tokenUrl: "https://oauth.posthog.com/oauth/token/",
+    pkce: true,
     tokenResponse: {
       access_token: "posthog-test-token",
       refresh_token: "posthog-refresh-token",
       expires_in: 3600,
+      posthog_region: "eu",
+      posthog_base_url: "https://eu.posthog.com",
     },
     mockUserInfo: () => {
       server.use(
-        http.get("https://us.posthog.com/api/users/@me/", () => {
+        http.get("https://eu.posthog.com/api/users/@me/", () => {
           return HttpResponse.json({
             id: 123,
             first_name: "PostHog",
@@ -650,15 +655,20 @@ function launchGatedTokenRequestParams(
   );
 }
 
-function launchGatedClientId(connectorSlug: string): string {
-  return `${connectorSlug}-test-client-id`;
+function launchGatedClientId(providerCase: LaunchGatedDirectOkouCase): string {
+  return "publicClientId" in providerCase
+    ? providerCase.publicClientId
+    : `${providerCase.connectorSlug}-test-client-id`;
 }
 
 function mockLaunchGatedOAuthEnv(): void {
   for (const providerCase of LAUNCH_GATED_DIRECT_OKOU_CASES) {
+    if (!("clientEnvPrefix" in providerCase)) {
+      continue;
+    }
     mockOptionalEnv(
       `${providerCase.clientEnvPrefix}_OAUTH_CLIENT_ID`,
-      launchGatedClientId(providerCase.connectorSlug),
+      launchGatedClientId(providerCase),
     );
     mockOptionalEnv(
       `${providerCase.clientEnvPrefix}_OAUTH_CLIENT_SECRET`,
@@ -1036,7 +1046,7 @@ async function completeAppOauthCallback(
         ...callbackQuery,
       },
     )}`,
-    { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+    { headers: { "x-okou-web-origin": "https://okou.ai" } },
   );
 
   expect(callback.status).toBe(307);
@@ -1220,7 +1230,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
             state,
           },
         )}`,
-        { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+        { headers: { "x-okou-web-origin": "https://okou.ai" } },
       );
       expect(callback.status).toBe(307);
       const location = new URL(callback.headers.get("location") ?? "");
@@ -1277,7 +1287,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "github-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1313,7 +1323,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
             state,
           },
         )}`,
-        { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+        { headers: { "x-okou-web-origin": "https://okou.ai" } },
       );
       expect(callback.status).toBe(307);
       const location = new URL(callback.headers.get("location") ?? "");
@@ -1380,7 +1390,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "airtable-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1441,7 +1451,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "gmail-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1499,7 +1509,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "box-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1556,7 +1566,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "hubspot-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1622,7 +1632,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "meta-ads-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1675,7 +1685,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         auth_code: "tiktok-ads-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -2149,7 +2159,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "notion-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -2207,6 +2217,9 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
       const tokenBodies: URLSearchParams[] = [];
       server.use(
         http.post(providerCase.tokenUrl, async ({ request }) => {
+          if ("publicClientId" in providerCase) {
+            expect(request.headers.get("authorization")).toBeNull();
+          }
           tokenBodies.push(
             launchGatedTokenRequestParams(providerCase, await request.text()),
           );
@@ -2229,7 +2242,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         providerCase.authorizationEndpoint,
       );
       expect(authorizationUrl.searchParams.get("client_id")).toBe(
-        launchGatedClientId(providerCase.connectorSlug),
+        launchGatedClientId(providerCase),
       );
       const redirectUri = authorizationUrl.searchParams.get("redirect_uri");
       expect(redirectUri).toBe(
@@ -2270,6 +2283,20 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
       expect(tokenBodies[0]?.get("code_verifier")).toStrictEqual(
         expectedCodeVerifier,
       );
+      if (providerCase.pkce === true) {
+        const codeVerifier = z
+          .string()
+          .parse(tokenBodies[0]?.get("code_verifier"));
+        expect(authorizationUrl.searchParams.get("code_challenge")).toBe(
+          createHash("sha256").update(codeVerifier).digest("base64url"),
+        );
+      }
+      if ("publicClientId" in providerCase) {
+        expect(tokenBodies[0]?.get("client_id")).toBe(
+          providerCase.publicClientId,
+        );
+        expect(tokenBodies[0]?.get("client_secret")).toBeNull();
+      }
     },
   );
 
@@ -2384,7 +2411,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "cloudflare-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);

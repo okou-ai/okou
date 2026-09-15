@@ -48,6 +48,7 @@ function configureChatPrerequisites(): void {
   context.mocks.data.userModelPreference({
     selectedModel: "claude-sonnet-4-6",
     serviceTier: null,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: null,
@@ -77,6 +78,7 @@ function snapshotThread(
     renamedAt: null,
     selectedModel: "claude-sonnet-4-6",
     serviceTier: null,
+    modelSettings: {},
     computerUseHostId: null,
     cloudBrowserEnabled: false,
     selectedVideoModel: null,
@@ -90,6 +92,7 @@ function threadMetadata(id: string, title: string): ChatThreadMetadata {
     agentId: AGENT_ID,
     title,
     selectedModel: "claude-sonnet-4-6",
+    modelSettings: {},
     serviceTier: null,
     pinnedAt: null,
     computerUseHostId: null,

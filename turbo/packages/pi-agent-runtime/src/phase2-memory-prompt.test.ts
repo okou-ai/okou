@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 
+import {
+  PI_MEMORY_SUMMARY_MAX_BYTES,
+  PI_MEMORY_SUMMARY_MAX_TOKENS,
+} from "@okouai/api-contracts/contracts/runners";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -62,5 +66,18 @@ describe("Pi memory Phase 2 prompt", () => {
     for (const block of requiredBlocks) {
       expect(prompt).toContain(block);
     }
+  });
+
+  it("states the injection target and the hard byte limit as separate numbers", () => {
+    const prompt = renderPiMemoryPhase2Prompt();
+    expect(prompt).toContain(
+      `at most ${PI_MEMORY_SUMMARY_MAX_TOKENS.toString()} exact o200k tokens`,
+    );
+    expect(prompt).toContain(
+      `within ${PI_MEMORY_SUMMARY_MAX_BYTES.toString()} UTF-8 bytes`,
+    );
+    expect(prompt).toContain(
+      "A file above the 2500-token target is still valid and is stored in full",
+    );
   });
 });

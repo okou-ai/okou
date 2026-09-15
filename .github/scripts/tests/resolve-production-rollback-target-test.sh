@@ -44,6 +44,12 @@ case "${1:-}" in
         [ "${MOCK_GOAL_SCHEMA_REPAIR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "669d0befc9a181e44e3f1f9e39093efddabcc0f8" ]; then
       [ "${MOCK_CLIENT_PRODUCT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "eb2f211a9af41450d0d5dad10c0c8ad12fac0a24" ]; then
+      [ "${MOCK_PREPARED_DOMAIN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
+      [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "8a5e1299b4d26bd114ccec017b84b7a83fb4a164" ]; then
+      [ "${MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -140,6 +146,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -232,6 +239,19 @@ grep -Fq "669d0befc9a181e44e3f1f9e39093efddabcc0f8" "${tmp_dir}/failure.err" ||
 [ ! -s "${tmp_dir}/failure.out" ] || fail "pre-drop API target must not print resolved targets"
 if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "client_product rejection must precede API and Runner artifact resolution"
+fi
+
+# Targets that still declare morning_brief_default_eligible_at fail before any artifacts.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Target commit predates the org_members_metadata.morning_brief_default_eligible_at drop" \
+  run_resolver "${tmp_dir}/morning-brief-eligibility-floor.output" \
+  MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID=0
+grep -Fq "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" "${tmp_dir}/failure.err" ||
+  fail "morning brief eligibility rejection must identify the drop commit"
+[ ! -s "${tmp_dir}/morning-brief-eligibility-floor.output" ] || fail "pre-drop API target must not publish outputs"
+[ ! -s "${tmp_dir}/failure.out" ] || fail "pre-drop API target must not print resolved targets"
+if grep -qE '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "morning brief eligibility rejection must precede API and Runner artifact resolution"
 fi
 
 release_target_script="${tmp_dir}/resolve-release-target.sh"
@@ -524,5 +544,22 @@ ruby - \
   raise "deploy-app must upload the archived App artifact" unless artifact_upload_run.include?("/dist.tar.gz")
   raise "deploy-app must not upload per-file App artifacts" if artifact_upload_run.include?("aws s3 cp turbo/apps/platform/dist")
 RUBY
+: >"${tmp_dir}/boundaries.log"
+assert_failure "first supported release is eb2f211a9af41450d0d5dad10c0c8ad12fac0a24" \
+  run_resolver "${tmp_dir}/prepared-domain-floor.output" MOCK_PREPARED_DOMAIN_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/prepared-domain-floor.output" ] || fail "unprepared API must not publish outputs"
+if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "prepared writer floor must be checked before artifact resolution"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Target commit predates personal subscription priority" \
+  run_resolver "${tmp_dir}/personal-priority-floor.output" \
+  MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID=0
+grep -q '8a5e1299b4d26bd114ccec017b84b7a83fb4a164' "${tmp_dir}/failure.err" || fail "priority rejection must identify B"
+[ ! -s "${tmp_dir}/personal-priority-floor.output" ] || fail "pre-B target must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "priority rejection must precede artifact resolution"
+fi
 
 echo "resolve-production-rollback-target tests passed"

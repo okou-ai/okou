@@ -21,7 +21,7 @@ function ControlledSelect() {
         setValue(nextValue);
       }}
     >
-      <SelectTrigger aria-label="Style: All">
+      <SelectTrigger variant="neutral" aria-label="Style: All">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

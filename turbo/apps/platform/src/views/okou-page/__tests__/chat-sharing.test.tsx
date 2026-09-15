@@ -101,6 +101,11 @@ test("Share selected message groups as a public conversation snapshot", async ()
 
   await waitFor(() => {
     expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        "Selected messages and their attachments will be public.",
+      ).length,
+    ).toBeGreaterThan(0);
   });
   const promptGroup = selectableGroupForText(PROMPT);
   const answerGroup = selectableGroupForText(ANSWER);
@@ -139,69 +144,157 @@ test("Share selected message groups as a public conversation snapshot", async ()
     `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
   );
   expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
+  expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
 
-test("A folded multi-message answer shares only its visible message", async () => {
-  const createRequests: string[][] = [];
+test.each(["running", "failed"] as const)(
+  "Sharing a %s answer shows only its latest message and restores the expanded history on close",
+  async (runStatus) => {
+    const createRequests: string[][] = [];
+    const error = "The provider could not complete the request.";
+    const statusSelector =
+      runStatus === "failed"
+        ? "[data-chat-run-status-tail]"
+        : "[data-thinking-indicator]";
+    mockChatLifecycle(context, {
+      threadId: THREAD_ID,
+      threadTitle: "Grouped launch answer",
+      chatEvents: [
+        {
+          id: PROMPT_EVENT_ID,
+          role: "user",
+          content: PROMPT,
+          runId: GROUPED_RUN_ID,
+          createdAt: "2026-08-01T10:00:00Z",
+        },
+        ...GROUPED_ANSWER_EVENT_IDS.map((id, index) => {
+          return {
+            id,
+            role: "assistant" as const,
+            content: `Launch answer ${String(index + 1)}`,
+            runId: GROUPED_RUN_ID,
+            createdAt: `2026-08-01T10:00:0${String(index + 1)}Z`,
+          };
+        }),
+        ...(runStatus === "failed"
+          ? [
+              {
+                id: "b0000000-0000-4000-a000-000000000814",
+                eventType: "run.failed" as const,
+                content: null,
+                error,
+                runId: GROUPED_RUN_ID,
+                createdAt: "2026-08-01T10:00:04Z",
+              },
+            ]
+          : []),
+      ],
+      activeRunIds: runStatus === "running" ? [GROUPED_RUN_ID] : [],
+    });
+    context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
+      createRequests.push([...body.eventIds]);
+      return respond(201, { id: SHARED_THREAD_ID });
+    });
+
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+
+    await screen.findByText("Launch answer 3");
+    expect(screen.queryByText("Launch answer 1")).toBeNull();
+    expect(screen.queryByText("Launch answer 2")).toBeNull();
+    click(requiredButtonNamed("Expand work history"));
+
+    await screen.findByText("Launch answer 1");
+    expect(screen.getByText("Launch answer 2")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-event-actions")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.querySelector(statusSelector)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+    });
+    click(requiredButtonNamed("Share messages"));
+
+    const answerGroup = selectableGroupForText("Launch answer 3");
+    const answerSelection = within(answerGroup).getByRole("checkbox", {
+      name: "Select message group",
+    });
+    expect(screen.queryByText("Launch answer 1")).toBeNull();
+    expect(screen.queryByText("Launch answer 2")).toBeNull();
+    expect(buttonsNamed("Collapse work history")).toHaveLength(0);
+    expect(buttonsNamed("Expand work history")).toHaveLength(0);
+    expect(screen.queryByTestId("chat-event-actions")).toBeNull();
+    expect(document.querySelector("[data-chat-run-work-history]")).toBeNull();
+    expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
+    expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
+    expect(screen.queryByText(error)).toBeNull();
+    click(answerSelection);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
+      expect(answerSelection).toBeChecked();
+    });
+    expect(
+      document.querySelectorAll('[role="checkbox"][aria-checked="true"]'),
+    ).toHaveLength(1);
+
+    click(requiredButtonNamed("Share"));
+    await screen.findByRole("textbox", { name: "Shared conversation link" });
+    expect(createRequests).toStrictEqual([[GROUPED_ANSWER_EVENT_IDS.at(-1)]]);
+    expect(screen.queryByTestId("chat-event-actions")).toBeNull();
+    expect(screen.queryByText("Launch answer 1")).toBeNull();
+    expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
+
+    click(requiredButtonNamed("Close"));
+
+    await screen.findByText("Launch answer 1");
+    expect(screen.getByText("Launch answer 2")).toBeInTheDocument();
+    expect(screen.getByText("Launch answer 3")).toBeInTheDocument();
+    expect(requiredButtonNamed("Collapse work history")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByTestId("chat-event-actions")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.querySelector(statusSelector)).toBeInTheDocument();
+    });
+  },
+);
+
+test("Sharing while awaiting the first answer hides the run indicator until cancelled", async () => {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
-    threadTitle: "Grouped launch answer",
-    chatEvents: [
-      {
-        id: PROMPT_EVENT_ID,
-        role: "user",
-        content: PROMPT,
-        runId: GROUPED_RUN_ID,
-        createdAt: "2026-08-01T10:00:00Z",
-      },
-      ...GROUPED_ANSWER_EVENT_IDS.map((id, index) => {
-        return {
-          id,
-          role: "assistant" as const,
-          content: `Launch answer ${String(index + 1)}`,
-          runId: GROUPED_RUN_ID,
-          createdAt: `2026-08-01T10:00:0${String(index + 1)}Z`,
-        };
-      }),
-    ],
-    activeRunIds: [GROUPED_RUN_ID],
+    chatEvents: standardConversation().slice(0, 1),
+    activeRunIds: ["launch-run"],
   });
-  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
-    createRequests.push([...body.eventIds]);
-    return respond(201, { id: SHARED_THREAD_ID });
-  });
-
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
 
-  await screen.findByText("Launch answer 3");
-  expect(screen.queryByText("Launch answer 1")).toBeNull();
-  expect(screen.queryByText("Launch answer 2")).toBeNull();
+  await screen.findByText(PROMPT);
   await waitFor(() => {
-    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+    expect(
+      document.querySelector("[data-thinking-indicator]"),
+    ).toBeInTheDocument();
   });
   click(requiredButtonNamed("Share messages"));
 
-  const answerGroup = selectableGroupForText("Launch answer 3");
-  const answerSelection = within(answerGroup).getByRole("checkbox", {
-    name: "Select message group",
-  });
-  click(answerSelection);
+  const promptGroup = selectableGroupForText(PROMPT);
+  expect(within(promptGroup).getByRole("checkbox")).toBeInTheDocument();
+  expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
+
+  click(requiredButtonNamed("Cancel"));
 
   await waitFor(() => {
-    expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
-    expect(answerSelection).toBeChecked();
+    expect(
+      document.querySelector("[data-thinking-indicator]"),
+    ).toBeInTheDocument();
   });
-  expect(
-    document.querySelectorAll('[role="checkbox"][aria-checked="true"]'),
-  ).toHaveLength(1);
-
-  click(requiredButtonNamed("Share"));
-  await screen.findByRole("textbox", { name: "Shared conversation link" });
-  expect(createRequests).toStrictEqual([[GROUPED_ANSWER_EVENT_IDS.at(-1)]]);
 });
 
 test("An oversized message group cannot be added to a shared snapshot", async () => {

@@ -22,6 +22,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { emptyUsageImg } from "../platform-assets.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -166,9 +167,10 @@ function mockBillingStatus(
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       tier,
+      ...billingPlanCapabilities(tier),
       showUsagePack,
       supportByok: tier !== "limited-free-1",
-      restrictedVm0Models: tier === "limited-free-1",
+      restrictedBuiltInModels: tier === "limited-free-1",
       credits: 12_500,
       onboardingPaymentPending: false,
       subscriptionStatus,
@@ -559,6 +561,7 @@ test("Configure member packages from personal Credit balance", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00.000Z",
       allocations: [
@@ -574,6 +577,7 @@ test("Configure member packages from personal Credit balance", async () => {
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,
@@ -823,7 +827,9 @@ test("Identify the model used by limited-free runs", async () => {
           {
             kind: "model",
             credits: 100,
-            providers: [{ provider: "gpt-5.6-luna", credits: 100 }],
+            providers: [
+              { provider: "gpt-5.6-luna", credits: 100, usageKinds: [] },
+            ],
           },
         ],
       },
@@ -855,7 +861,9 @@ test("Label HeyGen Avatar III usage by the product feature", async () => {
         {
           kind: "video",
           credits: 100,
-          providers: [{ provider: "heygen-avatar-iii", credits: 100 }],
+          providers: [
+            { provider: "heygen-avatar-iii", credits: 100, usageKinds: [] },
+          ],
         },
       ],
     },

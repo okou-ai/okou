@@ -4,39 +4,33 @@ import type {
   ModelProviderResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import { secrets } from "@okouai/db/schema/secret";
-import { modelProviderAccountSecrets } from "@okouai/db/schema/model-provider-account";
-import { and, eq, inArray } from "drizzle-orm";
 
 import {
   invalidateCodexResetCreditExpiry,
   prepareCodexResetCreditExpiryRead,
 } from "./codex-reset-credit-expiry.service";
 import { logger } from "../../lib/log";
-import { type Db, type ReadonlyDb, writeDb$ } from "../external/db";
+import { type Db, writeDb$ } from "../external/db";
+import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { tapError } from "../utils";
-import { resolveCurrentModelProviderRuntimeSecretForApi } from "./agent-webhook-firewall-auth.service";
+import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
 import {
   consumeCodexRateLimitResetCredit,
   fetchCodexUsageMetadata,
   type CodexRateLimitResetCreditOutcome,
 } from "./codex-usage.service";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import type {
   SubscriptionUsageMetadata,
   SubscriptionUsageWindowMetadata,
 } from "./model-provider-subscription-usage.types";
+import { personalModelProviderAccountById } from "./model-provider-account.service";
+import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
 const L = logger("model-provider-subscription-usage.service");
 
-const CODEX_USAGE_METADATA_SECRET_NAMES = [
-  "CHATGPT_ACCOUNT_ID",
-  "CHATGPT_ID_TOKEN",
-] as const;
-const CODEX_RESET_METADATA_SECRET_NAMES = ["CHATGPT_ACCOUNT_ID"] as const;
 const CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME = "CLAUDE_CODE_OAUTH_TOKEN";
 
 interface SubscriptionMetadata {
@@ -53,63 +47,6 @@ interface SubscriptionMetadata {
 type SerializedSubscriptionUsage = NonNullable<
   ModelProviderResponse["subscriptionUsage"]
 >;
-
-async function modelProviderSecretValues(
-  args: {
-    readonly db: ReadonlyDb;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly names: readonly string[];
-    readonly modelProviderAccountId?: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<ReadonlyMap<string, string>> {
-  if (args.names.length === 0) {
-    return new Map();
-  }
-
-  const rows = args.modelProviderAccountId
-    ? await args.db
-        .select({
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: modelProviderAccountSecrets.encryptedValue,
-        })
-        .from(modelProviderAccountSecrets)
-        .where(
-          and(
-            eq(
-              modelProviderAccountSecrets.modelProviderAccountId,
-              args.modelProviderAccountId,
-            ),
-            inArray(modelProviderAccountSecrets.name, [...args.names]),
-          ),
-        )
-    : await args.db
-        .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
-        .from(secrets)
-        .where(
-          and(
-            eq(secrets.orgId, args.orgId),
-            eq(secrets.userId, args.userId),
-            eq(secrets.type, "model-provider"),
-            inArray(secrets.name, [...args.names]),
-          ),
-        );
-
-  const values = new Map<string, string>();
-  for (const row of rows) {
-    values.set(
-      row.name,
-      await decryptStoredSecretValue(
-        row.encryptedValue,
-        args.featureSwitchContext,
-      ),
-    );
-    signal.throwIfAborted();
-  }
-  return values;
-}
 
 function serializeUsageWindow(
   window: SubscriptionUsageWindowMetadata | null,
@@ -179,6 +116,7 @@ async function refreshCodexProvider(
     readonly userId: string;
     readonly provider: ModelProviderResponse;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly expectedAccountIdentity?: string;
   },
   signal: AbortSignal,
 ): Promise<ModelProviderResponse> {
@@ -192,8 +130,8 @@ async function refreshCodexProvider(
     ...(args.provider.modelProviderId ? { sourceId: args.provider.id } : {}),
     metadataKey: args.provider.type,
   };
-  const [accessTokenResult, secretValues] = await Promise.all([
-    resolveCurrentModelProviderRuntimeSecretForApi(
+  const accessTokenResult =
+    await resolveCurrentPersonalSubscriptionBundleForApi(
       {
         db: args.db,
         orgId: args.orgId,
@@ -204,21 +142,7 @@ async function refreshCodexProvider(
         featureSwitchContext: args.featureSwitchContext,
       },
       signal,
-    ),
-    modelProviderSecretValues(
-      {
-        db: args.db,
-        orgId: args.orgId,
-        userId: args.userId,
-        names: CODEX_USAGE_METADATA_SECRET_NAMES,
-        ...(args.provider.modelProviderId
-          ? { modelProviderAccountId: args.provider.id }
-          : {}),
-        featureSwitchContext: args.featureSwitchContext,
-      },
-      signal,
-    ),
-  ]);
+    );
   signal.throwIfAborted();
   if (accessTokenResult.status === "unavailable") {
     return accessTokenResult.reconnectState
@@ -231,15 +155,27 @@ async function refreshCodexProvider(
       : args.provider;
   }
 
-  const accountId = secretValues.get("CHATGPT_ACCOUNT_ID");
-  const idToken = secretValues.get("CHATGPT_ID_TOKEN");
-  if (!accountId) {
+  const accountId = accessTokenResult.values.get("CHATGPT_ACCOUNT_ID");
+  const idToken = accessTokenResult.values.get("CHATGPT_ID_TOKEN");
+  const accessToken = accessTokenResult.values.get("CHATGPT_ACCESS_TOKEN");
+  if (!accountId || !accessToken) {
+    return args.provider;
+  }
+  if (
+    args.expectedAccountIdentity &&
+    personalSubscriptionAccountIdentity({
+      type: args.provider.type,
+      externalAccountId: accountId,
+      accountEmail: null,
+      workspaceName: null,
+    }) !== args.expectedAccountIdentity
+  ) {
     return args.provider;
   }
 
   const metadata = await fetchCodexUsageMetadata(
     {
-      accessToken: accessTokenResult.value,
+      accessToken,
       accountId,
       idToken,
       readResetCreditExpiry,
@@ -252,30 +188,55 @@ async function refreshCodexProvider(
 
 async function refreshClaudeCodeProvider(
   args: {
-    readonly db: ReadonlyDb;
+    readonly db: Db;
     readonly orgId: string;
     readonly userId: string;
     readonly provider: ModelProviderResponse;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly expectedAccountIdentity?: string;
   },
   signal: AbortSignal,
 ): Promise<ModelProviderResponse> {
-  const secretValues = await modelProviderSecretValues(
+  const bundle = await resolveCurrentPersonalSubscriptionBundleForApi(
     {
       db: args.db,
       orgId: args.orgId,
       userId: args.userId,
-      names: [CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME],
-      ...(args.provider.modelProviderId
-        ? { modelProviderAccountId: args.provider.id }
-        : {}),
+      key: CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
+      providerKey: args.provider.type,
+      metadata: {
+        sourceType: "model-provider",
+        sourceUserId: args.userId,
+        metadataKey: args.provider.type,
+        ...(args.provider.modelProviderId
+          ? { sourceId: args.provider.id }
+          : {}),
+      },
       featureSwitchContext: args.featureSwitchContext,
     },
     signal,
   );
-  const accessToken = secretValues.get(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME);
+  const accessToken =
+    bundle.status === "available"
+      ? bundle.values.get(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME)
+      : undefined;
   if (!accessToken) {
     return args.provider;
+  }
+  if (args.expectedAccountIdentity) {
+    const account = await personalModelProviderAccountById({
+      db: args.db,
+      orgId: args.orgId,
+      userId: args.userId,
+      id: args.provider.id,
+    });
+    if (
+      !account ||
+      personalSubscriptionAccountIdentity(account) !==
+        args.expectedAccountIdentity
+    ) {
+      return args.provider;
+    }
   }
 
   const metadata = await fetchClaudeCodeSubscriptionMetadata(
@@ -295,6 +256,7 @@ async function refreshProvider(
     readonly userId: string;
     readonly provider: ModelProviderResponse;
     readonly featureSwitchContext: FeatureSwitchContext;
+    readonly expectedAccountIdentity?: string;
   },
   signal: AbortSignal,
 ): Promise<ModelProviderResponse> {
@@ -317,6 +279,7 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly result: ModelProviderListResponse;
+      readonly expectedAccountIdentity?: string;
     },
     signal: AbortSignal,
   ): Promise<ModelProviderListResponse> => {
@@ -341,6 +304,7 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
                 userId: args.userId,
                 provider,
                 featureSwitchContext,
+                expectedAccountIdentity: args.expectedAccountIdentity,
               },
               signal,
             ),
@@ -381,6 +345,7 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       readonly userId: string;
       readonly idempotencyKey: string;
       readonly modelProviderAccountId?: string;
+      readonly expectedAccountIdentity?: string;
     },
     signal: AbortSignal,
   ): Promise<
@@ -395,24 +360,8 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
     );
     signal.throwIfAborted();
 
-    const secretValues = await modelProviderSecretValues(
-      {
-        db: database,
-        orgId: args.orgId,
-        userId: args.userId,
-        names: CODEX_RESET_METADATA_SECRET_NAMES,
-        modelProviderAccountId: args.modelProviderAccountId,
-        featureSwitchContext,
-      },
-      signal,
-    );
-    const accountId = secretValues.get("CHATGPT_ACCOUNT_ID");
-    if (!accountId) {
-      return notFound("Resource not found");
-    }
-
     const accessTokenResult =
-      await resolveCurrentModelProviderRuntimeSecretForApi(
+      await resolveCurrentPersonalSubscriptionBundleForApi(
         {
           db: database,
           orgId: args.orgId,
@@ -441,6 +390,23 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       );
     }
 
+    const accountId = accessTokenResult.values.get("CHATGPT_ACCOUNT_ID");
+    const accessToken = accessTokenResult.values.get("CHATGPT_ACCESS_TOKEN");
+    if (!accountId || !accessToken) {
+      return notFound("Resource not found");
+    }
+    if (
+      args.expectedAccountIdentity &&
+      personalSubscriptionAccountIdentity({
+        type: "codex-oauth-token",
+        externalAccountId: accountId,
+        accountEmail: null,
+        workspaceName: null,
+      }) !== args.expectedAccountIdentity
+    ) {
+      return notFound("Resource not found");
+    }
+
     const invalidateExpiry = () => {
       invalidateCodexResetCreditExpiry(
         { scope: "personal", orgId: args.orgId, userId: args.userId },
@@ -448,13 +414,17 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       );
     };
     invalidateExpiry();
-    return await consumeCodexRateLimitResetCredit(
+    const result = await consumeCodexRateLimitResetCredit(
       {
-        accessToken: accessTokenResult.value,
+        accessToken,
         accountId,
         idempotencyKey: args.idempotencyKey,
       },
       signal,
     ).finally(invalidateExpiry);
+    signal.throwIfAborted();
+    await publishPersonalModelProvidersChangedSafely(args.userId);
+    signal.throwIfAborted();
+    return result;
   },
 );

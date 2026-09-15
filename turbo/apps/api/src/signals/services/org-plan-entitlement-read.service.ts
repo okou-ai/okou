@@ -1,5 +1,5 @@
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -14,7 +14,7 @@ export interface OrgPlanCapabilities {
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
   readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
@@ -91,10 +91,12 @@ export async function loadOrgPlanCapabilities(
     );
   }
 
+  // Destructured rather than spread so the non-null narrowing above survives
+  // into the returned capability, which is declared as a plain boolean.
   const { restrictedBuiltInModels, ...runtimeCapabilities } = capabilities;
   return {
     ...runtimeCapabilities,
-    restrictedVm0Models: restrictedBuiltInModels,
+    restrictedBuiltInModels,
     status: runtimeStatusForEntitlement(capabilities.status),
   };
 }

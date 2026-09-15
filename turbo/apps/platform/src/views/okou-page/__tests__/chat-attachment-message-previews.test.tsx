@@ -542,6 +542,41 @@ test("A Slack-originated message keeps its attachment and original source", asyn
   await expect(screen.findByText("Slack launch review")).resolves.toBeVisible();
 });
 
+test("A Lark image stored as a binary object uses a thumbnail and opens its original", async () => {
+  const fileId = "lark-image";
+  const originalUrl =
+    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/artifacts/lark-image.bin` +
+    "?X-Amz-Signature=image-signature";
+  mockAttachmentChat(context, {
+    chatEvents: [
+      sentUserMessage(
+        userMessage([
+          {
+            type: "source",
+            kind: "feishu",
+            href: "https://applink.larksuite.com/client/chat/open?chatId=chat-1",
+          },
+          filePart(fileId, "image", "image/jpeg"),
+          { type: "text", text: "Describe this image" },
+        ]),
+      ),
+    ],
+  });
+  mockPrivateUrlSequence(context, { [fileId]: [originalUrl] });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  const thumbnail = await screen.findByAltText("image");
+  expect(thumbnail).toHaveAttribute(
+    "src",
+    `https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${originalUrl}`,
+  );
+  click(await findPreviewActionForImage("image"));
+  await expect(
+    screen.findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", originalUrl);
+});
+
 test("User attachments appear before their message text", async () => {
   const files = [
     ["ordered-image", "compact.png", "image/png"],
@@ -580,7 +615,7 @@ test("User attachments appear before their message text", async () => {
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   const text = await screen.findByText("Original message beneath the files");
-  const bubble = text.closest<HTMLElement>(".okou-chat-bubble-user");
+  const bubble = text.closest<HTMLElement>('[data-slot="chat-user-message"]');
   if (!bubble) {
     throw new Error("Expected the original text bubble");
   }

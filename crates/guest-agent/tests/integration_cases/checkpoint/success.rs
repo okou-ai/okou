@@ -335,7 +335,7 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
     create_bounded_checkpoint(&runtime).await.unwrap();
 
     prepare_mock.assert_calls_async(1).await;
-    upload_mock.assert_calls_async(3).await;
+    upload_mock.assert_calls_async(1).await;
     complete_mock.assert_calls_async(1).await;
 
     let operations = std::fs::read_to_string(runtime.paths.sandbox_ops_file()).unwrap();
@@ -350,13 +350,13 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
     assert_eq!(upload_operation["success"], false);
     assert_eq!(
         upload_operation["error"],
-        "http: PUT presigned failed after 3 attempts; last failure: HTTP 502"
+        "http: PUT presigned: HTTP 502 Bad Gateway"
     );
 
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file()).unwrap();
     assert!(system_log.contains(
         "[ERROR] [sandbox:guest-agent] Session history upload failed; continuing checkpoint \
-         without history: http: PUT presigned failed after 3 attempts; last failure: HTTP 502"
+         without history: http: PUT presigned: HTTP 502 Bad Gateway"
     ));
     assert!(!system_log.contains(upload_path));
     assert!(!std::path::Path::new(runtime.paths.final_session_history_identity_file()).exists());

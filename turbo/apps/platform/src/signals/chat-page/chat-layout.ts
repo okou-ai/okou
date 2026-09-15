@@ -53,6 +53,7 @@ export const chatLayoutTransitionOnRef$ = onRef(
         properties.add(event.propertyName);
         transitions.set(event.target, properties);
         if (!frames) {
+          // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
           frames = createChildAbortController(signal);
           startFrames(frames.signal);
         }

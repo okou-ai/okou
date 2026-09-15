@@ -1,3 +1,4 @@
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
@@ -12,12 +13,10 @@ import { db } from "../../../lib/db";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
-  PI_MEMORY_PHASE2_EXPECTED_HEARTBEAT_CADENCE_MS,
   PI_MEMORY_PHASE2_LEASE_DURATION_MS,
   PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
   PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS,
-  piMemoryPhase2SelectionDigest,
 } from "../pi-memory-phase2-job.service";
 import {
   createPhase2TestScope,
@@ -32,7 +31,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 describe("Pi memory Phase 2 selection", () => {
   it("pins every timing, attempt, count, byte, and digest constant", () => {
     expect(PI_MEMORY_PHASE2_LEASE_DURATION_MS).toBe(60 * 60 * 1000);
-    expect(PI_MEMORY_PHASE2_EXPECTED_HEARTBEAT_CADENCE_MS).toBe(90 * 1000);
     expect(PI_MEMORY_PHASE2_RETRY_DELAY_MS).toBe(60 * 60 * 1000);
     expect(PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS).toBe(6 * 60 * 60 * 1000);
     expect(PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS).toBe(30 * DAY_MS);

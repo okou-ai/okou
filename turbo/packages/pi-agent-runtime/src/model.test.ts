@@ -51,10 +51,15 @@ const OPENAI_TERRA = {
   apiKey: "test-key",
   model: "gpt-5.6-terra",
   dialect: "openai-responses",
+  transport: "sse",
 } as const;
 
 async function retryableCodexProvider() {
-  const requests: Array<{ headers: IncomingHttpHeaders; body: unknown }> = [];
+  const requests: Array<{
+    url: string | undefined;
+    headers: IncomingHttpHeaders;
+    body: unknown;
+  }> = [];
   const server = createServer((request, response) => {
     void (async () => {
       const chunks: Buffer[] = [];
@@ -63,6 +68,7 @@ async function retryableCodexProvider() {
       }
       const bytes = Buffer.concat(chunks);
       requests.push({
+        url: request.url,
         headers: request.headers,
         body: JSON.parse(
           (request.headers["content-encoding"] === "zstd"
@@ -100,16 +106,48 @@ async function retryableCodexProvider() {
 }
 
 describe("Pi agent model adapter", () => {
-  it.each([
-    undefined,
-    "openai-completions",
-    "openai-responses",
-    "openai-codex-responses",
-  ] as const)("normalizes legacy api %s to Responses", (api) => {
-    const model = resolvePiAgentModel({
-      ...OPENAI_TERRA,
-      ...(api === undefined ? {} : { api }),
-    });
+  it("sends canonical Gen1 to public Responses with the selected credential", async () => {
+    const provider = await retryableCodexProvider();
+    try {
+      const config = await materializePiAgentModelConfig({
+        config: {
+          provider: "openai",
+          baseUrl: provider.baseUrl,
+          model: "gpt-5.6-terra",
+          apiKeyEnv: "OPENAI_API_KEY",
+          credentialSecretName: "OPENAI_API_KEY",
+        },
+        target: "direct",
+        resolveCredential: () => {
+          return "selected-public-key";
+        },
+      });
+      const model = resolvePiAgentModel(config);
+      if (!model) throw new Error("Expected a public model");
+      const result = await piAgentStreamForConfig(config)(
+        model,
+        {
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        },
+        { apiKey: config.apiKey },
+      ).result();
+      expect(result.stopReason).toBe("error");
+      expect(provider.requests).toHaveLength(1);
+      expect(provider.requests[0]).toMatchObject({
+        url: "/responses",
+        headers: { authorization: "Bearer selected-public-key" },
+        body: { model: "gpt-5.6-terra", stream: true, store: false },
+      });
+      expect(provider.requests[0]?.headers).not.toHaveProperty(
+        "chatgpt-account-id",
+      );
+    } finally {
+      await provider.close();
+    }
+  });
+
+  it("projects public Responses catalog capabilities onto the SDK model", () => {
+    const model = resolvePiAgentModel(OPENAI_TERRA);
 
     expect(model).toMatchObject({
       id: "gpt-5.6-terra",
@@ -182,7 +220,6 @@ describe("Pi agent model adapter", () => {
       const materialized = await materializePiAgentModelConfig({
         config: piModelConfigSchema.parse({
           ...config,
-          api: "openai-completions",
           apiKeyEnv: "OPENAI_API_KEY",
           credentialSecretName: "OPENAI_API_KEY",
         }),
@@ -213,6 +250,7 @@ describe("Pi agent model adapter", () => {
         apiKey: "test-key",
         model: "gpt-5.6-terra",
         dialect: "openai-responses",
+        transport: "sse",
       } as const,
     },
     {
@@ -276,6 +314,7 @@ describe("Pi agent model adapter", () => {
         apiKey: "test-key",
         model: "openai/gpt-5.6-sol",
         dialect: "openai-responses",
+        transport: "sse",
       }),
     ).toMatchObject({
       id: "openai/gpt-5.6-sol",
@@ -304,6 +343,7 @@ describe("Pi agent model adapter", () => {
           baseUrl: "https://gateway.example.com/v1",
           apiKey: "unused",
           dialect: "openai-responses",
+          transport: "sse",
         }),
       ).toMatchObject({
         id: config.model,
@@ -330,6 +370,7 @@ describe("Pi agent model adapter", () => {
         baseUrl: "https://example.invalid/v1",
         apiKey: "test-key",
         dialect: "openai-responses",
+        transport: "sse",
       }),
     ).toBeNull();
   });
@@ -351,14 +392,9 @@ describe("Pi agent model adapter", () => {
       baseUrl: "https://chatgpt.com/backend-api",
       api: "openai-codex-responses",
     });
-    expect(
-      resolvePiAgentModel({
-        ...OPENAI_TERRA,
-        dialect: "openai-codex-responses",
-        accountId: "account-id",
-        transport: "sse",
-      }),
-    ).toBeNull();
+    const invalid = { ...CODEX_ROUTE };
+    Object.defineProperty(invalid, "provider", { value: "openai" });
+    expect(resolvePiAgentModel(invalid)).toBeNull();
   });
 
   it.each([
@@ -367,19 +403,18 @@ describe("Pi agent model adapter", () => {
   ] as const)(
     "rejects $serviceTier on $dialect before a provider request",
     (policy) => {
-      const config = {
-        ...OPENAI_TERRA,
-        ...policy,
-        provider:
-          policy.dialect === "openai-codex-responses"
-            ? "openai-codex"
-            : "openai",
-        accountId: "exact-account-id",
-        transport: "sse" as const,
-      };
-      expect(resolvePiAgentModel(config)).toBeNull();
-      const model = resolvePiAgentModel({ ...config, serviceTier: undefined });
+      const config =
+        policy.dialect === "openai-codex-responses"
+          ? { ...CODEX_ROUTE }
+          : { ...OPENAI_TERRA };
+      const model = resolvePiAgentModel(config);
       if (!model) throw new Error("Expected a supported standard model");
+      // Untyped callers can still tamper with an otherwise valid config. The
+      // transport boundary must reject it independently of the internal types.
+      Object.defineProperty(config, "serviceTier", {
+        value: policy.serviceTier,
+      });
+      expect(resolvePiAgentModel(config)).toBeNull();
       expect(() => {
         return piAgentStreamForConfig(config)(model, {
           messages: [],

@@ -145,7 +145,7 @@ function completedWorkflowRun(args: {
   ];
 }
 
-test("Project all workflow run outputs through one run-group history", async () => {
+test("Project workflow history expansion through the existing run group", async () => {
   const events = [
     ...completedWorkflowRun({
       number: 1,
@@ -179,12 +179,10 @@ test("Project all workflow run outputs through one run-group history", async () 
     },
   ] satisfies MockChatEventInput[];
   installRunChat({ chatEvents: events, activeRunIds: [WORKFLOW_RUN_IDS[2]] });
-
   await setupPage({
     context,
     path: RUN_PATH,
   });
-
   await readyChat();
   expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();
   expect(screen.queryByText("Earlier workflow result 1")).toBeNull();
@@ -208,7 +206,6 @@ test("Project all workflow run outputs through one run-group history", async () 
       return link.getAttribute("aria-label") === "View agent profile";
     }),
   ).toHaveLength(1);
-
   click(await findWorkHistoryToggle("collapsed"));
   const firstEarlierEvidence = await screen.findByText(
     "Earlier workflow evidence 1",
@@ -221,10 +218,71 @@ test("Project all workflow run outputs through one run-group history", async () 
     assistantGroup,
   );
   expect(screen.queryByText("Nightly launch review")).toBeNull();
-
   click(await findWorkHistoryToggle("expanded"));
   await expect(findWorkHistoryToggle("collapsed")).resolves.toBeVisible();
+});
 
+test("Project workflow current run output through the existing run group", async () => {
+  const events = [
+    ...completedWorkflowRun({
+      number: 1,
+      runId: WORKFLOW_RUN_IDS[0],
+      seqId: 1,
+      minute: 0,
+    }),
+    ...completedWorkflowRun({
+      number: 2,
+      runId: WORKFLOW_RUN_IDS[1],
+      seqId: 5,
+      minute: 2,
+    }),
+    workflowInput({
+      id: "workflow-history-current-input",
+      runId: WORKFLOW_RUN_IDS[2],
+      runGroupId: WORKFLOW_GROUP_ID,
+      seqId: 9,
+      minute: 4,
+    }),
+    {
+      id: "workflow-history-current-thinking",
+      role: "assistant" as const,
+      eventType: "output.thinking" as const,
+      content: null,
+      thinking: "Checking the latest workflow run",
+      runId: WORKFLOW_RUN_IDS[2],
+      runGroupId: WORKFLOW_GROUP_ID,
+      seqId: 10,
+      createdAt: timestamp(4, 10),
+    },
+  ] satisfies MockChatEventInput[];
+  installRunChat({ chatEvents: events, activeRunIds: [WORKFLOW_RUN_IDS[2]] });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+  await readyChat();
+  expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();
+  expect(screen.queryByText("Earlier workflow result 1")).toBeNull();
+  expect(screen.queryByText("Earlier workflow evidence 2")).toBeNull();
+  const main = screen.getByText("Earlier workflow result 2");
+  expect(main).toBeVisible();
+  expect(queryWorkHistoryToggle("collapsed")).toBeVisible();
+  const currentProgress = await screen.findByLabelText(
+    "Checking the latest workflow run",
+  );
+  expect(currentProgress).toBeVisible();
+  const assistantGroup = main.closest<HTMLElement>('[data-role="assistant"]');
+  if (!assistantGroup) {
+    throw new Error(
+      "Expected the workflow result inside an assistant response",
+    );
+  }
+  expect(assistantGroup).toContainElement(currentProgress);
+  expect(
+    queryAllByRoleFast("link").filter((link) => {
+      return link.getAttribute("aria-label") === "View agent profile";
+    }),
+  ).toHaveLength(1);
   events.push(
     assistantOutput({
       id: "workflow-history-current-result",
@@ -237,7 +295,6 @@ test("Project all workflow run outputs through one run-group history", async () 
     }),
   );
   publishRunUpdate();
-
   const currentMain = await screen.findByText("Current workflow result");
   expect(currentMain).toBeVisible();
   expect(screen.queryByText("Earlier workflow result 2")).toBeNull();

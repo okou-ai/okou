@@ -266,7 +266,7 @@ function mcpCustomConnector(
     ],
     headerInjections: [
       {
-        name: "X-VM0-Test-Token",
+        name: "X-Okou-Test-Token",
         valueTemplate: "{{secrets.secret}}",
       },
     ],

@@ -226,7 +226,7 @@ export function IdeationPage() {
                   return (
                     <section
                       key={category.id}
-                      className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
+                      className="flex flex-col gap-3 duration-300"
                     >
                       <h2 className="text-lg font-semibold tracking-tight text-foreground">
                         {category.title}

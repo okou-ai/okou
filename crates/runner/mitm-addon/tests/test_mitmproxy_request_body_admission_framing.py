@@ -122,8 +122,8 @@ async def test_http2_open_sigv4_request_without_length_is_rejected_before_body(
         patch.object(auth, "get_firewall_headers", get_headers),
     ):
         addon_context.options.update(
-            vm0_api_url="https://api.okou.ai",
-            vm0_proxy_registry_path=str(registry_path),
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
         )
         http_layer, request_headers_hook = start_http2_request(
             addon_context,
@@ -170,8 +170,8 @@ async def test_http2_headers_only_sigv4_request_uses_zero_byte_admission(
         patch.object(auth, "get_firewall_headers", get_headers),
     ):
         addon_context.options.update(
-            vm0_api_url="https://api.okou.ai",
-            vm0_proxy_registry_path=str(registry_path),
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
         )
         http_layer, request_headers_hook = start_http2_request(
             addon_context,
@@ -214,8 +214,8 @@ async def test_http2_open_auth_base_request_without_length_is_rejected_before_bo
         patch.object(auth, "get_firewall_headers", get_headers),
     ):
         addon_context.options.update(
-            vm0_api_url="https://api.okou.ai",
-            vm0_proxy_registry_path=str(registry_path),
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
         )
         http_layer, request_headers_hook = start_http2_request(
             addon_context,
@@ -273,8 +273,8 @@ async def test_headers_only_auth_base_request_without_length_is_forwarded(
         fake_forwarder_upstream(status=200, body=b"ok"),
     ):
         addon_context.options.update(
-            vm0_api_url="https://api.okou.ai",
-            vm0_proxy_registry_path=str(registry_path),
+            okou_api_url="https://api.okou.ai",
+            okou_proxy_registry_path=str(registry_path),
         )
         if http_version == "HTTP/2":
             http_layer, request_headers_hook = start_http2_request(

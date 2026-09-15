@@ -18,6 +18,7 @@ import { onRejection, safeSync, settle } from "../utils";
 type AuxiliaryFeature =
   | "chat_title"
   | "shared_thread_title"
+  | "chat_activity_summary"
   | "chat_initial_thinking"
   | "run_summary"
   | "recommended_followups"
@@ -144,7 +145,7 @@ function diagnose(
   error: unknown,
   context: Readonly<{ runId?: string; threadId?: string }> | undefined,
 ): void {
-  log.warn("Auxiliary generation failed", {
+  const fields = {
     feature,
     reason,
     ...context,
@@ -165,7 +166,8 @@ function diagnose(
           retryAfterMs: error.retryAfterMs,
         }
       : {}),
-  });
+  };
+  log.warn("Auxiliary generation failed", fields);
 }
 
 /** Only generation and feature output interpretation belong inside this boundary. */
@@ -174,6 +176,13 @@ export async function generateAuxiliary<T>(
     readonly feature: AuxiliaryFeature;
     readonly generate: (record: RecordAuxiliaryGenerationDetail) => Promise<T>;
     readonly usable: (value: T) => boolean;
+    /**
+     * Set by a caller whose empty interpreted result is an omission it already
+     * handles: the outcome stays counted in `auxiliary_generation_result` and
+     * produces no diagnostic at any level. It describes the interpreted return
+     * value only, never a thrown provider error.
+     */
+    readonly unusableOutput?: "expected";
     readonly diagnosticContext?: Readonly<{
       runId?: string;
       threadId?: string;
@@ -208,7 +217,17 @@ export async function generateAuxiliary<T>(
         // be unusable: the token ceiling is the known, non-actionable cause, and
         // reporting it as a defect would restore the noise this replaces.
         const truncated = detail?.truncated === true;
-        const outcome = truncated ? "degraded" : usable ? "success" : "error";
+        // A caller that declares its empty result expected keeps the reason and
+        // the counted event; only the diagnostic goes away. Truncation still
+        // classifies ahead of it, so a usable shortened sibling output stays
+        // `output_truncated` rather than being reported as a plain success.
+        const outcome = truncated
+          ? "degraded"
+          : usable
+            ? "success"
+            : args.unusableOutput === "expected"
+              ? "degraded"
+              : "error";
         if (outcome === "error") {
           diagnose(
             args.feature,

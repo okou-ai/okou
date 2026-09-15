@@ -4,182 +4,163 @@ import type { ConnectorAuthCodeGrantConfig } from "@okouai/connectors/connector-
 import { throwOAuthError } from "../../oauth/error";
 import { effectiveOAuthScopes, reportedOAuthScopes } from "../../oauth/scope";
 
-const POSTHOG_TOKEN_URL = "https://us.posthog.com/oauth/token";
+const POSTHOG_TOKEN_URL = "https://oauth.posthog.com/oauth/token/";
+const POSTHOG_AUTHORIZATION_URL = "https://oauth.posthog.com/oauth/authorize/";
 
-const POSTHOG_AUTHORIZATION_URL = "https://us.posthog.com/oauth/authorize";
+const regionSchema = z
+  .object({
+    region: z.enum(["us", "eu"]),
+    baseUrl: z.enum(["https://us.posthog.com", "https://eu.posthog.com"]),
+  })
+  .refine(
+    ({ region, baseUrl }) => {
+      return baseUrl === `https://${region}.posthog.com`;
+    },
+    {
+      message: "PostHog region and API URL do not match",
+    },
+  );
 
-const POSTHOG_USER_INFO_URL = "https://us.posthog.com/api/users/@me/";
+const tokenSchema = z.object({
+  access_token: z.string().min(1),
+  refresh_token: z.string().min(1).nullable().optional(),
+  expires_in: z.number().positive().optional(),
+  scope: z.string().optional(),
+  posthog_region: z.string(),
+  posthog_base_url: z.string(),
+});
 
-interface PosthogUserInfo {
-  id: string;
-  name: string | null;
-  email: string | null;
+function base64Url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
-interface PosthogTokenResult {
-  accessToken: string;
-  refreshToken: string | null;
-  expiresIn?: number;
-  scopes: string[];
-  userInfo: PosthogUserInfo;
-}
-
-interface PosthogRefreshResult {
-  accessToken: string;
-  refreshToken: string | null;
-  expiresIn?: number;
-  scopes: string[] | null;
-}
-
-/**
- * Build PostHog OAuth authorization URL.
- */
-export function buildPosthogAuthorizationUrl(
+export async function buildPosthogAuthorizationUrl(
   authCodeGrant: ConnectorAuthCodeGrantConfig,
   clientId: string,
   redirectUri: string,
   state: string,
-): string {
+) {
+  const codeVerifier = base64Url(crypto.getRandomValues(new Uint8Array(48)));
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(codeVerifier),
+  );
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: authCodeGrant.scopes.join(" "),
     state,
+    code_challenge: base64Url(new Uint8Array(digest)),
+    code_challenge_method: "S256",
   });
-
-  return `${POSTHOG_AUTHORIZATION_URL}?${params.toString()}`;
+  return {
+    url: `${POSTHOG_AUTHORIZATION_URL}?${params.toString()}`,
+    codeVerifier,
+  };
 }
 
-/**
- * Exchange authorization code for access token and user info.
- */
-export async function exchangePosthogCode(
-  authCodeGrant: ConnectorAuthCodeGrantConfig,
-  clientId: string,
-  clientSecret: string,
-  code: string,
-  redirectUri: string,
-): Promise<PosthogTokenResult> {
-  const response = await fetch(POSTHOG_TOKEN_URL, {
+async function requestToken(
+  url: string,
+  operation: "exchange" | "refresh",
+  body: URLSearchParams,
+  signal?: AbortSignal,
+) {
+  const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    signal,
+    redirect: "error",
+  });
+  if (!response.ok) {
+    await throwOAuthError("PostHog", operation, response);
+  }
+  const token = tokenSchema.parse(await response.json());
+  const region = regionSchema.parse({
+    region: token.posthog_region,
+    baseUrl: token.posthog_base_url,
+  });
+  return { token, ...region };
+}
+
+export async function exchangePosthogCode(args: {
+  readonly grant: ConnectorAuthCodeGrantConfig;
+  readonly clientId: string;
+  readonly code: string;
+  readonly redirectUri: string;
+  readonly codeVerifier: string | undefined;
+}) {
+  if (!args.codeVerifier) {
+    throw new Error("PostHog requires the original PKCE code verifier");
+  }
+  const { token, region, baseUrl } = await requestToken(
+    POSTHOG_TOKEN_URL,
+    "exchange",
+    new URLSearchParams({
+      client_id: args.clientId,
+      code: args.code,
+      redirect_uri: args.redirectUri,
+      code_verifier: args.codeVerifier,
       grant_type: "authorization_code",
     }),
-  });
-
-  if (!response.ok) {
-    await throwOAuthError("PostHog", "exchange", response);
-  }
-
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
-
-  if (data.error) {
-    throw new Error(data.error_description ?? data.error);
-  }
-
-  if (!data.access_token) {
-    throw new Error("No access token in PostHog response");
-  }
-
-  const userInfo = await fetchPosthogUserInfo(data.access_token);
-
+  );
+  const userInfo = await fetchPosthogUserInfo(baseUrl, token.access_token);
   return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token ?? null,
-    expiresIn: data.expires_in,
-    scopes: effectiveOAuthScopes(data.scope, authCodeGrant.scopes, " "),
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token ?? null,
+    expiresIn: token.expires_in,
+    scopes: effectiveOAuthScopes(token.scope, args.grant.scopes, " "),
+    region,
+    baseUrl,
     userInfo,
   };
 }
 
-/**
- * Refresh a PostHog access token using the refresh token.
- * Access token expires_in: 36000s (10 hours). Ref: https://posthog.com/handbook/engineering/oauth-development-guide
- */
 export async function refreshPosthogToken(
-  clientId: string,
-  clientSecret: string,
-  refreshToken: string,
+  args: {
+    readonly clientId: string;
+    readonly refreshToken: string;
+    readonly region: string;
+    readonly baseUrl: string;
+  },
   signal: AbortSignal,
-): Promise<PosthogRefreshResult> {
-  const response = await fetch(POSTHOG_TOKEN_URL, {
-    signal,
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
+) {
+  const savedRegion = regionSchema.parse(args);
+  // Refresh against the account's region: the shared OAuth proxy's region
+  // selection can change when another account authorizes the same client_id.
+  const { token, region, baseUrl } = await requestToken(
+    `${savedRegion.baseUrl}/oauth/token/`,
+    "refresh",
+    new URLSearchParams({
+      client_id: args.clientId,
       grant_type: "refresh_token",
-      refresh_token: refreshToken,
+      refresh_token: args.refreshToken,
     }),
-  });
-
-  if (!response.ok) {
-    await throwOAuthError("PostHog", "refresh", response);
+    signal,
+  );
+  if (region !== savedRegion.region || baseUrl !== savedRegion.baseUrl) {
+    throw new Error("PostHog refresh response changed the account region");
   }
-
-  const data = z
-    .object({
-      access_token: z.string().optional(),
-      refresh_token: z.string().nullable().optional(),
-      expires_in: z.number().optional(),
-      scope: z.string().optional(),
-      error: z.string().optional(),
-      error_description: z.string().optional(),
-    })
-    .parse(await response.json());
-
-  if (data.error) {
-    throw new Error(data.error_description ?? data.error);
-  }
-
-  if (!data.access_token) {
-    throw new Error("No access token in PostHog refresh response");
-  }
-
   return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token ?? null,
-    expiresIn: data.expires_in,
-    scopes: reportedOAuthScopes(data.scope, " "),
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token ?? null,
+    expiresIn: token.expires_in,
+    scopes: reportedOAuthScopes(token.scope, " "),
   };
 }
 
-/**
- * Fetch PostHog user info using the REST API.
- */
-async function fetchPosthogUserInfo(
-  accessToken: string,
-): Promise<PosthogUserInfo> {
-  const response = await fetch(POSTHOG_USER_INFO_URL, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
+async function fetchPosthogUserInfo(baseUrl: string, accessToken: string) {
+  const response = await fetch(`${baseUrl}/api/users/@me/`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    redirect: "error",
   });
-
   if (!response.ok) {
     throw new Error(`PostHog user info fetch failed: ${response.status}`);
   }
-
   const data = z
     .object({
       id: z.number(),
@@ -188,9 +169,7 @@ async function fetchPosthogUserInfo(
       email: z.string().optional(),
     })
     .parse(await response.json());
-
   const name = [data.first_name, data.last_name].filter(Boolean).join(" ");
-
   return {
     id: String(data.id),
     name: name || null,

@@ -11,6 +11,11 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { appendChatThreadEvent } from "./chat-thread-event.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import {
+  integrationDmSessionKey,
+  isIntegrationDmSessionKey,
+} from "../../lib/integration-dm-session";
 
 interface SlackChatThreadRouteKey {
   readonly connectionId: string;
@@ -24,8 +29,6 @@ interface SlackChatThreadRouteBinding extends SlackChatThreadRouteKey {
   readonly chatThreadId: string;
 }
 
-const SLACK_DIRECT_MESSAGE_THREAD_TS = "direct-message";
-
 export function slackSessionThreadTs(args: {
   readonly channelType: "channel" | "dm" | "group_dm";
   readonly messageTs: string;
@@ -35,14 +38,13 @@ export function slackSessionThreadTs(args: {
   readonly serviceTier?: ChatThreadServiceTier | null;
 }): string {
   if (args.channelType === "dm" && !args.threadTs && args.agentId) {
-    const session = `${SLACK_DIRECT_MESSAGE_THREAD_TS}:${args.agentId}:${args.selectedModel ?? "default"}`;
-    return args.serviceTier === "priority" ? `${session}:priority` : session;
+    return integrationDmSessionKey({ ...args, agentId: args.agentId });
   }
   return args.threadTs ?? args.messageTs;
 }
 
 export function isSlackDirectMessageSessionThreadTs(threadTs: string): boolean {
-  return threadTs.startsWith(`${SLACK_DIRECT_MESSAGE_THREAD_TS}:`);
+  return isIntegrationDmSessionKey(threadTs);
 }
 
 function slackChatThreadRouteWhere(key: SlackChatThreadRouteKey) {
@@ -111,12 +113,17 @@ export async function ensureCanonicalSlackChatThreadRoute(
       orgId: args.orgId,
       userId: args.userId,
     });
+    const modelSettings = await loadNewChatThreadModelSettings(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     const [thread] = await tx
       .insert(chatThreads)
       .values({
         userId: args.userId,
         agentId: args.agentId,
         selectedModel: args.selectedModel,
+        modelSettings,
         codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
         title: null,
         lastReadAt: args.currentTime,
@@ -171,6 +178,7 @@ export async function ensureCanonicalSlackChatThreadRoute(
       agentId: args.agentId,
       title: null,
       selectedModel: args.selectedModel,
+      modelSettings,
       serviceTier: args.serviceTier,
       ...mediaModels,
       createdAt: thread.createdAt,

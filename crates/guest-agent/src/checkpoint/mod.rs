@@ -569,27 +569,54 @@ mod tests {
         let guest_paths = crate::paths::GuestPaths::from_runtime_dir(dir.path().join("runtime"));
         let _files_guard = CheckpointFilesGuard::new(&guest_paths);
         let memory_root = dir.path().join("memory");
-        std::fs::create_dir_all(&memory_root).unwrap();
+        std::fs::create_dir_all(memory_root.join("skills/interrupted")).unwrap();
+        // Block in the shell itself so interruption cannot orphan a sleeper.
         let mut child = tokio::process::Command::new("sh")
             .args([
-                "-c",
-                "mkdir -p \"$1/skills/interrupted\"; printf partial > \"$1/MEMORY.md\"; printf half > \"$1/skills/interrupted/SKILL.md\"; printf 'started\\n'; sleep 300; printf late > \"$1/memory_summary.md\"",
+                "-ec",
+                r#"printf partial > "$1/MEMORY.md"
+printf half > "$1/skills/interrupted/SKILL.md"
+printf 'started\n'
+IFS= read -r _ || exit 1
+printf late > "$1/memory_summary.md""#,
                 "sh",
                 &memory_root.to_string_lossy(),
             ])
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
             .unwrap();
         let stdout = child.stdout.take().unwrap();
         let mut reader = BufReader::new(stdout);
         let mut started = String::new();
-        reader.read_line(&mut started).await.unwrap();
+        let fixture_timeout = Duration::from_secs(5);
+        let readiness = tokio::time::timeout(fixture_timeout, reader.read_line(&mut started)).await;
+
+        // Reap the fixture even if readiness failed before asserting its result.
+        child.start_kill().unwrap();
+        let status = tokio::time::timeout(fixture_timeout, child.wait())
+            .await
+            .expect("interrupted fixture should exit")
+            .unwrap();
+        readiness.expect("fixture should become ready").unwrap();
         assert_eq!(started, "started\n");
-        child.kill().await.unwrap();
-        assert!(!child.wait().await.unwrap().success());
+        assert!(!status.success());
+        started.clear();
+        assert_eq!(
+            tokio::time::timeout(fixture_timeout, reader.read_line(&mut started))
+                .await
+                .expect("fixture stdout should close without surviving descendants")
+                .unwrap(),
+            0
+        );
         assert_eq!(
             std::fs::read_to_string(memory_root.join("MEMORY.md")).unwrap(),
             "partial"
+        );
+        assert_eq!(
+            std::fs::read_to_string(memory_root.join("skills/interrupted/SKILL.md")).unwrap(),
+            "half"
         );
         assert!(!memory_root.join("memory_summary.md").exists());
         let storage_id = "1d09f0c9-a5c6-4f21-9664-d80a3ca3ae63";

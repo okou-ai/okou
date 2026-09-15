@@ -1,4 +1,7 @@
-import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
+import {
+  createAttachmentPreviewSignals,
+  type AttachmentPreviewSignals,
+} from "../attachment-resource-url.ts";
 import {
   command,
   computed,
@@ -14,6 +17,7 @@ import {
 } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { artifactDetailPreview } from "../artifacts-page/artifact-catalog-signals.ts";
 import {
+  createTextPreviewComputed,
   fetchPreviewText,
   isTextPreviewKind,
   type TextPreviewComputed,
@@ -24,6 +28,11 @@ import {
   type MarkdownPreviewTreeComputed,
 } from "../markdown-preview-tree.ts";
 import type { MailDraftSignals } from "./mail-draft.ts";
+import {
+  classifyChatAttachment,
+  previewAttachmentFromUrl,
+} from "./parse-body-blocks.ts";
+import { createObjectUrlResource } from "../object-url-resource.ts";
 import {
   createZoomableImageCanvasSignals,
   type ZoomableImageCanvasSignals,
@@ -62,8 +71,6 @@ export type ArtifactRef = {
   readonly kind: ArtifactPreviewKind;
   readonly filename: string;
   readonly shareAvailable?: boolean;
-  /** Reset resources owned by this particular sidebar preview. */
-  readonly resetResources$?: Command<AbortSignal, AbortSignal[]>;
   /**
    * Text preview content for text-kind refs, resolved by the opening command
    * from the owning thread's artifact signals. The sidebar renders from the
@@ -86,9 +93,83 @@ export type ArtifactMetadataRef = {
   readonly contentType?: string;
   readonly shareAvailable?: boolean;
   readonly text$?: TextPreviewComputed;
+  readonly preview?: AttachmentPreviewSignals;
 };
 
 export type ArtifactRefInput = string | ArtifactFileRef | ArtifactMetadataRef;
+
+function artifactRefFromUrl(url: string): ArtifactRef {
+  const attachment = previewAttachmentFromUrl(url);
+  return {
+    url,
+    ...createAttachmentPreviewSignals(url),
+    kind: classifyChatAttachment(attachment),
+    filename: attachment.filename,
+  };
+}
+
+function withTextPreview(
+  ref: ArtifactRef,
+  ownerSignal: AbortSignal,
+): ArtifactRef {
+  if (!isTextPreviewKind(ref.kind)) {
+    return ref;
+  }
+  const text$ =
+    ref.text$ ?? createTextPreviewComputed(ref.url, ref.resourceUrl$);
+  return {
+    ...ref,
+    text$,
+    ...(ref.kind === "markdown"
+      ? { markdownTree$: createMarkdownPreviewTree(text$, ownerSignal) }
+      : {}),
+  };
+}
+
+function materializeArtifactRef(
+  input: ArtifactRefInput,
+  ownerSignal: AbortSignal,
+): ArtifactRef {
+  if (typeof input === "string") {
+    return withTextPreview(artifactRefFromUrl(input), ownerSignal);
+  }
+  if (!("file" in input)) {
+    return withTextPreview(
+      {
+        url: input.url,
+        ...(input.preview ?? createAttachmentPreviewSignals(input.url)),
+        kind: classifyChatAttachment({
+          contentType: input.contentType,
+          filename: input.filename,
+          url: input.url,
+        }),
+        filename: input.filename,
+        ...(input.text$ === undefined ? {} : { text$: input.text$ }),
+        ...(input.shareAvailable === undefined
+          ? {}
+          : { shareAvailable: input.shareAvailable }),
+      },
+      ownerSignal,
+    );
+  }
+  const resource = createObjectUrlResource(input.file, ownerSignal);
+  return withTextPreview(
+    {
+      url: resource.url,
+      ...createAttachmentPreviewSignals(resource.url),
+      kind: classifyChatAttachment({
+        contentType: input.file.type,
+        filename: input.file.name,
+        url: resource.url,
+      }),
+      filename: input.file.name,
+      ...(input.shareAvailable === undefined
+        ? {}
+        : { shareAvailable: input.shareAvailable }),
+    },
+    ownerSignal,
+  );
+}
 
 export type ThreadSidebarArtifactSource =
   | { readonly kind: "catalog"; readonly artifactId: string }
@@ -101,9 +182,20 @@ export type ThreadSidebarTarget =
   | { readonly type: "browser" }
   | { readonly type: "automations" };
 
+export type ThreadSidebarOpenTarget =
+  | Exclude<ThreadSidebarTarget, { readonly type: "artifact" }>
+  | {
+      readonly type: "artifact";
+      readonly source: Extract<
+        ThreadSidebarArtifactSource,
+        { readonly kind: "catalog" }
+      >;
+    };
+
 export interface ThreadSidebarSignals {
   readonly target$: Computed<ThreadSidebarTarget | null>;
-  readonly open$: Command<void, [ThreadSidebarTarget]>;
+  readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
+  readonly openAttachment$: Command<void, [ArtifactRefInput, AbortSignal]>;
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
   readonly close$: Command<void, []>;
@@ -137,14 +229,6 @@ export interface ThreadSidebarSignals {
   readonly artifactCatalog: ArtifactCatalogSignals;
   readonly selectedArtifactText$: Computed<Promise<string>>;
   readonly selectedArtifactMarkdownTree$: MarkdownPreviewTreeComputed;
-}
-
-function attachmentResourceReset(
-  target: ThreadSidebarTarget | null,
-): Command<AbortSignal, AbortSignal[]> | undefined {
-  return target?.type === "artifact" && target.source.kind === "attachment"
-    ? target.source.ref.resetResources$
-    : undefined;
 }
 
 function createCatalogArtifactPreviewSignals(
@@ -199,7 +283,6 @@ function createCatalogArtifactPreviewSignals(
 
 export function createThreadSidebarSignals(
   threadId: string,
-  ownerSignal: AbortSignal,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<ThreadSidebarTarget | null>(null);
   const internalEntryAnimationsEnabled$ = state(false);
@@ -207,9 +290,11 @@ export function createThreadSidebarSignals(
   const internalFullscreen$ = state(false);
   const internalEditingAutomationId$ = state<string | null>(null);
   const internalClaimedAutoOpenCandidateKey$ = state<string | null>(null);
-  const resetArtifactPreviewSignal$ = resetSignal();
+  const resetSidebarSessionSignal$ = resetSignal();
   const internalArtifactPreviewVersion$ = state(0);
-  const internalArtifactPreviewSignal$ = state(ownerSignal);
+  // No sidebar session exists until `open$` starts one under its caller's
+  // lifetime, and there is nothing to release before then.
+  const internalSidebarSessionSignal$ = state(AbortSignal.any([]));
   const imageCanvas = createZoomableImageCanvasSignals();
   const artifactCatalog = createArtifactCatalogSignals({
     chatThreadId: threadId,
@@ -217,53 +302,72 @@ export function createThreadSidebarSignals(
   const preview = createCatalogArtifactPreviewSignals(
     artifactCatalog,
     internalArtifactPreviewVersion$,
-    internalArtifactPreviewSignal$,
+    internalSidebarSessionSignal$,
   );
 
-  const open$ = command(({ get, set }, target: ThreadSidebarTarget) => {
-    const current = get(internalTarget$);
-    const currentResourceReset$ = attachmentResourceReset(current);
-    const nextResourceReset$ = attachmentResourceReset(target);
-    if (current === null) {
-      set(internalAnimateEntry$, get(internalEntryAnimationsEnabled$));
-    }
-    if (current?.type !== target.type) {
-      set(internalFullscreen$, false);
-    }
-    set(imageCanvas.reset$);
-    set(
-      internalArtifactPreviewSignal$,
-      set(resetArtifactPreviewSignal$, ownerSignal),
-    );
-    set(internalArtifactPreviewVersion$, (version) => {
-      return version + 1;
-    });
-    if (target.type === "artifact" && target.source.kind === "catalog") {
-      set(artifactCatalog.selectArtifact$, target.source.artifactId);
-    }
-    set(internalTarget$, target);
-    if (currentResourceReset$ && currentResourceReset$ !== nextResourceReset$) {
-      set(currentResourceReset$);
-    }
-  });
+  const startSession$ = command(
+    ({ set }, ownerSignal: AbortSignal): AbortSignal => {
+      ownerSignal.throwIfAborted();
+      const sessionSignal = set(resetSidebarSessionSignal$, ownerSignal);
+      set(internalSidebarSessionSignal$, sessionSignal);
+      set(internalArtifactPreviewVersion$, (version) => {
+        return version + 1;
+      });
+      return sessionSignal;
+    },
+  );
 
-  const close$ = command(({ get, set }) => {
-    set(
-      internalArtifactPreviewSignal$,
-      set(resetArtifactPreviewSignal$, ownerSignal),
-    );
+  const publishTarget$ = command(
+    ({ get, set }, target: ThreadSidebarTarget): void => {
+      const current = get(internalTarget$);
+      if (current === null) {
+        set(internalAnimateEntry$, get(internalEntryAnimationsEnabled$));
+      }
+      if (current?.type !== target.type) {
+        set(internalFullscreen$, false);
+      }
+      set(imageCanvas.reset$);
+      if (target.type === "artifact" && target.source.kind === "catalog") {
+        set(artifactCatalog.selectArtifact$, target.source.artifactId);
+      }
+      set(internalTarget$, target);
+    },
+  );
+
+  const open$ = command(
+    (
+      { set },
+      target: ThreadSidebarOpenTarget,
+      ownerSignal: AbortSignal,
+    ): void => {
+      set(startSession$, ownerSignal);
+      set(publishTarget$, target);
+    },
+  );
+
+  const openAttachment$ = command(
+    ({ set }, input: ArtifactRefInput, ownerSignal: AbortSignal): void => {
+      const sessionSignal = set(startSession$, ownerSignal);
+      set(publishTarget$, {
+        type: "artifact",
+        source: {
+          kind: "attachment",
+          ref: materializeArtifactRef(input, sessionSignal),
+        },
+      });
+    },
+  );
+
+  const close$ = command(({ set }) => {
+    set(resetSidebarSessionSignal$);
     set(internalArtifactPreviewVersion$, (version) => {
       return version + 1;
     });
-    const resourceReset$ = attachmentResourceReset(get(internalTarget$));
     set(internalTarget$, null);
     set(internalAnimateEntry$, false);
     set(internalFullscreen$, false);
     set(internalEditingAutomationId$, null);
     set(imageCanvas.reset$);
-    if (resourceReset$) {
-      set(resourceReset$);
-    }
   });
 
   const claimAutoOpenCandidate$ = command(
@@ -281,6 +385,7 @@ export function createThreadSidebarSignals(
       return get(internalTarget$);
     }),
     open$,
+    openAttachment$,
     close$,
     animateEntry$: computed((get) => {
       return get(internalAnimateEntry$);

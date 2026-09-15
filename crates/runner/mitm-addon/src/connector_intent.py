@@ -5,9 +5,10 @@ from typing import Final, Literal
 
 from mitmproxy import http
 
-HEADER_NAME: Final = "X-VM0-Connector-Intent"
+HEADER_NAME: Final = "X-Okou-Connector-Intent"
 
-_RAW_HEADER_NAME: Final = b"x-vm0-connector-intent"
+# Lowercase, because the field scan compares against ``name.lower()``.
+_RAW_HEADER_NAME: Final = b"x-okou-connector-intent"
 _MAX_CONNECTOR_INTENT_BYTES: Final = 64
 
 _VALUE_METADATA_KEY = "_connector_intent_value"
@@ -33,18 +34,28 @@ ABSENT = ConnectorIntent("absent")
 MALFORMED = ConnectorIntent("malformed")
 
 
+def _scan_raw_header(flow: http.HTTPFlow, raw_name: bytes) -> tuple[bytes | None, bool]:
+    """Return one header's first raw value and whether that same name repeats."""
+    raw_value: bytes | None = None
+    for name, value in flow.request.headers.fields:
+        if name.lower() != raw_name:
+            continue
+        if raw_value is not None:
+            return raw_value, True
+        raw_value = value
+    return raw_value, False
+
+
 def capture_and_strip(flow: http.HTTPFlow) -> None:
-    """Capture connector intent once and always remove its private header."""
+    """Capture connector intent once and always remove its private header.
+
+    Removal is unconditional: it runs on every flow, including flows that do not
+    carry the header and flows whose intent was already captured — a header this
+    addon fails to remove is forwarded to the third-party upstream with a
+    connector id in it. Repeating the name is ``malformed``.
+    """
     if _STATUS_METADATA_KEY not in flow.metadata:
-        raw_value: bytes | None = None
-        repeated = False
-        for name, value in flow.request.headers.fields:
-            if name.lower() != _RAW_HEADER_NAME:
-                continue
-            if raw_value is not None:
-                repeated = True
-                break
-            raw_value = value
+        raw_value, repeated = _scan_raw_header(flow, _RAW_HEADER_NAME)
 
         if raw_value is None:
             flow.metadata[_STATUS_METADATA_KEY] = "absent"

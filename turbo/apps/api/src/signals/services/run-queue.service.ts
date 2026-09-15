@@ -2,7 +2,11 @@ import { command } from "ccstate";
 import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agents } from "@okouai/db/schema/agent";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   and,
   count,
@@ -22,7 +26,10 @@ import {
   publishThreadListChanged,
 } from "../external/realtime";
 import { logger } from "../../lib/log";
-import { activePendingRunPredicate } from "./agent-run-activity.service";
+import {
+  legacySandboxRunPredicate,
+  sandboxCapacityPredicate,
+} from "./pi-inference-lifecycle.service";
 import { decryptQueuedRunnerJobPayload } from "./agent-run-queue-payload.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -44,7 +51,17 @@ import {
 } from "./pi-api-first-turn-config";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { checkOrgCreditsForRunAdmissionInTransaction } from "./run-admission.service";
-import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import {
+  COMPUTE_CLOSURE_ERROR,
+  transitionAgentRunsToTerminal,
+} from "./agent-run-terminal-transition.service";
+import {
+  prepareComputeRunAdmission,
+  validateComputeRunAdmission,
+  stopClosedComputeCandidate,
+  withComputeOwnershipRetry,
+} from "./compute-erasure-admission.service";
+import { settle } from "../utils";
 
 const L = logger("RunQueue");
 
@@ -71,13 +88,53 @@ async function effectiveOrgConcurrencyState(
 }
 
 type DbTransaction = Tx;
+
+async function lockQueuedRunThreads(
+  tx: DbTransaction,
+  runIds: readonly string[],
+): Promise<void> {
+  if (runIds.length === 0) {
+    return;
+  }
+  // Terminal cleanup takes the provider lock. Queue-marker revocation later
+  // writes thread sequence numbers, so own those threads before locking runs
+  // or providers, in the same order as completion and final launch admission.
+  // Include marker parents for historical runs without a thread binding.
+  await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      inArray(
+        chatThreads.id,
+        tx
+          .select({ id: agentRuns.chatThreadId })
+          .from(agentRuns)
+          .where(inArray(agentRuns.id, runIds))
+          .union(
+            tx
+              .select({ id: chatEvents.chatThreadId })
+              .from(chatEvents)
+              .where(inArray(chatEvents.runId, runIds)),
+          ),
+      ),
+    )
+    .orderBy(chatThreads.id)
+    .for("update");
+}
+
 type QueuedRunnerJobPayload = NonNullable<
   Awaited<ReturnType<typeof decryptQueuedRunnerJobPayload>>
 >;
 
 interface QueueCandidate {
   readonly runId: string;
+  readonly agentId: string | null;
+  readonly resourceOwner: {
+    readonly userId: string;
+    readonly orgId: string;
+  } | null;
   readonly userId: string;
+  readonly runOwner: { readonly userId: string; readonly orgId: string } | null;
   readonly createdAt: Date;
   readonly encryptedParams: string | null;
   readonly runStatus: string | null;
@@ -98,6 +155,7 @@ interface PromoteQueuedCandidateArgs {
   readonly orgId: string;
   readonly row: QueueCandidate;
   readonly payload: QueuedRunnerJobPayload | null;
+  readonly payloadFailure?: { readonly error: unknown };
 }
 
 interface PromotedRunnerJob {
@@ -277,7 +335,10 @@ async function loadDrainCandidates(
   return await db
     .select({
       runId: agentRunQueue.runId,
+      agentId: agentSessions.agentId,
+      resourceOwner: { userId: agents.owner, orgId: agents.orgId },
       userId: agentRunQueue.userId,
+      runOwner: { userId: agentRuns.userId, orgId: agentRuns.orgId },
       createdAt: agentRunQueue.createdAt,
       encryptedParams: agentRunQueue.encryptedParams,
       runStatus: agentRuns.status,
@@ -287,9 +348,12 @@ async function loadDrainCandidates(
     })
     .from(agentRunQueue)
     .leftJoin(agentRuns, eq(agentRunQueue.runId, agentRuns.id))
+    .leftJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
     .where(
       and(
         eq(agentRunQueue.orgId, orgId),
+        sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
         sql`${agentRuns.triggerSource} IS DISTINCT FROM 'goal'`,
       ),
     )
@@ -361,6 +425,7 @@ async function failQueuedRunAdmission(
     conditions: [
       eq(agentRuns.id, args.row.runId),
       eq(agentRuns.status, "queued"),
+      sql`(${legacySandboxRunPredicate()})`,
     ],
   });
   if (!failed) {
@@ -459,6 +524,26 @@ async function promoteQueuedCandidateInTransaction(
   args: PromoteQueuedCandidateArgs,
   timing: ApiDispatchTimingCollector,
 ): Promise<{ readonly result: PromotionResult; readonly lockHeldAt: number }> {
+  // A mismatch in the single discovery snapshot is persisted corruption, not
+  // a resource disappearing while admission waits. Preserve its existing error.
+  if (
+    args.row.runOwner &&
+    (args.row.runOwner.userId !== args.row.userId ||
+      args.row.runOwner.orgId !== args.orgId)
+  ) {
+    throw new Error(
+      `Queued run "${args.row.runId}" does not match its queue owner`,
+    );
+  }
+  const admission = await prepareComputeRunAdmission(tx, args.row.runId, {
+    userId: args.row.userId,
+    orgId: args.orgId,
+    agentId: args.row.agentId,
+    resourceOwner: args.row.resourceOwner ?? undefined,
+  });
+  if (!admission) {
+    return { result: { status: "lost" }, lockHeldAt: now() };
+  }
   const lockHeldAt = await acquirePromotionAdmissionLock(
     tx,
     args.orgId,
@@ -467,6 +552,14 @@ async function promoteQueuedCandidateInTransaction(
   const complete = (result: PromotionResult) => {
     return { result, lockHeldAt };
   };
+  await lockQueuedRunThreads(tx, [args.row.runId]);
+  if (!(await validateComputeRunAdmission(tx, admission))) {
+    return complete({ status: "lost" });
+  }
+  if (admission.closed) {
+    await stopClosedComputeCandidate(tx, admission);
+    return complete({ status: "lost" });
+  }
   const concurrency = await effectiveOrgConcurrencyState(tx, args.orgId);
   if (concurrency.activeRunCount >= concurrency.limit) {
     return complete({ status: "full" });
@@ -511,6 +604,9 @@ async function promoteQueuedCandidateInTransaction(
     return complete({ status: "lost" });
   }
   if (args.payload === null) {
+    if (args.payloadFailure) {
+      throw args.payloadFailure.error;
+    }
     throw new Error(
       `Queued run "${args.row.runId}" is missing its runner job payload`,
     );
@@ -544,8 +640,10 @@ async function promoteQueuedCandidate(
 ): Promise<PromoteQueuedCandidateResult> {
   // Promotion may outlive the create-run collector, so buffer timing until commit.
   const timing = new ApiDispatchTimingCollector();
-  const committed = await db.transaction(async (tx) => {
-    return await promoteQueuedCandidateInTransaction(tx, args, timing);
+  const committed = await withComputeOwnershipRetry(() => {
+    return db.transaction(async (tx) => {
+      return await promoteQueuedCandidateInTransaction(tx, args, timing);
+    });
   });
   return finalizePromoteQueuedCandidate(timing, committed);
 }
@@ -573,6 +671,7 @@ async function promoteQueuedCandidateWithSideEffects(
     readonly orgId: string;
     readonly row: QueueCandidate;
     readonly payload: QueuedRunnerJobPayload | null;
+    readonly payloadFailure?: { readonly error: unknown };
   },
 ): Promise<PromoteQueuedCandidateSideEffectResult> {
   const result = await promoteQueuedCandidate(db, args);
@@ -640,15 +739,18 @@ export const promoteNextQueuedRun$ = command(
     signal.throwIfAborted();
 
     for (const row of queueRows) {
-      const payload =
+      const payloadResult =
         row.runStatus === "queued"
-          ? await decryptQueuedRunnerJobPayload(row.encryptedParams)
-          : null;
+          ? await settle(decryptQueuedRunnerJobPayload(row.encryptedParams))
+          : { ok: true as const, value: null };
       signal.throwIfAborted();
       const result = await promoteQueuedCandidateWithSideEffects(writeDb, {
         orgId: args.orgId,
         row,
-        payload,
+        payload: payloadResult.ok ? payloadResult.value : null,
+        ...(payloadResult.ok
+          ? {}
+          : { payloadFailure: { error: payloadResult.error } }),
       });
       // Promotion is durable now. Observe request cancellation for diagnostics,
       // but let the commit-owned activation finish independently.
@@ -694,7 +796,7 @@ export const cleanupExpiredQueueEntries$ = command(
           ),
         );
 
-      const candidates = await tx
+      const discovered = await tx
         .select({
           runId: agentRuns.id,
         })
@@ -703,15 +805,24 @@ export const cleanupExpiredQueueEntries$ = command(
           and(
             inArray(agentRuns.id, expiredRunIds),
             eq(agentRuns.status, "queued"),
+            sql`(${legacySandboxRunPredicate()})`,
           ),
         )
-        .orderBy(agentRuns.createdAt, agentRuns.id)
-        .for("update");
+        .orderBy(agentRuns.createdAt, agentRuns.id);
       signal.throwIfAborted();
 
-      const candidateRunIds = candidates.map((candidate) => {
+      const candidateRunIds = discovered.map((candidate) => {
         return candidate.runId;
       });
+      await lockQueuedRunThreads(tx, candidateRunIds);
+      if (candidateRunIds.length > 0) {
+        await tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(inArray(agentRuns.id, candidateRunIds))
+          .orderBy(agentRuns.createdAt, agentRuns.id)
+          .for("update");
+      }
 
       const timedOut =
         candidateRunIds.length === 0
@@ -725,6 +836,8 @@ export const cleanupExpiredQueueEntries$ = command(
               conditions: [
                 inArray(agentRuns.id, candidateRunIds),
                 eq(agentRuns.status, "queued"),
+                sql`(${legacySandboxRunPredicate()})`,
+                inArray(agentRuns.id, expiredRunIds),
               ],
             });
       const timedOutRuns = await timedOutQueuedRunsWithMarkerNotifications(
@@ -742,6 +855,7 @@ export const cleanupExpiredQueueEntries$ = command(
             lt(agentRunQueue.expiresAt, currentTime),
             runIds === null ? undefined : inArray(agentRunQueue.runId, runIds),
             or(isNull(agentRuns.id), ne(agentRuns.status, "queued")),
+            sql`${agentRuns.error} IS DISTINCT FROM ${COMPUTE_CLOSURE_ERROR}`,
           ),
         );
 
@@ -799,6 +913,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         .where(
           and(
             eq(agentRuns.status, "queued"),
+            sql`(${legacySandboxRunPredicate()})`,
             lt(agentRuns.createdAt, cutoff),
             runIds === null ? undefined : inArray(agentRuns.id, runIds),
             notExists(
@@ -809,8 +924,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
             ),
           ),
         )
-        .orderBy(agentRuns.createdAt, agentRuns.id)
-        .for("update");
+        .orderBy(agentRuns.createdAt, agentRuns.id);
       signal.throwIfAborted();
 
       if (candidates.length === 0) {
@@ -820,6 +934,13 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
       const candidateRunIds = candidates.map((candidate) => {
         return candidate.runId;
       });
+      await lockQueuedRunThreads(tx, candidateRunIds);
+      await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(inArray(agentRuns.id, candidateRunIds))
+        .orderBy(agentRuns.createdAt, agentRuns.id)
+        .for("update");
 
       // Queue persistence locks the run before inserting agent_run_queue. If
       // this transaction waited for that lock, re-check the queue table with a
@@ -832,6 +953,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         },
         conditions: [
           eq(agentRuns.status, "queued"),
+          sql`(${legacySandboxRunPredicate()})`,
           inArray(agentRuns.id, candidateRunIds),
           notExists(
             tx
@@ -885,13 +1007,7 @@ export const staleQueueOrgIds$ = command(
         .where(
           and(
             eq(agentRuns.orgId, orgId),
-            or(
-              eq(agentRuns.status, "running"),
-              and(
-                eq(agentRuns.status, "pending"),
-                activePendingRunPredicate(staleThreshold),
-              ),
-            ),
+            sandboxCapacityPredicate(writeDb, orgId, staleThreshold),
           ),
         );
       signal.throwIfAborted();

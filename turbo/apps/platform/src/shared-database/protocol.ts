@@ -13,6 +13,7 @@ export const sharedDatabaseRealtimeScopeSchema = z.enum([
   "credential",
   "org",
   "user",
+  "run-output",
 ]);
 
 export type SharedDatabaseRealtimeScope = z.infer<
@@ -100,6 +101,7 @@ const userRealtimeTopicSchema = z.union([
   z.literal("customConnectorListChanged"),
   z.literal("feishu:changed"),
   z.literal("github:changed"),
+  z.literal("modelPoliciesChanged"),
   z.literal("presentationTemplatesChanged"),
   z.literal("slack:changed"),
   z.literal("teams:changed"),
@@ -117,8 +119,12 @@ function isSharedDatabaseAppRealtimeSubscription(
   topic: string,
 ): boolean {
   return (
+    (scope === "run-output" && z.uuid().safeParse(topic).success) ||
     (scope === "user" && userRealtimeTopicSchema.safeParse(topic).success) ||
-    (scope === "org" && topic === "presentationTemplatesChanged")
+    (scope === "credential" && topic === "morningBriefChanged") ||
+    (scope === "org" &&
+      (topic === "presentationTemplatesChanged" ||
+        topic === "modelPoliciesChanged"))
   );
 }
 

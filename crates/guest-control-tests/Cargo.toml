@@ -1,12 +1,13 @@
 [package]
 name = "guest-control-tests"
-version = "0.11.3"
+version = "0.11.12"
 edition.workspace = true
 
 [dependencies]
 guest-write-file.workspace = true
 
 [dev-dependencies]
+guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 nix = { workspace = true, features = ["inotify"] }
 shell-quote.workspace = true

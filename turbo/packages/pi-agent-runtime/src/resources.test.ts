@@ -47,6 +47,7 @@ describe("preheated Pi resources", () => {
       agentDir,
       ...piPreheatedResourceLoaderOptions({
         appendSystemPrompt: ["Appended by the run"],
+        systemPrompt: "Okou Harness base prompt for the preheated route.",
         snapshot: {
           schemaVersion: 1,
           agentsFiles: [
@@ -106,6 +107,9 @@ describe("preheated Pi resources", () => {
     ).toStrictEqual(["release-check", "manual-only"]);
     expect(session.systemPrompt).not.toContain("Stale automatic Goal guidance");
     expect(session.systemPrompt).toContain("Appended by the run");
+    expect(session.systemPrompt).toContain(
+      "Okou Harness base prompt for the preheated route.",
+    );
     expect(session.sessionManager.getSessionFile()).toBeUndefined();
     session.dispose();
 

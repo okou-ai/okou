@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { CronCleanupSandboxesResponse } from "@okouai/api-contracts/contracts/cron";
 import {
@@ -39,6 +39,7 @@ import {
   holdRunOutputProjectionLockFixture,
   insertPendingInlineDeliveryCallbackFixture,
   readRunCallbackFixture,
+  readHistoryBlobReferenceCountFixture,
 } from "../../../test-fixtures/run-deletion";
 import {
   deleteUsagePricingRows,
@@ -239,6 +240,7 @@ async function insertRunFixture(args?: {
   readonly completedAt?: Date | null;
   readonly cancellationRecoveryCompleted?: boolean;
   readonly threadless?: boolean;
+  readonly checkpointReady?: boolean;
   readonly triggerSource?: TriggerSource;
   readonly userId?: string;
   readonly orgId?: string;
@@ -259,6 +261,7 @@ async function insertRunFixture(args?: {
         : (args.completedAt?.toISOString() ?? null),
     cancellation_recovery_completed: args?.cancellationRecoveryCompleted,
     threadless: args?.threadless,
+    checkpoint_ready: args?.checkpointReady,
     trigger_source: args?.triggerSource,
     user_id: args?.userId,
     org_id: args?.orgId,
@@ -769,6 +772,45 @@ describe("sandbox cleanup", () => {
       });
     },
   );
+
+  it("releases a checkpoint history reference through the bounded threadless sweep", async () => {
+    mockNow(THREADLESS_TEST_NOW_MS);
+    const fixture = await trackRun(
+      insertRunFixture({
+        status: "failed",
+        createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + 1),
+        completedAt: new Date(
+          THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
+        ),
+        threadless: true,
+        checkpointReady: true,
+      }),
+    );
+    const hash = createHash("sha256")
+      .update(`bdd session history ${fixture.runId}`)
+      .digest("hex");
+    await webhooks.requestAgentCheckpoint(
+      {
+        runId: fixture.runId,
+        cliAgentType: "claude-code",
+        cliAgentSessionId: fixture.runId,
+        cliAgentSessionHistoryHash: hash,
+      },
+      {
+        authorization: `Bearer ${generateSandboxToken(fixture.userId, fixture.runId, fixture.orgId)}`,
+      },
+      [200],
+    );
+    // The maintenance clock/eligibility fixture and exact ledger inspection
+    // are infrastructure-only; checkpoint persistence and the sweep are real.
+    await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(1);
+    const response = await cleanupRegisteredFixtures();
+    expect(response.body.threadlessRuns.deleted).toBe(1);
+    await expect(findRun(fixture.runId)).resolves.toBeNull();
+    await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
+    await cleanupRegisteredFixtures();
+    await expect(readHistoryBlobReferenceCountFixture(hash)).resolves.toBe(0);
+  });
 
   it("waits through the quiet window and deletes at its exact boundary", async () => {
     const completedAt = new Date(THREADLESS_TEST_NOW_MS);
@@ -1548,6 +1590,58 @@ describe("sandbox cleanup", () => {
     });
     await expect(findQueueEntry(fixture.runId)).resolves.toBeNull();
   });
+
+  it.each(["request rejection", "per-key error"] as const)(
+    "preserves expired export jobs for retry when S3 deletion returns a %s",
+    async (failure) => {
+      const s3Key = `exports/${randomUUID()}.zip`;
+      const expiredJob = await trackExportJob(
+        insertExportJob({
+          status: "completed",
+          createdAt: minutesAgo(30),
+          expiresAt: minutesAgo(1),
+          s3Key,
+        }),
+      );
+      if (failure === "request rejection") {
+        context.mocks.s3.send.mockRejectedValueOnce(
+          new Error("S3 request failed"),
+        );
+      } else {
+        context.mocks.s3.send.mockResolvedValueOnce({
+          Errors: [{ Key: s3Key, Code: "AccessDenied" }],
+        });
+      }
+
+      const app = createAppWithRoutes({
+        signal: context.signal,
+        routes: testCronCleanupSandboxesStateRoutes,
+      });
+      const failed = await app.request(
+        "/api/test/cron-cleanup-sandboxes-state/cleanup",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            chatThreadIds: [],
+            runIds: [],
+            orgIds: [],
+            exportJobIds: [expiredJob.id],
+          }),
+        },
+      );
+
+      expect(failed.status).toBe(500);
+      await expect(findExportJob(expiredJob.id)).resolves.toStrictEqual({
+        status: "completed",
+        error: null,
+      });
+
+      const retried = await cleanupRegisteredFixtures();
+      expect(retried.body.exportJobsCleaned).toBe(1);
+      await expect(findExportJob(expiredJob.id)).resolves.toBeNull();
+    },
+  );
 
   it("cleans expired export jobs and fails stuck export jobs", async () => {
     const expiredJob = await trackExportJob(

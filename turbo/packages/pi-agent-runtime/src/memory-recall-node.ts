@@ -12,9 +12,8 @@ import {
   piMemorySummaryTokenCount,
   PI_MEMORY_ROOT,
   PI_MEMORY_SUMMARY_MAX_BYTES,
-  PI_MEMORY_SUMMARY_MAX_TOKENS,
+  PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
   renderPiMemoryRecall,
-  truncatePiMemorySummary,
 } from "./memory-recall";
 
 interface PiMemoryRecallResolution {
@@ -88,7 +87,8 @@ function readySelectionIsStructurallyValid(
     selection.sourceSize > 0 &&
     selection.sourceSize <= PI_MEMORY_SUMMARY_MAX_BYTES &&
     Number.isInteger(selection.tokenCount) &&
-    selection.tokenCount > 0
+    selection.tokenCount > 0 &&
+    selection.tokenCount <= PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS
   );
 }
 
@@ -127,26 +127,25 @@ function authenticateReadyBytes(
     return noBlock(mode, selection, "stale", "mismatch", "hash-mismatch");
   }
 
+  // The full source is authenticated here; the prompt budget is applied later
+  // by the shared renderer, which injects a bounded excerpt of this source.
   const tokenCount = piMemorySummaryTokenCount(content);
-  if (tokenCount > PI_MEMORY_SUMMARY_MAX_TOKENS) {
-    return noBlock(mode, selection, "invalid", "mismatch", "token-overflow");
-  }
   if (tokenCount !== selection.tokenCount) {
     return noBlock(mode, selection, "stale", "mismatch", "token-mismatch");
   }
-  const block = renderPiMemoryRecall(content);
-  if (block === null) {
+  const rendered = renderPiMemoryRecall(content);
+  if (rendered === null) {
     return noBlock(mode, selection, "invalid", "mismatch", "empty");
   }
   return {
-    block,
+    block: rendered.block,
     outcome: {
       mode,
       status: "hit",
       parity: "frozen-match",
       reason: "matched",
       ...frozenMetadata(selection),
-      injectedTokenCount: truncatePiMemorySummary(content).tokenCount,
+      injectedTokenCount: rendered.injectedTokenCount,
     },
   };
 }

@@ -1,7 +1,4 @@
-import {
-  legacyGoogleAdsAttribution,
-  compatibleGoogleAdsAttribution,
-} from "@okouai/core/google-ads-attribution";
+import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import {
   GOOGLE_ADS_ADSMARCH_ACCOUNT_ID,
   GOOGLE_ADS_LEGACY_ACCOUNT_ID,
@@ -15,7 +12,6 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { capturePaidOnboardingEvent } from "../../lib/posthog.ts";
 import { now } from "../../lib/time.ts";
-import { recordImpactAttribution$ } from "./impact-attribution.ts";
 import { apiClient$ } from "../api-client.ts";
 import { user$ } from "../auth.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
@@ -79,20 +75,15 @@ export const recordSignupAttribution$ = command(
     }
 
     const storedAttribution = set(readStoredAdAttributionMetadata$);
-    const impactAttribution = set(recordImpactAttribution$);
     const recentlyCreatedUser = isRecentlyCreatedUser(user);
     const attribution: AdAttributionMetadata | undefined =
       storedAttribution ??
-      (recentlyCreatedUser
-        ? { source_type: "unknown" }
-        : impactAttribution
-          ? {}
-          : undefined);
+      (recentlyCreatedUser ? { source_type: "unknown" } : undefined);
     if (!attribution) {
       return;
     }
 
-    const attributionFingerprint = `${user.id}:${JSON.stringify(attribution)}:${JSON.stringify(impactAttribution)}`;
+    const attributionFingerprint = `${user.id}:${JSON.stringify(attribution)}`;
     let recorded =
       get(signupAttributionRecordedStorage.get$) === attributionFingerprint;
 
@@ -103,8 +94,7 @@ export const recordSignupAttribution$ = command(
       const result = await accept(
         client.recordSignup({
           body: {
-            attribution: legacyGoogleAdsAttribution(attribution),
-            ...(impactAttribution ? { impactAttribution } : {}),
+            attribution,
           },
           fetchOptions: { signal },
         }),
@@ -112,7 +102,7 @@ export const recordSignupAttribution$ = command(
       );
       signal.throwIfAborted();
       recorded = result.body.recorded;
-      googleAdsAccountId = result.body.googleAdsAccountId ?? null;
+      googleAdsAccountId = result.body.googleAdsAccountId;
       if (recorded) {
         set(signupAttributionRecordedStorage.set$, attributionFingerprint);
         capturePaidOnboardingEvent("SignupAttributionRecorded", {

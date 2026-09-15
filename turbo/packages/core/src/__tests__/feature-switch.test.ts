@@ -23,16 +23,69 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.ChatPreference).toBe("chatPreference");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
+    expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
-    expect(FeatureSwitchKey.AgentMessageMath).toBe("agentMessageMath");
-    expect(FeatureSwitchKey.ProgressiveArtifactPreview).toBe(
-      "progressiveArtifactPreview",
-    );
+    expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
+    expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
   });
 });
 
 describe("isFeatureEnabled", () => {
+  it("keeps Pi memory off for everyone until an explicit override enables it", () => {
+    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: staffOrgId },
+      { orgId: staffOrgId, userId: "staff-user", email: "lancy@okou.ai" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.PiMemory, context)).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PiMemory, {
+          ...context,
+          overrides: { [FeatureSwitchKey.PiMemory]: true },
+        }),
+      ).toBe(true);
+    }
+    // PiLoop selects the runtime and stays independent of PiMemory.
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PiLoop, {
+        orgId: staffOrgId,
+        overrides: { [FeatureSwitchKey.PiMemory]: false },
+      }),
+    ).toBe(true);
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PiMemory]).toEqual({
+      maintainer: "lancy@okou.ai",
+      description:
+        "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
+      rolloutStage: "alpha",
+    });
+  });
+
+  it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, context),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
+          ...context,
+          overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: true },
+        }),
+      ).toBe(true);
+    }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
+      }),
+    ).toBe(false);
+  });
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
     expect(isFeatureEnabled(FeatureSwitchKey.AvatarNeckSweater, {})).toBe(true);
@@ -82,6 +135,40 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Lab, {})).toBe(false);
   });
 
+  it("should enable the Welcome Thread switch for the staff org only", () => {
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      }),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {
+        orgId: "org_nonexistent",
+      }),
+    ).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {})).toBe(false);
+  });
+
+  it("should default Langfuse tracing off for every org and accept user overrides", () => {
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        orgId: "org_nonexistent",
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        userId: "any-user",
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
+      }),
+    ).toBe(true);
+  });
+
   it("should apply user overrides to the staff-default Official Workflows switch", () => {
     const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
     expect(
@@ -103,30 +190,18 @@ describe("isFeatureEnabled", () => {
     ).toBe(true);
   });
 
-  it("should keep Morning Brief default-off with an independent staff rollout and overrides", () => {
-    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+  it("should release Morning Brief independently and preserve false overrides", () => {
     const ordinaryOrgId = "org_nonexistent";
     expect(FeatureSwitchKey.MorningBrief).toBe("morningBrief");
-    expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, {})).toBe(false);
+    expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, {})).toBe(true);
     expect(
       isFeatureEnabled(FeatureSwitchKey.MorningBrief, {
         orgId: ordinaryOrgId,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isFeatureEnabled(FeatureSwitchKey.MorningBrief, {
         orgId: ordinaryOrgId,
-        overrides: { [FeatureSwitchKey.MorningBrief]: true },
-      }),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MorningBrief, {
-        orgId: staffOrgId,
-      }),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.MorningBrief, {
-        orgId: staffOrgId,
         overrides: { [FeatureSwitchKey.MorningBrief]: false },
       }),
     ).toBe(false);
@@ -139,7 +214,7 @@ describe("isFeatureEnabled", () => {
       maintainer: "lancy@okou.ai",
       description:
         "Enable Morning Brief and email subscription management in Preferences.",
-      rolloutStage: "beta",
+      rolloutStage: "released",
     });
   });
 
@@ -185,20 +260,15 @@ describe("getAllFeatureStates", () => {
     });
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.ChatErrorRecovery]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
-      true,
-    );
-    expect(staffOrgStates[FeatureSwitchKey.ChatThinkingSpinner]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
     );
     expect(staffOrgStates[FeatureSwitchKey.ChatTranslation]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.VoiceInputV2]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.IntroVideo]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
@@ -211,41 +281,54 @@ describe("getAllFeatureStates", () => {
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.ChatErrorRecovery]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
-      false,
-    );
-    expect(otherOrgStates[FeatureSwitchKey.ChatThinkingSpinner]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,
     );
     expect(otherOrgStates[FeatureSwitchKey.ChatTranslation]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.VoiceInputV2]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.IntroVideo]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.GradientColorThemes]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.MorningBrief]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
   });
 
-  it("should enable the model picker menu for Bingjie by email outside the staff org", () => {
+  it("enables Pi memory only for the user whose override says so", () => {
+    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    const testerStates = getAllFeatureStates({
+      orgId: staffOrgId,
+      userId: "pi-memory-tester",
+      overrides: { [FeatureSwitchKey.PiMemory]: true },
+    });
+    expect(testerStates[FeatureSwitchKey.PiMemory]).toBe(true);
+    expect(testerStates[FeatureSwitchKey.PiLoop]).toBe(true);
+
+    const colleagueStates = getAllFeatureStates({
+      orgId: staffOrgId,
+      userId: "pi-memory-colleague",
+    });
+    expect(colleagueStates[FeatureSwitchKey.PiMemory]).toBe(false);
+    expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
+  });
+
+  it("should enable effort for Bingjie by email outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
     });
-    expect(bingjieStates[FeatureSwitchKey.ModelPickerMenu]).toBe(true);
+    expect(bingjieStates[FeatureSwitchKey.Effort]).toBe(true);
 
     const otherStates = getAllFeatureStates({
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.ModelPickerMenu]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.Effort]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {
@@ -337,8 +420,9 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.AvatarNeckSweater].rolloutStage).toBe(
       "released",
     );
-    expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("beta");
+    expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
     expect(metadata[FeatureSwitchKey.IntroVideo].rolloutStage).toBe("beta");
+    expect(metadata[FeatureSwitchKey.WelcomeThread].rolloutStage).toBe("beta");
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );

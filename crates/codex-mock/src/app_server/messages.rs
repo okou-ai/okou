@@ -540,6 +540,18 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
             }
         }),
     )?;
+    if let Some(path) = std::env::var_os("MOCK_CODEX_DELIVERY_ITEMS_PATH") {
+        let items: Vec<Value> = serde_json::from_slice(&std::fs::read(path)?)?;
+        for item in items {
+            write_json_line(
+                output,
+                &json!({
+                    "method": "item/completed",
+                    "params": {"threadId": thread_id, "turnId": turn_id, "completedAtMs": 9, "item": item}
+                }),
+            )?;
+        }
+    }
     write_json_line(output, &warning_notification(thread_id, 999))
 }
 

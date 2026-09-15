@@ -62,6 +62,16 @@ pub(super) async fn load_snapshot_and_apply_rate_limits(
 }
 
 pub(super) async fn ensure_snapshot_drive_bind_target(path: &Path) -> Result<(), SandboxError> {
+    ensure_snapshot_drive_bind_target_with_metadata(path, async |path: &Path| {
+        tokio::fs::symlink_metadata(path).await
+    })
+    .await
+}
+
+async fn ensure_snapshot_drive_bind_target_with_metadata(
+    path: &Path,
+    mut read_metadata: impl AsyncFnMut(&Path) -> io::Result<std::fs::Metadata>,
+) -> Result<(), SandboxError> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -74,7 +84,7 @@ pub(super) async fn ensure_snapshot_drive_bind_target(path: &Path) -> Result<(),
         return Ok(());
     }
 
-    if snapshot_drive_bind_target_is_regular_file(path).await? {
+    if snapshot_drive_bind_target_is_regular_file(path, &mut read_metadata).await? {
         return Ok(());
     }
 
@@ -83,9 +93,12 @@ pub(super) async fn ensure_snapshot_drive_bind_target(path: &Path) -> Result<(),
         if create_snapshot_drive_bind_target_file(path).await? {
             return Ok(());
         }
-        if snapshot_drive_bind_target_is_regular_file(path).await? {
-            return Ok(());
-        }
+    }
+
+    // Another restore may clear the mount after our first metadata read but
+    // before the mountinfo read. Revalidate even when no mount was observed.
+    if snapshot_drive_bind_target_is_regular_file(path, &mut read_metadata).await? {
+        return Ok(());
     }
 
     Err(SandboxError::Start {
@@ -111,12 +124,13 @@ async fn create_snapshot_drive_bind_target_file(path: &Path) -> Result<bool, San
     }
 }
 
-async fn snapshot_drive_bind_target_is_regular_file(path: &Path) -> Result<bool, SandboxError> {
-    let meta = tokio::fs::symlink_metadata(path)
-        .await
-        .map_err(|e| SandboxError::Start {
-            message: format!("stat snapshot drive bind target: {e}"),
-        })?;
+async fn snapshot_drive_bind_target_is_regular_file(
+    path: &Path,
+    read_metadata: &mut impl AsyncFnMut(&Path) -> io::Result<std::fs::Metadata>,
+) -> Result<bool, SandboxError> {
+    let meta = read_metadata(path).await.map_err(|e| SandboxError::Start {
+        message: format!("stat snapshot drive bind target: {e}"),
+    })?;
     Ok(meta.file_type().is_file())
 }
 
@@ -283,6 +297,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn snapshot_drive_bind_target_rejects_existing_socket() {
+        let dir = tempfile::tempdir().unwrap();
+        let bind_target = dir.path().join("cow-device-bind");
+        let _socket = std::os::unix::net::UnixListener::bind(&bind_target).unwrap();
+
+        let result = ensure_snapshot_drive_bind_target(&bind_target).await;
+
+        assert!(
+            matches!(result, Err(SandboxError::Start { message }) if message.contains("not a regular file"))
+        );
+    }
+
+    #[tokio::test]
     async fn snapshot_drive_bind_target_creates_missing_file_and_parent() {
         let dir = tempfile::tempdir().unwrap();
         let bind_target = dir.path().join("snapshot-work").join("cow-device-bind");
@@ -311,6 +338,65 @@ mod tests {
         right_result.unwrap();
         let meta = tokio::fs::symlink_metadata(&bind_target).await.unwrap();
         assert!(meta.file_type().is_file());
+    }
+
+    #[tokio::test]
+    async fn snapshot_drive_bind_target_allows_concurrent_stale_mount_cleanup() {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let bind_target = dir.path().join("cow-device-bind");
+        let backing_file = dir.path().join("underlying-target");
+        tokio::fs::write(&backing_file, b"existing target")
+            .await
+            .unwrap();
+        let before = tokio::fs::symlink_metadata(&backing_file).await.unwrap();
+        let _socket = std::os::unix::net::UnixListener::bind(&bind_target).unwrap();
+        let (observed_tx, observed_rx) = tokio::sync::oneshot::channel();
+        let (cleaned_tx, cleaned_rx) = tokio::sync::oneshot::channel();
+        let mut observation_gate = Some((observed_tx, cleaned_rx));
+
+        // A real stale device mount requires privileged infrastructure. Model
+        // its removal at the OS metadata boundary, retaining the backing inode
+        // and using real creation, mountinfo, and final metadata checks.
+        let stale_restore =
+            ensure_snapshot_drive_bind_target_with_metadata(&bind_target, async |path: &Path| {
+                let metadata = tokio::fs::symlink_metadata(path).await?;
+                if let Some((observed_tx, cleaned_rx)) = observation_gate.take() {
+                    assert!(!metadata.file_type().is_file());
+                    observed_tx.send(()).unwrap();
+                    cleaned_rx.await.unwrap();
+                }
+                Ok(metadata)
+            });
+        let peer_restore = async {
+            observed_rx.await.unwrap();
+            tokio::fs::remove_file(&bind_target).await.unwrap();
+            tokio::fs::rename(&backing_file, &bind_target)
+                .await
+                .unwrap();
+            let result = ensure_snapshot_drive_bind_target(&bind_target).await;
+            cleaned_tx.send(()).unwrap();
+            result
+        };
+
+        let (stale_result, peer_result) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                tokio::join!(stale_restore, peer_restore)
+            })
+            .await
+            .unwrap();
+
+        peer_result.unwrap();
+        stale_result.unwrap();
+        let after = tokio::fs::symlink_metadata(&bind_target).await.unwrap();
+        assert!(after.file_type().is_file());
+        assert_eq!(before.dev(), after.dev());
+        assert_eq!(before.ino(), after.ino());
+        assert_eq!(
+            tokio::fs::read(&bind_target).await.unwrap(),
+            b"existing target",
+        );
     }
 
     #[tokio::test]

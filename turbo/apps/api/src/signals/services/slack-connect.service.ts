@@ -75,7 +75,7 @@ async function upsertSlackConnection(
   }
 
   const [existing] = await writeDb
-    .select({ id: slackOrgConnections.id })
+    .select({ id: slackOrgConnections.id, userId: slackOrgConnections.userId })
     .from(slackOrgConnections)
     .where(
       and(
@@ -87,6 +87,9 @@ async function upsertSlackConnection(
 
   if (!existing) {
     throw new Error("Slack connection upsert did not return a row");
+  }
+  if (existing.userId !== args.userId) {
+    throw new Error("This Slack account is already connected to another user");
   }
 
   return existing.id;

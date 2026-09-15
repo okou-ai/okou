@@ -10,9 +10,11 @@ import { command } from "ccstate";
 
 import { googleAdsAccountForAttribution } from "@okouai/core/google-ads-account";
 import { clerk$ } from "../external/clerk";
+import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
+import { ensureOrgMetadataPlanEntitlement } from "./org-plan-entitlements.service";
 
 const ORG_ATTRIBUTION_FIELDS = [
   ["source_type", "acquisitionSourceType"],
@@ -65,6 +67,9 @@ export const googleAdsAccountForUser$ = command(
     provided: AdAttributionMetadata | undefined,
     signal: AbortSignal,
   ) => {
+    if (clerkAttributionDisabled()) {
+      return null;
+    }
     const users = await get(clerk$).users.getUserList(
       { userId: [userId], limit: 1 },
       undefined,
@@ -148,17 +153,24 @@ export const persistOrgAcquisitionAttribution$ = command(
     // An org can be created just before the first billing request. Ensure the
     // metadata row exists, then only fill the attribution columns once. The
     // timestamp is the immutable first-touch guard under concurrent checkouts.
-    const [inserted] = await db
-      .insert(orgMetadataCanonicalWrites)
-      .values({
-        orgId: args.orgId,
-        credits: 0,
-        ...values,
-        acquisitionRecordedAt: recordedAt,
-        updatedAt: recordedAt,
-      })
-      .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
-      .returning({ orgId: orgMetadataCanonicalWrites.orgId });
+    const inserted = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({
+          orgId: args.orgId,
+          credits: 0,
+          ...values,
+          acquisitionRecordedAt: recordedAt,
+          updatedAt: recordedAt,
+        })
+        .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
+        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+      if (row) {
+        await ensureOrgMetadataPlanEntitlement(tx, row);
+      }
+      signal.throwIfAborted();
+      return row;
+    });
     signal.throwIfAborted();
     if (inserted) {
       return true;

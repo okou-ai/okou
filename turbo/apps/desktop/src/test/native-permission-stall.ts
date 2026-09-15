@@ -94,27 +94,13 @@ lines.on('line', line => {
     },
     "darwin",
   );
-  const grants = { accessibility: true, screenRecording: true };
   const permissions = createDesktopComputerUsePermissions({
     driver,
-    requestedDriver: () => "okou",
-    transitioning: () => controller.isTransitioning(),
     refreshNative: (query) => controller.refreshNativePermissions(query),
-    host: {
-      getPermissions: async () => grants,
-      requestAccessibilityPermission: async () => grants,
-      requestScreenRecordingPermission: async () => grants,
-      probeAutomationPermission: async () => ({
-        status: "unknown",
-        reason: null,
-        updatedAt: null,
-      }),
-    },
   });
   const controller = new ComputerUseRuntimeController({
     driver,
     refreshPermissions: permissions.refreshComputerUsePermissionState,
-    prepareNative: permissions.prepareNative,
     transitionTimeoutMs: 4_000,
     getAuthState: () => auth.getAuthState(),
     setHostRuntimeOnline: () => {},

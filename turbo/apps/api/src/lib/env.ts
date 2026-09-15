@@ -26,6 +26,10 @@ const SCHEMA = {
   OFFICIAL_RUNNER_SECRET: z.string().length(64),
   OPENAI_API_KEY: z.string().min(1),
   FAL_KEY: z.string().min(1).optional(),
+  // Validated together at the Google LLM operation boundary.
+  GCP_LLM_PROJECT_ID: z.string().optional(),
+  GCP_LLM_WORKLOAD_IDENTITY_PROVIDER: z.string().optional(),
+  GCP_LLM_SERVICE_ACCOUNT_EMAIL: z.string().optional(),
   JOGGAI_API_KEY: z.string().min(1).optional(),
   JOGGAI_WEBHOOK_SECRET: z.string().min(1).optional(),
   HEYGEN_API_KEY: z.string().min(1).optional(),
@@ -75,7 +79,6 @@ const SCHEMA = {
     .email()
     .optional(),
   CRON_SECRET: z.string().min(1),
-  MARKETING_PRIVACY_API_SECRET: z.string().min(32).optional(),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),
@@ -150,14 +153,10 @@ const SCHEMA = {
   MICROSOFT_TEAMS_BOT_APP_PASSWORD: z.string().min(1).optional(),
   MICROSOFT_TEAMS_APP_TENANT_ID: z.string().min(1).optional(),
   CONCURRENT_RUN_LIMIT_CAP: z.coerce.number().int().min(0).optional(),
-  PI_MEMORY_STAGE1_IDLE_DELAY_MS: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .default(30 * 60 * 1000),
+  // Background workers remain opt-in until explicitly re-enabled.
   PI_MEMORY_BACKGROUND_WORKERS_ENABLED: z
     .enum(["true", "false"])
-    .default("true"),
+    .default("false"),
 } as const;
 
 const baseEnv = createEnv<undefined, typeof SCHEMA>({

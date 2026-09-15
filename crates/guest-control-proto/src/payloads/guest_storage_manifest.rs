@@ -41,7 +41,7 @@ pub struct DecodedGuestStorageManifestRequest<'a> {
     pub run_id: &'a str,
     /// Absolute guest runtime directory exposed to the fixed helper.
     pub runtime_dir: &'a str,
-    /// Canonical manifest JSON written to helper stdin.
+    /// Canonical JSON or explicitly framed decoded-files input for the fixed helper.
     pub manifest_json: &'a [u8],
 }
 
@@ -53,7 +53,8 @@ pub struct DecodedGuestStorageManifestRequest<'a> {
 /// contains a NUL byte, or exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUN_ID_BYTES`]
 /// bytes; if `runtime_dir` is empty, is not absolute, contains a NUL byte, or
 /// exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES`] bytes; if
-/// `manifest_json` exceeds [`MAX_EXEC_STDIN_BYTES`] bytes; if an encoded field
+/// JSON exceeds [`MAX_EXEC_STDIN_BYTES`] bytes or a binary storage-files input
+/// violates its separate bounded framing; if an encoded field
 /// does not fit its wire length field; or if the encoded payload exceeds the
 /// maximum protocol message size. String limits are measured in UTF-8 bytes,
 /// not characters.
@@ -85,7 +86,8 @@ pub fn encode_guest_storage_manifest_request(
 /// contains a NUL byte, or exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUN_ID_BYTES`]
 /// bytes; if `runtime_dir` is empty, is not absolute, contains a NUL byte, or
 /// exceeds [`GUEST_STORAGE_MANIFEST_MAX_RUNTIME_DIR_BYTES`] bytes; if
-/// `manifest_json` exceeds [`MAX_EXEC_STDIN_BYTES`] bytes; if an encoded field
+/// JSON exceeds [`MAX_EXEC_STDIN_BYTES`] bytes or a binary storage-files input
+/// violates its separate bounded framing; if an encoded field
 /// does not fit its wire length field; or if the encoded payload exceeds the
 /// maximum protocol message size. String limits are measured in UTF-8 bytes,
 /// not characters.
@@ -310,7 +312,10 @@ fn validate_request(
             "guest_storage_manifest runtime_dir contains NUL",
         ));
     }
-    if manifest_json.len() > MAX_EXEC_STDIN_BYTES {
+    if manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC) {
+        guest_contracts::storage_files::split_input(manifest_json)
+            .map_err(|_| ProtocolError::InvalidPayload("invalid storage files input framing"))?;
+    } else if manifest_json.len() > MAX_EXEC_STDIN_BYTES {
         return Err(ProtocolError::PayloadTooLarge(
             "manifest_json",
             manifest_json.len(),

@@ -1,6 +1,4 @@
 export const COMPUTER_USE_CHANNELS = {
-  setExperimentalCuaEnabled: "computer-use:set-experimental-cua-enabled",
-  selectDriver: "computer-use:select-driver",
   getState: "computer-use:get-state",
   refreshPermissions: "computer-use:refresh-permissions",
   start: "computer-use:start",

@@ -57,7 +57,7 @@ test("Returning from concurrency checkout confirms purchased capacity", async ()
   );
 });
 
-test.each(["7935750692", "1001302527", undefined])(
+test.each(["7935750692", "1001302527", "unknown-account"])(
   "A confirmed subscription reports a browser conversion only for the new account: %s",
   async (accountId) => {
     const googleTag = vi.fn<GoogleTag>();
@@ -104,17 +104,44 @@ test.each(["7935750692", "1001302527", undefined])(
   },
 );
 
+test("A confirmed subscription without a browser conversion payload completes checkout", async () => {
+  const googleTag = vi.fn<GoogleTag>();
+  vi.stubGlobal("gtag", googleTag);
+  context.mocks.api(billingCheckoutContract.complete, ({ respond }) => {
+    return respond(200, { completed: true });
+  });
+
+  await setupPage({
+    context,
+    path: "/agents?billing=team&billing_session_id=cs_without_conversion",
+    host: "app.okou.ai",
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(window.history.replaceState).toHaveBeenLastCalledWith(
+      {},
+      "",
+      "/agents",
+    );
+  });
+  expect(googleTag).not.toHaveBeenCalled();
+});
+
 test("A confirmed usage-pack purchase reports the paid conversion", async () => {
   const googleTag = vi.fn<GoogleTag>();
   vi.stubGlobal("gtag", googleTag);
   context.mocks.api(
     acquisitionAttributionContract.googleAdsMilestones,
     ({ respond }) => {
-      return respond(200, { milestones: [] });
+      return respond(200, { milestones: [], googleAdsAccountId: null });
     },
   );
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,

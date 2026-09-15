@@ -7,12 +7,12 @@ import {
 import { command } from "ccstate";
 import {
   compatibleGoogleAdsAttribution,
-  legacyGoogleAdsAttribution,
   normalizeGoogleAdsAttributionParams,
 } from "@okouai/core/google-ads-attribution";
 import { registerPostHogAttribution } from "../../lib/posthog.ts";
-import { recordImpactAttribution$ } from "./impact-attribution.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
+
+const legacyImpactStorage = sessionStorageSignals("okou.impactAttribution");
 
 const AD_ATTRIBUTION_SOURCE_PARAM = "vm0_source";
 
@@ -164,7 +164,7 @@ function registerStoredAttribution(
 
 export const recordAdAttribution$ = command(
   ({ get, set }, searchParams: URLSearchParams): void => {
-    set(recordImpactAttribution$);
+    set(legacyImpactStorage.clear$);
     const cookieString = getCookieString();
     const storedAttribution = get(storedAdAttributionStorage.get$);
 
@@ -188,32 +188,25 @@ export const recordAdAttribution$ = command(
   },
 );
 
-export const applyStoredAdAttribution$ = command(
-  ({ get, set }, url: URL): void => {
-    const impact = set(recordImpactAttribution$);
-    if (impact) {
-      url.searchParams.set("im_ref", impact.clickId);
-      url.searchParams.set("im_ref_at", impact.capturedAt);
-    }
-    const storedAttribution = get(storedAdAttributionStorage.get$);
-    if (!storedAttribution) {
-      return;
-    }
+export const applyStoredAdAttribution$ = command(({ get }, url: URL): void => {
+  const storedAttribution = get(storedAdAttributionStorage.get$);
+  if (!storedAttribution) {
+    return;
+  }
 
-    const attributionParams = collectAttributionParams(
-      new URLSearchParams(storedAttribution),
-    );
-    url.searchParams.delete("vm0_campaign_id");
-    url.searchParams.delete("vm0_ad_group_id");
-    for (const param of AD_ATTRIBUTION_PARAMS) {
-      url.searchParams.delete(param);
+  const attributionParams = collectAttributionParams(
+    new URLSearchParams(storedAttribution),
+  );
+  url.searchParams.delete("vm0_campaign_id");
+  url.searchParams.delete("vm0_ad_group_id");
+  for (const param of AD_ATTRIBUTION_PARAMS) {
+    url.searchParams.delete(param);
 
-      for (const value of attributionParams.getAll(param)) {
-        url.searchParams.append(param, value);
-      }
+    for (const value of attributionParams.getAll(param)) {
+      url.searchParams.append(param, value);
     }
-  },
-);
+  }
+});
 
 function adAttributionMetadataFromStoredValue(
   storedAttribution: string | null,
@@ -257,10 +250,4 @@ export const readStoredAdAttributionMetadata$ = command(({ get }) => {
     get(storedAdAttributionStorage.get$),
     getCookieString(),
   );
-});
-
-// Keep the wire shape readable by older API deployments until #33059 closes its rollout gate.
-export const readApiAdAttributionMetadata$ = command(({ set }) => {
-  const metadata = set(readStoredAdAttributionMetadata$);
-  return metadata ? legacyGoogleAdsAttribution(metadata) : undefined;
 });

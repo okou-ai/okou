@@ -7,10 +7,11 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { reloadAgents$ } from "../agent.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
-import { readApiAdAttributionMetadata$ } from "../bootstrap/ad-attribution.ts";
+import { readStoredAdAttributionMetadata$ } from "../bootstrap/ad-attribution.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
 import {
   ONBOARDING_CHECKOUT_STATE_PARAM,
@@ -60,6 +61,9 @@ export const completeOnboarding$ = command(
     if (role) {
       set(capturePaidOnboardingRoleConfirmed$, role);
     }
+    // Both a prior route and the Worker's HTML prefetch can retain an empty
+    // list from before the status endpoint provisioned the default agent.
+    set(reloadAgents$);
     set(reloadOnboardingStatus$);
     set(resetOnboardingDraft$);
   },
@@ -116,7 +120,7 @@ export const prepareOnboardingVideoRun$ = command(
       prompt: input.prompt,
       note: input.note,
     });
-    const adAttribution = set(readApiAdAttributionMetadata$);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const successUrl = checkoutReturnUrl(input, "pro", checkoutState);
     const cancelUrl = checkoutReturnUrl(input, "canceled", checkoutState);
     const { userId } = await get(authenticatedIdentity$);

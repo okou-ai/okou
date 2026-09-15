@@ -102,7 +102,7 @@ test("runner entitlement requires settled Pro, BYOK and unrestricted models", as
     tier: "limited-free-1",
     onboardingPaymentPending: false,
     supportByok: false,
-    restrictedVm0Models: true,
+    restrictedBuiltInModels: true,
   };
   await withApi(
     (request, response) => {
@@ -117,10 +117,30 @@ test("runner entitlement requires settled Pro, BYOK and unrestricted models", as
         tier: "pro",
         onboardingPaymentPending: true,
         supportByok: true,
-        restrictedVm0Models: false,
+        restrictedBuiltInModels: false,
       };
       assert.equal(await readRunnerPaidEntitlement(options), false);
       state.onboardingPaymentPending = false;
+      assert.equal(await readRunnerPaidEntitlement(options), true);
+    },
+  );
+});
+
+test("runner entitlement reads the retired alias from an API before the rename", async () => {
+  let state = {
+    tier: "pro",
+    onboardingPaymentPending: false,
+    supportByok: true,
+    restrictedVm0Models: true,
+  };
+  await withApi(
+    (request, response) => {
+      send(response, state);
+    },
+    async (apiUrl) => {
+      const options = { apiUrl, clerkSessionToken: "session-token" };
+      assert.equal(await readRunnerPaidEntitlement(options), false);
+      state = { ...state, restrictedVm0Models: false };
       assert.equal(await readRunnerPaidEntitlement(options), true);
     },
   );

@@ -19,9 +19,10 @@ The guest calls `runner-rpc-client` with the [generic envelope](runner-rpc-trans
 Run, owner, Agent, endpoint, username, private key, pin, timeout or SSH options.
 Unknown methods and invalid params are rejected before credential resolution.
 
-The Runner resolves or reuses its Run-owned credentials, validates the destination, makes one
-TCP connection, verifies host trust, authenticates using the private key, opens
-one session channel and requests one non-PTY exec with acknowledgement. It sends
+The Runner resolves or reuses its Run-owned credentials and exclusively leases an
+idle authenticated connection, or validates the destination and establishes a new
+TCP/SSH connection with host trust and private-key/password authentication. It opens
+a new session channel and requests one non-PTY exec with acknowledgement. It sends
 EOF on stdin. It never requests shell, environment, PTY, agent forwarding, port
 forwarding or subsystems, and rejects unsolicited server channels. There is no
 reconnection, alternate-address fallback or command replay.
@@ -58,7 +59,347 @@ completion only: future callers must inspect these business fields. Losing a
 terminal response never permits automatic replay. Local cancellation closes the
 socket but cannot guarantee the remote process stopped.
 
+## Managed sessions within one Run
+
+#33464 adds `ssh.session.start/list/read/status/write/signal/close` as opaque
+version-1 RPC methods. Each request is bounded and owns its guest stream
+only until its response. Each active session exclusively owns a verified,
+authenticated SSH transport, which may be reused after an earlier channel ended.
+
+`start` accepts `sshConnectionId`, `program: {type: "exec", command}` or
+`program: {type: "shell"}`, and optional `pty: true`. A PTY requests
+`xterm-256color`, 80 columns and 24 rows. Forwarding, agent forwarding,
+subsystems and arbitrary SSH options remain unavailable. Start returns
+`{type: "started", session_id}` before asynchronous setup finishes. Use `status`
+or `list` to inspect `starting`, `running`, `finished` or `failed`; an admitted
+ID is not evidence of successful authentication or process execution. Setup
+has a 60-second budget, while an active, quiet process can run until Run/sandbox
+cancellation or a two-hour session maximum. Keepalives detect dead peers without
+imposing a shorter idle timeout on a healthy process.
+
+There are eight retained session records per exact current Run, separate from
+the existing eight short request slots. Completed records occupy a slot for five
+minutes unless explicitly closed; pruning runs every 30 seconds and on access.
+No Runner-wide connection quota is introduced. A retired session's CPU, DNS or
+socket work retains its original session permit until actual cleanup. These host
+resources never own guest I/O or a guest park reservation. Run end invalidates
+all IDs; a later Run cannot reattach to an earlier session.
+
+`read` requires `sessionId`, a nonnegative byte `cursor`, `waitMs` (0–30000),
+`maxBytes` (1–8192), and `maxChunks` (1–32). It returns tagged standard-base64
+chunks, `wait_expired`, a `next_cursor`, and session status including
+`oldest_cursor` and `end_cursor`. Reads do not consume data. Output retention is
+bounded by 1 MiB and 256 chunks of at most 4 KiB per session. Old chunks are
+discarded; reading behind the retained prefix returns `lost: {from, to}`. A read
+returns up to the requested byte/chunk bounds, fitting one existing 24 KiB RPC frame.
+Stdout and stderr share one cursor; their observed interleaving is preserved.
+
+Ready output, a lost prefix, or a terminal state returns immediately. Otherwise
+the request waits for output/terminal notification until its wait deadline.
+`wait_expired` is true only for a positive wait expiring without such progress;
+it is not a remote failure. A notification future is registered before reading
+the locked snapshot and publishers wake all readers after updating it. No data
+lock survives an await. Retained terminal output is not subjected to the expired
+process deadline again. Run cancellation, entry retirement and access
+invalidation interrupt waiting under the existing RPC scope.
+
+Two nonblocking per-Run permits bound quiet waiting readers, leaving other short
+operation slots available for status, input, signals and close. Extra waiters
+fail with `resource_exhausted`. These waits retain their guest stream and park
+reservation only for the bounded request, never for the SSH session lifetime.
+Generic guest half-close is not a cancellation protocol: an abandoned quiet
+reader can retain these resources until its wait expires (at most 30 seconds
+plus bounded terminal reserve). It does not stop the remote process.
+
+The CLI aggregates verified pages within its own byte/chunk/request/time budgets;
+only the first page may wait. Its `lost` array, `stop_reason`, continuation and
+nullable last observation are CLI-owned, not generic RPC framing. See
+[session reading](ssh-access.md#long-commands-and-persistent-shells).
+The staff-gated read contract replaces the old parameter defaults and payload;
+there is no old-reader fallback or mixed-version reader rollout for this change.
+
+`write` accepts `sessionId`, canonical `dataBase64` (at most 16 KiB decoded) and
+optional `eof`. Empty input requires EOF. One bounded eight-item queue serializes
+stdin, EOF and `signal` requests while independently draining output. Expired or
+cancelled control requests are checked before submission. A write after EOF is
+rejected. Signals are limited to INT, TERM, KILL, HUP, USR1 and USR2. A submitted
+write/signal returns `effects: unknown`, because SSH submission does not prove
+what the remote process did. Partial input failure closes the session and is
+never replayed. Closing retires the ID and local transport; it does not confirm
+remote descendants stopped. Lost start replies can be investigated using `list`.
+
+Retained authority requires an active invalidation subscription. Delivered
+targeted/Run-wide invalidation, registration replacement and observed Ably
+disconnect cancel the affected sessions and retire their IDs. New sessions fail
+explicitly while disconnected. Cache saturation uses session-owned, uncached
+credentials with weak cancellation watchers on the exact Run registration, so
+the 256 cache cells do not become a global session cap. Per-Run admission bounds
+these extra retained credentials, and dead watchers are pruned. Failed
+asynchronous credential preparation remains inspectable without caching a failed
+value. A one-shot authentication/trust/configuration failure that evicts a shared
+snapshot also retires sessions using that snapshot. The documented
+missed-notification window still applies; close/revocation
+does not guarantee remote process-tree termination.
+
+## File RPCs
+
+#33857 adds `ssh.file.upload` and `ssh.file.download` using the opt-in binary
+[RPC stream](runner-rpc-transport.md#opt-in-binary-streaming-foundation).
+Upload params are exactly `{sshConnectionId, remotePath, size, overwrite}`;
+download params are exactly `{sshConnectionId, remotePath}`. IDs are hyphenated
+UUIDs and paths are bounded literal UTF-8 (4096 bytes, no NUL or empty/dot final
+component). No Runner-local path or caller-supplied authority is accepted.
+
+Only these validated methods extend the helper work envelope to at most 900,000
+ms; initial request and connection/SFTP setup retain their 60-second bounds.
+Two Run-local transfer permits cover active transfer and owned staging cleanup,
+within the existing eight RPC and 24 physical limits. A two-second reserve
+bounds cleanup and final reporting. Retained notification-backed authority is
+required, including uncached watchers at cache saturation. Delivered
+invalidation, observed notification disconnect and Run/sandbox end interrupt
+the whole operation. File channels always retire their exclusive pool lease.
+
+A private sequential SFTP v3 client requests only the `sftp` subsystem after
+authentication. It has one outstanding request, monotonically checked IDs,
+32 KiB data chunks, a 64 KiB maximum packet checked before allocation, and
+bounded fields, attributes, extensions and opaque byte handles. Failed/partial
+exchanges are never resumed. Server status diagnostics are discarded; v3's
+generic failure remains `file_operation_failed` when a more precise reason is
+not available. There are no detached SFTP tasks or unbounded request queues.
+
+Upload accepts exact announced bytes plus End, hashes the stream, verifies
+staging attributes and close, then publishes atomically. Download checks source
+lstat/open/fstat, streams and hashes bytes, verifies EOF/count/final attributes,
+then returns End and a typed result. A failed download after Data still emits
+End before its failed result; this is not business success. The Runner's
+download result has `effects: not_started`; only the CLI can assert completed
+local publication. Upload `effects` tracks acknowledged remote publication.
+See [file semantics and limits](ssh-access.md#file-upload-and-download).
+After half-closing a terminal response, the Runner drains pending input within
+the same short reporting budget to avoid resetting the native vsock bridge
+before an early rejection reaches the guest. The CLI stops writing on closed
+input but still requires a validated terminal, EOF and helper exit.
+
+File failures add `invalid_path`, `file_too_large`, `transfer_limit`, `path_not_found`,
+`permission_denied`, `destination_exists`, `not_regular_file`, `source_changed`,
+`subsystem_unavailable`, `unsupported_operation` and `file_operation_failed`.
+The CLI additionally classifies local I/O, invalid paths and missing helpers.
+Missing extensions fail before staging writes. Lost creation/publication ACKs
+leave explicit possible residue; only the same healthy channel cleans its
+acknowledged private staging. Authenticated file-operation failures remain
+successful connection observations, not connectivity warnings.
+
+Runner and helper ship together. Older CLIs retain exec/session behavior; a new
+CLI receiving an unsupported helper/method fails explicitly, without a legacy
+file path. The existing `sshAccess` staff gate applies, with no extra switch,
+schema, credential or grant. Tests enter the actual dispatcher through a real
+SSH peer and temporary filesystem. Run the independent OpenSSH lane explicitly
+where `/usr/lib/openssh/sftp-server` is installed:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin runner \
+  ssh::tests::files::openssh_server_interoperability -- --ignored --exact
+```
+
+## Idle connection reuse
+
+#33465 reuses healthy authenticated transports between independent exec/session
+channels in the same exact Run registration. A transport has one active channel
+at a time. Concurrent processes use separate transports, so cancelling one process
+or stalling its output consumer does not close or block another process's connection.
+Each channel starts a new process; cwd, environment, stdin and PTY state are not
+inherited from the preceding channel. No CLI or RPC changes are required.
+
+Only an observed channel close with actual exit evidence can return a connection
+to idle. Rejected setup, missing exit, cancellation, partial input, protocol failure
+or an uncertain channel-open result closes that execution's exclusive socket.
+No failed command/input is reconnected or replayed. A later separate request may
+establish its own fresh connection.
+
+A peer can retire an idle socket or refuse its next channel. If that races reuse,
+the current request reports its failure/effects; it does not retry on another
+connection. A peer that refuses sequential channels can therefore cause an extra
+failed request compared with always establishing a new connection.
+
+Completed connections enable `TCP_NODELAY` before idle retention so later channels'
+small control packets avoid Nagle/delayed-ACK stalls. The first handshake and
+command keep their existing socket behavior. If the socket cannot be prepared
+for reuse, it is retired without changing the completed command's result.
+
+The Run retains at most eight idle transports, evicting the oldest on overflow.
+An idle timer closes each socket after 60 seconds without another request.
+Idle expiry rechecks current pool membership under the same lock as checkout, so
+a delayed timeout cannot close a connection already in use or newly returned to idle.
+Physical work has 24 Run-local permits: eight short operations, eight retained sessions and
+eight idle transports. Physical-capacity waits observe the caller's setup deadline
+and cancellation. Neither this bound nor idle retention creates a Runner-wide quota.
+The socket's host lease holds its physical permit through actual DNS/library cleanup.
+It also holds the current operation permit until failure cleanup or proven channel
+completion; only normal completion releases that operation permit for idle retention.
+Guest park reservations remain exclusively owned by live guest RPC streams.
+
+Reuse matches the configured connection ID and current authority generation, never
+just the endpoint. Cancellation watchers are registered before credential preparation,
+including when the credential cache is full. Delivered invalidation, notification
+disconnect and Run/sandbox retirement close active and idle retained transports.
+This also interrupts an in-flight one-shot command using retained authority; a
+late pin result cannot revive its retired transport or evict a newer snapshot.
+Before notification readiness, one-shot commands still resolve/connect afresh and
+retain no idle socket; managed sessions keep their existing readiness requirement.
+
+Each physical connection independently validates the public destination and server
+proof/pin before authentication. Reused sockets keep their original verified peer;
+new physical connections repeat validation. Keepalives run every 30 seconds, with
+three unanswered probes allowed. Rekey and transport cancellation use a lifetime
+of at most two hours, independent of the initial RPC deadline. Run end always
+closes the transport. Existing missed-notification and remote-process termination
+limitations still apply.
+
+Sequential reuse avoids repeated TCP/KEX/authentication; busy connections are not
+shared by concurrent processes. A manual real-peer cold/warm measurement lives in
+`ssh::tests::pooling::measure_cold_and_warm_repeated_exec`. It reports elapsed
+samples and authentication counts without a timing assertion; local measurements
+do not establish a production speedup.
+
+On 2026-09-12, the local-profile dispatcher and loopback SSH peer ran a real `true`
+process for ten cold and ten warm samples. Both paths reused prepared credentials;
+priming and forced idle expiry were outside the measured request. The warm path
+opened a separate process/channel for every sample.
+
+| Path | Median   | Min–max        | New connections / authentications |
+| ---- | -------- | -------------- | --------------------------------- |
+| Cold | 65.70 ms | 64.63–66.29 ms | 10 / 10                           |
+| Warm | 44.02 ms | 43.12–44.12 ms | 0 / 0                             |
+
+Rerun the optional measurement with:
+
+```bash
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin runner \
+  ssh::tests::pooling::measure_cold_and_warm_repeated_exec \
+  -- --ignored --exact --nocapture --test-threads=1
+```
+
 ## Authority, trust and destination
+
+### Native Cloudflare Access carrier
+
+#34080 inserts a native rustls/tokio-tungstenite carrier below the shared SSH
+engine for S1's `resolved_access` handoff. Direct hosts still use the original
+TCP stream. Protected hosts require a saved canonical DNS name, port 443 and
+separate bounded Service Token headers; there are no guest-supplied URL, proxy,
+cookie, redirect, browser-login or cloudflared subprocess paths.
+
+#### Protocol references and interoperability baseline
+
+The Access-specific carrier follows Cloudflare's documented Service Token
+authentication and the official open-source cloudflared implementation:
+
+- [Service tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)
+  documents `CF-Access-Client-Id` / `CF-Access-Client-Secret` headers and the
+  **Service Auth** policy needed for non-interactive authentication.
+- [SSH with client-side cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/use-cases/ssh/ssh-cloudflared-authentication/)
+  documents the client-side SSH access model. Okou implements the carrier natively
+  instead of launching the documented client-side executable.
+- [carrier/websocket.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/carrier/websocket.go)
+  provides the reference HTTP-to-WebSocket handshake, request headers and stream
+  setup (`createWebsocketStream`, `clientConnect`).
+- [websocket/connection.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/websocket/connection.go)
+  provides the byte-stream adapter: `GorillaConn.Write` sends binary messages and
+  `GorillaConn.Read` preserves unread bytes across caller reads. This is the
+  reference for carrying SSH bytes, not a separate SSH protocol.
+
+The source links pin commit `733bfb939963e150dcf5c4faddb1603f744fbc98`, the
+[cloudflared 2026.8.2 release](https://github.com/cloudflare/cloudflared/releases/tag/2026.8.2)
+used for real-provider comparison. Initial research pinned
+`f11dea9cb7079e90a982c1a2d5548ab40847fdcf`; both carrier files are unchanged between
+those revisions. The official Linux amd64 comparison binary's SHA-256 is
+`fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2`.
+
+This is an implementation-derived interoperability baseline, not a claim of a
+separately versioned Access-over-WebSocket specification or a provider guarantee
+of permanent compatibility. Standard TLS, WebSocket and SSH handling use rustls,
+tokio-tungstenite and russh. The saved-recipient restrictions, buffer limits and
+no-login/no-redirect behavior below are Okou's security and resource policies;
+they are not copied as Cloudflare protocol requirements. Recheck upstream changes
+and repeat authorized provider acceptance when changing this baseline.
+
+[Acceptance recorded on 2026-09-15](https://github.com/vm0-ai/vm0/issues/34080#issuecomment-5674394652)
+compares native Runner and the pinned official binary on an authorized endpoint:
+SSH authentication, bidirectional IO across 65 seconds of idle time, invalid-token
+rejection and connection cleanup. It records the native lane's private API and
+public-DNS-answer fixtures; it does not establish deployed-Run, production-DNS or
+full two-hour Session acceptance.
+
+#### Runner transport and lifecycle
+
+The existing network policy validates all DNS answers and selects one public IP.
+TLS verifies the saved hostname using the bundled WebPKI roots and uses that name
+for SNI. It explicitly selects the Runner's existing AWS-LC TLS provider; enabling
+a second rustls provider would make Ably's implicit provider selection ambiguous.
+The WSS upgrade sends the same HTTP Host to `/`. Service Token values
+are sent only after TLS succeeds. A non-101 upgrade or unsolicited extension is
+rejected without inspecting or forwarding provider bodies. The native socket's
+physical-close guard and HostLease remain beneath TLS/WS and detached SSH IO,
+including cancellation during setup, active work and idle eviction.
+
+The upgrade has a 32 KiB read budget within the existing setup deadline. Incoming
+WebSocket frames/messages are limited to 1 MiB, with an initial 16 KiB read buffer
+(the library can grow it within the frame bound). Writes
+accept at most 32 KiB per binary message and have a 64 KiB maximum write buffer.
+The adapter retains at most one incoming message, handles fragmentation and
+ping/pong/close, and bounds empty/control processing per poll. There are no
+separate pump tasks or unbounded carrier queues. Existing SSH keepalives, channel
+limits, two-hour lifetime, Session reads/stdin/PTY and SFTP limits remain intact.
+
+Pool reuse checks both host generation and the transport binding/config generation.
+Run cache ownership and connection-scoped invalidations are unchanged. Token
+rotation evicts the affected bound connections; rename does not. Missed notices
+can still retain cached authority until Run end. No uncertain command, stdin or
+file publication is replayed over another transport.
+
+Guest terminal enums do not change: upgrade/TLS failures are `network_failure`;
+later stream/SSH errors retain existing protocol/disconnect outcomes. Owner
+observations distinguish `access_rejected` (401/403), `access_tls_failure` and
+`access_protocol_failure`, without treating gateway authorization as SSH login.
+Gateway 429/5xx responses and socket IO failures remain `network_failure`, not a
+claim that the token was rejected or that the gateway uses an incompatible protocol.
+Post-authentication command/file failures remain successful connection observations.
+Production log filters suppress raw TLS/WebSocket dependency diagnostics at every
+level, including token-bearing handshake traces and reflected provider errors.
+
+Controlled TLS/WS/SSH peers test the real dispatcher. An authorized Service Auth
+comparison against pinned cloudflared remains a separate required real-provider
+gate; local tests are not evidence of that gate or of production long-session
+reliability. #34081 retains full UI-driven real-Run acceptance and screenshots.
+
+The ignored `ssh::tests::access::live::authorized_provider_exec_idle_session_rejection_and_cleanup`
+test drives the production dispatcher, carrier and SSH engine against an explicitly
+authorized provider. Its API authority response is a fixture, not a deployed Run.
+Set these inputs only for a target and credentials approved for this test:
+
+- `OKOU_TEST_CF_ENV_FILE`: a local file containing `CF_ACCESS_CLIENT_ID` and
+  `CF_ACCESS_CLIENT_SECRET`; values must not be passed in command arguments.
+- `OKOU_TEST_CF_SSH_HOST` and `OKOU_TEST_CF_SSH_USER`: the published gateway name
+  and SSH username.
+- `OKOU_TEST_CF_SSH_KEY_FILE`: an authorized private-key file.
+- `OKOU_TEST_CF_SSH_HOST_KEY`: the independently trusted OpenSSH public host key.
+
+Run the exact test with `cargo test --manifest-path crates/Cargo.toml --profile local
+-p runner --bin runner ssh::tests::access::live::authorized_provider_exec_idle_session_rejection_and_cleanup
+-- --ignored --exact --nocapture`. It verifies exec, pooled reuse, bidirectional
+Session IO across 65 seconds of idle time, EOF, invalid-token rejection, notified
+credential replacement and actual socket shutdown. It neither changes Cloudflare
+configuration nor enables feature switches or writes product data.
+
+Development environments that synthesize non-public proxy addresses can supply
+independently verified current A/AAAA answers through the test-only
+`OKOU_TEST_CF_SSH_DNS_ANSWERS` comma-separated list. All supplied addresses still
+pass the production public-destination policy; TLS/SNI and SSH host-key validation
+remain enabled. Record that resolver fixture in acceptance evidence. Do not use
+this lane to claim production DNS, UI-driven Runs or the full two-hour Session
+allowance have been tested.
+
+### Private authority and host identity
 
 Resolve/pin requests use the host's immutable Runner process identity and exact
 current Run assignment. A token prefix selects official transport only; API
@@ -69,15 +410,17 @@ or pin is required, without affecting normal Agent execution. Cache hits make no
 API request. In-flight handoffs cannot be retracted; missed invalidations may
 additionally preserve an authorized snapshot until Run end.
 
-### Run-scoped authority and key cache
+### Run-scoped authority and credential cache
 
-The first use of a connection resolves current authority and parses the private
-key under the existing CPU/admission limits. While the Runner's Ably subscription
+The first use of a connection resolves current authority and prepares exactly one
+authentication method. Private keys are parsed under the existing CPU/admission
+limits; passwords require no key-decoding slot. While the Runner's Ably subscription
 is connected, later commands in the same Run reuse that prepared configuration,
-generation, host trust and parsed key. There is no TTL, periodic refresh,
-connection pooling, disk persistence or cross-Run credential sharing. Raw private
+generation, host trust and parsed key or bounded zeroizing password. The credential
+cache has no TTL, periodic refresh, disk persistence or cross-Run sharing; idle
+authenticated transports have the separate bounded lifetime above. Raw private
 key/passphrase text is released after preparation rather than retained alongside
-the parsed key. Every connection still validates its public destination and the
+the parsed key. Every new physical connection validates its public destination and the
 server's cryptographic proof and fingerprint.
 
 The runtime retains at most 256 cache cells, including evicted cells still owned
@@ -99,7 +442,7 @@ authorized N+1 response.
 
 Before subscription readiness or while disconnected/failed, the Runner bypasses
 shared caching and resolves each command. Observed connection loss clears cached
-entries; recovery rebuilds them lazily from the API. A relevant invalidation or
+entries; recovery rebuilds them lazily from the API. A relevant invalidation or one-shot
 authentication/trust/configuration failure evicts the entry for later commands.
 Required re-resolution failure never restores an invalidated credential, and no
 failure or invalidation automatically replays a command or silently repins a host.
@@ -165,12 +508,38 @@ Application-owned response, PEM and decrypted buffers are bounded and zeroizing;
 this is not a claim that serde/HTTP/crypto libraries eliminate every internal
 plaintext copy. Credentials are never written to guest files or checkpoints.
 
-Per-sandbox admission is 2 requests and per-Runner admission is 16, before request
-parsing and JIT. Expensive key decoding uses 2 process-wide blocking slots.
-Cancelled blocking work and system DNS retain the actual accepted stream and its
-existing normal-operation/park reservation until they really finish. Cancelling
-a waiter does not release those resources prematurely. The dispatcher does not
-introduce an independent park counter.
+The private `resolved_password` response supplies a login password (1..4096 UTF-16
+code units, preserving whitespace), distinct from a private-key passphrase. The
+Runner sends it only after host proof and pin/TOFU succeed. The destination receives
+the password over encrypted SSH; unlike private-key authentication, a malicious
+destination can learn and reuse it. Partial authentication or rejection fails
+without exec, another authentication method or command replay. Keyboard-interactive,
+OTP/MFA and forced password-change exchanges are not supported.
+
+#33467 adds this contract and execution capability only. Owner configuration and
+API credential writers remain key-only until #33468 delivers reusable credentials.
+SSH is staff-only, so this work adds no legacy compatibility or reader-drain gate;
+see [fallback policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback).
+
+Each sandbox's current Run admits up to 8 concurrent SSH requests, before request
+parsing and JIT. There is no Runner-wide SSH request or connection admission cap;
+other Runs do not consume this quota. A new Run receives a fresh 8-slot quota.
+Slots cover admitted work through parsing, authority, DNS, authentication,
+execution and host cleanup, rather than only established connections. Aggregate
+socket, memory and network use can therefore grow with active Runs and outstanding
+cleanup from retired Runs. Expensive key decoding still uses 2 process-wide
+blocking slots. When both are occupied, private-key preparation waits
+asynchronously within the request's existing deadline and Run/sandbox cancellation
+scope, before submitting a blocking job. Waiting retains the Run request slot and
+credential input but occupies no blocking worker; timeout or cancellation removes
+the waiter before DNS, TCP connection, SSH authentication or command execution.
+Password authentication and valid prepared-credential cache hits bypass decoding.
+Authority-cache and observation-report bounds remain separate.
+Cancelled blocking work and system DNS retain their original Run's capacity
+permits until they really finish. The dispatcher owns the guest stream and its existing
+normal-operation/park reservation independently. Once request I/O closes and the
+stream drops, host-only work no longer blocks guest park, while its capacity
+remains charged until actual completion. No independent park counter is added.
 
 Each stream retains at most 1 MiB output, coalesced into at most 16 KiB chunks,
 with periodic low-volume flushing. Both full streams fit the generic 24 KiB
@@ -184,8 +553,11 @@ Every external await observes Run/sandbox cancellation and the helper-coordinate
 
 The shared fresh/reused Run boundary installs the dispatcher before Agent work
 and cancels/joins it before cleanup. Dropping the Run also cancels it. A connected
-socket guard closes detached russh I/O, while that I/O retains the actual stream
-reservation until it exits. Telemetry contains only owned identifiers, fixed
+socket guard closes detached russh I/O, while that I/O retains host capacity
+until it exits. Shutdown joins request dispatch; it need not wait for remaining
+host-only cleanup before guest park. Run registration retirement and cancellation
+still prevent late work from connecting, authenticating or republishing old
+credentials after cancellation. Telemetry contains only owned identifiers, fixed
 outcomes, timing, byte counts, truncation and terminal-delivery state. Production
 fmt/Axiom sinks suppress raw russh/ssh-key/ssh-cipher diagnostics at every level.
 

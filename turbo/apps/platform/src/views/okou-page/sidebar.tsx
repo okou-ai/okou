@@ -221,12 +221,13 @@ function ExpandedSidebar() {
   const { t } = useTranslation();
   return (
     <aside
+      data-slot="sidebar-expanded"
       data-sidebar-expanded={expanded || undefined}
       aria-label={t(($) => {
         return $.appShell.sidebar.ariaLabel;
       })}
       className={cn(
-        "okou-nav okou-mobile-sidebar okou-mobile-fixed-safe-area h-full w-[300px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
+        "okou-mobile-sidebar okou-mobile-fixed-safe-area h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
         "hidden data-[sidebar-expanded]:max-md:flex md:hidden",
       )}
     >
@@ -246,9 +247,8 @@ function ExpandedHeader() {
     return $.appShell.sidebar.collapse;
   });
   return (
-    <div className="okou-sidebar-header shrink-0 px-2 pb-0">
-      <div className="okou-desktop-titlebar-drag-region" aria-hidden="true" />
-      <div className="okou-desktop-no-drag flex items-center justify-between gap-2 rounded-lg py-0.5">
+    <div className="shrink-0 px-2 pt-1.5 pb-0">
+      <div className="flex items-center justify-between gap-2 rounded-lg py-0.5 [-webkit-app-region:no-drag]">
         <div className="min-w-0 flex-1">
           <OrgSwitcher />
         </div>
@@ -307,11 +307,11 @@ function ExpandedManageSection() {
           return setManageCollapsed(!manageCollapsed);
         }}
       >
-        <span className="okou-nav-copy-muted okou-nav-copy-muted-hover flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-sidebar-foreground/50 group-hover:text-sidebar-foreground transition-colors">
+        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_50%,transparent))] group-hover:text-nav-copy transition-colors">
           {t(($) => {
             return $.appShell.sidebar.manage;
           })}
-          <span className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <span className="shrink-0 opacity-0 group-hover:opacity-100">
             <ChevronRight
               className={`opacity-35 ${manageCollapsed ? "" : "rotate-90"}`}
               size={12}
@@ -345,7 +345,9 @@ function ExpandedManageSection() {
                   }`}
                 >
                   <Icon size={16} className="shrink-0" />
-                  <span className="okou-nav-copy truncate">{label}</span>
+                  <span className="text-[color:var(--nav-copy,inherit)] truncate">
+                    {label}
+                  </span>
                 </Link>
               );
             },
@@ -431,7 +433,9 @@ function ExpandedFooter() {
                 ) : (
                   <Icon size={16} className="shrink-0" />
                 )}
-                <span className="okou-nav-copy flex-1 truncate">{label}</span>
+                <span className="text-[color:var(--nav-copy,inherit)] flex-1 truncate">
+                  {label}
+                </span>
                 {id === "works" && slackScopeMismatch && (
                   <span
                     data-testid="slack-scope-mismatch-indicator"
@@ -457,7 +461,7 @@ function ExpandedFooter() {
    what puts the workspace logo and the account mark the same distance from
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
-  "okou-nav okou-nav-rail hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar-rail px-1.5 py-[18px]";
+  "okou-nav-rail hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
 
 function LabeledRailLink({
   id,
@@ -546,8 +550,8 @@ function LabeledRailLink({
       <span
         className={`max-w-full truncate px-0.5 text-[10px] font-medium leading-[14px] ${
           isActive
-            ? "okou-nav-copy text-sidebar-foreground"
-            : "okou-nav-copy-muted text-sidebar-foreground/70"
+            ? "text-nav-copy"
+            : "text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_70%,transparent))]"
         }`}
       >
         {caption}
@@ -634,7 +638,6 @@ function LabeledNavRail() {
   };
   return (
     <aside data-testid="labeled-nav-rail" className={RAIL_FRAME}>
-      <div className="okou-desktop-titlebar-drag-region" aria-hidden="true" />
       <div className="mb-3 shrink-0">
         <OrgSwitcherCompact />
       </div>
@@ -755,7 +758,7 @@ function ChatListColumn() {
   return (
     <aside
       data-testid="chat-list-column"
-      className="okou-nav hidden md:flex h-full w-[300px] shrink-0 flex-col bg-sidebar"
+      className="hidden md:flex h-full w-[300px] shrink-0 flex-col bg-sidebar"
     >
       <div
         className={cn(
@@ -763,7 +766,7 @@ function ChatListColumn() {
           CHAT_LIST_INSET,
         )}
       >
-        <span className="okou-nav-copy flex-1 pl-2 text-[15px] font-semibold text-sidebar-foreground">
+        <span className="flex-1 pl-2 text-[15px] font-semibold text-nav-copy">
           {t(($) => {
             return $.appShell.sidebar.chat;
           })}

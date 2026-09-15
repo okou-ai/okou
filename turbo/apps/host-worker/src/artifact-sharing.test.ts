@@ -272,6 +272,63 @@ test("republishing does not reactivate earlier public URLs or canonical private 
   ).toBe(200);
 });
 
+test("named public site aliases retain snapshot delivery and revoked aliases never revive", async () => {
+  const f = fixture(true);
+  const alias = "business-report";
+  const record = {
+    version: 1,
+    kind: "publication",
+    publicBrand: "okou",
+    shareId: id,
+    publicToken,
+    targetKind: "html",
+  };
+  f.objects.set(
+    artifactDeliveryKey("okou", "html", alias),
+    JSON.stringify(record),
+  );
+  const address = `https://${alias}.okou.app`;
+  for (const path of ["/", "/style.css", "/app.js", "/image.png"]) {
+    const response = await fetchWorker(new Request(`${address}${path}`), f.env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("referrer-policy")).toBe("same-origin");
+  }
+  expect((await fetchWorker(new Request(siteOrigin), f.env)).status).toBe(200);
+  f.objects.set(
+    policyKey,
+    JSON.stringify({
+      ...f.policy,
+      audience: "private",
+      status: "revoked",
+      publicToken: null,
+    }),
+  );
+  expect((await fetchWorker(new Request(address), f.env)).status).toBe(404);
+  const nextToken = "b".repeat(24);
+  f.objects.set(
+    policyKey,
+    JSON.stringify({
+      ...f.policy,
+      publicToken: nextToken,
+      publicSlug: "business-report-abcd",
+    }),
+  );
+  f.objects.set(
+    artifactDeliveryKey("okou", "html", "business-report-abcd"),
+    JSON.stringify({ ...record, publicToken: nextToken }),
+  );
+  expect((await fetchWorker(new Request(address), f.env)).status).toBe(404);
+  expect((await fetchWorker(new Request(siteOrigin), f.env)).status).toBe(404);
+  expect(
+    (
+      await fetchWorker(
+        new Request("https://business-report-abcd.okou.app"),
+        f.env,
+      )
+    ).status,
+  ).toBe(200);
+});
+
 test("html snapshots protect every resource and navigation on an isolated origin", async () => {
   const f = fixture(true);
   for (const path of [
@@ -290,7 +347,7 @@ test("html snapshots protect every resource and navigation on an isolated origin
     expect(response.headers.get("content-security-policy")).toContain(
       "worker-src 'none'",
     );
-    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("referrer-policy")).toBe("same-origin");
   }
   const head = await fetchWorker(
     new Request(`${siteOrigin}/app.js`, { method: "HEAD" }),

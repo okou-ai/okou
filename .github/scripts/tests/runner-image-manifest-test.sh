@@ -89,6 +89,19 @@ if MANIFEST_PATH="${TMPDIR}/manifest.json" \
 fi
 grep -q "manifest missing rootfsHash for dev-3" "${TMPDIR}/manifest-test.err" || fail "expected missing host message"
 
+# Selecting an existing host must not bypass validation of its whole group.
+if MANIFEST_PATH="${TMPDIR}/manifest.json" \
+  HEAD_SHA=abc \
+  JOB_REF=pr-123 \
+  TARGET=aarch64-unknown-linux-musl \
+  PROFILE=vm0/default \
+  METAL_HOSTS=dev-1,dev-3 \
+  SELECTED_HOST=dev-1 \
+  "$MANIFEST" validate >"${TMPDIR}/selected-group.out" 2>"${TMPDIR}/selected-group.err"; then
+  fail "expected missing unselected host in selected group to fail"
+fi
+grep -q "manifest missing rootfsHash for dev-3" "${TMPDIR}/selected-group.err" || fail "expected whole selected group validation"
+
 if MANIFEST_PATH="${TMPDIR}/manifest.json" \
   HEAD_SHA=abc \
   JOB_REF=pr-123 \

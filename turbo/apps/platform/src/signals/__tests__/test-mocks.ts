@@ -30,6 +30,7 @@ import {
 } from "../../test/mocks/sentry-behavior.ts";
 import {
   deferNextAblySubscribe,
+  deferAblySubscribeOnChannel,
   getAuthTokenHistory,
   hasChannelSubscription,
   hasChannelSubscriptionOnChannel,
@@ -140,6 +141,10 @@ interface LocationAssignMock {
   calls: string[];
 }
 
+interface LocationReplaceMock {
+  calls: string[];
+}
+
 interface ClipboardWriteMock {
   writes: string[];
 }
@@ -232,7 +237,9 @@ interface ClerkMock {
   readonly loads: readonly (MockedClerkLoadOptions | undefined)[];
   readonly localizationRequests: ClerkLocalizationLocale[];
   readonly resourceRequests: ClerkResourceRequest[];
-  /** Hosted UI script requests; only v1 comparison routes should add one. */
+  /**
+   * Hosted UI script requests; only auth pages and account switching add one.
+   */
   readonly uiRequests: string[];
   /** Clerk `status` handlers the SDK still holds, so leaks stay observable. */
   readonly statusListenerCount: () => number;
@@ -426,6 +433,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
       locationAssign: (): LocationAssignMock => {
         return mockLocationAssign();
+      },
+      locationReplace: (): LocationReplaceMock => {
+        return mockLocationReplace();
       },
       authWindow: (): MockWindow => {
         return createMockWindow();
@@ -649,6 +659,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
     },
     ably: {
+      deferSubscribeOnChannel: (channelName: string, topic: string) => {
+        return deferAblySubscribeOnChannel(channelName, topic, getSignal());
+      },
       deferNextSubscribe: () => {
         return deferNextAblySubscribe(getSignal());
       },
@@ -821,6 +834,14 @@ function mockWindowOpen(openedWindow: Window | null): BrowserOpenMock {
 function mockLocationAssign(): LocationAssignMock {
   const calls: string[] = [];
   vi.spyOn(window.location, "assign").mockImplementation((url) => {
+    calls.push(String(url));
+  });
+  return { calls };
+}
+
+function mockLocationReplace(): LocationReplaceMock {
+  const calls: string[] = [];
+  vi.spyOn(window.location, "replace").mockImplementation((url) => {
     calls.push(String(url));
   });
   return { calls };
@@ -1100,8 +1121,6 @@ interface VoiceInputMockOptions {
   readonly durationSeconds?: number;
   readonly getUserMediaReady?: Promise<void>;
   readonly onAudioContextClose?: () => void;
-  readonly onRecorderStart?: () => void;
-  readonly onRecorderStop?: () => void;
   readonly onTrackStop?: () => void;
   readonly rms?: number | readonly number[] | (() => number);
 }
@@ -1110,9 +1129,6 @@ function mockVoiceInput(
   signal: AbortSignal,
   options: VoiceInputMockOptions = {},
 ): void {
-  const mediaRecorderGlobal = globalThis as typeof globalThis & {
-    MediaRecorder?: typeof MediaRecorder;
-  };
   const stream = {
     getTracks: () => {
       return [
@@ -1140,7 +1156,6 @@ function mockVoiceInput(
   }
 
   let sampleIndex = 0;
-  let recordingChunkIndex = 0;
 
   function nextRms(): number {
     const rms = options.rms;
@@ -1156,21 +1171,6 @@ function mockVoiceInput(
       return rms[index] ?? 0;
     }
     return 0;
-  }
-
-  function nextRecordingBlob(mimeType: string, standalone: boolean): Blob {
-    recordingChunkIndex += 1;
-    const prefix = standalone ? "voice" : "chunk";
-    const value = `${prefix}-${recordingChunkIndex}`;
-    const blob = new Blob([value], { type: mimeType });
-    if (typeof blob.arrayBuffer !== "function") {
-      Object.defineProperty(blob, "arrayBuffer", {
-        value: (): Promise<ArrayBuffer> => {
-          return Promise.resolve(new TextEncoder().encode(value).buffer);
-        },
-      });
-    }
-    return blob;
   }
 
   class TestAnalyser {
@@ -1257,54 +1257,6 @@ function mockVoiceInput(
     readonly port = new TestVoicePcmPort();
   }
 
-  type RecorderDataEvent = Event & { data: Blob };
-
-  class TestMediaRecorder extends EventTarget {
-    static isTypeSupported(type: string): boolean {
-      return type === "audio/webm";
-    }
-
-    mimeType: string;
-    ondataavailable: ((event: RecorderDataEvent) => void) | null = null;
-    state: RecordingState = "inactive";
-
-    constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
-      super();
-      this.mimeType = options?.mimeType ?? "audio/webm";
-    }
-
-    start(): void {
-      this.state = "recording";
-      options.onRecorderStart?.();
-    }
-
-    requestData(): void {
-      if (this.state !== "recording") {
-        return;
-      }
-      this.emitData(false);
-    }
-
-    private emitData(standalone: boolean): void {
-      const event = new Event("dataavailable") as RecorderDataEvent;
-      Object.defineProperty(event, "data", {
-        value: nextRecordingBlob(this.mimeType, standalone),
-      });
-      this.ondataavailable?.(event);
-      this.dispatchEvent(event);
-    }
-
-    stop(): void {
-      if (this.state === "inactive") {
-        return;
-      }
-      this.state = "inactive";
-      this.emitData(true);
-      this.dispatchEvent(new Event("stop"));
-      options.onRecorderStop?.();
-    }
-  }
-
   const mediaDevicesDescriptor = defineWindowProperty(
     navigator,
     "mediaDevices",
@@ -1318,11 +1270,6 @@ function mockVoiceInput(
         });
       },
     },
-  );
-  const mediaRecorderDescriptor = defineWindowProperty(
-    mediaRecorderGlobal,
-    "MediaRecorder",
-    TestMediaRecorder as unknown as typeof MediaRecorder,
   );
   const audioWorkletDescriptor = defineWindowProperty(
     window,
@@ -1340,11 +1287,6 @@ function mockVoiceInput(
 
   restoreOnAbort(signal, () => {
     restoreWindowProperty(navigator, "mediaDevices", mediaDevicesDescriptor);
-    restoreWindowProperty(
-      mediaRecorderGlobal,
-      "MediaRecorder",
-      mediaRecorderDescriptor,
-    );
     restoreWindowProperty(window, "AudioWorkletNode", audioWorkletDescriptor);
     if (audioContextDescriptor !== undefined) {
       restoreWindowProperty(window, "AudioContext", audioContextDescriptor);

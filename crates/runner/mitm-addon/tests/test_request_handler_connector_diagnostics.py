@@ -87,7 +87,7 @@ async def test_shared_base_unknown_endpoint_diagnoses_inactive_sibling_before_au
         path="/inactive",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "inactive-shared"),
+            ("X-Okou-Connector-Intent", "inactive-shared"),
         ),
     )
 
@@ -100,7 +100,7 @@ async def test_shared_base_unknown_endpoint_diagnoses_inactive_sibling_before_au
     auth_fetch.assert_not_called()
     _assert_shared_base_inactive_diagnostic(flow)
     assert "Authorization" not in flow.request.headers
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert upstream_destination_binding.binding_snapshot_for_tests() == {}
     [proxy_log_entry] = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
     assert proxy_log_entry["type"] == "connector_diagnostic"
@@ -129,7 +129,7 @@ async def test_shared_base_head_diagnostic_is_bodyless(
         method="HEAD",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "inactive-shared"),
+            ("X-Okou-Connector-Intent", "inactive-shared"),
         ),
     )
 
@@ -167,7 +167,7 @@ async def test_shared_base_connector_intent_diagnoses_inside_candidate_set_befor
         path="/graphql/v2",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "inactive-shared"),
+            ("X-Okou-Connector-Intent", "inactive-shared"),
         ),
     )
 
@@ -180,7 +180,7 @@ async def test_shared_base_connector_intent_diagnoses_inside_candidate_set_befor
     auth_fetch.assert_not_called()
     _assert_shared_base_inactive_diagnostic(flow)
     assert "Authorization" not in flow.request.headers
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert upstream_destination_binding.binding_snapshot_for_tests() == {}
     [proxy_log_entry] = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
     assert proxy_log_entry["type"] == "connector_diagnostic"
@@ -202,7 +202,7 @@ async def test_shared_base_active_connector_intent_keeps_active_auth_path(
         path="/graphql/v2",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "active-shared"),
+            ("X-Okou-Connector-Intent", "active-shared"),
         ),
     )
 
@@ -215,7 +215,7 @@ async def test_shared_base_active_connector_intent_keeps_active_auth_path(
     auth_fetch.assert_awaited_once()
     assert flow.response is None
     assert flow.request.headers["Authorization"] == "Bearer active"
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert flow.metadata[metadata_keys.FIREWALL_NAME] == "active-shared"
     assert metadata_keys.FIREWALL_ERROR not in flow.metadata
     assert metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG not in flow.metadata
@@ -259,7 +259,7 @@ async def test_shared_base_unknown_endpoint_with_configured_auth_keeps_active_au
         path=path,
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "inactive-shared"),
+            ("X-Okou-Connector-Intent", "inactive-shared"),
             *request_header_pairs,
         ),
     )
@@ -273,7 +273,7 @@ async def test_shared_base_unknown_endpoint_with_configured_auth_keeps_active_au
     auth_fetch.assert_awaited_once()
     assert flow.response is None
     assert flow.request.headers["Authorization"] == "Bearer active"
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG not in flow.metadata
 
 
@@ -289,8 +289,8 @@ async def test_shared_base_malformed_connector_intent_is_ignored_and_stripped(
         path="/inactive",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "inactive-shared"),
-            ("X-VM0-Connector-Intent", "other"),
+            ("X-Okou-Connector-Intent", "inactive-shared"),
+            ("X-Okou-Connector-Intent", "other"),
         ),
     )
 
@@ -303,7 +303,7 @@ async def test_shared_base_malformed_connector_intent_is_ignored_and_stripped(
     auth_fetch.assert_awaited_once()
     assert flow.response is None
     assert flow.request.headers["Authorization"] == "Bearer active"
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.CONNECTOR_DIAGNOSTIC_SLUG not in flow.metadata
 
 
@@ -357,7 +357,7 @@ async def test_shared_base_requestheaders_diagnoses_before_stream_safe_auth(
         path="/inactive",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "inactive-shared"),
+            ("X-Okou-Connector-Intent", "inactive-shared"),
             ("Content-Length", str(mitm_addon.STREAM_BUFFER_LIMIT + 1)),
         ),
     )
@@ -374,7 +374,7 @@ async def test_shared_base_requestheaders_diagnoses_before_stream_safe_auth(
     _assert_shared_base_inactive_diagnostic(flow)
     assert flow.request.stream is False
     assert "Authorization" not in flow.request.headers
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
     assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
 

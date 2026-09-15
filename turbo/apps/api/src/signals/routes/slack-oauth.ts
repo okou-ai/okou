@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
@@ -32,6 +32,11 @@ import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { OFFICIAL_SLACK_PUBLIC_BRAND } from "../../lib/slack-official-app";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
+import {
+  completeSlackConnectorOAuth$,
+  startSlackConnectorOAuth$,
+} from "../services/slack-connector-oauth.service";
+import { SLACK_CONNECTOR_OAUTH_STATE_PREFIX } from "../services/slack-connector-oauth-state";
 
 const L = logger("SlackOAuth");
 const SLACK_OAUTH_URL = "https://slack.com/oauth/v2/authorize";
@@ -235,7 +240,7 @@ function slackCredentials(): {
   return { clientId, clientSecret };
 }
 
-const installOauth$ = computed((get) => {
+const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$).raw;
   const origin = getOAuthApiOrigin(request);
   const clientId = env("SLACK_OAUTH_CLIENT_ID");
@@ -244,6 +249,17 @@ const installOauth$ = computed((get) => {
   }
 
   const query = get(queryOf(slackOauthContract.install));
+  if (query.connectorState) {
+    return await set(
+      startSlackConnectorOAuth$,
+      {
+        flow: "install",
+        connectorState: query.connectorState,
+        redirectUri: callbackRedirectUri(origin),
+      },
+      signal,
+    );
+  }
   const publicBrand = PUBLIC_BRAND;
   const userId = query.userId;
   const redirectUri = callbackRedirectUri(origin);
@@ -268,7 +284,7 @@ const installOauth$ = computed((get) => {
   return noStoreRedirect(authUrl.toString());
 });
 
-const connectOauth$ = command(async ({ get }, signal: AbortSignal) => {
+const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$).raw;
   const origin = getOAuthApiOrigin(request);
   const clientId = env("SLACK_OAUTH_CLIENT_ID");
@@ -277,6 +293,17 @@ const connectOauth$ = command(async ({ get }, signal: AbortSignal) => {
   }
 
   const query = get(queryOf(slackOauthContract.connect));
+  if (query.connectorState) {
+    return await set(
+      startSlackConnectorOAuth$,
+      {
+        flow: "connect",
+        connectorState: query.connectorState,
+        redirectUri: callbackRedirectUri(origin),
+      },
+      signal,
+    );
+  }
   const publicBrand = PUBLIC_BRAND;
   const userId = query.userId;
   if (!query.orgId || !userId) {
@@ -386,7 +413,7 @@ const handlePlatformInstall$ = command(
     );
     signal.throwIfAborted();
 
-    if (!member) {
+    if (member.kind !== "member") {
       throw new Error("You are not a member of this organization");
     }
 
@@ -631,7 +658,7 @@ const handleConnectCallback$ = command(
     );
     signal.throwIfAborted();
 
-    if (!member) {
+    if (member.kind !== "member") {
       throw new Error("You are not a member of this organization");
     }
 
@@ -680,12 +707,23 @@ const handleConnectCallback$ = command(
 );
 
 const callbackOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const query = get(queryOf(slackOauthContract.callback));
+  if (query.state?.startsWith(SLACK_CONNECTOR_OAUTH_STATE_PREFIX)) {
+    return await set(
+      completeSlackConnectorOAuth$,
+      {
+        state: query.state,
+        code: query.code,
+        error: query.error,
+      },
+      signal,
+    );
+  }
   const credentials = slackCredentials();
   if (!credentials) {
     return jsonErrorResponse("Slack integration is not configured", 503);
   }
 
-  const query = get(queryOf(slackOauthContract.callback));
   const parsedState = parseOAuthState(query.state);
 
   if (query.error) {

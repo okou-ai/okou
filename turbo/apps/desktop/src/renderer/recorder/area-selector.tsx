@@ -8,7 +8,7 @@ interface DragPoint {
   readonly y: number;
 }
 
-const recorder = window.vm0DesktopRecorder;
+const recorder = window.okouDesktopRecorder;
 /**
  * Which screen this overlay covers.
  *

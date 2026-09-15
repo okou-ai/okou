@@ -1,5 +1,262 @@
 # Changelog
 
+## [1.4.46](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.45...host-worker-v1.4.46) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.3
+
+## [1.4.45](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.44...host-worker-v1.4.45) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.2
+
+## [1.4.44](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.43...host-worker-v1.4.44) (2026-09-15)
+
+
+### Bug Fixes
+
+* align artifact viewer and shorten sharing urls ([#34249](https://github.com/vm0-ai/vm0/issues/34249)) ([f833361](https://github.com/vm0-ai/vm0/commit/f833361a484782b0d85ea6dd6d4929f0a6034d14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.1
+
+## [1.4.43](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.42...host-worker-v1.4.43) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.0
+
+## [1.4.42](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.41...host-worker-v1.4.42) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.442.0
+
+## [1.4.41](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.40...host-worker-v1.4.41) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.441.0
+
+## [1.4.40](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.39...host-worker-v1.4.40) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.1
+
+## [1.4.39](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.38...host-worker-v1.4.39) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.0
+
+## [1.4.38](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.37...host-worker-v1.4.38) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.439.0
+
+## [1.4.37](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.36...host-worker-v1.4.37) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.2
+
+## [1.4.36](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.35...host-worker-v1.4.36) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.1
+
+## [1.4.35](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.34...host-worker-v1.4.35) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.0
+
+## [1.4.34](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.33...host-worker-v1.4.34) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.437.0
+
+## [1.4.33](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.32...host-worker-v1.4.33) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+
+## [1.4.32](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.31...host-worker-v1.4.32) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.1
+
+## [1.4.31](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.30...host-worker-v1.4.31) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.0
+
+## [1.4.30](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.29...host-worker-v1.4.30) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.434.0
+
+## [1.4.29](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.28...host-worker-v1.4.29) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.1
+
+## [1.4.28](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.27...host-worker-v1.4.28) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.0
+
+## [1.4.27](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.26...host-worker-v1.4.27) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.1
+
+## [1.4.26](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.25...host-worker-v1.4.26) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.0
+
+## [1.4.25](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.24...host-worker-v1.4.25) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.431.0
+
+## [1.4.24](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.23...host-worker-v1.4.24) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.430.1
+
+## [1.4.23](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.22...host-worker-v1.4.23) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.430.0
+
+## [1.4.22](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.21...host-worker-v1.4.22) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.429.1
+
+## [1.4.21](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.20...host-worker-v1.4.21) (2026-09-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.429.0
+
+## [1.4.20](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.19...host-worker-v1.4.20) (2026-09-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.428.2
+
+## [1.4.19](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.18...host-worker-v1.4.19) (2026-09-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.428.1
+
 ## [1.4.18](https://github.com/vm0-ai/vm0/compare/host-worker-v1.4.17...host-worker-v1.4.18) (2026-09-11)
 
 

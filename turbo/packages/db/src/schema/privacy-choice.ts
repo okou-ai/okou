@@ -7,7 +7,10 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { PrivacyPurposes } from "@okouai/api-contracts/contracts/privacy-choices";
+
+// Retained after the DCF-552 runtime rollback for deployed data, old API
+// compatibility, and account deletion. These tables have no active writers.
+type PrivacyDecision = "granted" | "denied" | "unknown";
 
 // Personal choices are independent of organization membership. Browser tokens
 // authorize only this preference; no raw token or advertising ID is retained.
@@ -24,15 +27,15 @@ export const privacyChoices = pgTable(
       .notNull()
       .defaultRandom(),
     saleSharing: text("sale_sharing")
-      .$type<PrivacyPurposes["saleSharing"]>()
+      .$type<PrivacyDecision>()
       .notNull()
       .default("unknown"),
     advertising: text("advertising")
-      .$type<PrivacyPurposes["advertising"]>()
+      .$type<PrivacyDecision>()
       .notNull()
       .default("unknown"),
     marketingAnalytics: text("marketing_analytics")
-      .$type<PrivacyPurposes["marketingAnalytics"]>()
+      .$type<PrivacyDecision>()
       .notNull()
       .default("unknown"),
     source: text("source").$type<"explicit" | "gpc">(),
@@ -65,14 +68,10 @@ export const privacyChoiceRevisions = pgTable(
         },
         { onDelete: "cascade" },
       ),
-    saleSharing: text("sale_sharing")
-      .$type<PrivacyPurposes["saleSharing"]>()
-      .notNull(),
-    advertising: text("advertising")
-      .$type<PrivacyPurposes["advertising"]>()
-      .notNull(),
+    saleSharing: text("sale_sharing").$type<PrivacyDecision>().notNull(),
+    advertising: text("advertising").$type<PrivacyDecision>().notNull(),
     marketingAnalytics: text("marketing_analytics")
-      .$type<PrivacyPurposes["marketingAnalytics"]>()
+      .$type<PrivacyDecision>()
       .notNull(),
     source: text("source").$type<"explicit" | "gpc">().notNull(),
     policyVersion: text("policy_version").notNull(),

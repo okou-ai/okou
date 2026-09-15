@@ -54,7 +54,7 @@ test("An admin can set up a new Telegram bot", async () => {
         id: "bot_registered",
         username: "registered_bot",
         avatarUrl: null,
-        agent: { id: PRIMARY_AGENT_ID, name: "Zero" },
+        agent: { id: PRIMARY_AGENT_ID, name: "Nova" },
         isOwner: true,
         isConnected: false,
         connectedUser: null,

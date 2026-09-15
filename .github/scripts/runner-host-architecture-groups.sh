@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: runner-host-architecture-groups.sh [matrix|target-matrix|has-groups|hosts ID|select-context KEY|select-host ID KEY [HOSTS]]
+Usage: runner-host-architecture-groups.sh [matrix|validation-plan KEY|target-matrix|has-groups|hosts ID|select-context KEY|select-host ID KEY [HOSTS]]
 
 Emits compact JSON for configured runner host architecture groups.
 Inputs:
@@ -16,6 +16,7 @@ Inputs:
 Commands:
   <none>      Emit the full local contract, including hosts.
   matrix      Emit the cross-job matrix contract, excluding hosts.
+  validation-plan KEY  Emit the full matrix, selected target, and remaining validation matrix.
   target-matrix  Emit the deploy/rollback matrix contract: id, label, target.
   has-groups  Emit true when at least one host group is configured.
   hosts ID            Emit comma-separated hosts for the given architecture group.
@@ -167,6 +168,11 @@ emit_groups() {
 emit_matrix() {
   local groups
   groups=$(emit_groups) || return $?
+  matrix_from_groups "$groups"
+}
+
+matrix_from_groups() {
+  local groups=$1
   jq -c 'map({
     id,
     label,
@@ -222,15 +228,17 @@ emit_hosts() {
   jq -r --arg id "$group_id" '.[] | select(.id == $id) | .hosts' <<<"$groups"
 }
 
-emit_selected_context() {
+validate_selection_key() {
   local selection_key=${1:-}
   if [ -z "$selection_key" ]; then
     echo "missing runner host context selection key" >&2
     return 2
   fi
+}
 
-  local groups contexts context_count
-  groups=$(emit_groups) || return $?
+selected_context_from_groups() {
+  local selection_key=$1 groups=$2
+  local contexts context_count
   contexts=$(jq -c '[.[] as $group | $group.hosts | split(",")[] | {
     host: .,
     groupId: $group.id,
@@ -247,6 +255,27 @@ emit_selected_context() {
   hash=$(printf '%s' "$selection_key" | md5sum | cut -c1-8)
   context_index=$(( 0x$hash % context_count ))
   jq -c --argjson context_index "$context_index" '.[$context_index]' <<<"$contexts"
+}
+
+emit_selected_context() {
+  validate_selection_key "${1:-}" || return $?
+  local groups
+  groups=$(emit_groups) || return $?
+  selected_context_from_groups "${1:-}" "$groups"
+}
+
+emit_validation_plan() {
+  validate_selection_key "${1:-}" || return $?
+  local groups context matrix target
+  groups=$(emit_groups) || return $?
+  context=$(selected_context_from_groups "${1:-}" "$groups") || return $?
+  target=$(jq -r '.target' <<<"$context")
+  matrix=$(matrix_from_groups "$groups") || return $?
+  jq -cn --argjson matrix "$matrix" --arg target "$target" '{
+    matrix: $matrix,
+    selectedTarget: $target,
+    validationMatrix: ($matrix | map(select(.target != $target)))
+  }'
 }
 
 emit_selected_host() {
@@ -294,6 +323,9 @@ case "$cmd" in
     ;;
   matrix)
     emit_matrix
+    ;;
+  validation-plan)
+    emit_validation_plan "${2:-}"
     ;;
   target-matrix)
     emit_target_matrix

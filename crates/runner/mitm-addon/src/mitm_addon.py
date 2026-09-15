@@ -74,6 +74,7 @@ import request_classification
 import request_streaming
 import response_encoding_negotiation
 import response_streaming
+import runner_control
 import runner_flush_lifecycle
 import tcp_logging
 import terminal_usage
@@ -125,7 +126,6 @@ _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
 # Consumer: request() and terminal cleanup.
 # Release: auth marker is popped by terminal cleanup.
 # _REQUEST_HEADERS_TERMINATED is a flow-local sentinel for request() early exit.
-_HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE = 431
 # Match the existing 64 KiB HTTP/2/SigV4 minimum per-field accounting budget.
 _MAX_REQUEST_HEADER_FIELDS = 2048
 _MAX_REQUEST_HEADER_NAME_BYTES = 4096
@@ -187,16 +187,16 @@ def load(loader: Loader) -> None:
         runner_flush_lifecycle.handle_runner_usage_flush_signal,
     )
     loader.add_option(
-        name="vm0_api_url",
+        name="okou_api_url",
         typespec=str,
         default="https://api.okou.ai",
         help="Okou API URL for proxy endpoint",
     )
     loader.add_option(
-        name="vm0_proxy_registry_path",
+        name="okou_proxy_registry_path",
         typespec=str,
         # This default is a placeholder shown in `mitmdump --help`; the runner
-        # always passes `--set vm0_proxy_registry_path=<per-runner path>` (see
+        # always passes `--set okou_proxy_registry_path=<per-runner path>` (see
         # `proxy::process::spawn_mitmdump` in
         # `crates/runner/src/proxy/process.rs`), so the default is never used in
         # production. Computed via tempfile.gettempdir() so that standalone
@@ -205,37 +205,37 @@ def load(loader: Loader) -> None:
         help="Path to proxy registry file",
     )
     loader.add_option(
-        name="vm0_builtin_firewall_catalog_cache_path",
+        name="okou_builtin_firewall_catalog_cache_path",
         typespec=str,
         default=str(Path(tempfile.gettempdir()) / "builtin-firewall-catalog-cache.json"),
         help="Path to runner builtin firewall catalog cache file",
     )
     loader.add_option(
-        name="vm0_usage_state_id",
+        name="okou_usage_state_id",
         typespec=str,
         default="",
         help="Runner-generated usage-pending state id",
     )
     loader.add_option(
-        name="vm0_addon_ready_path",
+        name="okou_control_socket_dir",
         typespec=str,
         default="",
-        help="Path for the runner's addon initialization marker",
+        help="Runner-owned private launch directory for the control socket",
     )
     loader.add_option(
-        name="vm0_client_session_id",
+        name="okou_client_session_id",
         typespec=str,
         default="",
         help="Runner-generated client session id for platform API requests",
     )
     loader.add_option(
-        name="vm0_client_version",
+        name="okou_client_version",
         typespec=str,
         default="",
         help="Runner package version for platform API request attribution",
     )
     loader.add_option(
-        name="vm0_usage_flush_interval_seconds",
+        name="okou_usage_flush_interval_seconds",
         typespec=float,
         default=usage.DEFAULT_FLUSH_INTERVAL_SECONDS,
         help="Usage-event buffer flush interval in seconds",
@@ -244,42 +244,49 @@ def load(loader: Loader) -> None:
 
 def configure(updated: set[str]) -> None:
     platform_api.configure_client_headers(
-        client_session_id=ctx.options.vm0_client_session_id,
-        client_version=ctx.options.vm0_client_version,
+        client_session_id=ctx.options.okou_client_session_id,
+        client_version=ctx.options.okou_client_version,
     )
     model_provider_failure.configure_reporting(
         api_url=get_api_url(),
         bearer_credential=os.environ.get(model_provider_failure.RUNNER_AUTH_ENV, ""),
     )
-    if "vm0_usage_flush_interval_seconds" in updated:
+    if "okou_usage_flush_interval_seconds" in updated:
         usage.configure_usage_buffer(
-            flush_interval_seconds=ctx.options.vm0_usage_flush_interval_seconds
+            flush_interval_seconds=ctx.options.okou_usage_flush_interval_seconds
         )
-    if "vm0_usage_state_id" in updated:
+    if "okou_usage_state_id" in updated:
         # Custom --set options are deferred until after load() registers them,
         # so initialize this file here where ctx.options has the runner value.
         usage.set_pending_path(
             str(Path(__file__).resolve().parent / "usage-pending"),
-            usage_state_id=ctx.options.vm0_usage_state_id or None,
+            usage_state_id=ctx.options.okou_usage_state_id or None,
         )
 
 
+_runner_control: runner_control.ControlServer | None = None
+
+
 def running() -> None:
-    ready_path = ctx.options.vm0_addon_ready_path
-    usage_state_id = ctx.options.vm0_usage_state_id
-    if ready_path and usage_state_id:
+    global _runner_control
+
+    control_dir = ctx.options.okou_control_socket_dir
+    usage_state_id = ctx.options.okou_usage_state_id
+    if control_dir and usage_state_id:
         runner_flush_lifecycle.start_runner_jsonl_flush_worker()
-        Path(ready_path).write_text(usage_state_id, encoding="utf-8")
+        control = runner_control.ControlServer(Path(control_dir), usage_state_id)
+        control.start()
+        _runner_control = control
 
 
 def get_api_url() -> str:
     """Get API URL from options."""
-    return ctx.options.vm0_api_url
+    return ctx.options.okou_api_url
 
 
 def get_registry_path() -> str:
     """Get registry path from options."""
-    return ctx.options.vm0_proxy_registry_path
+    return ctx.options.okou_proxy_registry_path
 
 
 def _request_headers_probe_metadata_keys() -> tuple[str, ...]:
@@ -759,15 +766,15 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         flow.kill()
         return None
     if any(len(name) > _MAX_REQUEST_HEADER_NAME_BYTES for name, _value in request_header_fields):
-        # Mitmproxy performs an Expect lookup after this hook, so rejected names
-        # must be gone before control returns while ordinary protocol fields stay.
+        # A local response waits for body completion. Drop rejected names and
+        # kill before mitmproxy's Expect lookup or request-body buffering.
         flow.request.headers.fields = tuple(
             (name, value)
             for name, value in request_header_fields
             if len(name) <= _MAX_REQUEST_HEADER_NAME_BYTES
         )
-        flow.response = http.Response.make(_HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        flow.kill()
         return None
 
     codex_model_catalog_cache.capture_and_strip_prefetch_marker(flow)
@@ -1073,6 +1080,16 @@ async def _try_firewall_request_stream_from_headers(
         restore_request_state()
         _restore_request_headers_probe_metadata(flow, metadata_snapshot)
         raise
+    if result is FirewallHeaderPhaseAuthResult.REJECTED:
+        restore_request_state()
+        # A local response waits for body EOF. Preserve auth diagnostics, but
+        # kill before mitmproxy sends 100 Continue or consumes the rejected body.
+        flow.response = None
+        release_aws_sigv4_request_inspection(flow)
+        request_classification.pop_cached_classification(flow)
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        flow.kill()
+        return
     if result is not FirewallHeaderPhaseAuthResult.APPLIED:
         fall_back()
         return
@@ -1705,7 +1722,6 @@ def _release_terminal_flow_state(
         codex_output_timing.release_flow_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
-    flow.metadata.pop(metadata_keys.FIREWALL_AUTH_PROBE_FAILURE, None)
     release_aws_sigv4_request_inspection(flow)
     flow.metadata.pop(metadata_keys.WEBSOCKET_UPGRADE_REQUEST, None)
     flow.metadata.pop(metadata_keys.RESPONSE_ENCODING_NEGOTIATION, None)
@@ -2011,6 +2027,17 @@ def done():
     Catalog validation and SigV4 hashing close admission and join their bounded
     off-loop work.
     """
+    global _runner_control
+
+    try:
+        if _runner_control is not None:
+            _runner_control.stop()
+            _runner_control = None
+    finally:
+        _drain_addon_workers()
+
+
+def _drain_addon_workers() -> None:
     try:
         runner_flush_lifecycle.drain_and_close()
     finally:

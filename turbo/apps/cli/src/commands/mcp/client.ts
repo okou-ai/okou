@@ -17,7 +17,7 @@ import { ApiRequestError } from "../../lib/api/core/client-factory";
 
 declare const __CLI_VERSION__: string;
 
-const CONNECTOR_INTENT_HEADER = "X-VM0-Connector-Intent";
+const CONNECTOR_INTENT_HEADER = "X-Okou-Connector-Intent";
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 const MAX_ERROR_RESPONSE_BYTES = 8 * 1024;
 const MAX_DISCOVERY_BYTES = 16 * 1024 * 1024;

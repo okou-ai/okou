@@ -1,5 +1,5 @@
 import { env, optionalEnv } from "../../lib/env";
-const TEST_ENDPOINT_BYPASS_HEADER = "x-vm0-test-endpoint-bypass";
+const TEST_ENDPOINT_BYPASS_HEADER = "x-okou-test-endpoint-bypass";
 
 interface HeaderReader {
   readonly header: (name: string) => string | undefined;

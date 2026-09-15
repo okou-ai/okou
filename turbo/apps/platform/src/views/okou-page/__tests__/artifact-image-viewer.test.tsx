@@ -85,7 +85,7 @@ async function finishLightboxImageDecode(
   });
 }
 
-test("The image viewer navigates across one assistant response", async () => {
+test("The image viewer supports initial preview and download focus within one assistant response", async () => {
   const firstImageUrl =
     "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/first.png";
   const secondImageUrl =
@@ -163,14 +163,11 @@ test("The image viewer navigates across one assistant response", async () => {
       },
     ],
   });
-
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
   const expandHistory = await waitFor(() => {
     return getButtonByName("Expand work history");
   });
   click(expandHistory);
-
   const firstImage = await screen.findByAltText("first.png");
   const previewButton = firstImage.closest<HTMLElement>("button");
   if (!previewButton) {
@@ -208,13 +205,126 @@ test("The image viewer navigates across one assistant response", async () => {
   await waitFor(() => {
     expect(downloadButton).toHaveFocus();
   });
+});
+
+test("The image viewer supports next image within one assistant response", async () => {
+  const firstImageUrl =
+    "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/first.png";
+  const secondImageUrl =
+    "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/second.png";
+  const firstDecode = context.mocks.deferred<void>();
+  const secondDecode = context.mocks.deferred<void>();
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    if (this.src === firstImageUrl) {
+      return firstDecode.promise;
+    }
+    if (this.src === secondImageUrl) {
+      return secondDecode.promise;
+    }
+    return Promise.resolve();
+  });
+  const runId = "run-body-image-split-navigation";
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(200, {
+      runs: [
+        {
+          runId,
+          files: [
+            artifactFile(firstImageUrl, {
+              id: "artifact-body-split-first-image",
+              filename: "first.png",
+            }),
+            artifactFile(secondImageUrl, {
+              id: "artifact-body-split-second-image",
+              filename: "second.png",
+            }),
+          ],
+        },
+      ],
+    });
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    chatEvents: [
+      {
+        id: "msg-body-image-split-label",
+        role: "assistant",
+        content: "Generated images:",
+        runId,
+        runEventId: "event:0",
+        sequenceNumber: 0,
+        createdAt: "2026-03-10T00:00:00Z",
+      },
+      {
+        id: "msg-body-image-split-first",
+        role: "assistant",
+        content: `1. ![first.png](${firstImageUrl})`,
+        runId,
+        runEventId: "event:1",
+        sequenceNumber: 1,
+        createdAt: "2026-03-10T00:00:01Z",
+      },
+      {
+        id: "msg-body-image-split-second",
+        role: "assistant",
+        content: `2. ![second.png](${secondImageUrl})`,
+        runId,
+        runEventId: "event:2",
+        sequenceNumber: 2,
+        createdAt: "2026-03-10T00:00:02Z",
+      },
+    ],
+  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  const expandHistory = await waitFor(() => {
+    return getButtonByName("Expand work history");
+  });
+  click(expandHistory);
+  const firstImage = await screen.findByAltText("first.png");
+  const previewButton = firstImage.closest<HTMLElement>("button");
+  if (!previewButton) {
+    throw new Error("Expected the first generated image to open a preview");
+  }
+  fireEvent.load(firstImage);
+  click(previewButton);
+  await waitFor(() => {
+    const image = getLightboxImage();
+    expect(image).toHaveAttribute("alt", "first.png");
+    expect(image).toHaveAttribute("src", firstImageUrl);
+  });
+  const dialog = screen.getByRole("dialog", { name: "first.png preview" });
+  await waitFor(() => {
+    expect(dialog).toHaveFocus();
+  });
+  const firstLightboxImage = getLightboxImage();
+  expect(firstLightboxImage).not.toBeVisible();
+  expect(
+    screen.getByRole("status", { name: "Loading artifacts" }),
+  ).toBeVisible();
+  setImageDimensions(firstLightboxImage, 1600, 900);
+  expect(firstLightboxImage).not.toBeVisible();
+  await finishLightboxImageDecode(firstLightboxImage, () => {
+    return firstDecode.resolve();
+  });
+  expect(firstLightboxImage).toHaveStyle({ width: "1600px" });
+  expect(
+    screen.queryByRole("status", { name: "Loading artifacts" }),
+  ).toBeNull();
   expect(queryButtonByName("Previous image artifact")).toBeUndefined();
   const nextImage = await waitFor(() => {
     return getButtonByName("Next image artifact");
   });
-
   click(nextImage);
-
   await waitFor(() => {
     const image = getLightboxImage();
     expect(image).toHaveAttribute("alt", "second.png");

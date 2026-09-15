@@ -8,6 +8,7 @@ import { executeDueStripeAutomationEvents$ } from "../services/stripe-automation
 import { executeDueWorkflowAutomations$ } from "../services/workflow-automation-poller.service";
 import { executeOfficialWorkflowReconciliationWork$ } from "../services/official-workflow-reconciliation-worker.service";
 import { settle } from "../utils";
+import { executeMorningBriefEnrollmentWork$ } from "../services/morning-brief-enrollment-worker.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
 const log = logger("OfficialWorkflowReconciliationCron");
@@ -20,6 +21,15 @@ const executeWorkflowAutomationsRoute$: RouteEntry["handler"] = command(
       return cronUnauthorized();
     }
 
+    const enrollment = await settle(
+      set(executeMorningBriefEnrollmentWork$, signal),
+      signal,
+    );
+    if (!enrollment.ok) {
+      log.error("Morning Brief enrollment worker failed", {
+        error: enrollment.error,
+      });
+    }
     const reconciliation = await settle(
       set(executeOfficialWorkflowReconciliationWork$, signal),
       signal,

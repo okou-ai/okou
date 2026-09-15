@@ -147,10 +147,11 @@ const STRIPE_WEBHOOK_SECRET = "whsec_checkout_test";
 
 class ClerkApiResponseTestError extends Error {
   static readonly kind = "ClerkAPIResponseError";
-  readonly status = 429;
-
-  constructor(readonly retryAfter: number) {
-    super("Clerk Backend API rate limit exceeded");
+  constructor(
+    readonly retryAfter: number,
+    readonly status = 429,
+  ) {
+    super(`Clerk Backend API request failed with ${status}`);
   }
 }
 
@@ -1031,6 +1032,91 @@ describe("POST /api/billing/checkout", () => {
     });
   });
 
+  it.each(["plan", "usage pack"] as const)(
+    "keeps %s checkout available without Clerk attribution in CI previews",
+    async (kind) => {
+      mockEnv("ENV", "preview");
+      mockOptionalEnv("OKOU_PREVIEW_JOB_REF", "pr-123");
+      setUsagePackPrices();
+      mockUsagePackCatalog();
+      const fixture = createOrgFixture();
+      authenticateOrg(fixture);
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              role: "org:admin",
+              publicUserData: { userId: fixture.userId },
+              createdAt: now(),
+            },
+          ],
+        },
+      );
+      context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+        { data: [] },
+      );
+      context.mocks.clerk.users.getUserList.mockRejectedValue(
+        new ClerkApiResponseTestError(1),
+      );
+      context.mocks.stripe.customers.create.mockResolvedValue({
+        id: `cus_${randomUUID()}`,
+      });
+      context.mocks.stripe.checkout.sessions.create.mockImplementation(
+        (input) => {
+          const subscriptionId =
+            stripeInputMetadata(input).usagePackSubscriptionId;
+          if (subscriptionId) {
+            onTestFinished(async () => {
+              await usagePackStateAction({
+                action: "cleanup",
+                orgId: fixture.orgId,
+                usagePackSubscriptionId: subscriptionId,
+                deleteGrants: false,
+                deleteOrgMetadata: true,
+              });
+            });
+          }
+          return Promise.resolve({
+            id: `cs_${randomUUID()}`,
+            url: "https://checkout.stripe.com/session/ci",
+          });
+        },
+      );
+      const api = setupApp({ context, routes: billingCheckoutRoutes });
+      const body = {
+        ...usagePackCheckoutBody(fixture.userId),
+        adAttribution: { gclid: "ci-click", okou_campaign_id: "24220469665" },
+      };
+      const response = await (kind === "usage pack"
+        ? accept(
+            api(billingUsagePackCheckoutContract).create({
+              headers: { authorization: "Bearer clerk-session" },
+              body,
+            }),
+            [200],
+          )
+        : accept(
+            api(billingCheckoutContract).create({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                tier: body.tier,
+                successUrl: body.successUrl,
+                cancelUrl: body.cancelUrl,
+                adAttribution: body.adAttribution,
+              },
+            }),
+            [200],
+          ));
+      expect(response.body).toStrictEqual({
+        url: "https://checkout.stripe.com/session/ci",
+      });
+      expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+      expect(
+        context.mocks.clerk.users.updateUserMetadata,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns checkout URL on success", async () => {
     const okouPricePro = "price_okou_pro";
     mockEnv("OKOU_PRICE_PRO", okouPricePro);
@@ -1089,6 +1175,7 @@ describe("POST /api/billing/checkout", () => {
   });
 
   it("pays a saved-card Plan preview through the rollout-safe checkout route", async () => {
+    mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
     const fixture = await trackedSeed();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const customerId = `cus_${randomUUID().slice(0, 8)}`;
@@ -1183,6 +1270,8 @@ describe("POST /api/billing/checkout", () => {
       successUrl: `${APP_ORIGIN}/billing?billing=success`,
       cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
     };
+    const previewedAt = nowDate();
+    mockNow(previewedAt);
     const start = await accept(
       client.create({
         body: purchaseBody,
@@ -1207,6 +1296,7 @@ describe("POST /api/billing/checkout", () => {
       throw new Error("Expected a Plan purchase preview");
     }
 
+    mockNow(new Date(previewedAt.getTime() + 60_000));
     const confirmation = await accept(
       client.create({
         body: { ...purchaseBody, previewToken: start.body.previewToken },
@@ -1227,6 +1317,9 @@ describe("POST /api/billing/checkout", () => {
         customer: customerId,
         default_payment_method: paymentMethodId,
         payment_behavior: "default_incomplete",
+        metadata: expect.objectContaining({
+          purchaseCreatedAt: previewedAt.toISOString(),
+        }),
       }),
       expect.objectContaining({
         idempotencyKey: expect.stringContaining("plan-purchase:"),
@@ -1946,92 +2039,79 @@ describe("POST /api/billing/checkout", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])(
-    "keeps a stored click separate from a later campaign during checkout (privacy receipt: %s)",
-    async (hasReceipt) => {
-      const receipt = randomUUID();
-      const fixture = await trackedSeed();
-      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-      context.mocks.clerk.users.getUserList.mockResolvedValue({
-        data: [
-          {
-            id: fixture.userId,
-            privateMetadata: {
-              ...(hasReceipt ? { marketing_privacy_receipt: receipt } : {}),
-              signup_attribution: {
-                source_type: "paid",
-                gclid: "first-click",
-                gclid_present: "true",
-                utm_source: "google",
-                recorded_at: "2026-09-01T00:00:00.000Z",
-              },
+  it("keeps a stored click separate from a later campaign during checkout", async () => {
+    const fixture = await trackedSeed();
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    context.mocks.clerk.users.getUserList.mockResolvedValue({
+      data: [
+        {
+          id: fixture.userId,
+          privateMetadata: {
+            signup_attribution: {
+              source_type: "paid",
+              gclid: "first-click",
+              gclid_present: "true",
+              utm_source: "google",
+              recorded_at: "2026-09-01T00:00:00.000Z",
             },
           },
-        ],
-      });
-      context.mocks.stripe.customers.create.mockResolvedValue({
-        id: `cus_${randomUUID().slice(0, 8)}`,
-      });
-      context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-        url: "https://checkout.stripe.com/session/first-touch",
-      });
-      const client = setupApp({ context, routes: billingCheckoutRoutes })(
-        billingCheckoutContract,
-      );
-      await accept(
-        client.create({
-          body: {
-            tier: "pro",
-            successUrl: `${APP_ORIGIN}/billing?billing=success`,
-            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
-            adAttribution: {
-              gclid: "later-click",
-              vm0_campaign_id: "24220469665",
-              vm0_ad_group_id: "123456",
-              utm_campaign: "later-campaign",
-              ga_client_id: "123.456",
-            },
+        },
+      ],
+    });
+    context.mocks.stripe.customers.create.mockResolvedValue({
+      id: `cus_${randomUUID().slice(0, 8)}`,
+    });
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      url: "https://checkout.stripe.com/session/first-touch",
+    });
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingCheckoutContract,
+    );
+    await accept(
+      client.create({
+        body: {
+          tier: "pro",
+          successUrl: `${APP_ORIGIN}/billing?billing=success`,
+          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+          adAttribution: {
+            gclid: "later-click",
+            vm0_campaign_id: "24220469665",
+            vm0_ad_group_id: "123456",
+            utm_campaign: "later-campaign",
+            ga_client_id: "123.456",
           },
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      const expectedMetadata = {
-        ...(hasReceipt
-          ? {
-              marketing_privacy_receipt: receipt,
-              marketing_privacy_user_id: fixture.userId,
-            }
-          : {}),
-        orgId: fixture.orgId,
-        tier: "pro",
-        priceId: TEST_PRICE_PRO,
-        source_type: "paid",
-        gclid: "first-click",
-        gclid_present: "true",
-        utm_source: "google",
-        ga_client_id: "123.456",
-      };
-      expect(
-        context.mocks.stripe.checkout.sessions.create,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    const expectedMetadata = {
+      orgId: fixture.orgId,
+      tier: "pro",
+      priceId: TEST_PRICE_PRO,
+      source_type: "paid",
+      gclid: "first-click",
+      gclid_present: "true",
+      utm_source: "google",
+      ga_client_id: "123.456",
+    };
+    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expectedMetadata,
+        subscription_data: expect.objectContaining({
           metadata: expectedMetadata,
-          subscription_data: expect.objectContaining({
-            metadata: expectedMetadata,
-          }),
         }),
-      );
-      await expect(
-        readOrgAcquisitionAttributionFixture(fixture.orgId),
-      ).resolves.toMatchObject({
-        acquisitionGclid: "first-click",
-        acquisitionCampaignId: null,
-        acquisitionAdGroupId: null,
-        acquisitionCampaign: null,
-      });
-    },
-  );
+      }),
+    );
+    await expect(
+      readOrgAcquisitionAttributionFixture(fixture.orgId),
+    ).resolves.toMatchObject({
+      acquisitionGclid: "first-click",
+      acquisitionCampaignId: null,
+      acquisitionAdGroupId: null,
+      acquisitionCampaign: null,
+    });
+  });
 
   it.each(["legacy", "okou"])(
     "attaches %s ad attribution to Stripe checkout and subscription metadata",
@@ -2931,13 +3011,13 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     });
   });
 
-  it("recovers usage pack checkout from a transient Clerk rate limit", async () => {
+  it("recovers usage pack checkout from a transient Clerk server failure", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
     const checkoutSessionId = `cs_${randomUUID()}`;
     context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     context.mocks.clerk.organizations.getOrganizationMembershipList
-      .mockRejectedValueOnce(new ClerkApiResponseTestError(2))
+      .mockRejectedValueOnce(new ClerkApiResponseTestError(2, 521))
       .mockResolvedValue({
         data: [
           {
@@ -2997,7 +3077,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     );
   });
 
-  it("returns a non-cacheable 503 when Clerk rate limits persist", async () => {
+  it("returns a non-cacheable 503 on the first Clerk rate limit", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
     context.mocks.signalTimers.delay.mockResolvedValue(undefined);
@@ -3028,8 +3108,8 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(
       context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(3);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
+    ).toHaveBeenCalledTimes(1);
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
     expect(context.mocks.stripe.customers.create).not.toHaveBeenCalled();
     expect(
       context.mocks.stripe.checkout.sessions.create,
@@ -3067,7 +3147,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("stops sibling Clerk pagination after checkout directory exhaustion", async () => {
+  it("stops sibling Clerk pagination after a checkout directory rate limit", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
     const invitationPage = createDeferredPromise<{
@@ -3097,9 +3177,10 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     );
 
     expect(response.headers.get("Retry-After")).toBe("1");
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
     expect(
       context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(3);
+    ).toHaveBeenCalledTimes(1);
     expect(
       context.mocks.clerk.organizations.getOrganizationInvitationList,
     ).toHaveBeenCalledTimes(1);
@@ -3124,7 +3205,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     ).toHaveBeenCalledTimes(1);
   });
 
-  it("stops Clerk retries when usage pack checkout is cancelled", async () => {
+  it("stops Clerk 5xx retries when usage pack checkout is cancelled", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
     const controller = new AbortController();
@@ -3140,7 +3221,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       return createDeferredPromise<void>(signal).promise;
     });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(1),
+      new ClerkApiResponseTestError(1, 521),
     );
     context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
       { data: [] },
@@ -3768,6 +3849,10 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       ).toISOString(),
     });
 
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
     await reconcileBillingOrganization(fixture.orgId);
 
     const state = await readUsagePackState(
@@ -3785,6 +3870,54 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(
       context.mocks.stripe.checkout.sessions.retrieve,
     ).not.toHaveBeenCalled();
+
+    authenticateOrg(fixture);
+    mockClerkOrganization(fixture);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    mockStatefulUsagePackCheckoutSessions();
+    const replacement = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      ).create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          tier: "pro",
+          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 20 }],
+          successUrl: `${APP_ORIGIN}/billing?billing=success`,
+          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+        },
+      }),
+      [200],
+    );
+    expect(replacement.body).toHaveProperty("url");
+    const [created] = context.mocks.stripe.checkout.sessions.create.mock.calls;
+    const replacementId = created
+      ? stripeInputMetadata(created[0]).usagePackSubscriptionId
+      : undefined;
+    if (!replacementId) {
+      throw new Error("Expected a replacement usage pack purchase");
+    }
+    expect(replacementId).not.toBe(usagePackSubscriptionId);
+    await usagePackStateAction({
+      action: "cleanup",
+      orgId: fixture.orgId,
+      usagePackSubscriptionId: replacementId,
+      deleteGrants: false,
+      deleteOrgMetadata: false,
+    });
   });
 
   it("rechecks a stale snapshot after waiting for a concurrent Checkout writer", async () => {
@@ -5509,16 +5642,8 @@ describe("legacy subscription usage pack migration", () => {
         [200],
       );
       expect(confirmation.body.status).toBe("scheduled");
-      const legacyState = await accept(
-        migrationClient().get({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(legacyState.body).not.toHaveProperty("configuration");
       const scheduled = await accept(
         migrationClient().get({
-          query: { supportsFreeMembers: "true" },
           headers: { authorization: "Bearer clerk-session" },
         }),
         [200],
@@ -9349,142 +9474,221 @@ describe("usage pack allocation management", () => {
     expect(context.mocks.stripe.invoices.createPreview).not.toHaveBeenCalled();
   });
 
-  it("restores a scheduled package downgrade", async () => {
-    const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 50 }]);
-    const currentSubscription = managedUsagePackSubscription(
-      fixture,
-      new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      currentSubscription,
-    );
-    mockUsagePackChangePreviews(0, 2000);
-    const scheduleId = "sub_sched_usage_pack_restore";
-    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
-      id: scheduleId,
-    });
-    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
-      id: scheduleId,
-    });
-    const client = setupApp({ context, routes: billingCheckoutRoutes })(
-      billingUsagePackManagementContract,
-    );
-    const downgradePreview = await accept(
-      client.previewSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          targetTier: "pro",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
-        },
-      }),
-      [200],
-    );
-    const downgrade = await accept(
-      client.confirmSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { changeId: downgradePreview.body.changeId },
-      }),
-      [200],
-    );
-    expect(downgrade.body.status).toBe("scheduled");
+  it.each([false, true])(
+    "restores a scheduled package downgrade without copying retired Impact metadata (Marketing=%s)",
+    async (marketing) => {
+      mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", String(marketing));
+      const userId = `user_${randomUUID()}`;
+      const fixture = await seedManagedUsagePack([
+        { userId, usagePackUsd: 50 },
+      ]);
+      const currentSubscription = managedUsagePackSubscription(
+        fixture,
+        new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+      );
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        currentSubscription,
+      );
+      mockUsagePackChangePreviews(0, 2000);
+      const scheduleId = "sub_sched_usage_pack_restore";
+      context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+        id: scheduleId,
+      });
+      context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+        id: scheduleId,
+      });
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      );
+      const downgradePreview = await accept(
+        client.previewSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            targetTier: "pro",
+            memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
+          },
+        }),
+        [200],
+      );
+      const downgrade = await accept(
+        client.confirmSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { changeId: downgradePreview.body.changeId },
+        }),
+        [200],
+      );
+      expect(downgrade.body.status).toBe("scheduled");
 
-    const scheduledSubscription = managedUsagePackSubscription(
-      fixture,
-      new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
-      fixture.billingPeriod,
-      { scheduleId },
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      scheduledSubscription,
-    );
-    mockUsagePackSubscriptionPackagePreviews({
-      immediateAmountCents: 0,
-      nextRecurringAmountCents: 5000,
-      sourcePriceId: TEST_PRICE_USAGE_PACK_50,
-      targetPriceId: TEST_PRICE_USAGE_PACK_50,
-      rejectScheduledSubscriptionRecurringPreview: true,
-    });
-    context.mocks.stripe.invoices.createPreview.mockClear();
-    const nextPeriodEnd = fixture.billingPeriod.end + 30 * 86_400;
-    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
-      id: scheduleId,
-      end_behavior: "release",
-      current_phase: {
-        start_date: fixture.billingPeriod.start,
-        end_date: fixture.billingPeriod.end,
-      },
-      phases: [
-        {
+      const scheduledSubscription = managedUsagePackSubscription(
+        fixture,
+        new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+        fixture.billingPeriod,
+        { scheduleId },
+      );
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        scheduledSubscription,
+      );
+      mockUsagePackSubscriptionPackagePreviews({
+        immediateAmountCents: 0,
+        nextRecurringAmountCents: 5000,
+        sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+        targetPriceId: TEST_PRICE_USAGE_PACK_50,
+        rejectScheduledSubscriptionRecurringPreview: true,
+      });
+      context.mocks.stripe.invoices.createPreview.mockClear();
+      const nextPeriodEnd = fixture.billingPeriod.end + 30 * 86_400;
+      context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
+        id: scheduleId,
+        end_behavior: "release",
+        current_phase: {
           start_date: fixture.billingPeriod.start,
           end_date: fixture.billingPeriod.end,
+        },
+        phases: [
+          {
+            metadata: {
+              orgId: fixture.orgId,
+              impact_click_id: "retired-click",
+            },
+            start_date: fixture.billingPeriod.start,
+            end_date: fixture.billingPeriod.end,
+            items: [
+              { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+            ],
+          },
+          {
+            metadata: {
+              orgId: fixture.orgId,
+              impact_click_id: "retired-click",
+            },
+            start_date: fixture.billingPeriod.end,
+            end_date: nextPeriodEnd,
+            items: [
+              { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+            ],
+          },
+        ],
+      });
+      const restorePreview = await accept(
+        client.previewSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            targetTier: "pro",
+            memberUsagePacks: [{ memberId: userId, usagePackUsd: 50 }],
+          },
+        }),
+        [200],
+      );
+      expect(restorePreview.body).toStrictEqual(
+        expect.objectContaining({
+          sourceTier: "pro",
+          targetTier: "pro",
+          immediateAmountCents: 0,
+          nextRecurringAmountCents: 5000,
+        }),
+      );
+      expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith({
+        customer: fixture.customerId,
+        preview_mode: "recurring",
+        subscription_details: {
           items: [
             { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
             { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
           ],
         },
+      });
+
+      context.mocks.stripe.subscriptionSchedules.update.mockClear();
+      context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+        id: scheduleId,
+      });
+      const restored = await accept(
+        client.confirmSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { changeId: restorePreview.body.changeId },
+        }),
+        [200],
+      );
+      expect(restored.body).toStrictEqual({
+        status: "completed",
+        effectiveAt: expect.any(String),
+        hostedInvoiceUrl: null,
+      });
+      expect(
+        context.mocks.stripe.subscriptionSchedules.update,
+      ).toHaveBeenCalledWith(
+        scheduleId,
         {
-          start_date: fixture.billingPeriod.end,
-          end_date: nextPeriodEnd,
-          items: [
-            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
-            { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+          end_behavior: "release",
+          proration_behavior: "none",
+          phases: [
+            {
+              metadata: {
+                orgId: fixture.orgId,
+                ...(!marketing ? { impact_click_id: "retired-click" } : {}),
+              },
+              start_date: fixture.billingPeriod.start,
+              end_date: fixture.billingPeriod.end,
+              items: [
+                { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+                { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+              ],
+              proration_behavior: "none",
+            },
+            {
+              metadata: {
+                orgId: fixture.orgId,
+                ...(!marketing ? { impact_click_id: "retired-click" } : {}),
+              },
+              start_date: fixture.billingPeriod.end,
+              end_date: nextPeriodEnd,
+              items: [
+                { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+                { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+              ],
+              proration_behavior: "none",
+            },
           ],
         },
-      ],
-    });
-    const restorePreview = await accept(
-      client.previewSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          targetTier: "pro",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 50 }],
+        {
+          idempotencyKey: `usage-pack-subscription-change:${restorePreview.body.changeId}:restore-schedule`,
         },
-      }),
-      [200],
-    );
-    expect(restorePreview.body).toStrictEqual(
-      expect.objectContaining({
-        sourceTier: "pro",
-        targetTier: "pro",
-        immediateAmountCents: 0,
-        nextRecurringAmountCents: 5000,
-      }),
-    );
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith({
-      customer: fixture.customerId,
-      preview_mode: "recurring",
-      subscription_details: {
-        items: [
-          { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
-          { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
-        ],
-      },
-    });
+      );
+      expect(
+        context.mocks.stripe.subscriptionSchedules.release,
+      ).not.toHaveBeenCalled();
+      const state = await readUsagePackState(
+        fixture.orgId,
+        fixture.usagePackSubscriptionId,
+      );
+      expect(state.allocations).toStrictEqual([
+        expect.objectContaining({ usagePackUsd: 50, status: "active" }),
+      ]);
+      expect(state.changes).toStrictEqual([
+        expect.objectContaining({
+          status: "failed",
+          sourceUsagePackUsd: 50,
+          targetUsagePackUsd: 20,
+        }),
+      ]);
+      const management = await accept(
+        client.get({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(management.body.allocations[0]?.pendingChange).toBeNull();
 
-    context.mocks.stripe.subscriptionSchedules.update.mockClear();
-    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
-      id: scheduleId,
-    });
-    const restored = await accept(
-      client.confirmSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { changeId: restorePreview.body.changeId },
-      }),
-      [200],
-    );
-    expect(restored.body).toStrictEqual({
-      status: "completed",
-      effectiveAt: expect.any(String),
-      hostedInvoiceUrl: null,
-    });
-    expect(
-      context.mocks.stripe.subscriptionSchedules.update,
-    ).toHaveBeenCalledWith(
-      scheduleId,
-      {
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        scheduledSubscription,
+      );
+      context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
+        id: scheduleId,
         end_behavior: "release",
-        proration_behavior: "none",
+        current_phase: {
+          start_date: fixture.billingPeriod.start,
+          end_date: fixture.billingPeriod.end,
+        },
         phases: [
           {
             start_date: fixture.billingPeriod.start,
@@ -9493,7 +9697,6 @@ describe("usage pack allocation management", () => {
               { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
               { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
             ],
-            proration_behavior: "none",
           },
           {
             start_date: fixture.billingPeriod.end,
@@ -9502,85 +9705,29 @@ describe("usage pack allocation management", () => {
               { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
               { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
             ],
-            proration_behavior: "none",
           },
         ],
-      },
-      {
-        idempotencyKey: `usage-pack-subscription-change:${restorePreview.body.changeId}:restore-schedule`,
-      },
-    );
-    expect(
-      context.mocks.stripe.subscriptionSchedules.release,
-    ).not.toHaveBeenCalled();
-    const state = await readUsagePackState(
-      fixture.orgId,
-      fixture.usagePackSubscriptionId,
-    );
-    expect(state.allocations).toStrictEqual([
-      expect.objectContaining({ usagePackUsd: 50, status: "active" }),
-    ]);
-    expect(state.changes).toStrictEqual([
-      expect.objectContaining({
-        status: "failed",
-        sourceUsagePackUsd: 50,
-        targetUsagePackUsd: 20,
-      }),
-    ]);
-    const management = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-    expect(management.body.allocations[0]?.pendingChange).toBeNull();
-
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      scheduledSubscription,
-    );
-    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
-      id: scheduleId,
-      end_behavior: "release",
-      current_phase: {
-        start_date: fixture.billingPeriod.start,
-        end_date: fixture.billingPeriod.end,
-      },
-      phases: [
-        {
-          start_date: fixture.billingPeriod.start,
-          end_date: fixture.billingPeriod.end,
-          items: [
-            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
-            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
-          ],
-        },
-        {
-          start_date: fixture.billingPeriod.end,
-          end_date: nextPeriodEnd,
-          items: [
-            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
-            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
-          ],
-        },
-      ],
-    });
-    mockUsagePackSubscriptionPackagePreviews({
-      immediateAmountCents: 5000,
-      nextRecurringAmountCents: 10_000,
-      sourcePriceId: TEST_PRICE_USAGE_PACK_50,
-      targetPriceId: TEST_PRICE_USAGE_PACK_100,
-      rejectScheduledSubscriptionRecurringPreview: true,
-    });
-    const nextPreview = await accept(
-      client.previewSubscriptionChange({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          targetTier: "pro",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 100 }],
-        },
-      }),
-      [200],
-    );
-    expect(nextPreview.body.nextRecurringAmountCents).toBe(10_000);
-  });
+      });
+      mockUsagePackSubscriptionPackagePreviews({
+        immediateAmountCents: 5000,
+        nextRecurringAmountCents: 10_000,
+        sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+        targetPriceId: TEST_PRICE_USAGE_PACK_100,
+        rejectScheduledSubscriptionRecurringPreview: true,
+      });
+      const nextPreview = await accept(
+        client.previewSubscriptionChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            targetTier: "pro",
+            memberUsagePacks: [{ memberId: userId, usagePackUsd: 100 }],
+          },
+        }),
+        [200],
+      );
+      expect(nextPreview.body.nextRecurringAmountCents).toBe(10_000);
+    },
+  );
 
   it("restores a usage pack change without removing the Plan cancellation", async () => {
     const userId = `user_${randomUUID()}`;
@@ -13474,162 +13621,178 @@ describe("usage pack allocation management", () => {
     });
   });
 
-  it("preserves the invitation preview Impact snapshot and discounted exclusive-tax amount", async () => {
-    const { fixture, email } =
-      await setupInvitationPreviewContext("taxed-invite");
-    const paymentMethodId = `pm_invite_${randomUUID()}`;
-    const invoiceId = `in_invite_${randomUUID()}`;
-    const hostedInvoiceUrl = `https://invoice.stripe.test/${invoiceId}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      ...managedUsagePackSubscription(
-        fixture,
-        new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
-      ),
-      default_payment_method: paymentMethodId,
-    });
-    mockInvitationChargePreview({
-      lines: [
-        {
-          lineAmountCents: -2000,
-          subtotalCents: -2000,
-          exclusiveTaxCents: -200,
-        },
-        {
-          lineAmountCents: 2800,
-          subtotalCents: 3000,
-          exclusiveTaxCents: 280,
-        },
-      ],
-      periodEnd: fixture.billingPeriod.end,
-      automaticTax: true,
-    });
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    const capturedAt = new Date(now()).toISOString();
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [{ id: fixture.userId, privateMetadata: {} }],
-    });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      metadata: {},
-    });
-    const recordImpact = (clickId: string, timestamp: string) => {
-      return accept(
-        setupApp({ context, routes: acquisitionAttributionRoutes })(
-          acquisitionAttributionContract,
-        ).recordSignup({
-          body: {
-            attribution: {},
-            impactAttribution: { clickId, capturedAt: timestamp },
+  it.each(["legacy", "marketing", "cutover"])(
+    "keeps invitation billing attribution outside the App after Marketing cutover (Marketing=%s)",
+    async (mode) => {
+      const marketing = mode !== "legacy";
+      let cutover = false;
+      const { fixture, email } =
+        await setupInvitationPreviewContext("taxed-invite");
+      const paymentMethodId = `pm_invite_${randomUUID()}`;
+      const invoiceId = `in_invite_${randomUUID()}`;
+      const hostedInvoiceUrl = `https://invoice.stripe.test/${invoiceId}`;
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        ...managedUsagePackSubscription(
+          fixture,
+          new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
+        ),
+        default_payment_method: paymentMethodId,
+      });
+      mockInvitationChargePreview({
+        lines: [
+          {
+            lineAmountCents: -2000,
+            subtotalCents: -2000,
+            exclusiveTaxCents: -200,
           },
+          {
+            lineAmountCents: 2800,
+            subtotalCents: 3000,
+            exclusiveTaxCents: 280,
+          },
+        ],
+        periodEnd: fixture.billingPeriod.end,
+        automaticTax: true,
+      });
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      const capturedAt = new Date(now()).toISOString();
+      context.mocks.clerk.users.getUserList.mockResolvedValue({
+        data: [{ id: fixture.userId, privateMetadata: {} }],
+      });
+      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+        id: fixture.customerId,
+        metadata: {},
+      });
+      const recordImpact = (clickId: string, timestamp: string) => {
+        if (mode === "marketing" || cutover) {
+          mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
+        }
+        return accept(
+          setupApp({ context, routes: acquisitionAttributionRoutes })(
+            acquisitionAttributionContract,
+          ).recordSignup({
+            body: {
+              attribution: {},
+              impactAttribution: { clickId, capturedAt: timestamp },
+            },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200],
+        );
+      };
+      await recordImpact("invitation-preview-partner", capturedAt);
+      const client = setupApp({ context, routes: orgInviteRoutes })(
+        orgInviteContract,
+      );
+      const preview = await accept(
+        client.previewPurchase({
           headers: { authorization: "Bearer clerk-session" },
+          body: { email, role: "member", usagePackUsd: 20 },
         }),
         [200],
       );
-    };
-    await recordImpact("invitation-preview-partner", capturedAt);
-    const client = setupApp({ context, routes: orgInviteRoutes })(
-      orgInviteContract,
-    );
-    const preview = await accept(
-      client.previewPurchase({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { email, role: "member", usagePackUsd: 20 },
-      }),
-      [200],
-    );
-    expect(preview.body).toStrictEqual(
-      expect.objectContaining({
-        immediateAmountCents: 880,
-        purchasedCredits: 10_000,
-        bonusCredits: 200,
-      }),
-    );
-    const metadata = {
-      purpose: "usage_pack_invitation_purchase",
-      usagePackInvitationPurchaseId: preview.body.purchaseId,
-      impact_click_id: "invitation-preview-partner",
-      impact_click_at: capturedAt,
-    };
-    context.mocks.stripe.invoices.create.mockResolvedValue({
-      id: invoiceId,
-      metadata,
-      status: "draft",
-      hosted_invoice_url: null,
-    });
-    context.mocks.stripe.invoiceItems.create.mockResolvedValue({
-      id: `ii_${randomUUID()}`,
-    });
-    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
-      id: invoiceId,
-      metadata,
-      status: "open",
-      hosted_invoice_url: hostedInvoiceUrl,
-    });
-    context.mocks.stripe.invoices.pay.mockResolvedValue({
-      id: invoiceId,
-      metadata,
-      status: "open",
-      hosted_invoice_url: hostedInvoiceUrl,
-    });
-
-    mockNow(new Date(now() + 60_000));
-    await recordImpact(
-      "partner-after-invitation-preview",
-      new Date(now()).toISOString(),
-    );
-    const confirmation = await accept(
-      client.confirmPurchase({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { purchaseId: preview.body.purchaseId },
-        body: {},
-      }),
-      [200],
-    );
-
-    expect(confirmation.body).toStrictEqual({
-      status: "pending_payment",
-      hostedInvoiceUrl,
-    });
-    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
-      {
-        customer: fixture.customerId,
-        auto_advance: false,
-        default_payment_method: paymentMethodId,
+      expect(preview.body).toStrictEqual(
+        expect.objectContaining({
+          immediateAmountCents: 880,
+          purchasedCredits: 10_000,
+          bonusCredits: 200,
+        }),
+      );
+      const metadata = {
+        purpose: "usage_pack_invitation_purchase",
+        usagePackInvitationPurchaseId: preview.body.purchaseId,
+        ...(!marketing
+          ? {
+              impact_click_id: "invitation-preview-partner",
+              impact_click_at: capturedAt,
+            }
+          : {}),
+      };
+      context.mocks.stripe.invoices.create.mockResolvedValue({
+        id: invoiceId,
         metadata,
-        discounts: "",
-        automatic_tax: {
-          enabled: true,
-          liability: { type: "self" },
+        status: "draft",
+        hosted_invoice_url: null,
+      });
+      context.mocks.stripe.invoiceItems.create.mockResolvedValue({
+        id: `ii_${randomUUID()}`,
+      });
+      context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
+        id: invoiceId,
+        metadata,
+        status: "open",
+        hosted_invoice_url: hostedInvoiceUrl,
+      });
+      context.mocks.stripe.invoices.pay.mockResolvedValue({
+        id: invoiceId,
+        metadata,
+        status: "open",
+        hosted_invoice_url: hostedInvoiceUrl,
+      });
+
+      mockNow(new Date(now() + 60_000));
+      cutover = mode === "cutover";
+      await recordImpact(
+        "partner-after-invitation-preview",
+        new Date(now()).toISOString(),
+      );
+      const confirmation = await accept(
+        client.confirmPurchase({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { purchaseId: preview.body.purchaseId },
+          body: {},
+        }),
+        [200],
+      );
+
+      expect(confirmation.body).toStrictEqual({
+        status: "pending_payment",
+        hostedInvoiceUrl,
+      });
+      expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
+        {
+          customer: fixture.customerId,
+          auto_advance: false,
+          default_payment_method: paymentMethodId,
+          metadata: {
+            ...metadata,
+            ...(marketing ? { purchaseCreatedAt: expect.any(String) } : {}),
+          },
+          discounts: "",
+          automatic_tax: {
+            enabled: true,
+            liability: { type: "self" },
+          },
         },
-      },
-      {
-        idempotencyKey: `usage-pack-invitation:${preview.body.purchaseId}:invoice`,
-      },
-    );
-    expect(context.mocks.stripe.invoiceItems.create).toHaveBeenCalledWith(
-      {
-        invoice: invoiceId,
-        customer: fixture.customerId,
-        amount: 800,
-        currency: "usd",
-        description: `Member usage pack for ${email}`,
-        discountable: false,
-        period: {
-          start: expect.any(Number),
-          end: fixture.billingPeriod.end,
+        {
+          idempotencyKey: `usage-pack-invitation:${preview.body.purchaseId}:invoice`,
         },
-        subscription: fixture.subscriptionId,
-        tax_behavior: "exclusive",
-        tax_code: "txcd_10000000",
-      },
-      {
-        idempotencyKey: `usage-pack-invitation:${preview.body.purchaseId}:invoice-item`,
-      },
-    );
-  });
+      );
+      expect(context.mocks.stripe.invoiceItems.create).toHaveBeenCalledWith(
+        {
+          invoice: invoiceId,
+          customer: fixture.customerId,
+          amount: 800,
+          currency: "usd",
+          description: `Member usage pack for ${email}`,
+          discountable: false,
+          period: {
+            start: expect.any(Number),
+            end: fixture.billingPeriod.end,
+          },
+          subscription: fixture.subscriptionId,
+          tax_behavior: "exclusive",
+          tax_code: "txcd_10000000",
+        },
+        {
+          idempotencyKey: `usage-pack-invitation:${preview.body.purchaseId}:invoice-item`,
+        },
+      );
+    },
+  );
 
   it("uses one hosted invoice payment when an invitation buyer has no saved card", async () => {
     const existingMemberUserId = `user_${randomUUID()}`;
@@ -13760,7 +13923,7 @@ describe("usage pack allocation management", () => {
     );
   });
 
-  it("recovers a saved-card invitation from a transient post-payment Clerk rate limit", async () => {
+  it("recovers a saved-card invitation from a transient post-payment Clerk server failure", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     mockNow(new Date("2035-05-15T00:00:00.000Z"));
     onTestFinished(() => {
@@ -13939,7 +14102,7 @@ describe("usage pack allocation management", () => {
           },
         ],
       })
-      .mockRejectedValueOnce(new ClerkApiResponseTestError(2))
+      .mockRejectedValueOnce(new ClerkApiResponseTestError(2, 521))
       .mockResolvedValue({
         data: [
           {
@@ -14086,7 +14249,7 @@ describe("usage pack allocation management", () => {
     ]);
   });
 
-  it("returns a retryable 503 before starting payment when Clerk rate limits persist", async () => {
+  it("returns a retryable 503 before starting payment on the first Clerk rate limit", async () => {
     const purchase = await beginInvitationPurchase();
     context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
@@ -14119,8 +14282,8 @@ describe("usage pack allocation management", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(
       context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(3);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
+    ).toHaveBeenCalledTimes(1);
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
     expect(context.mocks.stripe.invoices.createPreview).not.toHaveBeenCalled();
     expect(
       context.mocks.clerk.organizations.createOrganizationInvitation,
@@ -14174,7 +14337,7 @@ describe("usage pack allocation management", () => {
     ).toHaveLength(1);
   });
 
-  it("stops Clerk retries when an invitation purchase is cancelled", async () => {
+  it("stops Clerk 5xx retries when an invitation purchase is cancelled", async () => {
     await beginInvitationPurchase();
     const controller = new AbortController();
     const retryStarted = createDeferredPromise<void>(context.signal);
@@ -14190,7 +14353,7 @@ describe("usage pack allocation management", () => {
     });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(1),
+      new ClerkApiResponseTestError(1, 521),
     );
     context.mocks.stripe.invoices.createPreview.mockClear();
     const request = setupApp({ context, routes: orgInviteRoutes })(
@@ -14222,7 +14385,7 @@ describe("usage pack allocation management", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("resumes invitation creation after a persistent post-payment Clerk rate limit", async () => {
+  it("resumes invitation creation on a later request after a post-payment Clerk rate limit", async () => {
     const purchase = await beginInvitationPurchase();
     const paymentIntentId = mockSavedCardInvitationPayment(purchase);
     const invitationId = `inv_resumed_${randomUUID()}`;
@@ -14258,8 +14421,8 @@ describe("usage pack allocation management", () => {
     expect(limited.headers.get("Cache-Control")).toBe("no-store");
     expect(
       context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(3);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
+    ).toHaveBeenCalledTimes(2);
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
     const paid = await readUsagePackState(
       purchase.fixture.orgId,
       purchase.fixture.usagePackSubscriptionId,
@@ -21063,8 +21226,6 @@ describe("POST /api/billing/credit-checkout", () => {
         unrelated: "keep",
         impact_click_id: "partner-first",
         impact_click_at: capturedAt.toISOString(),
-        impact_privacy_receipt: randomUUID(),
-        impact_privacy_user_id: "user_previous_purchaser",
       },
     });
     context.mocks.stripe.customers.update.mockResolvedValue({ id: customerId });
@@ -21115,8 +21276,6 @@ describe("POST /api/billing/credit-checkout", () => {
           metadata: {
             impact_click_id: "partner-first",
             impact_click_at: capturedAt.toISOString(),
-            impact_privacy_receipt: randomUUID(),
-            impact_privacy_user_id: "user_previous_purchaser",
           },
         },
         { id: "sub_canceled_impact", status: "canceled", metadata: {} },
@@ -21139,8 +21298,6 @@ describe("POST /api/billing/credit-checkout", () => {
       metadata: {
         impact_click_id: impact.clickId,
         impact_click_at: impact.capturedAt,
-        impact_privacy_receipt: "",
-        impact_privacy_user_id: "",
       },
     });
     context.mocks.stripe.customers.retrieve.mockResolvedValue({
@@ -21172,8 +21329,6 @@ describe("POST /api/billing/credit-checkout", () => {
       metadata: {
         impact_click_id: "partner-next",
         impact_click_at: impact.capturedAt,
-        impact_privacy_receipt: "",
-        impact_privacy_user_id: "",
       },
     });
     expect(
@@ -21239,160 +21394,65 @@ describe("POST /api/billing/credit-checkout", () => {
     );
   });
 
-  it.each([
-    { sameClick: false, hasReceipt: false },
-    { sameClick: false, hasReceipt: true },
-    { sameClick: true, hasReceipt: false },
-    { sameClick: true, hasReceipt: true },
-  ])(
-    "replaces prior purchaser Impact proof during checkout (same click: $sameClick, receipt: $hasReceipt)",
-    async ({ sameClick, hasReceipt }) => {
-      const fixture = trackedSeed();
-      const capturedAt = new Date("2026-09-09T04:00:00.000Z");
-      mockNow(capturedAt);
-      const customerId = `cus_${randomUUID().slice(0, 8)}`;
-      await createStripeCustomerOrgForFixture(fixture, customerId);
-
+  it.each([false, true])(
+    "keeps credit Checkout billing attribution outside the App after Marketing cutover (Marketing=%s)",
+    async (marketing) => {
+      const fixture = await createSubscriptionOrg({ tier: "pro" });
       const impact = {
-        clickId: "current-purchaser-click",
-        capturedAt: capturedAt.toISOString(),
+        clickId: "credit-partner",
+        capturedAt: nowDate().toISOString(),
       };
-      const receipt = randomUUID();
       context.mocks.clerk.users.getUserList.mockResolvedValue({
         data: [
           {
             id: fixture.userId,
-            privateMetadata: {
-              impact_attribution: impact,
-              ...(hasReceipt ? { impact_privacy_receipt: receipt } : {}),
-            },
+            privateMetadata: { impact_attribution: impact },
           },
         ],
       });
-      const previousMetadata = {
-        impact_click_id: sameClick
-          ? impact.clickId
-          : "previous-purchaser-click",
-        impact_click_at: sameClick
-          ? impact.capturedAt
-          : new Date(capturedAt.getTime() - 60_000).toISOString(),
-        impact_privacy_receipt: randomUUID(),
-        impact_privacy_user_id: "user_previous_purchaser",
-      };
+      if (marketing) {
+        mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
+      }
       context.mocks.stripe.customers.retrieve.mockResolvedValue({
-        id: customerId,
-        metadata: previousMetadata,
-      });
-      context.mocks.stripe.subscriptions.list.mockResolvedValue({
-        data: [
-          { id: "sub_previous", status: "active", metadata: previousMetadata },
-          {
-            id: "sub_newer",
-            status: "active",
-            metadata: {
-              ...previousMetadata,
-              impact_click_at: new Date(
-                capturedAt.getTime() + 60_000,
-              ).toISOString(),
-            },
-          },
-          {
-            id: "sub_different_click",
-            status: "active",
-            metadata: {
-              ...previousMetadata,
-              impact_click_id: "different-click-at-the-same-time",
-              impact_click_at: impact.capturedAt,
-            },
-          },
-        ],
-        has_more: false,
+        id: fixture.customerId,
+        metadata: {},
       });
       context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-        url: "https://checkout.stripe.com/session/impact-proof",
+        url: "https://checkout.stripe.com/session/impact-credit",
       });
-
       await accept(
-        setupApp({ context, routes: billingCheckoutRoutes })(
-          billingCheckoutContract,
+        setupApp({ context, routes: billingCreditCheckoutRoutes })(
+          billingCreditCheckoutContract,
         ).create({
           body: {
-            tier: "pro",
-            successUrl: `${APP_ORIGIN}/billing?billing=success`,
-            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+            credits: 20_000,
+            successUrl: `${APP_ORIGIN}/billing?credit=success`,
+            cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
           },
           headers: { authorization: "Bearer clerk-session" },
         }),
         [200],
       );
-
-      const expectedMetadata = {
-        impact_click_id: impact.clickId,
-        impact_click_at: impact.capturedAt,
-        impact_privacy_receipt: hasReceipt ? receipt : "",
-        impact_privacy_user_id: hasReceipt ? fixture.userId : "",
-      };
+      const snapshot = marketing
+        ? expect.not.objectContaining({ impact_click_id: expect.anything() })
+        : expect.objectContaining({
+            impact_click_id: impact.clickId,
+            impact_click_at: impact.capturedAt,
+          });
       expect(
-        context.mocks.stripe.customers.update,
-      ).toHaveBeenCalledExactlyOnceWith(customerId, {
-        metadata: expectedMetadata,
-      });
-      expect(
-        context.mocks.stripe.subscriptions.update,
-      ).toHaveBeenCalledExactlyOnceWith("sub_previous", {
-        metadata: expectedMetadata,
-      });
+        context.mocks.stripe.checkout.sessions.create,
+      ).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          metadata: snapshot,
+          invoice_creation: {
+            enabled: true,
+            invoice_data: { metadata: snapshot },
+          },
+          payment_intent_data: expect.objectContaining({ metadata: snapshot }),
+        }),
+      );
     },
   );
-
-  it("snapshots the org Impact click on credit Checkout, invoice and PaymentIntent metadata", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const impact = {
-      clickId: "credit-partner",
-      capturedAt: nowDate().toISOString(),
-    };
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        { id: fixture.userId, privateMetadata: { impact_attribution: impact } },
-      ],
-    });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      metadata: {},
-    });
-    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
-      url: "https://checkout.stripe.com/session/impact-credit",
-    });
-    await accept(
-      setupApp({ context, routes: billingCreditCheckoutRoutes })(
-        billingCreditCheckoutContract,
-      ).create({
-        body: {
-          credits: 20_000,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    const snapshot = expect.objectContaining({
-      impact_click_id: impact.clickId,
-      impact_click_at: impact.capturedAt,
-    });
-    expect(
-      context.mocks.stripe.checkout.sessions.create,
-    ).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        metadata: snapshot,
-        invoice_creation: {
-          enabled: true,
-          invoice_data: { metadata: snapshot },
-        },
-        payment_intent_data: expect.objectContaining({ metadata: snapshot }),
-      }),
-    );
-  });
 
   it("automatically applies the customer's coupon", async () => {
     const fixture = await createSubscriptionOrg({ tier: "pro" });
@@ -21450,185 +21510,209 @@ describe("POST /api/billing/credit-checkout", () => {
     );
   });
 
-  it("applies a customer coupon and preserves the preview Impact click without including renewal", async () => {
-    const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
-    const couponId = `coupon_${randomUUID().slice(0, 8)}`;
-    const invoiceId = `in_credit_${randomUUID().slice(0, 8)}`;
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-      id: fixture.subscriptionId,
-      default_payment_method: paymentMethodId,
-    });
-    context.mocks.stripe.customers.retrieve.mockResolvedValue({
-      id: fixture.customerId,
-      discount: {
-        source: {
-          type: "coupon",
-          coupon: couponId,
-        },
-      },
-    });
-    const capturedAt = new Date("2026-09-09T04:00:00.000Z");
-    mockNow(capturedAt);
-    const impact = {
-      clickId: "credit-preview-partner",
-      capturedAt: capturedAt.toISOString(),
-    };
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [
-        { id: fixture.userId, privateMetadata: { impact_attribution: impact } },
-      ],
-    });
-    mockCreditPurchasePreview(fixture.customerId);
-
-    const client = setupApp({
-      context,
-      routes: billingCreditCheckoutRoutes,
-    })(billingCreditCheckoutContract);
-    const preview = await accept(
-      client.create({
-        body: {
-          credits: 20_000,
-          previewExistingBilling: true,
-          successUrl: `${APP_ORIGIN}/billing?credit=success`,
-          cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(preview.body).toMatchObject({
-      status: "preview",
-      credits: 20_000,
-      amountCents: 1800,
-      currency: "usd",
-      expiresAt: expect.any(String),
-      previewToken: expect.any(String),
-    });
-    expect(
-      context.mocks.stripe.checkout.sessions.create,
-    ).not.toHaveBeenCalled();
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
-      expect.objectContaining({
-        discounts: [{ coupon: couponId }],
-      }),
-    );
-    expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
-      expect.not.objectContaining({ customer: fixture.customerId }),
-    );
-    if (!("previewToken" in preview.body)) {
-      throw new Error("Expected a credit purchase preview");
-    }
-
-    const invalidConfirmation = await accept(
-      client.confirm({
-        body: { previewToken: `${preview.body.previewToken}invalid` },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [400],
-    );
-    expect(invalidConfirmation.body.error.code).toBe("BAD_REQUEST");
-    expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
-
-    const draftInvoice = {
-      id: invoiceId,
-      hosted_invoice_url: null,
-      customer: fixture.customerId,
-      metadata: { purpose: "credit_purchase" },
-      amount_due: 1800,
-      currency: "usd",
-      status: "draft",
-      lines: { has_more: false, data: [] },
-      parent: null,
-    };
-    context.mocks.stripe.invoices.create.mockResolvedValue(draftInvoice);
-    let confirmedPurchaseId: string | null = null;
-    context.mocks.stripe.invoiceItems.create.mockImplementation((rawParams) => {
-      const params = rawParams as {
-        readonly metadata?: Readonly<Record<string, string>>;
-      };
-      confirmedPurchaseId = params.metadata?.credit_purchase_preview_id ?? null;
-      return Promise.resolve({
-        id: `ii_credit_${randomUUID().slice(0, 8)}`,
-      });
-    });
-    context.mocks.stripe.invoices.retrieve.mockImplementation(() => {
-      if (!confirmedPurchaseId) {
-        throw new Error("Expected a confirmed credit purchase ID");
+  it.each(["legacy", "marketing", "cutover"])(
+    "keeps credit preview attribution outside the App after cutover (%s)",
+    async (mode) => {
+      if (mode === "marketing") {
+        mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
       }
-      return Promise.resolve({
-        ...draftInvoice,
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_credit_${randomUUID().slice(0, 8)}`,
-              amount: 2000,
-              subtotal: 2000,
-              metadata: {
-                credit_purchase_preview_id: confirmedPurchaseId,
-              },
-              period: { start: currentSecond(), end: currentSecond() },
-              parent: null,
-            },
-          ],
+      const fixture = await createSubscriptionOrg({ tier: "pro" });
+      const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
+      const couponId = `coupon_${randomUUID().slice(0, 8)}`;
+      const invoiceId = `in_credit_${randomUUID().slice(0, 8)}`;
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        id: fixture.subscriptionId,
+        default_payment_method: paymentMethodId,
+      });
+      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+        id: fixture.customerId,
+        discount: {
+          source: {
+            type: "coupon",
+            coupon: couponId,
+          },
         },
       });
-    });
-    context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
-      ...draftInvoice,
-      status: "open",
-    });
-    context.mocks.stripe.invoices.pay.mockResolvedValue({
-      ...draftInvoice,
-      status: "paid",
-    });
+      const capturedAt = new Date("2026-09-09T04:00:00.000Z");
+      mockNow(capturedAt);
+      const impact = {
+        clickId: "credit-preview-partner",
+        capturedAt: capturedAt.toISOString(),
+      };
+      context.mocks.clerk.users.getUserList.mockResolvedValue({
+        data: [
+          {
+            id: fixture.userId,
+            privateMetadata: { impact_attribution: impact },
+          },
+        ],
+      });
+      mockCreditPurchasePreview(fixture.customerId);
 
-    mockNow(new Date(capturedAt.getTime() + 60_000));
-    impact.clickId = "partner-after-preview";
-    impact.capturedAt = new Date(capturedAt.getTime() + 60_000).toISOString();
-    const confirmation = await accept(
-      client.confirm({
-        body: { previewToken: preview.body.previewToken },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(confirmation.body).toStrictEqual({
-      status: "completed",
-      hostedInvoiceUrl: null,
-    });
-    expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customer: fixture.customerId,
-        default_payment_method: paymentMethodId,
-        discounts: [{ coupon: couponId }],
-        metadata: expect.objectContaining({
-          purpose: "credit_purchase",
-          orgId: fixture.orgId,
-          requestedCreditsAmount: "20000",
-          impact_click_id: "credit-preview-partner",
-          impact_click_at: capturedAt.toISOString(),
+      const client = setupApp({
+        context,
+        routes: billingCreditCheckoutRoutes,
+      })(billingCreditCheckoutContract);
+      const preview = await accept(
+        client.create({
+          body: {
+            credits: 20_000,
+            previewExistingBilling: true,
+            successUrl: `${APP_ORIGIN}/billing?credit=success`,
+            cancelUrl: `${APP_ORIGIN}/billing?credit=canceled`,
+          },
+          headers: { authorization: "Bearer clerk-session" },
         }),
-      }),
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining("credit-purchase:"),
-      }),
-    );
-    expect(context.mocks.stripe.invoiceItems.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        invoice: invoiceId,
+        [200],
+      );
+
+      expect(preview.body).toMatchObject({
+        status: "preview",
+        credits: 20_000,
+        amountCents: 1800,
+        currency: "usd",
+        expiresAt: expect.any(String),
+        previewToken: expect.any(String),
+      });
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).not.toHaveBeenCalled();
+      expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
+        expect.objectContaining({
+          discounts: [{ coupon: couponId }],
+        }),
+      );
+      expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith(
+        expect.not.objectContaining({ customer: fixture.customerId }),
+      );
+      if (!("previewToken" in preview.body)) {
+        throw new Error("Expected a credit purchase preview");
+      }
+
+      const invalidConfirmation = await accept(
+        client.confirm({
+          body: { previewToken: `${preview.body.previewToken}invalid` },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [400],
+      );
+      expect(invalidConfirmation.body.error.code).toBe("BAD_REQUEST");
+      expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+
+      const draftInvoice = {
+        id: invoiceId,
+        hosted_invoice_url: null,
         customer: fixture.customerId,
-        pricing: { price: TEST_PRICE_CUSTOM_CREDIT_UNIT },
-        quantity: 20,
-      }),
-      expect.objectContaining({
-        idempotencyKey: expect.stringContaining("credit-purchase:"),
-      }),
-    );
-  });
+        metadata: { purpose: "credit_purchase" },
+        amount_due: 1800,
+        currency: "usd",
+        status: "draft",
+        lines: { has_more: false, data: [] },
+        parent: null,
+      };
+      context.mocks.stripe.invoices.create.mockResolvedValue(draftInvoice);
+      let confirmedPurchaseId: string | null = null;
+      context.mocks.stripe.invoiceItems.create.mockImplementation(
+        (rawParams) => {
+          const params = rawParams as {
+            readonly metadata?: Readonly<Record<string, string>>;
+          };
+          confirmedPurchaseId =
+            params.metadata?.credit_purchase_preview_id ?? null;
+          return Promise.resolve({
+            id: `ii_credit_${randomUUID().slice(0, 8)}`,
+          });
+        },
+      );
+      context.mocks.stripe.invoices.retrieve.mockImplementation(() => {
+        if (!confirmedPurchaseId) {
+          throw new Error("Expected a confirmed credit purchase ID");
+        }
+        return Promise.resolve({
+          ...draftInvoice,
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_credit_${randomUUID().slice(0, 8)}`,
+                amount: 2000,
+                subtotal: 2000,
+                metadata: {
+                  credit_purchase_preview_id: confirmedPurchaseId,
+                },
+                period: { start: currentSecond(), end: currentSecond() },
+                parent: null,
+              },
+            ],
+          },
+        });
+      });
+      context.mocks.stripe.invoices.finalizeInvoice.mockResolvedValue({
+        ...draftInvoice,
+        status: "open",
+      });
+      context.mocks.stripe.invoices.pay.mockResolvedValue({
+        ...draftInvoice,
+        status: "paid",
+      });
+
+      mockNow(new Date(capturedAt.getTime() + 60_000));
+      if (mode === "cutover") {
+        mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
+      }
+      impact.clickId = "partner-after-preview";
+      impact.capturedAt = new Date(capturedAt.getTime() + 60_000).toISOString();
+      const confirmation = await accept(
+        client.confirm({
+          body: { previewToken: preview.body.previewToken },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+
+      expect(confirmation.body).toStrictEqual({
+        status: "completed",
+        hostedInvoiceUrl: null,
+      });
+      expect(context.mocks.stripe.invoices.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customer: fixture.customerId,
+          default_payment_method: paymentMethodId,
+          discounts: [{ coupon: couponId }],
+          metadata: expect.objectContaining({
+            purpose: "credit_purchase",
+            orgId: fixture.orgId,
+            requestedCreditsAmount: "20000",
+            ...(mode === "legacy"
+              ? {
+                  impact_click_id: "credit-preview-partner",
+                  impact_click_at: capturedAt.toISOString(),
+                }
+              : { purchaseCreatedAt: capturedAt.toISOString() }),
+          }),
+        }),
+        expect.objectContaining({
+          idempotencyKey: expect.stringContaining("credit-purchase:"),
+        }),
+      );
+      if (mode !== "legacy") {
+        expect(
+          JSON.stringify(context.mocks.stripe.invoices.create.mock.calls),
+        ).not.toContain("impact_");
+      }
+      expect(context.mocks.stripe.invoiceItems.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          invoice: invoiceId,
+          customer: fixture.customerId,
+          pricing: { price: TEST_PRICE_CUSTOM_CREDIT_UNIT },
+          quantity: 20,
+        }),
+        expect.objectContaining({
+          idempotencyKey: expect.stringContaining("credit-purchase:"),
+        }),
+      );
+    },
+  );
 
   it("uses a legacy subscription source when no higher-priority card exists", async () => {
     const fixture = await createSubscriptionOrg({ tier: "pro" });
@@ -22099,6 +22183,7 @@ describe("POST /api/billing/credit-checkout", () => {
   });
 
   it("returns Checkout when all saved cards are removed after preview", async () => {
+    mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
     const fixture = await createSubscriptionOrg({ tier: "pro" });
     const paymentMethodId = `pm_credit_${randomUUID().slice(0, 8)}`;
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
@@ -22115,6 +22200,8 @@ describe("POST /api/billing/credit-checkout", () => {
       context,
       routes: billingCreditCheckoutRoutes,
     })(billingCreditCheckoutContract);
+    const previewedAt = nowDate();
+    mockNow(previewedAt);
     const preview = await accept(
       client.create({
         body: {
@@ -22148,6 +22235,7 @@ describe("POST /api/billing/credit-checkout", () => {
       url: "https://checkout.stripe.com/session/cards-removed",
     });
 
+    mockNow(new Date(previewedAt.getTime() + 60_000));
     const confirmation = await accept(
       client.confirm({
         body: { previewToken: preview.body.previewToken },
@@ -22161,6 +22249,23 @@ describe("POST /api/billing/credit-checkout", () => {
       checkoutUrl: "https://checkout.stripe.com/session/cards-removed",
     });
     expect(context.mocks.stripe.invoices.create).not.toHaveBeenCalled();
+    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          purchaseCreatedAt: previewedAt.toISOString(),
+        }),
+        invoice_creation: expect.objectContaining({
+          invoice_data: expect.objectContaining({
+            metadata: expect.objectContaining({
+              purchaseCreatedAt: previewedAt.toISOString(),
+            }),
+          }),
+        }),
+      }),
+      expect.objectContaining({
+        idempotencyKey: expect.stringContaining("credit-purchase:"),
+      }),
+    );
   });
 
   it("rejects credit checkout when the plan capability is disabled", async () => {

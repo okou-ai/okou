@@ -144,7 +144,6 @@ export {
   SSH_USERNAME_MAX_LENGTH,
   createSshConnectionRequestSchema,
   resetSshConnectionHostKeyRequestSchema,
-  sshConnectionCredentialsInputSchema,
   sshConnectionPathParamsSchema,
   sshConnectionResponseSchema,
   sshConnectionsContract,
@@ -1827,22 +1826,6 @@ export {
   type UploadPrepareResponse,
 } from "./uploads";
 export {
-  IMAGE_REFERENCE_CONTENT_TYPES,
-  IMAGE_REFERENCE_PREVIEW_URL_TTL_SECONDS,
-  MAX_IMAGE_REFERENCE_DIMENSION,
-  MAX_IMAGE_REFERENCE_PIXELS,
-  MAX_IMAGE_REFERENCE_PREVIEW_URLS,
-  MAX_IMAGE_REFERENCE_SOURCE_BYTES,
-  imageReferencesContract,
-  type CreateImageReferenceBody,
-  type ImageReference,
-  type ImageReferenceContentType,
-  type ImageReferencePreviewUrl,
-  type ImageReferencesContract,
-  type ImageReferenceVisibility,
-  type UpdateImageReferenceBody,
-} from "./image-references";
-export {
   MAX_PRESENTATION_TEMPLATE_PAGE_BYTES,
   MAX_PRESENTATION_TEMPLATE_PAGES,
   MAX_PRESENTATION_TEMPLATE_SOURCE_BYTES,
@@ -1900,3 +1883,11 @@ export {
   activitySummaryResponseSchema,
   type ActivitySummaryResponse,
 } from "./chat-thread-activity-summary";
+
+export {
+  introVideoRenderContract,
+  introVideoRenderRequestSchema,
+  introVideoRenderResponseSchema,
+  type IntroVideoRenderRequest,
+  type IntroVideoRenderResponse,
+} from "./intro-video-render";

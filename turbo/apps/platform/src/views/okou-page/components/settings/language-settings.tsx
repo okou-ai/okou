@@ -177,7 +177,7 @@ export function LanguageSettings() {
               aria-label={t(($) => {
                 return $.settings.preferences.language.label;
               })}
-              className="border-control-border bg-control-surface [&:hover]:bg-state-hover-overlay"
+              variant="neutral"
             >
               <SelectValue />
             </SelectTrigger>

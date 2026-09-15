@@ -623,3 +623,259 @@ with the text beside it.
 A batch that changes geometry on purpose cannot be accepted by an unchanged-code
 replay. It needs the per-page runners, or an explicit reviewed delta list, or
 both.
+
+## Mic motion batch
+
+The legacy microphone meter and its visual replay harness were retired when
+voice input rolled out to all users. Recording and transcription now use the
+voice draft tray. The acceptance record below preserves the completed CSS
+migration evidence for the former microphone UI.
+
+### Mic motion acceptance record (#33345)
+
+The [frozen BEFORE and unchanged A/A archive](https://a.okou.io/tu82fjalef.zip)
+has SHA-256
+`cb2d57ff2c022af59fa893e08f72e4c538f4d4459ac35d9665950894ea0959c2`.
+Its immutable merge build `f3ae0b78c34b93d6a528c64851a8ac726ff8697f`
+starts from the same base as #33345 and leaves the target App stylesheet and
+composer source unchanged. The [AFTER and raw-diff archive](https://a.okou.io/s75ljvx543.zip)
+has SHA-256
+`23a02bd90b48702a8dea2f292eede718627685f08dc671de4e205478892ed716`
+and records target source `2e77c692de3b7e311c2547a03a30d89153ac5096`
+in merge build `99b0374201651de592a1ded743ef8ebe74145e88`.
+
+All 48 unchanged-build captures and all 48 migrated captures have zero content
+or rounding pixels changed. Starting and transcribing normal-motion checks
+progressed with the expected 700 ms infinite animation in all four cases. Raw
+computed styles differ only because the legacy `9999px` radius and Tailwind's
+`rounded-full` serialize to different, fully rounded values; the semantic
+observations match in every capture. Both archives were anonymously downloaded
+and SHA-256 verified. This is bounded Chromium acceptance with controlled
+bootstrap, API and browser-media boundaries; no Agent run, purchase, connector,
+real microphone recording or real transcription occurred.
+
+## Session list title batch
+
+The `session-list-title` batch owns `okou-nav-title`, `okou-nav-title-row` and
+`okou-nav-recent-label`: the clipped sidebar thread title, the row that drives
+its hover/focus travel, and the "Recent" header. It removes 17 CSS declarations
+and 5 consumption sites — 3 production sites in `sidebar-threads.tsx` and 2 test
+references in `sidebar.test.tsx`. `okou-nav-recent-label` carried no
+declarations, so its removal is a pure class deletion. `@property --okou-nav-title-shift` stays in
+the App stylesheet, because a registration is not a class selector and the
+transition cannot interpolate a length without it.
+
+`sidebar-thread-title-cases.json` registers the deployed surface: the real
+`/chats/:threadId` chat list in Light/Dark desktop at device scale 1 and 2, and
+narrow touch/DPR 2. That case file has no runner yet; the acceptance evidence
+below is a local equivalence harness, so the batch is `implemented` rather than
+`baselined` or `verified`.
+
+The harness compiles both sides with the App's own Tailwind entry point —
+`before` from `git show origin/main:` of the stylesheet with main's class
+strings, `after` from the branch — and renders the real ancestor chain
+(`.okou-app` shell, `aside.okou-nav` chat list column, the scroll content, the
+`.group` row wrapper, the `Link` row, the label wrapper) in system Chromium over
+CDP. Headless Chromium reports `(hover: hover)` as false, which silently
+disables every Tailwind `hover:` utility, so the fine-pointer run sets
+`--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4`
+and the coarse-pointer product is measured in a separate run without it.
+
+Each capture covers two titles (one clipped, one that fits) times rest, hovered
+and focus-visible, times the row's three template branches, with the pseudo-state
+forced on both the row and its `.group` ancestor and the travel allowed to
+settle. Every capture compares full-frame pixels and a computed-style and
+geometry observation of the title box and its text span.
+
+All 18 theme states (the default palette plus the eight gradient palettes, each
+in Light and Dark) report 0 changed pixels and 0 observation differences in the
+fine-pointer, coarse-pointer and reduced-motion runs. `GradientColorThemes` is
+disabled by default, so the default palette is the online-visible result and the
+palette states are a superset.
+
+The clipping box composes its utilities through `cn()` in one small
+`ChatThreadItemTitle` component rather than as a single opaque attribute string.
+`cn()` was checked to return that class list byte-identically, and the Tailwind
+`no-unknown-classes` rule was confirmed to still report an unknown class placed
+inside the call, so neither readability change costs coverage.
+
+The negative control is part of the acceptance, because a diff channel that
+cannot fail proves nothing. Dropping the merged `:is()` hover/focus travel
+changes 10,284 pixels and 6 observations, which is what establishes that the
+merged variant is load-bearing rather than silently inert. Dropping the text
+span's `[transform:translateX(var(--okou-nav-title-shift))]` changes 10,266
+pixels, and narrowing the fade from 24px to 23px changes 1,161, so the channel
+resolves both a gross and a one-pixel-scale change. Three earlier controls — dropping
+`overflow-hidden`, `mask-no-repeat` and `min-w-0` — changed 0 pixels and are
+retained: the mask already clips the overflow, `mask-size: 100% 100%` leaves
+nothing for `mask-repeat` to tile, and `overflow: hidden` already resolves the
+flex item's automatic minimum size to zero. Those three utilities are redundant
+in this composition and were kept only because the retired rule declared them.
+
+This is bounded local Chromium evidence against a reconstructed ancestor chain,
+not a deployed-preview capture: it does not certify the Base UI scroll area's
+own DOM, WebKit, native surfaces, or real navigation and virtualization.
+
+## Onboarding workflow diagram family
+
+The `owf-diagram-*` classes are now their own family, `onboarding-diagram`
+(phase 8), instead of sitting inside `motion-and-injection`. Only the travelling
+beam is motion; the other 24 classes are the geometry, positioning and surfaces
+of a fixed-coordinate illustration, so the motion family's replacement contract
+did not describe them and neither did its phase. The family is the largest
+remaining block of debt: 242 of the 324 declarations left in
+`apps/platform/src/views/css/index.css`, 25 of the 39 remaining legacy tokens,
+25 class references in `views/onboarding/onboarding-workflow-diagram.tsx`, and
+two class queries in that view's `__tests__/onboarding-flow.test.tsx`.
+
+`owf-diagram-avatar` is a twenty-sixth class. Its three declarations are frozen
+in `cssAtoms`, but it is absent from `legacyClassTokens`, so its consumption is
+not counted, and it cannot be added: `prunedBaseline()` only filters that array
+and `baselineGrowthErrors()` rejects any token the reference baseline lacks. The
+family records it so the plan is complete; deleting the class is what closes the
+gap.
+
+Two batches split the family by whether a token participates in the border-width
+contract. `onboarding-diagram-canvas` drained the geometry, motion and type in
+[#34225](https://github.com/vm0-ai/vm0/pull/34225): 125 declarations and 12 of
+its 13 tokens, leaving `owf-diagram` as the carrier of the 25 shared coordinate
+variables its tile and dot rules still read.
+
+`onboarding-diagram-tiles` then drained the bordered artwork and those
+variables, which retires the family. Its blocker was the border-width contract:
+four rules declared `border: 1px` and six dots `border: 1.5px`, while
+`--default-border-width` owns border width and a hand-written width is refused.
+The resolution was to register the weights as App-layer tokens —
+`--border-width-illustration` and `--border-width-illustration-marker`, whose
+contract is in [the style guide](styles.md) — rather than to accept the shared
+hairline's measurable thinning under this canvas's `scale(0.6)` or to redraw
+the strokes in SVG. Every coordinate the variables produced is now spelled at
+its own call site.
+
+`onboarding-diagram-cases.json` covers the three geometry branches the component
+actually renders, each through the workflow-run preview dialog:
+`file-sentry-crashes-github` draws both nodes, the destination curve and a
+two-icon source stack; `sort-gmail-draft-replies` has one connector, so it draws
+a source with no destination; `track-keyword-ranks-ahrefs` has none, so it draws
+neither and the beam takes its third path. The dialog's open state lives in
+`onboardingUi$` rather than the URL, so these cases still need a runner that
+opens the preview. No runner ships here, so the canvas batch is `implemented`
+rather than `verified`, and the local equivalence evidence recorded with its
+pull request is bounded Chromium rendering of the two class lists, not a
+deployed-preview capture.
+
+## Markdown body classes — partially drained, audit blocked
+
+The `markdown-body-classes` batch owns `wmde-markdown` and
+`wmde-markdown-color`. One is retired; the other is not a rename and is returned
+to the external-contract audit its family already asks for. The batch opened
+with `okou-markdown-card` as well, which the fixed viewport and markdown card
+batch drained separately while this one was open.
+
+`wmde-markdown-color` was applied by `MarkdownFrame` and selected by nothing:
+zero rules in the App stylesheet, zero in `packages/ui`, and zero in the
+vendored `@uiw/react-markdown-preview` 5.2.0 sheet. Removing it is a pure
+deletion, measured at zero changed pixels and zero observation differences.
+
+`wmde-markdown` cannot follow it. It is the live hook for a third-party
+stylesheet rather than a first-party typography class. Of the vendored sheet's
+302 selector instances, 300 are gated on `.wmde-markdown`; the remaining two are
+`body[data-color-mode*="light"|"dark"]`, and nothing in the repository ever sets
+`data-color-mode` on `body` — `MarkdownFrame` sets it on its own element — so
+those two are already dead. The App block in `index.css` is a patch layer over
+that base rather than a replacement for it: it declares 48
+`--color-prettylights-syntax-*` variables and zero `.token` rules, and the
+vendored sheet owns every one of them.
+
+Renaming the App selectors to `[data-slot="markdown-body"]` and dropping the
+vendored import changes **2,785,793 pixels and 396 observations** over six
+rendered states. All Prism token colours collapse to the plain foreground,
+inline code loses its padding, size and mono family, `pre` loses its fill, size
+and leading, `kbd` loses its border, padding, radius, `inline-block` box and
+middle alignment, `hr` drops from 3.5px to 1px and loses its 24px margins, `img`
+loses `content-box` and `border-style: none`, and `strong` shifts from 600 to 700.
+
+Spelling the hook as `[data-slot="markdown-body"]` in the stylesheet would also
+contradict this guide's companion: the style guide records in five places that
+a `data-slot` carries no styles, and no handwritten first-party rule selects one
+today. The one `[data-slot=markdown-card]` selector in the shipped bundle is the
+utility Tailwind emits for `CHAT_BUBBLE_MARKDOWN_CLASS`, which is authored on
+the component, not in a stylesheet, and stays inside the ratchet. It would
+convert a tracked class selector into the attribute selector this document still
+lists as an unenforced follow-up, hiding the debt from the ratchet instead of
+draining it.
+
+`okou-markdown-card` was held here at first, because its only declarations lived
+in the shared rule `.wmde-markdown p, .wmde-markdown .okou-markdown-card` — then
+the only rule of this block still held in the legacy baseline, against 42
+`third-party-dom-adapter` allowlist entries — and re-spelling that rule changed
+its baseline atoms. The markdown card batch drained it instead by splitting the
+rule: the two card sites took a `my-1.5` utility, and `.wmde-markdown p` became
+the 43rd adapter entry. Every rule of this block is now a declared adapter entry
+and the legacy baseline holds none of them.
+
+That leaves the class token itself, and `turbo/style-allowlist.json` already
+holds those 43 entries plus the sheet's hash-pinned `vendorFiles` record, so the
+remaining decision — keep the declared adapter, or replace the Markdown
+renderer's styling wholesale — is a product decision rather than an equivalence.
+
+### Harness and negative controls
+
+`markdown-body-cases.json` registers the deployed surface. The acceptance
+evidence is a local equivalence harness rather than a deployed capture, so the
+batch is `blocked` rather than `baselined` or `verified`.
+
+The harness compiles the App's own Tailwind 4.2.2 entry point through the Vite
+plugin the App uses, preserving the real cascade order. That order was measured
+rather than assumed: the vendored sheet reaches the bundle through a static
+`router.tsx → … → rich-markdown.tsx` chain with no dynamic import, so Rollup
+emits it roughly 3,600 lines _before_ `index.css`, and the App block wins every
+specificity tie. The sample article is the real DOM that `parseMarkdownTree`
+produces, covering `h1`–`h6`, paragraphs, nested ordered and unordered lists,
+blockquotes, a four-row table with header and zebra rows, inline code, a fenced
+block with live Prism tokens, `kbd`, `hr`, `mark`, links, an image and both card
+sites. The fixture rebuilds the `.okou-app` shell and the `group` wrapper and
+copies `index.html`'s viewport meta verbatim, so the 390px cases lay out at
+390px instead of silently falling back to 980px. Hover is forced on the link and
+on its ancestors.
+
+Six states — desktop Light/Dark at 1280, both again with hover forced, and
+narrow 390 DPR 2 Light/Dark — compare full-frame pixels plus computed styles and
+geometry for 39 probes. Unchanged code reports zero changed pixels and zero
+observation differences, and so does the retired `wmde-markdown-color` class.
+
+Three negative controls establish that those zeros are not degenerate. Dropping
+the App's table zebra rule changes 574,100 pixels and 6 observations. Dropping
+its `h2` override changes 1,735,373 pixels and 234 observations, because the
+vendored `1.5em` heading and its border return. Dropping the dark link hover
+colour changes 157 pixels in the one state that forces hover and none in the
+state that does not, so the channel resolves a small, state-specific change and
+the hover forcing is load-bearing.
+
+This is bounded local Chromium evidence against a reconstructed ancestor chain.
+It does not certify the real chat transcript's scroll container, WebKit, native
+surfaces, or the Markdown renderer's asynchronous card and diagram states.
+
+### A correction to the style guide
+
+The chat bubble section of the style guide stated that the Markdown chunk's
+stylesheet loads _after_ the App's. The bundler says otherwise, and the claim is
+corrected there. The vendored sheet is imported by `rich-markdown.tsx`, which
+`router.tsx` reaches through a static chain that `main.tsx` evaluates before its
+own `./css/index.css` import, so Rollup emits the vendored rules first. The
+shipped bundle shows the same gap: in `index-Cte7Pkoy.css` the vendored
+`.wmde-markdown blockquote>:first-child` sits at byte 16,205 and the App's
+`.wmde-markdown p,.wmde-markdown .okou-markdown-card` at byte 302,592.
+
+Two of the four resets that section relies on still win, but by `!important`
+rather than by source order. The other two do not. The vendored `blockquote >
+:first-child` / `:last-child` pair carries no `!important` and ties the retired
+`.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so with the App emitted
+second the retired rule won: a blockquote's first and last paragraph inside a
+bubble carried its 8px, and the `[&_blockquote>*:first-child]:mt-0!` pair that
+replaced it flushes them. That is a real spacing change inside a batch recorded
+as an equivalence, so it is tracked as its own decision in
+[#34278](https://github.com/vm0-ai/vm0/issues/34278) rather than repaired here.
+It also means that batch's evidence never exercised the case: either its sample
+carried no blockquote inside a bubble, or its fixture did not reproduce this
+cascade order. Establish which before reusing that harness.

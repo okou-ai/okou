@@ -218,6 +218,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_load_thread_session_binding"
   | "api_dispatch_update_thread_session_binding"
   | "api_dispatch_prepare_storage_manifest"
+  | "api_dispatch_prepare_storage_manifest_resolve_plan"
   | "api_dispatch_prepare_storage_manifest_resolve_inputs"
   | "api_dispatch_prepare_storage_manifest_ensure_artifacts"
   | "api_dispatch_prepare_storage_manifest_ensure_artifact_lookup_storage"

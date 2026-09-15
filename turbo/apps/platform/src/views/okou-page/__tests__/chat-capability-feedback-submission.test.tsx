@@ -66,6 +66,7 @@ test("Submit inline feedback once without losing composed text", async () => {
   modelPreference.resolve({
     selectedModel: "claude-sonnet-4-6",
     serviceTier: null,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-08-01T10:00:00.000Z",
@@ -87,6 +88,7 @@ test("Reconcile inline feedback when the selected model is unavailable", async (
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-5.6-sol",
     serviceTier: null,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-07-31T10:00:00.000Z",

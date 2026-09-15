@@ -12,6 +12,9 @@ import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import { importPresentationTemplateDeck$ } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -25,8 +28,18 @@ import {
 } from "../../signals/okou-page/workflow-composer-domain";
 import {
   scrollSlashWorkflowIntoView,
+  slashWorkflowOptionId,
   SlashWorkflowMenu,
 } from "./slash-workflow.tsx";
+import {
+  SlashTemplatePanel,
+  slashTemplateCategoryLabel,
+} from "./slash-template-panel.tsx";
+import {
+  SLASH_TEMPLATE_CATEGORIES,
+  type SlashTemplateCategory,
+  type SlashTemplatePreview,
+} from "./composer-template-catalog.ts";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 
 import {
@@ -309,6 +322,15 @@ interface ComposerSuggestionMenuState {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly createModes: readonly ComposerCreateCommand[];
   readonly selectCreate: (mode: ComposerCreateCommand) => void;
+  /** Non-empty only while ComposerSlashTemplatePanel is on. */
+  readonly panelCategories: readonly SlashTemplateCategory[];
+  readonly previewIndex: number | null;
+  readonly previewSuggestion: (index: number | null) => void;
+  readonly selectCategory: (category: SlashTemplateCategory) => void;
+  readonly selectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly importDeck: (file: File) => void;
+  readonly browseAllTemplates: () => void;
+  readonly showTemplatePanel: boolean;
   readonly workflowsLoading: boolean;
   readonly showWorkflows: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
@@ -345,14 +367,106 @@ function useComposerCreateSuggestions(
   });
 }
 
+/**
+ * The three categories that are also composer create modes keep their existing
+ * action, so choosing "Presentation" from the panel does exactly what choosing
+ * it from the flat menu does today. Website and Workflow have no create mode,
+ * so they open the template picker on their own tab instead.
+ */
+const SLASH_TEMPLATE_CATEGORY_CREATE_MODE = {
+  slides: "presentation",
+  illustration: "image",
+  video: "video",
+} as const satisfies Partial<
+  Record<SlashTemplateCategory, ComposerCreateCommand>
+>;
+
+function createModeForCategory(
+  category: SlashTemplateCategory,
+): ComposerCreateCommand | undefined {
+  return category in SLASH_TEMPLATE_CATEGORY_CREATE_MODE
+    ? SLASH_TEMPLATE_CATEGORY_CREATE_MODE[
+        category as keyof typeof SLASH_TEMPLATE_CATEGORY_CREATE_MODE
+      ]
+    : undefined;
+}
+
+function useSlashTemplateCategorySuggestions(
+  composer: ComposerSignals,
+  query: string | undefined,
+): readonly SlashTemplateCategory[] {
+  useTranslation();
+  const enabled = useGet(composer.create.enabled$);
+  if (!enabled || query === undefined) {
+    return [];
+  }
+  const normalized = query.toLowerCase().trim();
+  return SLASH_TEMPLATE_CATEGORIES.filter((category) => {
+    return slashTemplateCategoryLabel(category)
+      .toLowerCase()
+      .includes(normalized);
+  });
+}
+
+/**
+ * Everything the two-pane panel needs that the flat menu does not: which rows
+ * the typed query leaves, and what each row does when it is chosen.
+ */
+function useSlashTemplatePanelActions(
+  composer: ComposerSignals,
+  query: string | undefined,
+  close: () => void,
+) {
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerSlashTemplatePanel] ===
+    true;
+  const selectCreate = useSet(composer.create.selectCommand$);
+  const insertTemplate = useSet(composer.template.insertTemplate$);
+  const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
+  const runDeckImport = useSet(importPresentationTemplateDeck$);
+  const rootSignal = useGet(rootSignal$);
+  const categories = useSlashTemplateCategorySuggestions(
+    composer,
+    enabled ? query : undefined,
+  );
+  return {
+    enabled,
+    categories,
+    selectCategory(category: SlashTemplateCategory): void {
+      const mode = createModeForCategory(category);
+      if (mode) {
+        selectCreate(mode);
+        return;
+      }
+      openTemplatePicker({ kind: "insert", category });
+    },
+    selectTemplate(preview: SlashTemplatePreview): void {
+      insertTemplate(preview.template, preview.attachment);
+      close();
+    },
+    /**
+     * The import attaches the deck and sends, which navigates away from the
+     * page that started it, so it owns the root signal rather than a page
+     * signal — the same reason the picker dialog's import card does.
+     */
+    importDeck(file: File): void {
+      close();
+      detach(
+        runDeckImport({ signals: composer, file }, rootSignal),
+        Reason.DomCallback,
+      );
+    },
+    browseAll(): void {
+      openTemplatePicker({ kind: "insert", category: "slides" });
+    },
+  };
+}
+
 function useComposerWorkflowSuggestions(
   composer: ComposerSignals,
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const fuzzyWorkflows =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerWorkflowFuzzySearch] ===
-    true;
   const workflows = buildComposerSlashWorkflows({
     agentId: composer.agentId,
     workflows:
@@ -360,11 +474,127 @@ function useComposerWorkflowSuggestions(
   });
   return {
     workflows:
-      query === undefined
-        ? []
-        : findWorkflowQueryMatches(workflows, query, fuzzyWorkflows),
+      query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
     loading: workflowsLoadable.state === "loading",
   };
+}
+
+/**
+ * The @-mention half of the suggestion menu. Only the result for the current
+ * agent and the current query counts; a stale resolution shows nothing.
+ */
+function useComposerMentionSuggestions(
+  composer: ComposerSignals,
+  slashRange: { readonly query: string } | null,
+) {
+  const chatThreadRange = useGet(
+    composer.suggestion.activeChatThreadSuggestionRange$,
+  );
+  const chatThreadResult = useLastResolved(
+    composer.suggestion.chatThreadSuggestions$,
+  );
+  const result =
+    chatThreadRange &&
+    chatThreadResult &&
+    chatThreadResult.agentId === composer.agentId &&
+    chatThreadResult.query === chatThreadRange.query
+      ? chatThreadResult
+      : null;
+  const agents = result?.agents ?? [];
+  const chatThreads = result?.chatThreads ?? [];
+  return {
+    chatThreadRange,
+    agents,
+    chatThreads,
+    showMentions:
+      slashRange === null &&
+      chatThreadRange !== null &&
+      agents.length + chatThreads.length > 0,
+  };
+}
+
+interface SuggestionRows {
+  readonly showWorkflows: boolean;
+  readonly panelEnabled: boolean;
+  readonly panelCategories: readonly SlashTemplateCategory[];
+  readonly createModes: readonly ComposerCreateCommand[];
+  /** How many rows sit above the workflow suggestions. */
+  readonly headCount: number;
+  readonly workflows: readonly ComposerSlashWorkflowMatch[];
+  readonly agents: readonly ComposerAgentSuggestion[];
+  readonly chatThreads: readonly ComposerChatThreadSuggestion[];
+}
+
+interface SuggestionRowActions {
+  readonly selectCategory: (category: SlashTemplateCategory) => void;
+  readonly selectCreate: (mode: ComposerCreateCommand) => void;
+  readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
+  readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
+  readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
+}
+
+/** The head row for an index, whichever of the two menus is rendered. */
+function suggestionHeadRow(
+  index: number,
+  rows: SuggestionRows,
+): SlashTemplateCategory | ComposerCreateCommand | undefined {
+  return rows.panelEnabled
+    ? rows.panelCategories[index]
+    : rows.createModes[index];
+}
+
+function selectSlashSuggestionRow(
+  index: number,
+  rows: SuggestionRows,
+  actions: SuggestionRowActions,
+): void {
+  if (rows.panelEnabled) {
+    const category = rows.panelCategories[index];
+    if (category) {
+      actions.selectCategory(category);
+      return;
+    }
+  } else {
+    const mode = rows.createModes[index];
+    if (mode) {
+      actions.selectCreate(mode);
+      return;
+    }
+  }
+  const workflow = rows.workflows[index - rows.headCount];
+  if (workflow) {
+    actions.insertWorkflow(workflow);
+  }
+}
+
+function selectSuggestionRow(
+  index: number,
+  rows: SuggestionRows,
+  actions: SuggestionRowActions,
+): void {
+  if (rows.showWorkflows) {
+    selectSlashSuggestionRow(index, rows, actions);
+    return;
+  }
+  const agent = rows.agents[index];
+  if (agent) {
+    actions.insertAgent(agent);
+    return;
+  }
+  const chatThread = rows.chatThreads[index - rows.agents.length];
+  if (chatThread) {
+    actions.insertChatThread(chatThread);
+  }
+}
+
+function suggestionRowScrollTarget(
+  index: number,
+  rows: SuggestionRows,
+): { readonly id: string } | undefined {
+  const head = suggestionHeadRow(index, rows);
+  return head === undefined
+    ? rows.workflows[index - rows.headCount]
+    : { id: head };
 }
 
 function useComposerSuggestionMenu({
@@ -380,81 +610,75 @@ function useComposerSuggestionMenu({
   const slashRange = useGet(composer.suggestion.activeSlashRange$);
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
-  const createModes = useComposerCreateSuggestions(composer, slashRange?.query);
-  const chatThreadRange = useGet(
-    composer.suggestion.activeChatThreadSuggestionRange$,
-  );
-  const chatThreadResult = useLastResolved(
-    composer.suggestion.chatThreadSuggestions$,
+  const flatCreateModes = useComposerCreateSuggestions(
+    composer,
+    slashRange?.query,
   );
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
+  const previewIndex = useGet(composer.suggestion.previewSuggestionIndex$);
+  const previewSuggestion = useSet(composer.suggestion.previewSuggestion$);
   const setSelectedIndex = useSet(
     composer.suggestion.setSelectedSuggestionIndex$,
   );
   const close = useSet(composer.suggestion.closeSuggestionMenu$);
+  const templatePanel = useSlashTemplatePanelActions(
+    composer,
+    slashRange?.query,
+    close,
+  );
+  const templatePanelEnabled = templatePanel.enabled;
+  const panelCategories = templatePanel.categories;
+  // The panel replaces the flat Create group, so only one of the two occupies
+  // the indexes ahead of the workflow suggestions.
+  const createModes = templatePanelEnabled ? [] : flatCreateModes;
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
   const insertAgent = useSet(composer.suggestion.insertAgent$);
   const insertChatThread = useSet(composer.suggestion.insertChatThread$);
-  const currentAgentId = composer.agentId;
   const workflowResult = useComposerWorkflowSuggestions(
     composer,
     slashRange?.query,
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
-  const mentionResult =
-    chatThreadRange &&
-    chatThreadResult &&
-    chatThreadResult.agentId === currentAgentId &&
-    chatThreadResult.query === chatThreadRange.query
-      ? chatThreadResult
-      : null;
-  const agents = mentionResult?.agents ?? [];
-  const chatThreads = mentionResult?.chatThreads ?? [];
-  const showMentions =
-    slashRange === null &&
-    chatThreadRange !== null &&
-    agents.length + chatThreads.length > 0;
+  const mentions = useComposerMentionSuggestions(composer, slashRange);
+  const { agents, chatThreads, chatThreadRange, showMentions } = mentions;
   const open = showWorkflows || showMentions;
   const range = showWorkflows
     ? slashRange
     : showMentions
       ? chatThreadRange
       : null;
+  const headCount = templatePanelEnabled
+    ? panelCategories.length
+    : createModes.length;
   const suggestionCount = showWorkflows
-    ? createModes.length + workflowSuggestions.length
+    ? headCount + workflowSuggestions.length
     : agents.length + chatThreads.length;
 
+  const rows: SuggestionRows = {
+    showWorkflows,
+    panelEnabled: templatePanelEnabled,
+    panelCategories,
+    createModes,
+    headCount,
+    workflows: workflowSuggestions,
+    agents,
+    chatThreads,
+  };
+
   function selectSuggestion(index: number): void {
-    if (showWorkflows) {
-      const createMode = createModes[index];
-      if (createMode) {
-        selectCreate(createMode);
-        return;
-      }
-      const workflow = workflowSuggestions[index - createModes.length];
-      if (workflow) {
-        insertWorkflow(workflow);
-      }
-      return;
-    }
-    const agent = agents[index];
-    if (agent) {
-      insertAgent(agent);
-      return;
-    }
-    const chatThread = chatThreads[index - agents.length];
-    if (chatThread) {
-      insertChatThread(chatThread);
-    }
+    selectSuggestionRow(index, rows, {
+      selectCategory: templatePanel.selectCategory,
+      selectCreate,
+      insertWorkflow,
+      insertAgent,
+      insertChatThread,
+    });
   }
 
   function scrollSuggestionIntoView(index: number): void {
     if (showWorkflows) {
-      const mode = createModes[index];
-      scrollSlashWorkflowIntoView(
-        mode ? { id: mode } : workflowSuggestions[index - createModes.length],
-      );
+      scrollSlashWorkflowIntoView(suggestionRowScrollTarget(index, rows));
     }
   }
 
@@ -487,6 +711,14 @@ function useComposerSuggestionMenu({
     workflows: workflowSuggestions,
     createModes,
     selectCreate,
+    panelCategories,
+    previewIndex,
+    previewSuggestion,
+    selectCategory: templatePanel.selectCategory,
+    selectTemplate: templatePanel.selectTemplate,
+    importDeck: templatePanel.importDeck,
+    browseAllTemplates: templatePanel.browseAll,
+    showTemplatePanel: templatePanelEnabled,
     workflowsLoading: workflowResult.loading,
     showWorkflows,
     agents,
@@ -499,25 +731,18 @@ function useComposerSuggestionMenu({
   };
 }
 
-export function TiptapWorkflowComposer({
-  signals,
-  onDraftChange,
-  sending,
-  onKeyDown,
-  onPaste,
-}: TiptapWorkflowComposerProps) {
-  const composer = signals;
-  const suggestionMenu = useComposerSuggestionMenu({
-    composer,
-    onKeyDown,
-  });
+/**
+ * Resolves a paste against the editor before the host handler sees it. The host
+ * gets first refusal so it can claim files; anything it leaves is inserted as
+ * Markdown so pasted prose keeps its structure instead of arriving flattened.
+ */
+function useComposerPasteHandler(
+  composer: ComposerSignals,
+  onPaste: TiptapWorkflowComposerProps["onPaste"],
+): (event: ClipboardEvent, currentTarget: HTMLElement) => boolean {
   const insertPromptMarkdown = useSet(composer.editor.insertPromptMarkdown$);
-  const setContainerRef = useSet(composer.editor.setContainerRef$);
 
-  function handlePaste(
-    event: ClipboardEvent,
-    currentTarget: HTMLElement,
-  ): boolean {
+  return function handlePaste(event, currentTarget) {
     if (eventTargetsNonEditableNodeView(event)) {
       return false;
     }
@@ -541,7 +766,23 @@ export function TiptapWorkflowComposer({
       return true;
     }
     return event.defaultPrevented;
-  }
+  };
+}
+
+export function TiptapWorkflowComposer({
+  signals,
+  onDraftChange,
+  sending,
+  onKeyDown,
+  onPaste,
+}: TiptapWorkflowComposerProps) {
+  const composer = signals;
+  const suggestionMenu = useComposerSuggestionMenu({
+    composer,
+    onKeyDown,
+  });
+  const handlePaste = useComposerPasteHandler(composer, onPaste);
+  const setContainerRef = useSet(composer.editor.setContainerRef$);
 
   return (
     <Popover
@@ -597,6 +838,25 @@ export function TiptapWorkflowComposer({
           selectedIndex={suggestionMenu.selectedIndex}
           showWorkflowsPageLink
           onSelect={suggestionMenu.selectWorkflow}
+          panel={
+            suggestionMenu.showTemplatePanel ? (
+              <SlashTemplatePanel
+                categories={suggestionMenu.panelCategories}
+                workflows={suggestionMenu.workflows}
+                workflowsLoading={suggestionMenu.workflowsLoading}
+                selectedIndex={suggestionMenu.selectedIndex}
+                previewIndex={suggestionMenu.previewIndex}
+                onPreview={suggestionMenu.previewSuggestion}
+                onSelectCategory={suggestionMenu.selectCategory}
+                onSelectTemplate={suggestionMenu.selectTemplate}
+                onImportDeck={suggestionMenu.importDeck}
+                onSelectWorkflow={suggestionMenu.selectWorkflow}
+                onBrowseAll={suggestionMenu.browseAllTemplates}
+                workflowOptionId={slashWorkflowOptionId}
+                categoryOptionId={slashWorkflowOptionId}
+              />
+            ) : undefined
+          }
         />
       )}
       {suggestionMenu.showMentions && (

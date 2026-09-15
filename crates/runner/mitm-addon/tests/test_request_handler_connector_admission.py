@@ -672,7 +672,7 @@ async def test_matching_sni_and_host_allows_test_connector_on_authenticated_api_
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "preview-secret"),
+            ("x-okou-test-endpoint-bypass", "preview-secret"),
         ),
     )
     mark_connected_tls_upstream(
@@ -714,7 +714,7 @@ async def test_matching_sni_and_host_blocks_test_connector_with_insecure_upstrea
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "preview-secret"),
+            ("x-okou-test-endpoint-bypass", "preview-secret"),
         ),
     )
     mark_connected_tls_upstream(
@@ -759,7 +759,7 @@ async def test_test_connector_extends_existing_api_allow_binding(
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "preview-secret"),
+            ("x-okou-test-endpoint-bypass", "preview-secret"),
         ),
     )
     flow.server_conn.state = connection.ConnectionState.OPEN
@@ -801,7 +801,7 @@ async def test_test_connector_without_bypass_does_not_extend_existing_api_allow_
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "wrong-secret"),
+            ("x-okou-test-endpoint-bypass", "wrong-secret"),
         ),
     )
     flow.server_conn.state = connection.ConnectionState.OPEN
@@ -843,7 +843,7 @@ async def test_test_connector_unconnected_without_bypass_blocks_before_binding(
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "wrong-secret"),
+            ("x-okou-test-endpoint-bypass", "wrong-secret"),
         ),
     )
     monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret")
@@ -874,7 +874,7 @@ async def test_test_connector_without_bypass_does_not_reuse_connector_auth_bindi
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "wrong-secret"),
+            ("x-okou-test-endpoint-bypass", "wrong-secret"),
         ),
     )
     flow.server_conn.state = connection.ConnectionState.OPEN
@@ -918,7 +918,7 @@ async def test_test_connector_rejects_stale_unconnected_api_allow_binding(
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "preview-secret"),
+            ("x-okou-test-endpoint-bypass", "preview-secret"),
         ),
     )
     flow.server_conn.address = ("203.0.113.99", 443)
@@ -975,7 +975,7 @@ async def test_test_connector_rejects_mismatched_existing_binding_after_verified
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "preview-secret"),
+            ("x-okou-test-endpoint-bypass", "preview-secret"),
         ),
     )
     mark_connected_tls_upstream(
@@ -1024,7 +1024,7 @@ async def test_matching_sni_and_host_blocks_test_connector_api_edge_without_bypa
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "wrong-secret"),
+            ("x-okou-test-endpoint-bypass", "wrong-secret"),
         ),
     )
     mark_connected_tls_upstream(

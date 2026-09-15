@@ -79,6 +79,7 @@ function preference(
   context.mocks.data.userModelPreference({
     selectedModel,
     serviceTier,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: POLICY_DATE,

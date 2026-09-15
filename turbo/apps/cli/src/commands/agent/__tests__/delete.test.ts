@@ -62,10 +62,7 @@ describe("okou agent delete command", () => {
     });
   });
 
-  it.each([
-    [true, "cannot be deleted"],
-    [undefined, "Agent identity is unavailable"],
-  ])(
+  it.each([[true, "cannot be deleted"]])(
     "rejects deletion before confirmation for identity %s",
     async (identity, message) => {
       let deletes = 0;

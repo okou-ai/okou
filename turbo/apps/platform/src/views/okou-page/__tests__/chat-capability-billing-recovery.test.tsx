@@ -24,6 +24,7 @@ import {
   readyChat,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const BILLING_RUN_ID = "d0000000-0000-4000-a000-000000001301";
 
@@ -59,6 +60,7 @@ function billingStatus(args: {
   return {
     showUsagePack: false,
     tier: args.tier,
+    ...billingPlanCapabilities(args.tier),
     canBuyCredits: args.canBuyCredits,
     credits: args.credits,
     onboardingPaymentPending: false,

@@ -1,8 +1,37 @@
 use std::fmt;
 use std::io;
 
+use futures_util::{FutureExt, future::Shared};
+use tokio::sync::oneshot;
+
 #[cfg(target_os = "linux")]
 use std::os::fd::OwnedFd;
+
+/// Retains the child-wait result independently of a consuming monitor waiter.
+/// Clones share the terminal result, including across cancellation and Drop.
+#[derive(Clone)]
+pub(crate) struct ProcessExitCompletion {
+    completion: Shared<oneshot::Receiver<bool>>,
+}
+
+impl ProcessExitCompletion {
+    /// The monitor sends true only after a successful child wait. A nonzero
+    /// exit status still confirms exit; a wait error does not.
+    pub(crate) fn channel() -> (oneshot::Sender<bool>, Self) {
+        let (tx, rx) = oneshot::channel();
+        (
+            tx,
+            Self {
+                completion: rx.shared(),
+            },
+        )
+    }
+
+    pub(crate) async fn confirmed(&self) -> bool {
+        // A lost producer (including monitor panic/abort) cannot confirm exit.
+        self.completion.clone().await.unwrap_or(false)
+    }
+}
 
 /// Kill the entire process group of `child` via `killpg(SIGKILL)`.
 ///

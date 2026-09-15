@@ -260,32 +260,15 @@ pub(crate) struct ExecOperationWorkerRequest {
 
 impl ExecOperationWorkerRequest {
     fn process_class(&self) -> &'static str {
-        match self.role {
-            ExecProcessRole::Workload => "contained_workload",
-            ExecProcessRole::Agent => "controlled_agent",
-            ExecProcessRole::SessionHistoryIdentityVerifier => "session_history_identity_verifier",
-            ExecProcessRole::CodexSessionCleanup => "codex_session_cleanup",
-        }
+        self.role.process_class()
     }
 
     fn operation_kind(&self) -> &'static str {
-        match (self.role, self.lifecycle) {
-            (ExecProcessRole::Workload, ExecOperationLifecycle::OneShot) => "exec",
-            (ExecProcessRole::Workload, ExecOperationLifecycle::Supervised) => "start_process",
-            (ExecProcessRole::Agent, ExecOperationLifecycle::Supervised) => "start_agent_process",
-            (ExecProcessRole::Agent, ExecOperationLifecycle::OneShot) => "invalid",
-            (ExecProcessRole::SessionHistoryIdentityVerifier, ExecOperationLifecycle::OneShot) => {
-                "verify_session_history_identity"
-            }
-            (
-                ExecProcessRole::SessionHistoryIdentityVerifier,
-                ExecOperationLifecycle::Supervised,
-            ) => "invalid",
-            (ExecProcessRole::CodexSessionCleanup, ExecOperationLifecycle::OneShot) => {
-                "cleanup_codex_session"
-            }
-            (ExecProcessRole::CodexSessionCleanup, ExecOperationLifecycle::Supervised) => "invalid",
-        }
+        let lifecycle = match self.lifecycle {
+            ExecOperationLifecycle::OneShot => ExecLifecyclePolicy::OneShot,
+            ExecOperationLifecycle::Supervised => ExecLifecyclePolicy::Supervised,
+        };
+        self.role.operation_kind(lifecycle)
     }
 
     pub(crate) fn from_decoded(
@@ -2057,6 +2040,14 @@ fn wait_stdin_writable_or_cancelled(
                 revents: 0,
             },
         ];
+        // Observe readiness only after the final cancellation check. Even if
+        // cancellation arrives before poll starts, the wake pipe must be ready.
+        #[cfg(test)]
+        tests::STDIN_POLL_READY.with(|ready| {
+            if let Some(ready) = ready.take() {
+                let _ = ready.send(());
+            }
+        });
         // SAFETY: `pollfds` points to two initialized descriptor entries.
         let result = unsafe { libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, -1) };
         if result > 0 {
@@ -2436,6 +2427,8 @@ fn log_exec_terminal_if_notable(
 mod tests {
     use super::*;
     use crate::threading::test_support::FailingThreadSpawner;
+    use crate::threading::{UnitTask, VecTask};
+    use std::cell::Cell;
     use std::fs::File;
     use std::io::{Read, Write};
     use std::net::Shutdown;
@@ -2443,6 +2436,32 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::process::Command;
     use std::time::Duration;
+
+    thread_local! {
+        pub(super) static STDIN_POLL_READY: Cell<Option<mpsc::Sender<()>>> = const { Cell::new(None) };
+    }
+
+    #[derive(Clone)]
+    struct StdinPollReadySpawner {
+        ready: mpsc::Sender<()>,
+    }
+
+    impl ThreadSpawner for StdinPollReadySpawner {
+        fn spawn_unit(&self, name: &'static str, task: UnitTask) -> io::Result<JoinHandle<()>> {
+            let ready = self.ready.clone();
+            SystemThreadSpawner.spawn_unit(
+                name,
+                Box::new(move || {
+                    STDIN_POLL_READY.set(Some(ready));
+                    task();
+                }),
+            )
+        }
+
+        fn spawn_vec(&self, name: &'static str, task: VecTask) -> io::Result<JoinHandle<Vec<u8>>> {
+            SystemThreadSpawner.spawn_vec(name, task)
+        }
+    }
 
     fn read_message(stream: &mut UnixStream) -> guest_control_proto::RawMessage {
         let mut hdr = [0u8; 4];
@@ -2805,36 +2824,60 @@ mod tests {
 
     #[test]
     fn exec_terminal_log_message_marks_slow_only_result_as_latency_only() {
-        let request = request(7, "true");
         let stdout = BoundedDrainResult::default();
         let stderr = BoundedDrainResult::default();
 
-        let message = exec_terminal_log_message(ExecTerminalLogMessageInput {
-            request: &request,
-            elapsed_ms: 6000,
-            termination: ExecTermination::Exited { exit_code: 0 },
-            stdout_result: &stdout,
-            stderr_result: &stderr,
-            diagnostic_present: false,
-            oom_evidence: false,
-            oom_evidence_proof: false,
-            slow: true,
-            notable: false,
-        })
-        .unwrap();
+        for (lifecycle, operation_kind) in [
+            (ExecLifecyclePolicy::OneShot, "exec"),
+            (ExecLifecyclePolicy::Supervised, "start_process"),
+        ] {
+            let request = ExecOperationWorkerRequest::from_decoded(
+                7,
+                decoded_request(
+                    ExecProcessRole::Workload,
+                    lifecycle,
+                    ExecControlPolicy::Disabled,
+                ),
+                ProcessContainmentMode::TestNoop,
+                EXEC_OUTPUT_DRAIN_DEADLINE,
+                GuestAgentProgram::production(),
+            )
+            .unwrap();
+            let message = exec_terminal_log_message(ExecTerminalLogMessageInput {
+                request: &request,
+                elapsed_ms: 6000,
+                termination: ExecTermination::Exited { exit_code: 0 },
+                stdout_result: &stdout,
+                stderr_result: &stderr,
+                diagnostic_present: false,
+                oom_evidence: false,
+                oom_evidence_proof: false,
+                slow: true,
+                notable: false,
+            })
+            .unwrap();
 
-        assert!(message.contains("seq=7"), "message={message}");
-        assert!(message.contains("label=test"), "message={message}");
-        assert!(message.contains("slow=true"), "message={message}");
-        assert!(message.contains("notable=false"), "message={message}");
-        assert!(
-            message.contains("terminal_reason=slow"),
-            "message={message}"
-        );
-        assert!(
-            message.contains("diagnostic_present=false"),
-            "message={message}"
-        );
+            assert!(message.contains("seq=7"), "message={message}");
+            assert!(message.contains("label=test"), "message={message}");
+            assert!(
+                message.contains("process_class=contained_workload "),
+                "message={message}"
+            );
+            assert!(
+                message.contains(&format!("operation_kind={operation_kind} ")),
+                "message={message}"
+            );
+            assert!(message.contains("slow=true"), "message={message}");
+            assert!(message.contains("notable=false"), "message={message}");
+            assert!(
+                message.contains("terminal_reason=slow"),
+                "message={message}"
+            );
+            assert!(
+                message.contains("diagnostic_present=false"),
+                "message={message}"
+            );
+        }
     }
 
     #[test]
@@ -3138,6 +3181,9 @@ mod tests {
 
     #[test]
     fn stdin_writer_cancel_unblocks_full_pipe() {
+        // The exec protocol cannot synchronize on this private worker's final
+        // pre-poll check, and child cleanup can independently release stdin.
+        // Keep the actual writer, full pipe, poll, and cancellation wakeup here.
         let mut fds = [0; 2];
         // SAFETY: `pipe` initializes two file descriptors in `fds` on success.
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
@@ -3157,17 +3203,38 @@ mod tests {
             }
         }
 
-        let writer =
-            spawn_exec_operation_stdin(write_file, b"blocked".to_vec(), SystemThreadSpawner)
-                .unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let writer = spawn_exec_operation_stdin(
+            write_file,
+            b"blocked".to_vec(),
+            StdinPollReadySpawner { ready: ready_tx },
+        )
+        .unwrap();
+        let ready = ready_rx.recv_timeout(Duration::from_secs(5));
         request_stdin_writer_cancel(&writer);
-        if let Err(e) = writer.done_rx.recv_timeout(Duration::from_secs(5)) {
-            drop(read_fd);
-            join_stdin_writer(writer, 0, "");
-            panic!("stdin writer cancel did not wake blocked writer: {e}");
-        }
-        join_stdin_writer(writer, 0, "");
+        let completed = writer.done_rx.recv_timeout(Duration::from_secs(5));
+        let result = writer.result_rx.try_recv();
+
+        // Record completion while the peer is still open and undrained. Release
+        // it and join before asserting, including readiness and wakeup failures.
         drop(read_fd);
+        join_stdin_writer(writer, 0, "");
+        ready.expect("stdin writer did not reach its blocking poll");
+        completed.expect("stdin writer cancel did not wake blocked writer");
+        assert!(is_stdin_write_cancelled(&result.unwrap().unwrap_err()));
+    }
+
+    #[test]
+    fn write_stdin_rejects_pre_cancelled_input() {
+        let mut stdin = tempfile::tempfile().unwrap();
+        let (cancel_reader, _cancel_writer) = stdin_cancel_pipe().unwrap();
+        let cancel = AtomicBool::new(true);
+
+        let result =
+            write_stdin_cancellable(&mut stdin, b"input", &cancel, cancel_reader.as_raw_fd());
+
+        assert!(is_stdin_write_cancelled(&result.unwrap_err()));
+        assert_eq!(stdin.metadata().unwrap().len(), 0);
     }
 
     #[test]

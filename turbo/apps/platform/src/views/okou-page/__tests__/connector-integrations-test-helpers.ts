@@ -1,5 +1,6 @@
 import {
   feishuConnectContract,
+  larkConnectContract,
   type FeishuConnectStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import {
@@ -20,7 +21,7 @@ import {
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
 export function queryAction(
-  role: "button" | "link",
+  role: "button" | "link" | "radio",
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement | null {
@@ -35,7 +36,7 @@ export function queryAction(
 }
 
 export function getAction(
-  role: "button" | "link",
+  role: "button" | "link" | "radio",
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement {
@@ -101,7 +102,10 @@ export function mockTeams(
 export function mockFeishu(
   context: TestContext,
   overrides: Partial<FeishuConnectStatus> = {},
+  platform: "feishu" | "lark" = "feishu",
 ): void {
+  const contract =
+    platform === "lark" ? larkConnectContract : feishuConnectContract;
   const defaults: FeishuConnectStatus = {
     publicBrand: "vm0",
     isConnected: false,
@@ -116,10 +120,10 @@ export function mockFeishu(
     defaultAgentId: null,
     defaultAgentName: "Okou",
   };
-  context.mocks.api(feishuConnectContract.getStatus, ({ respond }) => {
+  context.mocks.api(contract.getStatus, ({ respond }) => {
     return respond(200, { ...defaults, ...overrides });
   });
-  context.mocks.api(feishuConnectContract.checkAppId, ({ respond }) => {
+  context.mocks.api(contract.checkAppId, ({ respond }) => {
     return respond(200, { available: true });
   });
 }
@@ -128,6 +132,7 @@ export function setupIntegrationsPage(
   context: TestContext,
   options: {
     readonly feishu?: boolean;
+    readonly lark?: boolean;
   } = {},
 ): Promise<void> {
   return setupPage({
@@ -135,14 +140,22 @@ export function setupIntegrationsPage(
     path: "/works",
     featureSwitches: {
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
+      [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
     },
   });
 }
 
-export function setupFeishuSettingsPage(context: TestContext): Promise<void> {
+export function setupFeishuSettingsPage(
+  context: TestContext,
+  platform: "feishu" | "lark" = "feishu",
+): Promise<void> {
   return setupPage({
     context,
-    path: "/settings/feishu",
-    featureSwitches: { [FeatureSwitchKey.FeishuIntegration]: true },
+    path: `/settings/${platform}`,
+    featureSwitches: {
+      [platform === "lark"
+        ? FeatureSwitchKey.LarkIntegration
+        : FeatureSwitchKey.FeishuIntegration]: true,
+    },
   });
 }

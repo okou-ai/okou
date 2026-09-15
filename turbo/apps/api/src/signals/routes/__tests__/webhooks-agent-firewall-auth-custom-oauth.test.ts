@@ -204,8 +204,6 @@ describe.each(["configured", "automatic"] as const)(
           intent: "add",
           displayName: "Second",
         });
-        context.mocks.axiomLogging.warn.mockClear();
-        context.mocks.axiomLogging.error.mockClear();
         context.mocks.sentry.captureException.mockClear();
         const first = custom.request(custom.account.id, true);
         await started.promise;
@@ -263,8 +261,6 @@ describe.each(["configured", "automatic"] as const)(
         const siblingAuth = await custom.request(sibling.id, false);
         expect(siblingAuth.status).toBe(200);
         expect(refreshCalls).toBe(4);
-        expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-        expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
         expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
 
         const replacement =

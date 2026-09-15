@@ -759,7 +759,7 @@ test("Complete a custom connector’s declared fields", async () => {
   });
 });
 
-test("Manage a custom HTTP connector through its lifecycle", async () => {
+test("Manage a custom HTTP connector through creation and connection", async () => {
   mockCustomConnectorStory(context);
   context.mocks.data.agents([
     listAgent(RESEARCH_ID, "Research"),
@@ -779,7 +779,6 @@ test("Manage a custom HTTP connector through its lifecycle", async () => {
       "No custom connectors yet. Create one to register an API for every member to use.",
     ),
   ).resolves.toBeInTheDocument();
-
   click(getConnectorAction("button", "New connector"));
   const create = await screen.findByRole("dialog", {
     name: "New custom connector",
@@ -805,7 +804,6 @@ test("Manage a custom HTTP connector through its lifecycle", async () => {
   expect(card).toHaveTextContent("HTTP API");
   expect(card).toHaveTextContent("https://api.acme.test/v1/");
   expect(card).toHaveTextContent("No accounts");
-
   click(getConnectorAction("button", "Connect Acme API", card));
   const connect = await screen.findByRole("dialog", {
     name: "Connect Acme API",
@@ -826,7 +824,38 @@ test("Manage a custom HTTP connector through its lifecycle", async () => {
       ),
     ).toHaveTextContent("Used by 2 agents");
   });
+});
 
+test("Manage a custom HTTP connector through rename and deletion", async () => {
+  const existing = customConnector({
+    displayName: "Acme API",
+    connected: true,
+    connectedAccountId: "66666666-6666-4666-8666-666666666666",
+    missingRequiredFields: [],
+    configuredFieldKeys: ["secret"],
+  });
+  mockCustomConnectorStory(context, [
+    {
+      connector: existing,
+      account: customAccount(
+        existing.id,
+        "66666666-6666-4666-8666-666666666666",
+      ),
+    },
+  ]);
+  context.mocks.data.agents([
+    listAgent(RESEARCH_ID, "Research"),
+    listAgent(SUPPORT_ID, "Support"),
+  ]);
+  await setupPage({
+    context,
+    path: "/connectors",
+  });
+  click(
+    await waitFor(() => {
+      return getConnectorAction("tab", "Custom");
+    }),
+  );
   click(
     await waitFor(() => {
       return getConnectorAction("button", "More options");
@@ -851,7 +880,6 @@ test("Manage a custom HTTP connector through its lifecycle", async () => {
   expect(getConnectorCard("Acme Billing API")).toHaveTextContent(
     "https://api.acme.test/v1/",
   );
-
   click(
     await waitFor(() => {
       return getConnectorAction("button", "More options");
@@ -865,7 +893,6 @@ test("Manage a custom HTTP connector through its lifecycle", async () => {
   const deletion = await screen.findByRole("dialog");
   expect(deletion).toHaveTextContent("Delete Acme Billing API?");
   click(getConnectorAction("button", "Delete", deletion));
-
   await expect(
     screen.findByText(
       "No custom connectors yet. Create one to register an API for every member to use.",
@@ -873,7 +900,7 @@ test("Manage a custom HTTP connector through its lifecycle", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Configure and maintain OAuth for a custom HTTP connector", async () => {
+test("Manage custom HTTP OAuth through creation", async () => {
   const completedAttempts = mockOAuthCompletions(context);
   const oauthAttemptId = crypto.randomUUID();
   let connector: CustomConnectorHttpResponse | null = null;
@@ -930,7 +957,11 @@ test("Configure and maintain OAuth for a custom HTTP connector", async () => {
       if (!connector) {
         throw new Error("Expected OAuth connector");
       }
-      connector = { ...connector, connected: true, missingRequiredFields: [] };
+      connector = {
+        ...connector,
+        connected: true,
+        missingRequiredFields: [],
+      };
       const connectedAccountId =
         connector.connectedAccountId ?? crypto.randomUUID();
       connector = { ...connector, connectedAccountId };
@@ -1009,9 +1040,7 @@ test("Configure and maintain OAuth for a custom HTTP connector", async () => {
     ]);
   });
   expect(getConnectorAction("button", "Create", create)).toBeEnabled();
-
   click(getConnectorAction("button", "Create", create));
-
   const card = await waitFor(() => {
     return getConnectorCard("Acme API");
   });
@@ -1033,7 +1062,107 @@ test("Configure and maintain OAuth for a custom HTTP connector", async () => {
     },
   });
   expect(card).not.toHaveTextContent("connector-oauth-client-secret");
+});
 
+test("Manage custom HTTP OAuth through configuration update and connection", async () => {
+  const completedAttempts = mockOAuthCompletions(context);
+  const oauthAttemptId = crypto.randomUUID();
+  let connector: CustomConnectorHttpResponse | null = customConnector({
+    displayName: "Acme API",
+    fields: [],
+    headerInjections: [],
+    queryInjections: [],
+    authMode: "oauth",
+    missingRequiredFields: ["oauth"],
+    oauthConfig: {
+      providerAdapter: "standard",
+      authorizationUrl: "https://oauth.acme.test/authorize",
+      tokenUrl: "https://oauth.acme.test/token",
+      clientId: "connector-oauth-client-id",
+      tokenEndpointAuthMethod: "client_secret_post",
+      scopes: ["search.read", "search.write"],
+      pkceMethod: "S256",
+      authorizationParams: {
+        resource: "https://api.acme.test",
+        audience: "acme-api",
+        access_type: "offline",
+        prompt: "consent",
+      },
+    },
+  });
+  const created: CreateCustomConnectorBody[] = [];
+  const updated: UpdateCustomConnectorBody[] = [];
+  const authWindow = createAuthWindow();
+  context.mocks.browser.open(authWindow);
+  context.mocks.data.agents([listAgent(RESEARCH_ID, "Research")]);
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: connector ? [connector] : [] });
+  });
+  context.mocks.api(customConnectorsContract.create, ({ body, respond }) => {
+    if (!body.oauthConfig || body.kind === "mcp") {
+      throw new Error("Expected OAuth HTTP connector");
+    }
+    created.push(body);
+    connector = customConnector({
+      displayName: body.displayName,
+      prefixTemplates: body.prefixTemplates ?? [],
+      fields: body.fields ?? [],
+      headerInjections: body.headerInjections ?? [],
+      queryInjections: body.queryInjections ?? [],
+      authMode: "oauth",
+      oauthConfig: publicOAuthConfig(body.oauthConfig),
+      missingRequiredFields: ["oauth"],
+    });
+    return respond(201, connector);
+  });
+  context.mocks.api(customConnectorByIdContract.update, ({ body, respond }) => {
+    if (!connector || body.kind === "mcp" || !body.oauthConfig) {
+      throw new Error("Expected OAuth HTTP connector update");
+    }
+    updated.push(body);
+    const updatedConnector = customConnectorHttpResponseSchema.parse({
+      ...connector,
+      displayName: body.displayName,
+      prefixTemplates: body.prefixTemplates,
+      fields: body.fields,
+      headerInjections: body.headerInjections,
+      queryInjections: body.queryInjections,
+      storageVersion: body.storageVersion ?? connector.storageVersion,
+      oauthConfig: publicOAuthConfig(body.oauthConfig),
+      connected: false,
+      missingRequiredFields: ["oauth"],
+    });
+    connector = updatedConnector;
+    return respond(200, updatedConnector);
+  });
+  context.mocks.api(
+    customConnectorOAuth2Contract.start,
+    ({ body, respond }) => {
+      expect(body.account).toStrictEqual({ intent: "add" });
+      if (!connector) {
+        throw new Error("Expected OAuth connector");
+      }
+      connector = {
+        ...connector,
+        connected: true,
+        missingRequiredFields: [],
+      };
+      const connectedAccountId =
+        connector.connectedAccountId ?? crypto.randomUUID();
+      connector = { ...connector, connectedAccountId };
+      completedAttempts.set(oauthAttemptId, connectedAccountId);
+      authWindow.close();
+      return respond(200, {
+        result: "authorization",
+        oauthAttemptId,
+        authorizationUrl: "https://oauth.acme.test/authorize?state=ui-test",
+      });
+    },
+  );
+  mockCustomAccountSummary(() => {
+    return connector;
+  });
+  await setupCustomPage();
   click(
     await waitFor(() => {
       return getConnectorAction("button", "More options");
@@ -1064,9 +1193,7 @@ test("Configure and maintain OAuth for a custom HTTP connector", async () => {
   expect(confirmation).toHaveTextContent(
     /disconnect every member currently connected with OAuth/u,
   );
-
   click(getConnectorAction("button", "Save and disconnect", confirmation));
-
   await waitFor(() => {
     return expect(updated).toHaveLength(1);
   });

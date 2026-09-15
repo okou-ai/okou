@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.3](https://github.com/vm0-ai/vm0/compare/ably-subscriber-v1.1.2...ably-subscriber-v1.1.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **ably-subscriber:** keep message delivery live during token renewal ([#34290](https://github.com/vm0-ai/vm0/issues/34290)) ([68f12b0](https://github.com/vm0-ai/vm0/commit/68f12b0d5001e5a8667c8d3bc862fcb1dc797ccf))
+
+## [1.1.2](https://github.com/vm0-ai/vm0/compare/ably-subscriber-v1.1.1...ably-subscriber-v1.1.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **ably-subscriber:** bound smoke-test publish duration ([#33541](https://github.com/vm0-ai/vm0/issues/33541)) ([ae77664](https://github.com/vm0-ai/vm0/commit/ae77664960d0074905f2d10be7c06f7ea29ad584))
+
 ## [1.1.1](https://github.com/vm0-ai/vm0/compare/ably-subscriber-v1.1.0...ably-subscriber-v1.1.1) (2026-09-09)
 
 

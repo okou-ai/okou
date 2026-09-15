@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
-import { EVENT } from "@axiomhq/logging";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { connectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -146,7 +145,7 @@ const DEFAULT_API_VERSION = apiPackage.version;
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES = 32 * 1024 * 1024;
 const EXPECTED_CAPABILITY_DIGEST =
-  "sha256:b87fcf9228ccc330b86d25a2df94d4a94ea8d27cb459e048ba6c6b2d866cf5b4";
+  "sha256:9a8c84f91a49b1ab88d0771fda4bfa91816dcd9d471d98d2d3eb2f2aafbc4627";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
@@ -1430,34 +1429,6 @@ async function expectCatalogUnavailableRequestError(
     reason,
     code,
   });
-
-  const [message, fields] =
-    context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
-  expect(message).toBe(
-    "Unhandled request error: Accepted external connector catalog is unavailable",
-  );
-  const logFields = fields as Record<PropertyKey, unknown>;
-  expect(logFields).toMatchObject({
-    type: "unhandled_request_error",
-    errorSummary: "Accepted external connector catalog is unavailable",
-    method: "POST",
-    route: "/api/runners/builtin-firewalls/resolve",
-    errorCode: code,
-    error: expect.objectContaining({
-      name: "ExternalConnectorCatalogUnavailableError",
-      message: "Accepted external connector catalog is unavailable",
-      reason,
-      code,
-    }),
-  });
-  expect(logFields[EVENT]).toMatchObject({
-    source: "api",
-    type: "unhandled_request_error",
-    errorSummary: "Accepted external connector catalog is unavailable",
-    method: "POST",
-    route: "/api/runners/builtin-firewalls/resolve",
-    errorCode: code,
-  });
 }
 
 interface VolumeStorageState {
@@ -2344,9 +2315,9 @@ describe("connector catalog valid lifecycle", () => {
     ).resolves.toHaveLength(0);
   });
 
-  it("applies compatibility, authored visibility, and request rollout filters", async () => {
+  it("applies compatibility and authored visibility to released connectors", async () => {
     configureSource();
-    const gated = publicAuthMethod({
+    const apiToken = publicAuthMethod({
       id: "api-token",
       grantKind: "manual",
       manual: true,
@@ -2366,13 +2337,13 @@ describe("connector catalog valid lifecycle", () => {
       version: "2026-07-15.external-request-filters",
       connectorSlug: "cal-com",
       mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [gated, visible, hidden]);
+        setArtifactAuthMethods(artifact, [apiToken, visible, hidden]);
       },
       mutateRuntime: (artifact) => {
         setArtifactAuthMethods(artifact, [
           manualPrivateAuthMethod({
             id: "api-token",
-            prefix: "GATED",
+            prefix: "API_TOKEN",
             access: "static",
             revoke: "none",
           }),
@@ -2401,37 +2372,12 @@ describe("connector catalog valid lifecycle", () => {
       context,
       routes: connectorCatalogRoutes,
     })(connectorCatalogContract);
-    const featureClient = setupApp({
-      context,
-      routes: featureSwitchesRoutes,
-    })(featureSwitchesContract);
-
-    const disabled = await accept(catalogClient.list({ headers }), [200]);
-    expect(disabled.body.connectors[0]?.authMethods).toStrictEqual([
-      {
-        id: "cli",
-        label: "cli auth",
-        description: null,
-        grantKind: "manual",
-      },
-    ]);
-
-    await accept(
-      featureClient.update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.CalComConnector]: true },
-        },
-      }),
-      [200],
-    );
-    const enabled = await accept(catalogClient.list({ headers }), [200]);
+    const released = await accept(catalogClient.list({ headers }), [200]);
     expect(
-      enabled.body.connectors[0]?.authMethods.map((method) => {
+      released.body.connectors[0]?.authMethods.map((method) => {
         return method.id;
       }),
     ).toStrictEqual(["api-token", "cli"]);
-    await accept(featureClient.delete({ headers }), [200]);
 
     const graduated = buildRelease({
       version: "2026-07-15.external-graduated-switch",
@@ -4357,7 +4303,7 @@ describe("connector catalog valid lifecycle", () => {
       orgId,
       status: "active",
       supportByok: true,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
     });
     const initialOauth = await connectorsApi.startOauth(
       actor,
@@ -6989,71 +6935,90 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
   });
 
-  it("skips large artifacts for a deterministically rejected candidate", async () => {
-    configureSource();
-    const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
-    serveObjects(catalogObjects([accepted], accepted));
-    await syncCatalog();
+  it.each(["invalid-artifact", "relationship-mismatch"])(
+    "retains the active catalog while reusing a cached %s rejection",
+    async (failureCode) => {
+      configureSource();
+      const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
+      serveObjects(catalogObjects([accepted], accepted));
+      await syncCatalog();
 
-    const invalid = buildRelease({
-      version: "2026-07-15.cache-invalid",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([accepted, invalid], invalid));
-    const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
-    const freshRejection = await syncCatalog();
-    expect(freshRejection.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      lastAttempt: {
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: {
-        catalogVersion: invalid.version,
-        failureCode: "invalid-artifact",
-        backendVersion: DEFAULT_API_VERSION,
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
-    ).toBe(2);
+      const invalid = buildRelease({
+        version: "2026-07-15.cache-invalid",
+        mutateCatalog: (artifact) => {
+          if (failureCode === "relationship-mismatch") {
+            firstRecord(artifact.connectors, "connectors").category = "unknown";
+          } else {
+            artifact.extra = true;
+          }
+        },
+      });
+      serveObjects(catalogObjects([accepted, invalid], invalid));
+      const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
+      const freshRejection = await syncCatalog();
+      expect(freshRejection.body).toMatchObject({
+        outcome: "rejected",
+        state: "stale",
+        active: { catalogVersion: accepted.version },
+        lastAttempt: {
+          failureCode,
+          reusedCachedRejection: false,
+        },
+        rejectedCandidate: {
+          catalogVersion: invalid.version,
+          failureCode,
+          backendVersion: DEFAULT_API_VERSION,
+        },
+      });
+      expect(
+        context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
+      ).toBe(2);
 
-    const callsBeforeCachedRejection = context.mocks.s3.send.mock.calls.length;
-    const cachedRejection = await syncCatalog();
-    expect(cachedRejection.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      lastAttempt: {
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: true,
-      },
-      rejectedCandidate: {
-        catalogVersion: invalid.version,
-        failureCode: "invalid-artifact",
-        backendVersion: DEFAULT_API_VERSION,
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(invalid.pointer),
-    });
-    expect(JSON.stringify(cachedRejection.body)).not.toContain(
-      invalid.catalogKey,
-    );
-    expect(JSON.stringify(cachedRejection.body)).not.toContain(
-      objectEtag(invalid.pointer),
-    );
-  });
+      const callsBeforeCachedRejection =
+        context.mocks.s3.send.mock.calls.length;
+      const cachedRejection = await syncCatalog();
+      expect(cachedRejection.body).toMatchObject({
+        outcome: "rejected",
+        state: "stale",
+        active: { catalogVersion: accepted.version },
+        lastAttempt: {
+          failureCode,
+          reusedCachedRejection: true,
+        },
+        rejectedCandidate: {
+          catalogVersion: invalid.version,
+          failureCode,
+          backendVersion: DEFAULT_API_VERSION,
+        },
+      });
+      expect(
+        context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
+      ).toBe(1);
+      expect(
+        commandInput(
+          context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
+        ),
+      ).toMatchObject({
+        Key: ACTIVE_KEY,
+        IfNoneMatch: objectEtag(invalid.pointer),
+      });
+      expect(JSON.stringify(cachedRejection.body)).not.toContain(
+        invalid.catalogKey,
+      );
+      expect(JSON.stringify(cachedRejection.body)).not.toContain(
+        objectEtag(invalid.pointer),
+      );
+      const recovered = buildRelease({ version: "2026-07-15.cache-recovered" });
+      serveObjects(catalogObjects([accepted, invalid, recovered], recovered));
+      expect((await syncCatalog()).body).toMatchObject({
+        outcome: "accepted",
+        state: "current",
+        active: { catalogVersion: recovered.version },
+        lastAttempt: { failureCode: null, reusedCachedRejection: false },
+        rejectedCandidate: null,
+      });
+    },
+  );
 
   it("revalidates a rejection when the production backend version advances", async () => {
     configureSource();
@@ -7432,14 +7397,13 @@ describe("connector catalog rejection and latest-valid retention", () => {
     );
   });
 
-  it("does not return or log raw source failures", async () => {
+  it("does not return raw source failures", async () => {
     const bucket = configureSource();
     const privateError =
       `credential=${PRIVATE_VALUE} bucket=${bucket} key=${ACTIVE_KEY} ` +
       "url=https://signed.example.test/private";
     context.mocks.s3.send.mockRejectedValue(new Error(privateError));
     const response = await syncCatalog();
-    const logged = JSON.stringify(context.mocks.axiomLogging.warn.mock.calls);
 
     expectRejectedBeforeAcceptance(response.body, "source-unavailable");
     for (const privateText of [
@@ -7449,7 +7413,6 @@ describe("connector catalog rejection and latest-valid retention", () => {
       "signed.example.test",
     ]) {
       expect(JSON.stringify(response.body)).not.toContain(privateText);
-      expect(logged).not.toContain(privateText);
     }
   });
 });

@@ -69,6 +69,7 @@ await runPiOfficialRpcMode({
     provider: "openai",
     model: "gpt-5.6-terra",
     dialect: "openai-responses",
+    transport: "sse",
     apiKey: "synthetic-key",
     baseUrl: "https://pending-tools.example/v1",
   },

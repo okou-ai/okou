@@ -39,10 +39,29 @@ if (!deepseekV4FlashCatalogModel) {
   throw new Error("DeepSeek V4 Flash model catalog entry is required");
 }
 
+const deepseekV41FlashCatalogModel = {
+  ...deepseekV4FlashCatalogModel,
+  slug: "deepseek-v4.1-flash",
+  display_name: "DeepSeek-V4.1-Flash",
+  input_modalities: ["text", "image"],
+};
+
+const DEEPSEEK_V4_1_FLASH_MODEL_CATALOG = {
+  ...DEEPSEEK_V4_FLASH_MODEL_CATALOG,
+  models: [deepseekV41FlashCatalogModel],
+};
+
 const DEEPSEEK_MODEL_CATALOG = {
   ...DEEPSEEK_V4_FLASH_MODEL_CATALOG,
   models: [
-    deepseekV4FlashCatalogModel,
+    {
+      ...deepseekV41FlashCatalogModel,
+      slug: "deepseek-flash",
+    },
+    {
+      ...deepseekV41FlashCatalogModel,
+      slug: "deepseek-v4-flash",
+    },
     {
       ...deepseekV4FlashCatalogModel,
       slug: "deepseek-v4-pro",
@@ -130,16 +149,16 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
 };
 
 export const DEFAULT_ORG_MODEL_POLICY_MODELS = [
+  "claude-fable-5-1",
   "gpt-6-astra",
   "gpt-5.6-luna",
-  "deepseek-v4-pro",
 ] as const satisfies readonly SupportedRunModel[];
 
 export const DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL =
-  "deepseek-v4-pro" as const satisfies SupportedRunModel;
+  "gpt-5.6-luna" as const satisfies SupportedRunModel;
 
 export const LIMITED_FREE1_DEFAULT_RUN_MODEL =
-  "deepseek-v4-pro" as const satisfies SupportedRunModel;
+  "gpt-5.6-luna" as const satisfies SupportedRunModel;
 
 export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
 
@@ -164,6 +183,7 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
+  "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
   "deepseek-v4-flash": "DeepSeek V4 Flash",
   "deepseek-v4-pro": "DeepSeek V4 Pro",
   "gpt-6-astra": "GPT 6 Astra",
@@ -336,6 +356,15 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
+  "deepseek-v4.1-flash": {
+    candidates: [
+      { concreteType: "deepseek", apiModel: "deepseek-flash" },
+      {
+        concreteType: "openrouter-codex",
+        apiModel: "deepseek/deepseek-v4.1-flash",
+      },
+    ],
+  },
   "deepseek-v4-flash": {
     candidates: [
       { concreteType: "deepseek" },
@@ -464,6 +493,7 @@ const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
 
 const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
   "gpt-5.6-luna",
+  "deepseek-v4.1-flash",
   "deepseek-v4-flash",
   "deepseek-v4-pro",
 ]);
@@ -498,6 +528,8 @@ export type ModelImageInputSupport = "supported" | "unsupported" | "unknown";
 const IMAGE_INPUT_SUPPORTED_MODELS = new Set([
   "gpt-6-astra",
   "openai/gpt-6-astra",
+  "deepseek-v4.1-flash",
+  "deepseek/deepseek-v4.1-flash",
   "claude-fable-5-1",
   "claude-opus-5",
   "claude-opus-4-8",
@@ -518,11 +550,19 @@ const IMAGE_INPUT_UNSUPPORTED_MODELS = new Set([
   "minimax/minimax-m2.5",
 ]);
 
+/** Pass the resolved concrete provider to recognize provider-specific aliases. */
 export function getModelImageInputSupport(
   model: string | null | undefined,
+  providerType?: ModelProviderType,
 ): ModelImageInputSupport {
   if (!model) {
     return "unknown";
+  }
+  if (
+    providerType === "deepseek" &&
+    (model === "deepseek-flash" || model === "deepseek-v4-flash")
+  ) {
+    return "supported";
   }
   const normalized = normalizeBuiltInModelId(model);
   if (
@@ -542,8 +582,9 @@ export function getModelImageInputSupport(
 
 export function modelSupportsImageInput(
   model: string | null | undefined,
+  providerType?: ModelProviderType,
 ): boolean {
-  return getModelImageInputSupport(model) === "supported";
+  return getModelImageInputSupport(model, providerType) === "supported";
 }
 
 /**
@@ -653,8 +694,12 @@ export const MODEL_PROVIDER_TYPES = {
       OPENAI_BASE_URL: "https://api.deepseek.com/",
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: ["deepseek-v4-flash", "deepseek-v4-pro"] as string[],
-    defaultModel: "deepseek-v4-flash",
+    models: [
+      "deepseek-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+    ] as string[],
+    defaultModel: "deepseek-flash",
   },
   "vercel-ai-gateway": {
     framework: "claude-code" as const,
@@ -707,6 +752,7 @@ export const MODEL_PROVIDER_TYPES = {
       "openai/gpt-5.6-terra",
       "openai/gpt-5.6-luna",
       "openai/gpt-5.5",
+      "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash",
       "deepseek/deepseek-v4-pro",
     ] as string[],
@@ -1033,6 +1079,7 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "openrouter-codex",
     "vercel-ai-gateway-codex",
   ],
+  "deepseek-v4.1-flash": ["built-in", "openrouter-codex"],
   "deepseek-v4-flash": ["built-in", "deepseek", "openrouter-codex"],
   "deepseek-v4-pro": ["built-in", "deepseek", "openrouter-codex"],
 } as const satisfies Record<ActiveRunModel, readonly ModelProviderType[]>;
@@ -1055,6 +1102,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
     "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
   },
   "openrouter-codex": {
+    "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash",
     "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
     "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
     "gpt-6-astra": "openai/gpt-6-astra",
@@ -1073,6 +1121,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
 
 const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
   {
+    "deepseek/deepseek-v4.1-flash": "deepseek-v4.1-flash",
     "deepseek/deepseek-v4-flash": "deepseek-v4-flash",
     "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
     "anthropic/claude-fable-5.1": "claude-fable-5-1",
@@ -1285,10 +1334,16 @@ export function getModelProviderCodexRuntimeConfig(
   return MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type];
 }
 
+const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
+  Partial<Record<ActiveRunModel, Record<string, unknown>>>
+> = {
+  "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
+};
+
 /**
- * Project a provider-owned Codex catalog record onto the model ID and provider
- * used at runtime. Returns undefined when no provider has authoritative
- * metadata for the logical model.
+ * Project a Codex catalog record onto the model ID and provider used at
+ * runtime. Returns undefined when no authoritative metadata is available for
+ * the logical model.
  */
 export function getModelProviderCodexCatalogForModel(
   logicalModel: string,
@@ -1297,12 +1352,27 @@ export function getModelProviderCodexCatalogForModel(
 ): Record<string, unknown> | undefined {
   const disableApplyPatch =
     runtimeProviderType === "openrouter-codex" &&
-    (logicalModel === "deepseek-v4-flash" ||
+    (logicalModel === "deepseek-v4.1-flash" ||
+      logicalModel === "deepseek-v4-flash" ||
       logicalModel === "deepseek-v4-pro");
-  for (const type of getProvidersForModel(logicalModel)) {
-    const sourceCatalog =
-      MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type]?.modelCatalog;
-    const sourceModels = sourceCatalog?.models;
+  const canonicalModel = normalizeRunModelId(logicalModel);
+  // The native V4 alias serves V4.1. Other providers keep the original
+  // legacy catalog until their upstream mapping is verified.
+  const overrideCatalog =
+    canonicalModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
+      ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
+      : isActiveRunModel(canonicalModel)
+        ? CODEX_MODEL_CATALOG_OVERRIDES[canonicalModel]
+        : undefined;
+  const sourceCatalogs = overrideCatalog
+    ? [overrideCatalog]
+    : getProvidersForModel(logicalModel).flatMap((type) => {
+        const sourceCatalog =
+          MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type]?.modelCatalog;
+        return sourceCatalog ? [sourceCatalog] : [];
+      });
+  for (const sourceCatalog of sourceCatalogs) {
+    const sourceModels = sourceCatalog.models;
     const sourceModel = Array.isArray(sourceModels)
       ? sourceModels.find(
           (model: unknown): model is Record<string, unknown> => {
@@ -1311,7 +1381,7 @@ export function getModelProviderCodexCatalogForModel(
               model !== null &&
               !Array.isArray(model) &&
               "slug" in model &&
-              model.slug === logicalModel
+              model.slug === canonicalModel
             );
           },
         )
@@ -1523,11 +1593,29 @@ export const orgModelPolicySchema = z.object({
   modelLabel: z.string(),
   isDefault: z.boolean(),
   defaultProviderType: modelProviderTypeSchema,
+  // Concrete built-in provider; other policies use defaultProviderType.
+  runtimeProviderType: modelProviderTypeSchema.nullable().optional(),
   credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),
   modelProviderSurfaceId: z.uuid().nullable().optional(),
   routeStatus: orgModelPolicyRouteStatusSchema,
   routeStatusReason: z.string().nullable(),
+  // Caller-specific, response-only routing. Optional across the B/C rollout.
+  // A candidate has not captured a concrete subscription account for a run.
+  memberEffective: z
+    .object({
+      providerType: modelProviderTypeSchema,
+      runtimeProviderType: modelProviderTypeSchema.nullable(),
+      credentialScope: modelProviderCredentialScopeSchema,
+      availability: z.enum([
+        "available",
+        "reconnect_required",
+        "unavailable",
+        "plan_restricted",
+      ]),
+      accountSelection: z.enum(["capture_required", "not_applicable"]),
+    })
+    .optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -1546,6 +1634,9 @@ export const updateOrgModelPolicySchema = z.object({
 export type UpdateOrgModelPolicy = z.infer<typeof updateOrgModelPolicySchema>;
 
 export const orgModelPoliciesResponseSchema = z.object({
+  // Administrative snapshot only. Optional while older APIs remain reachable.
+  revision: z.string().optional(),
+  writePreconditionRequired: z.boolean().optional(),
   policies: z.array(orgModelPolicySchema),
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
@@ -1556,6 +1647,7 @@ export type OrgModelPoliciesResponse = z.infer<
 >;
 
 export const updateOrgModelPoliciesRequestSchema = z.object({
+  revision: z.string().optional(),
   policies: z.array(updateOrgModelPolicySchema),
 });
 

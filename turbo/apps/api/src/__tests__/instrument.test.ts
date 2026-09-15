@@ -30,6 +30,10 @@ describe("instrument", () => {
         },
         serviceName: "vm0-api",
         traceExporter: expect.any(OTLPTraceExporter),
+        idGenerator: {
+          generateSpanId: expect.any(Function),
+          generateTraceId: expect.any(Function),
+        },
       }),
     );
   });
@@ -66,6 +70,7 @@ describe("instrument", () => {
 
     expect(context.mocks.sentry.init).toHaveBeenCalledWith({
       dsn: "https://examplePublicKey@o0.ingest.sentry.io/0",
+      enableLogs: false,
       environment: "production",
       initialScope: {
         tags: {

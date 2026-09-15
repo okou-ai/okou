@@ -1,3 +1,4 @@
+import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
@@ -7,6 +8,7 @@ import {
   type RunnerSshObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
@@ -121,15 +123,18 @@ async function fixture(runtimeOverrides: Partial<RuntimeBody> = {}) {
       body: {
         displayName: "SSH fixture",
         host: "ssh.example.com",
-        username: "deploy",
-        privateKey,
-        passphrase,
+        credential: inlineSshKey("deploy", privateKey, passphrase),
       },
     }),
     [201],
   );
   const runtime = await createRuntime(owner, runtimeOverrides);
-  return { ...owner, ...runtime, connectionId: connection.body.id };
+  return {
+    ...owner,
+    ...runtime,
+    connectionId: connection.body.id,
+    credentialId: connection.body.credentialId,
+  };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 
@@ -153,10 +158,11 @@ describe("SSH authority invalidation", () => {
     const updates = [
       { host: "changed.example.com" },
       {
-        credentials: {
-          privateKey: "rotated-private-key",
-          passphrase: "rotated-passphrase",
-        },
+        credential: inlineSshKey(
+          "deploy",
+          "rotated-private-key",
+          "rotated-passphrase",
+        ),
       },
     ];
     let generation = 1;
@@ -233,7 +239,10 @@ describe("SSH authority invalidation", () => {
       config().update({
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
-        body: { expectedGeneration: 1, username: "new-login" },
+        body: {
+          expectedGeneration: 1,
+          credential: inlineSshKey("new-login", privateKey, passphrase),
+        },
       }),
       [200],
     );
@@ -267,7 +276,10 @@ describe("SSH authority invalidation", () => {
           config().update({
             headers: sessionHeaders,
             params: { connectionId: f.connectionId },
-            body: { expectedGeneration: 1, username },
+            body: {
+              expectedGeneration: 1,
+              credential: inlineSshKey(username, privateKey, passphrase),
+            },
           }),
           [200, 409],
         );
@@ -376,6 +388,180 @@ beforeEach(() => {
   useSecretKmsProbe();
 });
 
+describe("shared credential runtime authority", () => {
+  it("rotates every referencing host, preserves pins, invalidates the Run, and rebinds only one host", async () => {
+    const f = await fixture({ runnerGroup: `ssh-shared-${randomUUID()}` });
+    const credentials = setupApp({ context, routes: sshConnectionsRoutes })(
+      sshCredentialsContract,
+    );
+    const params = { credentialId: f.credentialId };
+    const shared = await accept(
+      config().create({
+        headers: sessionHeaders,
+        body: {
+          displayName: "Shared host",
+          host: "shared.example.com",
+          credential: { id: f.credentialId },
+        },
+      }),
+      [201],
+    );
+    const unrelated = await accept(
+      config().create({
+        headers: sessionHeaders,
+        body: {
+          displayName: "Unrelated",
+          host: "unrelated.example.com",
+          credential: inlineSshKey("other", "unrelated-key"),
+        },
+      }),
+      [201],
+    );
+    await pin(f);
+    const before = await list(f);
+    context.mocks.ably.publish.mockClear();
+    await accept(
+      credentials.update({
+        headers: sessionHeaders,
+        params,
+        body: { expectedRevision: 1, name: "Renamed login" },
+      }),
+      [200],
+    );
+    const renamed = await list(f);
+    expect(
+      renamed.map(({ generation }) => {
+        return generation;
+      }),
+    ).toStrictEqual(
+      before.map(({ generation }) => {
+        return generation;
+      }),
+    );
+    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+      ["ssh:changed", { orgId: f.orgId }],
+    ]);
+
+    context.mocks.ably.publish.mockClear();
+    const password = "  password-canary\n";
+    await accept(
+      credentials.update({
+        headers: sessionHeaders,
+        params,
+        body: {
+          expectedRevision: 2,
+          username: "operator",
+          authentication: { method: "password", password },
+        },
+      }),
+      [200],
+    );
+    expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+      ["ssh:changed", { orgId: f.orgId }],
+      ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
+    ]);
+    const rotated = await list(f);
+    for (const host of rotated) {
+      const previous = before.find(({ id }) => {
+        return id === host.id;
+      });
+      expect(host.generation).toBe(
+        (previous?.generation ?? 0) +
+          (host.credentialId === f.credentialId ? 1 : 0),
+      );
+      expect(host.learnedHostKey).toStrictEqual(previous?.learnedHostKey);
+    }
+    for (const connectionId of [f.connectionId, shared.body.id]) {
+      const resolved = await resolve(f, { connectionId });
+      expect(resolved).toMatchObject({
+        outcome: "resolved_password",
+        username: "operator",
+        password,
+      });
+      expect(resolved).not.toHaveProperty("privateKey");
+      expect(resolved).not.toHaveProperty("passphrase");
+    }
+    await expect(
+      resolve(f, { connectionId: unrelated.body.id }),
+    ).resolves.toMatchObject({
+      outcome: "resolved",
+      username: "other",
+      privateKey: "unrelated-key",
+    });
+    const stalePin = await pin({ ...f, connectionId: shared.body.id }, 1);
+    expect(stalePin.outcome).toBe("configuration_changed");
+    const staleObservation = await accept(
+      client().observe({
+        params: { runId: f.runId },
+        headers: runnerHeaders,
+        body: {
+          connectionId: shared.body.id,
+          runnerIdentity: f.runnerIdentity,
+          expectedGeneration: 1,
+          observedAt: nowDate().toISOString(),
+          failureReason: "authentication_failed",
+        },
+      }),
+      [200],
+    );
+    expect(staleObservation.body.outcome).toBe("ignored");
+
+    await accept(
+      config().update({
+        headers: sessionHeaders,
+        params: { connectionId: shared.body.id },
+        body: {
+          expectedGeneration: 2,
+          credential: { id: unrelated.body.credentialId },
+        },
+      }),
+      [200],
+    );
+    await expect(
+      resolve(f, { connectionId: shared.body.id }),
+    ).resolves.toMatchObject({
+      outcome: "resolved",
+      generation: 3,
+      username: "other",
+      privateKey: "unrelated-key",
+    });
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved_password",
+      password,
+    });
+    await accept(
+      credentials.update({
+        headers: sessionHeaders,
+        params,
+        body: {
+          expectedRevision: 3,
+          authentication: {
+            method: "private_key",
+            privateKey: "new-key",
+            passphrase: null,
+          },
+        },
+      }),
+      [200],
+    );
+    const restored = await resolve(f);
+    expect(restored).toMatchObject({
+      outcome: "resolved",
+      username: "operator",
+      privateKey: "new-key",
+      passphrase: null,
+    });
+    expect(restored).not.toHaveProperty("password");
+    await expect(
+      resolve(f, { connectionId: shared.body.id }),
+    ).resolves.toMatchObject({
+      outcome: "resolved",
+      generation: 3,
+      privateKey: "unrelated-key",
+    });
+  });
+});
+
 describe("SSH connection observations", () => {
   async function observe(
     f: Fixture,
@@ -417,9 +603,11 @@ describe("SSH connection observations", () => {
           body: {
             displayName: "Independent login",
             host: "SSH.example.com.",
-            username,
-            privateKey: "sibling-private-key",
-            passphrase: "sibling-passphrase",
+            credential: inlineSshKey(
+              username,
+              "sibling-private-key",
+              "sibling-passphrase",
+            ),
           },
         }),
         [201],
@@ -473,11 +661,11 @@ describe("SSH connection observations", () => {
           params: { connectionId: f.connectionId },
           body: {
             expectedGeneration: 2,
-            username: "rotated-login",
-            credentials: {
-              privateKey: "rotated-private-key",
-              passphrase: "rotated-passphrase",
-            },
+            credential: inlineSshKey(
+              "rotated-login",
+              "rotated-private-key",
+              "rotated-passphrase",
+            ),
           },
         }),
         [200],
@@ -603,7 +791,7 @@ describe("SSH connection observations", () => {
         params: { connectionId: f.connectionId },
         body: {
           expectedGeneration: 2,
-          credentials: { privateKey: "replacement" },
+          credential: inlineSshKey("deploy", "replacement"),
         },
       }),
       [200],
@@ -730,7 +918,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("rechecks authority after waiting for an owner connection lock", async () => {
-    for (const change of ["revoke", "disable", "delete-credential"] as const) {
+    for (const change of ["revoke", "disable"] as const) {
       const f = await fixture({
         triggerSource: "automation-schedule",
         chat: false,
@@ -771,17 +959,10 @@ describe("official Runner SSH authority", () => {
             .toBe(true);
           if (change === "revoke") {
             await access(f, false);
-          } else if (change === "disable") {
+          } else {
             await updateFeatureSwitchesForUser(context, f, {
               [FeatureSwitchKey.SshAccess]: false,
             });
-          } else {
-            await accept(
-              stateClient().action({
-                body: { action: "delete-credential", ...scope },
-              }),
-              [200],
-            );
           }
         })(),
         releaseLock,
@@ -907,22 +1088,29 @@ describe("official Runner SSH authority", () => {
       pin({ ...f, connectionId: foreign.connectionId }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect((await list(foreign))[0]?.learnedHostKey).toBeNull();
-    // Keep the user and eligible staff Run unchanged: organization scoping must
-    // deny this independently of the hard staff gate and user ownership check.
-    await accept(
-      stateClient().action({
+    // Same user, different organization must not grant access.
+    const hiddenOwner = { ...f, orgId: `org_hidden_${randomUUID()}` };
+    await updateFeatureSwitchesForUser(context, hiddenOwner, {
+      [FeatureSwitchKey.SshAccess]: true,
+    });
+    authenticate(hiddenOwner);
+    const hidden = await accept(
+      config().create({
+        headers: sessionHeaders,
         body: {
-          action: "move-connection-org",
-          orgId: f.orgId,
-          userId: f.userId,
-          connectionId: f.connectionId,
-          targetOrgId: `org_hidden_${randomUUID()}`,
+          displayName: "Hidden host",
+          host: "hidden.example.com",
+          credential: inlineSshKey("deploy", privateKey),
         },
       }),
-      [200],
+      [201],
     );
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
-    await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(
+      resolve(f, { connectionId: hidden.body.id }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(
+      pin({ ...f, connectionId: hidden.body.id }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(kms.decryptCalls).toBe(0);
   });
 
@@ -1009,16 +1197,13 @@ describe("official Runner SSH authority", () => {
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.SshAccess]: true,
     });
+    authenticate(f);
     await accept(
-      stateClient().action({
-        body: {
-          action: "delete-credential",
-          orgId: f.orgId,
-          userId: f.userId,
-          connectionId: f.connectionId,
-        },
+      config().delete({
+        headers: sessionHeaders,
+        params: { connectionId: f.connectionId },
       }),
-      [200],
+      [204],
     );
     await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     await expect(pin(f)).resolves.toStrictEqual({ outcome: "unavailable" });
@@ -1038,8 +1223,7 @@ describe("official Runner SSH authority", () => {
         headers: sessionHeaders,
         body: {
           expectedGeneration: 2,
-          username: "new-user",
-          credentials: { privateKey: "rotated-key", passphrase: null },
+          credential: inlineSshKey("new-user", "rotated-key"),
         },
       }),
       [200],

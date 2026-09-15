@@ -1,4 +1,3 @@
-import { stopAndTranscribe$ } from "../voice-io/voice-io-stt.ts";
 import {
   createComposerTaskChipsSignals,
   type ComposerTaskChipsSignals,
@@ -13,7 +12,7 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { INTRO_VIDEO_TEMPLATE_ID } from "@okouai/core/intro-video-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -78,8 +77,8 @@ type ComposerEditorSignals = Pick<
   | "insertPromptMarkdown$"
   | "insertUserMessage$"
   | "insertText$"
-  | "appendText$"
   | "selectOrAppendText$"
+  | "replacePromptText$"
 > & {
   readonly singleLineOnMobile: boolean;
 };
@@ -96,6 +95,8 @@ type ComposerSuggestionSignals = Pick<
   | "chatThreadSuggestions$"
   | "selectedSuggestionIndex$"
   | "setSelectedSuggestionIndex$"
+  | "previewSuggestionIndex$"
+  | "previewSuggestion$"
   | "closeSuggestionMenu$"
   | "insertAgent$"
   | "insertChatThread$"
@@ -343,8 +344,8 @@ function composerEditorSignals(
     insertPromptMarkdown$: composer.insertPromptMarkdown$,
     insertUserMessage$: composer.insertUserMessage$,
     insertText$: composer.insertText$,
-    appendText$: composer.appendText$,
     selectOrAppendText$: composer.selectOrAppendText$,
+    replacePromptText$: composer.replacePromptText$,
   };
 }
 
@@ -367,6 +368,8 @@ function composerSuggestionSignals(
     chatThreadSuggestions$: composer.chatThreadSuggestions$,
     selectedSuggestionIndex$: composer.selectedSuggestionIndex$,
     setSelectedSuggestionIndex$: composer.setSelectedSuggestionIndex$,
+    previewSuggestionIndex$: composer.previewSuggestionIndex$,
+    previewSuggestion$: composer.previewSuggestion$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     insertAgent$: composer.insertAgent$,
     insertChatThread$: composer.insertChatThread$,
@@ -518,7 +521,6 @@ function createComposerVoiceInput(
     },
   );
   return createComposerVoiceInputSignals(
-    workflowComposer.appendText$,
     deliverText$,
     workflowComposer.readVoiceContext$,
     lastAssistantMessage$,
@@ -551,6 +553,13 @@ export function createComposerSignals(
     image: options.imageModel !== undefined,
     video: options.videoModel !== undefined,
   });
+  const taskChips = createComposerTaskChipsSignals(create, {
+    insertTemplate$: workflowComposer.insertTemplate$,
+    insertPrompt$: workflowComposer.replacePromptText$,
+    openTemplatePicker$: workflowComposer.openTemplatePicker$,
+    focusEditor$: workflowComposer.focus$,
+    saveDraft$: options.draft.save$,
+  });
   const voice = createComposerVoiceInput(
     options,
     workflowComposer,
@@ -561,7 +570,7 @@ export function createComposerSignals(
     eventSignals,
     workflowComposer,
     ui.videoOptions,
-    { voice, create },
+    { voice, create, taskChips },
   );
   const fileInput = createComposerFileInputSignals();
   const workflowPrompt = createComposerWorkflowPromptSignals(
@@ -600,13 +609,7 @@ export function createComposerSignals(
   return {
     agentId: options.agentId,
     create,
-    taskChips: createComposerTaskChipsSignals(create, {
-      insertTemplate$: workflowComposer.insertTemplate$,
-      insertPrompt$: workflowComposer.selectOrAppendText$,
-      openTemplatePicker$: workflowComposer.openTemplatePicker$,
-      focusEditor$: workflowComposer.focus$,
-      saveDraft$: options.draft.save$,
-    }),
+    taskChips,
     editor: composerEditorSignals(workflowComposer, options.singleLineOnMobile),
     voice,
     feedback: workflowComposer.feedback,
@@ -763,8 +766,8 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
 
 /**
  * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Nothing is sent when the run
- * would use that model's defaults anyway.
+ * model the user changed after setting them. Creative Video sends every
+ * displayed parameter, including the model's defaults.
  */
 function createVideoRunOptionsSignal(
   videoModel: ComposerVideoModelSignals | undefined,
@@ -775,9 +778,6 @@ function createVideoRunOptionsSignal(
       return undefined;
     }
     const patch = get(videoOptions.videoRunOptions$);
-    if (Object.keys(patch).length === 0) {
-      return undefined;
-    }
     const model = await get(videoModel.effectiveVideoModel$);
     signal.throwIfAborted();
     return videoRunOptionsForSend(patch, model);
@@ -820,13 +820,21 @@ function createComposerPrimaryActionSignal(args: {
   });
 }
 
-function createSubmitCurrentInput(
-  options: CreateComposerSignalsOptions,
-  workflowComposer: WorkflowComposerSignals,
-  videoOptions: ComposerVideoOptionsSignals,
-  voice: ComposerVoiceInputSignals,
-  create: ComposerCreateSignals,
-) {
+function createSubmitCurrentInput({
+  options,
+  workflowComposer,
+  videoOptions,
+  voice,
+  create,
+  taskChips,
+}: {
+  readonly options: CreateComposerSignalsOptions;
+  readonly workflowComposer: WorkflowComposerSignals;
+  readonly videoOptions: ComposerVideoOptionsSignals;
+  readonly voice: ComposerVoiceInputSignals;
+  readonly create: ComposerCreateSignals;
+  readonly taskChips: ComposerTaskChipsSignals;
+}) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
   const readVideoRunOptions$ = createVideoRunOptionsSignal(
@@ -843,8 +851,6 @@ function createSubmitCurrentInput(
       if (action !== "send" && action !== "queue") {
         return false;
       }
-      await set(stopAndTranscribe$, signal);
-      signal.throwIfAborted();
       if (!get(draft.attachmentUploadsReady$)) {
         return false;
       }
@@ -866,8 +872,7 @@ function createSubmitCurrentInput(
           message?.parts.some((part) => {
             return (
               part.type === "template" &&
-              part.template.type === "video" &&
-              part.template.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID
+              generationTemplateKind(part.template) === "intro-video"
             );
           })
         ) {
@@ -887,10 +892,9 @@ function createSubmitCurrentInput(
         return false;
       }
       const mode = get(create.mode$);
-      const videoRunOptions =
-        mode !== null && mode !== "video"
-          ? undefined
-          : await set(readVideoRunOptions$, signal);
+      const videoRunOptions = get(create.creativeVideo$)
+        ? await set(readVideoRunOptions$, signal)
+        : undefined;
       signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
       const additionalInfo = get(create.enabled$)
@@ -898,6 +902,9 @@ function createSubmitCurrentInput(
             mode,
             videoRunOptions,
             get(create.presentationSlideCount$),
+            get(taskChips.task$) === "visualization"
+              ? get(taskChips.visualization.preferences$)
+              : undefined,
           )
         : undefined;
       const editorDocument = additionalInfo
@@ -908,7 +915,7 @@ function createSubmitCurrentInput(
             additionalInfo,
           )
         : submission.editorDocument;
-      return await set(
+      const submitted = await set(
         options.submitMessage$,
         action,
         {
@@ -919,6 +926,10 @@ function createSubmitCurrentInput(
         },
         signal,
       );
+      if (submitted) {
+        set(videoOptions.resetVideoRunOptions$);
+      }
+      return submitted;
     },
   );
 }
@@ -931,7 +942,12 @@ function createComposerSubmissionSignals(
   {
     voice,
     create,
-  }: { voice: ComposerVoiceInputSignals; create: ComposerCreateSignals },
+    taskChips,
+  }: {
+    voice: ComposerVoiceInputSignals;
+    create: ComposerCreateSignals;
+    taskChips: ComposerTaskChipsSignals;
+  },
 ) {
   const { state$: voiceState$, owner$ } = voice;
   const invocation$ = state<{
@@ -949,13 +965,14 @@ function createComposerSubmissionSignals(
     voiceState$,
     createPickerOpen$: create.pickerOpen$,
   });
-  const submitCurrentInput$ = createSubmitCurrentInput(
+  const submitCurrentInput$ = createSubmitCurrentInput({
     options,
     workflowComposer,
     videoOptions,
     voice,
     create,
-  );
+    taskChips,
+  });
   const activatePrimaryAction$ = command(
     async (
       { get, set },

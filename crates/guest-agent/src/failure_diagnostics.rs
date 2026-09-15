@@ -256,6 +256,11 @@ fn cli_result_failure_diagnostic_for_config(
     {
         diagnostic = diagnostic.with_claude_num_turns(result.num_turns);
     }
+    if matches!(config.framework, env::Framework::Pi)
+        && let Some(result) = jsonl_result
+    {
+        diagnostic.model_request = result.model_request;
+    }
     diagnostic
 }
 
@@ -269,7 +274,13 @@ fn with_cli_failure_reason(
         failure_message.message.as_str(),
     )
     .or(failure_message.failure_reason)
-    {
+    .or_else(|| {
+        (diagnostic.framework == AgentFramework::Pi
+            && diagnostic
+                .model_request
+                .is_some_and(|request| request.http_status == Some(429)))
+        .then_some(FailureReason::ProviderRateLimited)
+    }) {
         diagnostic.with_failure_reason(reason)
     } else {
         diagnostic

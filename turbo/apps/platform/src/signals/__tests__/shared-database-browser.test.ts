@@ -3,7 +3,10 @@ import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/cli
 import { expect, vi } from "vitest";
 
 import { setupPage } from "../../__tests__/page-helper.ts";
-import { mockedClerk } from "../../__tests__/mock-auth.ts";
+import {
+  installMockedClerkBootstrap,
+  mockedClerk,
+} from "../../__tests__/mock-auth.ts";
 import type { SharedDatabasePortLike } from "../../shared-database/bridge.ts";
 import { sharedDatabaseClientMessageSchema } from "../../shared-database/protocol.ts";
 import { setupSharedDatabaseBridge$ } from "../shared-database-browser.ts";
@@ -11,6 +14,7 @@ import {
   bridgeConnected$,
   installedSharedDatabaseBridge$,
 } from "../shared-database-bridge-state.ts";
+import { setupClerkUser$ } from "../auth.ts";
 import { setRootSignal$ } from "../root-signal.ts";
 import { detach, Reason } from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
@@ -128,6 +132,7 @@ function installSharedWorkerMock(): {
 function setupBridge(): void {
   context.store.set(setRootSignal$, context.signal);
   const clerk = context.mocks.clerk();
+  installMockedClerkBootstrap(context.signal);
   clerk.user(
     {
       id: "shared-worker-user",
@@ -140,6 +145,13 @@ function setupBridge(): void {
     activeOrg: { id: "shared-worker-org", name: "Shared Worker Org" },
     memberships: [{ id: "shared-worker-org" }],
   });
+  // Bootstrap owns `clerkUser$` in production; this test drives the bridge
+  // directly, so it has to claim the same owner.
+  detach(
+    context.store.set(setupClerkUser$, context.signal),
+    Reason.Daemon,
+    "test clerk user owner",
+  );
   detach(
     context.store.set(setupSharedDatabaseBridge$, context.signal),
     Reason.Daemon,
@@ -147,7 +159,7 @@ function setupBridge(): void {
   );
 }
 
-test("Pass only the page identity to the shared worker", async () => {
+test("Pass the page identity through the Vite shared worker URL", async () => {
   context.mocks.browser.url("https://app.okou.ai/chats");
   const { constructorCalls, workers } = installSharedWorkerMock();
   setupBridge();
@@ -157,10 +169,9 @@ test("Pass only the page identity to the shared worker", async () => {
 
   const workerUrl = new URL(String(constructorCalls[0]!.scriptURL));
   expect(workerUrl.origin).toBe("https://app.okou.ai");
-  expect(Object.fromEntries(workerUrl.searchParams)).toStrictEqual({
-    orgId: "shared-worker-org",
-    userId: "shared-worker-user",
-  });
+  expect(workerUrl.search).toMatch(/[?&](?:sharedworker|worker_file)(?:&|$)/u);
+  expect(workerUrl.searchParams.get("orgId")).toBe("shared-worker-org");
+  expect(workerUrl.searchParams.get("userId")).toBe("shared-worker-user");
   expect(constructorCalls[0]!.options).toStrictEqual({
     name: "okou_shared-worker-user_shared-worker-org",
     type: "module",

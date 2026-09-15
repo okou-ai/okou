@@ -1,7 +1,5 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import "../css/vendor/uiw-react-markdown-preview-5.2.0.css";
-import { CopyButton } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
@@ -21,9 +19,10 @@ import type {
   ArtifactSignals,
 } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
+import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
 import { MathFormulaView } from "./math-formula.tsx";
@@ -72,6 +71,8 @@ function MediaImage({
   url,
   alt,
   load,
+  filename,
+  resolvedPreview,
   asLink = false,
   insideLink = false,
 }: {
@@ -79,6 +80,8 @@ function MediaImage({
   url: string;
   alt: string;
   load: ImageLoadSignals;
+  filename?: string;
+  resolvedPreview?: AttachmentPreviewSignals;
   asLink?: boolean;
   insideLink?: boolean;
 }) {
@@ -150,7 +153,12 @@ function MediaImage({
         const threadId = event.currentTarget.closest<HTMLElement>(
           "[data-chat-thread-container-id]",
         )?.dataset.chatThreadContainerId;
-        openImageLightbox(threadId ? { threadId, url } : url);
+        openImageLightbox({
+          threadId,
+          url,
+          filename,
+          preview: resolvedPreview,
+        });
       }}
       className={className}
     >
@@ -224,13 +232,15 @@ function ArtifactImage({
   signals: ArtifactSignals;
   alt: string;
 }) {
-  const src = useLastResolved(signals.resourceUrl$);
+  const src = useLastResolved(signals.thumbnailUrl$);
   return (
     <MediaImage
       src={src}
       url={signals.url}
       alt={alt}
       load={signals.previewImageLoad}
+      filename={signals.filename}
+      resolvedPreview={signals}
     />
   );
 }
@@ -313,9 +323,11 @@ function MediaParagraphRenderer({
   ...props
 }: ComponentPropsWithoutRef<"p"> & MarkdownNodeProp) {
   // Document cards contain block elements, which cannot live inside a <p>.
+  // The div leaves the renderer's `.wmde-markdown p` rhythm behind with the
+  // paragraph, so it restates that 6px block spacing.
   if (node && containsBlockArtifact(node)) {
     return (
-      <div {...props} className="okou-markdown-card">
+      <div {...props} data-slot="markdown-card" className="my-1.5">
         {children}
       </div>
     );
@@ -343,13 +355,10 @@ function MarkdownTimeRenderer({
   dateTime,
   ...rest
 }: MarkdownTimeProps) {
-  const features = useLastResolved(featureSwitch$);
   const browserLocales =
     navigator.languages.length > 0 ? navigator.languages : [navigator.language];
-  const timestamp = features?.[FeatureSwitchKey.MarkdownTime]
-    ? markdownDateTimeSchema.safeParse(dateTime)
-    : undefined;
-  const content = timestamp?.success
+  const timestamp = markdownDateTimeSchema.safeParse(dateTime);
+  const content = timestamp.success
     ? new Intl.DateTimeFormat(browserLocales, {
         dateStyle: "medium",
         timeStyle: "long",
@@ -376,21 +385,13 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
   // consecutive cards sit border-to-border.
   if (data?.card) {
     return (
-      <div className="okou-markdown-card">
+      <div data-slot="markdown-card" className="my-1.5">
         <MarkdownCardView card={data.card} />
       </div>
     );
   }
   if (typeof data?.copyCode === "string") {
-    return (
-      <CopyButton
-        type="button"
-        text={data.copyCode}
-        showTooltip={false}
-        className="copied"
-        data-code={data.copyCode}
-      />
-    );
+    return <CodeBlockCopyButton code={data.copyCode} />;
   }
   if (data?.mermaidSignals) {
     return <MermaidDiagramView signals={data.mermaidSignals} />;

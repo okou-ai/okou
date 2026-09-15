@@ -3,6 +3,7 @@ import { z } from "zod";
 import { connectorAuthMethodIdSchema } from "../../connector-identity";
 
 import { connectorCatalogVersionSchema, privateNameSchema } from "./common";
+import { ConnectorCatalogRelationshipError } from "./relationship-error";
 
 export const publicFieldIdSchema = z.string().regex(/^[a-z][a-zA-Z0-9]*$/u);
 export const internalOptionNameSchema = z
@@ -274,7 +275,10 @@ function assertUnique(args: {
   const seen = new Set<string>();
   for (const value of args.values) {
     if (seen.has(value)) {
-      throw new Error(`Duplicate ${args.label}: ${value}`);
+      throw new ConnectorCatalogRelationshipError(
+        "duplicate-identifier",
+        `Duplicate ${args.label}: ${value}`,
+      );
     }
     seen.add(value);
   }
@@ -340,12 +344,16 @@ function validateStorageDeclarations(
   });
   for (const name of storage.secretNames) {
     if (storage.variableNames.has(name)) {
-      throw new Error(`${methodRef} declares ${name} in both storage classes`);
+      throw new ConnectorCatalogRelationshipError(
+        "overlapping-storage-classes",
+        `${methodRef} declares ${name} in both storage classes`,
+      );
     }
   }
   for (const name of storage.platformSecrets) {
     if (storage.secretNames.has(name) || storage.variableNames.has(name)) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "platform-secret-storage-overlap",
         `${methodRef} declares platform secret ${name} in connector storage`,
       );
     }
@@ -376,7 +384,8 @@ function validateManualGrant(
     const expectedNames =
       field.storage === "secret" ? storage.secretNames : storage.variableNames;
     if (!expectedNames.has(field.privateName)) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "manual-field-storage",
         `${methodRef} manual field ${field.privateName} is missing from ${field.storage} storage`,
       );
     }
@@ -386,7 +395,8 @@ function validateManualGrant(
       normalizedPublicId === normalizedPrivateName ||
       normalizedPublicId.includes(normalizedPrivateName)
     ) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "private-derived-public-id",
         `${methodRef} public field id ${field.publicId} derives from a private name`,
       );
     }
@@ -425,7 +435,8 @@ function validateDeviceGrant(
         return choice.value === option.defaultValue;
       })
     ) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "device-option-default",
         `${methodRef}/${option.publicId} defaultValue is not an option`,
       );
     }
@@ -442,14 +453,18 @@ function validateClientGrantAlignment(
     "device-auth",
   ].includes(authMethod.grant.kind);
   if (grantNeedsClient !== (authMethod.client !== undefined)) {
-    throw new Error(`${methodRef} client does not match its grant kind`);
+    throw new ConnectorCatalogRelationshipError(
+      "auth-client-presence",
+      `${methodRef} client does not match its grant kind`,
+    );
   }
   if (
     authMethod.grant.kind === "auth-code" &&
-    authMethod.client?.clientType !== "confidential"
+    authMethod.client?.clientRegistration !== "static"
   ) {
-    throw new Error(
-      `${methodRef} auth-code grant requires a confidential client`,
+    throw new ConnectorCatalogRelationshipError(
+      "auth-code-client-registration",
+      `${methodRef} auth-code grant requires a static client`,
     );
   }
   if (
@@ -457,7 +472,10 @@ function validateClientGrantAlignment(
       authMethod.grant.kind === "device-auth") &&
     authMethod.client?.clientType !== "public"
   ) {
-    throw new Error(`${methodRef} grant requires a public client`);
+    throw new ConnectorCatalogRelationshipError(
+      "auth-client-type",
+      `${methodRef} grant requires a public client`,
+    );
   }
 }
 
@@ -472,7 +490,10 @@ function validateValueReferences(
       ? storage.secretNames.has(name) || storage.platformSecrets.has(name)
       : storage.variableNames.has(name);
     if (!known) {
-      throw new Error(`${methodRef} references undeclared storage ${valueRef}`);
+      throw new ConnectorCatalogRelationshipError(
+        "undeclared-storage-reference",
+        `${methodRef} references undeclared storage ${valueRef}`,
+      );
     }
   }
 }
@@ -487,7 +508,10 @@ function validateRefreshableSecrets(
   }
   for (const name of authMethod.access.refreshableSecrets) {
     if (!storage.secretNames.has(name)) {
-      throw new Error(`${methodRef} refreshable secret ${name} is not stored`);
+      throw new ConnectorCatalogRelationshipError(
+        "refreshable-secret-storage",
+        `${methodRef} refreshable secret ${name} is not stored`,
+      );
     }
   }
 }
@@ -536,7 +560,8 @@ export function validateCatalogSourceSemantics(source: CatalogSource): void {
   const knownGroups = new Set(groupIds);
   for (const category of source.categoryMetadata.categories) {
     if (category.groupId !== null && !knownGroups.has(category.groupId)) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "unknown-category-group",
         `Catalog category ${category.id} references unknown group ${category.groupId}`,
       );
     }

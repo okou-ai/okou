@@ -1,6 +1,6 @@
 {
   "name": "@okouai/host-worker",
-  "version": "1.4.18",
+  "version": "1.4.46",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
     "oxlint": "^1.75.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "wrangler": "^4.90.1"
+    "wrangler": "^4.129.0"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*"

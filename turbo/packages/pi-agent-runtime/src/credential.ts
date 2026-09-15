@@ -1,8 +1,9 @@
-import {
-  PI_NATIVE_CREDENTIAL_PLACEHOLDER,
-  piModelConfigV4Schema,
-} from "@okouai/api-contracts/contracts/pi-native";
+import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contracts/pi-native";
 import type { PiModelConfig } from "@okouai/api-contracts/contracts/runners";
+import {
+  normalizePiExecutionRoute,
+  type PiExecutionRoute,
+} from "./execution-route";
 
 import type {
   PiAgentCredentialHeaderTemplate,
@@ -75,32 +76,6 @@ export function resolvePiAgentCredential(args: {
   return { apiKey: UNUSED_OPENAI_API_KEY, requestHeaders };
 }
 
-function legacyCredentialBinding(
-  config: Exclude<PiModelConfig, { readonly schemaVersion: number }>,
-): PiAgentCredentialReference {
-  return {
-    kind: "api-key",
-    environment: config.apiKeyEnv,
-    secretName: config.credentialSecretName,
-    ...(config.credentialHeader === undefined
-      ? {}
-      : { credentialHeader: config.credentialHeader }),
-  };
-}
-
-function requiredBinding(
-  config: Extract<PiModelConfig, { readonly schemaVersion: number }>,
-  kind: PiAgentCredentialReference["kind"],
-): PiAgentCredentialReference {
-  const binding = config.credentialBindings.find((candidate) => {
-    return candidate.kind === kind;
-  });
-  if (!binding) {
-    throw new Error(`Pi model config is missing its ${kind} binding`);
-  }
-  return binding;
-}
-
 async function resolvedCredentialValue(args: {
   readonly binding: PiAgentCredentialReference;
   readonly resolveCredential: (
@@ -128,13 +103,16 @@ export function assertPiNativeCredential(value: string): void {
 }
 
 async function materializeNative(args: {
-  readonly config: Extract<PiModelConfig, { readonly schemaVersion: 4 }>;
+  readonly config: Extract<
+    PiExecutionRoute,
+    { readonly dialect: "anthropic-messages" | "bedrock-converse-stream" }
+  >;
   readonly target: PiAgentCredentialTarget;
   readonly resolveCredential: (
     binding: PiAgentCredentialReference,
   ) => string | Promise<string>;
 }): Promise<PiAgentModelConfig> {
-  const config = piModelConfigV4Schema.parse(args.config);
+  const config = args.config;
   const values = new Map<PiAgentCredentialReference["kind"], string>();
   for (const binding of config.credentialBindings) {
     const value = await resolvedCredentialValue({
@@ -162,8 +140,6 @@ async function materializeNative(args: {
     baseUrl: config.baseUrl,
     model: config.model,
     catalogModel: config.catalogModel,
-    dialect: config.dialect,
-    transport: config.transport,
     thinkingLevel: config.thinkingLevel,
   };
   if (config.dialect === "anthropic-messages") {
@@ -177,6 +153,9 @@ async function materializeNative(args: {
     });
     return {
       ...route,
+      provider: config.provider,
+      dialect: config.dialect,
+      transport: config.transport,
       ...credential,
       requestHeaders: {
         "x-api-key": null,
@@ -187,6 +166,9 @@ async function materializeNative(args: {
   }
   return {
     ...route,
+    provider: config.provider,
+    dialect: config.dialect,
+    transport: config.transport,
     // Explicit dummy prevents Pi's model registry from resolving ambient auth.
     apiKey: "unused",
     region: config.region,
@@ -216,28 +198,38 @@ export async function materializePiAgentModelConfig(args: {
     binding: PiAgentCredentialReference,
   ) => string | Promise<string>;
 }): Promise<PiAgentModelConfig> {
-  if ("schemaVersion" in args.config && args.config.schemaVersion === 4) {
-    return await materializeNative({ ...args, config: args.config });
+  return await materializePiExecutionRoute({
+    route: normalizePiExecutionRoute(args.config),
+    target: args.target,
+    resolveCredential: args.resolveCredential,
+  });
+}
+
+/** Materialize captured internal intent without reselecting its provider. */
+export async function materializePiExecutionRoute(args: {
+  readonly route: PiExecutionRoute;
+  readonly target: PiAgentCredentialTarget;
+  readonly resolveCredential: (
+    binding: PiAgentCredentialReference,
+  ) => string | Promise<string>;
+}): Promise<PiAgentModelConfig> {
+  const config = structuredClone(args.route);
+  if (
+    config.dialect === "anthropic-messages" ||
+    config.dialect === "bedrock-converse-stream"
+  ) {
+    return await materializeNative({ ...args, config });
   }
-  if (!("schemaVersion" in args.config)) {
-    // Old API/Runner payloads and stored contexts can still carry this alias
-    // through the rollback, queue, execution and finalization gates in #31085.
-    // Strip it before spreading the route; only dialect selects the adapter.
-    const {
-      api: _legacyApi,
-      apiKeyEnv: _apiKeyEnv,
-      credentialHeader: _credentialHeader,
-      credentialSecretName: _credentialSecretName,
-      ...route
-    } = args.config;
-    const binding = legacyCredentialBinding(args.config);
+
+  if (config.dialect === "openai-responses") {
+    const { credentialBindings, ...route } = config;
+    const binding = credentialBindings[0];
     const credential = await resolvedCredentialValue({
       binding,
       resolveCredential: args.resolveCredential,
     });
     return {
       ...route,
-      dialect: "openai-responses",
       ...resolvePiAgentCredential({
         credential,
         header: binding.credentialHeader,
@@ -246,33 +238,8 @@ export async function materializePiAgentModelConfig(args: {
     };
   }
 
-  const {
-    schemaVersion: _schemaVersion,
-    credentialBindings: _credentialBindings,
-    dialect,
-    transport,
-    ...route
-  } = args.config;
-  if (dialect === "openai-responses") {
-    const binding = requiredBinding(args.config, "api-key");
-    const credential = await resolvedCredentialValue({
-      binding,
-      resolveCredential: args.resolveCredential,
-    });
-    return {
-      ...route,
-      dialect,
-      transport,
-      ...resolvePiAgentCredential({
-        credential,
-        header: binding.credentialHeader,
-        target: args.target,
-      }),
-    };
-  }
-
-  const accessTokenBinding = requiredBinding(args.config, "access-token");
-  const accountIdBinding = requiredBinding(args.config, "account-id");
+  const { credentialBindings, ...route } = config;
+  const [accessTokenBinding, accountIdBinding] = credentialBindings;
   // Subscription credentials are one ordered bundle. The access token may be
   // refreshed at this boundary, so the matching account ID must only be read
   // after that refresh has settled.
@@ -286,8 +253,6 @@ export async function materializePiAgentModelConfig(args: {
   });
   return {
     ...route,
-    dialect,
-    transport,
     apiKey,
     accountId,
   };

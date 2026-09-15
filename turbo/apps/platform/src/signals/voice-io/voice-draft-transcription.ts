@@ -125,6 +125,7 @@ function createInitialization(
       key,
       recordingId: recording.id,
       context: recording.progress?.context,
+      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
       controller: createChildAbortController(signal),
     };
     const restored: VoiceDraftTranscriptionSegment[] = [];

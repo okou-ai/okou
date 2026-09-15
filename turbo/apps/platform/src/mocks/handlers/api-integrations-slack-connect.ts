@@ -34,19 +34,16 @@ export const apiIntegrationsSlackConnectHandlers = [
     });
   }),
 
-  // POST /api/integrations/slack/connect — connect account
-  // body ({ workspaceId, slackUserId, channelId?, threadTs? }) is contract-typed
-  // but not used for routing — the mock simulates errors via mockData.postError.
+  // POST /api/integrations/slack/connect — start user OAuth
   mockApi(slackConnectContract.connect, ({ respond }) => {
     if (mockData.postError) {
       return respond(400, {
         error: { message: mockData.postError, code: "BAD_REQUEST" },
       });
     }
-    return respond(200, {
-      success: true,
-      connectionId: "conn-mock-001",
-      role: "member",
+    return respond(202, {
+      authorizationUrl:
+        "https://api.okou.ai/api/slack/oauth/connect?connectorState=mock-entry",
     });
   }),
 ];

@@ -6,7 +6,6 @@ import {
   workflowsCollectionContract,
 } from "@okouai/api-contracts";
 import {
-  FeatureSwitchKey,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
   WORKFLOW_TEMPLATE_ITEMS,
 } from "@okouai/core";
@@ -270,8 +269,8 @@ test.each(["insert", "send"])(
     await expect(screen.findByLabelText("Template")).resolves.toBeVisible();
 
     if (action === "insert") {
-      await selectTemplate(user, first);
-      await selectTemplate(user, second);
+      await selectTemplate(first);
+      await selectTemplate(second);
     }
     await waitFor(() => {
       return expect(composerInlineTemplates()).toHaveLength(2);
@@ -314,8 +313,8 @@ test("Replace an inline template after sending a message", async () => {
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
-  const user = userEvent.setup();
-  await selectTemplate(user, first);
+  const user = userEvent.setup({ delay: null });
+  await selectTemplate(first);
   await user.click(await findComposerEditor());
   await user.keyboard("{Enter}");
   await waitFor(() => {
@@ -324,7 +323,7 @@ test("Replace an inline template after sending a message", async () => {
     expect(composerInlineTemplates()).toHaveLength(0);
   });
 
-  await selectTemplate(user, first);
+  await selectTemplate(first);
   const inlineTemplate = composerInlineTemplates()[0];
   if (!inlineTemplate) {
     throw new Error("Expected an inline template to replace");
@@ -565,11 +564,7 @@ test("Find and insert a workflow with an abbreviated name", async () => {
     ];
   });
 
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: true },
-  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();
@@ -609,11 +604,7 @@ test("Rank exact workflow names before prefixes, substrings, and abbreviations",
     ];
   });
 
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: true },
-  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();
@@ -650,11 +641,7 @@ test("Rank compact workflow abbreviations before scattered matches", async () =>
     ];
   });
 
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: true },
-  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   const user = userEvent.setup();
   const editor = await findComposerEditor();
@@ -699,11 +686,7 @@ test("Keep numeric workflow identifiers contiguous in abbreviated queries", asyn
     ];
   });
 
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: true },
-  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   const editor = await findComposerEditor();
   await fill(editor, "/26809");
@@ -717,33 +700,21 @@ test("Keep numeric workflow identifiers contiguous in abbreviated queries", asyn
   });
 });
 
-test.each([
-  { enabled: false, query: "/pdau" },
-  { enabled: true, query: "/pd" },
-])(
-  "Keep strict workflow matching for $query when fuzzy search is $enabled",
-  async ({ enabled, query }) => {
-    mockAgent();
-    mockThread();
-    installWorkflows(() => {
-      return [workflow("pr-design-acceptance-url")];
-    });
+test("Keep strict workflow matching for queries shorter than three characters", async () => {
+  mockAgent();
+  mockThread();
+  installWorkflows(() => {
+    return [workflow("pr-design-acceptance-url")];
+  });
 
-    await setupPage({
-      context,
-      path: `/chats/${THREAD_ID}`,
-      featureSwitches: {
-        [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: enabled,
-      },
-    });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
-    const editor = await findComposerEditor();
-    await fill(editor, query);
-    await expect(
-      screen.findByText("No matching workflows"),
-    ).resolves.toBeVisible();
-  },
-);
+  const editor = await findComposerEditor();
+  await fill(editor, "/pd");
+  await expect(
+    screen.findByText("No matching workflows"),
+  ).resolves.toBeVisible();
+});
 
 test("Suggest only the effective workflow when a private workflow shadows a public workflow", async () => {
   const privateWorkflow = workflow("pr-auto", {
@@ -809,12 +780,11 @@ test("Send a template while the current run is active", async () => {
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
-  const user = userEvent.setup();
   await findComposerEditor();
   await expect(
     screen.findByText("Start an active deck run"),
   ).resolves.toBeVisible();
-  await selectTemplate(user, template);
+  await selectTemplate(template);
   await waitFor(() => {
     expect(namedButton("Send")).toBeEnabled();
   });
@@ -952,9 +922,8 @@ test("Wait for a template attachment before sending", async () => {
   });
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
-  const user = userEvent.setup();
   await findComposerEditor();
-  await selectTemplate(user, template);
+  await selectTemplate(template);
   const file = new File(["launch brief"], "brief.txt", {
     type: "text/plain",
   });

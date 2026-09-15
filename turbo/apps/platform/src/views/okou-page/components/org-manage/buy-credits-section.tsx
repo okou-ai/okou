@@ -290,7 +290,7 @@ export function BuyCreditsSection() {
             onCustomChange={setCustomDollars}
           />
         </div>
-        <div className="h-0 okou-border-t mx-5" />
+        <div className="h-0 border-t border-t-gray-400 mx-5" />
         <div className="flex justify-end px-5 py-4">
           <Button
             type="button"

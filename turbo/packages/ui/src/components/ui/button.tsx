@@ -28,6 +28,13 @@ const buttonVariants = cva(
           "bg-interrupt text-interrupt-foreground hover:bg-interrupt-hover active:bg-interrupt-pressed",
         outline:
           "border border-[hsl(var(--gray-400))] bg-background hover:bg-state-hover active:bg-state-pressed text-foreground",
+        // The fill is opaque, so its states are overlays. A translucent
+        // `bg-state-*` would set `background-color` and replace
+        // `bg-control-surface` outright -- which dropped the fill's warm cast
+        // on hover and left a neutral grey. Select, ToggleButton and the
+        // clickable Card already state their hover this way.
+        neutral:
+          "border border-control-border bg-control-surface text-foreground [&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary-hover active:bg-secondary-pressed",
         ghost: "text-brand-text hover:bg-state-hover active:bg-state-pressed",

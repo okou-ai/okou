@@ -29,6 +29,7 @@ def _make_flow(real_flow, fields: tuple[tuple[bytes, bytes], ...]) -> http.HTTPF
             metadata_keys.FIREWALL_BILLABLE: True,
             metadata_keys.CLI_AGENT_TYPE: "codex",
             metadata_keys.MODEL_USAGE_PROVIDER: "gpt-5.5",
+            metadata_keys.RESPONSE_ENCODING_NEGOTIATION: "already_stream_decodable",
         }
     )
     return flow
@@ -128,14 +129,22 @@ def test_response_hook_uses_complete_bounded_singleton(real_flow, values, *, is_
 
 
 @pytest.mark.parametrize(
-    ("field_count", "is_sse"),
-    [(_FIELD_LIMIT, True), (_FIELD_LIMIT + 1, False)],
+    "field_count",
+    [_FIELD_LIMIT, _FIELD_LIMIT + 1],
 )
-def test_response_hook_bounds_field_count(real_flow, field_count: int, *, is_sse: bool):
+def test_response_hook_bounds_field_count(real_flow, mitm_ctx, field_count: int):
     fields = ((b"X-Padding", b""),) * (field_count - 1) + ((b"Content-Type", b"text/event-stream"),)
     flow = _make_flow(real_flow, fields)
 
-    _assert_stream_classification(flow, is_sse=is_sse)
+    if field_count == _FIELD_LIMIT:
+        _assert_stream_classification(flow, is_sse=True)
+    else:
+        # Excess fields also prevent the decoder from establishing identity.
+        with mitm_ctx():
+            mitm_addon.responseheaders(flow)
+        assert flow.response is not None
+        assert flow.response.status_code == 502
+        assert response_stream(flow)(_SSE_USAGE) == b""
 
 
 def test_response_hook_checks_duplicates_after_early_sse_match(real_flow):

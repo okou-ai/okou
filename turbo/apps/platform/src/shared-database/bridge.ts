@@ -30,7 +30,7 @@ export interface SharedDatabaseBridge {
 }
 
 export type SharedDatabaseTokenProvider = (
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ) => Promise<string | null>;
 
 export interface SharedDatabaseBridgeEvents {

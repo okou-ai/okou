@@ -36,10 +36,9 @@ function selectedVideoParameterLabels(
  * message overrides one value, which is the same pull toward treating these as
  * requirements that the wording above works to avoid.
  *
- * Returns "" unless the user actually changed something. Most runs never
- * generate a video, so the block has to be absent rather than merely quiet:
- * restating the model's own defaults in every run's prompt would cost every
- * unrelated run context for nothing.
+ * Returns "" when no video parameters are supplied. Creative Video composers
+ * send all displayed settings, including defaults; unrelated runs omit this
+ * block so they do not spend context on video generation settings.
  *
  * The model is not part of this block. The run already carries the video model
  * resolved from the thread pin and the member default, and the generation

@@ -1,18 +1,13 @@
 use crate::support::{
-    TarEntry, TcpTestServer, create_tar_gz, create_tar_gz_entries, manifest_json,
-    read_http_request_path, run_guest_storage_apply, run_guest_storage_apply_manifest_json,
-    write_manifest,
+    TarEntry, create_tar_gz, create_tar_gz_entries, manifest_json, run_guest_storage_apply,
+    run_guest_storage_apply_manifest_json, write_manifest,
 };
+use httpmock::Mock;
 use httpmock::prelude::*;
-use httpmock::{HttpMockRequest, HttpMockResponse, Mock};
-use std::io::Write;
-use std::net::TcpStream;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 const STORAGE_ARCHIVE_PATH: &str = "/storage.tar.gz";
 const ARTIFACT_ARCHIVE_PATH: &str = "/artifact.tar.gz";
-const EXPECTED_RETRY_ATTEMPTS: usize = 3;
 
 fn mock_gzip_archive<'server>(
     server: &'server MockServer,
@@ -31,30 +26,6 @@ fn mock_status<'server>(server: &'server MockServer, path: &str, status: u16) ->
     server.mock(|when, then| {
         when.method(GET).path(path);
         then.status(status);
-    })
-}
-
-fn mock_500_then_gzip_archive<'server>(
-    server: &'server MockServer,
-    path: &str,
-    body: &[u8],
-) -> Mock<'server> {
-    let calls = AtomicUsize::new(0);
-    let body = body.to_vec();
-
-    server.mock(move |when, then| {
-        when.method(GET).path(path);
-        then.respond_with(move |_req: &HttpMockRequest| {
-            if calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                HttpMockResponse::builder().status(500).build()
-            } else {
-                HttpMockResponse::builder()
-                    .status(200)
-                    .header("content-type", "application/gzip")
-                    .body(body.clone())
-                    .build()
-            }
-        });
     })
 }
 
@@ -98,48 +69,6 @@ fn path_to_str(path: &Path) -> std::io::Result<&str> {
     path.to_str().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidData, "path is not valid UTF-8")
     })
-}
-
-fn start_truncated_then_valid_server(archive: Vec<u8>) -> std::io::Result<TcpTestServer<usize>> {
-    let partial_len = (archive.len() / 2).max(1);
-    let partial_archive: Vec<u8> = archive.iter().copied().take(partial_len).collect();
-
-    TcpTestServer::start(move |server| {
-        let mut storage_requests = 0;
-        loop {
-            let Some(mut stream) = server.accept()? else {
-                return Ok(storage_requests);
-            };
-            let path = read_http_request_path(&mut stream)?;
-            if path == STORAGE_ARCHIVE_PATH {
-                if storage_requests == 0 {
-                    write_response(&mut stream, &partial_archive, archive.len())?;
-                } else {
-                    write_response(&mut stream, &archive, archive.len())?;
-                }
-                storage_requests += 1;
-                if storage_requests == 2 {
-                    break;
-                }
-            } else {
-                write_response(&mut stream, &[], 0)?;
-            }
-        }
-        Ok(storage_requests)
-    })
-}
-
-fn write_response(
-    stream: &mut TcpStream,
-    body: &[u8],
-    content_length: usize,
-) -> std::io::Result<()> {
-    let headers = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/gzip\r\ncontent-length: {content_length}\r\nconnection: close\r\n\r\n"
-    );
-    stream.write_all(headers.as_bytes())?;
-    stream.write_all(body)?;
-    stream.flush()
 }
 
 #[test]
@@ -346,35 +275,7 @@ fn storage_404_fatal() {
 }
 
 #[test]
-fn server_error_exhausts_retries() {
-    let server = MockServer::start();
-    let mock = mock_status(&server, STORAGE_ARCHIVE_PATH, 500);
-
-    let dir = tempfile::tempdir().unwrap();
-    let mount = dir.path().join("mount");
-    let url = server.url(STORAGE_ARCHIVE_PATH);
-    let result = run_storage_download(&dir, &mount, Some(&url)).unwrap();
-
-    assert!(!result);
-    mock.assert_calls(EXPECTED_RETRY_ATTEMPTS);
-}
-
-#[test]
-fn rate_limit_exhausts_retries() {
-    let server = MockServer::start();
-    let mock = mock_status(&server, STORAGE_ARCHIVE_PATH, 429);
-
-    let dir = tempfile::tempdir().unwrap();
-    let mount = dir.path().join("mount");
-    let url = server.url(STORAGE_ARCHIVE_PATH);
-    let result = run_storage_download(&dir, &mount, Some(&url)).unwrap();
-
-    assert!(!result);
-    mock.assert_calls(EXPECTED_RETRY_ATTEMPTS);
-}
-
-#[test]
-fn invalid_tar_gz_non_retriable() {
+fn invalid_tar_gz_is_rejected() {
     let server = MockServer::start();
     let mock = mock_gzip_archive(&server, STORAGE_ARCHIVE_PATH, b"this is not a valid tar.gz");
 
@@ -385,26 +286,6 @@ fn invalid_tar_gz_non_retriable() {
 
     assert!(!result);
     mock.assert_calls(1);
-}
-
-#[test]
-fn http_body_read_error_retries_then_succeeds() {
-    let tar_gz = create_tar_gz(&[("recovered.txt", b"recovered")]).unwrap();
-    let server = start_truncated_then_valid_server(tar_gz).unwrap();
-    let base_url = server.base_url().to_owned();
-
-    let dir = tempfile::tempdir().unwrap();
-    let mount = dir.path().join("mount");
-    let url = format!("{base_url}{STORAGE_ARCHIVE_PATH}");
-    let result = run_storage_download(&dir, &mount, Some(&url)).unwrap();
-    let storage_requests = server.finish().unwrap();
-
-    assert!(result);
-    assert_eq!(storage_requests, 2);
-    assert_eq!(
-        std::fs::read_to_string(mount.join("recovered.txt")).unwrap(),
-        "recovered"
-    );
 }
 
 #[test]
@@ -470,26 +351,7 @@ fn artifact_500_fatal() {
     let result = run_artifact_download(&dir, &mount, Some(&url)).unwrap();
 
     assert!(!result);
-    mock.assert_calls(EXPECTED_RETRY_ATTEMPTS);
-}
-
-#[test]
-fn retry_then_succeed() {
-    let server = MockServer::start();
-    let tar_gz = create_tar_gz(&[("recovered.txt", b"recovered")]).unwrap();
-    let mock = mock_500_then_gzip_archive(&server, STORAGE_ARCHIVE_PATH, &tar_gz);
-
-    let dir = tempfile::tempdir().unwrap();
-    let mount = dir.path().join("mount");
-    let url = server.url(STORAGE_ARCHIVE_PATH);
-    let result = run_storage_download(&dir, &mount, Some(&url)).unwrap();
-
-    assert!(result);
-    mock.assert_calls(2);
-    assert_eq!(
-        std::fs::read_to_string(mount.join("recovered.txt")).unwrap(),
-        "recovered"
-    );
+    mock.assert_calls(1);
 }
 
 #[test]

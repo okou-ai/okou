@@ -1,4 +1,5 @@
 import { zstdDecompressSync } from "node:zlib";
+import { readFileSync } from "node:fs";
 import { createServer, type ServerResponse } from "node:http";
 
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
@@ -11,8 +12,11 @@ import {
   fauxAssistantMessage,
   type AssistantMessage,
 } from "@earendil-works/pi-ai";
-import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import {
+  AgentSession,
+  CURRENT_SESSION_VERSION,
+} from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createPiApiFirstTurnOwnership,
@@ -21,11 +25,49 @@ import {
   projectPiSessionJsonlForExport,
   PiApiFirstTurnCompactionRequiredError,
   runPiApiFirstTurn,
+  preparePiApiTurn,
+  executePreparedPiApiTurn,
   UnsupportedPiSessionVersionError,
 } from "./api";
 import { projectPiApiAssistantMessage } from "./api-turn";
 import { resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
+import type { PiApiAssistantMessage, PiApiFirstTurnArgs } from "./api-types";
+
+function promiseWithResolvers<T>() {
+  return (
+    Promise as PromiseConstructor & {
+      withResolvers<TValue>(): {
+        readonly promise: Promise<TValue>;
+        readonly resolve: (value: TValue) => void;
+      };
+    }
+  ).withResolvers<T>();
+}
+
+const publicEventFixture = JSON.parse(
+  readFileSync(
+    new URL("../../../../fixtures/pi-public-events.json", import.meta.url),
+    "utf8",
+  ),
+) as {
+  readonly cases: readonly {
+    readonly name: string;
+    readonly guestMessage: AssistantMessage;
+    readonly apiAssistant: PiApiAssistantMessage;
+  }[];
+};
+
+describe("Pi API input normalization fixtures", () => {
+  it.each(publicEventFixture.cases)(
+    "normalizes $name before API event projection",
+    (example) => {
+      expect(projectPiApiAssistantMessage(example.guestMessage)).toEqual(
+        example.apiAssistant,
+      );
+    },
+  );
+});
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000123";
 const SESSION_TIMESTAMP = "2026-08-31T12:34:56.000Z";
@@ -35,6 +77,7 @@ function responsesTextSse(
   text: string,
   options?: {
     readonly fragmentTerminal?: boolean;
+    readonly onDeltaSent?: (finish: () => void) => void;
     readonly serviceTier?: string | null;
   },
 ): void {
@@ -107,6 +150,14 @@ function responsesTextSse(
       return `data: ${JSON.stringify(event)}\n\n`;
     })
     .join("");
+  if (options?.onDeltaSent) {
+    const boundary = body.indexOf('data: {"type":"response.output_item.done"');
+    response.write(body.slice(0, boundary));
+    options.onDeltaSent(() => {
+      response.end(body.slice(boundary));
+    });
+    return;
+  }
   if (!options?.fragmentTerminal) {
     response.end(body);
     return;
@@ -188,6 +239,190 @@ function responsesToolSse(
 }
 
 describe("Pi API facade", () => {
+  it("streams visible text before completion and preserves its durable block identity", async () => {
+    const firstDelta = promiseWithResolvers<void>();
+    const chunks: { runEventId: string; chunkIndex: number; delta: string }[] =
+      [];
+    let finishResponse: (() => void) | undefined;
+    const server = createServer((_request, response) => {
+      responsesTextSse(
+        response,
+        `Visible text${PI_MEMORY_CITATION_OPEN}private citation${PI_MEMORY_CITATION_CLOSE}`,
+        {
+          onDeltaSent(finish) {
+            finishResponse = finish;
+          },
+        },
+      );
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected test transport");
+    }
+    try {
+      const turn = runPiApiFirstTurn({
+        cwd: "/home/user/workspace",
+        agentDir: "/home/user/.pi/agent",
+        sessionId: SESSION_ID,
+        prompt: "Stream an answer",
+        appendSystemPrompt: null,
+        model: {
+          provider: "openai",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: "test-key",
+          model: "gpt-5.6-terra",
+          dialect: "openai-responses",
+          transport: "sse",
+          thinkingLevel: "low",
+        },
+        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+        ownership: createPiApiFirstTurnOwnership(),
+        textStream: {
+          eventIdPrefix: "api-first:attempt",
+          onDelta(chunk) {
+            chunks.push(chunk);
+            firstDelta.resolve();
+          },
+        },
+      });
+      await firstDelta.promise;
+      expect(chunks).toEqual([
+        {
+          runEventId: "api-first:attempt:0",
+          chunkIndex: 0,
+          delta: "Visible text",
+        },
+      ]);
+      expect(finishResponse).toBeDefined();
+      finishResponse?.();
+      const result = await turn;
+      expect(result.assistantMessage.content).toEqual([
+        {
+          type: "text",
+          text: "Visible text",
+          runEventId: chunks[0]?.runEventId,
+        },
+      ]);
+      expect(result.sessionJsonl).toContain("private citation");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
+  });
+  it.each(["execute", "discard", "cancel", "late-initialization"] as const)(
+    "owns a prepared session through %s without speculative provider transport",
+    async (outcome) => {
+      let providerRequests = 0;
+      const server = createServer((_request, response) => {
+        providerRequests++;
+        responsesTextSse(response, "prepared answer");
+      });
+      await new Promise<void>((resolve) => {
+        return server.listen(0, "127.0.0.1", resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Expected test transport");
+      const disposed = vi.spyOn(AgentSession.prototype, "dispose");
+      const controller = new AbortController();
+      const args = {
+        cwd: "/home/user/workspace",
+        agentDir: "/home/user/.pi/agent",
+        sessionId: SESSION_ID,
+        prompt: "use exactly the captured input",
+        appendSystemPrompt: "Captured final instruction",
+        model: {
+          provider: "openai",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: "test-key",
+          model: "gpt-5.6-terra",
+          dialect: "openai-responses",
+          transport: "sse",
+          thinkingLevel: "low",
+        },
+        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+        onPreparationTiming(observation: { readonly phase: string }) {
+          // The official initializer is already running and does not stop at
+          // this abort. Preparation must dispose its eventual session.
+          if (
+            outcome === "late-initialization" &&
+            observation.phase === "model_runtime"
+          ) {
+            controller.abort(new Error("abandoned initializer"));
+          }
+        },
+      } as const;
+      try {
+        if (outcome === "late-initialization") {
+          await expect(
+            preparePiApiTurn(args, controller.signal),
+          ).rejects.toThrow("abandoned initializer");
+        } else {
+          const prepared = await preparePiApiTurn(args, controller.signal);
+          expect(providerRequests).toBe(0);
+          const ownership = createPiApiFirstTurnOwnership();
+          if (outcome === "discard") {
+            prepared.dispose();
+            prepared.dispose();
+          } else if (outcome === "cancel") {
+            controller.abort(new Error("cancel before transport"));
+            await expect(
+              executePreparedPiApiTurn(
+                prepared,
+                { ownership },
+                controller.signal,
+              ),
+            ).rejects.toThrow("cancel before transport");
+          } else {
+            const gate = promiseWithResolvers<void>();
+            const entered = promiseWithResolvers<void>();
+            const execution = executePreparedPiApiTurn(
+              prepared,
+              {
+                ownership,
+                async providerRequestBoundary(mark) {
+                  entered.resolve();
+                  await gate.promise;
+                  mark();
+                },
+              },
+              controller.signal,
+            );
+            await entered.promise;
+            expect(providerRequests).toBe(0);
+            expect(ownership.stage).toBe("pre-provider");
+            gate.resolve();
+            const result = await execution;
+            expect(result.assistantMessage.content).toEqual([
+              { type: "text", text: "prepared answer" },
+            ]);
+          }
+          await expect(
+            executePreparedPiApiTurn(prepared, { ownership }),
+          ).rejects.toThrow("already been consumed or disposed");
+          prepared.dispose();
+        }
+        expect(providerRequests).toBe(outcome === "execute" ? 1 : 0);
+        expect(disposed).toHaveBeenCalledTimes(1);
+      } finally {
+        disposed.mockRestore();
+        controller.abort();
+        await new Promise<void>((resolve, reject) => {
+          return server.close((error) => {
+            return error ? reject(error) : resolve();
+          });
+        });
+      }
+    },
+  );
+
   it("sends stable memory schemas and hands a call off without API execution", async () => {
     const requestBodies: Array<Record<string, unknown>> = [];
     const server = createServer((request, response) => {
@@ -241,6 +476,7 @@ describe("Pi API facade", () => {
           apiKey: "test-key",
           model: "gpt-5.6-terra",
           dialect: "openai-responses",
+          transport: "sse",
           thinkingLevel: "low",
         },
         resourceSnapshot: {
@@ -405,11 +641,7 @@ describe("Pi API facade", () => {
         let sessionJsonl: string | undefined;
         const runTurn = async (
           serviceTier: "priority" | "fast" | undefined,
-          api:
-            | "openai-completions"
-            | "openai-codex-responses"
-            | "openai-responses"
-            | undefined,
+          thinkingLevel: "low" | "high" = "low",
         ) => {
           const result = await runPiApiFirstTurn({
             cwd: "/home/user/workspace",
@@ -428,7 +660,7 @@ describe("Pi API facade", () => {
                       provider: "openai-codex",
                       baseUrl: `http://127.0.0.1:${address.port}/v1`,
                       model: "gpt-5.6-terra",
-                      thinkingLevel: "low",
+                      thinkingLevel,
                       ...(serviceTier === undefined ? {} : { serviceTier }),
                       credentialBindings: [
                         {
@@ -455,10 +687,9 @@ describe("Pi API facade", () => {
                       provider: "openai",
                       baseUrl: `http://127.0.0.1:${address.port}/v1`,
                       model: "gpt-5.6-terra",
-                      ...(api === undefined ? {} : { api }),
                       apiKeyEnv: "OPENAI_API_KEY",
                       credentialSecretName: "OPENAI_API_KEY",
-                      thinkingLevel: "low",
+                      thinkingLevel,
                       ...(serviceTier ? { serviceTier } : {}),
                     }),
                     target: "direct",
@@ -472,22 +703,20 @@ describe("Pi API facade", () => {
           sessionJsonl = result.sessionJsonl;
           return result;
         };
-        const standardResult = await runTurn(undefined, "openai-completions");
+        const standardResult = await runTurn(undefined);
         const priorityResult = await runTurn(
           route === "native" ? "fast" : "priority",
-          "openai-codex-responses",
+          "high",
         );
-        const standardReturnResult = await runTurn(undefined, undefined);
-        const publicResult = await runTurn(undefined, "openai-responses");
+        const standardReturnResult = await runTurn(undefined);
 
-        expect(providerRequests).toHaveLength(4);
+        expect(providerRequests).toHaveLength(3);
         if (route === "native") {
           expect(
             providerRequests.map((request) => {
               return request.accountId;
             }),
           ).toEqual([
-            "exact-account-id",
             "exact-account-id",
             "exact-account-id",
             "exact-account-id",
@@ -510,13 +739,12 @@ describe("Pi API facade", () => {
           url: route === "native" ? "/v1/codex/responses" : "/v1/responses",
           body: {
             model: "gpt-5.6-terra",
-            reasoning: { effort: "low" },
+            reasoning: { effort: "high" },
             service_tier: "priority",
           },
         });
         expect(providerRequests[2]?.body).not.toHaveProperty("service_tier");
-        expect(providerRequests[3]?.body).not.toHaveProperty("service_tier");
-        expect(publicResult.assistantMessage.content).toStrictEqual([
+        expect(standardReturnResult.assistantMessage.content).toStrictEqual([
           { type: "text", text: "Terra API-first answer" },
         ]);
         expect(
@@ -540,7 +768,10 @@ describe("Pi API facade", () => {
           MemoryPiSession.fromJsonl(
             priorityResult.sessionJsonl,
           ).buildSessionContext().thinkingLevel,
-        ).toBe("low");
+        ).toBe("high");
+        expect(providerRequests[2]?.body).toMatchObject({
+          reasoning: { effort: "low" },
+        });
       } finally {
         await new Promise<void>((resolve, reject) => {
           server.close((error) => {
@@ -555,91 +786,118 @@ describe("Pi API facade", () => {
     },
   );
 
-  it("sends direct DeepSeek through Responses with the stable Pi identity and no Chat fields", async () => {
-    const providerRequests: Array<{
-      readonly url: string | undefined;
-      readonly body: Record<string, unknown>;
-      readonly userAgent: string | undefined;
-    }> = [];
-    const server = createServer((request, response) => {
-      void (async () => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        providerRequests.push({
-          url: request.url,
-          body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
-            string,
-            unknown
-          >,
-          userAgent: request.headers["user-agent"],
-        });
-        responsesTextSse(response, "DeepSeek API-first answer");
-      })().catch((error: unknown) => {
-        response.destroy(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      });
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        server.off("error", reject);
-        resolve();
-      });
-    });
-    const address = server.address();
-    if (address === null || typeof address === "string") {
-      throw new Error("DeepSeek API-first test server has no TCP address");
-    }
-
-    try {
-      const result = await runPiApiFirstTurn({
-        cwd: "/home/user/workspace",
-        agentDir: "/home/user/.pi/agent",
-        sessionId: SESSION_ID,
-        prompt: "answer through direct DeepSeek",
-        appendSystemPrompt: null,
-        model: {
-          provider: "deepseek",
-          baseUrl: `http://127.0.0.1:${address.port}`,
-          apiKey: "test-key",
-          model: "deepseek-v4-flash",
-          dialect: "openai-responses",
-        },
-        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
-        ownership: createPiApiFirstTurnOwnership(),
-      });
-
-      expect(providerRequests).toHaveLength(1);
-      expect(providerRequests[0]).toMatchObject({
-        url: "/responses",
-        userAgent: "okou-pi-agent/1.0",
-        body: {
-          model: "deepseek-v4-flash",
-          stream: true,
-          store: false,
-        },
-      });
-      expect(providerRequests[0]?.body).not.toHaveProperty("service_tier");
-      expect(providerRequests[0]?.body).not.toHaveProperty("temperature");
-      expect(providerRequests[0]?.body).not.toHaveProperty("top_p");
-      expect(result.assistantMessage.content).toStrictEqual([
-        { type: "text", text: "DeepSeek API-first answer" },
-      ]);
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
+  it.each(["absent", "throwing"] as const)(
+    "preserves DeepSeek transport and pre-provider cancellation with a %s preparation observer",
+    async (observer) => {
+      const providerRequests: Array<{
+        readonly url: string | undefined;
+        readonly body: Record<string, unknown>;
+        readonly userAgent: string | undefined;
+      }> = [];
+      const server = createServer((request, response) => {
+        void (async () => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
+          providerRequests.push({
+            url: request.url,
+            body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
+              string,
+              unknown
+            >,
+            userAgent: request.headers["user-agent"],
+          });
+          responsesTextSse(response, "DeepSeek API-first answer");
+        })().catch((error: unknown) => {
+          response.destroy(
+            error instanceof Error ? error : new Error(String(error)),
+          );
         });
       });
-    }
-  });
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          server.off("error", reject);
+          resolve();
+        });
+      });
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("DeepSeek API-first test server has no TCP address");
+      }
+
+      try {
+        const args: PiApiFirstTurnArgs = {
+          cwd: "/home/user/workspace",
+          agentDir: "/home/user/.pi/agent",
+          sessionId: SESSION_ID,
+          prompt: "answer through direct DeepSeek",
+          appendSystemPrompt: null,
+          model: {
+            provider: "deepseek",
+            baseUrl: `http://127.0.0.1:${address.port}`,
+            apiKey: "test-key",
+            model: "deepseek-v4-flash",
+            dialect: "openai-responses",
+            transport: "sse",
+          },
+          resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+          ownership: createPiApiFirstTurnOwnership(),
+          onPreparationTiming:
+            observer === "throwing"
+              ? () => {
+                  throw new Error("telemetry unavailable");
+                }
+              : undefined,
+        };
+        const result = await runPiApiFirstTurn(args);
+
+        expect(providerRequests).toHaveLength(1);
+        expect(providerRequests[0]).toMatchObject({
+          url: "/responses",
+          userAgent: "okou-pi-agent/1.0",
+          body: {
+            model: "deepseek-v4-flash",
+            stream: true,
+            store: false,
+          },
+        });
+        expect(providerRequests[0]?.body).not.toHaveProperty("service_tier");
+        expect(providerRequests[0]?.body).not.toHaveProperty("temperature");
+        expect(providerRequests[0]?.body).not.toHaveProperty("top_p");
+        expect(result.assistantMessage.content).toStrictEqual([
+          { type: "text", text: "DeepSeek API-first answer" },
+        ]);
+        const cancellation = new AbortController();
+        const reason = new DOMException("request cancelled", "AbortError");
+        await expect(
+          runPiApiFirstTurn(
+            {
+              ...args,
+              ownership: createPiApiFirstTurnOwnership(),
+              providerRequestBoundary: async () => {
+                cancellation.abort(reason);
+                cancellation.signal.throwIfAborted();
+              },
+            },
+            cancellation.signal,
+          ),
+        ).rejects.toBe(reason);
+        expect(providerRequests).toHaveLength(1);
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve();
+            }
+          });
+        });
+      }
+    },
+  );
 
   it("captures fragmented terminal OpenRouter tiers without persisting them", async () => {
     const observedTiers = [
@@ -702,6 +960,7 @@ describe("Pi API facade", () => {
               apiKey: "test-key",
               model: "openai/gpt-5.6-terra",
               dialect: "openai-responses",
+              transport: "sse",
               thinkingLevel: "low",
               serviceTier: "priority",
             },
@@ -864,6 +1123,7 @@ describe("Pi API facade", () => {
           apiKey: "test-key",
           model: "openai/gpt-5.6-terra",
           dialect: "openai-responses",
+          transport: "sse",
           thinkingLevel: "low",
         },
         resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
@@ -940,6 +1200,7 @@ describe("Pi API facade", () => {
       apiKey: "test-key",
       model: "gpt-5.6-terra",
       dialect: "openai-responses",
+      transport: "sse",
     });
     if (!resolvedModel) {
       throw new Error("Expected pinned Pi to catalog Terra");
@@ -986,6 +1247,7 @@ describe("Pi API facade", () => {
       apiKey: "test-key",
       model: "gpt-5.6-terra",
       dialect: "openai-responses" as const,
+      transport: "sse" as const,
       thinkingLevel: "low" as const,
     };
 
@@ -1018,6 +1280,9 @@ describe("Pi API facade", () => {
           model,
           resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
           ownership: blockedOwnership,
+          onPreparationTiming() {
+            throw new Error("telemetry unavailable");
+          },
         }),
       ).rejects.toThrow(PiApiFirstTurnCompactionRequiredError);
       expect(providerRequests).toBe(1);

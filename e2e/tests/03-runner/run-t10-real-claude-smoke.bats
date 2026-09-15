@@ -8,6 +8,7 @@ load '../../helpers/runner-api'
 
 BATS_TEST_TIMEOUT=600
 REAL_CLAUDE_MODEL="claude-sonnet-5"
+REAL_PI_MODEL="deepseek-v4-pro"
 
 setup_file() {
     local credentials="/tmp/e2e-api-credentials-runner-real-claude.json"
@@ -16,7 +17,37 @@ setup_file() {
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
     runner_e2e_require_environment
 
-    local feature_switches
+    local policies policy_payload feature_switches
+    policies="$(runner_api_curl "/api/model-policies")"
+    policy_payload="$(jq -c --arg model "$REAL_PI_MODEL" '
+        {
+            policies: (
+                [.policies[] |
+                    select(.model != $model) |
+                    {
+                        model,
+                        isDefault,
+                        defaultProviderType,
+                        credentialScope,
+                        modelProviderId
+                    }
+                ] + [
+                    {
+                        model: $model,
+                        isDefault: false,
+                        defaultProviderType: "built-in",
+                        credentialScope: "org",
+                        modelProviderId: null
+                    }
+                ]
+            )
+        }
+    ' <<<"$policies")"
+    runner_api_curl "/api/model-policies" \
+        -X PUT \
+        -d "$policy_payload" \
+        >/dev/null
+
     feature_switches="$(runner_api_curl "/api/feature-switches" \
         -X POST \
         -d '{"switches":{"_realAgentInPreview":true,"piLoop":true}}')"
@@ -155,9 +186,9 @@ run_real_claude_steer() {
 @test "built-in real pi loop returns a successful answer" {
     run runner_api_curl "/api/model-policies"
     assert_success
-    run jq -e '
+    run jq -e --arg model "$REAL_PI_MODEL" '
         any(.policies[]?;
-            .model == "deepseek-v4-pro" and
+            .model == $model and
             .defaultProviderType == "built-in" and
             .credentialScope == "org" and
             .modelProviderId == null
@@ -168,7 +199,7 @@ run_real_claude_steer() {
     run run_real_chat \
         "123+456. Reply only RESULT=<answer>." \
         "RESULT=579" \
-        "deepseek-v4-pro"
+        "$REAL_PI_MODEL"
 
     assert_success
     assert_output --partial '"status":"completed"'
@@ -182,10 +213,10 @@ run_real_claude_steer() {
 
     run runner_api_curl "/api/runs/${run_id}/context"
     assert_success
-    run jq -e '
+    run jq -e --arg model "$REAL_PI_MODEL" '
         .cliAgentType == "pi" and
         .environment.OPENAI_BASE_URL == "https://api.deepseek.com/" and
-        .environment.OPENAI_MODEL == "deepseek-v4-pro" and
+        .environment.OPENAI_MODEL == $model and
         any(
             .firewalls[];
             .kind == "builtin" and

@@ -897,7 +897,7 @@ async fn fresh_codex_oauth_run_prefetches_catalog_while_agent_prepares() {
     assert!(
         start_calls[0]
             .cmd
-            .contains("X-VM0-Codex-Model-Catalog-Prefetch: 1")
+            .contains("X-Okou-Codex-Model-Catalog-Prefetch: 1")
     );
     assert!(matches!(
         start_calls[0].output,

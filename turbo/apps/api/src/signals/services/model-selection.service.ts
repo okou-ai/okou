@@ -1,4 +1,11 @@
 import {
+  loadMemberModelRouteContext,
+  providerTypeForSurfaceProtocol,
+  resolveEffectivePolicyRoute,
+  type MemberModelRouteContext,
+  type ResolvedModelFirstPolicyRoute,
+} from "./effective-model-route.service";
+import {
   getFrameworkForType,
   getBuiltInConcreteProviderType,
   isCodexFastModeModel,
@@ -9,14 +16,8 @@ import {
   isModelSupportedByProvider,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
-  type ModelProviderType,
   type ModelProviderWriteType,
-  type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  getModelProviderTypeForSurfaceProtocol,
-  modelProviderSurfaceProtocolSchema,
-} from "@okouai/api-contracts/contracts/model-provider-gateways";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
@@ -64,13 +65,6 @@ export interface DefaultModelFirstPin extends ModelFirstPin {
   readonly serviceTier: ChatThreadServiceTier | null;
 }
 
-interface ResolvedModelFirstPolicyRoute {
-  readonly modelProviderId: string | null;
-  readonly modelProviderType: ModelProviderType;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope;
-  readonly selectedModel: SupportedRunModel;
-}
-
 interface PersistedModelFirstRouteResolution {
   readonly route: ResolvedModelFirstPolicyRoute | null;
   readonly selectedModelChanged: boolean;
@@ -93,15 +87,6 @@ interface AvailableModelProviderPin {
   readonly type: string;
 }
 
-function providerTypeForSurfaceProtocol(
-  protocol: string,
-): ModelProviderType | null {
-  const parsed = modelProviderSurfaceProtocolSchema.safeParse(protocol);
-  return parsed.success
-    ? getModelProviderTypeForSurfaceProtocol(parsed.data)
-    : null;
-}
-
 function modelFirstPinFromRoute(
   route: ResolvedModelFirstPolicyRoute,
 ): ModelFirstPin {
@@ -113,33 +98,29 @@ function modelFirstPinFromRoute(
   };
 }
 
-function isOAuthMemberProviderType(type: ModelProviderType): boolean {
-  return type === "claude-code-oauth-token" || type === "codex-oauth-token";
-}
-
 function modelRouteCapabilities(
   capabilities: OrgPlanCapabilities | null,
-): Pick<OrgPlanCapabilities, "restrictedVm0Models" | "supportByok"> {
+): Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok"> {
   if (capabilities?.status !== "active") {
     return {
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
       supportByok: true,
     };
   }
   return {
-    restrictedVm0Models: capabilities.restrictedVm0Models,
+    restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     supportByok: capabilities.supportByok,
   };
 }
 
 function modelAllowedForOrgPlan(args: {
-  readonly capabilities: Pick<OrgPlanCapabilities, "restrictedVm0Models">;
+  readonly capabilities: Pick<OrgPlanCapabilities, "restrictedBuiltInModels">;
   readonly selectedModel: string | null | undefined;
 }): boolean {
   return (
     getRunModelAccess(
       args.selectedModel,
-      args.capabilities.restrictedVm0Models,
+      args.capabilities.restrictedBuiltInModels,
     ) === "allowed"
   );
 }
@@ -154,114 +135,19 @@ function modelProviderAllowedForOrgPlan(args: {
   );
 }
 
-function parseModelProviderCredentialScope(
-  value: string | null,
-): ModelProviderCredentialScope | null {
-  if (value === null || value === "org" || value === "member") {
-    return value;
-  }
-  throw new Error(`Unknown model provider credential scope "${value}"`);
-}
-
-async function resolveCustomSurfacePolicyRoute(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly policy: {
-    readonly model: SupportedRunModel;
-    readonly modelProviderId: string | null;
-    readonly modelProviderSurfaceId: string;
-  };
-  readonly providerType: ModelProviderType;
-  readonly credentialScope: ModelProviderCredentialScope;
-}): Promise<ResolvedModelFirstPolicyRoute | null> {
-  if (
-    params.credentialScope !== "org" ||
-    params.policy.modelProviderId !== null ||
-    isOAuthMemberProviderType(params.providerType)
-  ) {
-    return null;
-  }
-  const [surface] = await params.db
-    .select({
-      protocol: modelProviderSurfaces.protocol,
-      modelMappings: modelProviderSurfaces.modelMappings,
-    })
-    .from(modelProviderSurfaces)
-    .innerJoin(
-      modelProviderConnections,
-      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-    )
-    .where(
-      and(
-        eq(modelProviderSurfaces.id, params.policy.modelProviderSurfaceId),
-        eq(modelProviderConnections.orgId, params.orgId),
-      ),
-    )
-    .limit(1);
-  if (
-    !surface ||
-    providerTypeForSurfaceProtocol(surface.protocol) !== params.providerType ||
-    typeof surface.modelMappings[params.policy.model] !== "string"
-  ) {
-    return null;
-  }
-  return {
-    modelProviderId: params.policy.modelProviderSurfaceId,
-    modelProviderType: params.providerType,
-    modelProviderCredentialScope: params.credentialScope,
-    selectedModel: params.policy.model,
-  };
-}
-
-function isLegacyPolicyRouteShapeValid(params: {
-  readonly credentialScope: ModelProviderCredentialScope;
-  readonly providerType: ModelProviderType;
-  readonly modelProviderId: string | null;
-}): boolean {
-  if (params.credentialScope === "member") {
-    return (
-      isOAuthMemberProviderType(params.providerType) &&
-      params.modelProviderId === null
-    );
-  }
-  if (isOAuthMemberProviderType(params.providerType)) {
-    return false;
-  }
-  return isBuiltInModelProviderType(params.providerType)
-    ? params.modelProviderId === null
-    : params.modelProviderId !== null;
-}
-
-function getLegacyOrgProviderId(params: {
-  readonly credentialScope: ModelProviderCredentialScope;
-  readonly providerType: ModelProviderType;
-  readonly modelProviderId: string | null;
-}): string | null {
-  return params.credentialScope === "org" &&
-    !isBuiltInModelProviderType(params.providerType)
-    ? params.modelProviderId
-    : null;
-}
-
 async function resolveValidPolicyRoute(params: {
   readonly db: Db;
   readonly orgId: string;
+  readonly member: MemberModelRouteContext;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
-    "restrictedVm0Models" | "supportByok"
+    "restrictedBuiltInModels" | "supportByok"
   >;
   readonly selectedModel: string;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
-  if (
-    !isSupportedRunModel(params.selectedModel) ||
-    !modelAllowedForOrgPlan({
-      capabilities: params.capabilities,
-      selectedModel: params.selectedModel,
-    })
-  ) {
+  if (!isSupportedRunModel(params.selectedModel)) {
     return null;
   }
-
   const [policy] = await params.db
     .select({
       model: orgModelPolicies.model,
@@ -278,79 +164,7 @@ async function resolveValidPolicyRoute(params: {
       ),
     )
     .limit(1);
-  const providerType = policy
-    ? modelProviderTypeSchema.safeParse(policy.defaultProviderType)
-    : null;
-  if (
-    !policy ||
-    !isSupportedRunModel(policy.model) ||
-    !providerType?.success ||
-    (!policy.modelProviderSurfaceId &&
-      !isModelSupportedByProvider(policy.model, providerType.data)) ||
-    !modelProviderAllowedForOrgPlan({
-      capabilities: params.capabilities,
-      modelProviderType: providerType.data,
-    })
-  ) {
-    return null;
-  }
-
-  const credentialScope = parseModelProviderCredentialScope(
-    policy.credentialScope,
-  );
-  if (credentialScope === null) {
-    return null;
-  }
-  if (policy.modelProviderSurfaceId) {
-    return await resolveCustomSurfacePolicyRoute({
-      db: params.db,
-      orgId: params.orgId,
-      policy: {
-        model: policy.model,
-        modelProviderId: policy.modelProviderId,
-        modelProviderSurfaceId: policy.modelProviderSurfaceId,
-      },
-      providerType: providerType.data,
-      credentialScope,
-    });
-  }
-  if (
-    !isLegacyPolicyRouteShapeValid({
-      credentialScope,
-      providerType: providerType.data,
-      modelProviderId: policy.modelProviderId,
-    })
-  ) {
-    return null;
-  }
-  const legacyOrgProviderId = getLegacyOrgProviderId({
-    credentialScope,
-    providerType: providerType.data,
-    modelProviderId: policy.modelProviderId,
-  });
-  if (legacyOrgProviderId) {
-    const [provider] = await params.db
-      .select({ type: modelProviders.type })
-      .from(modelProviders)
-      .where(
-        and(
-          eq(modelProviders.id, legacyOrgProviderId),
-          eq(modelProviders.orgId, params.orgId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      )
-      .limit(1);
-    if (provider?.type !== providerType.data) {
-      return null;
-    }
-  }
-
-  return {
-    modelProviderId: policy.modelProviderId,
-    modelProviderType: providerType.data,
-    modelProviderCredentialScope: credentialScope,
-    selectedModel: policy.model,
-  };
+  return policy ? resolveEffectivePolicyRoute({ ...params, policy }) : null;
 }
 
 export async function resolveDefaultModelFirstPin(
@@ -361,6 +175,7 @@ export async function resolveDefaultModelFirstPin(
   if (userId !== "__no_preference__") {
     await ensureOrgModelPolicies(db, orgId, userId);
   }
+  const member = await loadMemberModelRouteContext(db, orgId, userId);
   const capabilities = modelRouteCapabilities(
     await loadOrgPlanCapabilities(db, orgId),
   );
@@ -383,6 +198,7 @@ export async function resolveDefaultModelFirstPin(
         db,
         orgId,
         capabilities,
+        member,
         selectedModel: preference.selectedModel,
       });
       if (preferredRoute) {
@@ -407,6 +223,7 @@ export async function resolveDefaultModelFirstPin(
     db,
     orgId,
     capabilities,
+    member,
   });
   return route
     ? { ...modelFirstPinFromRoute(route), serviceTier: null }
@@ -420,11 +237,12 @@ export async function resolveDefaultModelFirstPin(
 }
 
 async function resolveWorkspaceDefaultModelFirstRoute(params: {
+  readonly member: MemberModelRouteContext;
   readonly db: Db;
   readonly orgId: string;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
-    "restrictedVm0Models" | "supportByok"
+    "restrictedBuiltInModels" | "supportByok"
   >;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
   const [policy] = await params.db
@@ -444,6 +262,7 @@ async function resolveWorkspaceDefaultModelFirstRoute(params: {
     db: params.db,
     orgId: params.orgId,
     capabilities: params.capabilities,
+    member: params.member,
     selectedModel: policy.model,
   });
 }
@@ -459,12 +278,18 @@ export async function resolvePersistedModelFirstRoute(params: {
     params.db,
     params.orgId,
   );
+  const member = await loadMemberModelRouteContext(
+    params.db,
+    params.orgId,
+    params.userId,
+  );
   const capabilities = modelRouteCapabilities(orgPlanCapabilities);
   const currentRoute = params.selectedModel
     ? await resolveValidPolicyRoute({
         db: params.db,
         orgId: params.orgId,
         capabilities,
+        member,
         selectedModel: params.selectedModel,
       })
     : null;
@@ -480,6 +305,7 @@ export async function resolvePersistedModelFirstRoute(params: {
     db: params.db,
     orgId: params.orgId,
     capabilities,
+    member,
   });
   return {
     route: defaultRoute,
@@ -527,6 +353,7 @@ export async function resolveModelSelectionPin(params: {
   if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
+  const member = await loadMemberModelRouteContext(db, orgId, userId);
   const capabilities = modelRouteCapabilities(
     await loadOrgPlanCapabilities(db, orgId),
   );
@@ -579,6 +406,7 @@ export async function resolveModelSelectionPin(params: {
     db,
     orgId,
     capabilities,
+    member,
     selectedModel: modelSelection.selectedModel,
   });
   return route

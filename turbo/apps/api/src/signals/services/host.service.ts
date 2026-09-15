@@ -1,4 +1,3 @@
-import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import type {
@@ -18,7 +17,10 @@ import {
 } from "@okouai/db/schema/hosted-site";
 import { and, desc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { env } from "../../lib/env";
+import { publicSlugCandidate } from "../../lib/hosted-site-slug";
 import { type Db, writeDb$ } from "../external/db";
+import { settle } from "../utils";
+import type { Tx } from "../../lib/db-types";
 import {
   generateHostedSitesPresignedGetUrl,
   generateHostedSitesPresignedPutUrl,
@@ -34,15 +36,15 @@ import {
   type RenderArtifactPreviewArgs,
 } from "./artifact-preview.service";
 import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
-
-const PUT_URL_TTL_SECONDS = 3600;
-const GET_URL_TTL_SECONDS = 3600;
+import {
+  assertHostedDeploymentScope,
+  canonicalizeHostedSiteScope,
+  HostedSiteScopeError,
+  lockHostedRunChatThreadId,
+} from "./hosted-site-scope.service";
 const MAX_HOSTED_SITE_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_PUBLIC_SLUG_ATTEMPTS = 5;
-const MAX_DNS_LABEL_LENGTH = 63;
-const PUBLIC_SLUG_HASH_LENGTH = 4;
-const PUBLIC_SLUG_HASH_SPACE = 36 ** PUBLIC_SLUG_HASH_LENGTH;
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
 
@@ -162,7 +164,8 @@ type SiteDeploymentCreationResult =
       readonly site: HostedSiteRow;
       readonly deployment: HostedDeploymentRow;
     }
-  | { readonly kind: "slug_conflict" };
+  | { readonly kind: "slug_conflict" }
+  | { readonly kind: "scope_conflict"; readonly message: string };
 
 interface CreateHostedSiteDeploymentContext {
   readonly now: Date;
@@ -262,44 +265,6 @@ function deploymentPrefix(
   deploymentVersion: number,
 ): string {
   return `sites/orgs/${encodeURIComponent(orgId)}/${site}/versions/${deploymentVersion}`;
-}
-
-function shortPublicSlugHash(
-  orgId: string,
-  site: string,
-  scopeKey: string,
-  attempt: number,
-): string {
-  const value = createHash("sha256")
-    .update(`${orgId}\0${site}\0${scopeKey}\0${attempt}`)
-    .digest()
-    .readUInt32BE(0);
-  return (value % PUBLIC_SLUG_HASH_SPACE)
-    .toString(36)
-    .padStart(PUBLIC_SLUG_HASH_LENGTH, "0");
-}
-
-function isImmutableDeploymentHostLabel(value: string): boolean {
-  return IMMUTABLE_DEPLOYMENT_HOST_PATTERN.test(value);
-}
-
-function publicSlugCandidate(
-  site: string,
-  orgId: string,
-  scopeKey: string,
-  attempt: number,
-): string {
-  if (attempt === 0 && !isImmutableDeploymentHostLabel(site)) {
-    return site;
-  }
-  const hashAttempt = isImmutableDeploymentHostLabel(site)
-    ? attempt
-    : attempt - 1;
-  const base = site.slice(
-    0,
-    MAX_DNS_LABEL_LENGTH - PUBLIC_SLUG_HASH_LENGTH - 1,
-  );
-  return `${base}-${shortPublicSlugHash(orgId, site, scopeKey, hashAttempt)}`;
 }
 
 function hostedSiteScopeKey(args: ScopedPrepareDeploymentArgs): string {
@@ -643,7 +608,7 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
 }
 
 async function findOrCreateHostedSite(
-  db: Db,
+  db: Tx,
   args: ScopedPrepareDeploymentArgs,
   now: Date,
 ): Promise<HostedSiteRow | null> {
@@ -655,6 +620,13 @@ async function findOrCreateHostedSite(
   }
 
   const scopeKey = hostedSiteScopeKey(args);
+  const scope = await canonicalizeHostedSiteScope(db, {
+    orgId: args.orgId,
+    slug: args.body.site,
+    requestedSlug: args.body.site,
+    chatThreadId: args.chatThreadId,
+    createdFromRunId: args.runId,
+  });
   for (let attempt = 0; attempt < MAX_PUBLIC_SLUG_ATTEMPTS; attempt += 1) {
     const publicSlug = publicSlugCandidate(
       args.body.site,
@@ -668,9 +640,8 @@ async function findOrCreateHostedSite(
         orgId: args.orgId,
         userId: args.userId,
         slug: publicSlug,
-        requestedSlug: args.body.site,
+        ...scope,
         publicBrand: args.publicBrand,
-        chatThreadId: args.chatThreadId,
         publicSlug,
         createdFromRunId: args.runId,
         updatedAt: now,
@@ -692,7 +663,7 @@ async function findOrCreateHostedSite(
 }
 
 async function allocateHostedSite(
-  db: Db,
+  db: Tx,
   args: ScopedPrepareDeploymentArgs,
   now: Date,
 ): Promise<HostedSiteAllocation | null> {
@@ -716,7 +687,7 @@ async function allocateHostedSite(
 }
 
 async function insertHostedDeployment(
-  db: Db,
+  db: Tx,
   args: ScopedPrepareDeploymentArgs,
   context: CreateHostedSiteDeploymentContext,
   allocation: HostedSiteAllocation,
@@ -748,6 +719,11 @@ async function insertHostedDeployment(
     ...(args.privateArtifacts ? { access: "owner-private-v1" as const } : {}),
   };
   const files = Object.values(manifest.files);
+  await assertHostedDeploymentScope(db, {
+    siteId: site.id,
+    orgId: args.orgId,
+    runId: args.runId,
+  });
   const [deployment] = await db
     .insert(
       args.privateArtifacts ? privateHostedDeployments : hostedDeployments,
@@ -782,24 +758,43 @@ async function insertHostedDeployment(
   return deployment;
 }
 
-function createHostedSiteDeployment(
+export async function createHostedSiteDeployment(
   writeDb: Db,
-  args: ScopedPrepareDeploymentArgs,
+  args: PrepareDeploymentArgs & { readonly privateArtifacts: boolean },
   context: CreateHostedSiteDeploymentContext,
 ): Promise<SiteDeploymentCreationResult> {
-  return writeDb.transaction(async (tx) => {
-    const allocation = await allocateHostedSite(tx, args, context.now);
-    if (!allocation) {
-      return { kind: "slug_conflict" };
+  const result = await settle(
+    writeDb.transaction(async (tx): Promise<SiteDeploymentCreationResult> => {
+      // Hold run ownership stable through allocation and deployment admission.
+      // FOR SHARE also blocks non-key metadata updates and run cleanup.
+      const chatThreadId = await lockHostedRunChatThreadId(tx, args.runId);
+      const scopedArgs = { ...args, chatThreadId };
+      if (await hasUnscopedHostedSiteConflict(tx, scopedArgs)) {
+        return {
+          kind: "scope_conflict",
+          message: `Hosted site slug "${args.body.site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
+        };
+      }
+      const allocation = await allocateHostedSite(tx, scopedArgs, context.now);
+      if (!allocation) {
+        return { kind: "slug_conflict" };
+      }
+      const deployment = await insertHostedDeployment(
+        tx,
+        scopedArgs,
+        context,
+        allocation,
+      );
+      return { kind: "ok", site: allocation.site, deployment };
+    }),
+  );
+  if (!result.ok) {
+    if (result.error instanceof HostedSiteScopeError) {
+      return { kind: "scope_conflict", message: result.error.message };
     }
-    const deployment = await insertHostedDeployment(
-      tx,
-      args,
-      context,
-      allocation,
-    );
-    return { kind: "ok", site: allocation.site, deployment };
-  });
+    throw result.error;
+  }
+  return result.value;
 }
 
 export const prepareHostedSiteDeployment$ = command(
@@ -819,30 +814,23 @@ export const prepareHostedSiteDeployment$ = command(
     }
 
     const writeDb = set(writeDb$);
-    const chatThreadId = await resolveChatThreadId(writeDb, args.runId);
-    signal.throwIfAborted();
-    const scopedArgs: ScopedPrepareDeploymentArgs = {
+    const creationArgs = {
       ...args,
-      chatThreadId,
       privateArtifacts: await get(
         privateArtifactCreationEnabled(args.orgId, args.userId),
       ),
     };
     signal.throwIfAborted();
-    if (await hasUnscopedHostedSiteConflict(writeDb, scopedArgs)) {
-      return {
-        status: "conflict",
-        message: `Hosted site slug "${args.body.site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
-      };
-    }
-    signal.throwIfAborted();
     const now = nowDate();
     const siteAndDeployment = await createHostedSiteDeployment(
       writeDb,
-      scopedArgs,
+      creationArgs,
       { now },
     );
     signal.throwIfAborted();
+    if (siteAndDeployment.kind === "scope_conflict") {
+      return { status: "conflict", message: siteAndDeployment.message };
+    }
     if (siteAndDeployment.kind === "slug_conflict") {
       return {
         status: "conflict",
@@ -860,7 +848,6 @@ export const prepareHostedSiteDeployment$ = command(
               hostedR2.config.bucket,
               fileKey(siteAndDeployment.deployment.r2Prefix, file.path),
               file.contentType,
-              PUT_URL_TTL_SECONDS,
               true,
             ),
           );
@@ -1391,9 +1378,6 @@ export const getHostedSiteFiles$ = command(
           generateHostedSitesPresignedGetUrl(
             hostedR2.config.bucket,
             fileKey(deployment.r2Prefix, file.path),
-            deployment.manifest.access
-              ? PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS
-              : GET_URL_TTL_SECONDS,
             true,
           ),
         );

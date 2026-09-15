@@ -150,7 +150,12 @@ async function openSupportedLanguagePicker() {
     return respond(200, preferences);
   });
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
-    preferences = createPreferences(body.locale ?? "en-US", ["en-US"]);
+    preferences = {
+      ...preferences,
+      ...body,
+      supportedLocales:
+        body.locale === undefined ? preferences.supportedLocales : ["en-US"],
+    };
     return respond(200, preferences);
   });
 

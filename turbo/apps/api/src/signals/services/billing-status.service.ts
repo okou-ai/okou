@@ -136,10 +136,15 @@ interface BillingStatusResponse {
   concurrencyPurchaseReviewAvailable: boolean;
   canBuyCredits: boolean;
   showUsagePack: boolean;
-  // Wire compatibility for outgoing Apps only; derived from status (#32575).
-  memberInvitationAllowed: boolean;
   autoRechargeAllowed: boolean;
   supportByok: boolean;
+  restrictedBuiltInModels: boolean;
+  // Retired brand alias of restrictedBuiltInModels, carrying an identical
+  // value from the same source. Surface: old web/app -> API. Apps older than
+  // this release read only this name, and because the contract marks both
+  // optional they would silently fall back to their hardcoded legacy tier
+  // table instead of failing. Remove once the replacement app is live and the
+  // client-version floor excludes those builds: #33658 step 2.
   restrictedVm0Models: boolean;
   videoGenerationAllowed: boolean;
   workflowWebhookAutomationAllowed: boolean;
@@ -586,7 +591,7 @@ function billingStatusResponse(args: {
   status: OrgPlanCapabilities["status"];
   autoRechargeAllowed: boolean;
   supportByok: boolean;
-  restrictedVm0Models: boolean;
+  restrictedBuiltInModels: boolean;
   videoGenerationAllowed: boolean;
   workflowWebhookAutomationAllowed: boolean;
   unsettledExpired: number;
@@ -615,10 +620,10 @@ function billingStatusResponse(args: {
     canBuyCredits: args.canBuyCredits,
     showUsagePack: args.showUsagePack,
     status: args.status,
-    memberInvitationAllowed: args.status === "active",
     autoRechargeAllowed: args.autoRechargeAllowed,
     supportByok: args.supportByok,
-    restrictedVm0Models: args.restrictedVm0Models,
+    restrictedBuiltInModels: args.restrictedBuiltInModels,
+    restrictedVm0Models: args.restrictedBuiltInModels,
     videoGenerationAllowed: args.videoGenerationAllowed,
     workflowWebhookAutomationAllowed: args.workflowWebhookAutomationAllowed,
     credits: displayedCredits,
@@ -766,7 +771,7 @@ export function orgBillingStatus(
       status: billingPlanStatus(capabilities),
       autoRechargeAllowed: capabilities?.autoRechargeAllowed ?? false,
       supportByok: capabilities?.supportByok ?? false,
-      restrictedVm0Models: capabilities?.restrictedVm0Models ?? false,
+      restrictedBuiltInModels: capabilities?.restrictedBuiltInModels ?? false,
       videoGenerationAllowed: capabilities?.videoGenerationAllowed ?? false,
       workflowWebhookAutomationAllowed:
         capabilities?.workflowWebhookAutomationAllowed ?? false,

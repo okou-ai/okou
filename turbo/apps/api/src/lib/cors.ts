@@ -84,7 +84,6 @@ export const corsMiddleware: MiddlewareHandler = cors({
   credentials: true,
   allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowHeaders: [
-    "Sec-GPC",
     "X-CSRF-Token",
     "X-Requested-With",
     "Accept",

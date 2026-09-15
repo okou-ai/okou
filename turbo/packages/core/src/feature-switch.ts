@@ -45,15 +45,23 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.PrivacyChoices]: {
-    maintainer: "yuma@okou.ai",
-    description: "Canonical anonymous and personal privacy preference APIs",
-    enabled: true,
+  [FeatureSwitchKey.SessionOutputStreaming]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Subscribe to transient session text output while a run is active",
+    enabled: false,
+  },
+  [FeatureSwitchKey.SocialStatus]: {
+    maintainer: "liangyou@okou.ai",
+    description: "On-demand public Social service health",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ThreadActivitySummary]: {
     maintainer: "lancy@okou.ai",
@@ -71,12 +79,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ComposerCreateCommands]: {
     maintainer: "bingjie@okou.ai",
     description: "Create commands and mode-specific composer controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Fuzzy workflow name matching in the chat composer",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -103,17 +105,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.CanvaConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Canva design connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.CalendlyOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable Calendly OAuth connections",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.CalComConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Cal.com scheduling connector",
     enabled: false,
   },
   [FeatureSwitchKey.CopperConnector]: {
@@ -186,11 +177,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Webflow site management connector",
     enabled: false,
   },
-  [FeatureSwitchKey.PosthogConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the PostHog analytics connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",
@@ -200,11 +186,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ramp spend management connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.MailchimpConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mailchimp email marketing connector",
-    enabled: true,
   },
   [FeatureSwitchKey.ResendConnector]: {
     maintainer: "yuma@okou.ai",
@@ -234,7 +215,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable the managed banking gateway and banking:read OKOU_TOKEN capability for Finicity-backed accounts, balances, and transactions.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Lab]: {
     maintainer: "ethan@okou.ai",
@@ -259,8 +239,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Enable Morning Brief and email subscription management in Preferences.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -296,10 +275,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ModelPickerMenu]: {
+  [FeatureSwitchKey.Effort]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Show a compact overview of chat, image, and video models with nested model lists and Fast settings.",
+      "Set Fast mode and chat reasoning effort from the composer's run controls.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
@@ -325,13 +304,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatReasoningEffort]: {
-    maintainer: "bingjie@okou.ai",
+  [FeatureSwitchKey.PiDeferredSandbox]: {
+    maintainer: "lancy@okou.ai",
     description:
-      "Choose model reasoning effort for Codex and Claude Code chats.",
+      "Allow Pi inference before Sandbox admission after lifecycle activation prerequisites are met.",
     enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",
@@ -339,6 +316,25 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Run owned chat threads with the official Pi runtime, native session persistence, and shared memory learning across interactive and automation turns.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.PiMemory]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.OpenRouterUsRouting]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Use US routing for supported models with platform-owned OpenRouter keys.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.LangfuseTrace]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
+    enabled: false,
   },
   [FeatureSwitchKey.IntroVideo]: {
     maintainer: "bingjie@okou.ai",
@@ -366,13 +362,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Translate selected assistant text into a remembered target language.",
     enabled: false,
   },
-  [FeatureSwitchKey.VoiceInputV2]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Transcribe and polish voice input before inserting it into the composer, with Mod+Shift+E to start or stop recording.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -386,73 +375,18 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatErrorRecovery]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Replace supported Codex and Claude Code limit errors with recovery actions in chat.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ReferenceImages]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Enable reusable private and organization-visible image references.",
-    enabled: false,
-  },
   // Every artifact privacy slice in #32492 uses this same rollout switch.
   [FeatureSwitchKey.PrivateArtifacts]: {
     maintainer: "yuma@okou.ai",
     description:
-      "Use private storage and authenticated previews for CLI artifact uploads and managed generation.",
+      "Use private artifact storage, the Okou viewer, and organization and public sharing.",
     enabled: false,
-  },
-  [FeatureSwitchKey.AgentMessageMath]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Render explicit LaTeX delimiters in Agent messages as native MathML.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.MarkdownTime]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Render Markdown time tags with explicit datetime offsets in the browser timezone.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ProgressiveArtifactPreview]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Publish coherent website and HTML presentation previews while the agent continues improving them.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThinkingSpinner]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Replace the three-block chat thinking loader with a rotating Okou mark.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerImageAnnotation]: {
     maintainer: "tongx@okou.ai",
     description:
       "Let an attached image be marked up in the composer lightbox — boxes, arrows, freehand, text, highlight and redaction, each able to carry a note — and send a rendered copy carrying the editable marks.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ResponsiveFollowupCards]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Render recommended follow-ups as a horizontally scrollable rail of tappable quick replies on touch devices.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.StableChatThreadNavigation]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Keep pinned chats in a stable, manually adjustable order, show current chats in empty search, and use numbered shortcuts inside the search dialog.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.GradientColorThemes]: {
     maintainer: "ming@okou.ai",
@@ -467,6 +401,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PersonalSubscriptionPriority]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -474,17 +414,21 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.LarkIntegration]: {
+    maintainer: "linghan@okou.ai",
+    description: "Enable Lark bot setup, account connections, and messaging.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.TelegramDmSessions]: {
+    maintainer: "linghan@okou.ai",
+    description:
+      "Use agent/model-scoped Telegram DM sessions and separate reply chains. Enable after compatible callback readers are deployed.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SlackRead]: {
-    maintainer: "linghan@okou.ai",
-    description:
-      "List Slack channels and read channel and bot DM history through the Okou CLI.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -501,10 +445,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.CloudflareAccess]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable user-owned Cloudflare Access for saved SSH hosts",
+    enabled: false,
+  },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:
-      "Shelf-based connector browsing in the chat composer and on the connectors page: connected connectors separated from discovery, category shelves and chips, per-connector detail, and keyboard navigation.",
+      "Shelf-based connector browsing in the chat composer and on the connectors page: a Discover/Your connectors scope segment with one filter each (category and agent), category shelves and chips, per-connector detail, and keyboard navigation.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -512,6 +461,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Pin chats from the desktop title and keep Pin, Share, and More visible in the mobile thread header.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
+    maintainer: "tongx@okou.ai",
+    description:
+      "Replace the composer's flat slash menu with a two-pane panel that previews each template type's covers.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

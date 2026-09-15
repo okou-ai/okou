@@ -1,9 +1,66 @@
 # mitmproxy Addon Runtime Contracts
 
-These contracts cover addon logging, WebSocket framing and inspection, and path
+These contracts cover addon control, logging, WebSocket framing and inspection, and path
 normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](testing/mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
+
+## Runner-private control and readiness
+
+Runner and its embedded addon ship together. `okou_control_socket_dir` selects
+the current managed launch directory; `okou_usage_state_id` is also the control
+generation and rotates on restart. Readiness requires a correlated `proxy.status`
+reply followed by EOF, then the existing TCP listener probe, within the original
+10-second startup deadline. A socket inode alone is not readiness. Only read-only
+startup probes retry, with at most one second per control attempt.
+
+The addon owns a separate asyncio I/O thread. It opens the launch directory with
+`O_DIRECTORY | O_NOFOLLOW`, requires the effective UID and private permissions,
+and exclusively binds `control.sock` with mode `0600`. Runner creates launch
+directories with mode `0700`. Neither bind failure nor addon shutdown unlinks an
+endpoint: Runner removes the launch directory only after reaping its process
+tree. Each side connects/binds through its own live directory descriptor's
+`/proc/self/fd/<fd>/control.sock` alias, so long launch paths work on Linux.
+
+Each Unix stream carries one request and at most one terminal reply: a four-byte
+big-endian unsigned length followed by UTF-8 JSON. Frames are 1–65,536 bytes;
+there are at most 16 admitted connections, a backlog of 16, and a five-second
+whole-connection deadline. Partial frames, oversize lengths, disconnected or
+slow peers cannot retain admission indefinitely. Overload closes without reading
+or inventing a request ID. Malformed or pipelined peers can observe a reset.
+
+Requests have exactly `requestId`, `generation`, `method`, and `params`. Identifiers
+match `[A-Za-z0-9_.-]{1,64}`; duplicate keys, non-JSON constants, and unknown fields
+are rejected. The only method is `proxy.status`, with empty object parameters:
+
+```json
+{
+  "requestId": "request-1",
+  "generation": "launch-generation",
+  "method": "proxy.status",
+  "params": {}
+}
+```
+
+A successful reply contains those identities, `"type": "result"`, and
+`"data": {"state": "running"}`. An error instead contains `"type": "error"` and
+`"code": "invalid_request"`, `"stale_generation"`, or `"unknown_method"`;
+`requestId` is null when no valid correlation can be recovered. Error generation
+always identifies the serving addon. Rust rejects mismatched identities, unknown
+response fields/states, extra response bytes, and missing terminal EOF.
+
+The JSONL watcher starts before control admission. Shutdown stops control
+admission, closes every accepted socket (including tasks not yet started), and
+joins the I/O thread before existing blocking drains. This is a readiness
+snapshot, not an ongoing health guarantee or business-state acknowledgement.
+A lost reply after transmission means an unknown outcome; the transport does
+not automatically replay future mutations or move business state onto its thread.
+
+JSONL flush, registry/catalog consumption, SIGUSR1 delivery drain, and API/billing
+contracts remain unchanged. Old Runner instances retain their embedded addon;
+no API-first deployment or mixed Runner/addon protocol fallback is needed. This
+stage does not implement token accounting or guest RPC, and unit/packaged runtime
+tests do not claim production soak or a measured latency improvement.
 
 ## Logging Boundaries
 
@@ -27,6 +84,42 @@ nested fields map. Runner-owned Axiom metadata (`_time`, `context`, `service`,
 `runner_hostname`, and `runner_version`) remains authoritative. Callers remain
 responsible for redaction and bounded values.
 
+Process events use the Linux Runner's stderr pipe only. Each emission reopens
+`/proc/self/fd/2` with independent nonblocking flags, checks the opened pipe's
+atomic-write limit, attempts one complete record, and closes the descriptor.
+The original stderr flags remain unchanged for mitmproxy-native output. A full
+pipe drops the entire event; later events can be delivered once the reader
+resumes. There is no application queue, retry, overflow log, or shutdown drain.
+Each concurrent emission owns at most one transient descriptor and one bounded
+record (4096 bytes). Non-pipe stderr and transport setup/write errors also drop
+the event. Input validation and serialization errors still propagate. This
+best-effort policy does not change billing delivery or run-local JSONL logging.
+
+### Capture header inspection
+
+Opt-in network capture serializes a header prefix bounded to 512 raw fields
+and 32 KiB of raw name/value bytes per request or response. Header values retain
+the existing redaction rules. `*_headers_truncated` describes only that prefix.
+
+Total capture inspection is capped at 2,048 raw fields per side, including
+unrelated names. Body capture requires complete `Content-Type` and
+`Content-Encoding` discovery within that limit; dependency values retain their
+separate 512-field and 32-KiB budgets, including folding separators. Dependencies
+after the serialized prefix still apply when the complete collection fits.
+
+If the raw field count exceeds 2,048, capture skips dependency discovery and
+only serializes the bounded header prefix. Even an early valid Content-Type
+cannot establish that an unseen duplicate or encoding is absent. Nonempty bodies
+are omitted with `*_body_encoding: "binary"`; empty bodies have neither a body
+nor an encoding field. Empty, absent, and suppressed bodies do not need
+dependency discovery. Existing body truncation and incomplete-stream semantics
+remain independent of header truncation.
+
+This bounds optional capture work after upstream parsing. It does not reject
+traffic or modify status, headers, or wire body bytes. The final network-log row
+still reaches the existing writer. Old runners retain their previous capture
+policy until updated; the log schema and its consumers do not change.
+
 ### JSONL append recovery
 
 The asynchronous writer accepts caller-framed JSONL bytes and opens the
@@ -43,6 +136,27 @@ prefix, including after a writer restart, but cannot recover another producer's
 record already embedded in a malformed line or serialize independently
 interleaved short-write sequences. The existing Runner uploader continues to
 skip malformed physical lines and upload independently parseable records.
+
+## Header-phase credential-resolution failures
+
+If credential resolution fails while preparing a request for authenticated
+streaming, the addon terminates that upload from `requestheaders()`. The pinned
+mitmproxy runtime closes an HTTP/1 connection or resets the affected HTTP/2
+stream before sending `100 Continue` or consuming the request body. It makes no
+upstream request and does not retry credential resolution for that flow.
+
+These uploads receive a transport termination instead of a JSON error after
+body completion. The existing firewall action, error classification, and proxy
+diagnostic remain available; the error hook records a connection failure with
+status `0` and releases terminal resources. The unsent local error response is
+discarded so it cannot appear as a captured response. Auth failures first
+resolved in the normal buffered request hook keep their structured responses.
+Successful authenticated streaming retains its bounded capture behavior.
+
+This changes only the addon lifecycle. Runner/API and network-log schemas stay
+unchanged, and old Runner instances keep their previous behavior until replaced.
+`test_mitmproxy_header_auth_failure_framing.py` covers incomplete Content-Length,
+chunked, and HTTP/2 uploads, including body data queued during the headers hook.
 
 ## Model-provider failure reporting shutdown
 
@@ -242,6 +356,44 @@ raw-value guards and exact-boundary cases protect against unbounded suffix
 copies, name normalization, and truncated-prefix matches. The shared failure
 reporting suite also verifies the same classification for usage and failure
 observers without timing or allocation thresholds.
+
+## Content-Encoding decoder inspection boundary
+
+Shared body decoders inspect at most 8,192 raw header fields and 8,192 total
+Content-Encoding value bytes per call, including comma-space separators for
+repeated fields. Field count is checked before traversal, and raw names are
+length-checked before case normalization. All matching values must fit the
+budget before any value is decoded, joined, stripped, or lowercased. Oversized
+unrelated names and values are skipped without copying or normalization.
+
+Within budget, decoding preserves mitmproxy's UTF-8/surrogateescape conversion,
+comma folding, and existing whitespace/case normalization. Missing and empty
+encoding remain identity; gzip, deflate, and br keep streaming support, while
+zstd keeps its bounded terminal JSON path. Repeated fields and coding lists
+retain their unsupported-encoding behavior.
+
+Budget exhaustion is uninspectable, not proof of identity encoding. Capability
+checks decline both streaming and terminal JSON fallback. Successful billable
+model responses and registered connector response parsers therefore use the
+existing empty 502 response and discard upstream body bytes. The fixed
+`content encoding header inspection limit exceeded` diagnostic contains no raw
+header data. Upstream errors, non-billable flows, and bodyless responses retain
+their existing pass-through policy; status-level provider failure reports remain
+available. Accepted and pass-through responses preserve wire headers and bytes.
+
+Direct terminal JSON decoding returns an error for exhaustion, strict capture
+decoders hide the body, and best-effort capture decompression retains wire bytes
+as it does for unsupported encoding. These local decoder limits do not bound
+mitmproxy's initial HTTP-head buffer, separate request-billing inspection, or
+other header consumers. Old runners retain their previous local behavior until
+updated; no wire protocol or persisted state changes.
+
+`test_response_content_encoding_budget.py` exercises guarded raw inputs through
+the real response hooks and verifies usage delivery, exact limits, and 502/body
+discard behavior. The provider failure suite covers the real 429 response hook
+with oversized unrelated names and excess fields while verifying HTTP reports
+and pass-through traffic. The regressions use structural work assertions, not
+wall-clock thresholds.
 
 ## Path normalization work boundary
 

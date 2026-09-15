@@ -3,34 +3,67 @@
 New-policy private artifacts use the existing `privateArtifacts` switch. Its
 code default remains `false`. The API resolves the owner/original-org switch
 for new grants and audience/version changes; the app uses the same switch for
-its Share menu. Stored policy enforcement, organization resolution and stopping
-an existing share do not depend on the rollout switch.
+its Share menu and standalone viewer. Stored policy enforcement, organization
+resolution and stopping an existing share do not depend on the rollout switch.
+
+## Upload storage and historical files
+
+With `privateArtifacts` enabled, new chat attachments (including annotated images
+and multipart uploads), integration input/output files, browser screenshots,
+Social downloads, and generated preview images use the private artifact bucket.
+The upload purpose is not a storage-policy selector. Private objects have an
+ownership record with `metadata.storage: "private-artifact-v1"`, the bucket and
+object key, and a stable `/artifacts/` reference. Missing private configuration or
+bytes never falls back to a public write or public lookup.
+
+Reads authorize the recorded owner and organization and use the stored location,
+regardless of the current switch. Old public URLs, V1/V2 object keys, and canonical
+input records with `accessLevel: "private"` but no storage marker retain their
+original public storage behavior. Enabling the switch does not migrate or make
+historical public bytes private. Existing canonical operations and multipart
+uploads retain their allocated bucket on retry. Social jobs record the storage
+choice in their request snapshot; older jobs without that field remain public.
+
+Web previews, Agent downloads, image recognition, template import/preview, and
+Drive sync resolve the stored location. Providers that fetch bytes receive
+temporary signed URLs; durable records retain the stable reference. Teams and
+GitHub message links to new private files use the authenticated App URL.
+Conversation sharing copies private attachment bytes into private snapshots
+controlled by the conversation's existing share policy, including when creation
+has subsequently been disabled. Reattaching an existing output preserves its
+original run and publication identity.
 
 ## User flow
 
 The owner opens an artifact's existing Share menu, which contains only
 **Share to organization** and **Share to Public**. Choosing either option shares
 the displayed version and copies its link. If that version already has the
-chosen audience, the action only copies the existing link without updating
-permissions or republishing. Opening the menu is read-only. Upload, generation,
-hosting and thread sharing create no artifact grants. Recipients cannot edit
-or reshare.
+chosen audience, the action copies the existing link. An explicit share action
+also allocates a short organization reference or named public site URL for an
+older share that lacks one. Opening the menu is read-only. Upload, generation,
+hosting create no artifact grants. Thread sharing creates independent resource
+snapshots under its own grant; see [shared-thread snapshots](shared-thread-artifact-snapshots.md).
+Recipients cannot edit or reshare the original artifact.
 
-- Organization: `https://app.okou.ai/share/artifacts/<shareId>` (the configured
+- Organization: `https://app.okou.ai/artifacts/<10-character-reference>.<extension>` (the configured
   `APP_URL` in other environments). The app uses existing login with a same-origin
   return path, then calls the API with its session. The API checks the grant and
   current membership of the **original organization**, even when another org is
-  active. Success navigates directly to the signed file or isolated HTML; this
-  route adds no viewer or wrapper iframe. Denial shows only an unavailable
-  message. The app handoff and API response are private/no-store and no-referrer.
-- Public: `https://sh-<compactShareId>-<publicationToken>.okou.app/`, using the
-  configured branded hosted domain. Anonymous requests go through the host
-  Worker and never require an API or primary database round trip.
+  active. With `privateArtifacts` enabled, success opens the standalone Okou
+  viewer; otherwise it navigates directly to the signed file or isolated HTML.
+  Denial shows an unavailable message without artifact metadata or content.
+  The app response and API response are private/no-store and no-referrer.
+- Public sites: `https://<site-name>.okou.app/`, using the configured branded
+  hosted domain and the same naming rules as `okou host`. A collision adds four
+  lowercase alphanumeric characters. Anonymous requests go through the host
+  Worker and never require an API or primary database round trip. Public files
+  retain their existing artifact-delivery URLs.
 - The menu has no separate copy or stop-sharing action. The API retains its
   stop-sharing operation for revocation and rollback. Changing Public to
   organization clears the public token before acknowledging
   organization-only scope. Republishing rotates that token, so an earlier
-  revoked public URL stays revoked.
+  revoked public URL stays revoked. A named site URL also belongs to one public
+  token: republishing after revocation allocates a new name with a short suffix.
 
 A file ID is one version. A hosted site's share ID spans its versions, but its
 policy pins one explicitly selected deployment. A new generation or another
@@ -39,6 +72,47 @@ not-yet-shared version explicitly updates the selected version and copies the
 link; the organization link stays stable. Repeating the action for the already
 shared version only copies that link.
 CLI/model URLs continue to be stable authenticated API references.
+
+## Standalone artifact viewer
+
+The shared `privateArtifacts` switch applies to
+`/artifacts/<compact-reference>[.<extension>]` and the legacy
+`/share/artifacts/<shareId>` route. Both retain the existing login and resolver
+authorization. The viewer reuses the lightbox's media and document previews,
+image zoom controls, and download action in a full-page canvas with the shared
+thread page's brand header. There is no fullscreen action. The header restores
+the app's theme preferences and **Continue with Okou** uses the shared primary
+button colors.
+
+The viewer's **Share** button directly copies the current app URL and reports
+clipboard success or failure. It never creates a grant, changes an audience,
+publishes content, or copies the temporary preview credential. Download resolves
+the canonical reference again and saves the original filename. HTML remains in
+the isolated preview origin inside a sandboxed iframe; URL fragments, including
+slide and PDF page positions, are retained. **Continue with Okou** opens a new
+chat with the canonical artifact link as its prompt, without importing the
+source thread.
+
+Organization references contain 10 lowercase alphanumeric characters, matching
+generated image reference length. An immutable R2 record at
+`artifact-references/<reference>.json` maps the reference to the internal share
+UUID. Conditional creation retries collisions without overwriting another share.
+The reference grants no access: every resolution still checks the authoritative
+share policy and original-organization membership. Existing 32-character
+`/artifacts/` references and `/share/artifacts/<shareId>` links remain supported.
+
+Named public sites use the existing immutable artifact-delivery registry. Name
+allocation checks other hosted sites, historical public pointers and registered
+aliases before acknowledging the policy write. Already allocated aliases are
+never reassigned. Legacy public token URLs continue to resolve through their
+original policy and revocation checks.
+
+The outer app page keeps `Referrer-Policy: no-referrer`. Its HTML iframe sends
+only the app origin to the configured first-party hosted domains, allowing the
+hosted-domain WAF to recognize it. Private and shared hosted responses use
+`Referrer-Policy: same-origin`: local CSS, JS and image requests identify their
+isolated origin, while cross-origin requests disclose no preview credential.
+External HTML previews retain `no-referrer`.
 
 ## Storage authority and immutable bytes
 
@@ -56,8 +130,9 @@ stay in the private artifact bucket; HTML bundles stay in the hosted-sites
 bucket under `shared-artifacts/<brand>/<snapshotId>/<deploymentId>`. No upload
 credentials are issued for those keys. This prevents still-valid upload PUT
 credentials from modifying already shared content. A snapshot is reused for
-later audience changes to the same version. No public bucket or public alias is
-created or updated; no thumbnail renderer or image-transform URL is introduced.
+later audience changes to the same version. No public bucket or mutable legacy
+site pointer is created or updated; no thumbnail renderer or image-transform
+URL is introduced.
 
 The identity is committed before publishing. Owner mutations serialize with a
 row lock, copy all required objects, then write the authoritative R2 policy.
@@ -127,10 +202,25 @@ all-cookie-blocked browser behavior require the corresponding dev deployment.
 
 Retain follow-ups for private snapshot/expired-grant retention and lifecycle
 cleanup, direct connector outputs, arbitrary hosted-asset ingestion by providers,
-and the remaining derivative/consumer audit from #32492. Shared-thread consumers
-keep their existing independent artifact authorization; sharing a thread does
-not publish its private attachments. This change adds no organization-recipient
-Drive export or editing authority.
+and the remaining derivative/consumer audit from #32492. Sharing selected user
+messages copies their attached files into immutable public objects under
+`artifacts/shared-threads/<shareId>/`. The snapshot stores their filenames,
+content types, sizes and public URLs; annotated images publish their rendered
+annotation copy. Every source is resolved for the sharing owner and original
+organization before publication. Private artifact references in message content
+use the parent conversation grant described in
+[shared-thread snapshots](shared-thread-artifact-snapshots.md), without changing
+the source artifact's policy. Copy or registration failures reject creation;
+there is no partial snapshot, retry or failed-copy reclamation. This change adds
+no organization-recipient Drive export or editing authority.
+
+Shared-thread attachment metadata is stored in `shared_threads.message_attachments`,
+keyed by the snapshot's message index. The existing `messages` JSON keeps its
+previous strict shape, so old API readers can still serve the text. The additive
+column defaults to an empty object for historical shares and old writers; no
+attachment backfill or cleanup phase is required. The current API combines these
+columns into the optional `messages[].attachments` response field. Apply the
+migration before promoting that API through the normal release workflow.
 
 ## Local verification for slice 4
 

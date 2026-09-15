@@ -1,5 +1,7 @@
 import {
   getCanonicalModelDisplayName,
+  getBuiltInConcreteProviderType,
+  isBuiltInModelProviderType,
   getDefaultOrgModelPolicySeed,
   type OrgModelPolicy,
   type OrgModelPoliciesResponse,
@@ -22,6 +24,7 @@ function makeDefaultPolicies(): OrgModelPolicy[] {
       modelLabel: getCanonicalModelDisplayName(seed.model),
       isDefault: seed.isDefault,
       defaultProviderType: seed.defaultProviderType,
+      runtimeProviderType: getBuiltInConcreteProviderType(seed.model),
       credentialScope: seed.credentialScope,
       modelProviderId: seed.modelProviderId,
       modelProviderSurfaceId: null,
@@ -67,6 +70,9 @@ function applyUpdate(policy: UpdateOrgModelPolicy): OrgModelPolicy {
     modelLabel: getCanonicalModelDisplayName(policy.model),
     isDefault: policy.isDefault,
     defaultProviderType: policy.defaultProviderType,
+    ...(isBuiltInModelProviderType(policy.defaultProviderType)
+      ? { runtimeProviderType: getBuiltInConcreteProviderType(policy.model) }
+      : {}),
     credentialScope: policy.credentialScope,
     modelProviderId: policy.modelProviderId,
     modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,

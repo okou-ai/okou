@@ -116,6 +116,7 @@ describe.each([true, false])(
       "reset a dismissed list's search after %s",
       async (dismissal) => {
         installComposerConnectorFixture({ catalog: catalog() });
+        context.mocks.data.userPreferences({ locale: "en-US" });
         await loadPage(directoryEnabled);
         const dialog = await openAddConnectors(directoryEnabled);
         await fill(

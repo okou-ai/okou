@@ -2,7 +2,7 @@ import { delay } from "signal-timers";
 
 import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
-import { onRejection, settle } from "../utils";
+import { onRejection, settle, startUntrackedBestEffortCleanup } from "../utils";
 
 const L = logger("VoiceProvider");
 const MAX_ATTEMPTS = 3;
@@ -12,7 +12,7 @@ const RECOVERY_BUDGET_MS = 15_000;
 const INITIAL_BACKOFF_MS = 1000;
 
 interface VoiceProviderContext {
-  readonly provider: "openrouter" | "fal";
+  readonly provider: "openrouter" | "fal" | "vertex";
   readonly model: string;
   readonly responseSchema?: string;
 }
@@ -128,11 +128,10 @@ export async function requestVoiceProvider<T>(
       INITIAL_BACKOFF_MS * 2 ** (attempts - 1),
       retryAfterMs(response.headers.get("Retry-After")) ?? 0,
     );
-    if (!response.bodyUsed) {
-      await onRejection(
-        response.body?.cancel() ?? Promise.resolve(),
-        checkSignal,
-      );
+    // Stream cancellation is advisory and can remain pending (for example a
+    // tee whose other reader is retained). It must not own the recovery budget.
+    if (!response.bodyUsed && response.body) {
+      startUntrackedBestEffortCleanup(response.body.cancel());
     }
     checkSignal();
     // A provider's long retry delay is not permission to retry earlier.

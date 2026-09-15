@@ -639,6 +639,15 @@ export function createAuthDeviceApiActions(context: TestContext) {
       );
     },
 
+    async requestDesktopHandoffRaw(actor: ApiTestUser | null, rawBody: string) {
+      const headers = authenticate(actor);
+      return await postRawJson(
+        "/api/desktop-auth/handoff",
+        rawBody,
+        headers.authorization ? { authorization: headers.authorization } : {},
+      );
+    },
+
     async requestDesktopConsume(
       code: string,
       statuses: readonly (200 | 400 | 500)[],

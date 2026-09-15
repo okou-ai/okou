@@ -15,6 +15,7 @@ import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { onboardingStatus$ } from "./okou-page/onboarding.ts";
 import { apiClient$ } from "./api-client.ts";
+import { discardApiBootstrapResponse } from "./api-client-base.ts";
 import { accept } from "../lib/accept.ts";
 import { retryTransientLoad } from "./utils.ts";
 import { assistantName$ } from "./branding.ts";
@@ -105,6 +106,10 @@ export const sortedAgents$ = computed(async (get) => {
 
 /** Bump to refetch the agents list. */
 export const reloadAgents$ = command(({ set }) => {
+  discardApiBootstrapResponse(
+    agentsMainContract.list.method,
+    agentsMainContract.list.path,
+  );
   set(internalReloadAgents$, (prev) => {
     return prev + 1;
   });

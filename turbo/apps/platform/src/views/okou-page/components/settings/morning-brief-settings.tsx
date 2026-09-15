@@ -34,6 +34,25 @@ function nextBriefText(
   return format(state.preference.nextRunAt, state.preference.timezone);
 }
 
+function useEnrollmentStatus(
+  state: MorningBriefPreferenceState | undefined,
+  nextBrief: string | null,
+) {
+  const { t } = useTranslation();
+  let status = nextBrief;
+  if (state?.kind === "ready" && state.preference.status === "preparing") {
+    status = t(($) => {
+      return $.settings.preferences.morningBrief.preparing;
+    });
+  }
+  if (state?.kind === "ready" && state.preference.status === "error") {
+    status = t(($) => {
+      return $.settings.preferences.morningBrief.preparationFailed;
+    });
+  }
+  return status;
+}
+
 function MorningBriefStatus({
   state,
   loading,
@@ -65,7 +84,7 @@ function MorningBriefStatus({
       })
     : null;
 
-  let status = nextBrief;
+  let status = useEnrollmentStatus(state, nextBrief);
   if (loading) {
     status = t(($) => {
       return $.settings.preferences.morningBrief.loading;
@@ -114,7 +133,12 @@ function MorningBriefDeliveryStatus({
 }) {
   const { t } = useTranslation();
   const subscription = useLoadable(emailSubscription$);
-  if (!preference || preference.unavailableReason !== null) {
+  if (
+    !preference ||
+    preference.unavailableReason !== null ||
+    preference.status === "preparing" ||
+    preference.status === "error"
+  ) {
     return null;
   }
   if (!preference.enabled) {
@@ -162,6 +186,19 @@ function MorningBriefDeliveryStatus({
   );
 }
 
+/**
+ * Enabling while a reason is reported returns the unchanged preference, so the
+ * switch would silently spring back. The reason copy explains what to fix.
+ */
+function isToggleDisabled(
+  preference: MorningBriefPreferenceResponse | undefined,
+  busy: boolean,
+): boolean {
+  return (
+    busy || preference === undefined || preference.unavailableReason !== null
+  );
+}
+
 export function MorningBriefSettings() {
   const { t } = useTranslation();
   const preferenceLoadable = useLoadable(morningBriefPreference$);
@@ -180,7 +217,6 @@ export function MorningBriefSettings() {
   const mutating = mutationLoadable.state === "loading";
   const loadFailed = preferenceLoadable.state === "hasError";
   const mutationFailed = mutationLoadable.state === "hasError";
-  const unavailable = preference?.unavailableReason ?? null;
   const conflicted = state?.kind === "error";
   const enabled = preference?.enabled ?? false;
 
@@ -189,6 +225,10 @@ export function MorningBriefSettings() {
   };
 
   const handleRetry = () => {
+    if (preference?.status === "error") {
+      detach(updatePreference(true, pageSignal), Reason.DomCallback);
+      return;
+    }
     if (mutationFailed && preference) {
       detach(
         updatePreference(!preference.enabled, pageSignal),
@@ -199,7 +239,11 @@ export function MorningBriefSettings() {
     retryPreference();
   };
 
-  const showRetry = loadFailed || mutationFailed || conflicted;
+  const showRetry =
+    loadFailed ||
+    mutationFailed ||
+    conflicted ||
+    preference?.status === "error";
 
   return (
     <div
@@ -252,14 +296,10 @@ export function MorningBriefSettings() {
             })}
             checked={enabled}
             onCheckedChange={handleToggle}
-            disabled={
-              loading ||
-              mutating ||
-              loadFailed ||
-              conflicted ||
-              unavailable !== null ||
-              preference === undefined
-            }
+            disabled={isToggleDisabled(
+              preference,
+              loading || mutating || loadFailed || conflicted,
+            )}
           />
         </div>
       </PreferenceCardRow>

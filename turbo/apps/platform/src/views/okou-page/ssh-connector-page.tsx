@@ -11,6 +11,14 @@ import {
   DialogDescription,
   Input,
   Textarea,
+  Checkbox,
+  SegmentControl,
+  SegmentControlItem,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
 } from "@okouai/ui";
 import {
   SSH_DISPLAY_NAME_MAX_LENGTH,
@@ -21,6 +29,15 @@ import {
   type SshConnectionResponse,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import {
+  sshView$,
+  type SshDialogState,
+  changeSshView$,
+  sshCredentials$,
+  sshCredentialEditor$,
+  chooseSshCredential$,
+  chooseSshAuthMethod$,
+  replaceSshAuthentication$,
+  openSshCredentialDialog$,
   sshConnections$,
   sshConflict$,
   sshDialog$,
@@ -30,8 +47,13 @@ import {
   cancelSshPrivateKeyFile$,
   importSshPrivateKeyFile$,
   mountSshPrivateKey$,
+  mountSshForm$,
   sshPrivateKeyFileResult$,
 } from "../../signals/ssh.ts";
+import {
+  SSH_PASSWORD_MAX_LENGTH,
+  type SshCredentialResponse,
+} from "@okouai/api-contracts/contracts/ssh-credentials";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -53,7 +75,12 @@ function EndpointFields({
 }) {
   const { t } = useTranslation();
   return (
-    <>
+    <fieldset className="grid min-w-0 gap-4">
+      <legend className="mb-3 text-sm font-semibold">
+        {t(($) => {
+          return $.ssh.hostSection;
+        })}
+      </legend>
       <label className="grid gap-2">
         {t(($) => {
           return $.ssh.displayName;
@@ -66,49 +93,39 @@ function EndpointFields({
           defaultValue={connection?.displayName}
         />
       </label>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.host;
-        })}
-        <Input
-          name="host"
-          required
-          pattern=".*\S.*"
-          maxLength={SSH_HOST_MAX_LENGTH}
-          defaultValue={connection?.host}
-        />
-      </label>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.port;
-        })}
-        <Input
-          name="port"
-          type="number"
-          className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-          required
-          min={1}
-          max={65_535}
-          defaultValue={connection?.port ?? 22}
-        />
-      </label>
-      <label className="grid gap-2">
-        {t(($) => {
-          return $.ssh.username;
-        })}
-        <Input
-          name="username"
-          required
-          pattern=".*\S.*"
-          maxLength={SSH_USERNAME_MAX_LENGTH}
-          defaultValue={connection?.username}
-        />
-      </label>
-    </>
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_6rem]">
+        <label className="grid gap-2">
+          {t(($) => {
+            return $.ssh.host;
+          })}
+          <Input
+            name="host"
+            required
+            pattern=".*\S.*"
+            maxLength={SSH_HOST_MAX_LENGTH}
+            defaultValue={connection?.host}
+          />
+        </label>
+        <label className="grid gap-2">
+          {t(($) => {
+            return $.ssh.port;
+          })}
+          <Input
+            name="port"
+            type="number"
+            className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            required
+            min={1}
+            max={65_535}
+            defaultValue={connection?.port ?? 22}
+          />
+        </label>
+      </div>
+    </fieldset>
   );
 }
 
-function CredentialFields() {
+function PrivateKeyFields() {
   const { t } = useTranslation();
   const importFile = useSet(importSshPrivateKeyFile$);
   const cancelRead = useSet(cancelSshPrivateKeyFile$);
@@ -207,92 +224,350 @@ function CredentialFields() {
   );
 }
 
+function CredentialFields({
+  credential,
+  disabled,
+}: {
+  readonly credential: SshCredentialResponse | null;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(sshCredentialEditor$);
+  const chooseMethod = useSet(chooseSshAuthMethod$);
+  const replace = useSet(replaceSshAuthentication$);
+  return (
+    <>
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.ssh.credential.name;
+        })}
+        <Input
+          name="credentialName"
+          required
+          pattern=".*\S.*"
+          maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
+          defaultValue={credential?.name}
+        />
+      </label>
+      <label className="grid gap-2">
+        {t(($) => {
+          return $.ssh.username;
+        })}
+        <Input
+          name="username"
+          required
+          pattern=".*\S.*"
+          maxLength={SSH_USERNAME_MAX_LENGTH}
+          defaultValue={credential?.username}
+        />
+      </label>
+      {credential && (
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            disabled={disabled}
+            checked={editor.replace}
+            onCheckedChange={(checked) => {
+              return replace(checked === true);
+            }}
+          />
+          {t(($) => {
+            return $.ssh.credential.replaceAuthentication;
+          })}
+        </label>
+      )}
+      {(!credential || editor.replace) && (
+        <>
+          <div className="grid gap-2">
+            <span id="ssh-auth-method-label">
+              {t(($) => {
+                return $.ssh.credential.authentication;
+              })}
+            </span>
+            <SegmentControl
+              className="justify-self-start"
+              disabled={disabled}
+              aria-labelledby="ssh-auth-method-label"
+              value={editor.method}
+              onValueChange={chooseMethod}
+            >
+              <SegmentControlItem value="private_key">
+                {t(($) => {
+                  return $.ssh.privateKey;
+                })}
+              </SegmentControlItem>
+              <SegmentControlItem value="password">
+                {t(($) => {
+                  return $.ssh.credential.password;
+                })}
+              </SegmentControlItem>
+            </SegmentControl>
+          </div>
+          {editor.method === "password" ? (
+            <label key="password" className="grid gap-2">
+              {t(($) => {
+                return $.ssh.credential.password;
+              })}
+              <Input
+                name="password"
+                type="password"
+                required
+                maxLength={SSH_PASSWORD_MAX_LENGTH}
+                autoComplete="new-password"
+              />
+            </label>
+          ) : (
+            <PrivateKeyFields key="private-key" />
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+function CredentialSelection({ disabled }: { readonly disabled: boolean }) {
+  const { t } = useTranslation();
+  const credentials = useLoadable(sshCredentials$);
+  const editor = useGet(sshCredentialEditor$);
+  const choose = useSet(chooseSshCredential$);
+  return (
+    <fieldset className="grid min-w-0 gap-4">
+      <legend className="mb-3 text-sm font-semibold">
+        <label htmlFor="ssh-selected-credential">
+          {t(($) => {
+            return $.ssh.credential.label;
+          })}
+        </label>
+      </legend>
+      <div className="grid gap-2">
+        {credentials.state === "hasError" ? (
+          <SshLoadError />
+        ) : credentials.state === "loading" ? (
+          <p role="status">
+            {t(($) => {
+              return $.ssh.credential.loading;
+            })}
+          </p>
+        ) : !credentials.data ? (
+          <p>
+            {t(($) => {
+              return $.ssh.unavailable;
+            })}
+          </p>
+        ) : (
+          <Select
+            disabled={disabled}
+            value={editor.selection}
+            onValueChange={choose}
+          >
+            <SelectTrigger id="ssh-selected-credential">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {credentials.data.map((credential) => {
+                return (
+                  <SelectItem key={credential.id} value={credential.id}>
+                    {credential.name} · {credential.username}
+                  </SelectItem>
+                );
+              })}
+              <SelectItem value="new">
+                {t(($) => {
+                  return $.ssh.credential.createNew;
+                })}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      {editor.selection === "new" && (
+        <div className="grid gap-4 rounded-lg border bg-muted/30 p-4">
+          <CredentialFields credential={null} disabled={disabled} />
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
+function CredentialImpact({
+  credential,
+}: {
+  readonly credential: SshCredentialResponse;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid gap-1 text-sm text-muted-foreground">
+      <p>
+        {credential.hosts.length === 0
+          ? t(($) => {
+              return $.ssh.credential.unused;
+            })
+          : t(
+              ($) => {
+                return $.ssh.credential.sharedHelp;
+              },
+              {
+                count: credential.hosts.length,
+              },
+            )}
+      </p>
+      {credential.hosts.length > 0 && (
+        <ul className="list-inside list-disc">
+          {credential.hosts.map((host) => {
+            return <li key={host.id}>{host.displayName}</li>;
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
+  const { t } = useTranslation();
+  switch (kind) {
+    case "create": {
+      return {
+        title: t(($) => {
+          return $.ssh.add;
+        }),
+        description: null,
+      };
+    }
+    case "edit": {
+      return {
+        title: t(($) => {
+          return $.ssh.edit;
+        }),
+        description: t(($) => {
+          return $.ssh.editHelp;
+        }),
+      };
+    }
+    case "delete": {
+      return {
+        title: t(($) => {
+          return $.ssh.delete;
+        }),
+        description: t(($) => {
+          return $.ssh.deleteHelp;
+        }),
+      };
+    }
+    case "reset": {
+      return {
+        title: t(($) => {
+          return $.ssh.reset;
+        }),
+        description: t(($) => {
+          return $.ssh.resetHelp;
+        }),
+      };
+    }
+    case "create-credential": {
+      return {
+        title: t(($) => {
+          return $.ssh.credential.add;
+        }),
+        description: null,
+      };
+    }
+    case "edit-credential": {
+      return {
+        title: t(($) => {
+          return $.ssh.credential.edit;
+        }),
+        description: null,
+      };
+    }
+    case "delete-credential": {
+      return {
+        title: t(($) => {
+          return $.ssh.credential.delete;
+        }),
+        description: t(($) => {
+          return $.ssh.credential.deleteHelp;
+        }),
+      };
+    }
+    case undefined: {
+      return { title: "", description: null };
+    }
+  }
+}
+
 function SshDialog() {
   const { t } = useTranslation();
   const data = useLoadable(sshDialog$);
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveSsh$);
+  const mountForm = useSet(mountSshForm$);
   const signal = useGet(pageSignal$);
-  const cancelRead = useSet(cancelSshPrivateKeyFile$);
   const fileResult = useLoadable(sshPrivateKeyFileResult$);
+  const credentials = useLoadable(sshCredentials$);
   const dialog = data.state === "hasData" ? data.data : null;
+  const { title, description } = useDialogCopy(dialog?.kind);
+  const isSaving = saving.state === "loading";
   if (!dialog) {
     return null;
   }
-  const title =
-    dialog.kind === "create"
-      ? t(($) => {
-          return $.ssh.add;
-        })
-      : dialog.kind === "edit"
-        ? t(($) => {
-            return $.ssh.edit;
-          })
-        : dialog.kind === "rotate"
-          ? t(($) => {
-              return $.ssh.rotate;
-            })
-          : dialog.kind === "reset"
-            ? t(($) => {
-                return $.ssh.reset;
-              })
-            : t(($) => {
-                return $.ssh.delete;
-              });
-  const description =
-    dialog.kind === "reset"
-      ? t(($) => {
-          return $.ssh.resetHelp;
-        })
-      : dialog.kind === "delete"
-        ? t(($) => {
-            return $.ssh.deleteHelp;
-          })
-        : dialog.kind === "edit"
-          ? t(($) => {
-              return $.ssh.editHelp;
-            })
-          : null;
+  const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
+  const destructive = ["delete", "reset", "delete-credential"].includes(
+    dialog.kind,
+  );
   return (
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open && saving.state !== "loading") {
+        if (!open && !isSaving) {
           close();
         }
       }}
     >
       <DialogContent
-        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? "new"}`}
+        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? "new"}`}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         <form
+          ref={mountForm}
           className="grid gap-4"
           autoComplete="off"
-          onReset={() => {
-            cancelRead();
-          }}
+          aria-busy={isSaving}
           onSubmit={(event) => {
             event.preventDefault();
-            const form = event.currentTarget;
-            const values = new FormData(form);
-            // Never retain credentials in ccstate, query caches or the DOM during I/O.
-            form.reset();
+            if (isSaving) {
+              return;
+            }
+            // Keep retryable input only in this form, never in ccstate or caches.
+            const values = new FormData(event.currentTarget);
             detach(save(values, signal), Reason.DomCallback);
           }}
         >
-          {["create", "edit"].includes(dialog.kind) && (
-            <EndpointFields connection={dialog.connection} />
+          {!destructive && (
+            <fieldset disabled={isSaving} className="grid min-w-0 gap-4">
+              {hostEditor ? (
+                <>
+                  <EndpointFields connection={dialog.connection} />
+                  <div aria-hidden="true" className="h-px bg-divider" />
+                  <CredentialSelection disabled={isSaving} />
+                </>
+              ) : (
+                <CredentialFields
+                  credential={dialog.credential}
+                  disabled={isSaving}
+                />
+              )}
+            </fieldset>
           )}
-          {["create", "rotate"].includes(dialog.kind) && <CredentialFields />}
+          {dialog.credential && (
+            <CredentialImpact credential={dialog.credential} />
+          )}
           <div className="flex justify-end gap-2">
             <Button
               type="button"
               variant="outline"
-              disabled={saving.state === "loading"}
+              disabled={isSaving}
               onClick={() => {
                 return close();
               }}
@@ -303,18 +578,23 @@ function SshDialog() {
             </Button>
             <Button
               type="submit"
-              disabled={[saving.state, fileResult.state].includes("loading")}
-              variant={
-                dialog.kind === "delete" || dialog.kind === "reset"
-                  ? "destructive"
-                  : "default"
+              disabled={
+                [saving.state, fileResult.state].includes("loading") ||
+                (hostEditor &&
+                  (credentials.state !== "hasData" ||
+                    credentials.data === null))
               }
+              variant={destructive ? "destructive" : "default"}
             >
-              {dialog.kind === "delete" || dialog.kind === "reset"
-                ? title
-                : t(($) => {
-                    return $.ssh.save;
-                  })}
+              {isSaving
+                ? t(($) => {
+                    return $.connectors.actions.saving;
+                  })
+                : destructive
+                  ? title
+                  : t(($) => {
+                      return $.ssh.save;
+                    })}
             </Button>
           </div>
         </form>
@@ -338,6 +618,9 @@ function HostCard({
         connectionId={connection.id}
         generation={connection.generation}
       />
+      <p className="text-sm text-muted-foreground">
+        {connection.credentialName}
+      </p>
       <p className="break-all text-sm">
         {connection.username}@{connection.host}:{connection.port}
       </p>
@@ -365,19 +648,6 @@ function HostCard({
         >
           {t(($) => {
             return $.ssh.edit;
-          })}
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => {
-            return detach(
-              open("rotate", connection, signal),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {t(($) => {
-            return $.ssh.rotate;
           })}
         </Button>
         <Button
@@ -486,8 +756,138 @@ function SshHosts() {
   );
 }
 
+function Credentials() {
+  const { t } = useTranslation();
+  const credentials = useLoadable(sshCredentials$);
+  const conflict = useGet(sshConflict$);
+  const open = useSet(openSshCredentialDialog$);
+  const signal = useGet(pageSignal$);
+  if (credentials.state === "loading") {
+    return (
+      <p role="status">
+        {t(($) => {
+          return $.ssh.credential.loading;
+        })}
+      </p>
+    );
+  }
+  if (credentials.state === "hasError") {
+    return <SshLoadError />;
+  }
+  if (!credentials.data) {
+    return (
+      <p>
+        {t(($) => {
+          return $.ssh.unavailable;
+        })}
+      </p>
+    );
+  }
+  return (
+    <div className="grid gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.ssh.credential.summary;
+            },
+            { count: credentials.data.length },
+          )}
+        </p>
+        <Button
+          onClick={() => {
+            return detach(
+              open("create-credential", null, signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          <Plus size={16} aria-hidden="true" />
+          {t(($) => {
+            return $.ssh.credential.add;
+          })}
+        </Button>
+      </div>
+      {conflict && (
+        <p role="alert">
+          {localizedSshError(conflict) ??
+            t(($) => {
+              return $.ssh.errors.failed;
+            })}
+        </p>
+      )}
+      {credentials.data.length === 0 && (
+        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+          {t(($) => {
+            return $.ssh.credential.empty;
+          })}
+        </p>
+      )}
+      {credentials.data.map((credential) => {
+        return (
+          <article
+            key={credential.id}
+            className="grid gap-3 rounded-xl border bg-card p-5"
+          >
+            <h2 className="font-semibold">{credential.name}</h2>
+            <p className="text-sm">
+              {credential.username} ·{" "}
+              {credential.authMethod === "password"
+                ? t(($) => {
+                    return $.ssh.credential.password;
+                  })
+                : t(($) => {
+                    return $.ssh.privateKey;
+                  })}
+            </p>
+            <CredentialImpact credential={credential} />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  return detach(
+                    open("edit-credential", credential, signal),
+                    Reason.DomCallback,
+                  );
+                }}
+              >
+                {t(($) => {
+                  return $.ssh.credential.edit;
+                })}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={credential.hosts.length > 0}
+                onClick={() => {
+                  return detach(
+                    open("delete-credential", credential, signal),
+                    Reason.DomCallback,
+                  );
+                }}
+              >
+                {t(($) => {
+                  return $.ssh.credential.delete;
+                })}
+              </Button>
+            </div>
+            {credential.hosts.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.ssh.credential.inUseHelp;
+                })}
+              </p>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SshConnectorPage() {
   const { t } = useTranslation();
+  const view = useGet(sshView$);
+  const changeView = useSet(changeSshView$);
   return (
     <DetailPageShell>
       <DetailPageBreadcrumbBar>
@@ -530,7 +930,27 @@ export function SshConnectorPage() {
         </div>
       </DetailPageHeader>
       <DetailPageMain constrainContent>
-        <SshHosts />
+        <div className="mb-5">
+          <SegmentControl
+            value={view}
+            onValueChange={changeView}
+            aria-label={t(($) => {
+              return $.ssh.title;
+            })}
+          >
+            <SegmentControlItem value="hosts">
+              {t(($) => {
+                return $.ssh.hostsTab;
+              })}
+            </SegmentControlItem>
+            <SegmentControlItem value="credentials">
+              {t(($) => {
+                return $.ssh.credentialsTab;
+              })}
+            </SegmentControlItem>
+          </SegmentControl>
+        </div>
+        {view === "hosts" ? <SshHosts /> : <Credentials />}
         <SshDialog />
       </DetailPageMain>
     </DetailPageShell>

@@ -9,7 +9,6 @@ import { sign } from "@electron/osx-sign";
 
 import desktopNotarizeApiEnvironment from "./desktop-notarize-api-environment.js";
 import desktopSigningIdentityEnvironment from "./desktop-signing-identity-environment.js";
-import cuaSigning from "./cua-signing.js";
 
 const { resolveDesktopNotarizeApiEnvironment } = desktopNotarizeApiEnvironment;
 const { resolveDesktopSigningIdentityEnvironment } =
@@ -78,7 +77,6 @@ if (!notarizeOptions) {
 
 await sign({
   app: options.appPath,
-  binaries: cuaSigning.cuaSigningBinaries(options.appPath),
   batchCodesignCalls: true,
   identity: requiredEnvironmentVariable(
     "OKOU_DESKTOP_SIGNING_IDENTITY",

@@ -1,32 +1,16 @@
 const { defineConfig } = require("tsup");
-const { readFileSync, copyFileSync, mkdirSync } = require("node:fs");
+const { readFileSync } = require("node:fs");
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf8"));
 
 module.exports = defineConfig({
-  entry: [
-    "src/bootstrap.ts",
-    "src/main.ts",
-    "src/preload.ts",
-    "src/cua-sdk-process.ts",
-  ],
+  entry: ["src/bootstrap.ts", "src/main.ts", "src/preload.ts"],
   format: ["cjs"],
   platform: "node",
   target: "node20",
   outDir: "dist",
   sourcemap: true,
   clean: true,
-  onSuccess: async () => {
-    mkdirSync("native/dist/native", { recursive: true });
-    copyFileSync(
-      "dist/cua-sdk-process.js",
-      "native/dist/native/cua-sdk-process.js",
-    );
-    copyFileSync(
-      "dist/cua-sdk-process.js.map",
-      "native/dist/native/cua-sdk-process.js.map",
-    );
-  },
   // "./main.js" stays external so bootstrap.js loads the main bundle at
   // runtime instead of inlining it, which would defeat its crash isolation.
   external: ["electron", "./main.js"],

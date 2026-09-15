@@ -19,6 +19,7 @@
 //! lifecycle. Each path retains ownership of its process, event delivery,
 //! heartbeat races, and child reaping until completion.
 
+mod bounded_event_delivery;
 mod child_env;
 mod child_exit_notifier;
 mod claude;
@@ -35,9 +36,12 @@ mod codex_startup;
 mod command;
 mod diagnostics;
 mod event_delivery;
+#[cfg(test)]
+mod event_delivery_budget_tests;
 mod exec_boundary;
 mod jsonl_result;
 mod line_reader;
+mod pi_event_delivery;
 mod pi_memory_citation;
 mod pi_rpc;
 mod process_group;
@@ -91,6 +95,9 @@ const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
 const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
+const PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY: &str = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
+const LANGFUSE_PUBLIC_KEY_ENV_KEY: &str = "LANGFUSE_PUBLIC_KEY";
+const LANGFUSE_SECRET_KEY_ENV_KEY: &str = "LANGFUSE_SECRET_KEY";
 const WEB_SEARCH_TOOL_NAME: &str = "WebSearch";
 const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
 const CODEX_FIXED_STARTUP_CONFIGS: [&str; 5] = [
@@ -488,7 +495,9 @@ impl<'a> CliRuntimeConfig<'a> {
         let remove_claude_effort = matches!(self.framework, env::Framework::ClaudeCode)
             && self.reasoning_effort.is_some()
             && self.user_env.contains_key("CLAUDE_CODE_EFFORT_LEVEL");
-        if !remove_base_url && !remove_claude_effort {
+        let remove_pi_langfuse_credentials = matches!(self.framework, env::Framework::Pi)
+            && user_env_value(self.user_env, PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY) == "true";
+        if !remove_base_url && !remove_claude_effort && !remove_pi_langfuse_credentials {
             return Cow::Borrowed(self.user_env);
         }
         // Structured Codex runtime config is authoritative; do not let stale
@@ -501,6 +510,12 @@ impl<'a> CliRuntimeConfig<'a> {
         // ultracode. An explicit chat choice must win over restored user env.
         if remove_claude_effort {
             user_env.remove("CLAUDE_CODE_EFFORT_LEVEL");
+        }
+        // Platform tracing uses the first-party relay. Its Pi child must not
+        // receive Langfuse project credentials.
+        if remove_pi_langfuse_credentials {
+            user_env.remove(LANGFUSE_PUBLIC_KEY_ENV_KEY);
+            user_env.remove(LANGFUSE_SECRET_KEY_ENV_KEY);
         }
         Cow::Owned(user_env)
     }
@@ -811,28 +826,7 @@ impl<'a> CliEventIngestor<'a> {
             })?;
             if should_send_events {
                 let event = events::prepare_event_for_delivery(event, sequence, masker);
-                if self.framework == env::Framework::Codex {
-                    let prepared = codex_event_delivery::prepare_for_delivery(
-                        event,
-                        event_tx.max_serialized_event_bytes(),
-                    )?;
-                    if let Some(reduction) = prepared.reduction {
-                        log_warn!(
-                            LOG_TAG,
-                            "Codex event reduced for delivery: seq={} event_type={} item_type={} original_bytes={} delivered_bytes={} fields={} fallback={}",
-                            sequence,
-                            reduction.event_type,
-                            reduction.item_type,
-                            reduction.original_bytes,
-                            reduction.delivered_bytes,
-                            reduction.fields.join(","),
-                            reduction.fallback
-                        );
-                    }
-                    event_tx.try_send_serialized(sequence, prepared.serialized)?;
-                } else {
-                    event_tx.try_send(sequence, event)?;
-                }
+                event_tx.try_send_for_framework(sequence, event, self.framework)?;
             }
         }
         Ok(())
@@ -1046,6 +1040,9 @@ async fn execute_cli_inner(
         // leave a CLI process running in the VM.
         .kill_on_drop(true);
 
+    if matches!(runtime.framework, env::Framework::Pi) {
+        write_pi_launch_payload_file(runtime)?;
+    }
     let mut child_env_values = child_env::values_for_runtime(runtime);
     match runtime.framework {
         env::Framework::ClaudeCode => child_env_values.push((
@@ -1053,7 +1050,6 @@ async fn execute_cli_inner(
             runtime.claude_config_dir.to_string(),
         )),
         env::Framework::Pi => {
-            write_pi_launch_payload_file(runtime)?;
             child_env_values.extend(pi_child_env_values(runtime));
         }
         env::Framework::Codex => {}
@@ -2466,6 +2462,77 @@ mod tests {
                 .codex_startup_config_overrides()
                 .contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string())
         );
+    }
+
+    #[test]
+    fn pi_langfuse_credentials_are_filtered_from_child_environment() {
+        let user_env = HashMap::from([
+            (
+                super::PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY.to_string(),
+                "true".to_string(),
+            ),
+            (
+                super::LANGFUSE_PUBLIC_KEY_ENV_KEY.to_string(),
+                "pk-lf-private".to_string(),
+            ),
+            (
+                super::LANGFUSE_SECRET_KEY_ENV_KEY.to_string(),
+                "sk-lf-private".to_string(),
+            ),
+        ]);
+        let runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+
+        let child_values = child_env::values_for_runtime(&runtime);
+        assert!(
+            !child_values
+                .iter()
+                .any(|(key, _)| key == super::LANGFUSE_PUBLIC_KEY_ENV_KEY)
+        );
+        assert!(
+            !child_values
+                .iter()
+                .any(|(key, _)| key == super::LANGFUSE_SECRET_KEY_ENV_KEY)
+        );
+        assert!(child_values.iter().any(|(key, value)| key
+            == super::PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY
+            && value == "true"));
+        #[cfg(target_os = "linux")]
+        {
+            let mut child = std::process::Command::new("/bin/sh");
+            child
+                .arg("-c")
+                .arg("tr '\\0' '\\n' < /proc/self/environ")
+                .env_clear()
+                .envs(child_values.iter().cloned());
+            let output = child.output().unwrap();
+            assert!(output.status.success());
+            let initial_environment = String::from_utf8(output.stdout).unwrap();
+            assert!(!initial_environment.contains("pk-lf-private"));
+            assert!(!initial_environment.contains("sk-lf-private"));
+        }
+    }
+
+    #[test]
+    fn pi_langfuse_credentials_remain_user_owned_when_tracing_gate_is_off() {
+        let user_env = HashMap::from([
+            (
+                super::LANGFUSE_PUBLIC_KEY_ENV_KEY.to_string(),
+                "user-public-key".to_string(),
+            ),
+            (
+                super::LANGFUSE_SECRET_KEY_ENV_KEY.to_string(),
+                "user-secret-key".to_string(),
+            ),
+        ]);
+        let runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+        let child_values = child_env::values_for_runtime(&runtime);
+
+        assert!(child_values.iter().any(|(key, value)| {
+            key == super::LANGFUSE_PUBLIC_KEY_ENV_KEY && value == "user-public-key"
+        }));
+        assert!(child_values.iter().any(|(key, value)| {
+            key == super::LANGFUSE_SECRET_KEY_ENV_KEY && value == "user-secret-key"
+        }));
     }
 
     #[test]

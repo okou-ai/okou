@@ -12,6 +12,8 @@ import {
   type OrgModelPolicy,
   type SupportedRunModel,
   getCanonicalModelDisplayName,
+  getBuiltInConcreteProviderType,
+  isBuiltInModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
@@ -43,6 +45,7 @@ import {
 
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const POLICY_DATE = "2026-08-12T09:00:00.000Z";
 
@@ -65,6 +68,9 @@ function modelPolicy(
     modelLabel: getCanonicalModelDisplayName(model),
     isDefault: options.default ?? false,
     defaultProviderType: providerType,
+    ...(isBuiltInModelProviderType(providerType)
+      ? { runtimeProviderType: getBuiltInConcreteProviderType(model) }
+      : {}),
     credentialScope,
     modelProviderId:
       credentialScope === "member"
@@ -98,6 +104,7 @@ function preference(
   return {
     selectedModel,
     serviceTier,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: POLICY_DATE,
@@ -115,6 +122,40 @@ function installNewChat(
 
 async function modelPicker(name: string): Promise<HTMLElement> {
   return await screen.findByRole("combobox", { name });
+}
+
+/**
+ * The menu's pages are the narrow viewport's layout: a desktop has the room the
+ * flyout's two panels need, so it takes those instead.
+ */
+function setNarrowViewport(): void {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(pointer: coarse)";
+  });
+}
+
+/**
+ * Effort and Fast live on the composer now, so every test reaches them the way
+ * a user does: through the control beside the model, not through a page inside
+ * the model picker.
+ */
+async function openEffortPanel(): Promise<HTMLElement> {
+  await waitFor(() => {
+    expect(effortTrigger()).toBeVisible();
+  });
+  click(effortTrigger());
+  return await screen.findByRole("dialog");
+}
+
+/** The composer's effort control, named for the level it currently carries. */
+function effortTrigger(): HTMLElement {
+  const trigger = queryAllByRoleFast("button").find((candidate) => {
+    return candidate.getAttribute("aria-label")?.startsWith("Effort, ");
+  });
+  if (!trigger) {
+    throw new Error("Effort control was not visible");
+  }
+  return trigger;
 }
 
 async function readyComposer(): Promise<HTMLElement> {
@@ -152,8 +193,9 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "limited-free-1",
+    ...billingPlanCapabilities("limited-free-1"),
     supportByok: false,
-    restrictedVm0Models: true,
+    restrictedBuiltInModels: true,
     credits: 0,
     onboardingPaymentPending: false,
     subscriptionStatus: null,
@@ -185,23 +227,119 @@ async function openCodexExecutionChat(): Promise<void> {
   await readyComposer();
 }
 
-test("Show and dismiss Fast Codex speed and credit guidance on hover", async () => {
+async function openMixedProviderFastMenu() {
   const user = userEvent.setup({ delay: null });
-  await openCodexExecutionChat();
-  await user.click(await modelPicker("GPT 5.6 Sol"));
+  installNewChat(["gpt-6-astra", "gpt-5.6-sol"], "gpt-6-astra");
+  context.mocks.data.orgModelPolicies([
+    modelPolicy("gpt-6-astra", 1, {
+      default: true,
+      providerType: "codex-oauth-token",
+    }),
+    modelPolicy("gpt-5.6-sol", 2),
+  ]);
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await readyComposer();
+  await user.click(await modelPicker("GPT 6 Astra"));
+  return user;
+}
+
+test("Show and dismiss Fast Codex ChatGPT usage guidance on hover", async () => {
+  const user = await openMixedProviderFastMenu();
   const fastOption = await screen.findByRole("option", {
-    name: "GPT 5.6 Sol Fast",
+    name: "GPT 6 Astra Fast",
   });
   await user.hover(fastOption);
   await expect(
-    screen.findByText("Fast · 1.5× model speed · 2.5× credit usage"),
+    screen.findByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
   ).resolves.toBeVisible();
   await user.unhover(fastOption);
   await waitFor(() => {
     expect(
-      screen.queryByText("Fast · 1.5× model speed · 2.5× credit usage"),
+      screen.queryByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
     ).not.toBeInTheDocument();
   });
+});
+
+test("Show Fast Codex Okou credit guidance on hover", async () => {
+  const user = await openMixedProviderFastMenu();
+  await user.hover(screen.getByRole("option", { name: "GPT 5.6 Sol Fast" }));
+  await expect(
+    screen.findByText("Fast · Up to 2.5× model speed · 2× Okou model credits"),
+  ).resolves.toBeVisible();
+});
+
+test.each([
+  {
+    model: "gpt-5.6-sol",
+    providerType: "openai-api-key",
+    guidance: "Fast · Up to 2.5× model speed · 2× API token cost",
+  },
+  {
+    model: "gpt-5.6-luna",
+    providerType: "openrouter-codex",
+    guidance: "Fast · Speed depends on provider · Usage depends on provider",
+  },
+] as const)(
+  "Show $providerType Fast guidance on hover",
+  async ({ model, providerType, guidance }) => {
+    const user = userEvent.setup({ delay: null });
+    installNewChat([model], model);
+    context.mocks.data.orgModelPolicies([
+      modelPolicy(model, 1, { default: true, providerType }),
+    ]);
+    await setupPage({
+      context,
+      path: NEW_CHAT_PATH,
+      featureSwitches: {
+        [FeatureSwitchKey.CodexFastMode]: true,
+        [FeatureSwitchKey.ChatPreference]: true,
+      },
+    });
+    await readyComposer();
+    const modelLabel = getCanonicalModelDisplayName(model);
+    await user.click(await modelPicker(modelLabel));
+    await user.hover(
+      await screen.findByRole("option", { name: `${modelLabel} Fast` }),
+    );
+    await expect(screen.findByText(guidance)).resolves.toBeVisible();
+  },
+);
+
+test("Localize fractional Fast speed guidance on hover", async () => {
+  const user = userEvent.setup({ delay: null });
+  installNewChat(["gpt-5.6-luna"], "gpt-5.6-luna");
+  context.mocks.data.orgModelPolicies([
+    modelPolicy("gpt-5.6-luna", 1, {
+      default: true,
+      providerType: "codex-oauth-token",
+    }),
+  ]);
+  await setupPage({
+    locale: "de-DE",
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await expect(screen.findByRole("textbox")).resolves.toBeVisible();
+  await user.click(await modelPicker("GPT 5.6 Luna"));
+  await user.hover(
+    await screen.findByRole("option", { name: "GPT 5.6 Luna Schnell" }),
+  );
+  await expect(
+    screen.findByText(
+      "Schnell · 1,5× Modellgeschwindigkeit · 2,5× ChatGPT-Verbrauch",
+    ),
+  ).resolves.toBeVisible();
 });
 
 test("Choose Fast then Standard Codex execution before changing models", async () => {
@@ -252,7 +390,9 @@ test("Make a temporary Codex speed the default", async () => {
   const scopeCard = await screen.findByRole("group", {
     name: "Model for this chat",
   });
-  expect(scopeCard).toHaveTextContent("Temporarily switch to GPT 5.6 Sol Fast");
+  expect(scopeCard).toHaveTextContent(
+    "Temporarily switch to GPT 5.6 Sol · Fast",
+  );
   const futureChats = buttonNamed("Use this for future chats", scopeCard);
 
   click(futureChats);
@@ -541,12 +681,15 @@ test("Let an existing thread send while model availability is reconciling", asyn
 });
 
 test("Switch chat models immediately and adjust Fast from settings", async () => {
+  setNarrowViewport();
+  const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -562,17 +705,18 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
   expect(
     buttonNamed("Change Chat model, GPT 5.6 Luna", updated),
   ).toHaveTextContent("Standard");
-  click(buttonNamed("Adjust GPT 5.6 Luna settings", updated));
-  await screen.findByRole("region", { name: "Chat settings" });
+  const settings = await openEffortPanel();
+  // The row carries Fast's speed and cost in the bolt's tooltip rather than as
+  // a second line of small print under the label.
+  await user.hover(within(settings).getByText("Fast"));
+  await expect(
+    screen.findByText("Faster model responses · 2× Okou model credits"),
+  ).resolves.toBeVisible();
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.6 Luna Fast"));
   const models = await screen.findByRole("region", { name: "Models" });
   expect(
     buttonNamed("Change Chat model, GPT 5.6 Luna", models),
@@ -582,72 +726,62 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     name: "Chat models",
   });
   click(buttonNamed("GPT 5.6 Luna", sameModelList));
-  const selected = await screen.findByRole("region", { name: "Models" });
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
-  click(buttonNamed("Adjust GPT 5.6 Luna settings", selected));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await user.keyboard("{Escape}");
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
 });
 
 test("Keep immediate Fast changes when navigating back through the menu", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
   await readyComposer();
-  click(await findButton("GPT 5.6 Sol"));
-  let overview = await screen.findByRole("region", { name: "Models" });
-  click(buttonNamed("Adjust GPT 5.6 Sol settings", overview));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await openEffortPanel();
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
   await user.keyboard("{Escape}");
-  overview = await screen.findByRole("region", { name: "Models" });
+  // The picker is a separate surface now, and it reflects the change the
+  // composer made.
+  click(await findButton("GPT 5.6 Sol Fast"));
+  let overview = await screen.findByRole("region", { name: "Models" });
   expect(
     buttonNamed("Change Chat model, GPT 5.6 Sol", overview),
   ).toHaveTextContent("Fast");
-  click(buttonNamed("Adjust GPT 5.6 Sol settings", overview));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await user.keyboard("{Escape}");
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).not.toBeChecked();
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.6 Sol"));
   overview = await screen.findByRole("region", { name: "Models" });
   click(buttonNamed("Change Chat model, GPT 5.6 Sol", overview));
   const list = await screen.findByRole("region", { name: "Chat models" });
   click(buttonNamed("GPT 5.6 Luna", list));
   await expect(findButton("GPT 5.6 Luna")).resolves.toBeVisible();
-  overview = screen.getByRole("region", { name: "Models" });
-  click(buttonNamed("Change Chat model, GPT 5.6 Luna", overview));
-  await screen.findByRole("region", { name: "Chat models" });
-  await user.keyboard("{Escape}");
-  await screen.findByRole("region", { name: "Models" });
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(
       screen.queryByRole("region", { name: "Models" }),
     ).not.toBeInTheDocument();
   });
-  click(await findButton("GPT 5.6 Luna"));
-  overview = await screen.findByRole("region", { name: "Models" });
-  click(buttonNamed("Adjust GPT 5.6 Luna settings", overview));
-  await screen.findByRole("region", { name: "Chat settings" });
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).not.toBeChecked();
 });
 
 test("Keep unavailable routes disabled and open plan comparison from the compact menu", async () => {
+  setNarrowViewport();
   installNewChat(
     ["deepseek-v4-flash", "claude-fable-5-1", "gpt-5.6-sol"],
     "deepseek-v4-flash",
@@ -667,7 +801,10 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ModelPickerMenu]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
+    },
   });
   await readyComposer();
   click(await findButton("DeepSeek V4 Flash"));
@@ -687,45 +824,44 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
   await expect(findButton("DeepSeek V4 Flash")).resolves.toBeVisible();
 });
 
+// The pages are the narrow viewport's layout, so this walks them there; the
+// flyout's own keyboard walk is the desktop test below.
 test("Navigate the compact menu by keyboard and retain Fast after dismissal", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 640px)";
-  });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
   });
   const composer = await readyComposer();
   click(await findButton("GPT 5.6 Sol"));
   const overview = await screen.findByRole("region", { name: "Models" });
-  const modelButton = buttonNamed("Change Chat model, GPT 5.6 Sol", overview);
-  const settingsButton = buttonNamed("Adjust GPT 5.6 Sol settings", overview);
-  expect(modelButton).toHaveFocus();
-  await user.keyboard("{ArrowDown}");
-  expect(settingsButton).toHaveFocus();
-  await user.keyboard("{Enter}");
-  await screen.findByRole("region", { name: "Chat settings" });
-  await user.keyboard("{ArrowDown}");
-  expect(screen.getByRole("switch", { name: "Fast" })).toHaveFocus();
+  expect(buttonNamed("Change Chat model, GPT 5.6 Sol", overview)).toHaveFocus();
+  // The picker carries models only; effort and Fast are reached from the
+  // composer, so the walk continues there.
+  await user.keyboard("{Escape}");
+  const settings = await openEffortPanel();
+  // Fast's speed and credit cost live in the bolt's tooltip, so the bolt is a
+  // stop of its own: the panel opens on it, which is how a keyboard user meets
+  // the cost before the switch that applies it.
+  expect(within(settings).getByText("Fast").closest("button")).toHaveFocus();
+  const fastSwitch = screen.getByRole("switch", { name: "Fast" });
+  fastSwitch.focus();
   await user.keyboard(" ");
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
   await user.click(composer);
   await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Chat settings" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  click(await findButton("GPT 5.6 Sol Fast"));
-  const reopened = await screen.findByRole("region", { name: "Models" });
-  click(buttonNamed("Adjust GPT 5.6 Sol settings", reopened));
-  await screen.findByRole("region", { name: "Chat settings" });
+  // Dismissing the panel keeps the choice.
+  await openEffortPanel();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
 });
 
@@ -764,16 +900,122 @@ test("Choose a model from the flyout without leaving the type list", async () =>
   });
 });
 
+test("Offer Fast beside effort on the composer for a Fast-capable model", async () => {
+  const user = userEvent.setup({ delay: null });
+  installNewChat(["gpt-5.6-luna"], "gpt-5.6-luna");
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await readyComposer();
+  await user.click(await findButton("Effort, Max"));
+  const panel = await screen.findByRole("dialog");
+  await expect(
+    within(panel).findByRole("slider", { name: "Effort" }),
+  ).resolves.toBeVisible();
+  // Both rows belong to this panel: the model supports Fast, so the switch has
+  // to be here rather than leaving a rule with nothing under it.
+  expect(within(panel).getByRole("switch", { name: "Fast" })).toBeVisible();
+  expect(
+    within(panel).getByRole("slider", { name: "Effort" }),
+  ).not.toBeDisabled();
+  click(within(panel).getByRole("switch", { name: "Fast" }));
+  // Turning Fast on must not rename the model. The effort control beside it
+  // carries the bolt, so the word on the model would say it twice -- and the
+  // model's own name would change as a side effect of a speed setting.
+  const model = await findButton("GPT 5.6 Luna Fast");
+  await waitFor(() => {
+    expect(model).toHaveTextContent("GPT 5.6 Luna");
+  });
+  expect(model).not.toHaveTextContent(/Fast/u);
+});
+
+test("Adjust effort from the composer without opening the model picker", async () => {
+  const user = userEvent.setup({ delay: null });
+  installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
+  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await readyComposer();
+  // The composer names the effort at rest, so the choice is visible without
+  // opening anything.
+  const trigger = await findButton("Effort, Max");
+  await user.click(trigger);
+  const slider = await screen.findByRole("slider", { name: "Effort" });
+  slider.focus();
+  await user.keyboard("{Home}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "Low");
+  });
+  await expect(findButton("Effort, Low")).resolves.toBeVisible();
+  // The bolt is the Fast state rather than decoration, so it is absent until
+  // Fast is on.
+  expect(within(trigger).queryByRole("img", { hidden: true })).toBeNull();
+  click(screen.getByRole("switch", { name: "Fast" }));
+  await waitFor(() => {
+    expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
+  });
+});
+
+test("Name the ends of the effort scale beside the bar", async () => {
+  const user = userEvent.setup({ delay: null });
+  installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
+  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await readyComposer();
+  const panel = await openEffortPanel();
+  // A level name says where the handle is, never which way the bar points, so
+  // the track's two ends are named instead.
+  expect(within(panel).getByText("Faster")).toBeVisible();
+  expect(within(panel).getByText("Smarter")).toBeVisible();
+  // They are a caption on the track, not a second value to read out: the
+  // slider already reports its own step, so the words stay out of the
+  // accessibility tree and out of the way of the pointer.
+  const slider = await within(panel).findByRole("slider", { name: "Effort" });
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
+  expect(
+    within(panel).getByText("Faster").closest("[aria-hidden='true']"),
+  ).not.toBeNull();
+  // Naming the ends does not move them: the bar still runs the whole scale.
+  slider.focus();
+  await user.keyboard("{Home}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "Low");
+  });
+  expect(within(panel).getByText("Faster")).toBeVisible();
+});
+
 test("Choose effort for a new chat and keep Fast independent", async () => {
   const user = userEvent.setup({ delay: null });
-  const updates: {
+  const creates: {
     reasoningEffort?: string | null;
-    codexServiceTier?: string | null;
+    serviceTier?: string | null;
   }[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
-    onModelSelectionUpdate: (body) => {
-      updates.push(body);
+    onThreadCreate: (body) => {
+      creates.push(body);
     },
   });
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
@@ -781,8 +1023,8 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
-      [FeatureSwitchKey.ChatReasoningEffort]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -790,22 +1032,17 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   });
   const composer = await readyComposer();
   click(await findButton("GPT 5.6 Sol"));
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
-    name: "Reasoning effort",
+    name: "Effort",
   });
-  expect(slider).toHaveAttribute("aria-valuetext", "max");
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
   slider.focus();
   await user.keyboard("{Home}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "low");
+    expect(slider).toHaveAttribute("aria-valuetext", "Low");
   });
-  for (const effort of ["medium", "high", "xhigh", "max", "ultra"]) {
+  for (const effort of ["Medium", "High", "Xhigh", "Max", "Ultra"]) {
     await user.keyboard("{ArrowRight}");
     await waitFor(() => {
       expect(slider).toHaveAttribute("aria-valuetext", effort);
@@ -813,15 +1050,15 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   }
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
-  expect(slider).toHaveAttribute("aria-valuetext", "ultra");
+  expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
   await user.click(composer);
   await fillComposer(composer, "Use this effort for the new task");
   click(await findButton("Send"));
   await waitFor(() => {
-    expect(updates).toContainEqual(
+    expect(creates).toContainEqual(
       expect.objectContaining({
         reasoningEffort: "ultra",
-        codexServiceTier: "fast",
+        serviceTier: "priority",
       }),
     );
   });
@@ -846,32 +1083,27 @@ test("Select the default effort on an existing thread without changing Fast", as
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
-      [FeatureSwitchKey.ChatReasoningEffort]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
     },
   });
   await readyChat();
   click(await findButton("GPT 5.6 Sol Fast"));
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
-    name: "Reasoning effort",
+    name: "Effort",
   });
-  expect(slider).toHaveAttribute("aria-valuetext", "high");
+  expect(slider).toHaveAttribute("aria-valuetext", "High");
   slider.focus();
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "xhigh");
+    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   });
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "max");
+    expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
   await waitFor(() => {
@@ -884,7 +1116,8 @@ test("Select the default effort on an existing thread without changing Fast", as
   });
 });
 
-test("Preserve compatible effort and reset incompatible choices when changing models", async () => {
+test("Keep independent effort selections when changing models", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(
     ["claude-sonnet-5", "gpt-5.6-sol", "gpt-5.5"],
@@ -894,21 +1127,15 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
-      [FeatureSwitchKey.ChatReasoningEffort]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   await readyComposer();
-  click(await findButton("Claude Sonnet 5"));
-  click(
-    buttonNamed(
-      "Adjust Claude Sonnet 5 settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
-  let slider = await screen.findByRole("slider", { name: "Reasoning effort" });
+  await openEffortPanel();
+  let slider = await screen.findByRole("slider", { name: "Effort" });
   expect(slider).toHaveAttribute("aria-valuetext", "High");
   slider.focus();
   await user.keyboard("{End}");
@@ -919,21 +1146,16 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Extra");
   });
-  expect(screen.getByText("Extra")).toBeInTheDocument();
+  // The composer names the effort too, so scope this to the settings page.
+  expect(
+    within(screen.getByRole("dialog")).getByText("Extra"),
+  ).toBeInTheDocument();
   expect(screen.queryByText("ultracode")).not.toBeInTheDocument();
-  await user.keyboard("{ArrowLeft}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "High");
-  });
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("Claude Sonnet 5"));
   await expect(
     screen.findByRole("region", { name: "Models" }),
-  ).resolves.toHaveTextContent("High");
+  ).resolves.toHaveTextContent("Extra");
   click(
     buttonNamed(
       "Change Chat model, Claude Sonnet 5",
@@ -946,25 +1168,16 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
       await screen.findByRole("region", { name: "Chat models" }),
     ),
   );
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
-  slider = await screen.findByRole("slider", { name: "Reasoning effort" });
-  expect(slider).toHaveAttribute("aria-valuetext", "high");
+  await openEffortPanel();
+  slider = await screen.findByRole("slider", { name: "Effort" });
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "ultra");
+    expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
   });
-  click(
-    buttonNamed(
-      "Back to models",
-      screen.getByRole("region", { name: "Chat settings" }),
-    ),
-  );
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.6 Sol"));
   click(
     buttonNamed(
       "Change Chat model, GPT 5.6 Sol",
@@ -977,22 +1190,36 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
       await screen.findByRole("region", { name: "Chat models" }),
     ),
   );
-  click(
-    buttonNamed(
-      "Adjust GPT 5.5 settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
-  slider = await screen.findByRole("slider", { name: "Reasoning effort" });
-  expect(slider).toHaveAttribute("aria-valuetext", "xhigh");
+  await openEffortPanel();
+  slider = await screen.findByRole("slider", { name: "Effort" });
+  expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "xhigh");
+    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   });
+  await user.keyboard("{Escape}");
+  click(await findButton("GPT 5.5"));
+  click(
+    buttonNamed(
+      "Change Chat model, GPT 5.5",
+      await screen.findByRole("region", { name: "Models" }),
+    ),
+  );
+  click(
+    buttonNamed(
+      "Claude Sonnet 5",
+      await screen.findByRole("region", { name: "Chat models" }),
+    ),
+  );
+  await openEffortPanel();
+  await expect(
+    screen.findByRole("slider", { name: "Effort" }),
+  ).resolves.toHaveAttribute("aria-valuetext", "Extra");
 });
 
-test("Keep saved effort dormant when its feature is disabled", async () => {
+test("Use the legacy picker and keep saved effort dormant when refactoring is disabled", async () => {
+  const user = userEvent.setup({ delay: null });
   const updates: {
     codexServiceTier?: string | null;
     reasoningEffort?: string | null;
@@ -1009,26 +1236,30 @@ test("Keep saved effort dormant when its feature is disabled", async () => {
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
-      [FeatureSwitchKey.ChatReasoningEffort]: false,
+      [FeatureSwitchKey.Effort]: false,
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
       [FeatureSwitchKey.CodexFastMode]: true,
     },
   });
   await readyChat();
-  click(await findButton("GPT 5.6 Sol"));
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
-  await screen.findByRole("region", { name: "Chat settings" });
+  await user.click(await modelPicker("GPT 5.6 Sol"));
+  const fastOption = await screen.findByRole("option", {
+    name: "GPT 5.6 Sol Fast",
+  });
   expect(
-    screen.queryByRole("slider", { name: "Reasoning effort" }),
+    screen.queryByRole("region", { name: "Models" }),
   ).not.toBeInTheDocument();
-  click(screen.getByRole("switch", { name: "Fast" }));
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Effort,");
+    }),
+  ).toBeFalsy();
+  expect(
+    screen.queryByRole("slider", { name: "Effort" }),
+  ).not.toBeInTheDocument();
+  await user.click(fastOption);
+  await expect(modelPicker("GPT 5.6 Sol Fast")).resolves.toBeInTheDocument();
   await waitFor(() => {
-    expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
     expect(updates).toContainEqual(
       expect.objectContaining({ codexServiceTier: "fast" }),
     );
@@ -1040,7 +1271,13 @@ test("Keep saved effort dormant when its feature is disabled", async () => {
   ).toBeUndefined();
 });
 
-test("Allow restoring a saved effort when the route no longer supports it", async () => {
+/**
+ * Effort and the model list answer to different switches: effort is a run
+ * setting the composer carries beside the model, so it stays live where the
+ * list is still drawn by the legacy select.
+ */
+test("Keep effort on the composer while the model list stays on the legacy picker", async () => {
+  const user = userEvent.setup({ delay: null });
   const updates: { reasoningEffort?: string | null }[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
@@ -1054,35 +1291,118 @@ test("Allow restoring a saved effort when the route no longer supports it", asyn
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
-      [FeatureSwitchKey.ChatReasoningEffort]: true,
-      [FeatureSwitchKey.PiLoop]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: false,
+      [FeatureSwitchKey.PiLoop]: false,
     },
   });
   await readyChat();
-  click(await findButton("GPT 5.6 Sol"));
-  click(
-    buttonNamed(
-      "Adjust GPT 5.6 Sol settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
-  const settings = await screen.findByRole("region", { name: "Chat settings" });
-  expect(settings).toHaveTextContent(
-    "Effort is unavailable for this model route",
-  );
+  await expect(modelPicker("GPT 5.6 Sol")).resolves.toBeInTheDocument();
   expect(
-    screen.queryByRole("slider", { name: "Reasoning effort" }),
+    screen.queryByRole("region", { name: "Models" }),
   ).not.toBeInTheDocument();
-  click(buttonNamed("Restore model default", settings));
+  await openEffortPanel();
+  const slider = await screen.findByRole("slider", { name: "Effort" });
+  expect(slider).toHaveAttribute("aria-valuetext", "High");
+  slider.focus();
+  await user.keyboard("{ArrowRight}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
+  });
   await waitFor(() => {
     expect(updates).toContainEqual(
-      expect.objectContaining({ reasoningEffort: null }),
+      expect.objectContaining({ reasoningEffort: "xhigh" }),
     );
   });
 });
 
-test("Follow effort changes and resets made in another session", async () => {
+test("Show the Pi fallback without overwriting a saved native preference", async () => {
+  const updates: { reasoningEffort?: string | null }[] = [];
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    reasoningEffort: "ultra",
+    onModelSelectionUpdate: (body) => {
+      updates.push(body);
+    },
+  });
+  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.PiLoop]: true,
+    },
+  });
+  await readyChat();
+  const settings = await openEffortPanel();
+  const slider = await screen.findByRole("slider", {
+    name: "Effort",
+  });
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
+  expect(settings).not.toHaveTextContent("Restore model default");
+  expect(updates).toStrictEqual([]);
+});
+
+test("Save the preferred effort for future chats when Pi displays a fallback", async () => {
+  setNarrowViewport();
+  const user = userEvent.setup({ delay: null });
+  const updates: UpdateUserModelPreferenceRequest[] = [];
+  installNewChat(["claude-sonnet-5", "gpt-5.6-sol"], "claude-sonnet-5");
+  context.mocks.data.userModelPreference({
+    ...preference("claude-sonnet-5"),
+    modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
+  });
+  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
+    updates.push(body);
+    return respond(200, {
+      ...preference("gpt-5.6-sol"),
+      modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
+    });
+  });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatPreference]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
+      [FeatureSwitchKey.PiLoop]: true,
+    },
+  });
+  const composer = await readyComposer();
+  click(await findButton("Claude Sonnet 5"));
+  click(
+    buttonNamed(
+      "Change Chat model, Claude Sonnet 5",
+      await screen.findByRole("region", { name: "Models" }),
+    ),
+  );
+  click(
+    buttonNamed(
+      "GPT 5.6 Sol",
+      await screen.findByRole("region", { name: "Chat models" }),
+    ),
+  );
+  await openEffortPanel();
+  await expect(
+    screen.findByRole("slider", { name: "Effort" }),
+  ).resolves.toHaveAttribute("aria-valuetext", "Max");
+  await user.click(composer);
+  const scopeCard = await screen.findByRole("group", {
+    name: "Model for this chat",
+  });
+  click(buttonNamed("Use this for future chats", scopeCard));
+  await waitFor(() => {
+    expect(updates).toContainEqual({
+      selectedModel: "gpt-5.6-sol",
+      serviceTier: null,
+      modelSettingsPatch: { model: "gpt-5.6-sol", effort: "ultra" },
+    });
+  });
+});
+
+test("Follow model-scoped effort changes made in another session", async () => {
   const events: ChatThreadEvent[] = [];
   installRunChat({ selectedModel: "claude-sonnet-5", reasoningEffort: "high" });
   configurePolicies(["claude-sonnet-5"], "claude-sonnet-5");
@@ -1098,20 +1418,15 @@ test("Follow effort changes and resets made in another session", async () => {
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ModelPickerMenu]: true,
-      [FeatureSwitchKey.ChatReasoningEffort]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.ModelPickerFlyout]: true,
     },
   });
   await readyChat();
   click(await findButton("Claude Sonnet 5"));
-  click(
-    buttonNamed(
-      "Adjust Claude Sonnet 5 settings",
-      await screen.findByRole("region", { name: "Models" }),
-    ),
-  );
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
-    name: "Reasoning effort",
+    name: "Effort",
   });
   expect(slider).toHaveAttribute("aria-valuetext", "High");
   for (const [reasoningEffort, displayValue] of [
@@ -1120,7 +1435,6 @@ test("Follow effort changes and resets made in another session", async () => {
     ["high", "High"],
     ["extra", "Extra"],
     ["max", "Max"],
-    [null, "High"],
   ] as const) {
     events.push({
       id: crypto.randomUUID(),
@@ -1130,7 +1444,10 @@ test("Follow effort changes and resets made in another session", async () => {
       agentId: "c0000000-0000-4000-a000-000000000001",
       title: null,
       selectedModel: "claude-sonnet-5",
-      reasoningEffort,
+      modelSettingsPatch: {
+        model: "claude-sonnet-5",
+        effort: reasoningEffort,
+      },
       serviceTier: null,
       computerUseHostId: null,
       selectedVideoModel: null,
@@ -1143,7 +1460,7 @@ test("Follow effort changes and resets made in another session", async () => {
   }
 });
 
-test("Adjust effort and Fast from the desktop flyout with keyboard controls", async () => {
+test("Adjust effort and Fast with keyboard controls on a desktop layout", async () => {
   const user = userEvent.setup({ delay: null });
   context.mocks.browser.matchMedia((query) => {
     return query === "(min-width: 640px)";
@@ -1154,43 +1471,120 @@ test("Adjust effort and Fast from the desktop flyout with keyboard controls", as
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.ChatReasoningEffort]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   await readyComposer();
-  click(await findButton("GPT 5.6 Sol"));
-  await screen.findByRole("listbox", { name: "Chat models" });
-  click(await findButton("Adjust GPT 5.6 Sol settings"));
+  // The control is the composer's own, so the flyout has nothing to do with it.
+  await openEffortPanel();
   const slider = await screen.findByRole("slider", {
-    name: "Reasoning effort",
+    name: "Effort",
   });
-  expect(slider).toHaveAttribute("aria-valuetext", "max");
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "ultra");
+    expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
   });
   await user.keyboard("{ArrowLeft}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "max");
+    expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
   await user.keyboard("{ArrowLeft}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "xhigh");
+    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   });
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
-  expect(slider).toHaveAttribute("aria-valuetext", "xhigh");
-  const settings = screen.getByRole("region", { name: "Chat settings" });
+  expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   slider.focus();
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "max");
+    expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
-  click(buttonNamed("Back to models", settings));
-  await screen.findByRole("listbox", { name: "Chat models" });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  // The flyout is still reachable on its own.
+  click(await findButton("GPT 5.6 Sol Fast"));
+  await expect(
+    screen.findByRole("listbox", { name: "Chat models" }),
+  ).resolves.toBeVisible();
 });
+
+test.each([
+  {
+    model: "gpt-6-astra",
+    providerType: "openai-api-key",
+    first: "Low",
+    last: "Ultra",
+  },
+  {
+    model: "gpt-5.6-sol",
+    providerType: "openai-api-key",
+    first: "Low",
+    last: "Max",
+  },
+  {
+    model: "claude-sonnet-5",
+    providerType: "anthropic-api-key",
+    first: "Low",
+    last: "Max",
+  },
+  {
+    model: "deepseek-v4-flash",
+    providerType: "deepseek",
+    first: "Low",
+    last: "Max",
+  },
+  {
+    model: "deepseek-v4-pro",
+    providerType: "deepseek",
+    first: "High",
+    last: "Max",
+  },
+  {
+    model: "deepseek-v4-flash",
+    providerType: "openrouter-codex",
+    first: "High",
+    last: "Xhigh",
+  },
+] as const)(
+  "Offer $model efforts for $providerType with Pi enabled",
+  async ({ model, providerType, first, last }) => {
+    const user = userEvent.setup({ delay: null });
+    installRunChat({ selectedModel: model });
+    context.mocks.data.orgModelPolicies([
+      modelPolicy(model, 1, { default: true, providerType }),
+    ]);
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: {
+        [FeatureSwitchKey.Effort]: true,
+        [FeatureSwitchKey.PiLoop]: true,
+      },
+    });
+    await readyChat();
+    const label = getCanonicalModelDisplayName(model);
+    click(await findButton(label));
+    await openEffortPanel();
+    const slider = await screen.findByRole("slider", {
+      name: "Effort",
+    });
+    slider.focus();
+    await user.keyboard("{Home}");
+    await waitFor(() => {
+      return expect(slider).toHaveAttribute("aria-valuetext", first);
+    });
+    await user.keyboard("{End}");
+    await waitFor(() => {
+      return expect(slider).toHaveAttribute("aria-valuetext", last);
+    });
+  },
+);

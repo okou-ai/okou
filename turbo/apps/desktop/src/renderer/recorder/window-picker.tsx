@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { DesktopRecorderWindowOption } from "../../desktop-recorder-types";
 
-const recorder = window.vm0DesktopRecorder;
+const recorder = window.okouDesktopRecorder;
 
 /**
  * Picks the window to record by sight.

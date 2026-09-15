@@ -1,5 +1,294 @@
 # Changelog
 
+## [1.8.27](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.26...app-worker-v1.8.27) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.666.4
+
+## [1.8.26](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.25...app-worker-v1.8.26) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.666.3
+
+## [1.8.25](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.24...app-worker-v1.8.25) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.666.2
+
+## [1.8.24](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.23...app-worker-v1.8.24) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.666.1
+
+## [1.8.23](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.22...app-worker-v1.8.23) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.666.0
+
+## [1.8.22](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.21...app-worker-v1.8.22) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.665.0
+
+## [1.8.21](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.20...app-worker-v1.8.21) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.664.2
+
+## [1.8.20](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.19...app-worker-v1.8.20) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.664.1
+
+## [1.8.19](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.18...app-worker-v1.8.19) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.664.0
+
+## [1.8.18](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.17...app-worker-v1.8.18) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.663.2
+
+## [1.8.17](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.16...app-worker-v1.8.17) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.663.1
+
+## [1.8.16](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.15...app-worker-v1.8.16) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.663.0
+
+## [1.8.15](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.14...app-worker-v1.8.15) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.662.2
+
+## [1.8.14](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.13...app-worker-v1.8.14) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.662.1
+
+## [1.8.13](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.12...app-worker-v1.8.13) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.662.0
+
+## [1.8.12](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.11...app-worker-v1.8.12) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.661.1
+
+## [1.8.11](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.10...app-worker-v1.8.11) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.661.0
+
+## [1.8.10](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.9...app-worker-v1.8.10) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.3
+
+## [1.8.9](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.8...app-worker-v1.8.9) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.2
+
+## [1.8.8](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.7...app-worker-v1.8.8) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.1
+
+## [1.8.7](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.6...app-worker-v1.8.7) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.0
+
+## [1.8.6](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.5...app-worker-v1.8.6) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.659.0
+
+## [1.8.5](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.4...app-worker-v1.8.5) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.658.0
+
+## [1.8.4](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.3...app-worker-v1.8.4) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.657.0
+
+## [1.8.3](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.2...app-worker-v1.8.3) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.656.0
+
+## [1.8.2](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.1...app-worker-v1.8.2) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.655.0
+
+## [1.8.1](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.0...app-worker-v1.8.1) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.654.3
+
+## [1.8.0](https://github.com/vm0-ai/vm0/compare/app-worker-v1.7.2...app-worker-v1.8.0) (2026-09-11)
+
+
+### Features
+
+* **connectors:** support posthog cimd oauth and regional accounts ([#33490](https://github.com/vm0-ai/vm0/issues/33490)) ([37967c7](https://github.com/vm0-ai/vm0/commit/37967c79fbe0658e97adfa1c1d3c2138e2469099))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.654.2
+
+## [1.7.2](https://github.com/vm0-ai/vm0/compare/app-worker-v1.7.1...app-worker-v1.7.2) (2026-09-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.654.1
+
+## [1.7.1](https://github.com/vm0-ai/vm0/compare/app-worker-v1.7.0...app-worker-v1.7.1) (2026-09-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.654.0
+
+## [1.7.0](https://github.com/vm0-ai/vm0/compare/app-worker-v1.6.21...app-worker-v1.7.0) (2026-09-11)
+
+
+### Features
+
+* **app-worker:** serve static posthog oauth client metadata ([#33481](https://github.com/vm0-ai/vm0/issues/33481)) ([324a367](https://github.com/vm0-ai/vm0/commit/324a367f792198a97a044d7386f87668cf51ebe9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.653.0
+
 ## [1.6.21](https://github.com/vm0-ai/vm0/compare/app-worker-v1.6.20...app-worker-v1.6.21) (2026-09-11)
 
 

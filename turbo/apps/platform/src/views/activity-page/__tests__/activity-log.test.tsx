@@ -702,3 +702,77 @@ test("Activity logs show useful reasoning without progress noise", async () => {
   expect(screen.queryByText("thinking_tokens")).not.toBeInTheDocument();
   expect(screen.queryByText("777777")).not.toBeInTheDocument();
 });
+
+test("Pi bounded tool content stays associated with a failed tool and run", async () => {
+  const notice = "[event content truncated for delivery]";
+  const imageNotice = "[image omitted for delivery]";
+  mockActivity(
+    [
+      event(1, "assistant", {
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "bounded-pi-call",
+              name: "read",
+              input: { _delivery_notice: notice },
+            },
+          ],
+        },
+      }),
+      event(2, "user", {
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "bounded-pi-call",
+              is_error: true,
+              content: [
+                { type: "text", text: notice },
+                { type: "text", text: imageNotice },
+              ],
+            },
+          ],
+        },
+      }),
+    ],
+    { framework: "pi", status: "failed" },
+  );
+  await openActivity();
+  const search = await screen.findByPlaceholderText("Search steps");
+  await fill(search, imageNotice);
+  await expect(screen.findByText("(1/1 matched)")).resolves.toBeInTheDocument();
+  expect(screen.getByText(imageNotice)).toBeVisible();
+  expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
+});
+
+test("Codex bounded structured output remains a readable completed item", async () => {
+  mockActivity(
+    [
+      event(1, "item.completed", {
+        type: "item.completed",
+        thread_id: "thread",
+        turn_id: "turn",
+        item: {
+          type: "function_call_output",
+          id: "bounded-codex-call",
+          name: "read",
+          namespace: "tools",
+          output: [
+            {
+              type: "input_text",
+              text: "[event content truncated for delivery]",
+            },
+            { type: "input_text", text: "[image omitted for delivery]" },
+          ],
+        },
+      }),
+    ],
+    { framework: "codex" },
+  );
+  await openActivity();
+  await expect(
+    screen.findByText(/bounded-codex-call/u),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByText(/function_call_output/u)).toBeVisible();
+});

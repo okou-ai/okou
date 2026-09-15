@@ -125,6 +125,38 @@ Overlapping runner versions have independent limits. Four is an initial policy,
 not a measured optimum or a guarantee that large-history export/copy latency
 disappears. No operator setting or persistent cache format changes are required.
 
+### Sidecar export resource diagnostics
+
+The existing `workspace image cache session history sidecar export completed`
+event includes per-stage resource counters alongside wall-clock timings. The
+`helper_read_verify_` and `helper_write_` prefixes each expose:
+
+- `resources_available`: whether both resource snapshots produced valid deltas.
+- `user_cpu_us` and `system_cpu_us`: CPU time in microseconds.
+- `minor_faults` and `major_faults`: page faults without and with I/O, respectively.
+- `input_blocks` and `output_blocks`: Linux `ru_inblock` and `ru_oublock`
+  filesystem I/O accounting counters, not bytes or disk latency.
+- `voluntary_context_switches` and `involuntary_context_switches`: scheduler
+  context-switch counts.
+
+These are deltas for the synchronous exporting thread, not all guest processes
+or threads. Read/verify includes decoding, buffering and hashing. Write includes
+private export-file creation and writing, but not the subsequent host copy.
+Zero is a measured value. If collection fails, a counter decreases, or the
+platform is not Linux, affected stage counters are absent and
+`resources_available` is false; export success and failure handling are unchanged.
+
+Faults can reflect buffer allocation and cache effects, and block counters do
+not describe physical-device service time. Wall time minus CPU time also includes
+scheduling and other waits: it is not disk-wait time or proof of a balloon-related
+cause. Correlate these fields with the exact artifact and guest/host evidence.
+
+Collection uses three fixed `getrusage(RUSAGE_THREAD)` calls per successful
+export, with no per-chunk sampling, second history read, new RPC or run-startup
+wait. The bounded numeric summary is private helper output, not persisted cache
+metadata. Existing export admission, timeouts and the 5-second warning threshold
+remain unchanged.
+
 ## Runner Operator Server Configuration
 
 `runner config` requires the control-plane URL and Runner token through the

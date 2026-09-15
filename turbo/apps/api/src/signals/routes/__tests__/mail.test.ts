@@ -319,7 +319,7 @@ async function seedGmailMailCardFixture() {
   const actorWithOrg = { ...actor, orgId: actor.orgId };
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, {
-    displayName: "Zero Mail agent",
+    displayName: "Nova Mail agent",
     visibility: "private",
   });
   const thread = await chat.createThread(actor, {
@@ -873,6 +873,300 @@ describe("POST /api/mail/drafts/link", () => {
     expect(page.events).toHaveLength(0);
   });
 
+  it.each([false, true])(
+    "keeps a rejected Gmail draft available for correction and an explicit later send (status present: %s)",
+    async (withStatus) => {
+      const fixture = await seedGmailMailCardFixture();
+      mockGmailDraftApi();
+      const linked = await linkDraft(fixture);
+      let sendAttempts = 0;
+      server.use(
+        http.post(`${GMAIL_API_BASE}/drafts/send`, () => {
+          sendAttempts += 1;
+          return HttpResponse.json(
+            {
+              error: {
+                code: 400,
+                ...(withStatus ? { status: "INVALID_ARGUMENT" } : {}),
+                message: "Private draft for recipient@example.com",
+                errors: [
+                  {
+                    domain: "global",
+                    reason: "badRequest",
+                    message: "Private subject and message contents",
+                  },
+                ],
+              },
+            },
+            { status: 400 },
+          );
+        }),
+      );
+
+      const rejected = await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [400],
+      );
+      expect(rejected.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message:
+            "Gmail rejected this draft. Open it in Gmail and check its recipients and content before trying again.",
+        },
+      });
+      expect(sendAttempts).toBe(1);
+      const draft = await accept(
+        client().getDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(draft.body.mailDraft.status).toBe("draft");
+      expect(draft.body.mailDraft.sentGmailMessageId).toBeUndefined();
+      await expect(
+        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      ).resolves.toMatchObject({ connectionStatus: "connected" });
+
+      // Only a new user request, after the provider accepts the corrected draft,
+      // may send it. Neither rejection handling nor the read above resends it.
+      const gmail = mockGmailDraftApi();
+      const sent = await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(sent.body.mailDraft.status).toBe("sent");
+      expect(gmail.sentBody).toStrictEqual({ id: GMAIL_DRAFT_ID });
+      expect(gmail.sendCount).toBe(1);
+      expect(sendAttempts).toBe(1);
+    },
+  );
+
+  it.each([
+    [
+      "unknown reason",
+      400,
+      { errors: [{ domain: "global", reason: "private@example.com" }] },
+    ],
+    [
+      "mixed reasons",
+      400,
+      {
+        errors: [
+          { domain: "global", reason: "badRequest" },
+          { domain: "global", reason: "backendError" },
+        ],
+      },
+    ],
+    ["missing reasons", 400, {}],
+    ["empty reasons", 400, { errors: [] }],
+    [
+      "unrecognized domain",
+      400,
+      { errors: [{ domain: "other", reason: "badRequest" }] },
+    ],
+    [
+      "conflicting body code",
+      400,
+      { code: 500, errors: [{ domain: "global", reason: "badRequest" }] },
+    ],
+    [
+      "conflicting body status",
+      400,
+      {
+        status: "INTERNAL",
+        errors: [{ domain: "global", reason: "badRequest" }],
+      },
+    ],
+    [
+      "conflicting details",
+      400,
+      {
+        errors: [{ domain: "global", reason: "badRequest" }],
+        details: [{ reason: "OTHER_ERROR" }],
+      },
+    ],
+    [
+      "request parameter defect",
+      400,
+      {
+        errors: [
+          {
+            domain: "global",
+            reason: "badRequest",
+            locationType: "parameter",
+            location: "id",
+          },
+        ],
+      },
+    ],
+    [
+      "server failure with badRequest reason",
+      500,
+      { errors: [{ domain: "global", reason: "badRequest" }] },
+    ],
+    [
+      "backend failure",
+      503,
+      { errors: [{ domain: "global", reason: "backendError" }] },
+    ],
+    [
+      "unrelated permission denial",
+      403,
+      { errors: [{ domain: "global", reason: "forbidden" }] },
+    ],
+    [
+      "rate limit",
+      429,
+      { errors: [{ domain: "usageLimits", reason: "userRateLimitExceeded" }] },
+    ],
+  ] as const)(
+    "preserves a Gmail send failure for %s",
+    async (_name, status, error) => {
+      const fixture = await seedGmailMailCardFixture();
+      mockGmailDraftApi();
+      const linked = await linkDraft(fixture);
+      let sendAttempts = 0;
+      server.use(
+        http.post(`${GMAIL_API_BASE}/drafts/send`, () => {
+          sendAttempts += 1;
+          return HttpResponse.json(
+            { error: { ...error, message: "Private draft contents" } },
+            { status },
+          );
+        }),
+      );
+      await expect(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+      ).rejects.toThrow(
+        "Unknown response status 500 for POST /api/mail/drafts/:mailDraftId/send",
+      );
+      expect(sendAttempts).toBe(1);
+      const draft = await accept(
+        client().getDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(draft.body.mailDraft.status).toBe("draft");
+      expect(draft.body.mailDraft.sentGmailMessageId).toBeUndefined();
+      await expect(
+        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      ).resolves.toMatchObject({ connectionStatus: "connected" });
+    },
+  );
+
+  it.each([
+    [
+      "non-JSON body",
+      () => {
+        return new HttpResponse("Private provider response", { status: 400 });
+      },
+    ],
+    [
+      "oversized body",
+      () => {
+        return HttpResponse.json(
+          {
+            error: {
+              errors: [{ domain: "global", reason: "badRequest" }],
+              message: "x".repeat(17 * 1024),
+            },
+          },
+          { status: 400 },
+        );
+      },
+    ],
+    [
+      "network failure",
+      () => {
+        return HttpResponse.error();
+      },
+    ],
+  ] as const)(
+    "preserves an unreadable Gmail send failure for %s",
+    async (_name, response) => {
+      const fixture = await seedGmailMailCardFixture();
+      mockGmailDraftApi();
+      const linked = await linkDraft(fixture);
+      let sendAttempts = 0;
+      server.use(
+        http.post(`${GMAIL_API_BASE}/drafts/send`, () => {
+          sendAttempts += 1;
+          return response();
+        }),
+      );
+      await expect(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+      ).rejects.toThrow(
+        "Unknown response status 500 for POST /api/mail/drafts/:mailDraftId/send",
+      );
+      expect(sendAttempts).toBe(1);
+      const draft = await accept(
+        client().getDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [200],
+      );
+      expect(draft.body.mailDraft.status).toBe("draft");
+    },
+  );
+
+  it.each([401, 403])(
+    "requires reconnect when Gmail rejects authorization during send with %s",
+    async (status) => {
+      const fixture = await seedGmailMailCardFixture();
+      mockGmailDraftApi();
+      const linked = await linkDraft(fixture);
+      server.use(
+        http.post(`${GMAIL_API_BASE}/drafts/send`, () => {
+          return status === 401
+            ? new HttpResponse(null, { status })
+            : HttpResponse.json(
+                {
+                  error: {
+                    details: [
+                      {
+                        domain: "googleapis.com",
+                        reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                      },
+                    ],
+                  },
+                },
+                { status },
+              );
+        }),
+      );
+      const response = await accept(
+        client().sendDraft({
+          headers: authHeaders(),
+          params: { mailDraftId: linked.body.mailDraftId },
+        }),
+        [409],
+      );
+      expect(response.body.error.message).toBe(
+        "Reconnect Gmail before continuing",
+      );
+      await expect(
+        connectors.readConnectorBySlug(fixture.actor, "gmail"),
+      ).resolves.toMatchObject({ connectionStatus: "reconnect-required" });
+    },
+  );
+
   it("refreshes a linked draft whose subject was initially empty", async () => {
     const fixture = await seedGmailMailCardFixture();
     const gmail = mockGmailDraftApi();
@@ -1230,7 +1524,7 @@ describe("POST /api/mail/drafts/link", () => {
     expect(refreshCalls).toBe(0);
   });
 
-  it("logs the canonical connector dimension on refresh failure", async () => {
+  it("requires reconnect when the Gmail token refresh fails", async () => {
     const fixture = await seedGmailMailCardFixture();
     await setConnectorCredentialStorageState(context, {
       orgId: fixture.actor.orgId ?? "",
@@ -1244,7 +1538,6 @@ describe("POST /api/mail/drafts/link", () => {
         return HttpResponse.error();
       }),
     );
-    context.mocks.axiomLogging.warn.mockClear();
 
     const response = await accept(
       client().linkDraft({
@@ -1260,12 +1553,6 @@ describe("POST /api/mail/drafts/link", () => {
 
     expect(response.body.error.message).toBe(
       "Reconnect Gmail before continuing",
-    );
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "Connector credential refresh failed",
-      expect.objectContaining({
-        connectorSlug: "gmail",
-      }),
     );
   });
 

@@ -1,7 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
@@ -24,7 +23,6 @@ import {
 } from "./chat-run-test-fixtures.ts";
 
 const refreshedContext = testContext();
-const flags = { [FeatureSwitchKey.VoiceInputV2]: true } as const;
 const targets = [
   { target: "agent", name: "Okou", path: NEW_CHAT_PATH },
   { target: "thread", name: "Capability conversation", path: RUN_PATH },
@@ -103,7 +101,7 @@ test.each(targets)(
       onAudioContextClose: contextClosed.resolve,
       onTrackStop: trackStopped.resolve,
     });
-    await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+    await setupPage({ context, path: RUN_PATH });
     await findEnabledButton("Voice input");
     const dialog = await openForwardComposer(name);
     click(await findEnabledButton("Voice input", dialog));
@@ -125,6 +123,7 @@ test.each(targets)(
 test.each(targets)(
   "Reuse an unfinished $target recording in the forward dialog without replacing it",
   async ({ name, path }) => {
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const initialPage = createChildAbortController(context.signal);
     installVoiceBoundaries();
     context.mocks.browser.voiceInput({ rms: 0.12 });
@@ -144,9 +143,9 @@ test.each(targets)(
       },
     );
     await setupPage({
+      locale: "en-US",
       context: { ...context, signal: initialPage.signal },
       path,
-      featureSwitches: flags,
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
@@ -154,9 +153,9 @@ test.each(targets)(
     const saved = await recordings();
     unload(initialPage);
     await setupPage({
+      locale: "en-US",
       context: refreshedContext,
       path: RUN_PATH,
-      featureSwitches: flags,
     });
     const originalComposer = await screen.findByRole("textbox", {
       name: "Message",

@@ -8,7 +8,7 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import {
-  chatReasoningEffortEnabled$,
+  chatEffortEnabled$,
   codexFastModeEnabled$,
 } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
@@ -88,10 +88,9 @@ export const chatPageModelSelection$ = computed(
       }
       const selection: ModelProviderSelection = {
         selectedModel: user.value.selectedModel,
-        ...(get(chatReasoningEffortEnabled$) &&
-        user.value.reasoningEffort !== undefined
-          ? { reasoningEffort: user.value.reasoningEffort }
-          : {}),
+        modelSettings: get(chatEffortEnabled$)
+          ? (user.value.modelSettings ?? {})
+          : {},
       };
       if (user.value.codexServiceTier !== "fast") {
         return selection;

@@ -3,9 +3,10 @@
 use std::{
     collections::HashMap,
     future::Future,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 use tokio::sync::{OnceCell, OwnedSemaphorePermit, Semaphore};
+use tokio_util::sync::CancellationToken;
 
 use super::{FailureReason, authority::PreparedCredential};
 use crate::ids::RunId;
@@ -27,12 +28,45 @@ struct State {
 struct RunEntries {
     identity: Arc<()>,
     entries: HashMap<uuid::Uuid, Arc<Entry>>,
+    sessions: Vec<(uuid::Uuid, Weak<Entry>)>,
 }
 
 struct Entry {
     value: OnceCell<Arc<PreparedCredential>>,
+    cancelled: CancellationToken,
     // Retain the slot even when eviction leaves an in-flight reader owning the entry.
     _slot: Option<OwnedSemaphorePermit>,
+}
+
+impl RunEntries {
+    fn invalidate(&mut self, connection: Option<uuid::Uuid>) {
+        self.sessions.retain(|(id, weak)| {
+            let Some(entry) = weak.upgrade() else {
+                return false;
+            };
+            if connection.is_none_or(|connection| connection == *id) {
+                entry.cancelled.cancel();
+                false
+            } else {
+                true
+            }
+        });
+        if let Some(connection) = connection {
+            if let Some(entry) = self.entries.remove(&connection) {
+                entry.cancelled.cancel();
+            }
+        } else {
+            for (_, entry) in self.entries.drain() {
+                entry.cancelled.cancel();
+            }
+        }
+    }
+}
+
+impl Drop for RunEntries {
+    fn drop(&mut self) {
+        self.invalidate(None);
+    }
 }
 
 pub(super) struct Registration {
@@ -41,6 +75,7 @@ pub(super) struct Registration {
     identity: Arc<()>,
 }
 
+#[derive(Clone)]
 pub(super) struct Access {
     registration: Arc<Registration>,
     connection: uuid::Uuid,
@@ -67,6 +102,7 @@ impl Cache {
                 RunEntries {
                     identity: Arc::clone(&identity),
                     entries: HashMap::new(),
+                    sessions: Vec::new(),
                 },
             );
         Arc::new(Registration {
@@ -84,7 +120,7 @@ impl Cache {
         state.connected = connected;
         if !connected {
             for run in state.runs.values_mut() {
-                run.entries.clear();
+                run.invalidate(None);
             }
         }
     }
@@ -97,12 +133,7 @@ impl Cache {
         let Some(run) = state.runs.get_mut(&run) else {
             return;
         };
-        match connection {
-            Some(connection) => {
-                run.entries.remove(&connection);
-            }
-            None => run.entries.clear(),
-        }
+        run.invalidate(connection);
     }
 }
 
@@ -128,6 +159,7 @@ impl Registration {
             } else if let Ok(slot) = Arc::clone(&self.cache.capacity).try_acquire_owned() {
                 let entry = Arc::new(Entry {
                     value: OnceCell::new(),
+                    cancelled: CancellationToken::new(),
                     _slot: Some(slot),
                 });
                 run.entries.insert(connection, Arc::clone(&entry));
@@ -145,11 +177,24 @@ impl Registration {
             entry: entry.unwrap_or_else(|| {
                 Arc::new(Entry {
                     value: OnceCell::new(),
+                    cancelled: CancellationToken::new(),
                     _slot: None,
                 })
             }),
             cached,
         })
+    }
+
+    /// Retained sessions require notification-backed authority, unlike one-shot exec.
+    pub(super) fn session_access(
+        self: &Arc<Self>,
+        connection: uuid::Uuid,
+    ) -> Result<Access, FailureReason> {
+        let access = self.lookup(connection)?;
+        if !access.retain()? {
+            return Err(FailureReason::Unavailable);
+        }
+        Ok(access)
     }
 
     pub(super) fn close(&self) {
@@ -175,6 +220,70 @@ impl Drop for Registration {
 }
 
 impl Access {
+    /// Register retained authority before resolving credentials, including cache misses.
+    /// Disconnected one-shot requests still resolve afresh and retain no transport.
+    pub(super) fn retain(&self) -> Result<bool, FailureReason> {
+        let mut state = self
+            .registration
+            .cache
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if !state.connected {
+            return Ok(false);
+        }
+        let run = state
+            .runs
+            .get_mut(&self.registration.run)
+            .filter(|run| Arc::ptr_eq(&run.identity, &self.registration.identity))
+            .ok_or(FailureReason::Cancelled)?;
+        if self.entry.cancelled.is_cancelled()
+            || (self.cached
+                && !run
+                    .entries
+                    .get(&self.connection)
+                    .is_some_and(|entry| Arc::ptr_eq(entry, &self.entry)))
+        {
+            return Err(FailureReason::ConfigurationChanged);
+        }
+        if !self.cached {
+            // Weak watchers own no credentials; live operations and idle transports bound them.
+            run.sessions.retain(|(_, entry)| entry.strong_count() > 0);
+            if !run
+                .sessions
+                .iter()
+                .any(|(_, entry)| entry.ptr_eq(&Arc::downgrade(&self.entry)))
+            {
+                run.sessions
+                    .push((self.connection, Arc::downgrade(&self.entry)));
+            }
+        }
+        Ok(true)
+    }
+
+    pub(super) fn cancelled(&self) -> CancellationToken {
+        self.entry.cancelled.clone()
+    }
+
+    /// A failed asynchronous start must remain inspectable through its record.
+    /// Do not retire its notification entry solely because this fill failed;
+    /// no failed value is cached, and every fill still checks current authority.
+    pub(super) async fn prepare_session(
+        &self,
+        prepare: impl Future<Output = Result<PreparedCredential, FailureReason>>,
+    ) -> Result<Arc<PreparedCredential>, FailureReason> {
+        let value = self
+            .entry
+            .value
+            .get_or_try_init(|| async {
+                self.check()?;
+                prepare.await.map(Arc::new)
+            })
+            .await?;
+        self.check()?;
+        Ok(Arc::clone(value))
+    }
+
     pub(super) async fn prepare(
         &self,
         prepare: impl Future<Output = Result<PreparedCredential, FailureReason>>,
@@ -198,7 +307,7 @@ impl Access {
         Ok(Arc::clone(value))
     }
 
-    fn check(&self) -> Result<(), FailureReason> {
+    pub(super) fn check(&self) -> Result<(), FailureReason> {
         let state = self
             .registration
             .cache
@@ -210,6 +319,9 @@ impl Access {
             .get(&self.registration.run)
             .filter(|run| Arc::ptr_eq(&run.identity, &self.registration.identity))
             .ok_or(FailureReason::Cancelled)?;
+        if self.entry.cancelled.is_cancelled() {
+            return Err(FailureReason::ConfigurationChanged);
+        }
         if self.cached
             && !run
                 .entries
@@ -243,7 +355,7 @@ impl Access {
             .get(&self.connection)
             .is_some_and(|entry| Arc::ptr_eq(entry, &self.entry))
         {
-            run.entries.remove(&self.connection);
+            run.invalidate(Some(self.connection));
         }
     }
 }

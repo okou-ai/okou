@@ -108,7 +108,7 @@ function prepareDefaultAgent(
     {
       agentId: AGENT_ID,
       ownerId: "test-user-123",
-      displayName: "Zero",
+      displayName: "Nova",
       description: null,
       sound: null,
       avatarUrl,
@@ -123,7 +123,7 @@ function prepareAgents(targetContext = context): AgentResponse[] {
       isDefaultAgent: false,
       agentId: AGENT_ID,
       ownerId: "test-user-123",
-      displayName: "Zero",
+      displayName: "Nova",
       description: null,
       sound: null,
       avatarUrl: null,
@@ -162,7 +162,7 @@ function prepareAgents(targetContext = context): AgentResponse[] {
   targetContext.mocks.data.agents(agents);
   targetContext.mocks.api(agentsByIdContract.get, ({ params, respond }) => {
     const displayNameById: Record<string, string> = {
-      [AGENT_ID]: "Zero",
+      [AGENT_ID]: "Nova",
       [RESEARCH_AGENT_ID]: "Research Agent",
       [SUPPORT_AGENT_ID]: "Support Agent",
     };
@@ -572,6 +572,11 @@ function restoreElementProperty(
   Reflect.deleteProperty(HTMLElement.prototype, name);
 }
 
+/** The clipping box a sidebar thread title is faded and scrolled inside. */
+function isSidebarTitleBox(element: HTMLElement): boolean {
+  return element.dataset.slot === "sidebar-thread-title";
+}
+
 /**
  * Gives the title box a fixed width and its text a width per character, so one
  * title overflows the box and the other fits inside it.
@@ -588,15 +593,13 @@ function stubSidebarTitleLayout(): void {
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
     get(this: HTMLElement): number {
-      return this.classList.contains("okou-nav-title")
-        ? SIDEBAR_TITLE_BOX_WIDTH
-        : 0;
+      return isSidebarTitleBox(this) ? SIDEBAR_TITLE_BOX_WIDTH : 0;
     },
   });
   Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
     configurable: true,
     get(this: HTMLElement): number {
-      if (!this.classList.contains("okou-nav-title")) {
+      if (!isSidebarTitleBox(this)) {
         return 0;
       }
       return Math.max(
@@ -1351,7 +1354,7 @@ test("Keep pin management usable with many pinned agents", async () => {
       return link.textContent?.trim();
     }),
   ).toStrictEqual([
-    "Zero",
+    "Nova",
     "Research Agent",
     "Support Agent",
     "Operations Agent",
@@ -1365,7 +1368,7 @@ test("Keep pin management usable with many pinned agents", async () => {
   if (!pinAgent) {
     throw new Error("Pin agent button not found");
   }
-  // Cards render as Zero, Research, Support, Operations, Pin, Analytics,
+  // Cards render as Nova, Research, Support, Operations, Pin, Analytics,
   // Billing, so Pin closes the first row and the rest wrap after it.
   const fourthAgent = pinnedAgentLink(grid, "Operations Agent");
   const fifthAgent = pinnedAgentLink(grid, "Analytics Agent");
@@ -1417,7 +1420,7 @@ test("Keep pinned agents and the chat heading visible while conversations scroll
     "pinned-agents-horizontal",
   );
   const pinnedAgent = within(pinnedHeader).getByText("Research Agent");
-  const chatTitle = within(sidebar()).getByText("Chats with Zero");
+  const chatTitle = within(sidebar()).getByText("Chats with Nova");
   expect(scrollArea).not.toContainElement(pinnedHeader);
   expect(scrollArea).not.toContainElement(pinnedAgent);
   expect(scrollArea).not.toContainElement(chatTitle);
@@ -1672,11 +1675,14 @@ test("Mark all of an agent’s chats read", async () => {
   const nav = await waitFor(() => {
     const current = mobileSidebar();
     expect(within(current).getByText("Research Agent")).toBeInTheDocument();
-    expect(within(current).getByText("Support Agent")).toBeInTheDocument();
     return current;
   });
   const researchSidebarRow = agentRowByName(nav, "Research Agent");
-  const supportSidebarRow = agentRowByName(nav, "Support Agent");
+  // Unpinned agents appear after the Worker finishes loading unread indicators,
+  // independently of the pinned-agent list above.
+  const supportSidebarRow = await waitFor(() => {
+    return agentRowByName(nav, "Support Agent");
+  });
   await waitFor(() => {
     expect(
       within(researchSidebarRow).getByLabelText("Unread"),
@@ -1921,7 +1927,7 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
     expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
   });
 
-  click(pinnedAgentLink(mobileSidebar(), "Zero"));
+  click(pinnedAgentLink(mobileSidebar(), "Nova"));
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
     expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
@@ -1990,9 +1996,6 @@ test("Show current shortcuts without stacking help over workspace search", async
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.VoiceInputV2]: true,
-    },
   });
 
   await waitFor(() => {
@@ -2130,7 +2133,7 @@ test("Pin and unpin agents without closing the pin manager", async () => {
 
   await waitFor(() => {
     expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Zero",
+      "Nova",
       "Research Agent",
       "Support Agent",
     ]);
@@ -2146,7 +2149,7 @@ test("Pin and unpin agents without closing the pin manager", async () => {
   click(buttonByText("Unpin", commandItemByText(dialogList, "Support Agent")));
 
   await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual(["Zero", "Research Agent"]);
+    expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Research Agent"]);
   });
   expect(dialogList).toBeInTheDocument();
   expect(
@@ -2183,13 +2186,13 @@ test("Show pinned agents before unread indicators finish loading", async () => {
 
   const grid = await screen.findByTestId("pinned-agents-grid");
   await waitFor(() => {
-    expect(pinnedAgentNames(grid)).toStrictEqual(["Zero", "Research Agent"]);
+    expect(pinnedAgentNames(grid)).toStrictEqual(["Nova", "Research Agent"]);
   });
 
   releaseIndicators.resolve(undefined);
   await waitFor(() => {
     expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Zero",
+      "Nova",
       "Research Agent",
       "Support Agent",
     ]);
@@ -2210,7 +2213,7 @@ test("Preserve the user’s pinned-agent order", async () => {
   const grid = await screen.findByTestId("pinned-agents-grid");
   await waitFor(() => {
     expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Zero",
+      "Nova",
       "Support Agent",
       "Research Agent",
     ]);
@@ -2247,7 +2250,7 @@ test("Highlight the current thread’s agent in the pinned grid", async () => {
       "page",
     );
   });
-  expect(pinnedAgentLink(grid, "Zero")).not.toHaveAttribute("aria-current");
+  expect(pinnedAgentLink(grid, "Nova")).not.toHaveAttribute("aria-current");
 });
 
 test("Recognize and pin sidebar conversation states", async () => {
@@ -2352,80 +2355,176 @@ test("Recognize and pin sidebar conversation states", async () => {
   expect(menuItemByText("Delete chat")).toBeInTheDocument();
 });
 
-test("Refresh agent and thread unread indicators", async () => {
-  mockMobileLayout();
-  prepareAgents();
-  mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Remote unread conversation"),
-  ]);
-  let hasUnread = false;
-  let unreadIndicatorsLoaded = false;
-  const unreadCatchUpReturned = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    unreadIndicatorsLoaded = hasUnread;
-    return respond(200, {
-      agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
-      threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
+test.each(["agent", "thread"] as const)(
+  "Refresh the %s unread indicator",
+  async (indicator) => {
+    mockMobileLayout();
+    // Both consumers observe Nova and its thread; unrelated agents add no coverage.
+    context.mocks.data.agents(
+      prepareAgents().filter((agent) => {
+        return agent.agentId === AGENT_ID;
+      }),
+    );
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Remote unread conversation"),
+    ]);
+    let hasUnread = false;
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
+        threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
+      });
     });
-  });
-  context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
-    const response = respond(200, {
-      events: Object.fromEntries(
-        body.map(([threadId]) => {
-          return [threadId, []];
-        }),
-      ),
-      notFoundThreads: [],
+    context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
+      return respond(200, {
+        events: Object.fromEntries(
+          body.map(([threadId]) => {
+            return [threadId, []];
+          }),
+        ),
+        notFoundThreads: [],
+      });
     });
-    if (unreadIndicatorsLoaded && !unreadCatchUpReturned.settled()) {
-      unreadCatchUpReturned.resolve(undefined);
-    }
-    return response;
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: hasUnread
-        ? [
-            {
-              threadId: EXISTING_THREAD_ID,
-              unreadAt: "2026-03-10T00:05:00Z",
+    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+      return respond(200, {
+        unreads: hasUnread
+          ? [
+              {
+                threadId: EXISTING_THREAD_ID,
+                unreadAt: "2026-03-10T00:05:00Z",
+              },
+            ]
+          : [],
+      });
+    });
+
+    await setupSidebarPage({
+      context,
+      path: "/agents",
+      sharedWorkerTestTransport: "message-port",
+    });
+
+    await waitFor(() => {
+      const current = mobileSidebar();
+      expect(within(current).getByText("Nova")).toBeInTheDocument();
+    });
+    // Both indicator consumers must finish loading before the external refresh.
+    await waitFor(() => {
+      expect(
+        threadRowByTitle("Remote unread conversation", mobileSidebar()),
+      ).toBeInTheDocument();
+    });
+    const indicatorRow = () => {
+      return indicator === "agent"
+        ? agentRowByName(mobileSidebar(), "Nova")
+        : threadRowByTitle("Remote unread conversation", mobileSidebar());
+    };
+    await waitFor(() => {
+      expect(within(indicatorRow()).queryByLabelText("Unread")).toBeNull();
+    });
+
+    hasUnread = true;
+    changeChatThreadList();
+
+    await waitFor(() => {
+      expect(
+        within(indicatorRow()).getByLabelText("Unread"),
+      ).toBeInTheDocument();
+    });
+  },
+);
+
+test.each([
+  ["thread list", "pending"],
+  ["thread list", "failed"],
+  ["read cursor", "pending"],
+  ["read cursor", "failed"],
+] as const)(
+  "Show the running indicator after a %s change while chat warming is %s",
+  async (notification, warmingOutcome) => {
+    mockMobileLayout();
+    prepareDefaultAgent();
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Remote running conversation"),
+    ]);
+    let running = false;
+    let runningIndicatorsReturned = false;
+    const warmingStarted = context.mocks.deferred<void>();
+    const warmingResponse = context.mocks.deferred<void>();
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      runningIndicatorsReturned = running;
+      return respond(200, {
+        agents: {},
+        threads: { [EXISTING_THREAD_ID]: running ? "active" : "unread" },
+      });
+    });
+    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+      return respond(200, {
+        unreads: [
+          {
+            threadId: EXISTING_THREAD_ID,
+            unreadAt: "2026-03-10T00:05:00Z",
+          },
+        ],
+      });
+    });
+    context.mocks.api(
+      chatThreadEventsContract.catchUp,
+      async ({ body, respond }) => {
+        if (runningIndicatorsReturned) {
+          if (!warmingStarted.settled()) {
+            warmingStarted.resolve();
+          }
+          if (warmingOutcome === "pending") {
+            await warmingResponse.promise;
+          }
+          return respond(500, {
+            error: {
+              message: "Chat warming failed",
+              code: "INTERNAL_SERVER_ERROR",
             },
-          ]
-        : [],
+          });
+        }
+        return respond(200, {
+          events: Object.fromEntries(
+            body.map(([threadId]) => {
+              return [threadId, []];
+            }),
+          ),
+          notFoundThreads: [],
+        });
+      },
+    );
+
+    await setupSidebarPage({
+      context,
+      path: "/agents",
+      sharedWorkerTestTransport: "message-port",
     });
-  });
+    const indicatorRow = () => {
+      return threadRowByTitle("Remote running conversation", mobileSidebar());
+    };
+    await waitFor(() => {
+      expect(within(indicatorRow()).getByLabelText("Unread")).toBeVisible();
+    });
 
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    sharedWorkerTestTransport: "message-port",
-  });
+    running = true;
+    if (notification === "thread list") {
+      changeChatThreadList();
+    } else {
+      changeChatThreadReadCursor({
+        threadId: EXISTING_THREAD_ID,
+        lastReadAt: null,
+      });
+    }
 
-  const nav = await waitFor(() => {
-    const current = mobileSidebar();
-    expect(within(current).getByText("Zero")).toBeInTheDocument();
-    return current;
-  });
-  const agentRow = agentRowByName(nav, "Zero");
-  const threadRow = await waitFor(() => {
-    return threadRowByTitle("Remote unread conversation", nav);
-  });
-  await waitFor(() => {
-    expect(within(agentRow).queryByLabelText("Unread")).toBeNull();
-    expect(within(threadRow).queryByLabelText("Unread")).toBeNull();
-  });
-
-  hasUnread = true;
-  changeChatThreadList();
-
-  // Indicator delivery follows the throttled batch, which may start after a
-  // trailing bootstrap request. Observe that response before checking the UI.
-  await unreadCatchUpReturned.promise;
-  await waitFor(() => {
-    expect(within(agentRow).getByLabelText("Unread")).toBeInTheDocument();
-    expect(within(threadRow).getByLabelText("Unread")).toBeInTheDocument();
-  });
-});
+    await warmingStarted.promise;
+    await waitFor(() => {
+      expect(within(indicatorRow()).getByLabelText("Running")).toBeVisible();
+    });
+    expect(within(indicatorRow()).queryByLabelText("Unread")).toBeNull();
+  },
+);
 
 test("Rename a conversation from the sidebar", async () => {
   prepareDefaultAgent();
@@ -2495,7 +2594,7 @@ test("Rename a conversation from the sidebar", async () => {
   );
 });
 
-test("Reorder pinned agents while keeping Zero first", async () => {
+test("Reorder pinned agents while keeping Nova first", async () => {
   const pinnedAgentIds = prepareOverflowingPinnedAgents();
   context.mocks.data.userPreferences({ pinnedAgentIds });
 
@@ -2509,7 +2608,7 @@ test("Reorder pinned agents while keeping Zero first", async () => {
     expect(within(grid).getAllByTestId("pinned-agent-card")).toHaveLength(6);
   });
   expect(pinnedAgentNames(grid)).toStrictEqual([
-    "Zero",
+    "Nova",
     "Research Agent",
     "Support Agent",
     "Operations Agent",
@@ -2542,7 +2641,7 @@ test("Reorder pinned agents while keeping Zero first", async () => {
 
   await waitFor(() => {
     expect(pinnedAgentNames(grid)).toStrictEqual([
-      "Zero",
+      "Nova",
       "Research Agent",
       "Operations Agent",
       "Analytics Agent",
@@ -2552,7 +2651,7 @@ test("Reorder pinned agents while keeping Zero first", async () => {
   });
 
   const orderAfterReorder = pinnedAgentNames(grid);
-  const lead = pinnedAgentLink(grid, "Zero");
+  const lead = pinnedAgentLink(grid, "Nova");
   const leadDropTransfer = createDataTransferStub();
   fireEvent.dragStart(pinnedAgentLink(grid, "Research Agent"), {
     dataTransfer: leadDropTransfer,
@@ -2565,7 +2664,7 @@ test("Reorder pinned agents while keeping Zero first", async () => {
     dataTransfer: leadDropTransfer,
   });
   expect(pinnedAgentNames(grid)).toStrictEqual(orderAfterReorder);
-  expect(pinnedAgentLink(grid, "Zero")).toBeInTheDocument();
+  expect(pinnedAgentLink(grid, "Nova")).toBeInTheDocument();
 });
 
 test("Keep the default Okou sweater outside a circular mask", async () => {

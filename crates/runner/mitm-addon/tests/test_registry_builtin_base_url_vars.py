@@ -24,7 +24,7 @@ _TEST_BUILTIN_FIREWALLS: dict[str, dict] = {}
 
 class _RegistryOptions:
     def __init__(self) -> None:
-        self.vm0_builtin_firewall_catalog_cache_path = ""
+        self.okou_builtin_firewall_catalog_cache_path = ""
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +111,7 @@ def write_builtin_firewall_registry(
     firewall = cache_firewall or _TEST_BUILTIN_FIREWALLS.get(name) or _builtin_firewall(name)
     cache_path = _cache_path_for_registry(path)
     _write_catalog_cache(cache_path, {firewall["name"]: firewall})
-    builtin_firewall_cache.ctx.options.vm0_builtin_firewall_catalog_cache_path = str(cache_path)
+    builtin_firewall_cache.ctx.options.okou_builtin_firewall_catalog_cache_path = str(cache_path)
 
 
 class TestRegistryBuiltinBaseUrlVars:
@@ -1035,7 +1035,9 @@ class TestRegistryBuiltinBaseUrlVars:
         )
         cache_path = _cache_path_for_registry(path)
         _write_catalog_cache(cache_path, {"zendesk": _builtin_firewall("zendesk")})
-        builtin_firewall_cache.ctx.options.vm0_builtin_firewall_catalog_cache_path = str(cache_path)
+        builtin_firewall_cache.ctx.options.okou_builtin_firewall_catalog_cache_path = str(
+            cache_path
+        )
 
         invalid_sandbox = assert_invalid_builtin_sandbox(path)
         assert "ZENDESK_SUBDOMAIN" in invalid_sandbox.message

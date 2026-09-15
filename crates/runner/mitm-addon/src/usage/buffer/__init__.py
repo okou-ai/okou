@@ -138,8 +138,9 @@ def flush_usage_events(*, trigger: UsageFlushTrigger) -> int:
     Return the number of webhook batches admitted by this invocation. Zero
     does not prove that the buffer is empty. Admission does not wait for final
     delivery or retained-retry completion. Non-shutdown triggers schedule
-    retained work for a later timer when timers are enabled; shutdown does not
-    schedule another timer.
+    retained work for a later timer when timers are enabled, until the first
+    shutdown flush begins. Shutdown stops timer scheduling and leaves retained
+    work for the final post-executor drain.
     """
     return _usage_event_buffer.flush_usage_events(trigger=trigger)
 
@@ -150,7 +151,7 @@ def seen_source_idempotency_keys(source_keys: Iterable[str]) -> set[str]:
 
 
 def drain_usage_events_after_executor_shutdown() -> None:
-    """Synchronously drain usage retained after the executor has stopped."""
+    """After joining the executor, wait for active flushes and drain retained usage."""
     _usage_event_buffer.drain_usage_events_after_executor_shutdown()
 
 

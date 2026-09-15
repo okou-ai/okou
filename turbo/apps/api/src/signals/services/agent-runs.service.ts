@@ -1,4 +1,9 @@
 import { computed, type Computed } from "ccstate";
+import {
+  modelProviderCredentialScopeSchema,
+  modelProviderTypeSchema,
+} from "@okouai/api-contracts/contracts/model-providers";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import {
@@ -31,7 +36,6 @@ import {
   inArray,
   isNotNull,
   lte,
-  or,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
@@ -41,14 +45,19 @@ import {
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { now } from "../../lib/time";
+import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
-import { activePendingRunPredicate } from "./agent-run-activity.service";
+import {
+  sandboxCapacityPredicate,
+  readPiInferenceLifecycle,
+} from "./pi-inference-lifecycle.service";
 import {
   activePaidConcurrencySlots,
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
 const PENDING_RUN_TTL_MS = 15 * 60 * 1000;
 const RECENT_RUNS_FOR_ETA = 10;
@@ -65,6 +74,15 @@ const runDurationMillisecondsDecoder = zodDriverValueDecoder(
 type ReadDb = Pick<Db, "select">;
 type QueueItem = QueueResponse["queue"][number];
 type RunningTaskItem = QueueResponse["runningTasks"][number];
+type RunSourceRow = Pick<
+  typeof agentRuns.$inferSelect,
+  | "modelProvider"
+  | "modelRuntimeProvider"
+  | "selectedModel"
+  | "modelProviderCredentialScope"
+  | "modelProviderId"
+  | "modelProviderAccountIdentity"
+>;
 
 type RunListResult =
   | { readonly kind: "ok"; readonly body: RunsListResponse }
@@ -127,13 +145,7 @@ async function activeMemberUsage(
     .where(
       and(
         eq(agentRuns.orgId, orgId),
-        or(
-          eq(agentRuns.status, "running"),
-          and(
-            eq(agentRuns.status, "pending"),
-            activePendingRunPredicate(staleThreshold),
-          ),
-        ),
+        sandboxCapacityPredicate(db, orgId, staleThreshold),
       ),
     )
     .groupBy(agentRuns.userId, userCache.name, userCache.email)
@@ -292,6 +304,67 @@ function runningTaskItem(
   };
 }
 
+async function persistedRunSource(
+  db: ReadDb,
+  run: RunSourceRow,
+  owner: { readonly userId: string; readonly orgId: string },
+): Promise<NonNullable<GetRunResponse["source"]>> {
+  let account: NonNullable<GetRunResponse["source"]>["account"] = {
+    status: "unknown",
+  };
+  if (
+    run.modelProviderCredentialScope === "member" &&
+    run.modelProviderId &&
+    run.modelProviderAccountIdentity &&
+    (run.modelProvider === "codex-oauth-token" ||
+      run.modelProvider === "claude-code-oauth-token")
+  ) {
+    const [captured] = await db
+      .select({
+        id: modelProviderAccounts.id,
+        type: modelProviderAccounts.type,
+        externalAccountId: modelProviderAccounts.externalAccountId,
+        accountEmail: modelProviderAccounts.accountEmail,
+        workspaceName: modelProviderAccounts.workspaceName,
+        disconnectedAt: modelProviderAccounts.disconnectedAt,
+      })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, run.modelProviderId),
+          eq(modelProviderAccounts.orgId, owner.orgId),
+          eq(modelProviderAccounts.userId, owner.userId),
+          eq(modelProviderAccounts.type, run.modelProvider),
+        ),
+      )
+      .limit(1);
+    account =
+      !captured || captured.disconnectedAt
+        ? { status: "unavailable" }
+        : personalSubscriptionAccountIdentity(captured) ===
+            run.modelProviderAccountIdentity
+          ? { status: "connected", id: captured.id }
+          : { status: "unknown" };
+  }
+
+  return {
+    providerType: run.modelProvider
+      ? (modelProviderTypeSchema.safeParse(run.modelProvider).data ?? null)
+      : null,
+    runtimeProviderType: run.modelRuntimeProvider
+      ? (modelProviderTypeSchema.safeParse(run.modelRuntimeProvider).data ??
+        null)
+      : null,
+    model: run.selectedModel,
+    credentialScope: run.modelProviderCredentialScope
+      ? (modelProviderCredentialScopeSchema.safeParse(
+          run.modelProviderCredentialScope,
+        ).data ?? null)
+      : null,
+    account,
+  };
+}
+
 export function agentRunById(args: {
   readonly runId: string;
   readonly userId: string;
@@ -301,6 +374,7 @@ export function agentRunById(args: {
     const [run] = await get(db$)
       .select({
         id: agentRuns.id,
+        launchSnapshot: agentRuns.launchSnapshot,
         status: agentRuns.status,
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
@@ -311,6 +385,13 @@ export function agentRunById(args: {
         createdAt: agentRuns.createdAt,
         startedAt: agentRuns.startedAt,
         completedAt: agentRuns.completedAt,
+        langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
+        modelProvider: agentRuns.modelProvider,
+        modelRuntimeProvider: agentRuns.modelRuntimeProvider,
+        selectedModel: agentRuns.selectedModel,
+        modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+        modelProviderId: agentRuns.modelProviderId,
+        modelProviderAccountIdentity: agentRuns.modelProviderAccountIdentity,
       })
       .from(agentRuns)
       .where(
@@ -326,6 +407,12 @@ export function agentRunById(args: {
       return null;
     }
 
+    await readPiInferenceLifecycle(get(db$), run.id, run.launchSnapshot);
+    const source = await persistedRunSource(get(db$), run, args);
+
+    const langfuseConfig = run.langfuseTraceEnabled
+      ? readPiLangfuseServerConfig()
+      : undefined;
     return {
       runId: run.id,
       status: run.status as RunStatus,
@@ -342,6 +429,12 @@ export function agentRunById(args: {
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString(),
       completedAt: run.completedAt?.toISOString(),
+      source,
+      ...(langfuseConfig
+        ? {
+            langfuseTraceUrl: `${langfuseConfig.baseUrl}/project/${encodeURIComponent(langfuseConfig.projectId)}/traces/${run.id.replaceAll("-", "")}`,
+          }
+        : {}),
     };
   });
 }

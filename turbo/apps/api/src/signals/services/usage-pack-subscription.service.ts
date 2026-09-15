@@ -62,7 +62,7 @@ import {
 } from "./usage-pack-plan-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoiceWithInvoice } from "./billing-operation-invoice.service";
-import { lockBillingPurchaseOrg } from "./billing-purchase-lock.service";
+import { writeUsagePackPendingSnapshots } from "./usage-pack-pending-snapshot.service";
 import {
   BILLING_PURCHASE_PREVIEW_TTL_MS,
   billingPreviewExpiresAt,
@@ -481,18 +481,31 @@ export async function usagePackPurchaseSerializationSchemaAvailable(
 ): Promise<boolean> {
   const [state] = await db
     .select({
-      available: sql`to_regclass('public.usage_pack_subscriptions') IS NOT NULL
-          AND to_regclass('public.usage_pack_allocations') IS NOT NULL
-          AND to_regclass('public.usage_pack_invoice_fulfillments') IS NOT NULL
-          AND to_regclass('public.usage_pack_pending_snapshot_guards') IS NOT NULL
-          AND to_regclass('public.uq_usage_pack_subscriptions_pending_org') IS NOT NULL
-          AND to_regprocedure('public.sync_usage_pack_pending_snapshot_guard_0954()') IS NOT NULL
+      available: sql`to_regclass('usage_pack_subscriptions') IS NOT NULL
+          AND to_regclass('usage_pack_allocations') IS NOT NULL
+          AND to_regclass('usage_pack_invoice_fulfillments') IS NOT NULL
+          AND to_regclass('usage_pack_pending_snapshot_guards') IS NOT NULL
           AND EXISTS (
-            SELECT 1
-            FROM pg_trigger
-            WHERE tgrelid = to_regclass('public.usage_pack_subscriptions')
-              AND tgname = 'sync_usage_pack_pending_snapshot_guard_0954'
-              AND NOT tgisinternal
+            SELECT 1 FROM pg_index i
+            JOIN pg_attribute a ON a.attrelid = i.indrelid
+              AND a.attnum = i.indkey[0]
+            WHERE i.indexrelid = to_regclass('uq_usage_pack_subscriptions_pending_org')
+              AND i.indrelid = to_regclass('usage_pack_pending_snapshot_guards')
+              AND i.indisunique AND i.indisvalid AND i.indisready
+              AND i.indnkeyatts = 1 AND i.indpred IS NULL
+              AND a.attname = 'org_id' AND a.attnotnull
+          )
+          AND EXISTS (
+            SELECT 1 FROM pg_attribute
+            WHERE attrelid = to_regclass('usage_pack_pending_snapshot_guards')
+              AND attname = 'pending_snapshot_count'
+              AND atttypid = 'integer'::regtype AND attnotnull AND NOT attisdropped
+          )
+          AND EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conrelid = to_regclass('usage_pack_pending_snapshot_guards')
+              AND conname = 'chk_usage_pack_pending_snapshot_guard_count'
+              AND contype = 'c' AND convalidated
           )`.mapWith(pgBooleanDecoder),
     })
     .from(sql`(SELECT 1) AS schema_probe`)
@@ -876,8 +889,7 @@ async function prepareUsagePackPurchaseSnapshot(
   customerId: string,
   signal: AbortSignal,
 ): Promise<PreparedUsagePackPurchaseSnapshot> {
-  return await db.transaction(async (tx) => {
-    await lockBillingPurchaseOrg(tx, args.orgId);
+  return await writeUsagePackPendingSnapshots(db, [args.orgId], async (tx) => {
     signal.throwIfAborted();
     const resolution = await resolvePendingUsagePackCheckout(
       tx,
@@ -973,33 +985,36 @@ async function createSerializedUsagePackCheckout(
 ): Promise<StartUsagePackPurchaseResult> {
   let preferredSnapshotId = initialSnapshotId;
   while (true) {
-    const attempt = await db.transaction(async (lockTx) => {
-      await lockBillingPurchaseOrg(lockTx, args.orgId);
-      signal.throwIfAborted();
-      const resolution = await resolvePendingUsagePackCheckout(
-        lockTx,
-        args,
-        customerId,
-        preferredSnapshotId,
-        signal,
-      );
-      if (resolution.kind === "redirect") {
-        return { kind: "complete" as const, url: resolution.url };
-      }
-      if (resolution.kind !== "reuse") {
-        return { kind: "retry" as const };
-      }
-      return {
-        kind: "complete" as const,
-        url: await createUsagePackCheckoutForSnapshot({
-          db: lockTx,
-          stripe: getStripeClient(),
-          purchase: args,
+    const attempt = await writeUsagePackPendingSnapshots(
+      db,
+      [args.orgId],
+      async (lockTx) => {
+        signal.throwIfAborted();
+        const resolution = await resolvePendingUsagePackCheckout(
+          lockTx,
+          args,
           customerId,
-          usagePackSubscriptionId: resolution.usagePackSubscriptionId,
-        }),
-      };
-    });
+          preferredSnapshotId,
+          signal,
+        );
+        if (resolution.kind === "redirect") {
+          return { kind: "complete" as const, url: resolution.url };
+        }
+        if (resolution.kind !== "reuse") {
+          return { kind: "retry" as const };
+        }
+        return {
+          kind: "complete" as const,
+          url: await createUsagePackCheckoutForSnapshot({
+            db: lockTx,
+            stripe: getStripeClient(),
+            purchase: args,
+            customerId,
+            usagePackSubscriptionId: resolution.usagePackSubscriptionId,
+          }),
+        };
+      },
+    );
     if (attempt.kind === "complete") {
       return { status: "checkout", url: attempt.url };
     }
@@ -1088,107 +1103,110 @@ async function createSerializedUsagePackPurchasePreviewAttempt(
   signal: AbortSignal,
 ): Promise<SerializedUsagePackPurchasePreviewAttempt> {
   const { purchase, route, stripe } = input;
-  return await input.db.transaction(async (lockTx) => {
-    await lockBillingPurchaseOrg(lockTx, purchase.orgId);
-    signal.throwIfAborted();
-    const resolution = await resolvePendingUsagePackCheckout(
-      lockTx,
-      purchase,
-      input.customerId,
-      input.preferredSnapshotId,
-      signal,
-    );
-    if (resolution.kind === "redirect") {
+  return await writeUsagePackPendingSnapshots(
+    input.db,
+    [purchase.orgId],
+    async (lockTx) => {
+      signal.throwIfAborted();
+      const resolution = await resolvePendingUsagePackCheckout(
+        lockTx,
+        purchase,
+        input.customerId,
+        input.preferredSnapshotId,
+        signal,
+      );
+      if (resolution.kind === "redirect") {
+        return {
+          kind: "complete",
+          result: { status: "checkout", url: resolution.url },
+        };
+      }
+      if (resolution.kind !== "reuse") {
+        return { kind: "retry" };
+      }
+      const items = [
+        { price: purchase.planPriceId, quantity: 1 },
+        ...usagePackLineItems(purchase.allocations),
+      ];
+      const [immediateInvoice, recurringInvoice] = await Promise.all([
+        stripe.invoices.createPreview({
+          customer: route.customerId,
+          preview_mode: "next",
+          subscription_details: { items },
+        }),
+        stripe.invoices.createPreview({
+          customer: route.customerId,
+          preview_mode: "recurring",
+          subscription_details: { items },
+        }),
+      ]);
+      signal.throwIfAborted();
+      const immediateAmountCents = safeInvoiceAmount(
+        immediateInvoice,
+        "usage pack purchase immediate",
+      );
+      const nextRecurringAmountCents = safeInvoiceAmount(
+        recurringInvoice,
+        "usage pack purchase recurring",
+      );
+      if (immediateInvoice.currency !== recurringInvoice.currency) {
+        throw new Error(
+          "Stripe usage pack purchase previews disagree on currency",
+        );
+      }
+      const issuedAt = nowDate();
+      const expiresAt = billingPreviewExpiresAt(issuedAt);
+      const refreshed = await lockTx
+        .update(usagePackSubscriptions)
+        .set({ updatedAt: issuedAt })
+        .where(
+          and(
+            eq(usagePackSubscriptions.id, resolution.usagePackSubscriptionId),
+            eq(usagePackSubscriptions.subscriptionStatus, "purchase_pending"),
+            isNull(usagePackSubscriptions.stripeCheckoutSessionId),
+            isNull(usagePackSubscriptions.stripeSubscriptionId),
+          ),
+        )
+        .returning({ id: usagePackSubscriptions.id });
+      if (refreshed.length !== 1) {
+        return { kind: "retry" };
+      }
+      const attribution = definedAttribution(purchase.adAttribution);
+      const payload: UsagePackPurchasePreviewToken = {
+        version: 1,
+        usagePackSubscriptionId: resolution.usagePackSubscriptionId,
+        orgId: purchase.orgId,
+        customerId: route.customerId,
+        sourceSubscriptionId: purchase.sourceSubscriptionId,
+        paymentMethodId: route.paymentMethodId,
+        tier: purchase.tier,
+        planPriceId: purchase.planPriceId,
+        immediateAmountCents,
+        nextRecurringAmountCents,
+        currency: immediateInvoice.currency,
+        successUrl: purchase.successUrl,
+        cancelUrl: purchase.cancelUrl,
+        ...(attribution ? { adAttribution: attribution } : {}),
+        expiresAt,
+      };
       return {
         kind: "complete",
-        result: { status: "checkout", url: resolution.url },
-      };
-    }
-    if (resolution.kind !== "reuse") {
-      return { kind: "retry" };
-    }
-    const items = [
-      { price: purchase.planPriceId, quantity: 1 },
-      ...usagePackLineItems(purchase.allocations),
-    ];
-    const [immediateInvoice, recurringInvoice] = await Promise.all([
-      stripe.invoices.createPreview({
-        customer: route.customerId,
-        preview_mode: "next",
-        subscription_details: { items },
-      }),
-      stripe.invoices.createPreview({
-        customer: route.customerId,
-        preview_mode: "recurring",
-        subscription_details: { items },
-      }),
-    ]);
-    signal.throwIfAborted();
-    const immediateAmountCents = safeInvoiceAmount(
-      immediateInvoice,
-      "usage pack purchase immediate",
-    );
-    const nextRecurringAmountCents = safeInvoiceAmount(
-      recurringInvoice,
-      "usage pack purchase recurring",
-    );
-    if (immediateInvoice.currency !== recurringInvoice.currency) {
-      throw new Error(
-        "Stripe usage pack purchase previews disagree on currency",
-      );
-    }
-    const issuedAt = nowDate();
-    const expiresAt = billingPreviewExpiresAt(issuedAt);
-    const refreshed = await lockTx
-      .update(usagePackSubscriptions)
-      .set({ updatedAt: issuedAt })
-      .where(
-        and(
-          eq(usagePackSubscriptions.id, resolution.usagePackSubscriptionId),
-          eq(usagePackSubscriptions.subscriptionStatus, "purchase_pending"),
-          isNull(usagePackSubscriptions.stripeCheckoutSessionId),
-          isNull(usagePackSubscriptions.stripeSubscriptionId),
-        ),
-      )
-      .returning({ id: usagePackSubscriptions.id });
-    if (refreshed.length !== 1) {
-      return { kind: "retry" };
-    }
-    const attribution = definedAttribution(purchase.adAttribution);
-    const payload: UsagePackPurchasePreviewToken = {
-      version: 1,
-      usagePackSubscriptionId: resolution.usagePackSubscriptionId,
-      orgId: purchase.orgId,
-      customerId: route.customerId,
-      sourceSubscriptionId: purchase.sourceSubscriptionId,
-      paymentMethodId: route.paymentMethodId,
-      tier: purchase.tier,
-      planPriceId: purchase.planPriceId,
-      immediateAmountCents,
-      nextRecurringAmountCents,
-      currency: immediateInvoice.currency,
-      successUrl: purchase.successUrl,
-      cancelUrl: purchase.cancelUrl,
-      ...(attribution ? { adAttribution: attribution } : {}),
-      expiresAt,
-    };
-    return {
-      kind: "complete",
-      result: {
-        status: "preview",
-        preview: {
+        result: {
           status: "preview",
-          purchaseType: "usage_pack",
-          tier: purchase.tier,
-          immediateAmountCents,
-          nextRecurringAmountCents,
-          currency: immediateInvoice.currency,
-          expiresAt,
-          previewToken: createBillingPreviewToken(payload),
+          preview: {
+            status: "preview",
+            purchaseType: "usage_pack",
+            tier: purchase.tier,
+            immediateAmountCents,
+            nextRecurringAmountCents,
+            currency: immediateInvoice.currency,
+            expiresAt,
+            previewToken: createBillingPreviewToken(payload),
+          },
         },
-      },
-    };
-  });
+      };
+    },
+  );
 }
 
 async function createSerializedUsagePackPurchasePreview(
@@ -1333,7 +1351,12 @@ async function loadUsagePackPurchaseSnapshot(
   const [subscription] = await db
     .select()
     .from(usagePackSubscriptions)
-    .where(eq(usagePackSubscriptions.id, preview.usagePackSubscriptionId))
+    .where(
+      and(
+        eq(usagePackSubscriptions.id, preview.usagePackSubscriptionId),
+        eq(usagePackSubscriptions.orgId, orgId),
+      ),
+    )
     .for("update")
     .limit(1);
   const allocationRows = await db
@@ -1659,8 +1682,7 @@ export const confirmUsagePackPurchase$ = command(
       return { status: "invalid_preview" };
     }
     const db = set(writeDb$);
-    return await db.transaction(async (tx) => {
-      await lockBillingPurchaseOrg(tx, orgId);
+    return await writeUsagePackPendingSnapshots(db, [orgId], async (tx) => {
       signal.throwIfAborted();
       const snapshot = await loadUsagePackPurchaseSnapshot(
         tx,
@@ -2239,41 +2261,46 @@ async function synchronizeUsagePackSubscriptionState(
     );
   }
 
-  await db.transaction(async (tx) => {
-    const updatedAt = nowDate();
-    const cancelAtPeriodEnd = usagePackSubscriptionWillCancel(
-      args.subscription,
-    );
-    await tx
-      .update(usagePackSubscriptions)
-      .set({
-        tier: shape.tier,
-        stripePlanPriceId: shape.planPriceId,
-        stripeSubscriptionId: args.subscription.id,
-        subscriptionStatus: args.subscription.status,
-        cancelAtPeriodEnd,
-        updatedAt,
-        ...(args.checkoutSessionId
-          ? { stripeCheckoutSessionId: args.checkoutSessionId }
-          : {}),
-      })
-      .where(eq(usagePackSubscriptions.id, args.usagePackSubscriptionId));
-    if (shape.projectsOrgPlan) {
+  await writeUsagePackPendingSnapshots(
+    db,
+    [context.subscription.orgId],
+    async (tx) => {
+      const updatedAt = nowDate();
+      const cancelAtPeriodEnd = usagePackSubscriptionWillCancel(
+        args.subscription,
+      );
       await tx
-        .update(orgMetadata)
+        .update(usagePackSubscriptions)
         .set({
+          tier: shape.tier,
+          stripePlanPriceId: shape.planPriceId,
+          stripeSubscriptionId: args.subscription.id,
           subscriptionStatus: args.subscription.status,
           cancelAtPeriodEnd,
           updatedAt,
+          ...(args.checkoutSessionId
+            ? { stripeCheckoutSessionId: args.checkoutSessionId }
+            : {}),
         })
-        .where(
-          and(
-            eq(orgMetadata.orgId, context.subscription.orgId),
-            eq(orgMetadata.stripeSubscriptionId, args.subscription.id),
-          ),
-        );
-    }
-  });
+        .where(eq(usagePackSubscriptions.id, args.usagePackSubscriptionId));
+      if (shape.projectsOrgPlan) {
+        await tx
+          .update(orgMetadata)
+          .set({
+            subscriptionStatus: args.subscription.status,
+            cancelAtPeriodEnd,
+            updatedAt,
+          })
+          .where(
+            and(
+              eq(orgMetadata.orgId, context.subscription.orgId),
+              eq(orgMetadata.stripeSubscriptionId, args.subscription.id),
+            ),
+          );
+      }
+    },
+    [args.usagePackSubscriptionId],
+  );
   return context;
 }
 
@@ -2324,60 +2351,65 @@ async function deactivateInvalidUsagePackSubscription(
   reason: string,
   subscriptionStatus = "invalid",
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const updatedAt = nowDate();
-    await tx
-      .update(usagePackSubscriptions)
-      .set({
-        stripeSubscriptionId: subscription.id,
-        subscriptionStatus,
-        cancelAtPeriodEnd: false,
-        updatedAt,
-      })
-      .where(eq(usagePackSubscriptions.id, context.subscription.id));
-    await tx
-      .update(usagePackAllocations)
-      .set({ status: "inactive", updatedAt })
-      .where(
-        eq(
-          usagePackAllocations.usagePackSubscriptionId,
-          context.subscription.id,
-        ),
-      );
+  await writeUsagePackPendingSnapshots(
+    db,
+    [context.subscription.orgId],
+    async (tx) => {
+      const updatedAt = nowDate();
+      await tx
+        .update(usagePackSubscriptions)
+        .set({
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus,
+          cancelAtPeriodEnd: false,
+          updatedAt,
+        })
+        .where(eq(usagePackSubscriptions.id, context.subscription.id));
+      await tx
+        .update(usagePackAllocations)
+        .set({ status: "inactive", updatedAt })
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            context.subscription.id,
+          ),
+        );
 
-    if (subscriptionHasCustomPlan(subscription)) {
-      return;
-    }
+      if (subscriptionHasCustomPlan(subscription)) {
+        return;
+      }
 
-    const downgraded = await tx
-      .update(orgMetadata)
-      .set({
-        tier: "limited-free-1",
-        stripeSubscriptionId: null,
-        subscriptionStatus,
-        currentPeriodEnd: null,
-        cancelAtPeriodEnd: false,
-        updatedAt,
-      })
-      .where(
-        and(
-          eq(orgMetadata.orgId, context.subscription.orgId),
-          eq(orgMetadata.stripeSubscriptionId, subscription.id),
-        ),
-      )
-      .returning({ orgId: orgMetadata.orgId });
-    for (const row of downgraded) {
-      await upsertOrgPlanEntitlement(tx, {
-        orgId: row.orgId,
-        tier: "limited-free-1",
-        source: "stripe_subscription",
-        sourceMetadata: {
-          ...subscription.metadata,
-          usagePackInvalidReason: reason,
-        },
-      });
-    }
-  });
+      const downgraded = await tx
+        .update(orgMetadata)
+        .set({
+          tier: "limited-free-1",
+          stripeSubscriptionId: null,
+          subscriptionStatus,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+          updatedAt,
+        })
+        .where(
+          and(
+            eq(orgMetadata.orgId, context.subscription.orgId),
+            eq(orgMetadata.stripeSubscriptionId, subscription.id),
+          ),
+        )
+        .returning({ orgId: orgMetadata.orgId });
+      for (const row of downgraded) {
+        await upsertOrgPlanEntitlement(tx, {
+          orgId: row.orgId,
+          tier: "limited-free-1",
+          source: "stripe_subscription",
+          sourceMetadata: {
+            ...subscription.metadata,
+            usagePackInvalidReason: reason,
+          },
+        });
+      }
+    },
+    [context.subscription.id],
+  );
 }
 
 async function handleUsagePackSubscriptionChanged(
@@ -2546,27 +2578,32 @@ export async function handleUsagePackSubscriptionDeleted(
     );
   }
 
-  await db.transaction(async (tx) => {
-    const updatedAt = nowDate();
-    await tx
-      .update(usagePackSubscriptions)
-      .set({
-        stripeSubscriptionId: subscription.id,
-        subscriptionStatus: "canceled",
-        cancelAtPeriodEnd: false,
-        updatedAt,
-      })
-      .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId));
-    await tx
-      .update(usagePackAllocations)
-      .set({ status: "inactive", updatedAt })
-      .where(
-        eq(
-          usagePackAllocations.usagePackSubscriptionId,
-          usagePackSubscriptionId,
-        ),
-      );
-  });
+  await writeUsagePackPendingSnapshots(
+    db,
+    [context.subscription.orgId],
+    async (tx) => {
+      const updatedAt = nowDate();
+      await tx
+        .update(usagePackSubscriptions)
+        .set({
+          stripeSubscriptionId: subscription.id,
+          subscriptionStatus: "canceled",
+          cancelAtPeriodEnd: false,
+          updatedAt,
+        })
+        .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId));
+      await tx
+        .update(usagePackAllocations)
+        .set({ status: "inactive", updatedAt })
+        .where(
+          eq(
+            usagePackAllocations.usagePackSubscriptionId,
+            usagePackSubscriptionId,
+          ),
+        );
+    },
+    [usagePackSubscriptionId],
+  );
   return { handled: true, orgId: context.subscription.orgId };
 }
 
@@ -3183,26 +3220,31 @@ async function activateUsagePackPlanFromSubscription(
       `Usage pack subscription ${subscription.id} has no current period start`,
     );
   }
-  await db.transaction(async (tx) => {
-    const [lockedSubscription] = await tx
-      .select()
-      .from(usagePackSubscriptions)
-      .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
-      .for("update")
-      .limit(1);
-    if (!lockedSubscription) {
-      throw new Error(
-        `Usage pack subscription ${usagePackSubscriptionId} disappeared during plan activation`,
-      );
-    }
-    await persistUsagePackPlanState(tx, lockedSubscription, {
-      stripeSubscription: subscription,
-      shape,
-      periodStart: shape.periodStart,
-      periodEnd: shape.periodEnd,
-      updatedAt: nowDate(),
-    });
-  });
+  await writeUsagePackPendingSnapshots(
+    db,
+    [context.subscription.orgId],
+    async (tx) => {
+      const [lockedSubscription] = await tx
+        .select()
+        .from(usagePackSubscriptions)
+        .where(eq(usagePackSubscriptions.id, usagePackSubscriptionId))
+        .for("update")
+        .limit(1);
+      if (!lockedSubscription) {
+        throw new Error(
+          `Usage pack subscription ${usagePackSubscriptionId} disappeared during plan activation`,
+        );
+      }
+      await persistUsagePackPlanState(tx, lockedSubscription, {
+        stripeSubscription: subscription,
+        shape,
+        periodStart: shape.periodStart,
+        periodEnd: shape.periodEnd,
+        updatedAt: nowDate(),
+      });
+    },
+    [usagePackSubscriptionId],
+  );
   return { handled: true, orgId: context.subscription.orgId, subscription };
 }
 
@@ -3210,7 +3252,6 @@ async function commitUsagePackFulfillmentTransaction(
   tx: WriteTx,
   args: CommitUsagePackFulfillmentArgs,
 ): Promise<void> {
-  await lockUsagePackBillingOrg(tx, args.context.subscription.orgId);
   const [lockedSubscription] = await tx
     .select()
     .from(usagePackSubscriptions)
@@ -3261,7 +3302,15 @@ async function commitUsagePackFulfillment(
   args: CommitUsagePackFulfillmentArgs,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    await commitUsagePackFulfillmentTransaction(tx, args);
+    await lockUsagePackBillingOrg(tx, args.context.subscription.orgId);
+    await writeUsagePackPendingSnapshots(
+      tx,
+      [args.context.subscription.orgId],
+      async (writeTx) => {
+        await commitUsagePackFulfillmentTransaction(writeTx, args);
+      },
+      [args.context.subscription.id],
+    );
   });
 }
 
@@ -3388,18 +3437,16 @@ interface ReconcileUsagePackSubscriptionResult {
   readonly orgIds: readonly string[];
 }
 
-async function reconcileUsagePackSubscriptionCandidate(
+async function retireStaleUsagePackSnapshot(
   db: Db,
-  stripe: StripeClient,
   candidate: UsagePackSubscriptionRow,
   pendingSnapshotStaleBefore: Date,
   signal: AbortSignal,
-): Promise<ReconcileUsagePackSubscriptionResult> {
-  const orgIds = new Set<string>();
-  let subscriptionId = candidate.stripeSubscriptionId;
-  if (!subscriptionId && !candidate.stripeCheckoutSessionId) {
-    await db.transaction(async (tx) => {
-      await lockBillingPurchaseOrg(tx, candidate.orgId);
+): Promise<void> {
+  await writeUsagePackPendingSnapshots(
+    db,
+    [candidate.orgId],
+    async (tx) => {
       signal.throwIfAborted();
       const [staleSnapshot] = await tx
         .select({ id: usagePackSubscriptions.id })
@@ -3420,7 +3467,27 @@ async function reconcileUsagePackSubscriptionCandidate(
       if (staleSnapshot) {
         await retireUsagePackCheckout(tx, staleSnapshot.id);
       }
-    });
+    },
+    [candidate.id],
+  );
+}
+
+async function reconcileUsagePackSubscriptionCandidate(
+  db: Db,
+  stripe: StripeClient,
+  candidate: UsagePackSubscriptionRow,
+  pendingSnapshotStaleBefore: Date,
+  signal: AbortSignal,
+): Promise<ReconcileUsagePackSubscriptionResult> {
+  const orgIds = new Set<string>();
+  let subscriptionId = candidate.stripeSubscriptionId;
+  if (!subscriptionId && !candidate.stripeCheckoutSessionId) {
+    await retireStaleUsagePackSnapshot(
+      db,
+      candidate,
+      pendingSnapshotStaleBefore,
+      signal,
+    );
     signal.throwIfAborted();
     return { reconciled: 0, orgIds: [] };
   }
@@ -3431,9 +3498,14 @@ async function reconcileUsagePackSubscriptionCandidate(
     signal.throwIfAborted();
     if (session.status !== "complete") {
       if (session.status === "expired") {
-        await db.transaction(async (tx) => {
-          await retireUsagePackCheckout(tx, candidate.id);
-        });
+        await writeUsagePackPendingSnapshots(
+          db,
+          [candidate.orgId],
+          async (tx) => {
+            await retireUsagePackCheckout(tx, candidate.id);
+          },
+          [candidate.id],
+        );
         signal.throwIfAborted();
       }
       return { reconciled: 0, orgIds: [] };

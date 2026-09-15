@@ -85,7 +85,9 @@ pub struct ExecRequest<'a> {
 /// by that helper. Manifests outside the provider's bounded transport belong
 /// on the caller's established fallback path.
 pub struct StorageManifestRequest<'a> {
-    /// Canonical storage-manifest JSON passed to the fixed guest helper.
+    /// Canonical JSON or `guest_contracts::storage_files::encode_input` output
+    /// passed to the fixed guest helper. Binary input has its own bounded section;
+    /// it does not increase the generic exec-stdin limit.
     pub manifest_json: &'a [u8],
     /// Run identity exposed to the helper through the guest run-id contract.
     pub run_id: &'a str,
@@ -793,7 +795,10 @@ impl GuestProcessControlHandle {
     ///
     /// `message_id` identifies the control message for provider
     /// acknowledgement. `timeout` bounds how long the provider should wait for
-    /// the control sink to acknowledge the payload.
+    /// the control sink to acknowledge the payload. Providers may add a bounded
+    /// response allowance to retain the sink's deadline result: Firecracker
+    /// waits for the wire-normalized Guest budget plus 250 ms after writing the
+    /// request. This is not an end-to-end deadline covering write queuing.
     pub async fn control(
         &self,
         message_id: &str,

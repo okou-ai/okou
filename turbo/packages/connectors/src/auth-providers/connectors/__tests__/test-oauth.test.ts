@@ -151,7 +151,7 @@ describe("test-oauth provider URLs", () => {
     expect(tokenRequestHeaders?.get("x-vercel-protection-bypass")).toBe(
       "preview-secret",
     );
-    expect(tokenRequestHeaders?.get("x-vm0-test-endpoint-bypass")).toBe(
+    expect(tokenRequestHeaders?.get("x-okou-test-endpoint-bypass")).toBe(
       "preview-secret",
     );
   });

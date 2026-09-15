@@ -4,9 +4,7 @@
 mod common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryAttemptFailureKind,
-};
+use guest_contracts::diagnostics::{EventDeliveryAcceptanceOutcome, HttpAttemptFailureKind};
 use serde_json::json;
 use std::io;
 use std::time::Duration;
@@ -165,7 +163,7 @@ async fn failed_batch_retries_three_times_and_later_batches_continue()
         failed_request_ids
     );
     assert!(failed_batch.attempts.iter().all(|attempt| {
-        attempt.failure_kind == EventDeliveryAttemptFailureKind::HttpStatus
+        attempt.failure_kind == HttpAttemptFailureKind::HttpStatus
             && attempt.http_status == Some(500)
     }));
     let mut unique_request_ids = failed_request_ids.clone();

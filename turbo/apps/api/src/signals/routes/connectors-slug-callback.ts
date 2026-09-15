@@ -52,6 +52,7 @@ import {
   loadActiveGithubInstallationForOrg,
 } from "../services/github-oauth.service";
 import { safeJsonParse, tapError } from "../utils";
+import { SLACK_CONNECTOR_OAUTH_STATE_PREFIX } from "../services/slack-connector-oauth-state";
 import type { RouteEntry } from "../route-entry";
 import {
   getConnectorOAuthCanonicalRedirectUrlForMethods,
@@ -1122,6 +1123,11 @@ const handleAuthCodeConnectorCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<Response> => {
+    // Combined Slack grants must validate workspace and member identity in the
+    // integration callback before either connection can be created.
+    if (args.query.state?.startsWith(SLACK_CONNECTOR_OAUTH_STATE_PREFIX)) {
+      return invalidStateRedirectResponse(args.origin, args.connectorSlug);
+    }
     const preflightResponse = await authCodeCallbackPreflight(
       set(writeDb$),
       args,

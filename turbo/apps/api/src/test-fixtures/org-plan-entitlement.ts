@@ -5,9 +5,7 @@
  * capabilities, so integration tests use this narrow boundary to verify those
  * reads and persisted webhook side effects.
  */
-import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { createStore } from "ccstate";
 import { eq } from "drizzle-orm";
 
@@ -25,7 +23,7 @@ interface OrgPlanEntitlementFixtureState {
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
   readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
@@ -48,7 +46,7 @@ export async function upsertOrgPlanEntitlementFixture(values: {
   readonly showUsagePack?: boolean;
   readonly autoRechargeAllowed?: boolean;
   readonly supportByok?: boolean;
-  readonly restrictedVm0Models?: boolean;
+  readonly restrictedBuiltInModels?: boolean;
   readonly videoGenerationAllowed?: boolean;
   readonly workflowWebhookAutomationAllowed?: boolean;
 }): Promise<void> {
@@ -64,13 +62,13 @@ export async function upsertOrgPlanEntitlementFixture(values: {
     showUsagePack: values.showUsagePack,
     autoRechargeAllowed: values.autoRechargeAllowed,
     supportByok: values.supportByok,
-    restrictedBuiltInModels: values.restrictedVm0Models,
+    restrictedBuiltInModels: values.restrictedBuiltInModels,
     videoGenerationAllowed: values.videoGenerationAllowed,
     workflowWebhookTriggerAllowed: values.workflowWebhookAutomationAllowed,
   };
   await createStore()
     .set(writeDb$)
-    .insert(orgPlanEntitlementsCanonicalWrites)
+    .insert(orgPlanEntitlements)
     .values({
       ...row,
       // Preserve the fixture's prior insert behavior without relying on a
@@ -78,7 +76,7 @@ export async function upsertOrgPlanEntitlementFixture(values: {
       restrictedBuiltInModels: row.restrictedBuiltInModels ?? true,
     })
     .onConflictDoUpdate({
-      target: orgPlanEntitlementsCanonicalWrites.orgId,
+      target: orgPlanEntitlements.orgId,
       set: {
         planKey: row.planKey,
         planRank: row.planRank,
@@ -115,36 +113,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
             }),
       },
     });
-}
-
-/**
- * Simulates an API instance from before migration 0639. It can create legacy
- * org metadata but does not explicitly create a plan entitlement snapshot.
- */
-export async function insertOrgMetadataAsLegacyWriterFixture(values: {
-  readonly orgId: string;
-  readonly tier: string;
-  readonly credits: number;
-}): Promise<void> {
-  await createStore()
-    .set(writeDb$)
-    .insert(orgMetadataCanonicalWrites)
-    .values(values);
-}
-
-/**
- * Simulates an API instance from before migration 0639. Its entitlement
- * upsert changes plan_key without writing the newly-added capability column.
- */
-export async function updateOrgPlanKeyAsLegacyWriterFixture(values: {
-  readonly orgId: string;
-  readonly planKey: string;
-}): Promise<void> {
-  await createStore()
-    .set(writeDb$)
-    .update(orgPlanEntitlements)
-    .set({ planKey: values.planKey })
-    .where(eq(orgPlanEntitlements.orgId, values.orgId));
 }
 
 export async function readOrgPlanEntitlementFixture(
@@ -192,11 +160,13 @@ export async function readOrgPlanEntitlementFixture(
     );
   }
 
+  // Destructured rather than spread so the non-null narrowing above survives
+  // into the returned state, which is declared as a plain boolean.
   const { restrictedBuiltInModels, ...entitlement } = row;
 
   return {
     ...entitlement,
-    restrictedVm0Models: restrictedBuiltInModels,
+    restrictedBuiltInModels,
     currentPeriodStart: row.currentPeriodStart?.toISOString() ?? null,
     currentPeriodEnd: row.currentPeriodEnd?.toISOString() ?? null,
     cancelAt: row.cancelAt?.toISOString() ?? null,

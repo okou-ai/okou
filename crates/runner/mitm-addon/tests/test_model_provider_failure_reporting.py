@@ -1115,7 +1115,7 @@ def test_retry_after_checks_late_duplicate_before_inspection(
 
 
 @pytest.mark.parametrize("excess_fields", [False, True], ids=["oversized-name", "excess-fields"])
-def test_retry_after_observer_checks_budgets_before_normalizing_names(
+def test_retry_after_response_hook_checks_budgets_before_normalizing_names(
     tmp_path, real_flow, model_provider_failure_api, *, excess_fields
 ):
     fields = (
@@ -1133,14 +1133,12 @@ def test_retry_after_observer_checks_budgets_before_normalizing_names(
     if not excess_fields:
         expected["retryAfterSeconds"] = 120
 
-    # Guard the reporting observer itself: later body decoding independently reads
-    # Content-Encoding through mitmproxy's general header lookup.
-    model_provider_failure.admit_flow(flow)
-    model_provider_failure.configure_response_observer(flow)
+    _assert_retry_after_header_report(flow, model_provider_failure_api, expected)
 
-    assert _reported_payloads(model_provider_failure_api) == [expected]
+    assert flow.response.status_code == 429
     assert flow.response.headers.fields == fields
-    model_provider_failure.release_flow(flow)
+    assert response_stream(flow)(b"upstream-error") == b"upstream-error"
+    assert response_stream(flow)(b"") == b""
 
 
 def test_later_success_does_not_retract_report(
@@ -1939,6 +1937,67 @@ def test_protocol_sse_failures_are_reported(
     if expected_kind == "connection":
         expected_payload["connectionSource"] = "provider_response"
     assert _reported_payloads(model_provider_failure_api) == [expected_payload]
+
+
+@pytest.mark.parametrize("payload_size", [4095, 4096, 4097])
+@pytest.mark.parametrize("chunk_size", [None, 7], ids=["whole", "split"])
+@pytest.mark.parametrize(
+    ("event_name", "reports_later_failure"),
+    [
+        ("response.completed", False),
+        ("response.done", False),
+        ("response.failed", False),
+        ("response.incomplete", False),
+        ("response.error", False),
+        ("error", False),
+        ("vendor.delta", False),
+        ("response.output_text.delta", True),
+        (None, True),
+    ],
+)
+def test_responses_sse_capture_keeps_framing_identity_across_prefix_bound(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    model_provider_failure_api,
+    payload_size: int,
+    chunk_size: int | None,
+    event_name: str | None,
+    reports_later_failure: bool,
+):
+    payload_prefix = b'{"type":"response.output_text.delta","padding":"'
+    payload = payload_prefix + b"x" * (payload_size - len(payload_prefix) - 2) + b'"}'
+    event_prefix = b"" if event_name is None else f"event: {event_name}\n".encode()
+    body = (
+        event_prefix + b"data: " + payload + b"\n\n"
+        b"event: response.failed\n"
+        b'data: {"type":"response.failed","response":{'
+        b'"error":{"code":"server_error"}}}\n\n'
+    )
+    flow = _make_flow(
+        real_flow,
+        tmp_path / "proxy.jsonl",
+        request_path="/v1/responses",
+        response_body=body,
+        response_headers=header_map({"content-type": "text/event-stream"}),
+    )
+
+    model_provider_failure.admit_flow(flow)
+    mitm_addon.responseheaders(flow)
+    stream = response_stream(flow)
+    chunk_size = len(body) if chunk_size is None else chunk_size
+    for offset in range(0, len(body), chunk_size):
+        chunk = body[offset : offset + chunk_size]
+        assert stream(chunk) == chunk
+    assert stream(b"") == b""
+
+    expected = [{"failureKind": "provider_unavailable"}] if reports_later_failure else []
+    assert _reported_payloads(model_provider_failure_api) == expected
+
+    with mitm_ctx():
+        mitm_addon.response(flow)
+
+    assert _reported_payloads(model_provider_failure_api) == expected
 
 
 def test_conflicting_sse_event_type_is_not_reported(

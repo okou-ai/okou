@@ -1,5 +1,10 @@
 import { vi } from "vitest";
 
+/** The Vercel SDK reads runtime environment directly, outside lib/env. */
+export function stubTestVercelRuntimeToken(token: string | undefined): void {
+  vi.stubEnv("VERCEL_OIDC_TOKEN", token);
+}
+
 export function stubTestTimezone(
   timezone: "America/New_York" | "Asia/Shanghai" | "UTC",
 ): void {

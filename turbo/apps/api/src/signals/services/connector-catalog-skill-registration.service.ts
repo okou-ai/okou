@@ -17,6 +17,8 @@ import {
   type PreparedStorageVersion,
 } from "./storage-version-registration.service";
 
+import { enqueuePiResourceVersionIndexes } from "./pi-resource-version-index.service";
+
 const SYSTEM_STORAGE_CREATOR = "system";
 
 type BundledConnectorSkill = Extract<
@@ -414,4 +416,11 @@ export async function registerPreparedConnectorCatalogSkills(
     return;
   }
   await registerConnectorCatalogSkills(args.db, args.registrations, signal);
+  await enqueuePiResourceVersionIndexes(
+    args.db,
+    args.registrations.map((registration) => {
+      return registration.versionId;
+    }),
+    signal,
+  );
 }

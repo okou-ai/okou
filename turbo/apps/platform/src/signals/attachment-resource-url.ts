@@ -1,4 +1,6 @@
 import { computed, type Computed } from "ccstate";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
+import { resolveArtifactImageTransformOrigin } from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
 import {
   artifactReferencesContract,
@@ -128,28 +130,47 @@ function createAttachmentPresignedToken$(
   });
 }
 
-/**
- * Persisted chat attachments live behind an authenticated API route, and a bare
- * `src` attribute cannot carry an Authorization header. Exchange the canonical
- * API URL for a temporary token after the API has checked ownership. Public
- * addresses need no token and pass through unchanged.
- */
-export function createAttachmentPreviewSignals(inputUrl: string) {
+/** Resolve the authenticated resource once for its owning preview. */
+export function createAttachmentPreviewSignals(
+  inputUrl: string,
+  options: {
+    readonly contentType?: string;
+    readonly resolvedToken?: AttachmentPresignedToken;
+  } = {},
+) {
+  const { contentType, resolvedToken } = options;
   const url = publicAttachmentUrl(inputUrl);
-  const presignedToken$ = createAttachmentPresignedToken$(url);
+  const presignedToken$ = resolvedToken
+    ? computed(() => {
+        return Promise.resolve(resolvedToken);
+      })
+    : createAttachmentPresignedToken$(url);
   const resourceUrl$ = computed(async (get) => {
     return (await get(presignedToken$))?.token ?? url;
   });
   const shareUrl$ = computed(async (get) => {
-    const presigned = await get(presignedToken$);
-    return presigned === null ? url : presigned.publicUrl;
+    const token = await get(presignedToken$);
+    return token === null ? url : token.publicUrl;
+  });
+  const thumbnailUrl$ = computed(async (get) => {
+    return r2ImageTransformUrl(
+      await get(resourceUrl$),
+      { width: 800, height: 720, contentType },
+      resolveArtifactImageTransformOrigin(),
+    );
   });
   return {
+    linkUrl$: resourceUrl$,
     presignedToken$,
     resourceUrl$,
     shareUrl$,
+    thumbnailUrl$,
   };
 }
+
+export type AttachmentPreviewSignals = ReturnType<
+  typeof createAttachmentPreviewSignals
+>;
 
 export function createAttachmentResourceUrl$(url: string) {
   return createAttachmentPreviewSignals(url).resourceUrl$;

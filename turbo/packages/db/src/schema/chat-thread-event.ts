@@ -1,9 +1,14 @@
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type {
+  ModelSettings,
+  ModelSettingsPatch,
+} from "@okouai/db/jsonb-contracts/chat-model-settings";
 import {
   bigint,
   boolean,
   check,
   index,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -59,6 +64,12 @@ export const chatThreadEvents = pgTable(
     title: text("title"),
     pinOrder: text("pin_order"),
     selectedModel: varchar("selected_model", { length: 255 }),
+    /** Full map for created events. */
+    modelSettings: jsonb("model_settings").$type<ModelSettings>(),
+    /** One-model incremental update for model-selection events. */
+    modelSettingsPatch: jsonb(
+      "model_settings_patch",
+    ).$type<ModelSettingsPatch>(),
     // SQL NULL is an omitted legacy field; "default" is an explicit reset.
     reasoningEffort: varchar("reasoning_effort", {
       length: 20,

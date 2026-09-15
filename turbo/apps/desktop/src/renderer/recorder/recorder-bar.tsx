@@ -18,7 +18,7 @@ type CaptureChoice =
       readonly title: string;
     };
 
-const recorder = window.vm0DesktopRecorder;
+const recorder = window.okouDesktopRecorder;
 
 export function RecorderBar(): React.ReactElement {
   const [choice, setChoice] = useState<CaptureChoice>({ kind: "display" });

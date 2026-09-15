@@ -9,6 +9,7 @@
 //! ```
 //!
 //! `ABLY_API_KEY` format: `keyName:keySecret` (from your Ably dashboard).
+//! Each REST publish, including error-body reading, has a 10-second deadline.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -20,6 +21,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use ably_subscriber::{Event, SubscribeConfig, subscribe};
 
 mod common;
+
+const PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A test case: publish `data` with optional `encoding`, expect `expected` back.
 struct TestCase {
@@ -212,14 +215,14 @@ async fn receive_message(
 /// Publish a single message via Ably REST API.
 async fn publish_message(
     client: &reqwest::Client,
-    rest_host: &str,
+    rest_url: &str,
     channel: &str,
     auth_header: &str,
     name: Option<&str>,
     data: &serde_json::Value,
     encoding: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let url = format!("https://{rest_host}/channels/{channel}/messages");
+    let url = format!("{rest_url}/channels/{channel}/messages");
 
     let mut body = serde_json::json!({ "data": data });
     let obj = body.as_object_mut().ok_or("body is not an object")?;
@@ -231,20 +234,26 @@ async fn publish_message(
         obj.insert("encoding".to_string(), serde_json::json!(enc));
     }
 
-    let resp = client
-        .post(&url)
-        .header("Authorization", format!("Basic {auth_header}"))
-        .json(&body)
-        .send()
-        .await?;
+    // Sending and reading an error body share one deadline. Expiry does not
+    // imply Ably rejected the message, so do not retry this publish.
+    tokio::time::timeout(PUBLISH_TIMEOUT, async {
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Basic {auth_header}"))
+            .json(&body)
+            .send()
+            .await?;
 
-    let status = resp.status();
-    if !status.is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("publish failed: HTTP {status} — {text}").into());
-    }
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("publish failed: HTTP {status} — {text}").into());
+        }
 
-    Ok(())
+        Ok(())
+    })
+    .await
+    .map_err(|_| format!("publish timed out after {PUBLISH_TIMEOUT:?}"))?
 }
 
 #[tokio::main]
@@ -266,7 +275,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .ok_or("ABLY_API_KEY must be in format keyName:keySecret")?;
 
     let auth_header = BASE64.encode(api_key.as_bytes());
-    let rest_host = "rest.ably.io";
+    let rest_url = "https://rest.ably.io";
 
     // --- Unique channel ---
     let ts = SystemTime::now()
@@ -305,7 +314,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let t0 = tokio::time::Instant::now();
         publish_message(
             &client,
-            rest_host,
+            rest_url,
             &channel,
             &auth_header,
             tc.name,
@@ -403,7 +412,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Publish and verify — if renewal failed, this will timeout.
     publish_message(
         &client,
-        rest_host,
+        rest_url,
         &renewal_channel,
         &auth_header,
         Some("renewal-test"),
@@ -454,4 +463,166 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use httpmock::prelude::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    const TEST_TIMEOUT: Duration = Duration::from_secs(20);
+
+    async fn stalled_publish_error(scheme: &str, response: Option<&[u8]>) -> String {
+        tokio::time::timeout(TEST_TIMEOUT, async {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let rest_url = format!("{scheme}://{}", listener.local_addr().unwrap());
+            let client = reqwest::Client::builder().no_proxy().build().unwrap();
+            let data = serde_json::json!("payload");
+            let publish = publish_message(
+                &client,
+                &rest_url,
+                "test-channel",
+                "test-auth",
+                Some("test"),
+                &data,
+                None,
+            );
+            tokio::pin!(publish);
+
+            let (mut socket, _) = tokio::select! {
+                accepted = listener.accept() => accepted.unwrap(),
+                result = &mut publish => panic!("publish finished before connecting: {result:?}"),
+            };
+
+            // Observe actual client traffic before withholding the response. No
+            // sleep or spawned server task is needed to establish the stall.
+            let mut prefix = [0; 5];
+            tokio::select! {
+                read = socket.read_exact(&mut prefix) => { read.unwrap(); }
+                result = &mut publish => panic!("publish finished before sending: {result:?}"),
+            }
+            if scheme == "https" {
+                assert_eq!(prefix[0], 0x16, "expected a TLS handshake record");
+            } else {
+                assert_eq!(&prefix, b"POST ");
+            }
+
+            if let Some(response) = response {
+                socket.write_all(response).await.unwrap();
+            }
+
+            // Keep the peer open until the publish ends; closing it early would
+            // test an EOF/reset instead of a deadline.
+            let error = publish.await.unwrap_err().to_string();
+            drop(socket);
+            error
+        })
+        .await
+        .expect("publish did not finish within the test guard")
+    }
+
+    #[tokio::test]
+    async fn publish_times_out_during_tls_handshake() {
+        assert_eq!(
+            stalled_publish_error("https", None).await,
+            "publish timed out after 10s"
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_times_out_waiting_for_response_headers() {
+        assert_eq!(
+            stalled_publish_error("http", None).await,
+            "publish timed out after 10s"
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_times_out_reading_error_body() {
+        let response = b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 100\r\n\r\npartial";
+        assert_eq!(
+            stalled_publish_error("http", Some(response)).await,
+            "publish timed out after 10s"
+        );
+    }
+
+    #[tokio::test]
+    async fn publish_preserves_auth_and_json_payload() {
+        let server = MockServer::start_async().await;
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let data = serde_json::json!("aGVsbG8=");
+
+        for (name, encoding, expected) in [
+            (
+                Some("binary"),
+                Some("base64"),
+                serde_json::json!({"name": "binary", "encoding": "base64", "data": data}),
+            ),
+            (None, None, serde_json::json!({"data": data})),
+        ] {
+            let mock = server
+                .mock_async(|when, then| {
+                    when.method(POST)
+                        .path("/channels/test-channel/messages")
+                        .header("authorization", "Basic test-auth")
+                        .json_body(expected);
+                    then.status(201);
+                })
+                .await;
+
+            tokio::time::timeout(
+                TEST_TIMEOUT,
+                publish_message(
+                    &client,
+                    &server.base_url(),
+                    "test-channel",
+                    "test-auth",
+                    name,
+                    &data,
+                    encoding,
+                ),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            mock.assert_calls_async(1).await;
+            mock.delete_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn publish_reports_http_error_with_body() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST).path("/channels/test-channel/messages");
+                then.status(401).body("invalid key");
+            })
+            .await;
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        let error = tokio::time::timeout(
+            TEST_TIMEOUT,
+            publish_message(
+                &client,
+                &server.base_url(),
+                "test-channel",
+                "test-auth",
+                None,
+                &serde_json::json!("payload"),
+                None,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "publish failed: HTTP 401 Unauthorized — invalid key"
+        );
+        mock.assert_calls_async(1).await;
+    }
 }

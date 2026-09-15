@@ -4,7 +4,7 @@ import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-en
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
 import {
   orgUsageAllowanceEntitlements,
@@ -58,9 +58,11 @@ import {
 } from "./org-concurrency-entitlements.service";
 import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
 import {
+  ensureOrgMetadataPlanEntitlement,
   orgPlanEntitlementOrgIdForStripeSubscription,
   upsertOrgPlanEntitlement,
   writeOrgMetadataWithPlanEntitlements,
+  writeOrgMetadataWithDefaultPlanEntitlement,
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import {
@@ -1424,21 +1426,28 @@ async function grantOrgCredits(
   orgId: string,
   amount: number,
 ): Promise<void> {
-  await tx
-    .insert(orgMetadataCanonicalWrites)
-    .values({
-      orgId,
-      credits: amount,
-      createdAt: sql`now()`,
-      updatedAt: sql`now()`,
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: {
-        credits: sql`${orgMetadata.credits} + ${amount}`,
-        updatedAt: sql`now()`,
-      },
-    });
+  await writeOrgMetadataWithDefaultPlanEntitlement(
+    tx,
+    orgId,
+    async (writeTx) => {
+      return await writeTx
+        .insert(orgMetadataCanonicalWrites)
+        .values({
+          orgId,
+          credits: amount,
+          createdAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .onConflictDoUpdate({
+          target: orgMetadataCanonicalWrites.orgId,
+          set: {
+            credits: sql`${orgMetadata.credits} + ${amount}`,
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+    },
+  );
 }
 
 async function createExpiresRecord(
@@ -1817,20 +1826,31 @@ async function grantAtomRedeemMemberUsagePack(
   });
 }
 
+async function insertStripeCustomerOrgMetadata(
+  tx: WriteTx,
+  args: { readonly orgId: string; readonly customerId?: string | null },
+): Promise<boolean> {
+  const rows = await tx
+    .insert(orgMetadataCanonicalWrites)
+    .values({
+      orgId: args.orgId,
+      ...(args.customerId ? { stripeCustomerId: args.customerId } : {}),
+    })
+    .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
+    .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+  for (const row of rows) {
+    await ensureOrgMetadataPlanEntitlement(tx, row);
+  }
+  return rows.length > 0;
+}
+
 async function processAtomPlanGrantInvoicePaid(
   db: Db,
   invoice: InvoiceInput,
   details: AtomPlanGrantInvoiceDetails,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await tx
-      .insert(orgMetadataCanonicalWrites)
-      .values({
-        orgId: details.orgId,
-        ...(details.customerId ? { stripeCustomerId: details.customerId } : {}),
-      })
-      .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId });
-
+    await insertStripeCustomerOrgMetadata(tx, details);
     const lockedOrg = await lockInvoicePaidOrg(tx, details.orgId);
     if (!lockedOrg) {
       return false;
@@ -2671,13 +2691,11 @@ async function insertStripeCustomerForClerkOrg(
     return false;
   }
 
-  const rows = await db
-    .insert(orgMetadataCanonicalWrites)
-    .values({ orgId: args.orgId, stripeCustomerId: args.customerId })
-    .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
-    .returning({ orgId: orgMetadataCanonicalWrites.orgId });
+  const inserted = await db.transaction(async (tx) => {
+    return await insertStripeCustomerOrgMetadata(tx, args);
+  });
 
-  if (rows.length > 0) {
+  if (inserted) {
     L.debug("inserted org metadata from Stripe customer metadata", {
       customerId: args.customerId,
       subscriptionId: args.subscriptionId,

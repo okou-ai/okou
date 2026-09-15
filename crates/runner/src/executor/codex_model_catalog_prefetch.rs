@@ -42,7 +42,7 @@ exec curl \
   --max-time 8 \
   --max-filesize 1048576 \
   --output /dev/null \
-  --header 'X-VM0-Codex-Model-Catalog-Prefetch: 1' \
+  --header 'X-Okou-Codex-Model-Catalog-Prefetch: 1' \
   --get \
   --data-urlencode "client_version=$client_version" \
   'https://chatgpt.com/backend-api/codex/models'

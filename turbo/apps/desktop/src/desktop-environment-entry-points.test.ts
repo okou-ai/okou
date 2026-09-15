@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-import manifest from "../cua/artifacts.json";
 import packageMetadata from "../package.json";
 import identities from "./desktop-identities.json";
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
@@ -14,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const desktopDirectory = resolve(__dirname, "..");
@@ -132,7 +130,6 @@ function createDesktopFixture(): DesktopFixture {
   const sourceDirectory = join(fixtureDesktopDirectory, "src");
   mkdirSync(scriptsDirectory, { recursive: true });
   mkdirSync(sourceDirectory, { recursive: true });
-  mkdirSync(join(fixtureDesktopDirectory, "cua"));
 
   for (const relativePath of [
     "scripts/desktop-build-config.js",
@@ -141,8 +138,6 @@ function createDesktopFixture(): DesktopFixture {
     "scripts/run-packaged-app.js",
     "scripts/smoke-test-packaged-app.js",
     "scripts/desktop-smoke-evidence.js",
-    "scripts/stage-cua-runtime.py",
-    "cua/artifacts.json",
     "package.json",
     "src/config.ts",
     "src/desktop-api-base-url.ts",
@@ -268,141 +263,20 @@ function runForgeConfig(): SpawnSyncReturns<string> {
 
 function dormantDriverEvidence() {
   return {
-    experimentalCuaEnabled: false,
-    selectedDriver: "okou",
-    developerAvailability: "unavailable",
     actual: null,
     phase: "stopped",
     lifecycleElapsedMs: 1,
     cleanupPending: false,
-    expectedCuaVersion: manifest.driverVersion,
     error: null,
     canRetry: true,
   };
 }
 
-function probeEvidence(bundleId = "ai.okou.desktop") {
-  const state = {
-    phase: "ready",
-    generation: 1,
-    cleanupPending: false,
-    driverVersion: manifest.driverVersion,
-    loadedDriverVersion: manifest.driverVersion,
-    error: null,
-  };
-  return {
-    schemaVersion: 1,
-    desktopVersion: packageMetadata.version,
-    electronVersion: packageMetadata.devDependencies.electron,
-    bundleId,
-    generation: 1,
-    driverVersion: manifest.driverVersion,
-    metadata: {
-      pid: 42,
-      embedded: true,
-      hostBundleId: bundleId,
-      driverVersion: manifest.driverVersion,
-      contractVersion: "1",
-      mcpProtocolVersion: "2025-03-26",
-    },
-    readyState: state,
-    stoppedState: {
-      ...state,
-      phase: "stopped",
-      generation: null,
-      loadedDriverVersion: null,
-    },
-    accessibility: false,
-    screenRecording: false,
-    attribution: "host",
-    capture: "not_requested",
-    cleanup: {
-      generation: 1,
-      exitObserved: true,
-      exitSuccess: true,
-      exitCode: 0,
-      hostStopped: true,
-      directoryRemoved: true,
-      process: {
-        guardianPid: 24,
-        guardianExitObserved: true,
-        descendantsExited: true,
-        forced: false,
-        elapsedMs: 75,
-        heartbeatCount: 1,
-      },
-    },
-  };
-}
-
 interface SmokeScenario {
-  readonly probe?: boolean;
   readonly settledDriver?: unknown;
   readonly output?: string;
   readonly exit?: number | "signal";
-  readonly corrupt?: "missing" | "javascript" | "version" | "signature";
-}
-
-function prepareCuaPayload(
-  resources: string,
-  corrupt?: SmokeScenario["corrupt"],
-) {
-  const root = join(resources, "cua");
-  mkdirSync(root, { recursive: true });
-  for (const artifact of manifest.artifacts) {
-    for (const file of artifact.files) {
-      const name = join(
-        artifact.destination,
-        artifact.destination === "." ? file : file.slice("package/".length),
-      );
-      const target = join(root, name);
-      mkdirSync(resolve(target, ".."), { recursive: true });
-      writeFileSync(
-        target,
-        manifest.nativeCode.includes(name)
-          ? Buffer.from([
-              0xcf,
-              0xfa,
-              0xed,
-              0xfe,
-              0x0c,
-              0,
-              0,
-              1,
-              ...new Array<number>(24).fill(0),
-            ])
-          : "fixture resource",
-      );
-      chmodSync(target, 0o755);
-    }
-  }
-  writeFileSync(join(root, "artifacts.json"), JSON.stringify(manifest));
-  const files: Record<string, string> = {};
-  const names = [
-    "artifacts.json",
-    ...manifest.artifacts.flatMap((artifact) =>
-      artifact.files.map((file) =>
-        join(
-          artifact.destination,
-          artifact.destination === "." ? file : file.slice("package/".length),
-        ),
-      ),
-    ),
-  ];
-  for (const name of names)
-    files[name] = createHash("sha256")
-      .update(readFileSync(join(root, name)))
-      .digest("hex");
-  writeFileSync(
-    join(root, "payload.json"),
-    JSON.stringify({
-      driverVersion: corrupt === "version" ? "0.23.1" : manifest.driverVersion,
-      files,
-    }),
-  );
-  const entry = join(root, "node_modules/@trycua/cua-driver/dist/index.js");
-  if (corrupt === "missing") rmSync(entry);
-  if (corrupt === "javascript") writeFileSync(entry, "tampered resource");
+  readonly signatureExit?: number;
 }
 
 function preparePackagedApp(
@@ -441,18 +315,13 @@ function preparePackagedApp(
       settledDriver: scenario.settledDriver ?? dormantDriverEvidence(),
       identity: { product, brandName, displayName },
     },
-    sdkLoadAttempted: false,
   };
   const output =
-    scenario.output ??
-    (scenario.probe
-      ? `[cua-probe] ${JSON.stringify(probeEvidence(bundleId))}`
-      : `[smoke-test] evidence ${JSON.stringify(evidence)}`);
+    scenario.output ?? `[smoke-test] evidence ${JSON.stringify(evidence)}`;
   writeFileSync(
     executablePath,
     `#!${process.execPath}\nrequire("node:fs").appendFileSync(process.env.TEST_TRACE_PATH, "${marker}\\n");\nconsole.log(${JSON.stringify(output)});\n${scenario.exit === "signal" ? 'process.kill(process.pid, "SIGTERM");' : `process.exit(${scenario.exit ?? 0});`}\n`,
   );
-  if (scenario.probe) prepareCuaPayload(resourcesPath, scenario.corrupt);
   chmodSync(executablePath, 0o755);
   writeFileSync(join(resourcesPath, "app", "dist", "main.js"), "");
   writeFileSync(join(resourcesPath, "mcp", "index.mjs"), "");
@@ -475,26 +344,35 @@ function runWrapper(
   }
   const environment = baseEnvironment();
   environment.TEST_TRACE_PATH = fixture.tracePath;
-  if (scenario.probe) {
-    const bin = join(fixture.desktopDirectory, "bin");
-    mkdirSync(bin);
-    // macOS codesign is the only substituted verification boundary.
-    const codesign = join(bin, "codesign");
-    writeFileSync(
-      codesign,
-      `#!${process.execPath}\nprocess.exit(${scenario.corrupt === "signature" ? 1 : 0});\n`,
-    );
-    chmodSync(codesign, 0o755);
-    environment.PATH = bin + ":" + environment.PATH;
-  }
   applyEnvironmentValues(environment, values);
+  const signatureArguments: string[] = [];
+  if (scenario.signatureExit !== undefined) {
+    const binaryDirectory = join(fixture.desktopDirectory, "bin");
+    mkdirSync(binaryDirectory);
+    const verifierPath = join(binaryDirectory, "codesign");
+    writeFileSync(
+      verifierPath,
+      `#!${process.execPath}
+const assert = require("node:assert/strict");
+assert.deepEqual(process.argv.slice(2, 5), ["--verify", "--deep", "--strict"]);
+assert.ok(process.argv[5].endsWith(${JSON.stringify(`/${expectedAppName}.app`)}));
+require("node:fs").appendFileSync(process.env.TEST_TRACE_PATH, "signature-check\\n");
+process.exit(${scenario.signatureExit});
+`,
+    );
+    chmodSync(verifierPath, 0o755);
+    environment.PATH = [binaryDirectory, environment.PATH]
+      .filter(Boolean)
+      .join(delimiter);
+    signatureArguments.push("--signed");
+  }
   const processResult = spawnSync(
     process.execPath,
     [
       "--require",
       fixture.platformOverridePath,
       join(fixture.desktopDirectory, "scripts", wrapper),
-      ...(scenario.probe ? ["--cua-probe", "--signed"] : []),
+      ...signatureArguments,
     ],
     { encoding: "utf8", env: environment },
   );
@@ -794,32 +672,33 @@ describe("packaged Desktop wrapper entry points", () => {
   });
 
   it("accepts structured lifecycle evidence only after successful process exit", () => {
-    const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {
-      probe: true,
-    });
+    const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {});
     expectSuccessfulEntryPoint(result);
     expect(result.trace).toBe("selected\n");
-    expect(result.process.stdout).toContain('"exitObserved":true');
+    expect(result.process.stdout).toContain('"computerUse":true');
     expect(result.process.stdout).toContain('"code":0,"signal":null');
   });
 
-  it.each(["missing", "javascript", "version", "signature"] as const)(
-    "rejects %s package damage before launching the executable",
-    (corrupt) => {
-      const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {
-        probe: true,
-        corrupt,
-      });
-      expect(result.process.status).not.toBe(0);
-      expect(result.trace).toBe("");
-    },
-  );
+  it("verifies the signed package before launching the smoke test", () => {
+    const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {
+      signatureExit: 0,
+    });
+    expectSuccessfulEntryPoint(result);
+    expect(result.trace).toBe("signature-check\nselected\n");
+  });
+
+  it("does not launch a package that fails signature verification", () => {
+    const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {
+      signatureExit: 1,
+    });
+    expect(result.process.status).toBe(1);
+    expect(result.trace).toBe("signature-check\n");
+  });
 
   it.each([1, "signal"] as const)(
     "rejects valid metadata with process exit %s",
     (exit) => {
       const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {
-        probe: true,
         exit,
       });
       expect(result.process.status).toBe(1);
@@ -827,51 +706,9 @@ describe("packaged Desktop wrapper entry points", () => {
     },
   );
 
-  const validProbe = probeEvidence();
   const malformedEvidence = [
-    "[cua-probe] {invalid JSON with private-input}",
-    '[cua-probe] {"cleanup":"confirmed"}',
-    "[cua-probe] " + JSON.stringify({ ...validProbe, driverVersion: "0.23.1" }),
-    "[cua-probe] " +
-      JSON.stringify({
-        ...validProbe,
-        metadata: { ...validProbe.metadata, embedded: false },
-      }),
-    "[cua-probe] " +
-      JSON.stringify({
-        ...validProbe,
-        metadata: { ...validProbe.metadata, hostBundleId: "unowned.app" },
-      }),
-    "[cua-probe] " +
-      JSON.stringify({
-        ...validProbe,
-        readyState: { ...validProbe.readyState, loadedDriverVersion: null },
-      }),
-    "[cua-probe] " + JSON.stringify({ ...validProbe, capture: "success" }),
-    "[cua-probe] " + JSON.stringify({ ...validProbe, accessibility: "false" }),
-    "[cua-probe] " +
-      JSON.stringify({
-        ...validProbe,
-        cleanup: { ...validProbe.cleanup, exitObserved: false },
-      }),
-    "[cua-probe] " +
-      JSON.stringify({
-        ...validProbe,
-        cleanup: { ...validProbe.cleanup, exitCode: null, exitSuccess: false },
-      }),
-    "[cua-probe] " +
-      JSON.stringify({
-        ...validProbe,
-        cleanup: { ...validProbe.cleanup, generation: 2 },
-      }),
-    "[cua-probe] " +
-      JSON.stringify({
-        ...validProbe,
-        stoppedState: { ...validProbe.stoppedState, cleanupPending: true },
-      }),
-    "[cua-probe] " +
-      JSON.stringify({ ...validProbe, privateField: "private-input" }),
-    `[cua-probe] ${JSON.stringify(validProbe)}\n[cua-probe] ${JSON.stringify(validProbe)}`,
+    "[smoke-test] evidence {invalid JSON with private-input}",
+    '[smoke-test] evidence {"bridge":null}',
     "private-input".repeat(12000),
     "no record",
   ];
@@ -879,7 +716,6 @@ describe("packaged Desktop wrapper entry points", () => {
     "rejects invalid or unproven lifecycle evidence $index without exposing raw output",
     ({ output }) => {
       const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {
-        probe: true,
         output,
       });
       expect(result.process.status).toBe(1);
@@ -890,12 +726,10 @@ describe("packaged Desktop wrapper entry points", () => {
   );
 
   it.each([
-    { ...dormantDriverEvidence(), selectedDriver: "cua" },
     { ...dormantDriverEvidence(), phase: "ready" },
-    { ...dormantDriverEvidence(), expectedCuaVersion: "0.23.1" },
     {
       ...dormantDriverEvidence(),
-      actual: { id: "cua", generation: 1, version: null },
+      actual: { id: "invalid", generation: 1, version: null },
     },
     {
       ...dormantDriverEvidence(),
@@ -912,9 +746,9 @@ describe("packaged Desktop wrapper entry points", () => {
     },
   );
 
-  it("does not accept ordinary readiness/dormancy markers without actual driver state", () => {
+  it("does not accept ordinary readiness markers without actual driver state", () => {
     const result = runWrapper("smoke-test-packaged-app.js", {}, "Okou", {
-      output: "[smoke-test] desktop main ready\n[smoke-test] cua dormant",
+      output: "[smoke-test] desktop main ready",
     });
     expect(result.process.status).toBe(1);
   });

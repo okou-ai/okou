@@ -10,7 +10,7 @@ the transport itself does not grant SSH access.
 
 ## Guest boundary
 
-`/usr/local/bin/runner-rpc-client` takes no arguments. Its stdin is one JSON envelope
+The default, no-argument `/usr/local/bin/runner-rpc-client` mode takes one JSON envelope on stdin,
 terminated by EOF:
 
 ```json
@@ -57,7 +57,8 @@ request boundary: the host validates it and dispatches at most once per connecti
 without waiting for EOF. Bytes after that frame are outside the one-shot request;
 they are never consumed as another request and cannot trigger another operation.
 The host does not drain or wait for trailing input and drops the connection after
-all handler work ends. This replaces connection-wide trailing-byte rejection,
+request handling ends. Detached host cleanup does not retain that connection.
+This replaces connection-wide trailing-byte rejection,
 not strict JSON validation inside the frame.
 
 The guest helper half-closes after sending, but dispatch does not depend on that
@@ -118,9 +119,17 @@ Runner ship together; no fallback or protocol negotiation is added.
 
 `Sandbox::guest_rpc(expected_run_id)` returns an assignment-bound
 `GuestRpcAcceptor`. `AcceptedGuestRpc` supplies a host-derived sandbox ID,
-an inseparable `GuestRpcStream`/normal-operation reservation, and lifecycle
-cancellation. Retain the stream through all handler work, even after terminal
-bytes and while awaiting non-I/O work.
+a `GuestRpcStream` owning a normal-operation reservation, and lifecycle
+cancellation. Keep the stream through request I/O and intervening handler work.
+Dropping the stream releases its reservation. Host-only work remaining after
+guest I/O closes must retain its own capacity and resources independently; it
+does not keep the guest busy for park. An input half-close or a terminal response
+alone does not drop the stream or release its reservation.
+
+Run authority and cancellation remain separate from both resource lifetimes.
+RPC closure does not grant continued authority or cross-Run attachment. Handlers
+must still observe lifecycle cancellation and must not publish late results into
+a retired or replacement Run registration.
 
 Admission checks Running/Open/current assignment and acquires the SAME
 `GuestControlClient` tracker reservation at the admission linearization point, with no
@@ -136,14 +145,110 @@ successful park close it. Failed bind never unlinks another owner's socket.
 
 Termination cancels pending admission and accepted I/O without waiting for
 external effects. Handlers must also select lifecycle cancellation throughout
-non-I/O work, retain their reservation, and bound their own concurrency and
-deadline. Transport cancellation cannot guarantee remote process termination.
+non-I/O work and bound their own concurrency and deadline. Host work that outlives
+cancellation retains its resource permits until it actually exits, without
+retaining closed guest I/O or its park reservation. Transport cancellation cannot
+guarantee remote process termination.
 
 This dedicated guest-initiated channel does not change the ordinary
 host-to-guest control protocol. `process-control-ipc` remains guest-local
 process control/placement IPC, not this cross-VM transport.
 
+## Opt-in binary streaming foundation
+
+#33856 (under #33847) adds `/usr/local/bin/runner-rpc-client --stream` for
+bounded binary consumers. #33857 adds `ssh.file.upload` / `ssh.file.download`,
+Runner-owned SFTP and [CLI file semantics](ssh-access.md#file-upload-and-download).
+Only validated file methods extend the Runner request lifetime; unknown methods
+are rejected before resolving authority. Existing exec, session and no-argument
+helper contracts are unchanged.
+
+Streaming stdin starts with one length-delimited, ordinary version-1 Request
+frame, followed by binary frames. The helper rejects caller-supplied
+`remaining_ms` and supplies its own remaining wall time. The fixed CID, port,
+one-connection and no-replay rules still apply. This mode neither opens local
+files nor chooses destinations, credentials, Run identity or business methods.
+
+Every frame uses the existing big-endian u32 body length. After the Request:
+
+| Frame   | Body                                 | Allowed direction |
+| ------- | ------------------------------------ | ----------------- |
+| Data    | byte `0`, then 1–65,536 opaque bytes | Input or response |
+| End     | exactly byte `1`                     | Input or response |
+| Control | existing strict JSON Response object | Response only     |
+
+End explicitly finishes one binary stream; an empty stream uses End without
+Data. Input reading stops at End, without waiting for stdin or guest transport
+EOF or draining trailing bytes. Those bytes cannot start another operation.
+Method handlers select the streaming contract explicitly; the helper mode does
+not change how existing one-shot handlers treat bytes after their Request.
+
+Responses can interleave control events and Data, then End and a terminal
+result/error. A Result after any Data requires End. A control-only Result is
+also valid at the transport layer. Errors can interrupt an unfinished stream;
+they must use `delivery: unknown` after Data, End or a control event. Missing
+End before a Result, duplicate End, Data after End, missing/duplicate terminal,
+and trailing response bytes fail. As in the default mode, the helper withholds
+the terminal until host EOF proves uniqueness. A valid Result is still RPC
+completion, not proof of complete file transfer or other business success.
+
+| Resource                                            |                                                Bound |
+| --------------------------------------------------- | ---------------------------------------------------: |
+| Initial Request                                     |                                              400 KiB |
+| Data per frame                                      |                                               64 KiB |
+| Total Data per direction                            |                                                1 GiB |
+| Data/End frames per direction                       |              65,536, including reserved End capacity |
+| Individual response Control                         |                                               24 KiB |
+| Aggregate response Control including length headers |                          4 MiB, reserving a terminal |
+| Streaming helper total lifetime                     | 15 minutes, reserving the final 100 ms for reporting |
+
+Binary counters are separate from control counters. Readers check advertised
+sizes and remaining capacity before allocating bodies; writers validate before
+transmission. The bridge buffers only bounded frames and concurrently forwards
+input and responses. Slow output applies backpressure. An early remote terminal
+ends pending input work, including a stalled producer. A future upload handler
+must therefore verify its own input End, expected size and completion before
+reporting success; the helper cannot establish those business facts.
+
+All input, connect, socket and stdout work belongs to the helper's one deadline.
+The streaming budget does not extend existing methods: current handlers still
+clamp their deadline to 60 seconds. New long-running handlers must clamp the
+untrusted hint, enforce their own admission limits, and observe exact current
+Run/lifecycle cancellation throughout. Splitting I/O does not release the owned
+GuestRpcStream or its park reservation; retain it through live guest I/O, and
+retain separate host-work permits until cleanup actually completes.
+
+Failed/cancelled partial frame I/O poisons the reader/writer. Never resume it or
+append a replacement terminal to partially written stdout. Locally rejected
+input before request transmission is not dispatched; failure after an attempted
+request can hide effects, even when no Data was forwarded. No disconnect,
+timeout or missing acknowledgement causes reconnection or replay.
+
+Runner and its bundled helper are one artifact, including rootfs/snapshot
+identity. No cross-version helper/Runner negotiation is added. Independently
+selected older CLI packages keep the unchanged no-argument interface. A future
+stream-aware CLI on an old helper must report an unsupported invocation without
+exec fallback. An unavailable method returns the existing JSON unknown-method
+error, which the streaming response reader accepts without binary frames.
+
+Real-socket codec/helper tests exercise greater-than-4-MiB bidirectional data,
+binary/empty streams, bounds, early rejection, backpressure, corrupt/partial
+frames and terminal/EOF failure. The native test also invokes the packaged
+streaming helper in fresh/restored/reassigned Firecracker sandboxes; compile-only
+checks are not a claim that this metal-host test ran locally.
+
 ## SSH consumer ownership and delivery
+
+Managed `ssh.session.*` methods use the same opaque version-1 transport and one
+terminal result per bounded request. Session IDs, cursor reads, stdin/EOF, signals,
+PTY and retained process state belong to the SSH consumer, not this protocol.
+The Runner-owned session task never retains the initiating guest stream or its
+park reservation. A bounded waiting read owns its own stream/reservation until
+that request finishes; it is not attached to the retained session task. No helper
+negotiation, method fallback or automatic replay is added. The staff-gated SSH
+reader changes its required business parameters directly without a legacy read
+payload path; the opaque version-1 framing and helper invocation are unchanged. See
+[managed SSH session ownership](runner-ssh-execution.md#managed-sessions-within-one-run).
 
 #32013 owns explicit `ssh.exec` dispatch, strict business schemas, dynamic JIT
 authorization, credentials, TOFU and execution. Generic events wrap SSH

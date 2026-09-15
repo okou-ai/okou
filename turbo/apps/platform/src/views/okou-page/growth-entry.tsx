@@ -1,9 +1,4 @@
-import {
-  useGet,
-  useLastLoadable,
-  useLastResolved,
-  useSet,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Check, ChevronDown, Coins, PlusCircle } from "lucide-react";
@@ -264,8 +259,8 @@ function AdminGrowthEntry() {
 export function GrowthEntryHeader() {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
-  const features = useLastResolved(featureSwitch$);
-  const questsEnabled = features?.[FeatureSwitchKey.GetStartedQuests] ?? false;
+  const features = useGet(featureSwitch$);
+  const questsEnabled = features[FeatureSwitchKey.GetStartedQuests];
   return (
     <>
       {/* Match the former in-flow header's 16px + 32px + 8px height. The

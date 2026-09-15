@@ -331,7 +331,7 @@ function UsageAllowanceCard({
   return (
     <div
       data-testid="usage-allowance-section"
-      className="overflow-hidden rounded-xl bg-card px-5 py-4 okou-border"
+      className="overflow-hidden rounded-xl bg-card px-5 py-4 border border-surface-border"
     >
       <p className="text-sm font-semibold text-foreground">
         {t(($) => {
@@ -651,7 +651,7 @@ export function CreditBalanceCard({
       {billing ? (
         <UsageAllowanceCard allowance={billing.usageAllowance} />
       ) : null}
-      <div className="overflow-hidden rounded-xl bg-card okou-border">
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         {billingLoading && !billing ? (
           <div className="px-5 py-4 space-y-2">
             <div className="h-4 w-48 rounded bg-muted/50 animate-pulse" />
@@ -690,7 +690,7 @@ export function MemberUsageTable({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="overflow-hidden rounded-xl bg-card okou-border">
+    <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
       {/* Header */}
       <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-2.5 text-[13px] font-medium text-foreground">
         <span>
@@ -712,7 +712,7 @@ export function MemberUsageTable({
 
         return (
           <div key={member.userId}>
-            <div className="h-0 okou-border-t mx-5" />
+            <div className="h-0 border-t border-t-gray-400 mx-5" />
             <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-3">
               <div className="flex items-center gap-3 min-w-0">
                 <UserAvatar

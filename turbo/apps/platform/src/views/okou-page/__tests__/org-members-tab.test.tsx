@@ -21,6 +21,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -53,6 +54,7 @@ function mockMembersStory(
     readonly role: string;
   }) => void,
   role: "admin" | "member" = "admin",
+  initialRoster: "all" | "owner" = "all",
 ): {
   readonly addPendingInvitation: (
     invitation: NonNullable<OrgMembersResponse["pendingInvitations"]>[number],
@@ -120,6 +122,15 @@ function mockMembersStory(
       },
     ],
   };
+
+  if (initialRoster === "owner") {
+    response = {
+      ...response,
+      members: response.members.slice(0, 1),
+      pendingInvitations: [],
+      membershipRequests: [],
+    };
+  }
 
   context.mocks.data.org({
     id: "org_1",
@@ -238,6 +249,7 @@ function mockMemberInviteEntitlement(
 ): void {
   const response: BillingStatusResponse = {
     tier: invitation?.tier ?? "pro",
+    ...billingPlanCapabilities(invitation?.tier ?? "pro"),
     showUsagePack,
     ...(invitation?.status === undefined ? {} : { status: invitation.status }),
     credits: 0,
@@ -266,6 +278,7 @@ function mockUsagePackManagement(
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
       tier: "pro",
+      supportsFreeMembers: true,
       currentPeriodEnd: "2026-09-01T00:00:00.000Z",
       allocations: [
         {
@@ -295,10 +308,10 @@ function mockUsagePackManagement(
   });
 }
 
-function mockUsagePackCatalog(supportsFreeMembers?: boolean): void {
+function mockUsagePackCatalog(): void {
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
-      ...(supportsFreeMembers === undefined ? {} : { supportsFreeMembers }),
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,
@@ -359,6 +372,7 @@ test("Show a scheduled package change on a pending invitation", async () => {
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
       tier: "pro",
+      supportsFreeMembers: true,
       currentPeriodEnd: "2026-09-01T00:00:00.000Z",
       allocations: [
         {
@@ -395,14 +409,14 @@ test("Show a scheduled package change on a pending invitation", async () => {
 });
 
 test("Configure a member’s package from People", async () => {
-  mockMembersStory();
+  mockMembersStory(undefined, "admin", "owner");
   mockMemberInviteEntitlement(true);
   mockUsagePackManagement();
   mockUsagePackCatalog();
 
   await setupPage({
     context,
-    path: "/?settings=people",
+    path: "/agents?settings=people",
   });
   await expect(screen.findByText("Usage pack")).resolves.toBeInTheDocument();
 
@@ -496,7 +510,7 @@ test("Keep People package controls restricted to administrators", async () => {
 });
 
 test.each(["free", "limited-free-1", "pro", "team"])(
-  "Use explicit active status instead of a legacy invitation denial on %s",
+  "Invite members on active %s plans",
   async (tier) => {
     mockMembersStory();
     mockMemberInviteEntitlement(
@@ -504,7 +518,6 @@ test.each(["free", "limited-free-1", "pro", "team"])(
       { tier, status: "active" },
       {
         hasSubscription: tier === "pro" || tier === "team",
-        memberInvitationAllowed: false,
       },
     );
 
@@ -543,43 +556,6 @@ test.each(["free", "limited-free-1", "pro", "team"])(
   },
 );
 
-test.each(["free", "limited-free-1"])(
-  "Preserve the older API invitation restriction on %s",
-  async (tier) => {
-    mockMembersStory();
-    mockMemberInviteEntitlement(
-      false,
-      { tier },
-      {
-        memberInvitationAllowed: false,
-      },
-    );
-    mockUsagePackCatalog();
-
-    await setupPage({ context, path: "/?settings=people" });
-    await screen.findByRole("heading", { name: "People" });
-    click(buttonByText("Add member"));
-
-    const inviteDialog = await screen.findByRole("dialog", {
-      name: "Upgrade to invite members",
-    });
-    expect(
-      within(inviteDialog).getByText(
-        /Member invitations are available on the Pro plan/u,
-      ),
-    ).toBeVisible();
-    expect(
-      within(inviteDialog).queryByPlaceholderText("email@example.com"),
-    ).not.toBeInTheDocument();
-    expect(within(inviteDialog).queryByText("Role")).not.toBeInTheDocument();
-    click(buttonByText("Upgrade to Pro", inviteDialog));
-
-    await expect(
-      screen.findByRole("heading", { name: "Choose a plan" }),
-    ).resolves.toBeInTheDocument();
-  },
-);
-
 test.each([
   { tier: "pro", hasSubscription: true },
   { tier: "team", hasSubscription: true },
@@ -588,7 +564,7 @@ test.each([
 ] as const)(
   "Invite a member after selecting No package on $tier (subscription: $hasSubscription)",
   async ({ tier, hasSubscription }) => {
-    mockMembersStory();
+    mockMembersStory(undefined, "admin", "owner");
     mockMemberInviteEntitlement(
       true,
       { tier, status: "active" },
@@ -610,9 +586,9 @@ test.each([
         },
       );
     }
-    mockUsagePackCatalog(true);
+    mockUsagePackCatalog();
 
-    await setupPage({ context, path: "/?settings=people" });
+    await setupPage({ context, path: "/agents?settings=people" });
     await screen.findByRole("heading", { name: "People" });
     click(buttonByText("Add member"));
     const inviteDialog = await screen.findByRole("dialog", {
@@ -663,7 +639,7 @@ test.each(["pro", "team"] as const)(
         subscriptionStatus: "atom_grant",
       },
     );
-    mockUsagePackCatalog(true);
+    mockUsagePackCatalog();
     context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
       return respond(404, {
         error: { code: "NOT_FOUND", message: "No usage pack subscription" },
@@ -697,7 +673,7 @@ test("Use the default $20 package when inviting a member", async () => {
     { hasSubscription: true },
   );
   mockUsagePackManagement({ supportsFreeMembers: true });
-  mockUsagePackCatalog(true);
+  mockUsagePackCatalog();
   context.mocks.api(orgInviteContract.previewPurchase, ({ body, respond }) => {
     expect(body).toMatchObject({
       email: "default-package@example.com",
@@ -743,91 +719,106 @@ test("Use the default $20 package when inviting a member", async () => {
   expect(within(confirmation).getByText(/5,100 credits/u)).toBeVisible();
 });
 
-test.each([
-  { tier: "pro", supportsFreeMembers: true },
-  { tier: "team", supportsFreeMembers: true },
-  { tier: "pro", supportsFreeMembers: false },
-  { tier: "team", supportsFreeMembers: false },
-] as const)(
-  "Buy an invitation package on $tier (no package: $supportsFreeMembers)",
-  async ({ tier, supportsFreeMembers }) => {
-    const story = mockMembersStory();
-    mockMemberInviteEntitlement(true, { tier, status: "active" });
-    mockUsagePackManagement({ tier });
-    mockUsagePackCatalog(supportsFreeMembers ? true : undefined);
-    const purchaseId = "67d0ac76-170e-4a99-a5b6-ecc74c1179df";
-    context.mocks.api(
-      orgInviteContract.previewPurchase,
-      ({ body, respond }) => {
-        expect(body).toMatchObject({
-          email: "paid.invitee@example.com",
-          role: "member",
-          usagePackUsd: 50,
-          supportsInAppPreview: true,
-        });
-        return respond(200, {
-          purchaseId,
-          usagePackUsd: 50,
-          immediateAmountCents: 1250,
-          currency: "usd",
-          purchasedCredits: 12_500,
-          bonusCredits: 650,
-          totalCredits: 13_150,
-          currentPeriodEnd: "2026-09-01T00:00:00.000Z",
-          expiresAt: "2026-08-10T00:00:00.000Z",
-          paymentMethodPreviewToken: "invite-payment-preview",
-        });
-      },
-    );
-    context.mocks.api(
-      orgInviteContract.confirmPurchase,
-      ({ body, params, respond }) => {
-        expect(params.purchaseId).toBe(purchaseId);
-        expect(body).toStrictEqual({
-          paymentMethodPreviewToken: "invite-payment-preview",
-        });
-        story.addPendingInvitation({
-          id: "inv-paid",
-          email: "paid.invitee@example.com",
-          role: "member",
-          createdAt: "2026-08-01T00:00:00.000Z",
-          usagePackUsd: 50,
-        });
-        return respond(200, { message: "Invitation sent" });
-      },
-    );
-
-    await setupPage({ context, path: "/?settings=people" });
-    await screen.findByRole("heading", { name: "People" });
-    click(buttonByText("Add member"));
-    const inviteDialog = await screen.findByRole("dialog", {
-      name: "Invite member",
+const PAID_INVITATION_SCENARIOS = ["pro", "team"] as const;
+async function preparePaidInvitation(tier: "pro" | "team") {
+  const story = mockMembersStory(undefined, "admin", "owner");
+  mockMemberInviteEntitlement(true, { tier, status: "active" });
+  mockUsagePackManagement({ tier });
+  mockUsagePackCatalog();
+  const purchaseId = "67d0ac76-170e-4a99-a5b6-ecc74c1179df";
+  context.mocks.api(orgInviteContract.previewPurchase, ({ body, respond }) => {
+    expect(body).toMatchObject({
+      email: "paid.invitee@example.com",
+      role: "member",
+      usagePackUsd: 50,
+      supportsInAppPreview: true,
     });
-    const packages = await within(inviteDialog).findByRole("combobox", {
-      name: "Member packages",
+    return respond(200, {
+      purchaseId,
+      usagePackUsd: 50,
+      immediateAmountCents: 1250,
+      currency: "usd",
+      purchasedCredits: 12_500,
+      bonusCredits: 650,
+      totalCredits: 13_150,
+      currentPeriodEnd: "2026-09-01T00:00:00.000Z",
+      expiresAt: "2026-08-10T00:00:00.000Z",
+      paymentMethodPreviewToken: "invite-payment-preview",
     });
-    expect(packages).toHaveTextContent("20,400 credits");
-    await fill(
-      within(inviteDialog).getByPlaceholderText("email@example.com"),
-      "paid.invitee@example.com",
-    );
-    click(packages);
-    expect(screen.queryByRole("option", { name: "No package" }) !== null).toBe(
-      supportsFreeMembers,
-    );
-    click(await screen.findByRole("option", { name: /52,600 credits/u }));
+  });
+  context.mocks.api(
+    orgInviteContract.confirmPurchase,
+    ({ body, params, respond }) => {
+      expect(params.purchaseId).toBe(purchaseId);
+      expect(body).toStrictEqual({
+        paymentMethodPreviewToken: "invite-payment-preview",
+      });
+      story.addPendingInvitation({
+        id: "inv-paid",
+        email: "paid.invitee@example.com",
+        role: "member",
+        createdAt: "2026-08-01T00:00:00.000Z",
+        usagePackUsd: 50,
+      });
+      return respond(200, { message: "Invitation sent" });
+    },
+  );
+  await setupPage({ context, path: "/?settings=people" });
+  await screen.findByRole("heading", { name: "People" });
+  click(buttonByText("Add member"));
+  const inviteDialog = await screen.findByRole("dialog", {
+    name: "Invite member",
+  });
+  const packages = await within(inviteDialog).findByRole("combobox", {
+    name: "Member packages",
+  });
+  expect(packages).toHaveTextContent("20,400 credits");
+  await fill(
+    within(inviteDialog).getByPlaceholderText("email@example.com"),
+    "paid.invitee@example.com",
+  );
+  click(packages);
+  expect(
+    queryAllByRoleFast("option").some((option) => {
+      return option.textContent?.trim() === "No package";
+    }),
+  ).toBeTruthy();
+  click(
     await waitFor(() => {
-      expect(buttonByText("Continue", inviteDialog)).toBeEnabled();
-    });
-    click(buttonByText("Continue", inviteDialog));
+      const option = queryAllByRoleFast("option").find((candidate) => {
+        return candidate.textContent?.includes("52,600 credits");
+      });
+      if (!option) {
+        throw new Error("Expected the 52,600-credit member package");
+      }
+      return option;
+    }),
+  );
+  await waitFor(() => {
+    expect(buttonByText("Continue", inviteDialog)).toBeEnabled();
+  });
+  click(buttonByText("Continue", inviteDialog));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Review invitation",
+  });
+  return { confirmation };
+}
 
-    const confirmation = await screen.findByRole("dialog", {
-      name: "Review invitation",
-    });
+test.each(PAID_INVITATION_SCENARIOS)(
+  "Review a paid invitation on %s",
+  async (tier) => {
+    const { confirmation } = await preparePaidInvitation(tier);
     expect(within(confirmation).getByText("$12.50")).toBeVisible();
     expect(
       within(confirmation).getByText("paid.invitee@example.com"),
     ).toBeVisible();
+  },
+);
+
+test.each(PAID_INVITATION_SCENARIOS)(
+  "Purchase an invitation and reset its package on %s",
+  async (tier) => {
+    const { confirmation } = await preparePaidInvitation(tier);
     click(buttonByText("Pay and invite", confirmation));
     await waitFor(() => {
       expect(rowByEmail("paid.invitee@example.com")).toBeVisible();
@@ -835,7 +826,6 @@ test.each([
     expect(
       within(rowByEmail("paid.invitee@example.com")).getByText("$50/month"),
     ).toBeVisible();
-
     click(buttonByText("Add member"));
     const nextInvite = await screen.findByRole("dialog", {
       name: "Invite member",
@@ -853,7 +843,7 @@ test.each([
   { tier: "pro-suspend" },
 ] as const)("Block invitations on suspended plans ($tier)", async (plan) => {
   mockMembersStory();
-  mockMemberInviteEntitlement(false, plan, { memberInvitationAllowed: true });
+  mockMemberInviteEntitlement(false, plan);
   mockUsagePackCatalog();
 
   await setupPage({

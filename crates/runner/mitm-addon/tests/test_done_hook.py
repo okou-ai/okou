@@ -581,7 +581,7 @@ class TestDoneHook:
 
         assert server.request_count == 3
         assert server.json_bodies() == [server.json_bodies()[0]] * 3
-        assert len(timers) == 2
+        assert len(timers) == 1
         assert all(timer.cancelled for timer in timers)
         assert_current_pending(
             pending_path,

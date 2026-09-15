@@ -1,3 +1,5 @@
+import { introVideoRenderRoutes } from "./routes/intro-video-render";
+import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
 import { authMeRoutes } from "./routes/auth-me";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import type { RouteEntry } from "./route-entry";
@@ -21,7 +23,7 @@ import { cronRenewGoogleWorkspaceEventSubscriptionsRoutes } from "./routes/cron-
 import { cronProcessUsageEventsRoutes } from "./routes/cron-process-usage-events";
 import { cronReconcileSocialKitDownloadRoutes } from "./routes/cron-reconcile-socialkit-downloads";
 import { cronReconcileBillingEntitlementsRoutes } from "./routes/cron-reconcile-billing-entitlements";
-import { cronRefreshStoragePresignedUrlsRoutes } from "./routes/cron-refresh-storage-presigned-urls";
+import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage-presigned-urls";
 import { cronMaterializeMemorySummariesRoutes } from "./routes/cron-materialize-memory-summaries";
 import { cronExtractPiMemoryStage1Routes } from "./routes/cron-extract-pi-memory-stage1";
 import { cronConsolidatePiMemoryPhase2Routes } from "./routes/cron-consolidate-pi-memory-phase2";
@@ -44,6 +46,7 @@ import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
+import { webhooksAgentLangfuseRoutes } from "./routes/webhooks-agent-langfuse";
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
 import { webhooksClerkRoutes } from "./routes/webhooks-clerk";
@@ -60,6 +63,7 @@ import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
+import { impactMarketingRoutes } from "./routes/impact-marketing";
 import { acquisitionAttributionRoutes } from "./routes/acquisition-attribution";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
@@ -134,6 +138,7 @@ import { peopleSearchRoutes } from "./routes/people-search";
 import { webSearchRoutes } from "./routes/web-search";
 import { socialRoutes } from "./routes/social";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
+import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { sshAccessRoutes } from "./routes/ssh-access";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { browserRoutes } from "./routes/browser";
@@ -186,12 +191,9 @@ import { uploadsCompleteRoutes } from "./routes/uploads-complete";
 import { uploadsMultipartRoutes } from "./routes/uploads-multipart";
 import { uploadsPrepareRoutes } from "./routes/uploads-prepare";
 import { presentationTemplatesRoutes } from "./routes/presentation-templates";
-import { imageReferencesRoutes } from "./routes/image-references";
 import { usageMembersRoutes } from "./routes/usage-members";
 import { usageRecordRoutes } from "./routes/usage-record";
 import { userPreferencesRoutes } from "./routes/user-preferences";
-import { marketingPrivacyRoutes } from "./routes/marketing-privacy";
-import { privacyChoicesRoutes } from "./routes/privacy-choices";
 import { userPermissionGrantsRoutes } from "./routes/user-permission-grants";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { avatarVideoRoutes } from "./routes/avatar-video";
@@ -227,6 +229,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksStripeRoutes,
   ...webhooksStripeAutomationEventsRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
+  ...webhooksAgentLangfuseRoutes,
   ...webhooksAgentCheckpointsRoutes,
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentEventsRoutes,
@@ -252,8 +255,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronProcessUsageEventsRoutes,
   ...cronReconcileSocialKitDownloadRoutes,
   ...cronReconcileBillingEntitlementsRoutes,
-  ...cronRefreshStoragePresignedUrlsRoutes,
+  ...cronPruneStoragePresignedUrlsRoutes,
   ...cronMaterializeMemorySummariesRoutes,
+  ...cronMaterializePiResourceIndexesRoutes,
   ...cronExtractPiMemoryStage1Routes,
   ...cronConsolidatePiMemoryPhase2Routes,
   ...cronComputerUseScreenshotCleanupRoutes,
@@ -267,6 +271,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentsRoutes,
   ...artifactCatalogRoutes,
   ...acquisitionAttributionRoutes,
+  ...impactMarketingRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
   ...billingConcurrencyCheckoutRoutes,
@@ -309,6 +314,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...avatarVideoRoutes,
   ...introVideoPresenterRoutes,
   ...introVideoAgentRoutes,
+  ...introVideoRenderRoutes,
   ...videoIoGenerateRoutes,
   ...logsRoutes,
   ...mailRoutes,
@@ -321,6 +327,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webSearchRoutes,
   ...socialRoutes,
   ...sshConnectionsRoutes,
+  ...cloudflareAccessRoutes,
   ...sshAccessRoutes,
   ...runnerSshRoutes,
   ...browserRoutes,
@@ -357,8 +364,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...pushSubscriptionsRoutes,
   ...userPermissionGrantsRoutes,
   ...userPreferencesRoutes,
-  ...privacyChoicesRoutes,
-  ...marketingPrivacyRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...emailSubscriptionRoutes,
@@ -408,7 +413,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...uploadsMultipartRoutes,
   ...uploadsPrepareRoutes,
   ...presentationTemplatesRoutes,
-  ...imageReferencesRoutes,
   ...registryResourceDownloadRoutes,
   ...usageMembersRoutes,
   ...usageRecordRoutes,

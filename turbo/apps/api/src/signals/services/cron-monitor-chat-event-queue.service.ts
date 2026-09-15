@@ -1,30 +1,48 @@
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
 import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { command } from "ccstate";
-import {
-  and,
-  count,
-  eq,
-  inArray,
-  isNull,
-  lt,
-  notExists,
-  or,
-} from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { inArray } from "drizzle-orm";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { STALE_QUEUE_ITEM_AGE_MS } from "./chat-thread-queue-drain.service";
-import { chatEventTypeIn } from "./chat-event-type.service";
+import {
+  CHAT_QUEUE_SCAN_PAGE_SIZE,
+  listChatQueueEventScanCandidatePage,
+  recentStaleChatQueueWindow,
+  revokedChatEventIds,
+  type ChatQueueEventScanCandidate,
+  type ChatQueueEventScanCursor,
+  type RecentStaleChatQueueWindow,
+} from "./chat-event-queue.service";
 
 const ORPHANED_CHAT_EVENT_ERROR_CODE = "ORPHANED_QUEUED_CHAT_MESSAGES";
-const monitoredEventRevoker = alias(chatEvents, "monitored_event_revoker");
+const MONITORED_CONTEXT_TYPES = [
+  "slack",
+  "feishu",
+  "teams",
+  "telegram",
+  "github",
+  "agentphone",
+  "automation",
+] as const;
+
+type MonitoredContextType = (typeof MONITORED_CONTEXT_TYPES)[number];
+type MonitoredQueueEvent = Omit<ChatQueueEventScanCandidate, "contextType"> & {
+  readonly contextType: MonitoredContextType;
+};
+
+interface ExistingContextRow {
+  readonly id: string;
+  readonly chatThreadId: string;
+}
+
+function unreachableMonitoredContextType(contextType: never): never {
+  throw new Error(`Unsupported monitored context type: ${String(contextType)}`);
+}
 
 class OrphanedQueuedChatEventsError extends Error {
   readonly code = ORPHANED_CHAT_EVENT_ERROR_CODE;
@@ -38,112 +56,196 @@ class OrphanedQueuedChatEventsError extends Error {
   }
 }
 
-function missingChatIntegrationContextRowCondition(db: Db) {
-  return or(
-    and(
-      eq(chatEvents.contextType, "slack"),
-      notExists(
-        db
-          .select({ id: chatSlackContext.id })
-          .from(chatSlackContext)
-          .where(
-            and(
-              eq(chatSlackContext.id, chatEvents.contextId),
-              eq(chatSlackContext.chatThreadId, chatEvents.chatThreadId),
-            ),
-          ),
-      ),
-    ),
-    and(
-      eq(chatEvents.contextType, "feishu"),
-      notExists(
-        db
-          .select({ id: chatFeishuContext.id })
-          .from(chatFeishuContext)
-          .where(
-            and(
-              eq(chatFeishuContext.id, chatEvents.contextId),
-              eq(chatFeishuContext.chatThreadId, chatEvents.chatThreadId),
-            ),
-          ),
-      ),
-    ),
-    and(
-      eq(chatEvents.contextType, "teams"),
-      notExists(
-        db
-          .select({ id: chatTeamsContext.id })
-          .from(chatTeamsContext)
-          .where(
-            and(
-              eq(chatTeamsContext.id, chatEvents.contextId),
-              eq(chatTeamsContext.chatThreadId, chatEvents.chatThreadId),
-            ),
-          ),
-      ),
-    ),
-    and(
-      eq(chatEvents.contextType, "telegram"),
-      notExists(
-        db
-          .select({ id: chatTelegramContext.id })
-          .from(chatTelegramContext)
-          .where(
-            and(
-              eq(chatTelegramContext.id, chatEvents.contextId),
-              eq(chatTelegramContext.chatThreadId, chatEvents.chatThreadId),
-            ),
-          ),
-      ),
-    ),
-    and(
-      eq(chatEvents.contextType, "github"),
-      notExists(
-        db
-          .select({ id: chatGithubContext.id })
-          .from(chatGithubContext)
-          .where(
-            and(
-              eq(chatGithubContext.id, chatEvents.contextId),
-              eq(chatGithubContext.chatThreadId, chatEvents.chatThreadId),
-            ),
-          ),
-      ),
-    ),
-  );
+async function loadExistingContextRows(
+  db: Db,
+  contextType: MonitoredContextType,
+  contextIds: readonly string[],
+): Promise<readonly ExistingContextRow[]> {
+  if (contextIds.length === 0) {
+    return [];
+  }
+
+  switch (contextType) {
+    case "slack": {
+      return await db
+        .select({
+          id: chatSlackContext.id,
+          chatThreadId: chatSlackContext.chatThreadId,
+        })
+        .from(chatSlackContext)
+        .where(inArray(chatSlackContext.id, [...contextIds]));
+    }
+    case "feishu": {
+      return await db
+        .select({
+          id: chatFeishuContext.id,
+          chatThreadId: chatFeishuContext.chatThreadId,
+        })
+        .from(chatFeishuContext)
+        .where(inArray(chatFeishuContext.id, [...contextIds]));
+    }
+    case "teams": {
+      return await db
+        .select({
+          id: chatTeamsContext.id,
+          chatThreadId: chatTeamsContext.chatThreadId,
+        })
+        .from(chatTeamsContext)
+        .where(inArray(chatTeamsContext.id, [...contextIds]));
+    }
+    case "telegram": {
+      return await db
+        .select({
+          id: chatTelegramContext.id,
+          chatThreadId: chatTelegramContext.chatThreadId,
+        })
+        .from(chatTelegramContext)
+        .where(inArray(chatTelegramContext.id, [...contextIds]));
+    }
+    case "github": {
+      return await db
+        .select({
+          id: chatGithubContext.id,
+          chatThreadId: chatGithubContext.chatThreadId,
+        })
+        .from(chatGithubContext)
+        .where(inArray(chatGithubContext.id, [...contextIds]));
+    }
+    case "agentphone": {
+      return await db
+        .select({
+          id: chatAgentphoneContext.id,
+          chatThreadId: chatAgentphoneContext.chatThreadId,
+        })
+        .from(chatAgentphoneContext)
+        .where(inArray(chatAgentphoneContext.id, [...contextIds]));
+    }
+    case "automation": {
+      return await db
+        .select({
+          id: chatAutomationContext.id,
+          chatThreadId: chatAutomationContext.chatThreadId,
+        })
+        .from(chatAutomationContext)
+        .where(inArray(chatAutomationContext.id, [...contextIds]));
+    }
+    default: {
+      return unreachableMonitoredContextType(contextType);
+    }
+  }
 }
 
-function missingScheduledContextRowCondition(db: Db) {
-  return or(
-    and(
-      eq(chatEvents.contextType, "agentphone"),
-      notExists(
-        db
-          .select({ id: chatAgentphoneContext.id })
-          .from(chatAgentphoneContext)
-          .where(
-            and(
-              eq(chatAgentphoneContext.id, chatEvents.contextId),
-              eq(chatAgentphoneContext.chatThreadId, chatEvents.chatThreadId),
-            ),
-          ),
-      ),
-    ),
-    and(
-      eq(chatEvents.contextType, "automation"),
-      notExists(
-        db
-          .select({ id: chatAutomationContext.id })
-          .from(chatAutomationContext)
-          .where(
-            and(
-              eq(chatAutomationContext.id, chatEvents.contextId),
-              eq(chatAutomationContext.chatThreadId, chatEvents.chatThreadId),
-            ),
-          ),
-      ),
-    ),
+async function missingContextEvents(
+  db: Db,
+  candidates: readonly ChatQueueEventScanCandidate[],
+): Promise<readonly MonitoredQueueEvent[]> {
+  const missingByType = await Promise.all(
+    MONITORED_CONTEXT_TYPES.map(async (contextType) => {
+      const contextEvents: readonly MonitoredQueueEvent[] = candidates.flatMap(
+        (candidate) => {
+          return candidate.contextType === contextType
+            ? [{ ...candidate, contextType }]
+            : [];
+        },
+      );
+      const contextIds = [
+        ...new Set(
+          contextEvents.flatMap(({ contextId }) => {
+            return contextId === null ? [] : [contextId];
+          }),
+        ),
+      ];
+      const existingRows = await loadExistingContextRows(
+        db,
+        contextType,
+        contextIds,
+      );
+      const existingThreadById = new Map(
+        existingRows.map((row) => {
+          return [row.id, row.chatThreadId] as const;
+        }),
+      );
+      return contextEvents.filter(({ contextId, chatThreadId }) => {
+        return (
+          contextId === null ||
+          existingThreadById.get(contextId) !== chatThreadId
+        );
+      });
+    }),
   );
+  return missingByType.flat();
+}
+
+async function findOrphanedQueueEvents(
+  db: Db,
+  window: RecentStaleChatQueueWindow,
+  eventIds: readonly string[] | undefined,
+  signal: AbortSignal,
+): Promise<readonly MonitoredQueueEvent[]> {
+  const orphanedEvents: MonitoredQueueEvent[] = [];
+  let cursor: ChatQueueEventScanCursor | undefined;
+  while (true) {
+    const candidates = await listChatQueueEventScanCandidatePage(db, {
+      ...window,
+      cursor,
+      limit: CHAT_QUEUE_SCAN_PAGE_SIZE,
+      eventIds,
+      contextTypes: MONITORED_CONTEXT_TYPES,
+    });
+    signal.throwIfAborted();
+    if (candidates.length === 0) {
+      break;
+    }
+
+    const candidateIds = candidates.map(({ id }) => {
+      return id;
+    });
+    const [revokedEventIds, missingEvents] = await Promise.all([
+      revokedChatEventIds(db, candidateIds),
+      missingContextEvents(db, candidates),
+    ]);
+    signal.throwIfAborted();
+    orphanedEvents.push(
+      ...missingEvents.filter(({ id }) => {
+        return !revokedEventIds.has(id);
+      }),
+    );
+
+    if (candidates.length < CHAT_QUEUE_SCAN_PAGE_SIZE) {
+      break;
+    }
+    const lastCandidate = candidates.at(-1);
+    if (!lastCandidate) {
+      break;
+    }
+    cursor = lastCandidate;
+  }
+  return orphanedEvents;
+}
+
+async function recheckOrphanedQueueEvents(
+  db: Db,
+  window: RecentStaleChatQueueWindow,
+  suspectedEvents: readonly MonitoredQueueEvent[],
+  signal: AbortSignal,
+): Promise<readonly MonitoredQueueEvent[]> {
+  const confirmedEvents: MonitoredQueueEvent[] = [];
+  for (
+    let offset = 0;
+    offset < suspectedEvents.length;
+    offset += CHAT_QUEUE_SCAN_PAGE_SIZE
+  ) {
+    signal.throwIfAborted();
+    const eventIds = suspectedEvents
+      .slice(offset, offset + CHAT_QUEUE_SCAN_PAGE_SIZE)
+      .map(({ id }) => {
+        return id;
+      });
+    confirmedEvents.push(
+      ...(await findOrphanedQueueEvents(db, window, eventIds, signal)),
+    );
+  }
+  return confirmedEvents;
 }
 
 async function monitorChatEventQueue(
@@ -151,50 +253,31 @@ async function monitorChatEventQueue(
   signal: AbortSignal,
   eventIds?: readonly string[],
 ) {
-  const staleBefore = new Date(nowDate().getTime() - STALE_QUEUE_ITEM_AGE_MS);
-  const orphanedSource = chatEvents.contextType;
-  const results = await db
-    .select({
-      eventType: chatEvents.eventType,
-      source: orphanedSource,
-      orphanedMessages: count(),
-    })
-    .from(chatEvents)
-    .where(
-      and(
-        eventIds === undefined
-          ? undefined
-          : inArray(chatEvents.id, [...eventIds]),
-        chatEventTypeIn(["input.prompt", "input.automation"]),
-        isNull(chatEvents.runId),
-        notExists(
-          db
-            .select({ id: monitoredEventRevoker.id })
-            .from(monitoredEventRevoker)
-            .where(eq(monitoredEventRevoker.revokesEventId, chatEvents.id)),
-        ),
-        lt(chatEvents.createdAt, staleBefore),
-        or(
-          missingChatIntegrationContextRowCondition(db),
-          missingScheduledContextRowCondition(db),
-        ),
-      ),
-    )
-    .groupBy(orphanedSource, chatEvents.eventType);
+  const window = recentStaleChatQueueWindow(nowDate().getTime());
+  const suspectedEvents = await findOrphanedQueueEvents(
+    db,
+    window,
+    eventIds,
+    signal,
+  );
+  signal.throwIfAborted();
+  // The split reads deliberately avoid one global polymorphic join. Re-read
+  // only suspected rows so a concurrent revoke, context insert, or thread
+  // deletion cannot turn the monitor into a false alert.
+  const orphanedEvents = await recheckOrphanedQueueEvents(
+    db,
+    window,
+    suspectedEvents,
+    signal,
+  );
   signal.throwIfAborted();
 
   const orphanedMessagesBySource: Record<string, number> = {};
-  for (const result of results) {
-    const source = result.source ?? "(unknown)";
-    orphanedMessagesBySource[source] =
-      (orphanedMessagesBySource[source] ?? 0) + result.orphanedMessages;
+  for (const event of orphanedEvents) {
+    orphanedMessagesBySource[event.contextType] =
+      (orphanedMessagesBySource[event.contextType] ?? 0) + 1;
   }
-  const orphanedMessages = Object.values(orphanedMessagesBySource).reduce(
-    (total, sourceCount) => {
-      return total + sourceCount;
-    },
-    0,
-  );
+  const orphanedMessages = orphanedEvents.length;
   if (orphanedMessages > 0) {
     throw new OrphanedQueuedChatEventsError(
       orphanedMessages,

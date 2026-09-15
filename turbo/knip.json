@@ -22,9 +22,10 @@
         "src/signals/external/stripe-client.ts",
         "src/signals/external/env.ts",
         "src/scripts/**/*.ts",
-        "src/**/*.{test,spec}.ts"
+        "src/**/*.{test,spec}.ts",
+        "scripts/erasure-bridge/{acceptance,child}.ts"
       ],
-      "project": ["src/**/*.ts"],
+      "project": ["src/**/*.ts", "scripts/erasure-bridge/*.ts"],
       "ignoreDependencies": ["@hono/node-server-v1", "clerk"]
     },
     "apps/platform": {
@@ -62,7 +63,6 @@
         "forge.config.js",
         "vite.renderer.config.ts",
         "src/main.ts",
-        "src/cua-sdk-process.ts",
         "src/preload.ts",
         "src/renderer/main.tsx",
         "src/renderer/recorder/main.tsx",
@@ -76,7 +76,7 @@
         "oxlint",
         "tsup"
       ],
-      "ignoreBinaries": ["electron-forge", "oxlint", "tsup", "python3"]
+      "ignoreBinaries": ["electron-forge", "oxlint", "tsup"]
     },
     "packages/core": {
       "entry": [

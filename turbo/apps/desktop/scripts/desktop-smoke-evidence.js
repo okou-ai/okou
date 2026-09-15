@@ -1,4 +1,3 @@
-const manifest = require("../cua/artifacts.json");
 const packageMetadata = require("../package.json");
 
 function requireEvidence(condition) {
@@ -12,32 +11,19 @@ function keys(value, expected) {
 
 function dormantDriver(driver) {
   keys(driver, [
-    "experimentalCuaEnabled",
-    "selectedDriver",
-    "developerAvailability",
     "actual",
     "phase",
     "lifecycleElapsedMs",
     "cleanupPending",
-    "expectedCuaVersion",
     "error",
     "canRetry",
   ]);
-  requireEvidence(
-    driver.experimentalCuaEnabled === false && driver.selectedDriver === "okou",
-  );
-  requireEvidence(
-    ["unresolved", "unavailable"].includes(driver.developerAvailability),
-  );
   requireEvidence(
     driver.phase === "stopped" &&
       driver.cleanupPending === false &&
       driver.error === null,
   );
-  requireEvidence(
-    driver.expectedCuaVersion === manifest.driverVersion &&
-      typeof driver.canRetry === "boolean",
-  );
+  requireEvidence(typeof driver.canRetry === "boolean");
   requireEvidence(
     Number.isSafeInteger(driver.lifecycleElapsedMs) &&
       driver.lifecycleElapsedMs >= 0 &&
@@ -55,31 +41,9 @@ function dormantDriver(driver) {
   }
 }
 
-function runtimeState(state, generation, phase) {
-  keys(state, [
-    "phase",
-    "cleanupPending",
-    "generation",
-    "driverVersion",
-    "loadedDriverVersion",
-    "error",
-  ]);
-  requireEvidence(
-    state.phase === phase &&
-      state.generation === generation &&
-      state.cleanupPending === false &&
-      state.error === null,
-  );
-  requireEvidence(state.driverVersion === manifest.driverVersion);
-  requireEvidence(
-    state.loadedDriverVersion ===
-      (phase === "ready" ? manifest.driverVersion : null),
-  );
-}
-
 /** Parse only the one bounded metadata record from the actual child process. */
-function readDesktopSmokeEvidence(stdout, cuaProbe, identity, forced = false) {
-  const prefix = cuaProbe ? "[cua-probe] " : "[smoke-test] evidence ";
+function readDesktopSmokeEvidence(stdout, identity) {
+  const prefix = "[smoke-test] evidence ";
   const records = stdout
     .split(/\r?\n/)
     .filter((line) => line.startsWith(prefix));
@@ -91,23 +55,7 @@ function readDesktopSmokeEvidence(stdout, cuaProbe, identity, forced = false) {
     "electronVersion",
     "bundleId",
   ];
-  keys(evidence, [
-    ...common,
-    ...(cuaProbe
-      ? [
-          "generation",
-          "driverVersion",
-          "metadata",
-          "readyState",
-          "stoppedState",
-          "accessibility",
-          "screenRecording",
-          "attribution",
-          "capture",
-          "cleanup",
-        ]
-      : ["bridge", "sdkLoadAttempted"]),
-  ]);
+  keys(evidence, [...common, "bridge"]);
   requireEvidence(
     evidence.schemaVersion === 1 &&
       evidence.desktopVersion === packageMetadata.version,
@@ -116,8 +64,7 @@ function readDesktopSmokeEvidence(stdout, cuaProbe, identity, forced = false) {
     evidence.electronVersion === packageMetadata.devDependencies.electron &&
       evidence.bundleId === identity.bundleId,
   );
-  if (cuaProbe) validateProbeEvidence(evidence, identity, forced);
-  else validateDormantEvidence(evidence, identity);
+  validateDormantEvidence(evidence, identity);
   return evidence;
 }
 
@@ -148,91 +95,6 @@ function validateDormantEvidence(evidence, identity) {
   );
   dormantDriver(bridge.driver);
   dormantDriver(bridge.settledDriver);
-  requireEvidence(evidence.sdkLoadAttempted === false);
-}
-
-function validateProbeEvidence(evidence, identity, forced) {
-  requireEvidence(
-    Number.isSafeInteger(evidence.generation) &&
-      evidence.generation > 0 &&
-      evidence.driverVersion === manifest.driverVersion,
-  );
-  const metadata = evidence.metadata;
-  keys(metadata, [
-    "pid",
-    "embedded",
-    "hostBundleId",
-    "driverVersion",
-    "contractVersion",
-    "mcpProtocolVersion",
-  ]);
-  requireEvidence(
-    Number.isSafeInteger(metadata.pid) &&
-      metadata.pid > 0 &&
-      metadata.embedded === true,
-  );
-  requireEvidence(
-    metadata.hostBundleId === identity.bundleId &&
-      metadata.driverVersion === manifest.driverVersion,
-  );
-  for (const version of [
-    metadata.contractVersion,
-    metadata.mcpProtocolVersion,
-  ]) {
-    requireEvidence(
-      typeof version === "string" && /^[a-zA-Z0-9_.-]{1,64}$/.test(version),
-    );
-  }
-  runtimeState(evidence.readyState, evidence.generation, "ready");
-  runtimeState(evidence.stoppedState, null, "stopped");
-  requireEvidence(
-    typeof evidence.accessibility === "boolean" &&
-      typeof evidence.screenRecording === "boolean",
-  );
-  requireEvidence(
-    evidence.attribution === "host" && evidence.capture === "not_requested",
-  );
-  const cleanup = evidence.cleanup;
-  keys(cleanup, [
-    "generation",
-    "exitObserved",
-    "exitSuccess",
-    "exitCode",
-    "hostStopped",
-    "directoryRemoved",
-    "process",
-  ]);
-  requireEvidence(
-    cleanup.generation === evidence.generation &&
-      cleanup.exitObserved === true &&
-      (forced
-        ? cleanup.exitSuccess === false && cleanup.exitCode === null
-        : cleanup.exitSuccess === true &&
-          cleanup.exitCode === 0 &&
-          cleanup.hostStopped === true) &&
-      cleanup.directoryRemoved === true,
-  );
-  const owner = cleanup.process;
-  keys(owner, [
-    "guardianPid",
-    "guardianExitObserved",
-    "descendantsExited",
-    "forced",
-    "elapsedMs",
-    "heartbeatCount",
-  ]);
-  requireEvidence(
-    Number.isSafeInteger(owner.guardianPid) &&
-      owner.guardianPid > 0 &&
-      owner.guardianExitObserved === true &&
-      owner.descendantsExited === true &&
-      owner.forced === forced &&
-      Number.isFinite(owner.elapsedMs) &&
-      owner.elapsedMs >= 0 &&
-      owner.elapsedMs <= 5000 &&
-      Number.isSafeInteger(owner.heartbeatCount) &&
-      owner.heartbeatCount >= (forced ? 20 : 0),
-  );
 }
 
 module.exports = { readDesktopSmokeEvidence };

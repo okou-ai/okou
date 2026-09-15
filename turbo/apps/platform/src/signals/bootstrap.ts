@@ -3,7 +3,12 @@ import { createElement } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
 import { setupDesktopAuthPage } from "./desktop-auth/desktop-auth.ts";
-import { clerk$, setupClerk$, watchOrgSwitch$ } from "./auth.ts";
+import {
+  clerk$,
+  setupClerk$,
+  setupClerkUser$,
+  watchOrgSwitch$,
+} from "./auth.ts";
 import {
   runAuthenticatedRealtime$,
   setupAuthenticatedBootstrapData$,
@@ -80,10 +85,6 @@ import { setupBankingConnectReturnPage$ } from "./banking-connect-return-page-se
 import { setupEmailUnsubscribePage$ } from "./email-unsubscribe/email-unsubscribe-page-setup.ts";
 import { setupSignInTokenPage$ } from "./sign-in-token-setup.ts";
 import {
-  setupSignInV2Page$,
-  setupSignUpV2Page$,
-} from "./auth-v2-page-setup.ts";
-import {
   setupSignInV1Page$,
   setupSignUpV1Page$,
 } from "./auth-v1-page-setup.ts";
@@ -103,8 +104,9 @@ import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
+  applyFeatureSwitches$,
   featureSwitch$,
-  reloadFeatureSwitch$,
+  featureSwitches$,
 } from "./external/feature-switch.ts";
 import {
   setupConnectionDiagnostics$,
@@ -211,34 +213,18 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.signIn,
-    setup: setupPageWrapper(setupSignInV2Page$),
+    setup: setupPageWrapper(setupSignInV1Page$),
   },
   {
     path: ROUTES.signInCatchAll,
-    setup: setupPageWrapper(setupSignInV2Page$),
+    setup: setupPageWrapper(setupSignInV1Page$),
   },
   {
     path: ROUTES.signUp,
-    setup: setupPageWrapper(setupSignUpV2Page$),
-  },
-  {
-    path: ROUTES.signUpCatchAll,
-    setup: setupPageWrapper(setupSignUpV2Page$),
-  },
-  {
-    path: ROUTES.signInV1,
-    setup: setupPageWrapper(setupSignInV1Page$),
-  },
-  {
-    path: ROUTES.signInV1CatchAll,
-    setup: setupPageWrapper(setupSignInV1Page$),
-  },
-  {
-    path: ROUTES.signUpV1,
     setup: setupPageWrapper(setupSignUpV1Page$),
   },
   {
-    path: ROUTES.signUpV1CatchAll,
+    path: ROUTES.signUpCatchAll,
     setup: setupPageWrapper(setupSignUpV1Page$),
   },
 
@@ -278,6 +264,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectorCallbackResult,
     setup: setupConnectorCallbackPage$,
+  },
+  {
+    path: ROUTES.larkOAuthCallback,
+    setup: setupFeishuOAuthCallbackPage$,
   },
   {
     path: ROUTES.feishuOAuthCallback,
@@ -377,6 +367,10 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.settingsFeishu,
+    setup: setupAuthSidebarPageWrapper(setupFeishuSettingsPage$),
+  },
+  {
+    path: ROUTES.settingsLark,
     setup: setupAuthSidebarPageWrapper(setupFeishuSettingsPage$),
   },
   {
@@ -519,11 +513,12 @@ const setupRoutes$ = command(async ({ set }, signal: AbortSignal) => {
   await set(initRoutes$, ROUTE_CONFIG, signal);
 });
 
-const setupFeatureSwitches$ = command(async ({ set }, signal: AbortSignal) => {
-  await set(reloadFeatureSwitch$, signal);
-  await set(syncLocalePreference$, signal);
-  await set(syncColorThemePreference$, signal);
-});
+const syncInitialPreferences$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    await set(syncLocalePreference$, signal);
+    await set(syncColorThemePreference$, signal);
+  },
+);
 
 function notificationChatThreadId(data: unknown): string | null {
   if (
@@ -564,7 +559,11 @@ const setupNotificationListener$ = command(({ set }, signal: AbortSignal) => {
 });
 
 const completeBootstrap$ = command(
-  async ({ set }, render: () => void, signal: AbortSignal): Promise<void> => {
+  async (
+    { get, set },
+    render: () => void,
+    signal: AbortSignal,
+  ): Promise<void> => {
     await set(initLocale$, signal);
     signal.throwIfAborted();
     set(markBootstrapLocaleInitCompleted$);
@@ -573,7 +572,7 @@ const completeBootstrap$ = command(
     render();
 
     // These public protocol pages also run before an embedded Clerk session exists.
-    // Auth v2 task continuations retain the same ownership via redirect_url.
+    // Hosted Clerk task continuations retain the same ownership via redirect_url.
     if (isDesktopAuthFlow()) {
       await Promise.all([
         set(setupClerk$, signal),
@@ -586,6 +585,11 @@ const completeBootstrap$ = command(
 
     set(handleSlackRedirect$);
 
+    // Route setup may make one-time feature-gated decisions.
+    const featureSwitches = await get(featureSwitches$);
+    signal.throwIfAborted();
+    set(applyFeatureSwitches$, featureSwitches);
+
     await Promise.all([
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
@@ -596,7 +600,7 @@ const completeBootstrap$ = command(
 
       set(setupGlobalKeyboardShortcuts$, signal),
       set(watchOrgSwitch$, signal),
-      set(setupFeatureSwitches$, signal),
+      set(syncInitialPreferences$, signal),
     ]);
 
     signal.throwIfAborted();
@@ -605,6 +609,7 @@ const completeBootstrap$ = command(
 
 interface BootstrapRuntime {
   readonly authenticatedRealtimeDaemon: Promise<void>;
+  readonly clerkIdentityDaemon: Promise<void>;
   readonly ready: Promise<void>;
   readonly sharedDatabaseDaemon: Promise<void>;
 }
@@ -621,6 +626,9 @@ export const bootstrap$ = command(
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);
     set(setRootSignal$, signal);
+    // Claims `clerkUser$` in this synchronous pass. The daemons and route
+    // setups below read it, and without an owner it never settles.
+    const clerkIdentityDaemon = set(setupClerkUser$, signal);
     const apiBaseUrl = resolveApiBaseForTarget("api");
     const vercelProtectionBypass =
       getCapturedPreviewBypassForTarget(apiBaseUrl);
@@ -628,7 +636,7 @@ export const bootstrap$ = command(
     set(setApiClientRuntime$, {
       getToken: async (requestSignal) => {
         const resolvedClerk = await clerk;
-        requestSignal.throwIfAborted();
+        requestSignal?.throwIfAborted();
         return await readClerkToken(resolvedClerk, requestSignal);
       },
       apiBaseUrl,
@@ -659,6 +667,7 @@ export const bootstrap$ = command(
 
     return {
       authenticatedRealtimeDaemon,
+      clerkIdentityDaemon,
       ready,
       sharedDatabaseDaemon,
     };

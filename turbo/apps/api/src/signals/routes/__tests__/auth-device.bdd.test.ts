@@ -168,7 +168,7 @@ describe("AUTH-02: CLI device authorization", () => {
 });
 
 describe("AUTH-02: desktop auth handoff", () => {
-  it("requires a session, returns a safe legacy Zero callback URL, and consumes the handoff once", async () => {
+  it("requires a session, returns a safe dev callback URL, and consumes the handoff once", async () => {
     authDevice.mockDesktopSignInToken("ticket_desktop_bdd");
 
     const unauthenticated = await authDevice.requestDesktopHandoff(
@@ -182,7 +182,7 @@ describe("AUTH-02: desktop auth handoff", () => {
     const actor = bdd.user();
     const handoff = await authDevice.requestDesktopHandoff(
       actor,
-      { callbackScheme: "ai.vm0.zero.desktop.dev" },
+      { callbackScheme: "ai.okou.desktop.dev" },
       [200],
     );
     if (handoff.status !== 200) {
@@ -191,7 +191,7 @@ describe("AUTH-02: desktop auth handoff", () => {
       );
     }
     const callbackUrl = new URL(handoff.body.callbackUrl);
-    expect(callbackUrl.protocol).toBe("ai.vm0.zero.desktop.dev:");
+    expect(callbackUrl.protocol).toBe("ai.okou.desktop.dev:");
     expect(callbackUrl.hostname).toBe("auth");
     expect(callbackUrl.pathname).toBe("/callback");
     expect(handoff.body.callbackUrl).not.toContain("ticket");
@@ -225,6 +225,16 @@ describe("AUTH-02: desktop auth handoff", () => {
     const missingCode = await authDevice.requestDesktopConsume("", [400]);
     expectApiError(missingCode.body);
     expect(missingCode.body.error.code).toBe("BAD_REQUEST");
+  });
+
+  it("rejects a retired Zero callback scheme", async () => {
+    const retired = await authDevice.requestDesktopHandoffRaw(
+      bdd.user(),
+      JSON.stringify({ callbackScheme: "ai.vm0.zero.desktop" }),
+    );
+    expect(retired.status).toBe(400);
+    expectApiError(retired.body);
+    expect(retired.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("creates and consumes an Okou desktop auth callback", async () => {
@@ -329,6 +339,7 @@ describe("AUTH-02: platform realtime token", () => {
       [`user:${actor.userId}`]: ["subscribe"],
       [`org:${actor.orgId}`]: ["subscribe"],
       [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
+      [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
     });
     context.mocks.ably.createTokenRequest.mockResolvedValueOnce({
       keyName: "ably-key",
@@ -351,6 +362,7 @@ describe("AUTH-02: platform realtime token", () => {
         [`user:${actor.userId}`]: ["subscribe"],
         [`org:${actor.orgId}`]: ["subscribe"],
         [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
+        [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
       },
       ttl: 60 * 60 * 1000,
       clientId: actor.userId,
@@ -762,7 +774,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     }
     expect(deduplicated.body.modelProviders).toHaveLength(1);
     expect(deduplicated.body.modelProviders[0]).toMatchObject({
-      id: accountAId,
+      id: accountBId,
       isActive: true,
       workspaceName: "Account B reconnected",
     });
@@ -793,7 +805,14 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       throw new Error("Expected account C device auth to complete");
     }
 
-    await support.deletePersonalModelProviderAccount(member, accountAId);
+    // Reconnecting A with B updates B's credential record; A never becomes B.
+    await support.resetPersonalModelProviderAccount(
+      member,
+      accountAId,
+      randomUUID(),
+      [404],
+    );
+    await support.deletePersonalModelProviderAccount(member, accountBId);
     const afterActiveDelete = await support.listPersonalModelProviders(
       member,
       [200],

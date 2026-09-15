@@ -13,6 +13,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 
+import { nowDate } from "../../lib/time";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
@@ -23,6 +24,11 @@ import {
 } from "../services/chat-event.service";
 import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
 import { createUserMessageDocument } from "../services/chat-user-message.service";
+import {
+  CHAT_QUEUE_SCAN_PAGE_SIZE,
+  CHAT_QUEUE_STALE_AFTER_MS,
+  CHAT_QUEUE_STALE_RECHECK_WINDOW_MS,
+} from "../services/chat-event-queue.service";
 import { monitorChatEventQueueForEvents$ } from "../services/cron-monitor-chat-event-queue.service";
 import {
   isTestEndpointAllowed,
@@ -42,6 +48,13 @@ type FixtureKind = Extract<
   { readonly action: "seed-fixture" }
 >["fixture_kind"];
 type DbTransaction = Tx;
+
+const OLD_ORPHAN_CONTEXT_FIXTURES = [
+  {
+    contextType: "slack",
+    eventType: "input.prompt",
+  },
+] as const;
 
 const STALE_CONTEXT_FIXTURES = [
   {
@@ -133,7 +146,24 @@ async function seedActiveRun(
   }
 }
 
-async function seedQueuedIntegrationEvent(tx: DbTransaction, threadId: string) {
+function recentStaleEventCreatedAt(): Date {
+  return new Date(nowDate().getTime() - CHAT_QUEUE_STALE_AFTER_MS - 60_000);
+}
+
+function oldStaleEventCreatedAt(): Date {
+  return new Date(
+    nowDate().getTime() -
+      CHAT_QUEUE_STALE_AFTER_MS -
+      CHAT_QUEUE_STALE_RECHECK_WINDOW_MS -
+      60_000,
+  );
+}
+
+async function seedQueuedIntegrationEvent(
+  tx: DbTransaction,
+  threadId: string,
+  createdAt?: Date,
+) {
   const userMessage = createUserMessageDocument({
     text: "orphan monitor fixture",
   });
@@ -147,6 +177,7 @@ async function seedQueuedIntegrationEvent(tx: DbTransaction, threadId: string) {
       payload: { userMessage },
       runId: null,
       seqId: 1,
+      ...(createdAt === undefined ? {} : { createdAt }),
     })
     .returning({ id: chatEvents.id });
   if (!event) {
@@ -162,6 +193,132 @@ function requireSeededEventId(
     throw new Error("Failed to seed orphan monitor message");
   }
   return event.id;
+}
+
+async function seedPaginatedOrphanEvents(tx: DbTransaction, threadId: string) {
+  // A missing context row cannot be produced through a valid external request.
+  // Revoke the entire first page so the alert depends on reaching page two.
+  const userMessage = createUserMessageDocument({
+    text: "paginated orphan monitor fixture",
+  });
+  const firstCreatedAt = recentStaleEventCreatedAt();
+  const sourceEvents = Array.from(
+    { length: CHAT_QUEUE_SCAN_PAGE_SIZE + 1 },
+    (_, index) => {
+      return {
+        id: randomUUID(),
+        chatThreadId: threadId,
+        contextType: "slack" as const,
+        contextId: randomUUID(),
+        eventType: "input.prompt" as const,
+        payload: { userMessage },
+        runId: null,
+        seqId: index + 1,
+        createdAt: new Date(firstCreatedAt.getTime() + index),
+      };
+    },
+  );
+  await tx.insert(chatEvents).values(sourceEvents);
+  await tx.insert(chatEvents).values(
+    sourceEvents.slice(0, CHAT_QUEUE_SCAN_PAGE_SIZE).map((source, index) => {
+      return {
+        id: randomUUID(),
+        chatThreadId: threadId,
+        contextType: source.contextType,
+        contextId: source.contextId,
+        eventType: source.eventType,
+        payload: source.payload,
+        runId: randomUUID(),
+        revokesEventId: source.id,
+        seqId: sourceEvents.length + index + 1,
+      };
+    }),
+  );
+  return sourceEvents.map(({ id }) => {
+    return { id };
+  });
+}
+
+async function seedFixtureEvents(
+  tx: DbTransaction,
+  fixtureKind: FixtureKind,
+  threadId: string,
+) {
+  if (fixtureKind === "paginated-orphan") {
+    return await seedPaginatedOrphanEvents(tx, threadId);
+  }
+  const userMessage = createUserMessageDocument({
+    text: "orphan monitor fixture",
+  });
+  const baseEvent = {
+    chatThreadId: threadId,
+    userMessage,
+    runId: null,
+  };
+  if (fixtureKind === "orphan" || fixtureKind === "old-orphan") {
+    const fixtures =
+      fixtureKind === "orphan"
+        ? STALE_CONTEXT_FIXTURES
+        : OLD_ORPHAN_CONTEXT_FIXTURES;
+    const createdAt =
+      fixtureKind === "orphan"
+        ? recentStaleEventCreatedAt()
+        : oldStaleEventCreatedAt();
+    return await tx
+      .insert(chatEvents)
+      .values(
+        fixtures.map((fixture, index) => {
+          return {
+            chatThreadId: baseEvent.chatThreadId,
+            payload: { userMessage: baseEvent.userMessage },
+            runId: baseEvent.runId,
+            ...fixture,
+            contextId: randomUUID(),
+            createdAt,
+            seqId: index + 1,
+          };
+        }),
+      )
+      .returning({ id: chatEvents.id });
+  }
+  if (fixtureKind === "orphaned-automation") {
+    const automation = await insertChatEvent(tx, {
+      ...baseEvent,
+      eventType: "input.automation",
+      createdAt: recentStaleEventCreatedAt(),
+      automationId: randomUUID(),
+      triggerBrief: null,
+    });
+    return [automation];
+  }
+  if (fixtureKind === "queued-integration") {
+    return [await seedQueuedIntegrationEvent(tx, threadId)];
+  }
+  if (fixtureKind === "revoked-message") {
+    const sourceEvent = await seedQueuedIntegrationEvent(
+      tx,
+      threadId,
+      recentStaleEventCreatedAt(),
+    );
+    await tx
+      .update(chatThreads)
+      .set({ lastChatEventSeqId: 1 })
+      .where(eq(chatThreads.id, threadId));
+    return [sourceEvent];
+  }
+  const event =
+    fixtureKind === "failed-message"
+      ? await insertChatEvent(tx, {
+          ...baseEvent,
+          eventType: "input.rejected",
+          error: "INSUFFICIENT_CREDITS",
+        })
+      : await insertChatEvent(tx, {
+          ...baseEvent,
+          contextType: "web",
+          eventType: "input.prompt",
+        });
+  return [event];
 }
 
 async function seedFixture(
@@ -196,58 +353,7 @@ async function seedFixture(
   }
 
   const events = await db.transaction(async (tx) => {
-    const userMessage = createUserMessageDocument({
-      text: "orphan monitor fixture",
-    });
-    const baseEvent = {
-      chatThreadId: thread.id,
-      userMessage,
-      runId: null,
-    };
-    if (fixtureKind === "orphan") {
-      return await tx
-        .insert(chatEvents)
-        .values(
-          STALE_CONTEXT_FIXTURES.map((fixture, index) => {
-            return {
-              chatThreadId: baseEvent.chatThreadId,
-              payload: { userMessage: baseEvent.userMessage },
-              runId: baseEvent.runId,
-              ...fixture,
-              contextId: fixture.contextType === null ? null : randomUUID(),
-              createdAt: new Date(0),
-              seqId: index + 1,
-            };
-          }),
-        )
-        .returning({ id: chatEvents.id });
-    }
-    if (fixtureKind === "orphaned-automation") {
-      const automation = await insertChatEvent(tx, {
-        ...baseEvent,
-        eventType: "input.automation",
-        createdAt: new Date(0),
-        automationId: randomUUID(),
-        triggerBrief: null,
-      });
-      return [automation];
-    }
-    if (fixtureKind === "queued-integration") {
-      return [await seedQueuedIntegrationEvent(tx, thread.id)];
-    }
-    const event =
-      fixtureKind === "failed-message"
-        ? await insertChatEvent(tx, {
-            ...baseEvent,
-            eventType: "input.rejected",
-            error: "INSUFFICIENT_CREDITS",
-          })
-        : await insertChatEvent(tx, {
-            ...baseEvent,
-            contextType: "web",
-            eventType: "input.prompt",
-          });
-    return [event];
+    return await seedFixtureEvents(tx, fixtureKind, thread.id);
   });
   signal.throwIfAborted();
   const event = events[0];
@@ -256,8 +362,8 @@ async function seedFixture(
   }
 
   if (fixtureKind === "revoked-message") {
-    await db.transaction(async (tx) => {
-      await replaceChatEvent(tx, event.id, {
+    const replacement = await db.transaction(async (tx) => {
+      return await replaceChatEvent(tx, event.id, {
         chatThreadId: thread.id,
         eventType: "input.prompt",
         userMessage: createUserMessageDocument({
@@ -266,6 +372,9 @@ async function seedFixture(
         runId: randomUUID(),
       });
     });
+    if (!replacement) {
+      throw new Error("Failed to revoke orphan monitor message");
+    }
   } else if (fixtureKind === "active-run") {
     await seedActiveRun(
       db,

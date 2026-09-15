@@ -454,7 +454,7 @@ describe("ORG-01: org update and delete error matrix", () => {
 });
 
 describe("ORG-02: membership admin matrix", () => {
-  it("retries transient Clerk reads and exposes exhausted rate limits", async () => {
+  it("retries Clerk 5xx reads and immediately exposes rate limits", async () => {
     const admin = api.user();
     const orgId = orgIdOf(admin);
     api.mockClerkOrg(admin);
@@ -472,12 +472,12 @@ describe("ORG-02: membership admin matrix", () => {
         ],
       });
 
-    const recovered = await api.requestListMembers(admin, [200]);
-    expect(recovered.body.members).toHaveLength(1);
+    const rateLimited = await api.requestListMembers(admin, [503]);
+    expect(rateLimited.headers.get("Retry-After")).toBe("2");
     expect(
       context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(2);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
+    ).toHaveBeenCalledTimes(1);
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
 
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
     context.mocks.signalTimers.delay.mockClear();
@@ -543,8 +543,8 @@ describe("ORG-02: membership admin matrix", () => {
     });
     expect(exhausted.headers.get("Retry-After")).toBe("7");
     expect(exhausted.headers.get("Cache-Control")).toBe("no-store");
-    expect(requests.listCalls()).toBe(3);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
+    expect(requests.listCalls()).toBe(1);
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
   });
 
   it("does not retry Clerk 4xx or malformed read failures", async () => {
@@ -577,7 +577,7 @@ describe("ORG-02: membership admin matrix", () => {
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
   });
 
-  it("stops sibling Clerk work when a directory read is exhausted", async () => {
+  it("stops sibling Clerk work on the first directory rate limit", async () => {
     const admin = api.user();
     api.mockClerkOrg(admin);
     const invitationPage = createDeferredPromise<{
@@ -588,11 +588,9 @@ describe("ORG-02: membership admin matrix", () => {
         readonly createdAt: number;
       }[];
     }>(context.signal);
+    const retryStarted = createDeferredPromise<void>(context.signal);
     let siblingDelayAborted = false;
-    context.mocks.signalTimers.delay.mockImplementation((ms, options) => {
-      if (ms < 10_000) {
-        return Promise.resolve();
-      }
+    context.mocks.signalTimers.delay.mockImplementation((_ms, options) => {
       const signal = options?.signal;
       if (!signal) {
         throw new Error("Expected retry delay to receive an abort signal");
@@ -606,13 +604,17 @@ describe("ORG-02: membership admin matrix", () => {
         },
         { once: true },
       );
+      retryStarted.resolve();
       return deferred.promise;
     });
     context.mocks.clerk.organizations.getOrganization.mockRejectedValueOnce(
-      new ClerkApiResponseTestError(10),
+      new ClerkApiResponseTestError(1, 521),
     );
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(1),
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+      async () => {
+        await retryStarted.promise;
+        throw new ClerkApiResponseTestError(1);
+      },
     );
     context.mocks.clerk.organizations.getOrganizationInvitationList.mockReturnValueOnce(
       invitationPage.promise,
@@ -623,7 +625,7 @@ describe("ORG-02: membership admin matrix", () => {
     expect(exhausted.headers.get("Retry-After")).toBe("1");
     expect(
       context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(3);
+    ).toHaveBeenCalledTimes(1);
     expect(
       context.mocks.clerk.organizations.getOrganization,
     ).toHaveBeenCalledTimes(1);
@@ -645,16 +647,16 @@ describe("ORG-02: membership admin matrix", () => {
     ).toHaveBeenCalledTimes(1);
   });
 
-  it("shares the retry deadline across organization member reads", async () => {
+  it("shares the 5xx retry deadline across organization member reads", async () => {
     const admin = api.user();
-    const orgId = orgIdOf(admin);
     api.mockClerkOrg(admin);
-    context.mocks.signalTimers.delay.mockImplementation((ms) => {
-      mockNow(now() + ms);
+    context.mocks.signalTimers.delay.mockImplementation(() => {
+      // Scheduling can resume later than the requested backoff.
+      mockNow(now() + 14_500);
       return Promise.resolve();
     });
     context.mocks.clerk.organizations.getOrganizationMembershipList
-      .mockRejectedValueOnce(new ClerkApiResponseTestError(10))
+      .mockRejectedValueOnce(new ClerkApiResponseTestError(1, 521))
       .mockResolvedValue({
         data: [
           {
@@ -664,19 +666,24 @@ describe("ORG-02: membership admin matrix", () => {
           },
         ],
       });
-    const requests = api.mockClerkMembershipRequestHandlers(orgId, {
-      listStatus: 429,
-      retryAfterSeconds: 6,
-    });
+    context.mocks.clerk.users.getUserList.mockRejectedValue(
+      new ClerkApiResponseTestError(1, 521),
+    );
 
-    const exhausted = await api.requestListMembers(admin, [503]);
+    const exhausted = await api.requestListMembers(admin, [500]);
 
-    expect(exhausted.headers.get("Retry-After")).toBe("6");
+    expect(exhausted.status).toBe(500);
     expect(
       context.mocks.clerk.organizations.getOrganizationMembershipList,
     ).toHaveBeenCalledTimes(2);
-    expect(requests.listCalls()).toBe(1);
+    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(1);
     expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
+    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "ClerkReadUnavailableError",
+        providerStatus: 521,
+      }),
+    );
   });
 
   it("rejects Clerk member records without required user identifiers", async () => {

@@ -4,7 +4,7 @@ import mermaid from "@okouai/mermaid-lite";
 
 import { createObjectUrlResource } from "./object-url-resource.ts";
 import { theme$ } from "./theme.ts";
-import { settle } from "./utils.ts";
+import { NEVER_RESOLVED_PROMISE, settle } from "./utils.ts";
 
 /**
  * Mermaid diagrams render through a pull model. Each diagram source owns one
@@ -167,11 +167,67 @@ function svgFile(markup: string): File {
 }
 
 /**
- * Pure factory for a diagram's signals. `ownerSignal` must match the consumer
- * surface. Streaming surfaces use `MermaidDiagramRegistry` so reparsing a
- * growing message preserves signal identities. Immutable surfaces such as a
- * shared thread or preview tree can instead use a factory-scoped resolver and
- * reuse its signals when that tree is prepared again.
+ * Lay out one diagram and return it as an SVG file. Pure: the caller decides
+ * which lifetime owns the blob URL made from it.
+ */
+async function renderDiagramFile(
+  renderQueue: { tail: Promise<unknown> },
+  theme: "light" | "dark",
+  code: string,
+): Promise<File | null> {
+  // Read the tail and replace it in the same synchronous block, so two
+  // resuming renders cannot both chain onto the same predecessor.
+  const previousRender = renderQueue.tail;
+  const render = (async (): Promise<string | undefined> => {
+    await settle(previousRender);
+    mermaid.initialize({
+      startOnLoad: false,
+      // "strict" makes mermaid sanitize the generated SVG with DOMPurify
+      // and disables click handlers declared inside diagram sources.
+      securityLevel: "strict",
+      // Without this mermaid injects its own error diagram into the
+      // document.
+      suppressErrorRendering: true,
+      theme: theme === "dark" ? "redux-dark" : "redux",
+      // Resolved to a concrete stack rather than passed as `var(...)`: the
+      // same SVG is also shown inside an <img> in the lightbox, where
+      // page-level CSS custom properties do not resolve.
+      fontFamily: getComputedStyle(document.documentElement)
+        .getPropertyValue("--font-family-sans")
+        .trim(),
+      // mermaid's defaults are sized for a standalone page: 16px labels
+      // and 50px rank spacing make a five-node flowchart taller than the
+      // message around it. These match the chat body text and cut roughly
+      // a third of the height.
+      themeVariables: { fontSize: "14px" },
+      flowchart: { nodeSpacing: 30, rankSpacing: 32, padding: 8 },
+    });
+    return renderDiagramSvg(diagramRenderId(`${theme}:${code}`), code);
+  })();
+  renderQueue.tail = render;
+  const markup = await render;
+  if (markup === undefined) {
+    return null;
+  }
+
+  // Parsed in a detached element. The markup never reaches the document,
+  // so the only thing that ever shows it is an <img>, where a blob URL SVG
+  // cannot run scripts or resolve page-level CSS custom properties.
+  const host = document.createElement("div");
+  host.innerHTML = markup;
+  const svg = host.querySelector("svg");
+  if (!svg) {
+    throw new Error("mermaid renderer produced no svg");
+  }
+
+  const serialized = sizeDiagramAndSerialize(svg);
+  return svgFile(serialized);
+}
+
+/**
+ * Pure factory for a diagram's signals on a surface that renders every
+ * diagram it holds. `ownerSignal` owns the blob URL. Virtualized surfaces use
+ * `MermaidDiagramRegistry`, which prepares only what is on screen.
  */
 export function createMermaidDiagramSignals(
   code: string,
@@ -190,60 +246,14 @@ export function createMermaidDiagramSignals(
     }
     const renderQueue = get(mermaidRenderQueue$);
     const image = (async (): Promise<MermaidDiagramImage | null> => {
-      // Read the tail and replace it in the same synchronous block, so two
-      // resuming renders cannot both chain onto the same predecessor.
-      const previousRender = renderQueue.tail;
-      const render = (async (): Promise<string | undefined> => {
-        await settle(previousRender);
-        mermaid.initialize({
-          startOnLoad: false,
-          // "strict" makes mermaid sanitize the generated SVG with DOMPurify
-          // and disables click handlers declared inside diagram sources.
-          securityLevel: "strict",
-          // Without this mermaid injects its own error diagram into the
-          // document.
-          suppressErrorRendering: true,
-          theme: theme === "dark" ? "redux-dark" : "redux",
-          // Resolved to a concrete stack rather than passed as `var(...)`: the
-          // same SVG is also shown inside an <img> in the lightbox, where
-          // page-level CSS custom properties do not resolve.
-          fontFamily: getComputedStyle(document.documentElement)
-            .getPropertyValue("--font-family-sans")
-            .trim(),
-          // mermaid's defaults are sized for a standalone page: 16px labels
-          // and 50px rank spacing make a five-node flowchart taller than the
-          // message around it. These match the chat body text and cut roughly
-          // a third of the height.
-          themeVariables: { fontSize: "14px" },
-          flowchart: { nodeSpacing: 30, rankSpacing: 32, padding: 8 },
-        });
-        return renderDiagramSvg(diagramRenderId(`${theme}:${code}`), code);
-      })();
-      renderQueue.tail = render;
-      const markup = await render;
-      if (markup === undefined) {
+      const file = await renderDiagramFile(renderQueue, theme, code);
+      if (file === null) {
         return null;
       }
-
-      // Parsed in a detached element. The markup never reaches the document,
-      // so the only thing that ever shows it is an <img>, where a blob URL SVG
-      // cannot run scripts or resolve page-level CSS custom properties.
-      const host = document.createElement("div");
-      host.innerHTML = markup;
-      const svg = host.querySelector("svg");
-      if (!svg) {
-        throw new Error("mermaid renderer produced no svg");
-      }
-
-      const serialized = sizeDiagramAndSerialize(svg);
-      const file = svgFile(serialized);
       const resource = createObjectUrlResource(file, ownerSignal);
-      return {
-        // A short blob URL keeps the multi-kilobyte SVG out of the `src`
-        // attribute, avoiding the measured per-mount string assignment cost.
-        url: resource.url,
-        file,
-      };
+      // A short blob URL keeps the multi-kilobyte SVG out of the `src`
+      // attribute, avoiding the measured per-mount string assignment cost.
+      return { url: resource.url, file };
     })();
     imagesByTheme.set(theme, image);
     return image;
@@ -254,33 +264,117 @@ export function createMermaidDiagramSignals(
 export interface MermaidDiagramRegistry {
   /** Get-or-create by diagram source; idempotent per source. */
   readonly register$: Command<MermaidDiagramSignals, [string]>;
+  /**
+   * Lay out every diagram the surface currently shows and publish it. Each
+   * blob URL is owned by `signal`: when it aborts the URL is revoked and its
+   * entry dropped, so a later pass prepares the diagram again.
+   */
+  readonly ensureDiagrams$: Command<
+    Promise<void>,
+    [readonly string[], AbortSignal]
+  >;
 }
 
 /**
- * A per-surface registry keyed by diagram source. The map is a `state` written
- * only by `register$` and never leaves the registry: the command that parses a
- * tree embeds each entry on its marker node. `ownerSignal` owns every entry's
- * blob URLs, so tearing the surface down releases its diagrams.
+ * A per-surface registry keyed by diagram source. `register$` hands the parse
+ * command a signals object to embed on the marker node; it allocates nothing.
+ * `ensureDiagrams$` lays the diagrams out and owns their blob URLs through the
+ * signal of the run that prepared them, so a diagram outlives the parse that
+ * produced it but not the surface that showed it.
  */
-export function createMermaidDiagramRegistry(
-  ownerSignal: AbortSignal,
-): MermaidDiagramRegistry {
-  const internalByCode$ = state<ReadonlyMap<string, MermaidDiagramSignals>>(
+export function createMermaidDiagramRegistry(): MermaidDiagramRegistry {
+  // Keyed by theme and source. The source itself is the key rather than a
+  // digest of it: a non-cryptographic hash that collided would show one
+  // diagram in place of another, and entries are bounded by what is on screen.
+  const internalImages$ = state<
+    ReadonlyMap<string, MermaidDiagramImage | null>
+  >(new Map());
+  const internalSignals$ = state<ReadonlyMap<string, MermaidDiagramSignals>>(
     new Map(),
   );
+
+  const imageKey = (theme: "light" | "dark", code: string): string => {
+    return `${theme}\n${code}`;
+  };
+
   const register$ = command(
     ({ get, set }, code: string): MermaidDiagramSignals => {
-      const current = get(internalByCode$);
-      const existing = current.get(code);
+      const existing = get(internalSignals$).get(code);
       if (existing !== undefined) {
         return existing;
       }
-      const signals = createMermaidDiagramSignals(code, ownerSignal);
-      const next = new Map(current);
+      const diagram$ = computed((get): Promise<MermaidDiagramImage | null> => {
+        const image = get(internalImages$).get(imageKey(get(theme$), code));
+        // Nothing prepared yet keeps the view on its reserved placeholder.
+        return image === undefined
+          ? (NEVER_RESOLVED_PROMISE as Promise<MermaidDiagramImage | null>)
+          : Promise.resolve(image);
+      });
+      const signals: MermaidDiagramSignals = { code, diagram$ };
+      const next = new Map(get(internalSignals$));
       next.set(code, signals);
-      set(internalByCode$, next);
+      set(internalSignals$, next);
       return signals;
     },
   );
-  return { register$ };
+
+  const publishImage$ = command(
+    ({ get, set }, key: string, image: MermaidDiagramImage | null): void => {
+      const next = new Map(get(internalImages$));
+      next.set(key, image);
+      set(internalImages$, next);
+    },
+  );
+
+  const dropImage$ = command(({ get, set }, key: string): void => {
+    const current = get(internalImages$);
+    if (!current.has(key)) {
+      return;
+    }
+    const next = new Map(current);
+    next.delete(key);
+    set(internalImages$, next);
+  });
+
+  const ensureDiagrams$ = command(
+    async (
+      { get, set },
+      codes: readonly string[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      const theme = get(theme$);
+      const pending = new Set(
+        codes.filter((code) => {
+          return !get(internalImages$).has(imageKey(theme, code));
+        }),
+      );
+      for (const code of pending) {
+        const key = imageKey(theme, code);
+        const file = await renderDiagramFile(
+          get(mermaidRenderQueue$),
+          theme,
+          code,
+        );
+        signal.throwIfAborted();
+        if (file === null) {
+          set(publishImage$, key, null);
+          continue;
+        }
+        const resource = createObjectUrlResource(file, signal);
+        signal.addEventListener(
+          "abort",
+          () => {
+            set(dropImage$, key);
+          },
+          { once: true },
+        );
+        // A short blob URL keeps the multi-kilobyte SVG out of the `src`
+        // attribute, avoiding the measured per-mount string assignment cost.
+        set(publishImage$, key, { url: resource.url, file });
+      }
+    },
+  );
+
+  return { register$, ensureDiagrams$ };
 }

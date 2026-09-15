@@ -33,9 +33,7 @@ export type AgentVisibility = z.infer<typeof agentVisibilitySchema>;
  */
 export const agentResponseSchema = z.object({
   agentId: z.string(),
-  // New App/CLI -> old API: unknown identity must not grant mutation access.
-  // Require this after older serving/rollback API targets retire (#33251).
-  isDefaultAgent: z.boolean().optional(),
+  isDefaultAgent: z.boolean(),
   ownerId: z.string(),
   description: z.string().nullable(),
   displayName: z.string().nullable(),

@@ -44,6 +44,9 @@ closes validation admission and joins the worker without cancelling accepted fut
 
 Response modes and authenticated ETags
 ---------------------------------------
+Content-Encoding acquisition uses the shared raw field and folded-value budgets.
+Exhaustion declines storage and releases followers at response headers before capture
+or validation, leaving the ordinary response pipeline to handle the upstream bytes.
 Ordinary owners require identity responses. Prefetch owners request Brotli; for an eligible
 Brotli response, the compressed stream passes downstream unchanged while validation decodes
 the bounded capture. A successful response to an authenticated Codex Responses request can
@@ -78,6 +81,7 @@ from typing import NoReturn
 from mitmproxy import http
 
 import body_decoding
+import content_encoding
 import content_length
 import flow_metadata
 from runtime_url_parsing import split_runtime_url
@@ -121,8 +125,8 @@ _HTTP_STATUS_BAD_GATEWAY = 502
 _FLOW_STATE = "_codex_model_catalog_cache_state"
 _FLOW_TELEMETRY = "_codex_model_catalog_cache_telemetry"
 _PREFETCH_REQUEST = "_codex_model_catalog_prefetch_request"
-_PREFETCH_HEADER = "X-VM0-Codex-Model-Catalog-Prefetch"
-_RAW_PREFETCH_HEADER = b"x-vm0-codex-model-catalog-prefetch"
+_PREFETCH_HEADER = "X-Okou-Codex-Model-Catalog-Prefetch"
+_RAW_PREFETCH_HEADER = b"x-okou-codex-model-catalog-prefetch"
 _BROTLI_ENCODING = "br"
 _IDENTITY_ENCODING = "identity"
 _REQUEST_CONDITIONAL_HEADERS = (
@@ -413,8 +417,7 @@ def _single_usable_etag(headers: http.Headers) -> str | None:
     return _usable_etag_value(values[0])
 
 
-def _single_content_encoding(headers: http.Headers) -> str | None:
-    values = headers.get_all("Content-Encoding")
+def _single_content_encoding(values: tuple[str, ...]) -> str | None:
     if not values:
         return _IDENTITY_ENCODING
     tokens = [
@@ -788,7 +791,10 @@ def _response_headers_bypass_reason(
 ) -> str | None:
     if status_code != _HTTP_STATUS_OK:
         return "response_status"
-    encoding = _single_content_encoding(headers)
+    encoding_values = content_encoding.read_values(headers)
+    if encoding_values is None:
+        return "response_encoding"
+    encoding = _single_content_encoding(encoding_values)
     if encoding != _IDENTITY_ENCODING and not (allow_brotli and encoding == _BROTLI_ENCODING):
         return "response_encoding"
     content_type = headers.get("Content-Type", "")
@@ -875,7 +881,13 @@ def handle_response_headers(flow: http.HTTPFlow) -> bool:
     if not isinstance(state, _FlowState) or flow.response is None:
         return True
 
-    encoding = _single_content_encoding(flow.response.headers)
+    encoding_values = content_encoding.read_values(flow.response.headers)
+    if encoding_values is None:
+        # Exhaustion leaves the coding unknown. Decline storage and release
+        # followers before capture or validation without interpreting the values.
+        _bypass_response(flow, state, "response_encoding")
+        return True
+    encoding = _single_content_encoding(encoding_values)
     if encoding == _IDENTITY_ENCODING:
         state.upstream_encoding = _IDENTITY_ENCODING
         bypass_reason = _response_headers_bypass_reason(

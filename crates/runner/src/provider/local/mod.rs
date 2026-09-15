@@ -124,7 +124,7 @@ impl LocalProvider {
         let cancel_watcher = if start_cancel_watcher {
             LocalCancelWatcher::start(cancel_scanner.clone())
         } else {
-            LocalCancelWatcher::disabled()
+            LocalCancelWatcher::disabled(cancel_scanner.clone())
         };
         Arc::new(Self {
             queue,

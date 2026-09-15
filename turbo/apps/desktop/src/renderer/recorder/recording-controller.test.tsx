@@ -41,7 +41,7 @@ function installRecorder(initial: DesktopRecorderStatus): {
       return await Promise.resolve();
     },
   } as unknown as DesktopRecorderApi;
-  vi.stubGlobal("vm0DesktopRecorder", api);
+  vi.stubGlobal("okouDesktopRecorder", api);
   return {
     setStatus: (next) => {
       status = next;

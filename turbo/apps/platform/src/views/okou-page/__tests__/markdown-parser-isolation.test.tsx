@@ -67,10 +67,7 @@ async function openInstructionsThenChat(): Promise<void> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}?tab=instructions`,
-    featureSwitches: {
-      [FeatureSwitchKey.AgentMessageMath]: false,
-      [FeatureSwitchKey.OkouDebug]: true,
-    },
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
 
   const editor = await screen.findByLabelText("Instructions editor");
@@ -83,7 +80,7 @@ async function openInstructionsThenChat(): Promise<void> {
   await screen.findByRole("textbox", { name: "Message" });
 }
 
-test("Opening Instructions preserves literal plus signs in streamed chat Markdown", async () => {
+async function prepareLiteralPlusMarkdownChat() {
   const chat = createMarkdownChatFixture(context);
   const rows = [chat.outputMessage("++Plain message++", { seqId: 1 })];
   chat.install({
@@ -91,11 +88,17 @@ test("Opening Instructions preserves literal plus signs in streamed chat Markdow
       return rows;
     },
   });
-
   await openInstructionsThenChat();
+  return { chat, rows };
+}
 
+test("Opening Instructions preserves literal plus signs in the initial message", async () => {
+  await prepareLiteralPlusMarkdownChat();
   await expect(screen.findByText("++Plain message++")).resolves.toBeVisible();
+});
 
+test("Opening Instructions preserves literal plus signs through streamed revisions", async () => {
+  const { chat, rows } = await prepareLiteralPlusMarkdownChat();
   rows.push(
     chat.outputMessage("**Streaming:** ++Reply", {
       id: "streamed-markdown",
@@ -104,11 +107,9 @@ test("Opening Instructions preserves literal plus signs in streamed chat Markdow
     }),
   );
   context.mocks.ably.trigger(chat.realtimeTopic);
-
   const streaming = await screen.findByText("Streaming:");
   expect(streaming.tagName).toBe("STRONG");
   expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply");
-
   rows[1] = chat.outputMessage("**Streaming:** ++Reply+", {
     id: "streamed-markdown",
     runEventId: "streamed-markdown",
@@ -116,13 +117,11 @@ test("Opening Instructions preserves literal plus signs in streamed chat Markdow
     sequenceNumber: 2,
   });
   context.mocks.ably.trigger(chat.realtimeTopic);
-
   await waitFor(() => {
     expect(markdownFrameFor(screen.getByText("Streaming:"))).toHaveTextContent(
       "++Reply+",
     );
   });
-
   rows[1] = chat.outputMessage(
     [
       "**Streaming:** ++Reply++",
@@ -145,7 +144,6 @@ test("Opening Instructions preserves literal plus signs in streamed chat Markdow
   );
   rows.push(chat.runCompleted({ seqId: 5, sequenceNumber: 3 }));
   context.mocks.ably.trigger(chat.realtimeTopic);
-
   await screen.findByText("Checked task");
   const frame = markdownFrameFor(screen.getByText("Streaming:"));
   expect(frame).toHaveTextContent("++Reply++");

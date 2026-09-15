@@ -19,7 +19,8 @@ const ROUTE = "/api/web/download-file";
 interface S3FixtureObject {
   readonly key: string;
   readonly size: number;
-  readonly body: Buffer;
+  readonly body: Buffer | AsyncIterable<Uint8Array>;
+  readonly downloadError?: Error;
 }
 
 function currentSecond(): number {
@@ -109,8 +110,21 @@ function mockS3Objects(objects: readonly S3FixtureObject[]): void {
       const object = objects.find((candidate) => {
         return candidate.key === key && bucket === BUCKET;
       });
+      if (object?.downloadError) {
+        return Promise.reject(object.downloadError);
+      }
       return Promise.resolve({
-        Body: object ? bodyStream(object.body) : bodyStream(Buffer.alloc(0)),
+        Body: object
+          ? Buffer.isBuffer(object.body)
+            ? bodyStream(object.body)
+            : object.body
+          : bodyStream(Buffer.alloc(0)),
+        ContentLength: object?.size,
+        $metadata: {
+          httpStatusCode: 200,
+          requestId: randomUUID(),
+          attempts: 1,
+        },
       });
     }
 
@@ -226,6 +240,58 @@ describe("GET /api/web/download-file", () => {
     );
     const receivedBytes = Buffer.from(await response.arrayBuffer());
     expect(receivedBytes.equals(fileContent)).toBeTruthy();
+  });
+
+  it("returns a generic failure when the storage download request fails", async () => {
+    const fileId = randomUUID();
+    const { token, userId } = await mintFileReadToken();
+    mockS3Objects([
+      {
+        key: artifactKey(userId, fileId, "report.zip"),
+        size: 128,
+        body: Buffer.alloc(0),
+        downloadError: new Error("Storage request failed"),
+      },
+    ]);
+
+    const response = await requestDownload({ fileId, token });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: "Internal server error",
+    });
+    expect(response.headers.get("x-file-name")).toBeNull();
+  });
+
+  it("does not serve partial bytes when the storage body is interrupted", async () => {
+    const fileId = randomUUID();
+    const { token, userId } = await mintFileReadToken();
+    const filename = "private-financial-export.zip";
+    const key = artifactKey(userId, fileId, filename);
+    const privateContent = Buffer.from("private file contents");
+    const storageUrl = "https://storage.example/private.zip?signature=secret";
+    const reset = Object.assign(new Error("aborted"), {
+      code: "ECONNRESET",
+      storageUrl,
+    });
+    mockS3Objects([
+      {
+        key,
+        size: privateContent.length + 100,
+        body: (async function* interruptedBody(): AsyncIterable<Uint8Array> {
+          yield privateContent;
+          throw reset;
+        })(),
+      },
+    ]);
+
+    const response = await requestDownload({ fileId, token });
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: "Internal server error",
+    });
+    expect(response.headers.get("x-file-name")).toBeNull();
   });
 
   it("downloads a canonical Slack input only for its owning user", async () => {

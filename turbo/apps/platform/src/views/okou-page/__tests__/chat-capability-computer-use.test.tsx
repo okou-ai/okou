@@ -138,7 +138,7 @@ async function openComputerDownloadDialog(title: string): Promise<HTMLElement> {
   return await screen.findByRole("dialog", { name: title });
 }
 
-test("Choose cloud browsing or a local computer for a new chat", async () => {
+async function prepareCloudBrowserDefaults() {
   const sends: CapturedComputerSend[] = [];
   installNewComputerChat(sends, [
     computerHost({
@@ -147,10 +147,13 @@ test("Choose cloud browsing or a local computer for a new chat", async () => {
       status: "online",
     }),
   ]);
-
   await setupPage({ context, path: NEW_CHAT_PATH });
-
   await readyChat();
+  return { sends };
+}
+
+test("Show cloud browser and local computer defaults in a new chat", async () => {
+  await prepareCloudBrowserDefaults();
   await openComputerMenu();
   expect(screen.getByText("Cloud browser")).toBeVisible();
   expect(
@@ -159,9 +162,11 @@ test("Choose cloud browsing or a local computer for a new chat", async () => {
   expect(
     screen.getByRole("switch", { name: "Connect Studio Mac" }),
   ).not.toBeChecked();
+});
 
+test("Send a new chat with the default cloud browser", async () => {
+  const { sends } = await prepareCloudBrowserDefaults();
   await sendText("Research the launch market");
-
   const sent = await waitForComputerSend(sends, 1);
   expect(sent).toMatchObject({
     prompt: "Research the launch market",
@@ -394,7 +399,7 @@ test("Explain Computer Use incompatibility on an Intel Mac", async () => {
   ).toBeUndefined();
 });
 
-test("Preserve the selected Computer Use host for an existing chat", async () => {
+async function connectExistingChatComputer() {
   const user = userEvent.setup({ delay: null });
   const sends: CapturedComputerSend[] = [];
   const updates: CapturedComputerUpdate[] = [];
@@ -447,7 +452,11 @@ test("Preserve the selected Computer Use host for an existing chat", async () =>
   await expect(
     screen.findByRole("switch", { name: "Disconnect Studio Mac" }),
   ).resolves.toBeChecked();
+  return { user, sends, updates, externalOrder };
+}
 
+test("Save and retain an existing chat's Computer Use host before sending", async () => {
+  const { sends, externalOrder } = await connectExistingChatComputer();
   await sendText("Inspect the desktop report");
 
   await waitForComputerSend(sends, 1);
@@ -460,7 +469,14 @@ test("Preserve the selected Computer Use host for an existing chat", async () =>
     name: "Disconnect Studio Mac",
   });
   expect(savedHost).toBeChecked();
+});
 
+test("Save an existing chat's Computer Use disconnection before sending", async () => {
+  const { user, sends, updates, externalOrder } =
+    await connectExistingChatComputer();
+  const savedHost = screen.getByRole("switch", {
+    name: "Disconnect Studio Mac",
+  });
   await user.click(savedHost);
 
   await waitFor(() => {
@@ -476,7 +492,7 @@ test("Preserve the selected Computer Use host for an existing chat", async () =>
 
   await sendText("Continue without the desktop");
 
-  const laterSend = await waitForComputerSend(sends, 2);
+  const laterSend = await waitForComputerSend(sends, 1);
   expect(externalOrder.at(-2)).toBe("save:none:false");
   expect(externalOrder.at(-1)).toBe("send:Continue without the desktop");
   expect(laterSend.computerUseHostId).toBeUndefined();

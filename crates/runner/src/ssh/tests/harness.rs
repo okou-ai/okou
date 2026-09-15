@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+mod process;
 use httpmock::{Mock, MockServer};
 use russh::{
     Channel, ChannelId,
@@ -12,7 +13,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -46,6 +47,9 @@ pub(super) enum Reply {
     Reject,
     Disconnect,
     Hold,
+    Process,
+    Sftp(&'static str),
+    BlockedInput,
 }
 impl Default for Reply {
     fn default() -> Self {
@@ -65,7 +69,13 @@ pub(super) struct Observed {
     pub(super) commands: Mutex<Vec<Vec<u8>>>,
     pub(super) attempts: Mutex<Vec<SocketAddr>>,
     pub(super) queries: Mutex<Vec<(String, u16)>>,
+    pub(super) resolved: AtomicUsize,
     pub(super) reservations: AtomicUsize,
+    pub(super) ptys: AtomicUsize,
+    pub(super) signals: AtomicUsize,
+    pub(super) closed: AtomicUsize,
+    pub(super) reject_reused_channels: AtomicBool,
+    pub(super) input: Mutex<Vec<u8>>,
 }
 
 pub(super) struct TestNetwork {
@@ -86,7 +96,9 @@ impl Network for TestNetwork {
         if let Some(gate) = gate {
             let _permit = gate.acquire().await.unwrap();
         }
-        Ok(self.answers.lock().unwrap().clone())
+        let answers = self.answers.lock().unwrap().clone();
+        self.observed.resolved.fetch_add(1, Ordering::SeqCst);
+        Ok(answers)
     }
     async fn connect(&self, address: SocketAddr) -> io::Result<TcpStream> {
         self.observed.attempts.lock().unwrap().push(address);
@@ -168,6 +180,53 @@ pub(super) struct Harness {
     peer: JoinHandle<()>,
 }
 
+pub(super) struct AdditionalRun {
+    sandbox: String,
+    control: guest_control_client::GuestControlClient,
+    _control_peer: tokio::net::UnixStream,
+    observed: Arc<Observed>,
+    lifecycle: CancellationToken,
+    incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
+    dispatcher: SshRun,
+}
+
+impl AdditionalRun {
+    pub(super) async fn new(runtime: &Arc<SshRuntime>, sandbox: &str) -> Self {
+        let (control, control_peer) = control_connection().await;
+        let (incoming, receiver) = mpsc::channel(32);
+        let dispatcher = runtime.start(
+            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+            sandbox.into(),
+            RunId::new_v4(),
+            &CancellationToken::new(),
+        );
+        Self {
+            sandbox: sandbox.into(),
+            control,
+            _control_peer: control_peer,
+            observed: Arc::new(Observed::default()),
+            lifecycle: CancellationToken::new(),
+            incoming,
+            dispatcher,
+        }
+    }
+
+    pub(super) async fn open(&self) -> DuplexStream {
+        open_rpc(
+            &self.incoming,
+            &self.sandbox,
+            &self.control,
+            &self.observed,
+            &self.lifecycle,
+        )
+        .await
+    }
+
+    pub(super) async fn shutdown(self) {
+        self.dispatcher.shutdown().await;
+    }
+}
+
 impl Harness {
     pub(super) async fn new(reply: Reply) -> Self {
         Self::with_keys(reply, key(Algorithm::Ed25519), key(Algorithm::Ed25519)).await
@@ -180,6 +239,27 @@ impl Harness {
         key: PrivateKey,
         host_key: PrivateKey,
         api_url: Option<String>,
+    ) -> Self {
+        Self::with_options(reply, key, host_key, api_url, None).await
+    }
+
+    pub(super) async fn with_tls(reply: Reply, tls: Arc<rustls::ClientConfig>) -> Self {
+        Self::with_options(
+            reply,
+            key(Algorithm::Ed25519),
+            key(Algorithm::Ed25519),
+            None,
+            Some(tls),
+        )
+        .await
+    }
+
+    async fn with_options(
+        reply: Reply,
+        key: PrivateKey,
+        host_key: PrivateKey,
+        api_url: Option<String>,
+        tls: Option<Arc<rustls::ClientConfig>>,
     ) -> Self {
         let api = MockServer::start_async().await;
         let (control, control_peer) = control_connection().await;
@@ -204,6 +284,9 @@ impl Harness {
             .unwrap()
             .unwrap();
         Arc::get_mut(&mut runtime).unwrap().network = network.clone();
+        if let Some(tls) = tls {
+            Arc::get_mut(&mut runtime).unwrap().access_tls = tls;
+        }
         let (incoming, receiver) = mpsc::channel(32);
         let cancel = CancellationToken::new();
         let lifecycle = CancellationToken::new();
@@ -224,6 +307,21 @@ impl Harness {
             },
             auth_rejection_time: Duration::ZERO,
             auth_rejection_time_initial: Some(Duration::ZERO),
+            limits: if matches!(reply, Reply::Process) {
+                // Traffic after a quiet period forces another key exchange,
+                // including after the initial setup deadline in the long-task test.
+                russh::Limits {
+                    rekey_time_limit: Duration::from_secs(1),
+                    ..russh::Limits::default()
+                }
+            } else {
+                russh::Limits::default()
+            },
+            window_size: if matches!(reply, Reply::BlockedInput) {
+                1
+            } else {
+                server::Config::default().window_size
+            },
             ..server::Config::default()
         });
         let peer_observed = Arc::clone(&observed);
@@ -234,7 +332,7 @@ impl Harness {
                     accepted = listener.accept() => {
                         let Ok((socket, _)) = accepted else { break; };
                         let config = Arc::clone(&config);
-                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None };
+                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None, process: None, pty: false, opened: false };
                         sessions.spawn(async move { if let Ok(session) = server::run_stream(config, socket, handler).await { let _ = session.await; } });
                     }
                     _ = sessions.join_next(), if !sessions.is_empty() => (),
@@ -283,33 +381,30 @@ impl Harness {
         .await
     }
     pub(super) async fn raw(&self, json: String) -> Vec<Value> {
-        let mut guest = self.open().await;
-        guest.write_u32(json.len() as u32).await.unwrap();
-        guest.write_all(json.as_bytes()).await.unwrap();
-        guest.shutdown().await.unwrap();
-        frames(guest).await
+        request_frames(self.open().await, json).await
     }
     pub(super) async fn open(&self) -> DuplexStream {
-        let (guest, stream) = tokio::io::duplex(64 * 1024);
-        self.observed.reservations.fetch_add(1, Ordering::SeqCst);
-        self.incoming
-            .send(sandbox::AcceptedGuestRpc {
-                sandbox_id: "sandbox-authoritative".into(),
-                stream: Box::new(ReservedStream {
-                    stream,
-                    observed: Arc::clone(&self.observed),
-                    _reservation: self.control.reserve_external_operation().unwrap(),
-                }),
-                cancelled: self.lifecycle.clone(),
-            })
-            .await
-            .unwrap();
-        guest
+        open_rpc(
+            &self.incoming,
+            "sandbox-authoritative",
+            &self.control,
+            &self.observed,
+            &self.lifecycle,
+        )
+        .await
     }
     pub(super) async fn shutdown(&mut self) {
         if let Some(dispatcher) = self.dispatcher.take() {
             dispatcher.shutdown().await;
         }
+    }
+
+    pub(super) async fn expire_idle(&self) {
+        let closed = self.observed.closed.load(Ordering::SeqCst);
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::time::resume();
+        super::wait_for(|| self.observed.closed.load(Ordering::SeqCst) > closed).await;
     }
 
     pub(super) fn take_dispatcher(&mut self) -> SshRun {
@@ -334,6 +429,30 @@ impl Drop for Harness {
         self.cancel.cancel();
         self.peer.abort();
     }
+}
+
+async fn open_rpc(
+    incoming: &mpsc::Sender<sandbox::AcceptedGuestRpc>,
+    sandbox: &str,
+    control: &guest_control_client::GuestControlClient,
+    observed: &Arc<Observed>,
+    lifecycle: &CancellationToken,
+) -> DuplexStream {
+    let (guest, stream) = tokio::io::duplex(64 * 1024);
+    observed.reservations.fetch_add(1, Ordering::SeqCst);
+    incoming
+        .send(sandbox::AcceptedGuestRpc {
+            sandbox_id: sandbox.into(),
+            stream: Box::new(ReservedStream {
+                stream,
+                observed: Arc::clone(observed),
+                _reservation: control.reserve_external_operation().unwrap(),
+            }),
+            cancelled: lifecycle.clone(),
+        })
+        .await
+        .unwrap();
+    guest
 }
 
 async fn control_connection() -> (
@@ -424,6 +543,12 @@ pub(super) async fn respond(socket: &mut TcpStream, body: Value) -> io::Result<(
 pub(super) fn params() -> Value {
     json!({"sshConnectionId":CONNECTION,"command":"printf test-command"})
 }
+pub(super) async fn request_frames(mut guest: DuplexStream, json: String) -> Vec<Value> {
+    guest.write_u32(json.len() as u32).await.unwrap();
+    guest.write_all(json.as_bytes()).await.unwrap();
+    guest.shutdown().await.unwrap();
+    frames(guest).await
+}
 pub(super) async fn frames(mut guest: DuplexStream) -> Vec<Value> {
     let read = async {
         let mut frames = Vec::new();
@@ -450,11 +575,23 @@ pub(super) async fn frames(mut guest: DuplexStream) -> Vec<Value> {
         .unwrap()
 }
 
+pub(super) const PASSWORD: &str = " password-😀-canary \n";
+pub(super) const PARTIAL_PASSWORD: &str = "partial-password-canary";
+
 struct Peer {
     key: PublicKey,
     observed: Arc<Observed>,
     reply: Reply,
     output: Option<Outgoing>,
+    process: Option<process::Process>,
+    pty: bool,
+    opened: bool,
+}
+
+impl Drop for Peer {
+    fn drop(&mut self) {
+        self.observed.closed.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 struct Outgoing {
@@ -508,6 +645,21 @@ impl Peer {
 }
 impl server::Handler for Peer {
     type Error = russh::Error;
+    async fn auth_password(
+        &mut self,
+        user: &str,
+        password: &str,
+    ) -> Result<server::Auth, Self::Error> {
+        self.observed.auth.fetch_add(1, Ordering::SeqCst);
+        Ok(if user == "test-user" && password == PASSWORD {
+            server::Auth::Accept
+        } else {
+            server::Auth::Reject {
+                proceed_with_methods: None,
+                partial_success: password == PARTIAL_PASSWORD,
+            }
+        })
+    }
     async fn auth_publickey(
         &mut self,
         user: &str,
@@ -529,6 +681,17 @@ impl server::Handler for Peer {
         reply: server::ChannelOpenHandle,
         _session: &mut server::Session,
     ) -> Result<(), Self::Error> {
+        if self.opened && self.observed.reject_reused_channels.load(Ordering::SeqCst) {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+        self.opened = true;
+        // A reused transport starts a distinct channel with no inherited process or PTY state.
+        self.process = None;
+        self.output = None;
+        self.pty = false;
         reply.accept().await;
         Ok(())
     }
@@ -544,11 +707,20 @@ impl server::Handler for Peer {
             .unwrap()
             .push(command.to_vec());
         match &self.reply {
-            Reply::Reject => {
+            Reply::Process => {
+                session.channel_success(channel)?;
+                self.process = Some(process::Process::start(
+                    Some(command),
+                    self.pty,
+                    channel,
+                    session.handle(),
+                ));
+            }
+            Reply::Reject | Reply::Sftp(_) => {
                 session.channel_failure(channel)?;
             }
             Reply::Disconnect => return Err(russh::Error::Disconnect),
-            Reply::Hold => {
+            Reply::Hold | Reply::BlockedInput => {
                 session.channel_success(channel)?;
             }
             Reply::Exit {
@@ -572,6 +744,22 @@ impl server::Handler for Peer {
         Ok(())
     }
 
+    async fn subsystem_request(
+        &mut self,
+        channel: ChannelId,
+        name: &str,
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if let Reply::Sftp(mode) = self.reply {
+            assert_eq!(name, "sftp");
+            session.channel_success(channel)?;
+            self.process = Some(process::Process::sftp(mode, channel, session.handle()));
+        } else {
+            session.channel_failure(channel)?;
+        }
+        Ok(())
+    }
+
     async fn window_adjusted(
         &mut self,
         channel: ChannelId,
@@ -579,5 +767,90 @@ impl server::Handler for Peer {
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
         self.send_output(channel, session)
+    }
+
+    async fn shell_request(
+        &mut self,
+        channel: ChannelId,
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if matches!(self.reply, Reply::Process) {
+            session.channel_success(channel)?;
+            self.process = Some(process::Process::start(
+                None,
+                self.pty,
+                channel,
+                session.handle(),
+            ));
+        } else {
+            session.channel_failure(channel)?;
+        }
+        Ok(())
+    }
+
+    async fn pty_request(
+        &mut self,
+        channel: ChannelId,
+        term: &str,
+        columns: u32,
+        rows: u32,
+        _pixels_x: u32,
+        _pixels_y: u32,
+        _modes: &[(russh::Pty, u32)],
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if matches!(self.reply, Reply::Process) {
+            assert_eq!((term, columns, rows), ("xterm-256color", 80, 24));
+            self.observed.ptys.fetch_add(1, Ordering::SeqCst);
+            self.pty = true;
+            session.channel_success(channel)?;
+        } else {
+            session.channel_failure(channel)?;
+        }
+        Ok(())
+    }
+
+    async fn data(
+        &mut self,
+        channel: ChannelId,
+        bytes: &[u8],
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if !matches!(self.reply, Reply::Sftp(_)) {
+            self.observed.input.lock().unwrap().extend_from_slice(bytes);
+        }
+        if matches!(self.reply, Reply::BlockedInput) {
+            // A one-byte receive window remains exhausted. Output is still
+            // independent of the client's blocked stdin write.
+            session.data(channel, b"output during blocked input".to_vec())?;
+        }
+        if let Some(process) = &self.process {
+            process.input(process::Input::Data(bytes.to_vec()))?;
+        }
+        Ok(())
+    }
+
+    async fn channel_eof(
+        &mut self,
+        _channel: ChannelId,
+        _session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if let Some(process) = &self.process {
+            process.input(process::Input::Eof)?;
+        }
+        Ok(())
+    }
+
+    async fn signal(
+        &mut self,
+        _channel: ChannelId,
+        signal: russh::Sig,
+        _session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        self.observed.signals.fetch_add(1, Ordering::SeqCst);
+        if let Some(process) = &self.process {
+            process.signal(&signal);
+        }
+        Ok(())
     }
 }

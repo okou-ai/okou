@@ -1,17 +1,12 @@
-import { command, type Command } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { activeRoute$ } from "../active-route.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { logger } from "../log.ts";
-import {
-  detachedNavigateTo$,
-  searchParams$,
-  updateSearchParams$,
-} from "../route.ts";
+import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { resetSignal } from "../utils.ts";
-import { createCachedChatPanelSignals$ } from "./create-chat-thread.ts";
-import { createChatEventSignals } from "./chat-event-signals.ts";
+import type { DraftSignals } from "../okou-page/chat-draft.ts";
+import { createChatPanelSignals, ensureDraft$ } from "./create-chat-thread.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
 import {
@@ -38,8 +33,72 @@ export {
 
 const L = logger("ChatPanes");
 
-const resetLeftSetupSignal$ = resetSignal();
-const resetRightSetupSignal$ = resetSignal();
+interface ChatThreadTarget {
+  readonly threadId: string;
+  readonly agentId: string;
+  readonly draft: DraftSignals;
+}
+
+interface ChatThreadPaneSignals {
+  /**
+   * Show a thread, binding its panel to the pane's current setup lifetime,
+   * and publish the pane state the page renders from.
+   */
+  readonly loadThread$: Command<ChatPanelSignals, [ChatThreadTarget]>;
+  readonly loadNotFound$: Command<void, [string]>;
+  /** Empty the pane and release the panel graph it showed. */
+  readonly clear$: Command<void, []>;
+  readonly onNotFoundReady$?: Command<void, [AbortSignal]>;
+}
+
+/**
+ * A pane derives its panel graph from the thread it shows. The panel factory
+ * runs inside the computed, so the graph is a memoized projection of pane
+ * state rather than something a setup command constructs while it runs.
+ */
+function createChatThreadPaneSignals(
+  setPane$: Command<void, [ChatThreadPaneState]>,
+  onNotFoundReady$?: Command<void, [AbortSignal]>,
+): ChatThreadPaneSignals {
+  const internalThread$ = state<ChatThreadTarget | null>(null);
+  const panel$ = computed((get): ChatPanelSignals | null => {
+    const target = get(internalThread$);
+    return target
+      ? createChatPanelSignals(target.threadId, target.agentId, target.draft)
+      : null;
+  });
+  const loadThread$ = command(
+    ({ get, set }, target: ChatThreadTarget): ChatPanelSignals => {
+      set(internalThread$, target);
+      const thread = get(panel$);
+      if (!thread) {
+        throw new Error("chat pane did not derive its panel");
+      }
+      set(setPane$, { kind: "thread", thread });
+      return thread;
+    },
+  );
+  const loadNotFound$ = command(({ set }, threadId: string): void => {
+    set(internalThread$, null);
+    set(setPane$, { kind: "not-found", threadId });
+  });
+  const clear$ = command(({ set }): void => {
+    set(internalThread$, null);
+    set(setPane$, null);
+  });
+  return {
+    loadThread$,
+    loadNotFound$,
+    clear$,
+    ...(onNotFoundReady$ === undefined ? {} : { onNotFoundReady$ }),
+  };
+}
+
+const leftPane = createChatThreadPaneSignals(
+  setCurrentLeftPane$,
+  hideAppSkeleton$,
+);
+const rightPane = createChatThreadPaneSignals(setCurrentRightPane$);
 
 // Thread-owned sidebars are anchored to the previous thread's messages.
 const closeThreadSidebars$ = command(({ get, set }) => {
@@ -56,20 +115,23 @@ export const unloadRightThread$ = command(({ get, set }) => {
     set(currentRightThread.resetRenderedChatGroupsIfAtBottom$);
     set(currentRightThread.sidebar.close$);
   }
-  set(resetRightSetupSignal$);
-  set(setCurrentRightPane$, null);
+  set(rightPane.clear$);
   const next = new URLSearchParams(get(searchParams$));
-  if (next.has(SIDEBAR_PARAM)) {
-    next.delete(SIDEBAR_PARAM);
-    set(updateSearchParams$, next);
+  if (!next.has(SIDEBAR_PARAM)) {
+    return;
   }
+  const mainThreadId = get(currentChatThreadId$);
+  if (!mainThreadId) {
+    return;
+  }
+  next.delete(SIDEBAR_PARAM);
+  // Closing navigates, the mirror of loadRightThread$. The route reload is
+  // what ends this pane's setup, so no pane-local cancellation is needed.
+  set(detachedNavigateTo$, ROUTES.chat, {
+    pathParams: { threadId: mainThreadId },
+    searchParams: next,
+  });
 });
-
-interface PaneSpec {
-  setPane$: Command<void, [ChatThreadPaneState]>;
-  resetSetupSignal$: ReturnType<typeof resetSignal>;
-  onNotFoundReady$?: Command<void, [AbortSignal]>;
-}
 
 const resolvePaneThread$ = command(
   async (
@@ -108,45 +170,47 @@ const resolvePaneThread$ = command(
   },
 );
 
+// Every path that ends a pane setup goes through the router, so the route
+// signal is the pane's setup lifetime.
 const beginPaneSetup$ = command(
-  ({ get, set }, spec: PaneSpec, parentSignal: AbortSignal): AbortSignal => {
-    const signal = set(spec.resetSetupSignal$, parentSignal);
-    signal.addEventListener(
+  (
+    { get, set },
+    pane: ChatThreadPaneSignals,
+    routeSignal: AbortSignal,
+  ): AbortSignal => {
+    routeSignal.addEventListener(
       "abort",
       () => {
         // A non-chat page must never inherit this pane on re-entry.
         // Chat-to-chat setup keeps the reference so the outer thread section
         // can preserve its established DOM identity until replacement.
         if (get(activeRoute$) !== "chat") {
-          set(spec.setPane$, null);
+          set(pane.clear$);
         }
       },
       { once: true },
     );
-    return signal;
+    return routeSignal;
   },
 );
 
 const setupPaneThread$ = command(
   async (
     { set },
-    spec: PaneSpec,
+    pane: ChatThreadPaneSignals,
     meta: ThreadMeta,
     initialEventId: string | null,
     parentSignal: AbortSignal,
   ): Promise<void> => {
-    const signal = set(beginPaneSetup$, spec, parentSignal);
+    const signal = set(beginPaneSetup$, pane, parentSignal);
     const threadId = meta.id;
 
     L.debug("setupPaneThread$ start", { threadId });
-    const chatEvents = createChatEventSignals(threadId);
-    const { thread } = set(
-      createCachedChatPanelSignals$,
-      chatEvents,
-      meta.agentId,
-      signal,
-    );
-    set(spec.setPane$, { kind: "thread", thread });
+    const thread = set(pane.loadThread$, {
+      threadId,
+      agentId: meta.agentId,
+      draft: set(ensureDraft$, threadId),
+    });
 
     await set(
       resolvePaneThread$,
@@ -162,14 +226,14 @@ const setupPaneThread$ = command(
 const setupPaneNotFound$ = command(
   (
     { set },
-    spec: PaneSpec,
+    pane: ChatThreadPaneSignals,
     threadId: string,
     parentSignal: AbortSignal,
   ): void => {
-    const signal = set(beginPaneSetup$, spec, parentSignal);
-    set(spec.setPane$, { kind: "not-found", threadId });
-    if (spec.onNotFoundReady$) {
-      set(spec.onNotFoundReady$, signal);
+    const signal = set(beginPaneSetup$, pane, parentSignal);
+    set(pane.loadNotFound$, threadId);
+    if (pane.onNotFoundReady$) {
+      set(pane.onNotFoundReady$, signal);
     }
   },
 );
@@ -183,16 +247,7 @@ export const setupLeftThread$ = command(
   ): Promise<void> => {
     await Promise.all([
       set(syncPrimaryThread$, meta, parentSignal),
-      set(
-        setupPaneThread$,
-        {
-          setPane$: setCurrentLeftPane$,
-          resetSetupSignal$: resetLeftSetupSignal$,
-        },
-        meta,
-        initialEventId,
-        parentSignal,
-      ),
+      set(setupPaneThread$, leftPane, meta, initialEventId, parentSignal),
     ]);
   },
 );
@@ -204,16 +259,7 @@ export const setupLeftThreadNotFound$ = command(
     parentSignal: AbortSignal,
   ): Promise<void> => {
     set(syncMissingPrimaryThread$);
-    await set(
-      setupPaneNotFound$,
-      {
-        setPane$: setCurrentLeftPane$,
-        resetSetupSignal$: resetLeftSetupSignal$,
-        onNotFoundReady$: hideAppSkeleton$,
-      },
-      threadId,
-      parentSignal,
-    );
+    await set(setupPaneNotFound$, leftPane, threadId, parentSignal);
   },
 );
 
@@ -223,16 +269,7 @@ export const setupRightThread$ = command(
     meta: ThreadMeta,
     parentSignal: AbortSignal,
   ): Promise<void> => {
-    await set(
-      setupPaneThread$,
-      {
-        setPane$: setCurrentRightPane$,
-        resetSetupSignal$: resetRightSetupSignal$,
-      },
-      meta,
-      null,
-      parentSignal,
-    );
+    await set(setupPaneThread$, rightPane, meta, null, parentSignal);
   },
 );
 
@@ -242,15 +279,7 @@ export const setupRightThreadNotFound$ = command(
     threadId: string,
     parentSignal: AbortSignal,
   ): Promise<void> => {
-    await set(
-      setupPaneNotFound$,
-      {
-        setPane$: setCurrentRightPane$,
-        resetSetupSignal$: resetRightSetupSignal$,
-      },
-      threadId,
-      parentSignal,
-    );
+    await set(setupPaneNotFound$, rightPane, threadId, parentSignal);
   },
 );
 

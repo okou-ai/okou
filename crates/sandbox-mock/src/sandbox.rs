@@ -248,6 +248,9 @@ impl MockSandbox {
     }
 
     /// Queue a fixed workspace-drive mount result. Results are consumed in FIFO order.
+    ///
+    /// Local results, including errors, take precedence over shared overrides.
+    /// Shared results are consumed only when this sandbox's queue is empty.
     pub fn push_workspace_drive_mount_result(&self, result: Result<ExecResult>) {
         self.workspace_drive_mount_results
             .lock_ignoring_poison()
@@ -894,15 +897,16 @@ impl Sandbox for MockSandbox {
             .workspace_drive_mount_results
             .lock_ignoring_poison()
             .pop_front();
-        let shared_result = self.overrides.as_ref().and_then(|overrides| {
-            overrides
-                .exec
-                .workspace_drive_mount_results
-                .lock_ignoring_poison()
-                .pop_front()
-        });
         let result = local_result
-            .or(shared_result)
+            .or_else(|| {
+                self.overrides.as_ref().and_then(|overrides| {
+                    overrides
+                        .exec
+                        .workspace_drive_mount_results
+                        .lock_ignoring_poison()
+                        .pop_front()
+                })
+            })
             .unwrap_or_else(|| Ok(default_exec_result()))?;
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_64_KIB))
     }

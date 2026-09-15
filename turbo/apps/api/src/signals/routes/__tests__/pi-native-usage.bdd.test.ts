@@ -1,9 +1,7 @@
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import {
-  piModelConfigV4Schema,
-  piNativeCatalogModelSchema,
-} from "@okouai/api-contracts/contracts/pi-native";
+import { piModelConfigV4Schema } from "@okouai/api-contracts/contracts/pi-native";
 import type { PiApiFirstTurnResult } from "@okouai/pi-agent-runtime/api";
 import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 
@@ -127,21 +125,21 @@ function turn(
 }
 
 describe("native API-owned billing reader", () => {
-  it.each(piNativeCatalogModelSchema.options)(
-    "records exact non-overlapping categories for %s across terminal outcomes",
-    async (model) => {
+  it.each(
+    piNativeCatalogModelSchema.options.flatMap((model) => {
+      return (["stop", "toolUse", "aborted", "error", "length"] as const).map(
+        (stopReason) => {
+          return { model, stopReason };
+        },
+      );
+    }),
+  )(
+    "records exact non-overlapping categories for $model after $stopReason",
+    async ({ model, stopReason }) => {
       const run = await nativeRun(model);
-      for (const stopReason of [
-        "stop",
-        "toolUse",
-        "aborted",
-        "error",
-        "length",
-      ] as const) {
-        const result = turn(stopReason, model);
-        await run.record(result);
-        await run.record(result);
-      }
+      const result = turn(stopReason, model);
+      await run.record(result);
+      await run.record(result);
       const ledger = await run.ledger();
       for (const [category, quantity] of [
         ["tokens.input", 11],
@@ -153,23 +151,15 @@ describe("native API-owned billing reader", () => {
           ledger.filter((row) => {
             return row.category === category;
           }),
-        ).toStrictEqual(
-          Array.from({ length: 5 }, () => {
-            return {
-              category,
-              provider: model,
-              quantity,
-            };
-          }),
-        );
+        ).toStrictEqual([{ category, provider: model, quantity }]);
       }
-      expect(ledger).toHaveLength(20);
+      expect(ledger).toHaveLength(4);
       await run.cancel();
       // A late/discarded observer of the same cancelled request remains one writer.
       const late = turn("aborted", model);
       await run.record(late);
       await run.record(late);
-      await expect(run.ledger()).resolves.toHaveLength(24);
+      await expect(run.ledger()).resolves.toHaveLength(8);
     },
   );
 

@@ -455,6 +455,159 @@ assert_contains "$output" "native/runner has intervening source changes in nativ
 assert_contains "$output" "turbo/apps/app has intervening source changes in turbo/apps/app"
 assert_contains "$output" "2 release target(s) missing"
 
+# Reproduce #33734 at its actual path: API release, intervening App test/docs,
+# then a synthetic release commit whose App version is still unchanged.
+setup_repo "colocated-platform-test"
+git -C "$REPO" mv turbo/apps/app turbo/apps/platform
+sed -i 's#turbo/apps/app#turbo/apps/platform#g' \
+  "${REPO}/release-please-config.json" "${REPO}/.release-please-manifest.json"
+platform_test="turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-connectors.test.tsx"
+mkdir -p "$(dirname "${REPO}/${platform_test}")"
+printf 'original test\n' >"${REPO}/${platform_test}"
+git -C "$REPO" add --all
+git -C "$REPO" commit -qm "test: prepare platform fixture"
+BASE=$(git -C "$REPO" rev-parse HEAD)
+release_head=$(
+  create_release_head "$REPO" release-api '.["turbo/apps/api"] = "1.0.1"'
+)
+git -C "$REPO" switch -q main
+printf 'updated assertion\n' >>"${REPO}/${platform_test}"
+printf 'testing documentation\n' >>"${REPO}/docs/README.md"
+git -C "$REPO" add --all
+git -C "$REPO" commit -qm "test(platform): update presence assertions"
+merge_base=$(git -C "$REPO" rev-parse HEAD)
+merge_head=$(
+  create_merge_head "$REPO" merge-api "$merge_base" '.["turbo/apps/api"] = "1.0.1"'
+)
+expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
+
+# Cover each excluded extension, direct/nested src and __tests__ paths, and a
+# shared dependency without releasing either of its Node consumer roots.
+for test_case in \
+  'modify|turbo/apps/app/src/__tests__/runtime.test.js' \
+  'add|turbo/apps/app/src/views/__tests__/page.test.jsx' \
+  'delete|turbo/apps/app/src/signals/__tests__/nested/state.test.ts' \
+  'rename|turbo/apps/app/nested/src/views/__tests__/page.test.tsx' \
+  'modify|turbo/packages/shared/src/contracts/__tests__/contract.test.ts'; do
+  IFS='|' read -r operation test_path <<<"$test_case"
+  setup_repo "colocated-${operation}-${test_path//\//-}"
+  mkdir -p "$(dirname "${REPO}/${test_path}")"
+  if [ "$operation" != "add" ]; then
+    printf 'original test\n' >"${REPO}/${test_path}"
+    git -C "$REPO" add --all
+    git -C "$REPO" commit -qm "test: prepare colocated fixture"
+    BASE=$(git -C "$REPO" rev-parse HEAD)
+  fi
+  release_head=$(
+    create_release_head "$REPO" release-runner '.["native/runner"] = "1.0.1"'
+  )
+  git -C "$REPO" switch -q main
+  case "$operation" in
+  modify | add) printf 'updated test\n' >>"${REPO}/${test_path}" ;;
+  delete) git -C "$REPO" rm -q "$test_path" ;;
+  rename) git -C "$REPO" mv "$test_path" "${test_path%.test.*}-renamed.test.ts" ;;
+  esac
+  git -C "$REPO" add --all
+  git -C "$REPO" commit -qm "test: update colocated tests"
+  merge_base=$(git -C "$REPO" rev-parse HEAD)
+  merge_head=$(
+    create_merge_head "$REPO" merge-runner "$merge_base" '.["native/runner"] = "1.0.1"'
+  )
+  expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
+done
+
+expect_node_source_release() {
+  local repo=$1 merge_base=$2 release_head=$3 source=$4
+  local merge_head
+
+  merge_head=$(
+    create_merge_head "$repo" merge-api "$merge_base" '.["turbo/apps/api"] = "1.0.1"'
+  )
+  expect_failure \
+    "$repo" "$merge_base" "$merge_head" "$release_head" \
+    "turbo/apps/app has intervening source changes in ${source} but no new release"
+
+  release_head=$(
+    create_release_head "$repo" release-apps \
+      '.["turbo/apps/api"] = "1.0.1" | .["turbo/apps/app"] = "1.0.1"'
+  )
+  merge_head=$(
+    create_merge_head "$repo" merge-apps "$merge_base" \
+      '.["turbo/apps/api"] = "1.0.1" | .["turbo/apps/app"] = "1.0.1"'
+  )
+  expect_success "$repo" "$merge_base" "$merge_head" "$release_head"
+}
+
+# A test: subject does not exempt source. Names resembling tests, resources,
+# and helpers remain protected, including files inside __tests__.
+for source_path in \
+  'src/index.ts' \
+  'src/test-helper.ts' \
+  'src/latest/index.ts' \
+  'src/fixtures/runtime.test.ts' \
+  'src/__tests__/helper.ts' \
+  'src/__tests__/fixtures/runtime.test.json' \
+  'src/__tests__/prompt.test.md' \
+  'src/__tests__/runtime.test.py'; do
+  setup_repo "source-${source_path//\//-}"
+  release_head=$(
+    create_release_head "$REPO" release-api '.["turbo/apps/api"] = "1.0.1"'
+  )
+  git -C "$REPO" switch -q main
+  mkdir -p "$(dirname "${REPO}/turbo/apps/app/${source_path}")"
+  printf 'production change\n' >>"${REPO}/turbo/apps/app/${source_path}"
+  git -C "$REPO" add --all
+  git -C "$REPO" commit -qm "test: update app tests"
+  merge_base=$(git -C "$REPO" rev-parse HEAD)
+  expect_node_source_release "$REPO" "$merge_base" "$release_head" turbo/apps/app
+done
+
+for transition in mixed delete rename-into-tests rename-out-of-tests; do
+  setup_repo "$transition"
+  test_path="turbo/apps/app/src/views/__tests__/runtime.test.ts"
+  mkdir -p "$(dirname "${REPO}/${test_path}")"
+  # Identical content makes both rename directions exact Git renames.
+  cp "${REPO}/turbo/apps/app/src/index.ts" "${REPO}/${test_path}"
+  git -C "$REPO" add --all
+  git -C "$REPO" commit -qm "test: prepare rename fixture"
+  BASE=$(git -C "$REPO" rev-parse HEAD)
+  release_head=$(
+    create_release_head "$REPO" release-api '.["turbo/apps/api"] = "1.0.1"'
+  )
+  git -C "$REPO" switch -q main
+  git -C "$REPO" config diff.renames true
+  case "$transition" in
+  mixed)
+    printf 'updated test\n' >>"${REPO}/${test_path}"
+    printf 'production change\n' >>"${REPO}/turbo/apps/app/src/index.ts"
+    ;;
+  delete) git -C "$REPO" rm -q turbo/apps/app/src/index.ts ;;
+  rename-into-tests)
+    git -C "$REPO" mv turbo/apps/app/src/index.ts "${test_path%/*}/renamed.test.ts"
+    ;;
+  rename-out-of-tests)
+    git -C "$REPO" mv "$test_path" turbo/apps/app/src/new-runtime.ts
+    ;;
+  esac
+  git -C "$REPO" add --all
+  git -C "$REPO" commit -qm "test: update app tests"
+  merge_base=$(git -C "$REPO" rev-parse HEAD)
+  expect_node_source_release "$REPO" "$merge_base" "$release_head" turbo/apps/app
+done
+
+setup_repo "mixed-shared-dependency"
+release_head=$(
+  create_release_head "$REPO" release-api '.["turbo/apps/api"] = "1.0.1"'
+)
+git -C "$REPO" switch -q main
+mkdir -p "${REPO}/turbo/packages/shared/src/contracts/__tests__"
+printf 'new test\n' >"${REPO}/turbo/packages/shared/src/contracts/__tests__/contract.test.ts"
+printf 'shared production change\n' >>"${REPO}/turbo/packages/shared/src/index.ts"
+git -C "$REPO" add --all
+git -C "$REPO" commit -qm "test: update shared tests"
+merge_base=$(git -C "$REPO" rev-parse HEAD)
+expect_node_source_release "$REPO" "$merge_base" "$release_head" turbo/packages/shared
+
 setup_repo "non-source-change"
 release_head=$(
   create_release_head \

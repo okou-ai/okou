@@ -300,10 +300,16 @@ export function createChatCallbacksApi(context: TestContext) {
       actor: ApiTestUser,
       policies: OrgModelPolicies,
     ): Promise<void> {
+      const snapshot = await accept(
+        modelPoliciesClient().list({
+          headers: authenticate(context, actor),
+        }),
+        [200],
+      );
       await accept(
         modelPoliciesClient().update({
           headers: authenticate(context, actor),
-          body: { policies },
+          body: { policies, revision: snapshot.body.revision },
         }),
         [200],
       );

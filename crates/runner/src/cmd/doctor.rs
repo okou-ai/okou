@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Write as _;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
@@ -666,9 +667,20 @@ async fn recheck_current_runner_warnings(
             report.apply_status_diagnostics(diagnostics);
         }
     })
-    .buffered(DOCTOR_IO_CONCURRENCY)
+    .buffer_unordered(DOCTOR_IO_CONCURRENCY)
     .for_each(|_| async {})
     .await;
+}
+
+/// Refill completed I/O slots immediately while preserving input order for display.
+async fn collect_doctor_io<F: Future>(operations: impl IntoIterator<Item = F>) -> Vec<F::Output> {
+    let mut results = stream::iter(operations.into_iter().enumerate())
+        .map(|(index, operation)| async move { (index, operation.await) })
+        .buffer_unordered(DOCTOR_IO_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+    results.sort_unstable_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
 }
 
 async fn build_runner_reports(
@@ -678,21 +690,23 @@ async fn build_runner_reports(
     discovered: &process::DiscoveredProcesses,
     installed: &[InstalledService],
 ) -> Vec<RunnerReport> {
-    stream::iter(live_runners.iter().filter(|runner| {
-        config_path_filter.is_none_or(|config_path| runner.config_path == config_path)
-    }))
-    .map(|runner| {
-        build_runner_report(
-            runner,
-            api_client,
-            &discovered.firecrackers,
-            &discovered.mitmdumps,
-            &discovered.dnsmasqs,
-            installed,
-        )
-    })
-    .buffered(DOCTOR_IO_CONCURRENCY)
-    .collect()
+    collect_doctor_io(
+        live_runners
+            .iter()
+            .filter(|runner| {
+                config_path_filter.is_none_or(|config_path| runner.config_path == config_path)
+            })
+            .map(|runner| {
+                build_runner_report(
+                    runner,
+                    api_client,
+                    &discovered.firecrackers,
+                    &discovered.mitmdumps,
+                    &discovered.dnsmasqs,
+                    installed,
+                )
+            }),
+    )
     .await
 }
 
@@ -924,26 +938,23 @@ async fn find_installed_services(system_dir: &Path) -> Vec<InstalledService> {
         units.push(unit);
     }
 
-    stream::iter(units)
-        .map(|unit| async move {
-            let config_path = match super::service::read_unit_config_path(&unit).await {
-                Ok(config_path) => config_path,
-                Err(e) => {
-                    tracing::warn!(
-                        "find_installed_services: cannot read effective config for {}: {e}",
-                        unit.service_name()
-                    );
-                    None
-                }
-            };
-            InstalledService {
-                unit_name: unit.unit_name().to_string(),
-                config_path,
+    collect_doctor_io(units.into_iter().map(|unit| async move {
+        let config_path = match super::service::read_unit_config_path(&unit).await {
+            Ok(config_path) => config_path,
+            Err(e) => {
+                tracing::warn!(
+                    "find_installed_services: cannot read effective config for {}: {e}",
+                    unit.service_name()
+                );
+                None
             }
-        })
-        .buffered(DOCTOR_IO_CONCURRENCY)
-        .collect()
-        .await
+        };
+        InstalledService {
+            unit_name: unit.unit_name().to_string(),
+            config_path,
+        }
+    }))
+    .await
 }
 
 /// Find installed services that have no matching running runner.
@@ -1578,13 +1589,16 @@ fn format_uptime(started_at: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
     use crate::test_fixtures::ignored_child::{
         ignored_child_test_env_guard_enabled, run_ignored_child_test,
     };
+    use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
     use httpmock::prelude::*;
+    use tokio::sync::oneshot;
 
     const SERVICE_DISCOVERY_SCENARIO_ENV: &str = "OKOU_RUN_DOCTOR_DISCOVERY_SCENARIO";
     const SERVICE_DISCOVERY_SYSTEM_DIR_ENV: &str = "OKOU_RUN_DOCTOR_DISCOVERY_SYSTEM_DIR";
@@ -1617,6 +1631,96 @@ printf '%s\n' \
   '[Service]' \
   "ExecStart=/usr/bin/runner start --config /configs/$suffix.yaml"
 "#;
+
+    #[tokio::test]
+    async fn doctor_io_refills_slots_with_a_fixed_bound_and_preserves_order() {
+        let count = DOCTOR_IO_CONCURRENCY + 2;
+        let (mut releases, gates): (Vec<_>, Vec<_>) =
+            (0..count).map(|_| oneshot::channel::<()>()).unzip();
+        let started = Cell::new(0);
+        let active = Cell::new(0);
+        let operations = gates.into_iter().enumerate().map(|(index, gate)| {
+            let started = &started;
+            let active = &active;
+            async move {
+                started.set(started.get() + 1);
+                active.set(active.get() + 1);
+                assert!(active.get() <= DOCTOR_IO_CONCURRENCY);
+                gate.await.unwrap();
+                active.set(active.get() - 1);
+                index
+            }
+        });
+        let results = collect_doctor_io(operations);
+        tokio::pin!(results);
+
+        assert!(futures_util::poll!(&mut results).is_pending());
+        assert_eq!(started.get(), DOCTOR_IO_CONCURRENCY);
+        assert_eq!(active.get(), DOCTOR_IO_CONCURRENCY);
+
+        // Keep the first operation blocked while later completions refill both slots.
+        for expected_started in (DOCTOR_IO_CONCURRENCY + 1)..=count {
+            releases.remove(1).send(()).unwrap();
+            assert!(futures_util::poll!(&mut results).is_pending());
+            assert_eq!(started.get(), expected_started);
+            assert_eq!(active.get(), DOCTOR_IO_CONCURRENCY);
+        }
+
+        for release in releases.into_iter().rev() {
+            release.send(()).unwrap();
+        }
+        assert_eq!(results.await, (0..count).collect::<Vec<_>>());
+        assert_eq!(active.get(), 0);
+    }
+
+    async fn gated_doctor_apis() -> Vec<(RawHttpTestServer, oneshot::Sender<()>)> {
+        let mut apis = Vec::new();
+        for index in 0..=DOCTOR_IO_CONCURRENCY {
+            let (release, gate) = oneshot::channel();
+            // Any HTTP response, including a server error, proves connectivity.
+            let status = if index == 0 {
+                "503 Unavailable"
+            } else {
+                "200 OK"
+            };
+            let server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+                release: gate,
+                response: http_response(status, b""),
+            }])
+            .await;
+            apis.push((server, release));
+        }
+        apis
+    }
+
+    async fn release_doctor_apis(mut apis: Vec<(RawHttpTestServer, oneshot::Sender<()>)>) {
+        for (index, (server, _)) in apis.iter_mut().take(DOCTOR_IO_CONCURRENCY).enumerate() {
+            let request = server.next_request("initial doctor API probe").await;
+            assert!(request.starts_with("HEAD / HTTP/1.1\r\n"));
+            assert!(request.contains(&format!("authorization: Bearer token-{index}\r\n")));
+        }
+
+        let (server, release) = apis.remove(1);
+        release.send(()).unwrap();
+        server.assert_finished().await;
+
+        // The first response is still gated: ordered buffering cannot reach this request.
+        let request = apis
+            .last_mut()
+            .unwrap()
+            .0
+            .next_request("queued doctor API probe while the first response is blocked")
+            .await;
+        assert!(request.starts_with("HEAD / HTTP/1.1\r\n"));
+        assert!(request.contains(&format!(
+            "authorization: Bearer token-{DOCTOR_IO_CONCURRENCY}\r\n"
+        )));
+
+        for (server, release) in apis {
+            release.send(()).unwrap();
+            server.assert_finished().await;
+        }
+    }
 
     #[test]
     fn format_uptime_minutes() {
@@ -2729,7 +2833,7 @@ printf '%s\n' \
     }
 
     #[tokio::test]
-    async fn installed_service_discovery_overlaps_with_a_fixed_bound() {
+    async fn installed_service_discovery_refills_slots_and_preserves_order() {
         run_service_discovery_scenario("bounded").await;
     }
 
@@ -2804,23 +2908,45 @@ printf '%s\n' \
 
     async fn assert_bounded_installed_service_discovery(system_dir: &Path) {
         let state_dir = PathBuf::from(std::env::var(SERVICE_DISCOVERY_STATE_DIR_ENV).unwrap());
-        let system_dir = system_dir.to_path_buf();
-        let discovery = tokio::spawn(async move { find_installed_services(&system_dir).await });
+        let units: Vec<_> = std::fs::read_dir(system_dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let name = entry.unwrap().file_name();
+                super::super::service::RunnerServiceUnit::from_file_name(name.to_str().unwrap())
+            })
+            .collect();
+        let first_unit = units.first().unwrap().service_name().to_string();
+        let release_lookups = async {
+            wait_for_started_units(&state_dir, DOCTOR_IO_CONCURRENCY).await;
+            let first_batch = started_units(&state_dir);
+            assert_eq!(first_batch.len(), DOCTOR_IO_CONCURRENCY);
+            assert!(first_batch.contains(&first_unit));
+            let later_units: Vec<_> = first_batch
+                .into_iter()
+                .filter(|unit| unit != &first_unit)
+                .collect();
+            release_units(&state_dir, &later_units);
 
-        wait_for_started_units(&state_dir, DOCTOR_IO_CONCURRENCY).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let first_batch = started_units(&state_dir);
-        assert_eq!(first_batch.len(), DOCTOR_IO_CONCURRENCY);
-        release_units(&state_dir, &first_batch);
+            // The first lookup stays blocked until a freed slot starts the fifth unit.
+            wait_for_started_units(&state_dir, DOCTOR_IO_CONCURRENCY + 1).await;
+            release_units(&state_dir, &started_units(&state_dir));
+        };
+        let (services, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(find_installed_services(system_dir), release_lookups)
+        })
+        .await
+        .expect("bounded service discovery should finish after releases");
 
-        wait_for_started_units(&state_dir, DOCTOR_IO_CONCURRENCY + 1).await;
-        release_units(&state_dir, &started_units(&state_dir));
-
-        let mut services = tokio::time::timeout(Duration::from_secs(5), discovery)
-            .await
-            .expect("bounded service discovery should finish after releases")
-            .unwrap();
-        services.sort_by(|left, right| left.unit_name.cmp(&right.unit_name));
+        assert_eq!(
+            services
+                .iter()
+                .map(|service| service.unit_name.as_str())
+                .collect::<Vec<_>>(),
+            units
+                .iter()
+                .map(|unit| unit.unit_name())
+                .collect::<Vec<_>>(),
+        );
         assert_eq!(services.len(), 5);
         for service in services {
             let suffix = service.unit_name.strip_prefix("vm0-runner-").unwrap();
@@ -3772,117 +3898,50 @@ printf '%s\n' \
     }
 
     #[tokio::test]
-    async fn build_runner_reports_overlaps_api_checks_and_preserves_order() {
-        let server = MockServer::start_async().await;
-        let slow = server
-            .mock_async(|when, then| {
-                when.method("HEAD")
-                    .path("/slow")
-                    .header("authorization", "Bearer token-slow");
-                then.status(503).delay(Duration::from_millis(1200));
+    async fn build_runner_reports_refills_api_checks_and_preserves_order() {
+        let apis = gated_doctor_apis().await;
+        let fixtures: Vec<_> = apis
+            .iter()
+            .enumerate()
+            .map(|(index, (server, _))| {
+                doctor_report_fixture_with_server(
+                    "running",
+                    None,
+                    None,
+                    Some((&server.url(), &format!("token-{index}"))),
+                )
             })
-            .await;
-        let fast_a = server
-            .mock_async(|when, then| {
-                when.method("HEAD")
-                    .path("/fast-a")
-                    .header("authorization", "Bearer token-a");
-                then.status(200).delay(Duration::from_secs(1));
+            .collect();
+        let runners: Vec<_> = fixtures
+            .iter()
+            .enumerate()
+            .map(|(index, fixture)| {
+                live_runner_instance(
+                    u32::MAX - index as u32,
+                    fixture.config_path.clone(),
+                    fixture.base_dir.clone(),
+                )
             })
-            .await;
-        let fast_b = server
-            .mock_async(|when, then| {
-                when.method("HEAD")
-                    .path("/fast-b")
-                    .header("authorization", "Bearer token-b");
-                then.status(200).delay(Duration::from_secs(1));
-            })
-            .await;
-        let fast_c = server
-            .mock_async(|when, then| {
-                when.method("HEAD")
-                    .path("/fast-c")
-                    .header("authorization", "Bearer token-c");
-                then.status(200).delay(Duration::from_secs(1));
-            })
-            .await;
-
-        let slow_url = server.url("/slow");
-        let fast_a_url = server.url("/fast-a");
-        let fast_b_url = server.url("/fast-b");
-        let fast_c_url = server.url("/fast-c");
-        let slow_fixture = doctor_report_fixture_with_server(
-            "running",
-            None,
-            None,
-            Some((&slow_url, "token-slow")),
-        );
-        let fast_a_fixture = doctor_report_fixture_with_server(
-            "running",
-            None,
-            None,
-            Some((&fast_a_url, "token-a")),
-        );
-        let fast_b_fixture = doctor_report_fixture_with_server(
-            "running",
-            None,
-            None,
-            Some((&fast_b_url, "token-b")),
-        );
-        let fast_c_fixture = doctor_report_fixture_with_server(
-            "running",
-            None,
-            None,
-            Some((&fast_c_url, "token-c")),
-        );
-        let runners = vec![
-            live_runner_instance(
-                u32::MAX - 3,
-                slow_fixture.config_path.clone(),
-                slow_fixture.base_dir.clone(),
-            ),
-            live_runner_instance(
-                u32::MAX - 2,
-                fast_a_fixture.config_path.clone(),
-                fast_a_fixture.base_dir.clone(),
-            ),
-            live_runner_instance(
-                u32::MAX - 1,
-                fast_b_fixture.config_path.clone(),
-                fast_b_fixture.base_dir.clone(),
-            ),
-            live_runner_instance(
-                u32::MAX,
-                fast_c_fixture.config_path.clone(),
-                fast_c_fixture.base_dir.clone(),
-            ),
-        ];
+            .collect();
         let client = build_api_client();
+        let discovered = empty_discovered();
 
-        let reports = tokio::time::timeout(
-            Duration::from_secs(3),
-            build_runner_reports(&runners, None, client.as_ref(), &empty_discovered(), &[]),
-        )
-        .await
-        .expect("four delayed API checks should complete in one concurrent batch");
+        let (reports, ()) = tokio::join!(
+            build_runner_reports(&runners, None, client.as_ref(), &discovered, &[]),
+            release_doctor_apis(apis),
+        );
 
         assert_eq!(
             reports
                 .iter()
                 .map(|report| report.config_path.as_path())
                 .collect::<Vec<_>>(),
-            vec![
-                slow_fixture.config_path.as_path(),
-                fast_a_fixture.config_path.as_path(),
-                fast_b_fixture.config_path.as_path(),
-                fast_c_fixture.config_path.as_path(),
-            ]
+            fixtures
+                .iter()
+                .map(|fixture| fixture.config_path.as_path())
+                .collect::<Vec<_>>(),
         );
         assert!(reports.iter().all(|report| report.api_ok == Some(true)));
-        slow.assert_calls_async(1).await;
-        fast_a.assert_calls_async(1).await;
-        fast_b.assert_calls_async(1).await;
-        fast_c.assert_calls_async(1).await;
     }
 
     #[tokio::test]
@@ -3944,70 +4003,40 @@ printf '%s\n' \
     }
 
     #[tokio::test]
-    async fn recheck_current_runner_warnings_overlaps_api_checks_and_preserves_order() {
-        let server = MockServer::start_async().await;
-        let api_a = server
-            .mock_async(|when, then| {
-                when.method("HEAD").path("/a");
-                then.status(200).delay(Duration::from_secs(1));
+    async fn recheck_current_runner_warnings_refills_api_checks_and_preserves_order() {
+        let apis = gated_doctor_apis().await;
+        let mut reports: Vec<_> = apis
+            .iter()
+            .enumerate()
+            .map(|(index, (server, _))| {
+                let mut report = make_report(&format!("runner-{index}"));
+                report.warnings.push(Warning::ApiUnreachable {
+                    server_url: server.url(),
+                    server_token: format!("token-{index}"),
+                });
+                report
             })
-            .await;
-        let api_b = server
-            .mock_async(|when, then| {
-                when.method("HEAD").path("/b");
-                then.status(200).delay(Duration::from_secs(1));
-            })
-            .await;
-        let api_c = server
-            .mock_async(|when, then| {
-                when.method("HEAD").path("/c");
-                then.status(200).delay(Duration::from_secs(1));
-            })
-            .await;
-        let api_d = server
-            .mock_async(|when, then| {
-                when.method("HEAD").path("/d");
-                then.status(200).delay(Duration::from_secs(1));
-            })
-            .await;
-        let mut reports = [
-            make_report("runner-a"),
-            make_report("runner-b"),
-            make_report("runner-c"),
-            make_report("runner-d"),
-        ];
-        for (report, path) in reports.iter_mut().zip(["/a", "/b", "/c", "/d"]) {
-            report.warnings.push(Warning::ApiUnreachable {
-                server_url: server.url(path),
-                server_token: format!("token-{path}"),
-            });
-        }
+            .collect();
+        let expected_paths: Vec<_> = reports
+            .iter()
+            .map(|report| report.config_path.clone())
+            .collect();
         let client = build_api_client();
+        let discovered = empty_discovered();
 
-        tokio::time::timeout(
-            Duration::from_secs(3),
-            recheck_current_runner_warnings(client.as_ref(), &empty_discovered(), &mut reports),
-        )
-        .await
-        .expect("four delayed API rechecks should complete in one concurrent batch");
+        tokio::join!(
+            recheck_current_runner_warnings(client.as_ref(), &discovered, &mut reports),
+            release_doctor_apis(apis),
+        );
 
         assert_eq!(
             reports
                 .iter()
-                .map(|report| report.config_path.as_path())
+                .map(|report| report.config_path.clone())
                 .collect::<Vec<_>>(),
-            vec![
-                Path::new("/data/runner-a.yaml"),
-                Path::new("/data/runner-b.yaml"),
-                Path::new("/data/runner-c.yaml"),
-                Path::new("/data/runner-d.yaml"),
-            ]
+            expected_paths,
         );
         assert!(reports.iter().all(|report| report.warnings.is_empty()));
-        api_a.assert_calls_async(1).await;
-        api_b.assert_calls_async(1).await;
-        api_c.assert_calls_async(1).await;
-        api_d.assert_calls_async(1).await;
     }
 
     #[tokio::test]

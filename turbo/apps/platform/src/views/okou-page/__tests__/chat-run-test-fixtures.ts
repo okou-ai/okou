@@ -48,6 +48,7 @@ export function installRunChat(
       selectedModel,
       serviceTier:
         options.codexServiceTier === "fast" ? ("priority" as const) : null,
+      modelSettings: options.modelSettings ?? {},
       selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,

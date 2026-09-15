@@ -1,3 +1,4 @@
+import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { and, count, eq } from "drizzle-orm";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -11,6 +12,7 @@ import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
 import {
   admitPiMemoryStage1Candidate,
+  deleteStoragesWithPiMemoryCandidates,
   commitPiMemoryStage1Candidate,
   getPiMemoryStage1AdmissionPrerequisiteSkipReason,
   type AdmitPiMemoryStage1CandidateArgs,
@@ -286,7 +288,9 @@ export async function readmitPiMemoryStage1CandidateFixture(
     !run ||
     !completedAt ||
     run.status !== "completed" ||
-    (launchSnapshot?.schemaVersion !== 2 && launchSnapshot?.schemaVersion !== 3)
+    (launchSnapshot?.schemaVersion !== 2 &&
+      launchSnapshot?.schemaVersion !== 3 &&
+      launchSnapshot?.schemaVersion !== 4)
   ) {
     throw new Error(
       "Expected a completed V2 or V3 Run for Pi memory readmission",
@@ -315,11 +319,21 @@ export async function readmitPiMemoryStage1CandidateFixture(
 export async function deletePiMemoryStorageFixture(
   memoryStorageId: string,
 ): Promise<void> {
-  const [deleted] = await db()
-    .delete(storages)
-    .where(eq(storages.id, memoryStorageId))
-    .returning({ id: storages.id });
+  const deleted = await db().transaction(async (tx) => {
+    return await deleteStoragesWithPiMemoryCandidates(
+      tx,
+      eq(storages.id, memoryStorageId),
+    );
+  });
   if (!deleted) {
     throw new Error("Expected Pi memory Storage fixture to be deleted");
   }
+}
+
+export async function readPiMemoryStage1DayFixture(userId: string) {
+  const [day] = await db()
+    .select()
+    .from(piMemoryStage1Days)
+    .where(eq(piMemoryStage1Days.userId, userId));
+  return day ?? null;
 }

@@ -265,6 +265,8 @@ jobs:
       # Keep cross-job architecture metadata sanitized. Jobs that need hosts
       # resolve host data locally from the secret-backed configuration.
       matrix: ${{ steps.groups.outputs.matrix }}
+      selected-target: ${{ steps.groups.outputs.selected-target }}
+      validation-matrix: ${{ steps.groups.outputs.validation-matrix }}
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -282,8 +284,17 @@ jobs:
         env:
           AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
+          RUNNER_CONSUMER_NEEDED: ${{ needs.detect.outputs.crates-runner-consumer-needed }}
+          SELECTION_KEY: ${{ needs.detect.outputs.runner-image-job-ref }}
         run: |
-          MATRIX=$(.github/scripts/runner-host-architecture-groups.sh matrix)
+          if [ "$RUNNER_CONSUMER_NEEDED" = "true" ]; then
+            PLAN=$(.github/scripts/runner-host-architecture-groups.sh validation-plan "$SELECTION_KEY")
+            MATRIX=$(jq -c '.matrix' <<<"$PLAN")
+            echo "selected-target=$(jq -r '.selectedTarget' <<<"$PLAN")" >> "$GITHUB_OUTPUT"
+            echo "validation-matrix=$(jq -c '.validationMatrix' <<<"$PLAN")" >> "$GITHUB_OUTPUT"
+          else
+            MATRIX=$(.github/scripts/runner-host-architecture-groups.sh matrix)
+          fi
           GROUP_COUNT=$(jq -r 'length' <<<"$MATRIX")
           if [ "$GROUP_COUNT" -lt 1 ]; then
             echo "::error::No runner host architecture groups found"
@@ -561,6 +572,33 @@ jobs:
         working-directory: crates/runner/mitm-addon
         run: uv run --no-sync python -m pytest tests/ -v
 
+  mitm-addon-packaged-control:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    needs: [detect]
+    if: |
+      needs.detect.outputs.any-changed == 'true' ||
+      needs.detect.outputs.mitm-addon-test-inputs-changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version-file: crates/runner/mitm-addon/.python-version
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+      - name: Sync locked environment
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+      - name: Check packaged addon control lifecycle
+        shell: bash
+        run: bash .github/scripts/check-packaged-addon-control.sh
+
   nbd-cow-test:
     runs-on: ubuntu-latest
     container:
@@ -752,12 +790,17 @@ jobs:
           AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           SELECTION_KEY: ${{ needs.detect.outputs.runner-image-job-ref }}
+          EXPECTED_TARGET: ${{ needs.runner-host-groups.outputs.selected-target }}
         run: |
           CONTEXT=$(.github/scripts/runner-host-architecture-groups.sh select-context "$SELECTION_KEY")
           HOST=$(jq -r '.host' <<<"$CONTEXT")
           GROUP_ID=$(jq -r '.groupId' <<<"$CONTEXT")
           TARGET=$(jq -r '.target' <<<"$CONTEXT")
           HOSTS=$(jq -r '.groupHosts' <<<"$CONTEXT")
+          if [ "$TARGET" != "$EXPECTED_TARGET" ]; then
+            echo "::error::Selected runner target changed after architecture validation planning: $EXPECTED_TARGET != $TARGET"
+            exit 1
+          fi
           {
             echo "host=${HOST}"
             echo "hosts=${HOSTS}"
@@ -787,11 +830,13 @@ jobs:
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' &&
-      needs.detect.outputs.crates-runner-consumer-needed == 'true'
+      needs.detect.outputs.crates-runner-consumer-needed == 'true' &&
+      needs.runner-host-groups.outputs.validation-matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.runner-host-groups.outputs.matrix || '[]') }}
+        # runner-build validates every host in the selected target's group.
+        include: ${{ fromJSON(needs.runner-host-groups.outputs.validation-matrix || '[]') }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
@@ -1108,6 +1153,7 @@ jobs:
       - api-contracts-rust-bindings
       - runner-firewall-contract-test
       - mitm-addon-test
+      - mitm-addon-packaged-control
       - runner-host-groups
       - runner-build
       - runner-image-architecture-manifest
@@ -1125,6 +1171,8 @@ jobs:
       - name: Validate CI results
         env:
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
+          RUNNER_IMAGE_NEEDED: ${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}
+          IMAGE_VALIDATION_MATRIX: ${{ needs.runner-host-groups.outputs.validation-matrix }}
         run: |
           # Auto-pass for release-please PRs, commits, and merge queue entries
           if [[ "$IS_RELEASE" == "true" ]]; then
@@ -1155,15 +1203,25 @@ jobs:
           # Must-succeed: only 'success' is acceptable
           check_result "detect" "${{ needs.detect.result }}" ""
 
+          RUNNER_IMAGE_ALLOW_SKIP=true
+          OTHER_TARGETS_ALLOW_SKIP=true
+          if [ "$RUNNER_IMAGE_NEEDED" = "true" ]; then
+            RUNNER_IMAGE_ALLOW_SKIP=""
+            if [ "$IMAGE_VALIDATION_MATRIX" != "[]" ]; then
+              OTHER_TARGETS_ALLOW_SKIP=""
+            fi
+          fi
+
           # May-skip: only run when relevant crates change
           check_result "check" "${{ needs.check.result }}" "true"
           check_result "coverage" "${{ needs.coverage.result }}" "true"
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "true"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"
-          check_result "runner-host-groups" "${{ needs.runner-host-groups.result }}" "true"
-          check_result "runner-build" "${{ needs.runner-build.result }}" "true"
-          check_result "runner-image-architecture-manifest" "${{ needs.runner-image-architecture-manifest.result }}" "true"
+          check_result "mitm-addon-packaged-control" "${{ needs.mitm-addon-packaged-control.result }}" "true"
+          check_result "runner-host-groups" "${{ needs.runner-host-groups.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
+          check_result "runner-build" "${{ needs.runner-build.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
+          check_result "runner-image-architecture-manifest" "${{ needs.runner-image-architecture-manifest.result }}" "$OTHER_TARGETS_ALLOW_SKIP"
           check_result "runner-behavior-lane-a" "${{ needs.runner-behavior-lane-a.result }}" "true"
           check_result "runner-behavior-lane-b" "${{ needs.runner-behavior-lane-b.result }}" "true"
           check_result "runner-behavior-lane-c" "${{ needs.runner-behavior-lane-c.result }}" "true"

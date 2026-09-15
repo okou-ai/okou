@@ -1,7 +1,6 @@
 import type {
   ComputerUseAutomationPermissionTarget,
   DesktopComputerUseState,
-  ComputerUseDriverId,
 } from "./computer-use-types";
 import type { DesktopIdentity } from "./config";
 import type {
@@ -53,12 +52,6 @@ export interface DesktopAuthApi {
 }
 
 export interface DesktopComputerUseApi {
-  readonly setExperimentalCuaEnabled: (
-    enabled: boolean,
-  ) => Promise<DesktopComputerUseState>;
-  readonly selectDriver: (
-    driver: ComputerUseDriverId,
-  ) => Promise<DesktopComputerUseState>;
   readonly getState: () => Promise<DesktopComputerUseState>;
   readonly refreshPermissions: () => Promise<DesktopComputerUseState>;
   readonly start: (options?: {
@@ -144,10 +137,10 @@ export type DesktopIdentityInfo = Pick<
 declare global {
   interface Window {
     vm0DesktopAuth?: DesktopAuthApi;
-    vm0DesktopComputerUse?: DesktopComputerUseApi;
-    vm0DesktopDeveloperTools?: DesktopDeveloperToolsApi;
-    vm0DesktopIdentity: DesktopIdentityInfo;
-    vm0DesktopRecorder?: DesktopRecorderApi;
+    okouDesktopComputerUse?: DesktopComputerUseApi;
+    okouDesktopDeveloperTools?: DesktopDeveloperToolsApi;
+    okouDesktopIdentity: DesktopIdentityInfo;
+    okouDesktopRecorder?: DesktopRecorderApi;
   }
 }
 

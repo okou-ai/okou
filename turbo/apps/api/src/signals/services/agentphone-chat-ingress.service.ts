@@ -10,7 +10,10 @@ import {
   loadNewChatThreadMediaModels,
   type NewChatThreadMediaModels,
 } from "./chat-thread-media-model.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
+import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
 
 interface AgentPhoneChatThreadRouteKey {
   readonly agentphoneUserLinkId: string;
@@ -82,6 +85,7 @@ interface CreatedAgentPhoneChatThread {
   readonly id: string;
   readonly createdAt: Date;
   readonly mediaModels: NewChatThreadMediaModels;
+  readonly modelSettings: ModelSettings;
 }
 
 async function createCanonicalAgentPhoneChatThread(
@@ -93,6 +97,10 @@ async function createCanonicalAgentPhoneChatThread(
     orgId: args.orgId,
     userId: args.userId,
   });
+  const modelSettings = await loadNewChatThreadModelSettings(tx, {
+    orgId: args.orgId,
+    userId: args.userId,
+  });
   const [thread] = await tx
     .insert(chatThreads)
     .values({
@@ -100,6 +108,7 @@ async function createCanonicalAgentPhoneChatThread(
       agentId: args.agentId,
       computerUseHostId,
       selectedModel: args.selectedModel,
+      modelSettings,
       codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
       title: null,
       lastReadAt: args.currentTime,
@@ -113,7 +122,7 @@ async function createCanonicalAgentPhoneChatThread(
   if (!thread) {
     throw new Error("Failed to create canonical AgentPhone chat thread");
   }
-  return { ...thread, mediaModels };
+  return { ...thread, mediaModels, modelSettings };
 }
 
 async function appendCanonicalAgentPhoneChatThreadCreatedEvent(
@@ -130,6 +139,7 @@ async function appendCanonicalAgentPhoneChatThreadCreatedEvent(
     agentId: args.agentId,
     title: null,
     selectedModel: args.selectedModel,
+    modelSettings: thread.modelSettings,
     serviceTier: args.serviceTier,
     computerUseHostId,
     ...thread.mediaModels,
@@ -244,6 +254,10 @@ export async function ensureAgentPhoneChatThreadRoute(
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
+      if (isIntegrationDmSessionKey(args.rootMessageId)) {
+        await updateRouteConversationContext(tx, existing, args.conversationId);
+        return existing;
+      }
       return await reconcileExistingRoute(tx, args, existing);
     }
 
@@ -271,6 +285,14 @@ export async function ensureAgentPhoneChatThreadRoute(
         throw new Error(
           "Failed to resolve AgentPhone chat thread route after conflict",
         );
+      }
+      if (isIntegrationDmSessionKey(args.rootMessageId)) {
+        await updateRouteConversationContext(
+          tx,
+          conflicted,
+          args.conversationId,
+        );
+        return conflicted;
       }
       return await reconcileExistingRoute(tx, args, conflicted);
     }

@@ -10,16 +10,16 @@ import {
   privateHostedDeployments,
 } from "@okouai/db/schema/hosted-site";
 import { notFound } from "../../lib/error";
-import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
-import { generateArtifactPreviewUrl } from "../external/s3";
+import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
 import { privateArtifactRecord } from "../services/private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "../services/private-hosted-preview.service";
 import { resolveArtifactShare$ } from "../services/artifact-shares.service";
+import { artifactShareReference } from "../services/artifact-share-alias.service";
 import type { RouteEntry } from "../route-entry";
 
 const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -30,19 +30,36 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Artifact unavailable");
   }
   const id = parsed.id;
+  if (id === null) {
+    const shareId = await get(artifactShareReference(parsed.hash, signal));
+    signal.throwIfAborted();
+    const shared = shareId
+      ? await set(
+          resolveArtifactShare$,
+          { id: shareId, userId: auth.userId },
+          signal,
+        )
+      : null;
+    return shared
+      ? { status: 200 as const, body: shared }
+      : notFound("Artifact unavailable");
+  }
   const file = await get(privateArtifactRecord(id));
   signal.throwIfAborted();
   if (file) {
-    if (
-      file.userId !== auth.userId ||
-      file.orgId !== auth.orgId ||
-      file.materializationStatus !== "ready"
-    ) {
+    if (file.userId !== auth.userId || file.orgId !== auth.orgId) {
+      return notFound("Artifact unavailable");
+    }
+    // Older attachment composers do not call complete after a single PUT.
+    // Verify the owned object exists before signing its preview; multipart
+    // uploads remain unreadable until R2 publishes the completed object.
+    const object = await get(s3ObjectHead(file.bucket, file.key));
+    signal.throwIfAborted();
+    if (object.kind === "missing") {
       return notFound("Artifact unavailable");
     }
     const preview = await get(
       generateArtifactPreviewUrl(file.bucket, file.key, {
-        expiresIn: PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS,
         signingDate: nowDate(),
       }),
     );

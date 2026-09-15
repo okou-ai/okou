@@ -9,6 +9,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import type { OrgMembersPinnedAgentIds } from "@okouai/db/jsonb-contracts/org-members-metadata";
+import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
   ChatTranslationLanguage,
@@ -41,6 +42,11 @@ export const orgMembersMetadata = pgTable(
     theme: text("theme").$type<ThemePreference>(),
     colorTheme: text("color_theme").$type<ColorTheme>(),
     selectedModel: varchar("selected_model", { length: 255 }),
+    /** Sparse defaults keyed by run model. */
+    modelSettings: jsonb("model_settings")
+      .$type<ModelSettings>()
+      .default({})
+      .notNull(),
     serviceTier: varchar("service_tier", {
       length: 32,
     }).$type<ChatThreadServiceTier>(),
@@ -51,9 +57,6 @@ export const orgMembersMetadata = pgTable(
     /** Voice input v2 model selected in Debug preferences. */
     voiceInputModel: varchar("voice_input_model", { length: 255 }),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
-    morningBriefDefaultEligibleAt: timestamp(
-      "morning_brief_default_eligible_at",
-    ),
     captureNetworkBodiesRemaining: integer(
       "capture_network_bodies_remaining",
     ).default(0),

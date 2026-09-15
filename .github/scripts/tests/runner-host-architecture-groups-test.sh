@@ -27,6 +27,9 @@ fi
 remote=$1
 shift
 host=${remote#*@}
+if [ -n "${SSH_LOG:-}" ]; then
+  printf '%s\n' "$host" >> "$SSH_LOG"
+fi
 
 if [ "$#" -ne 2 ] || [ "$1" != "uname" ] || [ "$2" != "-m" ]; then
   echo "unexpected ssh command for ${host}: $*" >&2
@@ -185,6 +188,26 @@ assert_json_eq "$selected" '{"host":"x86-1","groupId":"x86_64","target":"x86_64-
 
 retry_selected=$(run_clean AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" select-context pr-1)
 assert_json_eq "$retry_selected" "$selected"
+
+for selection_key in pr-1 pr-2 pr-9; do
+  plan=$(run_clean SSH_LOG="${TMPDIR}/${selection_key}.ssh" AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" validation-plan "$selection_key")
+  [ "$(wc -l <"${TMPDIR}/${selection_key}.ssh")" -eq 3 ] || fail "validation planning must probe each host only once"
+  context=$(run_clean AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" select-context "$selection_key")
+  assert_json_eq "$(jq '.selectedTarget' <<<"$plan")" "$(jq '.target' <<<"$context")"
+  assert_json_eq "$(jq '.matrix' <<<"$plan")" "$out"
+  jq -e '
+    (keys | sort) == ["matrix", "selectedTarget", "validationMatrix"] and
+    (.selectedTarget as $target | .validationMatrix == (.matrix | map(select(.target != $target)))) and
+    (.validationMatrix | length) == 1
+  ' <<<"$plan" >/dev/null || fail "expected full and complementary validation matrices"
+  assert_no_hosts_field "$(jq '.matrix' <<<"$plan")"
+  assert_no_hosts_field "$(jq '.validationMatrix' <<<"$plan")"
+done
+
+for host in arm-1 x86-1; do
+  plan=$(run_clean AWS_METAL_RUNNER_HOSTS="$host" "$HOST_GROUPS" validation-plan pr-1)
+  jq -e '.validationMatrix == [] and (.matrix | length) == 1 and .selectedTarget == .matrix[0].target' <<<"$plan" >/dev/null || fail "one target must be fully covered by runner-build"
+done
 
 selected=$(run_clean AWS_METAL_RUNNER_HOSTS='arm-1,x86-1,x86-2' "$HOST_GROUPS" select-context pr-2)
 assert_json_eq "$selected" '{"host":"arm-1","groupId":"arm64","target":"aarch64-unknown-linux-musl","groupHosts":"arm-1"}'

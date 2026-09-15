@@ -1075,7 +1075,7 @@ async function waitBeforeClerkRetry(delayMs: number): Promise<void> {
 }
 
 function isTransientClerkStatus(status: number): boolean {
-  return status === 429 || status >= 500;
+  return status >= 500;
 }
 
 function clerkRetryDelayMs(

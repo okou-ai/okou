@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.23.86](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.85...guest-storage-apply-v0.23.86) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
+## [0.23.85](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.84...guest-storage-apply-v0.23.85) (2026-09-15)
+
+## [0.23.84](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.83...guest-storage-apply-v0.23.84) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+## [0.23.83](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.82...guest-storage-apply-v0.23.83) (2026-09-14)
+
+## [0.23.82](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.81...guest-storage-apply-v0.23.82) (2026-09-12)
+
+
+### Bug Fixes
+
+* **guest-storage-apply:** bound tar extension metadata ([#33636](https://github.com/vm0-ai/vm0/issues/33636)) ([cc84395](https://github.com/vm0-ai/vm0/commit/cc84395b8f3e1acf054b6f73e301e3bac3e4d8b9))
+* **guest-storage-apply:** validate gzip trailers before extraction success ([#33632](https://github.com/vm0-ai/vm0/issues/33632)) ([fb96b45](https://github.com/vm0-ai/vm0/commit/fb96b45ee87e037ec8a004fab3e7d784d216a001))
+
+## [0.23.81](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.80...guest-storage-apply-v0.23.81) (2026-09-11)
+
 ## [0.23.80](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.79...guest-storage-apply-v0.23.80) (2026-09-11)
 
 

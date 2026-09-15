@@ -84,9 +84,9 @@ function AddConnectionMenu() {
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="neutral"
           size="sm"
-          className="okou-btn-morandi h-9 gap-2 rounded-lg border"
+          className="h-9 gap-2 rounded-lg"
         >
           <Plus size={14} />
           {t(($) => {

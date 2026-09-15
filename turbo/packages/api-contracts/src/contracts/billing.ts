@@ -58,8 +58,9 @@ const concurrencySubscriptionSchema = z.object({
   // It stays optional so a new app reaching a draining older API still parses
   // the response; no client branches on its absence since #26152.
   canChangeInApp: z.boolean().optional(),
-  // Optional while older API deployments can still serve an already-loaded
-  // web/app client during rollout.
+  // The API omits both fields whenever no concurrency change is scheduled
+  // (billing-status.service.ts spreads them only for a scheduled change), so
+  // they are genuinely optional rather than a rollout tolerance.
   scheduledQuantity: z.number().int().positive().nullable().optional(),
   scheduledChangeAt: z.string().nullable().optional(),
 });
@@ -80,32 +81,30 @@ const usageAllowanceSchema = z.object({
 
 const billingStatusResponseSchema = z.object({
   tier: z.string(),
-  // Existing entitlement state; optional while older API targets can serve.
-  status: z.enum(["active", "suspended"]).optional(),
-  canBuyConcurrency: z.boolean().optional(),
+  status: z.enum(["active", "suspended"]),
+  canBuyConcurrency: z.boolean(),
   // The current API omits the amount when the configured Stripe Price is
   // unavailable.
   concurrencyUnitAmountCents: z.number().int().positive().optional(),
-  concurrencyPurchaseReviewAvailable: z.boolean().optional(),
-  canBuyCredits: z.boolean().optional(),
+  concurrencyPurchaseReviewAvailable: z.boolean(),
+  canBuyCredits: z.boolean(),
   showUsagePack: z.boolean(),
-  // Outgoing Apps still consume this derived status alias. Current Apps ignore
-  // it; there is no independent invitation capability. Cleanup: #32575.
-  memberInvitationAllowed: z.boolean().optional(),
-  autoRechargeAllowed: z.boolean().optional(),
-  supportByok: z.boolean().optional(),
+  autoRechargeAllowed: z.boolean(),
+  supportByok: z.boolean(),
+  restrictedBuiltInModels: z.boolean().optional(),
+  // Retired brand alias of restrictedBuiltInModels, sent with an identical
+  // value from the same source while Apps older than this release are still
+  // installed. Remove once they are below the rollback floor: #33658 step 2.
   restrictedVm0Models: z.boolean().optional(),
-  videoGenerationAllowed: z.boolean().optional(),
-  workflowWebhookAutomationAllowed: z.boolean().optional(),
+  videoGenerationAllowed: z.boolean(),
+  workflowWebhookAutomationAllowed: z.boolean(),
   credits: z.number(),
   onboardingPaymentPending: z.boolean(),
   subscriptionStatus: z.string().nullable(),
   currentPeriodEnd: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   scheduledChange: scheduledBillingChangeSchema.nullable(),
-  // Optional while older API deployments can still serve an already-loaded
-  // web/app client during rollout.
-  canRestorePlan: z.boolean().optional(),
+  canRestorePlan: z.boolean(),
   hasSubscription: z.boolean(),
   autoRecharge: autoRechargeSchema,
   creditExpiry: creditExpirySchema,
@@ -142,7 +141,7 @@ const usagePackPurchasePreviewResponseSchema =
   });
 
 const googleAdsPaidConversionSchema = z.object({
-  googleAdsAccountId: z.string().optional(),
+  googleAdsAccountId: z.string(),
   transactionId: z.string().min(1),
   valueUsd: z.number().positive(),
 });
@@ -233,7 +232,7 @@ const usagePackCatalogItemSchema = z.object({
 
 const usagePackCatalogResponseSchema = z.object({
   usagePacks: z.array(usagePackCatalogItemSchema),
-  supportsFreeMembers: z.boolean().optional(),
+  supportsFreeMembers: z.literal(true),
 });
 
 const usagePackCreditBalanceSchema = z.object({
@@ -309,7 +308,7 @@ const usagePackManagementResponseSchema = z.object({
   tier: z.enum(["pro", "team"]),
   currentPeriodEnd: z.iso.datetime().nullable(),
   supportsMemberAdditions: z.boolean().optional(),
-  supportsFreeMembers: z.boolean().optional(),
+  supportsFreeMembers: z.literal(true),
   allocations: z.array(managedUsagePackAllocationSchema),
 });
 
@@ -884,9 +883,6 @@ export const billingUsagePackMigrationContract = c.router({
     method: "GET",
     path: "/api/billing/usage-pack-migration",
     headers: authHeadersSchema,
-    query: z
-      .object({ supportsFreeMembers: z.literal("true").optional() })
-      .optional(),
     responses: {
       200: usagePackMigrationStateResponseSchema,
       401: apiErrorSchema,
@@ -1212,8 +1208,9 @@ const invoiceSchema = z.object({
 
 const billingInvoicesResponseSchema = z.object({
   invoices: z.array(invoiceSchema),
-  // Optional while the frontend can overlap with API deployments that do not expose ZIP downloads yet.
-  receiptDownloadsSupported: z.literal(true).optional(),
+  // Apps older than this release gate the receipt download UI on this flag.
+  // Keep emitting it until the App client-version floor excludes those builds.
+  receiptDownloadsSupported: z.literal(true),
 });
 
 const billingReceiptsMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/u);

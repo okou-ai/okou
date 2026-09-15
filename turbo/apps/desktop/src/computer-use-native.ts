@@ -7,7 +7,6 @@ import {
 } from "./native-helper-path";
 import type {
   AccessibilityAppStateSnapshot,
-  ComputerUseCommand,
   ComputerUseCommandFailure,
   ComputerUseCoordinateBounds,
   ComputerUseMouseButton,
@@ -71,13 +70,9 @@ export interface ComputerUseNativeAppRecord {
 
 export interface ComputerUseNativeBackend {
   readonly isCleanupPending?: () => boolean;
-  readonly getRuntimeVersion?: () => string | null;
-  readonly validateCommand?: (command: ComputerUseCommand) => void;
   readonly setCommandBudget?: (budget: ComputerUseCommandBudget | null) => void;
-  readonly supportsWindowScroll?: boolean;
   readonly isAvailable?: () => boolean;
   readonly forceStop?: () => Promise<void>;
-  readonly discoveryNote?: string;
   readonly dispose: (reason?: ComputerUseNativeShutdownReason) => Promise<void>;
   readonly getPermissions: () => Promise<ComputerUsePermissionState>;
   readonly requestAccessibilityPermission: () => Promise<ComputerUsePermissionState>;

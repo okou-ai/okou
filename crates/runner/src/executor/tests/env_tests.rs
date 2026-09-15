@@ -130,6 +130,19 @@ fn pi_context_for_test() -> ExecutionContext {
     context
 }
 
+fn native_pi_context_for_test(config: serde_json::Value) -> ExecutionContext {
+    let mut context = pi_context_for_test();
+    let environment = context.environment.get_or_insert_with(HashMap::new);
+    for binding in config["credentialBindings"].as_array().unwrap() {
+        environment.insert(
+            binding["environment"].as_str().unwrap().into(),
+            api_contracts::generated::constants::runners::PI_NATIVE_CREDENTIAL_PLACEHOLDER.into(),
+        );
+    }
+    context.pi_model_config = Some(config);
+    context
+}
+
 #[test]
 fn effective_cli_framework_matches_guest_agent_fallback_semantics() {
     for (value, framework) in [
@@ -2096,34 +2109,14 @@ async fn build_env_json_with_memory_as_artifact() {
 }
 
 #[test]
-fn native_pi_context_preserves_the_wire_and_only_materializes_opaque_credentials() {
+fn native_pi_context_accepts_valid_fixtures_with_opaque_credentials() {
     let fixtures: Vec<serde_json::Value> = serde_json::from_str(include_str!(
         "../../../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json"
     )).unwrap();
     for fixture in fixtures {
-        let config = fixture["config"].clone();
-        let mut context = pi_context_for_test();
-        context.pi_model_config = Some(config.clone());
-        let environment = context.environment.get_or_insert_with(HashMap::new);
-        for binding in config["credentialBindings"].as_array().unwrap() {
-            environment.insert(
-                binding["environment"].as_str().unwrap().into(),
-                api_contracts::generated::constants::runners::PI_NATIVE_CREDENTIAL_PLACEHOLDER
-                    .into(),
-            );
-        }
+        let context = native_pi_context_for_test(fixture["config"].clone());
         let payload = validate_context_for_test(&context);
         assert!(payload.is_ok(), "{}: {:?}", fixture["name"], payload.err());
-        let binding = &config["credentialBindings"][0];
-        context.environment.as_mut().unwrap().insert(
-            binding["environment"].as_str().unwrap().into(),
-            "real-secret".into(),
-        );
-        assert!(
-            validate_context_for_test(&context)
-                .unwrap_err()
-                .contains("opaque firewall markers")
-        );
     }
 }
 
@@ -2133,26 +2126,137 @@ fn native_pi_context_rejects_wrong_dialects_credentials_and_regions() {
         "../../../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json"
     )).unwrap();
     for fixture in fixtures {
-        for (field, invalid) in [
-            ("schemaVersion", json!(99)),
-            ("transport", json!("websocket")),
-            ("catalogModel", json!("claude-fable-5")),
-            ("api", json!("openai-responses")),
-            ("credentialOwner", json!("subscription")),
+        for (field, invalid, expected_error) in [
+            (
+                "schemaVersion",
+                json!(99),
+                "Pi model config generation is unsupported",
+            ),
+            (
+                "transport",
+                json!("websocket"),
+                "Pi native model config is invalid",
+            ),
+            (
+                "catalogModel",
+                json!("claude-fable-5"),
+                "Pi native model config is invalid",
+            ),
+            (
+                "api",
+                json!("openai-responses"),
+                "Pi native config fields are invalid",
+            ),
+            (
+                "credentialOwner",
+                json!("subscription"),
+                "Pi native model config is invalid",
+            ),
             (
                 "requestPolicy",
                 json!({"maxAttempts": 3, "cacheRetention": "short"}),
+                "Pi native request or ownership policy is invalid",
             ),
         ] {
-            let mut context = pi_context_for_test();
-            let mut config = fixture["config"].clone();
-            config[field] = invalid;
-            context.pi_model_config = Some(config);
-            assert!(
-                validate_context_for_test(&context).is_err(),
+            let mut context = native_pi_context_for_test(fixture["config"].clone());
+            assert_eq!(
+                validate_context_for_test(&context),
+                Ok(()),
+                "{} {field} baseline",
+                fixture["name"]
+            );
+            context.pi_model_config.as_mut().unwrap()[field] = invalid;
+            assert_eq!(
+                validate_context_for_test(&context),
+                Err(expected_error.to_string()),
                 "{} {field}",
                 fixture["name"]
             );
         }
+    }
+}
+
+#[test]
+fn native_pi_context_rejects_missing_or_raw_credential_markers() {
+    let fixtures: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json"
+    )).unwrap();
+    let expected_error = "Pi native environment must contain opaque firewall markers";
+    for fixture in fixtures {
+        let config = &fixture["config"];
+        let mut context = native_pi_context_for_test(config.clone());
+        assert_eq!(
+            validate_context_for_test(&context),
+            Ok(()),
+            "{} baseline",
+            fixture["name"]
+        );
+        context.environment = None;
+        assert_eq!(
+            validate_context_for_test(&context),
+            Err(expected_error.to_string()),
+            "{} missing environment",
+            fixture["name"]
+        );
+
+        for binding in config["credentialBindings"].as_array().unwrap() {
+            let key = binding["environment"].as_str().unwrap();
+            for (case, invalid) in [("missing", None), ("raw", Some("real-secret"))] {
+                let mut context = native_pi_context_for_test(config.clone());
+                assert_eq!(
+                    validate_context_for_test(&context),
+                    Ok(()),
+                    "{} {key} {case} baseline",
+                    fixture["name"]
+                );
+                let environment = context.environment.as_mut().unwrap();
+                match invalid {
+                    Some(value) => {
+                        environment.insert(key.into(), value.into());
+                    }
+                    None => {
+                        environment.remove(key);
+                    }
+                }
+                assert_eq!(
+                    validate_context_for_test(&context),
+                    Err(expected_error.to_string()),
+                    "{} {key} {case}",
+                    fixture["name"]
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn native_pi_us_rejects_user_credentials_and_unsupported_models() {
+    let fixtures: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json"
+    )).unwrap();
+    let fixture = fixtures
+        .iter()
+        .find(|fixture| fixture["name"] == "built-in US anthropic/claude-sonnet-4.6")
+        .unwrap();
+    let mut context = pi_context_for_test();
+    context.pi_model_config = Some(fixture["config"].clone());
+    context.environment.get_or_insert_with(HashMap::new).insert(
+        "OKOU_PI_NATIVE_API_KEY".into(),
+        api_contracts::generated::constants::runners::PI_NATIVE_CREDENTIAL_PLACEHOLDER.into(),
+    );
+    assert!(validate_context_for_test(&context).is_ok());
+    for change in [
+        json!({"credentialOwner": "organization", "billingOwner": "user"}),
+        json!({"credentialOwner": "member", "billingOwner": "user"}),
+        json!({"model": "anthropic/claude-fable-5.1", "catalogModel": "claude-fable-5-1"}),
+        json!({"baseUrl": "https://us.openrouter.ai/api/v1"}),
+    ] {
+        let mut config = fixture["config"].clone();
+        config
+            .as_object_mut()
+            .unwrap()
+            .extend(change.as_object().unwrap().clone());
+        context.pi_model_config = Some(config);
+        assert!(validate_context_for_test(&context).is_err());
     }
 }

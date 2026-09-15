@@ -15,6 +15,7 @@ import {
   runPiOfficialRpcMode,
   runPiMemoryPhase2MountedConsolidation,
   type PiAgentModelConfig,
+  type PiLangfuseRuntimeConfig,
   type PiMemoryRecallOutcome,
   type PiMemoryToolSourceUse,
 } from "@okouai/pi-agent-runtime/node";
@@ -23,6 +24,7 @@ import {
   resolvePiApiFirstTurnHandoff,
   type PiApiFirstTurnBoundaryControl,
 } from "./pi-api-first-turn-handoff";
+import { piLangfuseTracesContract } from "@okouai/api-contracts/contracts/pi-langfuse";
 
 const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
@@ -61,6 +63,7 @@ export interface PiSandboxAgentConfig {
   readonly sessionId: string;
   readonly launchPayload: PiLaunchPayload;
   readonly model: PiAgentModelConfig;
+  readonly langfuseConfig?: PiLangfuseRuntimeConfig;
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -120,6 +123,7 @@ export async function piSandboxAgentConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<PiSandboxAgentConfig> {
   const runId = requiredEnv(env, RUN_ID_ENV);
+  const langfuseConfig = piLangfuseRelayConfig(env, runId);
   const parsedModel = piModelConfigSchema.parse(
     parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
   );
@@ -134,6 +138,29 @@ export async function piSandboxAgentConfigFromEnv(
         return requiredEnv(env, binding.environment);
       },
     }),
+    ...(langfuseConfig ? { langfuseConfig } : {}),
+  };
+}
+
+function piLangfuseRelayConfig(
+  env: NodeJS.ProcessEnv,
+  runId: string,
+): PiLangfuseRuntimeConfig | undefined {
+  if (env.OKOU_PI_LANGFUSE_DEBUG_ENABLED !== "true") {
+    return undefined;
+  }
+  const apiUrl = requiredEnv(env, "OKOU_API_BACKEND_URL");
+  const endpoint = new URL(
+    piLangfuseTracesContract.export.path.replace(
+      ":runId",
+      encodeURIComponent(runId),
+    ),
+    apiUrl.startsWith("http") ? apiUrl : `https://${apiUrl}`,
+  ).toString();
+  return {
+    relay: { endpoint, token: requiredEnv(env, "OKOU_TOKEN") },
+    userId: env.LANGFUSE_USER_ID,
+    environment: env.LANGFUSE_TRACING_ENVIRONMENT,
   };
 }
 
@@ -178,9 +205,7 @@ export async function runPiSandboxAgentLoop(args: {
       {
         memoryRoot: args.memoryRoot ?? PI_MEMORY_ROOT,
         memoryStorageId: maintenance.memoryStorageId,
-        claimedRevision: maintenance.claimedRevision,
         claimedBaseVersionId: maintenance.claimedBaseVersionId,
-        leaseToken: maintenance.leaseToken,
         selectionDigest: maintenance.selectionDigest,
         selected: maintenance.selected.map((candidate) => {
           return {
@@ -238,6 +263,12 @@ export async function runPiSandboxAgentLoop(args: {
     },
     sessionFile: handoff.sessionFile,
     ownershipTransferMode: handoff.ownershipTransferMode,
+    ...(handoff.langfuseParent
+      ? { langfuseParent: handoff.langfuseParent }
+      : {}),
+    ...(args.config.langfuseConfig
+      ? { langfuseConfig: args.config.langfuseConfig }
+      : {}),
   });
 }
 

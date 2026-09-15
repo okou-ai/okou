@@ -300,8 +300,8 @@ function ExportActions({
         {canExport && (
           <Button
             type="button"
-            variant="outline"
-            className="okou-btn-morandi h-9 w-full gap-2 rounded-lg border"
+            variant="neutral"
+            className="h-9 w-full gap-2 rounded-lg"
             disabled={triggering}
             onClick={onTrigger}
           >
@@ -431,7 +431,7 @@ export function ExportPage() {
   };
 
   return (
-    <div className="okou-app okou-viewport-shell flex w-full bg-background okou-workspace-bg">
+    <div className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) okou-workspace-bg">
       <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-4 py-8">
         <section
           className={surfaceVariants({

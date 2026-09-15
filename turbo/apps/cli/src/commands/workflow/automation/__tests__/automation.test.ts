@@ -47,8 +47,8 @@ function okouToken(orgId: string): string {
 const workflowSummary = {
   id: WORKFLOW_ID,
   agentId: AGENT_ID,
-  agentName: "Zero",
-  agentDisplayName: "Zero",
+  agentName: "Nova",
+  agentDisplayName: "Nova",
   name: "tell-a-joke",
   displayName: "Tell a joke",
   description: "Tell one short joke",
@@ -1542,7 +1542,7 @@ describe("okou workflow automation commands", () => {
       expect(logCalls).toContain("Webhook");
       expect(logCalls).toContain(webhookAutomation.webhookUrl);
       expect(logCalls).toContain(webhookAutomation.webhookSecret);
-      expect(logCalls).toContain("X-VM0-Signature");
+      expect(logCalls).toContain("X-Okou-Signature");
     });
 
     it.each([

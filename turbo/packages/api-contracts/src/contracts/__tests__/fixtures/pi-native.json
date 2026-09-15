@@ -317,5 +317,129 @@
       "region": "us-east-1",
       "authMode": "sigv4"
     }
+  },
+  {
+    "name": "built-in US anthropic/claude-opus-5",
+    "config": {
+      "schemaVersion": 4,
+      "dialect": "anthropic-messages",
+      "transport": "sse",
+      "provider": "anthropic",
+      "route": "openrouter-api-key",
+      "baseUrl": "https://us.openrouter.ai/api",
+      "model": "anthropic/claude-opus-5",
+      "catalogModel": "claude-opus-5",
+      "credentialOwner": "builtin",
+      "billingOwner": "builtin",
+      "thinkingLevel": "high",
+      "requestPolicy": {
+        "maxAttempts": 1,
+        "cacheRetention": "short"
+      },
+      "credentialBindings": [
+        {
+          "kind": "api-key",
+          "environment": "OKOU_PI_NATIVE_API_KEY",
+          "secretName": "OPENROUTER_API_KEY",
+          "credentialHeader": {
+            "name": "Authorization",
+            "valueTemplate": "Bearer {{secret}}"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "built-in US anthropic/claude-opus-4.8",
+    "config": {
+      "schemaVersion": 4,
+      "dialect": "anthropic-messages",
+      "transport": "sse",
+      "provider": "anthropic",
+      "route": "openrouter-api-key",
+      "baseUrl": "https://us.openrouter.ai/api",
+      "model": "anthropic/claude-opus-4.8",
+      "catalogModel": "claude-opus-4-8",
+      "credentialOwner": "builtin",
+      "billingOwner": "builtin",
+      "thinkingLevel": "high",
+      "requestPolicy": {
+        "maxAttempts": 1,
+        "cacheRetention": "short"
+      },
+      "credentialBindings": [
+        {
+          "kind": "api-key",
+          "environment": "OKOU_PI_NATIVE_API_KEY",
+          "secretName": "OPENROUTER_API_KEY",
+          "credentialHeader": {
+            "name": "Authorization",
+            "valueTemplate": "Bearer {{secret}}"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "built-in US anthropic/claude-sonnet-5",
+    "config": {
+      "schemaVersion": 4,
+      "dialect": "anthropic-messages",
+      "transport": "sse",
+      "provider": "anthropic",
+      "route": "openrouter-api-key",
+      "baseUrl": "https://us.openrouter.ai/api",
+      "model": "anthropic/claude-sonnet-5",
+      "catalogModel": "claude-sonnet-5",
+      "credentialOwner": "builtin",
+      "billingOwner": "builtin",
+      "thinkingLevel": "high",
+      "requestPolicy": {
+        "maxAttempts": 1,
+        "cacheRetention": "short"
+      },
+      "credentialBindings": [
+        {
+          "kind": "api-key",
+          "environment": "OKOU_PI_NATIVE_API_KEY",
+          "secretName": "OPENROUTER_API_KEY",
+          "credentialHeader": {
+            "name": "Authorization",
+            "valueTemplate": "Bearer {{secret}}"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "built-in US anthropic/claude-sonnet-4.6",
+    "config": {
+      "schemaVersion": 4,
+      "dialect": "anthropic-messages",
+      "transport": "sse",
+      "provider": "anthropic",
+      "route": "openrouter-api-key",
+      "baseUrl": "https://us.openrouter.ai/api",
+      "model": "anthropic/claude-sonnet-4.6",
+      "catalogModel": "claude-sonnet-4-6",
+      "credentialOwner": "builtin",
+      "billingOwner": "builtin",
+      "thinkingLevel": "high",
+      "requestPolicy": {
+        "maxAttempts": 1,
+        "cacheRetention": "short"
+      },
+      "credentialBindings": [
+        {
+          "kind": "api-key",
+          "environment": "OKOU_PI_NATIVE_API_KEY",
+          "secretName": "OPENROUTER_API_KEY",
+          "credentialHeader": {
+            "name": "Authorization",
+            "valueTemplate": "Bearer {{secret}}"
+          }
+        }
+      ]
+    }
   }
 ]

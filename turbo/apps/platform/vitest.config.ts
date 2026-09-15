@@ -95,8 +95,7 @@ export default defineConfig({
     unstubGlobals: true,
     benchmark: {
       include: ["src/**/__benches__/**/*.bench.tsx"],
-      includeSamples: true,
-      reporters: ["default", "./scripts/bench-p90-reporter.ts"],
+      retainSamples: true,
     },
   },
 });

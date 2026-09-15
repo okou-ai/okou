@@ -10,7 +10,10 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatClipboardPayload } from "../okou-page/clipboard.ts";
-import type { ChatEventGroup } from "./chat-event.ts";
+import type {
+  ChatEventGroup,
+  UserMessageRenderDocument,
+} from "./chat-event.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
 import type { HeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -30,6 +33,7 @@ import type { ChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import type { RunDetailSignals } from "./run-detail.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -50,6 +54,7 @@ export interface EventImageGroupProjection {
   readonly role: ChatEventGroup["role"];
   readonly events: readonly {
     readonly userMessage?: UserMessageDocument;
+    readonly userMessageRenderDocument?: UserMessageRenderDocument;
     readonly tree?: Root;
   }[];
 }
@@ -61,6 +66,7 @@ export interface EventImageGroupProjection {
  * source consumed by other features such as the composer.
  */
 export interface MessageListSignals {
+  readonly runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>;
   readonly setup$: Command<Promise<void>, [AbortSignal]>;
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
   readonly scroll: ReturnType<typeof createChatThreadScrollSignals>;
@@ -128,10 +134,9 @@ export interface QueueMessageOptions {
 }
 
 export interface ChatPanelSignals {
+  readonly runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>;
   readonly threadId: string;
   readonly agentId: string;
-  /** Aborts when this chat panel is replaced or its page is left. */
-  readonly signal: AbortSignal;
   // -- Data signals ----------------------------------------------------------
   readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
   readonly threadMeta$: Computed<ThreadMeta | null>;
@@ -229,7 +234,6 @@ export interface ChatPanelSignals {
   >;
   readonly subscribeChatThread$: Command<Promise<void>, [AbortSignal]>;
   // -- Thinking indicator ---------------------------------------------------
-  readonly blockColors$: Computed<[string, string, string]>;
   readonly thinkingPhrase$: Computed<string>;
   readonly donePhrase$: Computed<Promise<string>>;
   // -- Artifacts ------------------------------------------------------------

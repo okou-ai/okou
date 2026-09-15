@@ -132,6 +132,27 @@ const apiTestExternalBehaviorMessage =
 const apiTestDirectDbImportMessage =
   "API tests must not import DB handles directly. Exercise setup and assertions through API endpoints; add a test route only when an external-behavior exception is justified.";
 
+const apiTestLoggerImportMessage =
+  "API tests must not observe the logger. Assert HTTP responses and effects instead; see docs/testing/testing-external-behavior.md.";
+
+const apiTestDiagnosticsMessage =
+  "API tests must not observe the logger or telemetry; assert HTTP responses and effects. See docs/testing/testing-external-behavior.md";
+
+const apiTestDiagnosticsSyntax = [
+  {
+    selector: 'MemberExpression[property.name="axiomLogging"]',
+    message: apiTestDiagnosticsMessage,
+  },
+  {
+    selector: 'MemberExpression[property.name="sdkIngest"]',
+    message: apiTestDiagnosticsMessage,
+  },
+  {
+    selector: 'MemberExpression[property.name="useRealTelemetry"]',
+    message: apiTestDiagnosticsMessage,
+  },
+];
+
 const productionRouteTestImportMessage =
   "Production source must not import test-only routes. Mount required test fixture routes explicitly from tests through setupApp().";
 
@@ -200,6 +221,8 @@ const apiTestServiceImportPatterns = [
   "src/signals/services/**/*",
 ];
 
+const apiTestLoggerImportPatterns = ["**/lib/log", "**/lib/log.js"];
+
 export default [
   {
     ignores: [".typecheck/**"],
@@ -246,6 +269,18 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/conversation-history-deletion.service.ts"],
+    rules: {
+      // One content-free aggregate per committed lifecycle deletion, never on
+      // rollback/no-op. Debug is dropped by Axiom; this receipt establishes
+      // actual forward accounting activity for #33973 production acceptance.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Conversation history deletion committed"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/codex-reset-credit-expiry.service.ts"],
     rules: {
       // One demand-driven aggregate per minute, not per-read diagnostics.
@@ -257,43 +292,57 @@ export default [
     },
   },
   {
-    files: ["src/signals/services/chat-activity-summary.service.ts"],
-    rules: {
-      // Existing content-free operation records must survive Axiom's info default.
-      "api/no-logger-info": [
-        "error",
-        {
-          allowedMessages: [
-            "Activity summary cache",
-            "Activity summary attempt",
-            "Activity summary completion",
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/services/run-activity-snapshot.service.ts"],
-    rules: {
-      // One record per relevant batch or cleanup; suppressed captures stay silent.
-      "api/no-logger-info": [
-        "error",
-        {
-          allowedMessages: [
-            "Activity snapshot capture",
-            "Activity snapshot cleanup",
-          ],
-        },
-      ],
-    },
-  },
-  {
     files: ["src/signals/services/onboarding.service.ts"],
     rules: {
       "api/no-logger-info": [
         "error",
         {
           allowedMessages: ["Morning Brief onboarding provisioning outcome"],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/services/morning-brief-enrollment-worker.service.ts"],
+    rules: {
+      // Only a first attempt, a changed error, or an actual install reaches
+      // this record, so it is bounded by enrollment progress rather than by
+      // cron ticks. Axiom's default transport drops debug events, and the
+      // skipped reasons are the only evidence that enrollment ran and chose
+      // not to install.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Morning Brief enrollment changed"] },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/routes/webhooks-clerk.ts"],
+    rules: {
+      // One record per organization-membership creation. Failures already
+      // reach Axiom at warn; the succeeded and skipped outcomes must survive
+      // the info default too, or a silent dataset is indistinguishable from a
+      // working one.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Morning Brief membership provisioning outcome"] },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/routes/user-preferences.ts"],
+    rules: {
+      // Both records fire on the timezone initialize call, which an
+      // authenticated session invokes once. They share their details object
+      // with the warn branch beside them, so retaining them at info adds no
+      // field that Axiom does not already receive on failure.
+      "api/no-logger-info": [
+        "error",
+        {
+          allowedMessages: [
+            "Morning Brief timezone provisioning outcome",
+            "Morning Brief initialization outcome",
+          ],
         },
       ],
     },
@@ -338,6 +387,17 @@ export default [
             "Pi memory Phase 2 work completed",
           ],
         },
+      ],
+    },
+  },
+  {
+    files: ["src/signals/services/pi-memory-quota.service.ts"],
+    rules: {
+      // Quota admission is a bounded production decision, including expected
+      // denials and unknowns. Debug never reaches Axiom's info-level transport.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Pi memory quota admission"] },
       ],
     },
   },
@@ -529,8 +589,19 @@ export default [
   {
     // Keep finite persisted/state-machine contract matrices as narrow
     // exceptions. Route tests cover constructible behavior, while these exact
-    // transition inputs are not available through production APIs.
+    // transition inputs are not available through production APIs. Being an
+    // exception to the service-directory ban is not an exception to the
+    // diagnostics gate, so these files carry those selectors too.
     files: [
+      // B1 deliberately has no production deletion/selector endpoint. This
+      // exact codec suite verifies its minimum-data KMS envelope boundary.
+      "src/signals/services/__tests__/account-erasure-selector.test.ts",
+      // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
+      // sessions exercise first closure, lease recovery, and selector retirement.
+      "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // B2b1 races the dormant real projector with actual compute writers;
+      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
+      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
       // Content hashes are a byte-identical cryptographic contract shared with
       // guest-agent; route behavior cannot pin the serializer's full corpus.
       "src/signals/services/__tests__/storage-content-hash.service.test.ts",
@@ -563,10 +634,33 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger presence is a deployment boundary, not an HTTP input. Private
+      // schemas exercise the entitlement writer, rollback, and actual locks.
+      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
+      // OAuth trigger presence, config-key movement and row-lock interleavings
+      // require isolated PostgreSQL schemas outside the product API boundary.
+      "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
+      // Hosting trigger coexistence, ownership locks and allocation rollback
+      // require isolated PostgreSQL schemas; route suites cover product APIs.
+      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
+      // Pending guard coexistence, repair and row-lock races require private
+      // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
+      "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
+      // Historical privacy data and schema-drop races cannot be produced by
+      // current endpoints; actual user-deletion routes cover their contract.
+      "src/signals/services/__tests__/marketing-privacy-cleanup.service.test.ts",
+      // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
+      "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
+      // #34044 requires real transactions, UTC clock, deletion and old-writer races.
+      "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
     ],
     rules: {
-      "no-restricted-syntax": ["error", ...restrictedSyntax],
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedSyntax,
+        ...apiTestDiagnosticsSyntax,
+      ],
     },
   },
   {
@@ -695,6 +789,11 @@ export default [
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
+      // No production endpoint can construct B1's dormant jobs or DB races.
+      "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // B2b1 races the dormant real projector with actual compute writers;
+      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
+      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
       // Preview job-ref aliases are process environment state, and both Stripe
       // metadata entry points must share one value-free resolution matrix that
       // cannot be observed completely through a single production API route.
@@ -703,6 +802,28 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger presence is a deployment boundary, not an HTTP input. Private
+      // schemas exercise the entitlement writer, rollback, and actual locks.
+      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
+      // OAuth trigger presence, config-key movement and row-lock interleavings
+      // require isolated PostgreSQL schemas outside the product API boundary.
+      "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
+      // Hosting trigger coexistence, ownership locks and allocation rollback
+      // require isolated PostgreSQL schemas; route suites cover product APIs.
+      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
+      // Pending guard coexistence, repair and row-lock races require private
+      // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
+      "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
+      // Historical privacy data and schema-drop races cannot be produced by
+      // current endpoints; actual user-deletion routes cover their contract.
+      "src/signals/services/__tests__/marketing-privacy-cleanup.service.test.ts",
+      // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
+      "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
+      // #34044 requires real transactions, UTC clock, deletion and old-writer races.
+      "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
+      // The logger is the subject here, not a diagnostic: this suite covers the
+      // app factory's log wiring and flush ownership, which no route exposes.
+      "src/__tests__/app-factory.test.ts",
     ],
     rules: {
       "no-restricted-imports": [
@@ -727,8 +848,47 @@ export default [
               group: apiTestDirectDbImportPatterns,
               message: apiTestDirectDbImportMessage,
             },
+            {
+              group: apiTestLoggerImportPatterns,
+              message: apiTestLoggerImportMessage,
+            },
           ],
         },
+      ],
+    },
+  },
+  // Diagnostics gate: API tests must not reach the logger or telemetry stubs
+  // through `context.mocks`. This is the last `no-restricted-syntax` config for
+  // the files it matches, so it carries `restrictedSyntax` forward; files in
+  // `ignores` fall back to the shared test block above.
+  {
+    files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
+    ignores: [
+      // Bootstrap-only module: it owns the process.env and vi.stubEnv usage
+      // that `restrictedSyntax` bans everywhere else.
+      "src/__tests__/env-stub.ts",
+      // Service-directory tests are answered by their own blocks above: the
+      // file is either banned outright or is a named exception that carries
+      // these selectors alongside the shared ones.
+      "src/signals/services/**/*.test.ts",
+      // The stub definition site installs the logger and telemetry mocks that
+      // this rule stops tests from reading; it asserts nothing itself.
+      "src/__tests__/mocks.ts",
+      // The logger is the subject of this suite, not a diagnostic.
+      "src/lib/__tests__/log.test.ts",
+      // The Axiom log transport is the subject of this suite.
+      "src/lib/__tests__/log-axiom-transport.test.ts",
+      // The telemetry SDK client is the subject of this suite.
+      "src/signals/external/__tests__/axiom.test.ts",
+      // The app factory's log wiring and flush ownership is the subject here,
+      // and no route exposes it.
+      "src/__tests__/app-factory.test.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedSyntax,
+        ...apiTestDiagnosticsSyntax,
       ],
     },
   },

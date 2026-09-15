@@ -65,20 +65,21 @@ export const connectSlackAccount$ = command(
     const channelId = params.get("c");
     const threadTs = params.get("t");
 
-    await accept(
+    const result = await accept(
       client.connect({
         body: {
           workspaceId,
           slackUserId,
+          requestUserScopes: true,
           ...(channelId ? { channelId } : {}),
           ...(threadTs ? { threadTs } : {}),
         },
         fetchOptions: { signal },
       }),
-      [200],
+      [202],
     );
     signal.throwIfAborted();
 
-    window.location.href = "slack://open";
+    window.location.href = result.body.authorizationUrl;
   },
 );

@@ -8,7 +8,6 @@ import type {
 } from "../desktop-bridge";
 import type {
   ComputerUseAutomationPermissionTarget,
-  ComputerUseDriverId,
   DesktopComputerUseState,
 } from "../computer-use-types";
 
@@ -21,7 +20,7 @@ const reloadDesktopAuthState$ = state(0);
 const reloadDeveloperToolsState$ = state(0);
 
 function desktopComputerUseApi(): DesktopComputerUseApi {
-  const api = window.vm0DesktopComputerUse;
+  const api = window.okouDesktopComputerUse;
   if (!api) {
     throw new Error("Desktop Computer Use bridge is unavailable");
   }
@@ -37,11 +36,11 @@ function desktopAuthApi(): DesktopAuthApi {
 }
 
 function desktopDeveloperToolsApi(): DesktopDeveloperToolsApi | null {
-  return window.vm0DesktopDeveloperTools ?? null;
+  return window.okouDesktopDeveloperTools ?? null;
 }
 
 export function hasDesktopComputerUseBridge(): boolean {
-  return Boolean(window.vm0DesktopComputerUse);
+  return Boolean(window.okouDesktopComputerUse);
 }
 
 export function hasDesktopAuthBridge(): boolean {
@@ -49,7 +48,7 @@ export function hasDesktopAuthBridge(): boolean {
 }
 
 export function hasDesktopDeveloperToolsBridge(): boolean {
-  return Boolean(window.vm0DesktopDeveloperTools);
+  return Boolean(window.okouDesktopDeveloperTools);
 }
 
 export const computerUseData$ = computed(
@@ -134,16 +133,6 @@ export const startComputerUse$ = command(async ({ set }) => {
     set(reloadComputerUse$);
   }
 });
-
-export const selectComputerUseDriver$ = command(
-  async ({ set }, driver: ComputerUseDriverId) => {
-    try {
-      await desktopComputerUseApi().selectDriver(driver);
-    } finally {
-      set(reloadComputerUse$);
-    }
-  },
-);
 
 export const stopComputerUse$ = command(async ({ set }) => {
   try {

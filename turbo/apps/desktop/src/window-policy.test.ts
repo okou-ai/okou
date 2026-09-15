@@ -860,7 +860,7 @@ describe("computer use desktop runtime", () => {
     );
   });
 
-  it("renders CUA-style element details and focused element summary", () => {
+  it("renders accessibility element details and focused element summary", () => {
     const snapshot = {
       app: "Electron",
       appDisplayName: "Okou",

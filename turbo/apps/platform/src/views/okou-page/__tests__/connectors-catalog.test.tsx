@@ -2,7 +2,7 @@ import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/cli
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -20,8 +20,8 @@ import {
   search as locationSearch,
 } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { setMockConnectorFeatureSwitches } from "../../../mocks/handlers/api-connectors.ts";
 import {
+  customConnector,
   getConnectorAction,
   getConnectorCard,
   listAgent,
@@ -176,7 +176,7 @@ test("Avoid duplicate catalog sections during metadata changes", async () => {
   expect(queryConnectorCard("Billing Stripe")).toBeInTheDocument();
 });
 
-test("Show Mailchimp OAuth without a feature-switch override", async () => {
+test("Show Mailchimp OAuth in the connector catalog", async () => {
   mockConnectors(context, []);
   await setupPage({ context, path: "/connectors?keywords=mailchimp" });
 
@@ -185,45 +185,28 @@ test("Show Mailchimp OAuth without a feature-switch override", async () => {
   });
 });
 
-test("Update connector visibility when availability changes", async () => {
-  mockConnectors(context, []);
-  setMockConnectorFeatureSwitches({
-    [FeatureSwitchKey.MailchimpConnector]: false,
-  });
-  const switchesReady = context.mocks.deferred<void>();
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    await switchesReady.promise;
-    return respond(200, {
-      switches: { [FeatureSwitchKey.MailchimpConnector]: true },
-      effectiveSwitches: { [FeatureSwitchKey.MailchimpConnector]: true },
-    });
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=mailchimp",
-  });
-
-  await expect(
-    screen.findByText(/No connectors matching/u),
-  ).resolves.toBeInTheDocument();
-
-  setMockConnectorFeatureSwitches({
-    [FeatureSwitchKey.MailchimpConnector]: true,
-  });
-  switchesReady.resolve();
-
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", "Connect Mailchimp"),
-    ).toBeInTheDocument();
-  });
-  expect(locationSearch()).toBe("?keywords=mailchimp");
-});
-
 async function openConnectorFilterCatalog() {
   const researchId = "c0000000-0000-4000-a000-000000000010";
-  mockConnectors(context, [
+  const [github] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },
+  ]);
+  if (!github) {
+    throw new Error("Expected the connected GitHub account");
+  }
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "github",
+      label: "GitHub",
+      connection: github,
+      connected: true,
+      connectionStatus: "connected",
+      authMethods: [oauthMethod()],
+    }),
+    publicStatusItem({
+      connectorSlug: "asana",
+      label: "Asana",
+      authMethods: [oauthMethod()],
+    }),
   ]);
   context.mocks.data.agents([
     listAgent(researchId, "Research Agent", "preset:0"),
@@ -580,7 +563,7 @@ test("Browse the catalog as shelves, then enter a category and come back", async
   expect(screen.queryByTestId("connector-category-grid")).toBeInTheDocument();
 
   const back = queryAllByRoleFast("button").find((element) => {
-    return element.textContent === "Connectors";
+    return element.textContent === "Discover";
   });
   await click(back!);
   await waitFor(() => {
@@ -621,4 +604,225 @@ test("Keep every category in the filter while one of them is open", async () => 
       return option?.startsWith("Voice");
     }),
   ).toBeTruthy();
+});
+
+function connectedShelfCatalog() {
+  return shelfCatalog().map((connector) => {
+    return connector.slug === "mail-0" || connector.slug === "mail-1"
+      ? {
+          ...connector,
+          connected: true,
+          connectionStatus: "connected" as const,
+          connection: {
+            authMethod: "oauth" as const,
+            externalUsername: "octocat",
+            externalEmail: null,
+            reconnectReason: null,
+          },
+        }
+      : connector;
+  });
+}
+
+test("Land on Discover, then switch to the connectors this workspace has", async () => {
+  mockConnectors(context, [
+    { connectorSlug: "mail-0" as ConnectorSlug },
+    { connectorSlug: "mail-1" as ConnectorSlug },
+  ]);
+  mockPublicConnectorStatus(
+    context,
+    connectedShelfCatalog(),
+    shelfCategoryMetadata(),
+    { "communication-collaboration": 327, "ai-voice-audio": 50 },
+  );
+  await setupPage({
+    context,
+    path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  // Discovery leads: the catalog is what a visit is usually for, and the
+  // connectors this workspace has are counted rather than listed twice.
+  await waitFor(() => {
+    expect(
+      screen.getByTestId("connector-shelf-communication-collaboration"),
+    ).toBeInTheDocument();
+  });
+  const connected = screen.getByTestId("connectors-scope-connected");
+  expect(connected).toHaveTextContent("Connected2");
+  expect(screen.queryByTestId("connectors-connected-grid")).toBeNull();
+
+  // A connector this workspace already has is still an answer to "what talks
+  // to mail", so it stays on the shelf -- without an add affordance.
+  const head = screen.getByTestId("connector-shelf-head");
+  expect(within(head).getByTestId("connector-card-label")).toHaveTextContent(
+    "Gmail",
+  );
+  expect(queryConnectorAction("button", "Connect Gmail")).toBeNull();
+  // Category is the dimension that organises the catalog, so it owns the filter.
+  expect(screen.getByLabelText("Filter connectors")).toHaveTextContent(
+    "Filter: All",
+  );
+
+  await click(connected);
+  await waitFor(() => {
+    expect(locationSearch()).toContain("scope=connected");
+  });
+
+  // The other scope is the connected ones alone, and its dimension is the
+  // agent -- one control in the slot, never two.
+  const grid = await screen.findByTestId("connectors-connected-grid");
+  expect(within(grid).getAllByTestId("connector-card-label")).toHaveLength(2);
+  expect(
+    screen.queryByTestId("connector-shelf-communication-collaboration"),
+  ).toBeNull();
+  expect(screen.getByLabelText("Filter connectors")).toHaveTextContent(
+    "Filter: All agents",
+  );
+  await click(screen.getByLabelText("Filter connectors"));
+  const menu = await screen.findByRole("menu");
+  const options = queryAllByRoleFast("menuitem", menu).map((item) => {
+    return item.textContent;
+  });
+  expect(options).toContain("All agents");
+  expect(options).not.toContain("Not connected");
+});
+
+test("Leaving a category with the scope control drops the category with it", async () => {
+  mockConnectors(context, [{ connectorSlug: "mail-0" as ConnectorSlug }]);
+  mockPublicConnectorStatus(
+    context,
+    connectedShelfCatalog(),
+    shelfCategoryMetadata(),
+    { "communication-collaboration": 327, "ai-voice-audio": 50 },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?category=communication-collaboration",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  await waitFor(() => {
+    expect(getConnectorCard("Zendesk")).toBeInTheDocument();
+  });
+
+  // A category belongs to the scope it was opened in: carrying it across would
+  // filter the connectors you own by a dimension that does not organise them.
+  await click(screen.getByTestId("connectors-scope-connected"));
+  await waitFor(() => {
+    expect(locationSearch()).toContain("scope=connected");
+  });
+  expect(locationSearch()).not.toContain("category=");
+});
+
+test("Warn on the scope control when a connection this workspace owns needs a reconnect", async () => {
+  mockConnectors(context, [
+    {
+      connectorSlug: "mail-0" as ConnectorSlug,
+      connectionStatus: "reconnect-required",
+      reconnectReason: "authorization_expired_or_revoked",
+    },
+  ]);
+  mockPublicConnectorStatus(
+    context,
+    connectedShelfCatalog(),
+    shelfCategoryMetadata(),
+    { "communication-collaboration": 327, "ai-voice-audio": 50 },
+  );
+  await setupPage({
+    context,
+    path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  // The list is behind a control, so the control has to carry the one thing a
+  // count cannot say: something in there stopped working.
+  await expect(
+    screen.findByLabelText("Needs attention"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Find the connectors no agent is using", async () => {
+  const researchId = "c0000000-0000-4000-a000-000000000011";
+  mockConnectors(context, [
+    { connectorSlug: "mail-0" as ConnectorSlug },
+    { connectorSlug: "mail-1" as ConnectorSlug },
+  ]);
+  context.mocks.data.agents([listAgent(researchId, "Research", "preset:0")]);
+  context.mocks.api(userConnectorsContract.get, ({ params, respond }) => {
+    return respond(200, {
+      enabledConnectorSlugs: params.id === researchId ? ["mail-0"] : [],
+    });
+  });
+  mockPublicConnectorStatus(
+    context,
+    connectedShelfCatalog(),
+    shelfCategoryMetadata(),
+    { "communication-collaboration": 327, "ai-voice-audio": 50 },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=connected",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  await waitFor(() => {
+    expect(getConnectorCard("Gmail")).toBeInTheDocument();
+  });
+  expect(queryConnectorCard("Outlook Mail")).toBeInTheDocument();
+
+  // A connector nobody uses is the one worth finding in your own list, and it
+  // is the question the agent dimension cannot ask agent by agent.
+  click(getConnectorAction("button", "Filter connectors"));
+  click(getConnectorAction("menuitem", "Not shared with any agent"));
+  await waitFor(() => {
+    expect(queryConnectorCard("Gmail")).toBeNull();
+  });
+  expect(getConnectorCard("Outlook Mail")).toBeInTheDocument();
+  expect(new URLSearchParams(locationSearch()).get("connection")).toBe(
+    "unshared",
+  );
+});
+
+test("Reach the connectors this workspace built from their own segment", async () => {
+  mockConnectors(context, [{ connectorSlug: "mail-0" as ConnectorSlug }]);
+  mockPublicConnectorStatus(
+    context,
+    connectedShelfCatalog(),
+    shelfCategoryMetadata(),
+    { "communication-collaboration": 327, "ai-voice-audio": 50 },
+  );
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [customConnector()] });
+  });
+  await setupPage({
+    context,
+    path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  // Browsing the catalog no longer trails a block of connectors this workspace
+  // authored; the segment counts them instead.
+  await waitFor(() => {
+    expect(screen.getByTestId("connectors-scope-custom")).toHaveTextContent(
+      "Custom1",
+    );
+  });
+  expect(queryConnectorCard("Acme Search")).toBeNull();
+
+  await click(screen.getByTestId("connectors-scope-custom"));
+  await waitFor(() => {
+    expect(locationSearch()).toContain("scope=custom");
+  });
+
+  // The scope that owns them also owns the action that creates one, and it
+  // offers no category filter -- a custom connector has no category.
+  expect(getConnectorCard("Acme Search")).toBeInTheDocument();
+  expect(
+    screen.queryByTestId("connector-shelf-communication-collaboration"),
+  ).toBeNull();
+  expect(screen.queryByLabelText("Filter connectors")).toBeNull();
+  expect(
+    getConnectorAction("button", "New custom connector"),
+  ).toBeInTheDocument();
 });

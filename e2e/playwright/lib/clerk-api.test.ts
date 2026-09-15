@@ -145,7 +145,7 @@ test("creates a password-backed test identity without skipping its password poli
   );
 });
 
-test("creates organizations with exact ownership metadata and retries membership update", async () => {
+test("creates organizations with exact ownership metadata and retries a 5xx membership update", async () => {
   await withClerkServer(
     (request, response, requests) => {
       if (request.method === "POST" && request.url === "/v1/organizations") {
@@ -162,7 +162,7 @@ test("creates organizations with exact ownership metadata and retries membership
           "/v1/organizations/org_test/memberships/user_test",
         );
         if (patchCount === 1) {
-          sendJson(response, 429, { errors: [] }, { "retry-after": "0" });
+          sendJson(response, 503, { errors: [] }, { "retry-after": "0" });
         } else {
           sendJson(response, 200, { role: "org:admin" });
         }
@@ -212,6 +212,34 @@ test("creates organizations with exact ownership metadata and retries membership
           "/v1/organizations/org_test/memberships/user_test",
         ),
         2,
+      );
+    },
+  );
+});
+
+test("does not retry rate-limited Clerk lookups", async () => {
+  await withClerkServer(
+    (_request, response) => {
+      sendJson(response, 429, { errors: [] }, { "retry-after": "0" });
+    },
+    async (requests) => {
+      await assert.rejects(deleteUserByEmail("limited@example.com"), /429/);
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0]?.method, "GET");
+    },
+  );
+});
+
+test("does not retry rate-limited Clerk deletions", async () => {
+  await withClerkServer(
+    (_request, response) => {
+      sendJson(response, 429, { errors: [] }, { "retry-after": "0" });
+    },
+    async (requests) => {
+      await assert.rejects(deleteOrganizationById("org_limited"), /429/);
+      assert.equal(
+        countRequests(requests, "DELETE", "/v1/organizations/org_limited"),
+        1,
       );
     },
   );

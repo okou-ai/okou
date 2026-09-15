@@ -34,23 +34,6 @@ const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const reads = createRunReadsApi(context);
 
-function cooldownReports(level: "debug" | "info" | "warn" | "error") {
-  return context.mocks.axiomLogging[level].mock.calls.filter(([, fields]) => {
-    return (
-      typeof fields === "object" &&
-      fields !== null &&
-      "type" in fields &&
-      fields.type === "built_in_model_provider_cooldown"
-    );
-  });
-}
-
-function expectNoCooldownReports(): void {
-  for (const level of ["debug", "info", "warn", "error"] as const) {
-    expect(cooldownReports(level)).toStrictEqual([]);
-  }
-}
-
 interface ClaimedBuiltInRun {
   readonly actor: ReturnType<typeof bdd.user>;
   readonly agentId: string;
@@ -161,18 +144,23 @@ describe("POST /api/test/runtime-state/action", () => {
     });
   });
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
-    "disables Codex apply patch for the built-in %s OpenRouter fallback",
+  it.each([
+    "deepseek-v4.1-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+  ] as const)(
+    "uses OpenRouter during a built-in %s native cooldown",
     async (selectedModel) => {
       await seedBuiltInModelCandidateKeys(context, selectedModel);
       const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
-      const primaryCooldownUntil = new Date(startedAt + 60 * 1000);
+      const primaryCooldownUntil = new Date(startedAt + 5 * 60 * 1000);
       const primary = await withMockNowForTest(startedAt, async () => {
         return await resolveBuiltInModelRouteFixture(context, selectedModel);
       });
       if (!primary) {
         throw new Error(`Expected a primary route for ${selectedModel}`);
       }
+      expect(primary.provider_type).toBe("deepseek");
       await setBuiltInCandidateCooldownFixture(
         context,
         selectedModel,
@@ -242,6 +230,35 @@ describe("POST /api/test/runtime-state/action", () => {
         selectedModel,
         modelRuntimeProvider: fallback.provider_type,
         modelRuntimeModel: fallback.upstream_model,
+      });
+
+      await setBuiltInCandidateCooldownFixture(
+        context,
+        selectedModel,
+        fallback,
+        primaryCooldownUntil,
+      );
+      await withMockNowForTest(startedAt, async () => {
+        const rejected = await chat.requestSendEvent(
+          actor,
+          {
+            agentId: agent.agentId,
+            prompt: "reject while both built-in routes are cooling down",
+            model: selectedModel,
+          },
+          [503],
+        );
+        expectApiError(rejected.body);
+        expect(rejected.body.error.code).toBe("MODEL_PROVIDER_UNAVAILABLE");
+      });
+
+      await withMockNowForTest(primaryCooldownUntil.getTime(), async () => {
+        await expect(
+          resolveBuiltInModelRouteFixture(context, selectedModel),
+        ).resolves.toMatchObject({
+          provider_type: primary.provider_type,
+          upstream_model: primary.upstream_model,
+        });
       });
     },
   );
@@ -432,59 +449,45 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
   it.each([
     {
       caseName: "authentication intervention",
-      logLevel: "warn",
       body: { failureKind: "authentication", retryAfterSeconds: 1 },
-      source: "unspecified",
       cooldownSeconds: 30 * 60,
     },
     {
       caseName: "billing intervention",
-      logLevel: "warn",
       body: { failureKind: "billing", retryAfterSeconds: 1 },
-      source: "unspecified",
       cooldownSeconds: 30 * 60,
     },
     {
       caseName: "rate limit default",
-      logLevel: "info",
       body: { failureKind: "rate_limit" },
-      source: "unspecified",
       cooldownSeconds: 5 * 60,
     },
     {
       caseName: "provider unavailable default",
-      logLevel: "info",
       body: { failureKind: "provider_unavailable" },
-      source: "unspecified",
       cooldownSeconds: 5 * 60,
     },
     {
       caseName: "timeout default",
-      logLevel: "info",
       body: { failureKind: "timeout" },
-      source: "unspecified",
       cooldownSeconds: 5 * 60,
     },
     {
       caseName: "provider-response connection default",
-      logLevel: "info",
       body: {
         failureKind: "connection",
         connectionSource: "provider_response",
       },
-      source: "provider_response",
       cooldownSeconds: 5 * 60,
     },
     {
       caseName: "bounded provider retry delay",
-      logLevel: "info",
       body: { failureKind: "rate_limit", retryAfterSeconds: 120 },
-      source: "unspecified",
       cooldownSeconds: 120,
     },
   ] as const)(
     "records the $caseName cooldown for only the persisted built-in model route",
-    async ({ body, source, cooldownSeconds, logLevel }) => {
+    async ({ body, cooldownSeconds }) => {
       const startedAt = Date.UTC(2026, 7, 21, 0, 0, 0);
       await withMockNowForTest(startedAt, async () => {
         const claimed = await createClaimedBuiltInRun();
@@ -504,31 +507,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         await expect(
           runs.reportRunnerModelProviderFailure(claimed.runId, body),
         ).resolves.toStrictEqual({ outcome: "recorded" });
-        expect(cooldownReports(logLevel)).toStrictEqual([
-          [
-            "Built-in model provider failure report recorded",
-            expect.objectContaining({
-              type: "built_in_model_provider_cooldown",
-              context: "Runners",
-              runId: claimed.runId,
-              selectedModel: claimed.selectedModel,
-              providerType: primary.provider_type,
-              upstreamModel: primary.upstream_model,
-              failureKind: body.failureKind,
-              source,
-              reason: body.failureKind,
-              retryAfterSeconds: cooldownSeconds,
-              unavailableUntil: new Date(
-                startedAt + cooldownSeconds * 1000,
-              ).toISOString(),
-            }),
-          ],
-        ]);
-        for (const level of ["debug", "info", "warn", "error"] as const) {
-          if (level !== logLevel) {
-            expect(cooldownReports(level)).toStrictEqual([]);
-          }
-        }
         await expect(
           runs.readRun(claimed.actor, claimed.runId),
         ).resolves.toMatchObject({ status: "running" });
@@ -586,9 +564,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       claimed.selectedModel,
       primary,
     );
-    for (const level of ["debug", "info", "warn", "error"] as const) {
-      context.mocks.axiomLogging[level].mockClear();
-    }
     await withMockNowForTest(startedAt, async () => {
       await expect(
         runs.reportRunnerModelProviderFailure(secondClaimed.runId, {
@@ -603,8 +578,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         upstream_model: primary.upstream_model,
       });
     });
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
-    expectNoCooldownReports();
 
     await withMockNowForTest(startedAt + 60_000, async () => {
       await expect(
@@ -620,27 +593,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         upstream_model: primary.upstream_model,
       });
     });
-    expect(cooldownReports("info")).toStrictEqual([
-      [
-        "Built-in model provider failure report recorded",
-        expect.objectContaining({
-          type: "built_in_model_provider_cooldown",
-          context: "Runners",
-          runId: claimed.runId,
-          selectedModel: claimed.selectedModel,
-          providerType: primary.provider_type,
-          upstreamModel: primary.upstream_model,
-          failureKind: "connection",
-          source: "upstream_transport",
-          reason: "sustained_transport",
-          retryAfterSeconds: 5 * 60,
-          unavailableUntil: new Date(startedAt + 6 * 60_000).toISOString(),
-        }),
-      ],
-    ]);
-    for (const level of ["debug", "warn", "error"] as const) {
-      expect(cooldownReports(level)).toStrictEqual([]);
-    }
     await expect(
       runs.readRun(claimed.actor, claimed.runId),
     ).resolves.toMatchObject({ status: "running" });
@@ -671,7 +623,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       ).resolves.toStrictEqual({ outcome: "observed" });
     });
 
-    expectNoCooldownReports();
     // A resolver can capture time before the observation transaction commits.
     await withMockNowForTest(startedAt - 1, async () => {
       await expect(
@@ -704,9 +655,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         failureKind: "rate_limit",
         retryAfterSeconds: 60,
       });
-      for (const level of ["debug", "info", "warn", "error"] as const) {
-        context.mocks.axiomLogging[level].mockClear();
-      }
       await expect(
         runs.reportRunnerModelProviderFailure(claimed.runId, {
           failureKind: "connection",
@@ -715,8 +663,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       ).resolves.toStrictEqual({ outcome: "observed" });
     });
 
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
-    expectNoCooldownReports();
     await withMockNowForTest(startedAt + 60_000, async () => {
       await expect(
         resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
@@ -782,9 +728,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         failureKind: "authentication",
       });
     });
-    for (const level of ["debug", "info", "warn", "error"] as const) {
-      context.mocks.axiomLogging[level].mockClear();
-    }
     await withMockNowForTest(startedAt + 100_000, async () => {
       await expect(
         runs.reportRunnerModelProviderFailure(claimed.runId, {
@@ -823,8 +766,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
       ).resolves.toStrictEqual({ outcome: "observed" });
     });
 
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
-    expectNoCooldownReports();
     await withMockNowForTest(startedAt + 8 * 60_000, async () => {
       await expect(
         resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
@@ -1134,26 +1075,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
         ]);
       });
 
-      expect(cooldownReports("info")).toStrictEqual([
-        [
-          "Built-in model provider failure report recorded",
-          expect.objectContaining({
-            failureKind: "rate_limit",
-            unavailableUntil: new Date(startedAt + 300_000).toISOString(),
-          }),
-        ],
-        [
-          "Built-in model provider failure report recorded",
-          expect.objectContaining({
-            failureKind: "provider_unavailable",
-            unavailableUntil: new Date(startedAt + 400_000).toISOString(),
-          }),
-        ],
-      ]);
-      for (const level of ["debug", "warn", "error"] as const) {
-        expect(cooldownReports(level)).toStrictEqual([]);
-      }
-
       await withMockNowForTest(startedAt + 350_000, async () => {
         await expect(
           resolveBuiltInModelRouteFixture(context, claimed.selectedModel),
@@ -1234,18 +1155,7 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
     await held.done;
 
     expect(context.signal.aborted).toBeFalsy();
-    expect(context.mocks.axiomLogging.error).toHaveBeenCalledTimes(1);
-    expect(context.mocks.axiomLogging.error).toHaveBeenCalledWith(
-      "Unhandled request error: canceling statement due to user request",
-      expect.objectContaining({
-        type: "unhandled_request_error",
-        method: "POST",
-        route: "/api/runners/runs/:runId/model-provider-failures",
-        errorCode: "57014",
-      }),
-    );
     expect(context.mocks.sentry.captureException).toHaveBeenCalledTimes(1);
-    expectNoCooldownReports();
     await expect(
       runs.readRun(claimed.actor, claimed.runId),
     ).resolves.toMatchObject({ status: "running" });
@@ -1383,7 +1293,6 @@ describe("POST /api/runners/runs/:runId/model-provider-failures", () => {
           failureKind: "billing",
         }),
       ).resolves.toStrictEqual({ outcome: "ignored" });
-      expectNoCooldownReports();
 
       await expect(
         resolveBuiltInModelRouteFixture(context, claimed.selectedModel),

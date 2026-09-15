@@ -24,6 +24,8 @@ import type {
   ChatThreadArtifactRun,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatAttachment } from "../../signals/okou-page/chat-draft";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
+import { canonicalUserMessageFileUrl } from "../../signals/chat-page/user-message-files.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -103,7 +105,9 @@ import {
   type ImageArtifactNavigationItem,
 } from "./artifact-image-navigation.ts";
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
+import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
+import { hostedArtifactReferrerPolicy } from "../../lib/platform-host.ts";
 import { PresentationArtifactViewport } from "./presentation-artifact-viewport.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
@@ -480,9 +484,7 @@ function ArtifactDialogCard({
   return (
     <div
       className={`flex w-full flex-1 flex-col overflow-hidden ${
-        fillHeight
-          ? "h-full min-h-0 bg-transparent"
-          : "okou-chat-card min-h-[420px]"
+        fillHeight ? "h-full min-h-0 bg-transparent" : "min-h-[420px]"
       }`}
       data-testid="artifact-dialog-card"
     >
@@ -624,11 +626,13 @@ function ArtifactDialogTextBody({
 
 function ArtifactDialogImageStage({
   filename,
+  imageCanvasSignals,
   imageNavigation,
   preview,
   resourceUrl,
 }: {
   filename: string;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
   resourceUrl: string | null;
@@ -657,7 +661,7 @@ function ArtifactDialogImageStage({
               key={resourceUrl}
               src={resourceUrl}
               alt={filename}
-              signals={attachmentLightboxImageCanvasSignals}
+              signals={imageCanvasSignals}
               imageTestId="attachment-lightbox-image"
               contentClassName="p-6"
               imageClassName="rounded-lg shadow-sm"
@@ -701,10 +705,12 @@ function ArtifactDialogImageStage({
 
 function ArtifactDialogImageBody({
   filename,
+  imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   filename: string;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
 }) {
@@ -712,6 +718,7 @@ function ArtifactDialogImageBody({
   return (
     <ArtifactDialogImageStage
       filename={filename}
+      imageCanvasSignals={imageCanvasSignals}
       imageNavigation={imageNavigation}
       preview={preview}
       resourceUrl={resourceUrl}
@@ -732,7 +739,7 @@ function ArtifactDialogVideoBody({
   return (
     <ArtifactDialogStage centered>
       <div
-        className="okou-chat-frame w-full overflow-hidden bg-black"
+        className="w-full overflow-hidden bg-black"
         data-testid="artifact-dialog-video-stage"
       >
         {resourceUrl !== null && (
@@ -768,7 +775,7 @@ function ArtifactDialogAudioBody({
 
   return (
     <ArtifactDialogStage centered>
-      <div className="okou-chat-card flex w-full max-w-[520px] flex-col items-center gap-4 p-6">
+      <div className="flex w-full max-w-[520px] flex-col items-center gap-4 p-6">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-border/70 bg-muted/50 text-muted-foreground">
           <FileMusic size={28} />
         </span>
@@ -808,14 +815,14 @@ function ArtifactDialogDocumentFrameBody({
   // PDF Open Parameters: #navpanes=0 hides Chromium's built-in left rail so the
   // embedded preview shows just the page and toolbar by default.
   const src =
-    resourceUrl !== null && preview.kind === "pdf"
+    resourceUrl !== null && preview.kind === "pdf" && !resourceUrl.includes("#")
       ? `${resourceUrl}#navpanes=0`
       : resourceUrl;
 
   return (
     <ArtifactDialogStage scrollable={false}>
       <div
-        className="okou-chat-card flex h-full min-h-0 w-full flex-1 overflow-hidden"
+        className="flex h-full min-h-0 w-full flex-1 overflow-hidden"
         data-testid="artifact-dialog-document-frame"
       >
         {src !== null && (
@@ -840,7 +847,7 @@ function ArtifactDialogGenericFileBody({ filename }: { filename: string }) {
   const { t } = useTranslation();
   return (
     <ArtifactDialogStage centered>
-      <div className="okou-chat-card flex w-full max-w-md flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
+      <div className="flex w-full max-w-md flex-col items-center justify-center gap-3 p-6 text-center text-muted-foreground">
         <p className="text-sm">
           {t(($) => {
             return $.artifacts.preview.noInline;
@@ -878,12 +885,16 @@ function ArtifactDialogOfficeDocumentBody({
   );
 }
 
-function ArtifactDialogBody({
+export function ArtifactPreviewBody({
   artifact,
+  fullscreen,
+  imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
+  fullscreen: boolean;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
 }) {
@@ -893,6 +904,7 @@ function ArtifactDialogBody({
     return (
       <ArtifactDialogImageBody
         filename={filename}
+        imageCanvasSignals={imageCanvasSignals}
         imageNavigation={imageNavigation}
         preview={preview}
       />
@@ -935,6 +947,7 @@ function ArtifactDialogBody({
       <ArtifactDialogHtmlBody
         artifact={artifact}
         filename={filename}
+        fullscreen={fullscreen}
         preview={preview}
       />
     );
@@ -948,14 +961,15 @@ function ArtifactDialogBody({
 function ArtifactDialogHtmlBody({
   artifact,
   filename,
+  fullscreen,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
   filename: string;
+  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
-  const fullscreen = useGet(lightboxDialogFullscreen$);
   const src = useLastResolved(preview.resourceUrl$) ?? null;
   const isPresentationHtml = artifact?.artifactKind === "presentation-html";
 
@@ -980,6 +994,7 @@ function ArtifactDialogHtmlBody({
         { filename },
       )}
       sandbox="allow-same-origin allow-scripts"
+      referrerPolicy={hostedArtifactReferrerPolicy(src)}
       tabIndex={isPresentationHtml ? -1 : undefined}
       scrolling="yes"
       className="block h-full w-full border-0 bg-background"
@@ -1114,6 +1129,7 @@ function ArtifactPreviewDialogThreadResolver({
           })
         : undefined,
       filename: navigationItem.filename,
+      preview: navigationItem.preview,
       threadId: thread.threadId,
       url: navigationItem.url,
     });
@@ -1321,7 +1337,9 @@ function ArtifactPreviewDialogContent({
         ref={dialogMountRef}
         initialFocus={dialogElement}
         showCloseButton={false}
-        overlayClassName="okou-pwa-fixed-cover bg-gray-900/45 dark:bg-gray-900/45"
+        // The backdrop is fixed, so a standalone PWA clips it above the bottom
+        // safe inset; extending `bottom` keeps it covering the screen edge.
+        overlayClassName="[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))] bg-gray-900/45 dark:bg-gray-900/45"
         maxWidth={1440}
         height={1000}
         surface="canvas"
@@ -1373,8 +1391,10 @@ function ArtifactPreviewDialogContent({
                 <ConnectorConnectionStatus />
               </div>
             ) : (
-              <ArtifactDialogBody
+              <ArtifactPreviewBody
                 artifact={artifact}
+                fullscreen={fullscreen}
+                imageCanvasSignals={attachmentLightboxImageCanvasSignals}
                 imageNavigation={imageNavigation}
                 preview={preview}
               />
@@ -1615,25 +1635,25 @@ export function PreviewableAudioAttachmentChip({
 // ---------------------------------------------------------------------------
 
 /**
- * A restored attachment carries the canonical API URL, so the thumbnail needs
- * the same presigned exchange the sent message uses. Kept in its own component
- * so the surrounding button stays one DOM node across the pending-to-uploaded
- * transition. The canonical URL identifies the image load state.
+ * Composer attachments use the same presigned thumbnail as sent messages.
+ * The preview also supplies the original credential to the lightbox. Kept in
+ * its own component so the surrounding button stays one DOM node across the
+ * pending-to-uploaded transition. The canonical URL identifies the load state.
  */
 function ComposerImagePreviewImage({
-  resourceUrl$,
+  preview,
   load,
   loaded,
   url,
 }: {
-  resourceUrl$: ChatAttachment["resourceUrl$"];
+  preview: AttachmentPreviewSignals;
   load: ImageLoadSignals;
   loaded: boolean;
   url: string;
 }) {
   const markLoaded = useSet(load.loaded$);
   const markFailed = useSet(load.failed$);
-  const resolvedUrl = useLastResolved(resourceUrl$) ?? null;
+  const resolvedUrl = useLastResolved(preview.thumbnailUrl$) ?? null;
 
   if (resolvedUrl === null) {
     return null;
@@ -1653,24 +1673,24 @@ function ComposerImagePreviewImage({
 }
 
 function ComposerImagePreviewButton({
-  resourceUrl$,
+  preview,
   filename,
   load,
   markCount,
   openImageLightbox,
   url,
 }: {
-  resourceUrl$: ChatAttachment["resourceUrl$"];
+  preview: AttachmentPreviewSignals | null;
   filename: string;
   load: ImageLoadSignals;
   markCount: number;
-  openImageLightbox: (url: string) => void;
+  openImageLightbox: (url: string, preview: AttachmentPreviewSignals) => void;
   url: string | undefined;
 }) {
   const { t } = useTranslation();
   const currentImageStatus = useGet(load.status$);
 
-  if (!url) {
+  if (!url || !preview) {
     return (
       <button
         type="button"
@@ -1695,7 +1715,7 @@ function ComposerImagePreviewButton({
     <button
       type="button"
       onClick={() => {
-        openImageLightbox(url);
+        openImageLightbox(url, preview);
       }}
       aria-label={t(
         ($) => {
@@ -1721,7 +1741,7 @@ function ComposerImagePreviewButton({
         </span>
       )}
       <ComposerImagePreviewImage
-        resourceUrl$={resourceUrl$}
+        preview={preview}
         load={load}
         loaded={currentImageStatus === "loaded"}
         url={url}
@@ -1729,7 +1749,7 @@ function ComposerImagePreviewButton({
       <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/image-preview:bg-black/30">
         <Image
           size={18}
-          className="text-white opacity-0 drop-shadow transition-opacity group-hover/image-preview:opacity-100"
+          className="text-white opacity-0 drop-shadow group-hover/image-preview:opacity-100"
         />
       </span>
       {markCount > 0 && (
@@ -1794,9 +1814,12 @@ function AttachmentChip({
 }) {
   const { t } = useTranslation();
   const infoLoadable = useLoadable(attachment.fileInfo$);
+  const preview = useLastResolved(attachment.preview$) ?? null;
   const uploading = useGet(attachment.uploadPending$);
   const url =
-    infoLoadable.state === "hasData" ? infoLoadable.data?.url : undefined;
+    infoLoadable.state === "hasData" && infoLoadable.data
+      ? canonicalUserMessageFileUrl(infoLoadable.data.id)
+      : undefined;
   const openImageLightbox = useSet(openImageLightbox$);
   const openAnnotationEditor = useSet(annotationSignals.openAnnotationEditor$);
   const confirmAnnotations = useSet(attachment.confirmAnnotations$);
@@ -1810,15 +1833,17 @@ function AttachmentChip({
     >
       {isImage ? (
         <ComposerImagePreviewButton
-          resourceUrl$={attachment.resourceUrl$}
+          preview={preview}
           filename={attachment.filename}
           load={attachment.imageLoad}
           markCount={annotationMarkCount(annotations)}
-          openImageLightbox={(previewUrl) => {
+          openImageLightbox={(previewUrl, imagePreview) => {
             // A pending upload is not an artifact yet, so checking it must not
             // take over an open artifact sidebar.
             openImageLightbox({
               url: previewUrl,
+              filename: attachment.filename,
+              preview: imagePreview,
               splitViewAvailable: false,
               ...(annotationEnabled && !uploading
                 ? {

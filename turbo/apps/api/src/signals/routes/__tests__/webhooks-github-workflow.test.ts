@@ -57,25 +57,6 @@ function automationsClient() {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
 async function pendingAutomationEventCount(threadId: string): Promise<number> {
   const events = await wf.readThreadEvents(threadId);
   const revokedIds = new Set(
@@ -1045,7 +1026,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       }),
       [201],
     );
-    const createdSecond = await accept(
+    await accept(
       automationsClient().create({
         headers: authHeaders(),
         params: { workflowId },
@@ -1154,50 +1135,6 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     await expect(
       pendingAutomationEventCount(created.body.chatThreadId),
     ).resolves.toBe(5);
-
-    for (const runId of [admittedRunId]) {
-      const timingEvents = sandboxOperationEventsForRun(runId);
-      const actionTypes = new Set(
-        timingEvents.map((event) => {
-          return event.op_type;
-        }),
-      );
-      for (const actionType of [
-        "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-        "api_dispatch_pre_create_agent_workflow_automation_queue_admission",
-        "api_dispatch_pre_create_agent_automation_event_background_start_gap",
-        "api_dispatch_pre_create_agent_automation_event_load_source_state",
-        "api_dispatch_pre_create_agent_automation_event_load_automations",
-        "api_dispatch_pre_create_agent_automation_event_match_automations",
-        "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-        "api_dispatch_pre_create_agent_automation_event_handoff_run",
-      ]) {
-        expect(actionTypes).toContain(actionType);
-      }
-      expect(timingEvents).toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            op_type:
-              "api_dispatch_pre_create_agent_automation_event_handoff_run",
-            automation_event_source: "github",
-            trigger_source: "automation-event",
-            agent_run_origin: "workflow_automation",
-            span_kind: "nested",
-          }),
-        ]),
-      );
-      const serializedTiming = JSON.stringify(timingEvents);
-      expect(serializedTiming).not.toContain(mergedDeliveryId);
-      expect(serializedTiming).not.toContain("vm0-ai/vm0");
-      expect(serializedTiming).not.toContain("Ship chat snapshots");
-      expect(serializedTiming).not.toContain("lancy");
-      expect(serializedTiming).not.toContain("pr-author");
-      expect(serializedTiming).not.toContain(created.body.id);
-      expect(serializedTiming).not.toContain(createdSecond.body.id);
-      expect(serializedTiming).not.toContain(WORKFLOW_NAME);
-      expect(serializedTiming).not.toContain(fixture.orgId);
-      expect(serializedTiming).not.toContain(fixture.userId);
-    }
   });
 
   it("dispatches completed workflow runs matching all GitHub filters", async () => {

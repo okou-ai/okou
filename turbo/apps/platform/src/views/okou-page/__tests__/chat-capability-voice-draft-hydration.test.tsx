@@ -4,7 +4,6 @@ import {
   chatThreadDraftContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -108,9 +107,9 @@ test.each([
     });
 
     await setupPage({
+      locale: "en-US",
       context,
       path,
-      featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },
     });
     await hydrationRequested.promise;
     // Create retryable audio through the UI while the remote text stays gated.

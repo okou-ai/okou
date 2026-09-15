@@ -1,4 +1,6 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
+import { Readable } from "node:stream";
+import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
@@ -27,9 +29,12 @@ import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 const PRIVATE_ARTIFACT_CACHE_CONTROL =
   "private, max-age=31536000, must-revalidate";
+const PRIVATE_NO_STORE_CACHE_CONTROL = "private, no-store";
+const S3_DELETE_OBJECTS_LIMIT = 1000;
 
 export interface S3Object {
   readonly key: string;
@@ -169,6 +174,19 @@ interface S3Credentials {
 
 interface DownloadS3BufferOptions {
   readonly maxBytes?: number;
+  readonly onFailure?: (diagnostics: S3DownloadFailureDiagnostics) => void;
+}
+
+export interface S3DownloadFailureDiagnostics {
+  readonly stage: "get_object" | "read_body";
+  readonly stageDurationMs: number;
+  readonly receivedBytes: number;
+  readonly expectedBytes?: number;
+  readonly providerStatus?: number;
+  readonly providerRequestId?: string;
+  readonly providerAttempts?: number;
+  readonly providerRetryDelayMs?: number;
+  readonly signalAborted: boolean;
 }
 
 export type ConditionalS3BufferDownload =
@@ -412,25 +430,58 @@ export function deleteS3Objects(
   bucket: string,
   keys: readonly string[],
 ): Computed<Promise<void>> {
+  return deleteS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, keys);
+}
+
+export function deleteArtifactSnapshotObjects(
+  bucket: string,
+  keys: readonly string[],
+  hosted: boolean,
+  signal: AbortSignal,
+): Computed<Promise<void>> {
+  return deleteS3ObjectsWithClient(
+    hosted ? hostedSitesS3Client$ : s3ClientForBucket(bucket),
+    bucket,
+    keys,
+    signal,
+  );
+}
+
+function deleteS3ObjectsWithClient(
+  client$: Computed<S3Client>,
+  bucket: string,
+  keys: readonly string[],
+  signal?: AbortSignal,
+): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
     if (keys.length === 0) {
       return;
     }
-    const client = get(s3ClientForBucket(bucket));
-    const response = await client.send(
-      new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: {
-          Objects: keys.map((Key) => {
-            return { Key };
-          }),
-        },
-      }),
-    );
-    if ((response.Errors?.length ?? 0) > 0) {
-      throw new Error(
-        `S3 object deletion failed for ${response.Errors?.length.toString() ?? "0"} object(s)`,
+    const client = get(client$);
+    // Stop at the first failed batch. Retrying already deleted keys is safe.
+    for (
+      let offset = 0;
+      offset < keys.length;
+      offset += S3_DELETE_OBJECTS_LIMIT
+    ) {
+      const response = await client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: {
+            Objects: keys
+              .slice(offset, offset + S3_DELETE_OBJECTS_LIMIT)
+              .map((Key) => {
+                return { Key };
+              }),
+          },
+        }),
+        signal ? { abortSignal: signal } : undefined,
       );
+      if (response.Errors && response.Errors.length > 0) {
+        throw new Error(
+          `S3 object deletion failed for ${response.Errors.length.toString()} object(s)`,
+        );
+      }
     }
   });
 }
@@ -438,14 +489,22 @@ export function deleteS3Objects(
 export function downloadS3Buffer(
   bucket: string,
   key: string,
-  signal?: AbortSignal,
+  options?:
+    | AbortSignal
+    | {
+        readonly signal?: AbortSignal;
+        readonly onFailure?: DownloadS3BufferOptions["onFailure"];
+      },
 ): Computed<Promise<Buffer>> {
+  const downloadOptions = isAbortSignal(options)
+    ? { signal: options }
+    : options;
   return downloadS3BufferWithClient(
     s3ClientForBucket(bucket),
     bucket,
     key,
-    {},
-    signal,
+    { onFailure: downloadOptions?.onFailure },
+    downloadOptions?.signal,
   );
 }
 
@@ -566,11 +625,22 @@ function downloadS3BufferWithClient(
 ): Computed<Promise<Buffer>> {
   return computed(async (get): Promise<Buffer> => {
     const client = get(client$);
-    const response = await client.send(
-      new GetObjectCommand({ Bucket: bucket, Key: key }),
-      { abortSignal: signal },
+    const startedAt = performance.now();
+    const downloaded = await settle(
+      client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
+        abortSignal: signal,
+      }),
     );
-    return await readS3ObjectBody(response, key, options, signal);
+    if (!downloaded.ok) {
+      options.onFailure?.({
+        stage: "get_object",
+        stageDurationMs: Math.round(performance.now() - startedAt),
+        receivedBytes: 0,
+        signalAborted: signal?.aborted ?? false,
+      });
+      throw downloaded.error;
+    }
+    return await readS3ObjectBody(downloaded.value, key, options, signal);
   });
 }
 
@@ -579,71 +649,100 @@ async function readS3ObjectBody(
     readonly Body?: unknown;
     readonly ContentLength?: number;
     readonly ETag?: string;
+    readonly $metadata?: GetObjectCommandOutput["$metadata"];
   },
   key: string,
   options: DownloadS3BufferOptions,
   signal?: AbortSignal,
 ): Promise<Buffer> {
-  if (!response.Body) {
-    throw new Error("S3 object body is empty");
-  }
-  if (!isAsyncIterableByteStream(response.Body)) {
-    closeS3Body(response.Body);
-    throw new Error("S3 object body is not an async byte stream");
-  }
-  if (signal?.aborted) {
-    closeS3Body(response.Body);
-    signal.throwIfAborted();
-  }
-  if (
-    options.maxBytes !== undefined &&
-    response.ContentLength !== undefined &&
-    response.ContentLength > options.maxBytes
-  ) {
-    closeS3Body(response.Body);
-    throw new S3ObjectSizeLimitError(
-      key,
-      response.ContentLength,
-      options.maxBytes,
-      response.ETag ?? null,
-    );
-  }
-  const chunks: Uint8Array[] = [];
+  const startedAt = performance.now();
   let totalLength = 0;
-  for await (const chunk of response.Body) {
-    if (signal?.aborted) {
-      closeS3Body(response.Body);
-      signal.throwIfAborted();
-    }
-    if (!(chunk instanceof Uint8Array)) {
-      closeS3Body(response.Body);
-      throw new Error("S3 object body yielded a non-byte chunk");
-    }
-    totalLength += chunk.length;
-    if (options.maxBytes !== undefined && totalLength > options.maxBytes) {
-      closeS3Body(response.Body);
-      throw new S3ObjectSizeLimitError(
-        key,
+  const downloaded = await settle(
+    (async () => {
+      if (!response.Body) {
+        throw new Error("S3 object body is empty");
+      }
+      if (!isAsyncIterableByteStream(response.Body)) {
+        closeS3Body(response.Body);
+        throw new Error("S3 object body is not an async byte stream");
+      }
+      if (signal?.aborted) {
+        closeS3Body(response.Body);
+        signal.throwIfAborted();
+      }
+      if (
+        options.maxBytes !== undefined &&
+        response.ContentLength !== undefined &&
+        response.ContentLength > options.maxBytes
+      ) {
+        closeS3Body(response.Body);
+        throw new S3ObjectSizeLimitError(
+          key,
+          response.ContentLength,
+          options.maxBytes,
+          response.ETag ?? null,
+        );
+      }
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of response.Body) {
+        if (signal?.aborted) {
+          closeS3Body(response.Body);
+          signal.throwIfAborted();
+        }
+        if (!(chunk instanceof Uint8Array)) {
+          closeS3Body(response.Body);
+          throw new Error("S3 object body yielded a non-byte chunk");
+        }
+        totalLength += chunk.length;
+        if (options.maxBytes !== undefined && totalLength > options.maxBytes) {
+          closeS3Body(response.Body);
+          throw new S3ObjectSizeLimitError(
+            key,
+            totalLength,
+            options.maxBytes,
+            response.ETag ?? null,
+          );
+        }
+        chunks.push(chunk);
+      }
+      return Buffer.concat(
+        chunks.map((chunk) => {
+          return Buffer.from(chunk);
+        }),
         totalLength,
-        options.maxBytes,
-        response.ETag ?? null,
       );
-    }
-    chunks.push(chunk);
-  }
-  return Buffer.concat(
-    chunks.map((chunk) => {
-      return Buffer.from(chunk);
-    }),
-    totalLength,
+    })(),
   );
+  if (!downloaded.ok) {
+    options.onFailure?.({
+      stage: "read_body",
+      stageDurationMs: Math.round(performance.now() - startedAt),
+      receivedBytes: totalLength,
+      expectedBytes: response.ContentLength,
+      providerStatus: response.$metadata?.httpStatusCode,
+      providerRequestId: response.$metadata?.requestId,
+      providerAttempts: response.$metadata?.attempts,
+      providerRetryDelayMs: response.$metadata?.totalRetryDelay,
+      signalAborted: signal?.aborted ?? false,
+    });
+    throw downloaded.error;
+  }
+  return downloaded.value;
 }
 
 export function downloadHostedSitesS3Buffer(
   bucket: string,
   key: string,
+  options?: { readonly maxBytes?: number },
+  signal?: AbortSignal,
 ): Computed<Promise<Buffer>> {
-  return downloadS3BufferWithClient(hostedSitesS3Client$, bucket, key);
+  return downloadS3BufferWithClient(
+    hostedSitesS3Client$,
+    bucket,
+    key,
+    { maxBytes: options?.maxBytes },
+    signal,
+  );
 }
 
 /**
@@ -657,7 +756,6 @@ export function generatePresignedPutUrl(
   key: string,
   contentType: string,
   options: {
-    readonly expiresIn: number;
     readonly usePublicEndpoint?: boolean;
     readonly metadata?: Readonly<Record<string, string>>;
   },
@@ -717,7 +815,6 @@ export function generatePresignedUploadPartUrl(
   key: string,
   uploadId: string,
   partNumber: number,
-  expiresIn: number,
 ): Computed<Promise<string>> {
   return computed((get): Promise<string> => {
     const client = get(s3ClientForBucket(bucket, true));
@@ -729,7 +826,7 @@ export function generatePresignedUploadPartUrl(
         UploadId: uploadId,
         PartNumber: partNumber,
       }),
-      { expiresIn },
+      { expiresIn: PRESIGNED_URL_TTL_SECONDS },
     );
   });
 }
@@ -845,7 +942,6 @@ function generatePresignedPutUrlWithClient(
     readonly bucket: string;
     readonly key: string;
     readonly contentType: string;
-    readonly expiresIn: number;
     readonly metadata?: Readonly<Record<string, string>>;
   },
   signal?: AbortSignal,
@@ -870,7 +966,7 @@ function generatePresignedPutUrlWithClient(
       Metadata: options.metadata,
     });
     return getSignedUrl(client, command, {
-      expiresIn: options.expiresIn,
+      expiresIn: PRESIGNED_URL_TTL_SECONDS,
       ...(metadataHeaders
         ? {
             unhoistableHeaders: new Set(Object.keys(metadataHeaders)),
@@ -884,33 +980,29 @@ export function generateHostedSitesPresignedPutUrl(
   bucket: string,
   key: string,
   contentType: string,
-  expiresIn: number,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
   return generatePresignedPutUrlWithClient(
     usePublicEndpoint ? hostedSitesPublicS3Client$ : hostedSitesS3Client$,
-    { bucket, key, contentType, expiresIn },
+    { bucket, key, contentType },
   );
 }
 
 export function generateHostedSitesPresignedGetUrl(
   bucket: string,
   key: string,
-  expiresIn: number,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
   return generatePresignedGetUrlWithClient(
     usePublicEndpoint ? hostedSitesPublicS3Client$ : hostedSitesS3Client$,
     bucket,
     key,
-    expiresIn,
   );
 }
 
 export function generatePresignedGetUrl(
   bucket: string,
   key: string,
-  expiresIn: number,
   filename?: string,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
@@ -918,7 +1010,6 @@ export function generatePresignedGetUrl(
     s3ClientForBucket(bucket, usePublicEndpoint),
     bucket,
     key,
-    expiresIn,
     {
       filename,
       responseCacheControl:
@@ -929,18 +1020,30 @@ export function generatePresignedGetUrl(
   );
 }
 
+/** Private inputs must not remain cached after their signed access expires. */
+export function generatePrivatePresignedGetUrl(
+  bucket: string,
+  key: string,
+): Computed<Promise<string>> {
+  return generatePresignedGetUrlWithClient(
+    s3ClientForBucket(bucket, true),
+    bucket,
+    key,
+    { responseCacheControl: PRIVATE_NO_STORE_CACHE_CONTROL },
+  );
+}
+
 /** Use the same clock for the signature and its advertised expiration. */
 export function generateArtifactPreviewUrl(
   bucket: string,
   key: string,
   options: {
-    readonly expiresIn: number;
     readonly signingDate: Date;
     readonly filename?: string;
   },
 ): Computed<Promise<{ url: string; expiresAt: string }>> {
   return computed(async (get) => {
-    const { expiresIn, filename } = options;
+    const { filename } = options;
     const signingDate = new Date(
       Math.floor(options.signingDate.getTime() / 1000) * 1000,
     );
@@ -949,7 +1052,6 @@ export function generateArtifactPreviewUrl(
         s3ClientForBucket(bucket, true),
         bucket,
         key,
-        expiresIn,
         {
           filename,
           signingDate,
@@ -963,7 +1065,7 @@ export function generateArtifactPreviewUrl(
     return {
       url,
       expiresAt: new Date(
-        signingDate.getTime() + expiresIn * 1000,
+        signingDate.getTime() + PRESIGNED_URL_TTL_SECONDS * 1000,
       ).toISOString(),
     };
   });
@@ -973,7 +1075,6 @@ function generatePresignedGetUrlWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   key: string,
-  expiresIn: number,
   options?: {
     readonly filename?: string;
     readonly responseCacheControl?: string;
@@ -995,7 +1096,7 @@ function generatePresignedGetUrlWithClient(
         : {}),
     });
     return getSignedUrl(client, command, {
-      expiresIn,
+      expiresIn: PRESIGNED_URL_TTL_SECONDS,
       ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
     });
   });
@@ -1095,14 +1196,60 @@ export function putImmutableS3Object(
         readonly contentEncoding?: string;
       },
 ): Computed<Promise<void>> {
+  const writeOptions = isAbortSignal(options) ? { signal: options } : options;
+  return putImmutableS3ObjectWithOptions(
+    {
+      bucket,
+      key,
+      body,
+      contentType,
+      metadata: writeOptions?.metadata,
+      contentEncoding: writeOptions?.contentEncoding,
+      cacheControl: IMMUTABLE_CACHE_CONTROL,
+    },
+    writeOptions?.signal,
+  );
+}
+
+export function putPrivateImmutableS3Object(
+  bucket: string,
+  key: string,
+  body: string | Buffer,
+  contentType: string,
+  signal: AbortSignal,
+): Computed<Promise<void>> {
+  return putImmutableS3ObjectWithOptions(
+    {
+      bucket,
+      key,
+      body,
+      contentType,
+      cacheControl: PRIVATE_NO_STORE_CACHE_CONTROL,
+    },
+    signal,
+  );
+}
+
+function putImmutableS3ObjectWithOptions(
+  args: {
+    readonly bucket: string;
+    readonly key: string;
+    readonly body: string | Buffer;
+    readonly contentType: string;
+    readonly metadata?: Readonly<Record<string, string>>;
+    readonly contentEncoding?: string;
+    readonly cacheControl: string;
+  },
+  signal?: AbortSignal,
+): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
-    const writeOptions = isAbortSignal(options) ? { signal: options } : options;
+    const { bucket, key, body, contentType } = args;
     const client = get(s3ClientForBucket(bucket));
     await get(
       publicArtifactWriteRegistration(
         bucket,
-        { key, contentType, metadata: writeOptions?.metadata },
-        writeOptions?.signal,
+        { key, contentType, metadata: args.metadata },
+        signal,
       ),
     );
     const uploaded = await settle(
@@ -1112,12 +1259,12 @@ export function putImmutableS3Object(
           Key: key,
           Body: body,
           ContentType: contentType,
-          ContentEncoding: writeOptions?.contentEncoding,
-          Metadata: writeOptions?.metadata,
-          CacheControl: IMMUTABLE_CACHE_CONTROL,
+          ContentEncoding: args.contentEncoding,
+          Metadata: args.metadata,
+          CacheControl: args.cacheControl,
           IfNoneMatch: "*",
         }),
-        writeOptions?.signal ? { abortSignal: writeOptions.signal } : undefined,
+        signal ? { abortSignal: signal } : undefined,
       ),
     );
     if (!uploaded.ok && !isS3PreconditionFailedError(uploaded.error)) {
@@ -1148,6 +1295,101 @@ export function copyArtifactShareObject(
     );
   });
 }
+
+function requireReadableBody(body: unknown): Readable {
+  if (!(body instanceof Readable)) {
+    throw new Error("Shared attachment source has no readable body");
+  }
+  return body;
+}
+
+/** Publish independent bytes without changing the source object's access. */
+export const copyPublicArtifactObject$ = command(
+  async (
+    { get },
+    args: {
+      readonly sourceBucket: string;
+      readonly sourceKey: string;
+      readonly key: string;
+      readonly filename: string;
+      readonly contentType: string;
+      readonly size: number;
+      readonly publicBrand: PublicBrand;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
+    const sourceClient = get(s3ClientForBucket(args.sourceBucket));
+    const targetClient = get(s3ClientForBucket(bucket));
+    const source = { Bucket: args.sourceBucket, Key: args.sourceKey };
+    const head = await sourceClient.send(new HeadObjectCommand(source), {
+      abortSignal: signal,
+    });
+    signal.throwIfAborted();
+    if (head.ContentLength !== args.size || !head.ETag) {
+      throw new Error("Shared attachment source changed or has no ETag");
+    }
+    const metadata = {
+      filename: encodeURIComponent(args.filename),
+      "public-brand": args.publicBrand,
+    };
+    await get(
+      publicArtifactWriteRegistration(
+        bucket,
+        {
+          key: args.key,
+          contentType: args.contentType,
+          metadata,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    const target = {
+      Bucket: bucket,
+      Key: args.key,
+      ContentType: args.contentType,
+      CacheControl: IMMUTABLE_CACHE_CONTROL,
+      Metadata: metadata,
+    };
+    if (args.sourceBucket === bucket) {
+      await targetClient.send(
+        new CopyObjectCommand({
+          ...target,
+          CopySource: `${bucket}/${args.sourceKey.split("/").map(encodeURIComponent).join("/")}`,
+          CopySourceIfMatch: head.ETag,
+          MetadataDirective: "REPLACE",
+        }),
+        { abortSignal: signal },
+      );
+      signal.throwIfAborted();
+      return;
+    }
+    // Private and public buckets have separate scoped credentials.
+    await using body = requireReadableBody(
+      (
+        await sourceClient.send(
+          new GetObjectCommand({
+            ...source,
+            IfMatch: head.ETag,
+          }),
+          { abortSignal: signal },
+        )
+      ).Body,
+    );
+    signal.throwIfAborted();
+    await targetClient.send(
+      new PutObjectCommand({
+        ...target,
+        Body: body,
+        ContentLength: args.size,
+        IfNoneMatch: "*",
+      }),
+      { abortSignal: signal },
+    );
+    signal.throwIfAborted();
+  },
+);
 
 /** Read the body and revision validator from the same strongly consistent read. */
 export function readArtifactSharePolicyObject(
@@ -1195,13 +1437,18 @@ export function putHostedSitesS3Object(
   key: string,
   body: string | Buffer,
   contentType: string,
+  signal?: AbortSignal,
 ): Computed<Promise<void>> {
-  return putS3ObjectWithClient(hostedSitesS3Client$, {
-    bucket,
-    key,
-    body,
-    contentType,
-  });
+  return putS3ObjectWithClient(
+    hostedSitesS3Client$,
+    {
+      bucket,
+      key,
+      body,
+      contentType,
+    },
+    signal,
+  );
 }
 
 export function downloadManifest(

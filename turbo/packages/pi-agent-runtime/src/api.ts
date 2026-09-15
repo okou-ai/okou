@@ -1,9 +1,22 @@
 import {
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+} from "./preparation-timing";
+import type {
+  PiPreparationObservation,
+  PiPreparationObserver,
+} from "./preparation-timing";
+import {
   classifyPiApiProviderFailure,
   PiApiModelRequestError,
   type PiApiModelFailureDiagnostic,
 } from "./api-failure";
-import { runPiApiFirstTurn as runPiApiFirstTurnImpl } from "./api-turn";
+import {
+  runPiApiFirstTurn as runPiApiFirstTurnImpl,
+  preparePiApiTurn as preparePiApiTurnImpl,
+  executePreparedPiApiTurn as executePreparedPiApiTurnImpl,
+} from "./api-turn";
 import { MemoryPiSession } from "./session-memory";
 import type {
   PiApiAssistantContent,
@@ -11,6 +24,9 @@ import type {
   PiApiAssistantStopReason,
   PiApiAssistantTextContent,
   PiApiAssistantToolCallContent,
+  PiApiTurnPreparationArgs,
+  PiApiTurnExecutionArgs,
+  PreparedPiApiTurn,
   PiApiFirstTurnArgs,
   PiApiFirstTurnResult,
   PiObservedServiceTier,
@@ -29,6 +45,8 @@ import {
   UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
 } from "./errors";
+import { PI_MEMORY_STAGE1_MODEL } from "./memory-background-config";
+import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
 import { createPiApiFirstTurnOwnership } from "./provider-ownership";
 import type {
   PiApiFirstTurnOwnership,
@@ -37,66 +55,40 @@ import type {
 import {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
-  projectPiMemoryStage1History,
-  redactPiMemoryStage1Secrets,
-  resolvePiMemoryStage1ContextWindow,
+  projectPiMemoryStage1Evidence,
   runPiMemoryStage1Extraction,
-  truncatePiMemoryStage1History,
 } from "./stage1-memory";
-import { runPiMemoryPhase2Consolidation as runPiMemoryPhase2ConsolidationImpl } from "./phase2-memory";
-import {
-  PI_MEMORY_PHASE2_EXPECTED_HEARTBEAT_CADENCE_MS,
-  PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
-  PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_BYTES,
-  PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_FILE_BYTES,
-  PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_FILES,
-  PI_MEMORY_PHASE2_MEMORY_MAX_BYTES,
-  PI_MEMORY_PHASE2_PREPARED_MAX_BYTES,
-  PI_MEMORY_PHASE2_WORKSPACE_DIFF_MAX_BYTES,
-  PiMemoryPhase2EngineError,
-  type PiMemoryPhase2BaseFile,
-  type PiMemoryPhase2ConsolidationArgs,
-  type PiMemoryPhase2ConsolidationResult,
-  type PiMemoryPhase2DiffSummary,
-  type PiMemoryPhase2FailureClass,
-  type PiMemoryPhase2FailureCounts,
-  type PiMemoryPhase2LifecycleEvent,
-  type PiMemoryPhase2NoDiffResult,
-  type PiMemoryPhase2PreparedFile,
-  type PiMemoryPhase2PreparedManifest,
-  type PiMemoryPhase2PreparedResult,
-  type PiMemoryPhase2ProviderUsage,
-  type PiMemoryPhase2SelectedSnapshot,
-  type RunPiMemoryPhase2Consolidation,
-} from "./phase2-memory-types";
 import type {
   PiMemoryStage1ProviderResult,
   PiMemoryStage1ProviderUsage,
 } from "./stage1-memory";
+import {
+  PiMemoryStage1BudgetError,
+  type PiMemoryStage1Evidence,
+} from "./stage1-input";
+import { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 export {
+  piMemoryPhase2SelectionDigest,
   classifyPiApiProviderFailure,
   PiApiModelRequestError,
+  PI_MEMORY_STAGE1_MODEL,
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
-  projectPiMemoryStage1History,
+  PiMemoryStage1BudgetError,
+  projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
-  resolvePiMemoryStage1ContextWindow,
   runPiMemoryStage1Extraction,
-  truncatePiMemoryStage1History,
   PiApiFirstTurnCompactionRequiredError,
   UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
-  PI_MEMORY_PHASE2_EXPECTED_HEARTBEAT_CADENCE_MS,
-  PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
-  PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_BYTES,
-  PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_FILE_BYTES,
-  PI_MEMORY_PHASE2_MAX_CHANGED_SKILL_FILES,
-  PI_MEMORY_PHASE2_MEMORY_MAX_BYTES,
-  PI_MEMORY_PHASE2_PREPARED_MAX_BYTES,
-  PI_MEMORY_PHASE2_WORKSPACE_DIFF_MAX_BYTES,
-  PiMemoryPhase2EngineError,
 };
 export { createPiApiFirstTurnOwnership };
+export {
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+};
+export type { PiPreparationObservation, PiPreparationObserver };
 export type {
   PiApiModelFailureDiagnostic,
   PiApiAssistantContent,
@@ -104,6 +96,9 @@ export type {
   PiApiAssistantStopReason,
   PiApiAssistantTextContent,
   PiApiAssistantToolCallContent,
+  PiApiTurnPreparationArgs,
+  PiApiTurnExecutionArgs,
+  PreparedPiApiTurn,
   PiApiFirstTurnArgs,
   PiApiFirstTurnResult,
   PiObservedServiceTier,
@@ -118,26 +113,19 @@ export type {
   PiApiFirstTurnOwnership,
   PiApiFirstTurnOwnershipStage,
   PiMemoryStage1ProviderResult,
+  PiMemoryStage1Evidence,
   PiMemoryStage1ProviderUsage,
-  PiMemoryPhase2BaseFile,
-  PiMemoryPhase2ConsolidationArgs,
-  PiMemoryPhase2ConsolidationResult,
-  PiMemoryPhase2DiffSummary,
-  PiMemoryPhase2FailureClass,
-  PiMemoryPhase2FailureCounts,
-  PiMemoryPhase2LifecycleEvent,
-  PiMemoryPhase2NoDiffResult,
-  PiMemoryPhase2PreparedFile,
-  PiMemoryPhase2PreparedManifest,
-  PiMemoryPhase2PreparedResult,
-  PiMemoryPhase2ProviderUsage,
-  PiMemoryPhase2SelectedSnapshot,
-  RunPiMemoryPhase2Consolidation,
 };
 
-/** Run one restricted Phase 2 maintenance attempt behind a stable API type. */
-export const runPiMemoryPhase2Consolidation: RunPiMemoryPhase2Consolidation =
-  runPiMemoryPhase2ConsolidationImpl;
+export const preparePiApiTurn: (
+  args: PiApiTurnPreparationArgs,
+  signal?: AbortSignal,
+) => Promise<PreparedPiApiTurn> = preparePiApiTurnImpl;
+export const executePreparedPiApiTurn: (
+  prepared: PreparedPiApiTurn,
+  args: PiApiTurnExecutionArgs,
+  signal?: AbortSignal,
+) => Promise<PiApiFirstTurnResult> = executePreparedPiApiTurnImpl;
 
 /** Run one provider turn without exposing Pi's native declaration surface. */
 export const runPiApiFirstTurn: RunPiApiFirstTurn = runPiApiFirstTurnImpl;

@@ -1,62 +1,21 @@
-import { loadClerkJSScript } from "@clerk/shared/loadClerkJsScript";
 import { loadScript } from "@clerk/shared/loadScript";
-import type {
-  BrowserClerk,
-  ClerkOptions,
-  EnvironmentResource,
-} from "@clerk/shared/types";
-import type { ClerkUIConstructor } from "@clerk/shared/ui";
+import type { BrowserClerk } from "@clerk/shared/types";
 import type { ui } from "@clerk/ui";
-import { createDeferredPromise } from "../signals/utils.ts";
-import { CLERK_JS_VERSION, CLERK_UI_VERSION } from "./clerk-versions.ts";
-
-interface ClerkRuntimeOptions {
-  readonly publishableKey: string;
-  readonly loadOptions: ClerkRuntimeLoadOptions;
-}
-
-interface ClerkRuntimeLoadOptions {
-  readonly afterSignOutUrl: string;
-  readonly signInUrl: string;
-  readonly signUpUrl: string;
-}
+import { CLERK_UI_VERSION } from "./clerk-versions.ts";
 
 interface ClerkBrowserRuntime {
-  readonly clerk: PlatformClerk;
+  readonly clerk: BrowserClerk;
   /**
    * Loads the installed Clerk UI export and hands it to the shared core.
-   * Only v1 comparison routes request it, so stable routes keep the core-only
-   * download.
+   * Auth pages and account switching request it; other app routes keep the
+   * core-only download.
    */
   readonly ensureUiLoaded: () => Promise<typeof ui>;
   readonly loaded: Promise<void>;
 }
 
-type EarlyClerkBootstrap = NonNullable<Window["__okouClerkBootstrap"]>;
-type ResolveClerkUI = EarlyClerkBootstrap["resolveClerkUI"];
-type ClerkRouter = NonNullable<ClerkOptions["routerPush"]>;
-type ClerkRouterMetadata = Parameters<ClerkRouter>[1];
-
-function delegateClerkNavigation(
-  method: keyof NonNullable<Window["__okouClerkRouter"]>,
-  url: string,
-  metadata?: ClerkRouterMetadata,
-): unknown {
-  const router = window.__okouClerkRouter?.[method];
-  if (router) {
-    return router(url, metadata);
-  }
-  // Outside an owning route, preserve Clerk's full-document navigation.
-  return metadata?.windowNavigate(url);
-}
-
-const clerkRouterPush: ClerkRouter = (url, metadata) => {
-  return delegateClerkNavigation("push", url, metadata);
-};
-
-const clerkRouterReplace: ClerkRouter = (url, metadata) => {
-  return delegateClerkNavigation("replace", url, metadata);
-};
+type ClerkBootstrap = NonNullable<Window["__okouClerkBootstrap"]>;
+type ResolveClerkUI = ClerkBootstrap["resolveClerkUI"];
 
 /**
  * Installs route-owned handlers behind the callbacks Clerk captured at load.
@@ -74,11 +33,7 @@ export function registerClerkRouter(
   };
 }
 
-export type PlatformClerk = BrowserClerk & {
-  readonly __internal_environment?: EnvironmentResource;
-};
-
-function isBrowserClerk(value: unknown): value is PlatformClerk {
+function isBrowserClerk(value: unknown): value is BrowserClerk {
   return (
     (typeof value === "object" || typeof value === "function") &&
     value !== null &&
@@ -90,12 +45,10 @@ function isBrowserClerk(value: unknown): value is PlatformClerk {
 function createClerkUiLoader(
   resolveClerkUI: ResolveClerkUI,
   earlyUi: Promise<typeof ui> | undefined,
-  signal: AbortSignal,
 ): () => Promise<typeof ui> {
   let loadPromise: Promise<typeof ui> | undefined;
   return () => {
     loadPromise ??= (async () => {
-      signal.throwIfAborted();
       if (earlyUi) {
         await earlyUi;
       } else if (!window.__okouClerkUI) {
@@ -113,7 +66,6 @@ function createClerkUiLoader(
           },
         });
       }
-      signal.throwIfAborted();
       const loadedUi = window.__okouClerkUI;
       if (
         !loadedUi ||
@@ -131,82 +83,24 @@ function createClerkUiLoader(
   };
 }
 
-function matchesEarlyLoadOptions(
-  early: EarlyClerkBootstrap["loadOptions"],
-  current: ClerkRuntimeLoadOptions,
-): boolean {
-  return (
-    early.afterSignOutUrl === current.afterSignOutUrl &&
-    early.signInUrl === current.signInUrl &&
-    early.signUpUrl === current.signUpUrl
-  );
-}
-
-function adoptEarlyClerkRuntime(
-  clerk: PlatformClerk,
-  options: ClerkRuntimeOptions,
-  signal: AbortSignal,
-): ClerkBrowserRuntime | null {
+/** Read the browser runtime initialized by the inline page bootstrap. */
+export async function readClerkBrowserRuntime(): Promise<ClerkBrowserRuntime> {
   const bootstrap = window.__okouClerkBootstrap;
-  if (!bootstrap?.loaded || bootstrap.clerk !== clerk) {
-    return null;
-  }
-  if (
-    bootstrap.publishableKey !== options.publishableKey ||
-    !matchesEarlyLoadOptions(bootstrap.loadOptions, options.loadOptions)
-  ) {
-    throw new Error("Early Clerk bootstrap configuration mismatch");
+  if (!bootstrap) {
+    throw new Error("Clerk bootstrap is unavailable");
   }
 
-  const loaded = bootstrap.loaded;
-  bootstrap.loaded = undefined;
+  const { clerk, loaded } = await bootstrap.runtime;
+  if (!isBrowserClerk(clerk)) {
+    throw new Error("Clerk bootstrap did not expose a valid runtime");
+  }
 
   return {
     clerk,
     ensureUiLoaded: createClerkUiLoader(
       bootstrap.resolveClerkUI,
       bootstrap.uiLoaded,
-      signal,
     ),
-    loaded,
-  };
-}
-
-/**
- * `signal` owns the optional UI handle handed to Clerk core. Clerk keeps that
- * promise for the lifetime of the shared browser runtime, so only the app
- * root may abort it; route and command signals must not.
- */
-export async function startClerkBrowserRuntime(
-  options: ClerkRuntimeOptions,
-  signal: AbortSignal,
-): Promise<ClerkBrowserRuntime> {
-  await loadClerkJSScript({
-    __internal_clerkJSVersion: CLERK_JS_VERSION,
-    publishableKey: options.publishableKey,
-  });
-  const clerk: unknown = Reflect.get(globalThis, "Clerk");
-  if (!isBrowserClerk(clerk)) {
-    throw new Error("Clerk browser script did not expose a valid runtime");
-  }
-  signal.throwIfAborted();
-  const earlyRuntime = adoptEarlyClerkRuntime(clerk, options, signal);
-  if (earlyRuntime) {
-    return earlyRuntime;
-  }
-
-  // Clerk accepts the UI constructor as a promise, so core initialization does
-  // not wait for a download that most routes never need.
-  const clerkUI = createDeferredPromise<ClerkUIConstructor>(signal);
-  const loaded = clerk.load({
-    ...options.loadOptions,
-    routerPush: clerkRouterPush,
-    routerReplace: clerkRouterReplace,
-    ui: { ClerkUI: clerkUI.promise },
-  });
-  return {
-    clerk,
-    ensureUiLoaded: createClerkUiLoader(clerkUI.resolve, undefined, signal),
     loaded,
   };
 }

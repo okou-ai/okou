@@ -34,7 +34,7 @@ Every page test follows this order:
 
 1. Configure fixtures and external mocks.
 2. Call `setupPage`.
-3. Observe the smallest page-visible state that proves the page is ready.
+3. Observe the smallest rendered or accessible state that proves the page is ready.
 4. Perform one user-visible action.
 5. Wait for and assert the resulting behavior.
 6. Repeat the action/result cycle for any remaining steps.
@@ -187,9 +187,29 @@ completion point.
 
 ## Assertions
 
-Prefer presence, visibility, content, value, selected state, enabled or
-disabled state, focus, accessibility relationships, navigation, opened
-destinations, clipboard writes, and downloads. Scope assertions with
+Default to `toBeInTheDocument()` when checking that content, a toast, a dialog,
+or a control has rendered. For asynchronous content, await the appropriate
+`findBy*` query and assert presence:
+
+```typescript
+await expect(screen.findByText("Changes saved")).resolves.toBeInTheDocument();
+```
+
+Once the expected content is found, do not add `toBeVisible()` or another
+`waitFor` solely to confirm that it rendered. Text can already exist in the DOM
+while an enter effect still leaves its container at `opacity: 0`. A presence
+assertion avoids unnecessary computed-style checks and animation-dependent
+synchronization.
+
+Use `toBeVisible()` or `.not.toBeVisible()` only when showing or hiding an
+element is itself the behavior under test, including content that stays in the
+DOM while hidden. If that visibility changes asynchronously, wait for the
+visibility assertion with `waitFor`.
+
+Assert content, value, selected state, enabled or disabled state, focus,
+accessibility relationships, navigation, opened destinations, clipboard writes,
+and downloads when required by the contract. Presence alone does not establish
+that a control is ready for interaction. Scope assertions with
 `within(container)` after locating a dialog, form, card, or sidebar.
 
 Capture a request body only when request construction is part of the behavior.

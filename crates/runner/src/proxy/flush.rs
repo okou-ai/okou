@@ -1,4 +1,14 @@
 //! Addon flush request/ack protocols.
+//!
+//! Marker publication has a separate five-second budget. Its blocking worker
+//! retains serialization, temporary-file cleanup, and proxy directory ownership
+//! after caller cancellation until its filesystem work finishes. Acknowledgement
+//! deadlines include state-file I/O. JSONL has five seconds each for lock
+//! admission, publication, and acknowledgement; usage publication and
+//! acknowledgement have five- and 30-second budgets respectively. These bound
+//! callers, not kernel I/O or Tokio runtime teardown.
+
+mod publication;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -7,13 +17,17 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{future::Future as _, task::Poll};
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex as AsyncMutex;
 #[cfg(test)]
 use tokio::sync::mpsc;
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
+use tokio::time::Instant;
 use tracing::{error, warn};
 use uuid::Uuid;
 
 use crate::error::{RunnerError, RunnerResult};
+
+use super::runtime::MitmdumpRuntime;
+use publication::MarkerPublication;
 
 /// Maximum time to wait for buffered work and pending reports before stopping.
 ///
@@ -30,6 +44,9 @@ pub const JSONL_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum time to wait to serialize a mitmproxy JSONL flush request.
 const JSONL_FLUSH_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Marker publication budget, including usage lock admission and queued I/O.
+const FLUSH_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// Poll interval when waiting for usage flush.
 const USAGE_FLUSH_POLL: Duration = Duration::from_millis(200);
 
@@ -43,10 +60,27 @@ const JSONL_FLUSH_POLL: Duration = Duration::from_millis(50);
 /// Tolerated wall-clock skew when validating addon timestamps.
 const USAGE_PENDING_CLOCK_SKEW: Duration = Duration::from_secs(300);
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UsageFlushTarget {
     pub(super) expected_usage_state_id: String,
     pub(super) usage_state_started_at_ms: u64,
+    usage_request_lock: Arc<AsyncMutex<()>>,
+    runtime: Option<Arc<MitmdumpRuntime>>,
+}
+
+impl UsageFlushTarget {
+    pub(super) fn new(
+        expected_usage_state_id: String,
+        usage_state_started_at_ms: u64,
+        runtime: Option<Arc<MitmdumpRuntime>>,
+    ) -> Self {
+        Self {
+            expected_usage_state_id,
+            usage_state_started_at_ms,
+            usage_request_lock: Arc::new(AsyncMutex::new(())),
+            runtime,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -250,7 +284,7 @@ impl JsonlFlushRequest {
 
 impl MitmJsonlFlushHandle {
     pub async fn flush_path(&self, path: &Path) -> bool {
-        let Some(_request_guard) = self.acquire_request_lock().await else {
+        let Some(request_guard) = self.acquire_request_lock().await else {
             warn!(
                 phase = "request_lock",
                 timeout_secs = JSONL_FLUSH_LOCK_TIMEOUT.as_secs(),
@@ -260,8 +294,15 @@ impl MitmJsonlFlushHandle {
             return false;
         };
         let target = usage_flush_state_guard(&self.usage_state).clone();
-        let request = match write_jsonl_flush_request(&self.addon_dir, &target, path).await {
-            Ok(request) => request,
+        let (request, _request_guard) = match write_jsonl_flush_request(
+            &self.addon_dir,
+            &target,
+            path,
+            request_guard,
+        )
+        .await
+        {
+            Ok(result) => result,
             Err(e) => {
                 warn!(error = %e, path = %path.display(), "failed to create JSONL flush request");
                 return false;
@@ -276,10 +317,10 @@ impl MitmJsonlFlushHandle {
         wait_jsonl_flush(&self.addon_dir, JSONL_FLUSH_TIMEOUT, &request).await
     }
 
-    async fn acquire_request_lock(&self) -> Option<tokio::sync::MutexGuard<'_, ()>> {
+    async fn acquire_request_lock(&self) -> Option<OwnedMutexGuard<()>> {
         #[cfg(test)]
         if let Some(request_lock_poll_tx) = &self.request_lock_poll_tx {
-            let request_lock = self.request_lock.lock();
+            let request_lock = Arc::clone(&self.request_lock).lock_owned();
             tokio::pin!(request_lock);
             let mut first_poll_tx = Some(request_lock_poll_tx);
             let mut first_poll_was_pending = false;
@@ -315,9 +356,12 @@ impl MitmJsonlFlushHandle {
             return request_guard;
         }
 
-        tokio::time::timeout(JSONL_FLUSH_LOCK_TIMEOUT, self.request_lock.lock())
-            .await
-            .ok()
+        tokio::time::timeout(
+            JSONL_FLUSH_LOCK_TIMEOUT,
+            Arc::clone(&self.request_lock).lock_owned(),
+        )
+        .await
+        .ok()
     }
 }
 
@@ -325,17 +369,27 @@ pub async fn write_usage_flush_request(
     addon_dir: &Path,
     target: &UsageFlushTarget,
 ) -> RunnerResult<UsageFlushRequest> {
+    let deadline = Instant::now() + FLUSH_REQUEST_TIMEOUT;
+    let request_guard = tokio::time::timeout_at(
+        deadline,
+        Arc::clone(&target.usage_request_lock).lock_owned(),
+    )
+    .await
+    .map_err(|_| RunnerError::Internal("usage flush publication lock timed out".to_string()))?;
     let request = UsageFlushRequest::new(target);
     let marker = UsageFlushRequestMarker {
         usage_state_id: &request.core.expected_usage_state_id,
         flush_request_id: &request.core.flush_request_id,
         requested_at_ms: request.core.requested_at_ms,
     };
-    write_flush_request_marker(
+    let _request_guard = write_flush_request_marker(
         addon_dir,
         "usage-flush-request",
         &marker,
         "usage flush request",
+        request_guard,
+        target.runtime.clone(),
+        deadline,
     )
     .await?;
     Ok(request)
@@ -345,7 +399,9 @@ async fn write_jsonl_flush_request(
     addon_dir: &Path,
     target: &UsageFlushTarget,
     log_path: &Path,
-) -> RunnerResult<JsonlFlushRequest> {
+    request_guard: OwnedMutexGuard<()>,
+) -> RunnerResult<(JsonlFlushRequest, OwnedMutexGuard<()>)> {
+    let deadline = Instant::now() + FLUSH_REQUEST_TIMEOUT;
     let request = JsonlFlushRequest::new(target, log_path);
     let marker = JsonlFlushRequestMarker {
         usage_state_id: &request.core.expected_usage_state_id,
@@ -353,14 +409,17 @@ async fn write_jsonl_flush_request(
         requested_at_ms: request.core.requested_at_ms,
         path: &request.path,
     };
-    write_flush_request_marker(
+    let request_guard = write_flush_request_marker(
         addon_dir,
         "jsonl-flush-request",
         &marker,
         "JSONL flush request",
+        request_guard,
+        target.runtime.clone(),
+        deadline,
     )
     .await?;
-    Ok(request)
+    Ok((request, request_guard))
 }
 
 async fn write_flush_request_marker<T: Serialize>(
@@ -368,11 +427,24 @@ async fn write_flush_request_marker<T: Serialize>(
     file_name: &str,
     marker: &T,
     description: &str,
-) -> RunnerResult<()> {
+    request_guard: OwnedMutexGuard<()>,
+    runtime: Option<Arc<MitmdumpRuntime>>,
+    deadline: Instant,
+) -> RunnerResult<OwnedMutexGuard<()>> {
     let path = addon_dir.join(file_name);
     let content = serde_json::to_vec(marker)
         .map_err(|e| RunnerError::Internal(format!("serialize {description}: {e}")))?;
-    crate::state_file::write_private_atomic(&path, &content).await
+    MarkerPublication {
+        path,
+        content,
+        deadline,
+        request_guard,
+        runtime,
+        #[cfg(test)]
+        staged_gate: None,
+    }
+    .publish()
+    .await
 }
 
 fn parse_usage_pending_state(content: &str) -> Result<UsagePendingState, String> {
@@ -605,8 +677,26 @@ where
     let mut next_flush_request_at = repeat_request
         .as_ref()
         .map(|(repeat_request_interval, _)| started_at + *repeat_request_interval);
+    let read_timed_out = || FlushWaitFailure::TimedOut {
+        phase: "state_read",
+        not_ready: format!(
+            "read {} did not finish before the flush deadline",
+            path.display()
+        ),
+        snapshot: None,
+    };
+    let mut last_failure = read_timed_out();
     loop {
-        let (phase, not_ready, snapshot) = match read_addon_state_file(&path).await {
+        if Instant::now() >= deadline {
+            return Err(last_failure);
+        }
+        let state = tokio::time::timeout_at(deadline, read_addon_state_file(&path))
+            .await
+            .map_err(|_| read_timed_out())?;
+        if Instant::now() >= deadline {
+            return Err(read_timed_out());
+        }
+        let (phase, not_ready, snapshot) = match state {
             Ok(Some(content)) => match evaluate_state(&content) {
                 FlushReadiness::Ready => return Ok(()),
                 FlushReadiness::NotReady {
@@ -643,6 +733,11 @@ where
                 snapshot,
             });
         }
+        last_failure = FlushWaitFailure::TimedOut {
+            phase,
+            not_ready,
+            snapshot,
+        };
         tokio::time::sleep(std::cmp::min(poll_interval, deadline - now)).await;
     }
 }
@@ -757,6 +852,207 @@ mod tests {
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
 
+    struct BlockingPoolGate {
+        release: std::sync::mpsc::Sender<()>,
+        worker: tokio::task::JoinHandle<()>,
+    }
+
+    impl BlockingPoolGate {
+        async fn occupy() -> Self {
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+            let (release, release_rx) = std::sync::mpsc::channel();
+            let worker = tokio::task::spawn_blocking(move || {
+                let _ = ready_tx.send(());
+                // Dropping the sender also releases the worker on test failure.
+                let _ = release_rx.recv_timeout(Duration::from_secs(10));
+            });
+            ready_rx.await.unwrap();
+            Self { release, worker }
+        }
+
+        async fn release(self) {
+            let _ = self.release.send(());
+            self.worker.await.unwrap();
+        }
+    }
+
+    fn filesystem_test_runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .max_blocking_threads(1)
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn usage_publication_serialization_survives_proxy_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut proxy, _crash_rx) = MitmProxy::noop();
+        let handle = proxy.jsonl_flush_handle();
+        let previous = usage_flush_state_guard(&handle.usage_state).clone();
+        let previous_guard = Arc::clone(&previous.usage_request_lock).lock_owned().await;
+        let _restart = proxy.begin_restart();
+        let current = usage_flush_state_guard(&handle.usage_state).clone();
+        assert_ne!(
+            previous.expected_usage_state_id,
+            current.expected_usage_state_id
+        );
+
+        tokio::time::pause();
+        assert!(
+            write_usage_flush_request(dir.path(), &current)
+                .await
+                .is_err()
+        );
+        tokio::time::resume();
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+
+        drop(previous_guard);
+        let request = write_usage_flush_request(dir.path(), &current)
+            .await
+            .unwrap();
+        let marker: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("usage-flush-request")).unwrap())
+                .unwrap();
+        assert_eq!(marker["usageStateId"], current.expected_usage_state_id);
+        assert_eq!(marker["flushRequestId"], request.core.flush_request_id);
+    }
+
+    #[test]
+    fn usage_flush_read_deadline_includes_blocking_pool_queueing() {
+        filesystem_test_runtime().block_on(async {
+            let dir = tempfile::tempdir().unwrap();
+            let request = usage_request();
+            let gate = BlockingPoolGate::occupy().await;
+            tokio::time::pause();
+            let wait =
+                wait_usage_flush_requesting(dir.path(), USAGE_FLUSH_TIMEOUT, &request, || true);
+            tokio::pin!(wait);
+            assert!(futures_util::poll!(&mut wait).is_pending());
+            tokio::time::advance(USAGE_FLUSH_TIMEOUT + Duration::from_secs(1)).await;
+            let at_deadline = futures_util::poll!(&mut wait);
+            tokio::time::resume();
+            gate.release().await;
+            if at_deadline.is_pending() {
+                let _ = wait.await;
+            }
+            assert_eq!(at_deadline, Poll::Ready(false));
+        });
+    }
+
+    #[test]
+    fn jsonl_flush_read_deadline_includes_blocking_pool_queueing() {
+        filesystem_test_runtime().block_on(async {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("network.jsonl");
+            let request = jsonl_request(&path);
+            let gate = BlockingPoolGate::occupy().await;
+            tokio::time::pause();
+            let wait = wait_jsonl_flush(dir.path(), JSONL_FLUSH_TIMEOUT, &request);
+            tokio::pin!(wait);
+            assert!(futures_util::poll!(&mut wait).is_pending());
+            tokio::time::advance(JSONL_FLUSH_TIMEOUT + Duration::from_secs(1)).await;
+            let at_deadline = futures_util::poll!(&mut wait);
+            tokio::time::resume();
+            gate.release().await;
+            if at_deadline.is_pending() {
+                let _ = wait.await;
+            }
+            assert_eq!(at_deadline, Poll::Ready(false));
+        });
+    }
+
+    #[test]
+    fn usage_marker_deadline_includes_blocking_pool_queueing() {
+        filesystem_test_runtime().block_on(async {
+            let dir = tempfile::tempdir().unwrap();
+            let target = usage_target();
+            let gate = BlockingPoolGate::occupy().await;
+            tokio::time::pause();
+            let write = write_usage_flush_request(dir.path(), &target);
+            tokio::pin!(write);
+            assert!(futures_util::poll!(&mut write).is_pending());
+            tokio::time::advance(Duration::from_secs(6)).await;
+            let at_deadline = futures_util::poll!(&mut write);
+            let timed_out = matches!(&at_deadline, Poll::Ready(Err(_)));
+            tokio::time::resume();
+            gate.release().await;
+            if at_deadline.is_pending() {
+                let _ = write.await;
+            }
+            // With one blocking worker, this also drains previously queued I/O.
+            tokio::task::spawn_blocking(|| ()).await.unwrap();
+            assert!(
+                timed_out,
+                "usage marker write exceeded its publication budget"
+            );
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+
+            let next = write_usage_flush_request(dir.path(), &target)
+                .await
+                .unwrap();
+            let marker: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(dir.path().join("usage-flush-request")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(marker["flushRequestId"], next.core.flush_request_id);
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        });
+    }
+
+    #[test]
+    fn jsonl_marker_deadline_includes_blocking_pool_queueing() {
+        filesystem_test_runtime().block_on(async {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("network.jsonl");
+            let mut handle = MitmJsonlFlushHandle {
+                addon_dir: dir.path().to_path_buf(),
+                usage_state: Arc::new(Mutex::new(usage_target())),
+                request_lock: Arc::new(AsyncMutex::new(())),
+                request_lock_poll_tx: None,
+                request_published_tx: None,
+            };
+            let gate = BlockingPoolGate::occupy().await;
+            tokio::time::pause();
+            {
+                let flush = handle.flush_path(&path);
+                tokio::pin!(flush);
+                assert!(futures_util::poll!(&mut flush).is_pending());
+                tokio::time::advance(Duration::from_secs(6)).await;
+                let at_deadline = futures_util::poll!(&mut flush);
+                tokio::time::resume();
+                gate.release().await;
+                if at_deadline.is_pending() {
+                    let _ = flush.await;
+                }
+                assert_eq!(at_deadline, Poll::Ready(false));
+            }
+            {
+                let _guard = handle.request_lock.lock().await;
+                assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+            }
+            let mut published_rx = observe_request_publication(&mut handle);
+            let next_path = path.clone();
+            let next = tokio::spawn(async move { handle.flush_path(&next_path).await });
+            let marker = assert_request_published(dir.path(), &path, &mut published_rx).await;
+            std::fs::write(
+                dir.path().join("jsonl-flush-state"),
+                serde_json::json!({
+                    "pid": 1234,
+                    "usageStateId": marker["usageStateId"],
+                    "updatedAtMs": now_millis(),
+                    "flushRequestId": marker["flushRequestId"],
+                    "path": marker["path"],
+                    "pending": 0,
+                })
+                .to_string(),
+            )
+            .unwrap();
+            assert!(next.await.unwrap());
+            assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+        });
+    }
+
     async fn capture_async_log_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
     where
         F: std::future::Future,
@@ -798,10 +1094,7 @@ mod tests {
     }
 
     fn usage_target() -> UsageFlushTarget {
-        UsageFlushTarget {
-            expected_usage_state_id: "state-test".to_string(),
-            usage_state_started_at_ms: 1_770_000_000_000,
-        }
+        UsageFlushTarget::new("state-test".to_string(), 1_770_000_000_000, None)
     }
 
     fn observe_request_publication(
@@ -978,9 +1271,11 @@ mod tests {
         let target = usage_target();
         let log_path = dir.path().join("network.jsonl");
 
-        let request = write_jsonl_flush_request(dir.path(), &target, &log_path)
-            .await
-            .unwrap();
+        let request_guard = Arc::new(AsyncMutex::new(())).lock_owned().await;
+        let (request, _guard) =
+            write_jsonl_flush_request(dir.path(), &target, &log_path, request_guard)
+                .await
+                .unwrap();
 
         let marker: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(dir.path().join("jsonl-flush-request")).unwrap(),
@@ -999,7 +1294,8 @@ mod tests {
         let log_path = dir.path().join("network.jsonl");
         std::fs::create_dir(dir.path().join("jsonl-flush-request")).unwrap();
 
-        let result = write_jsonl_flush_request(dir.path(), &target, &log_path).await;
+        let request_guard = Arc::new(AsyncMutex::new(())).lock_owned().await;
+        let result = write_jsonl_flush_request(dir.path(), &target, &log_path, request_guard).await;
 
         assert!(result.is_err());
         let leaked_tmp = std::fs::read_dir(dir.path())
@@ -1038,7 +1334,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn wait_jsonl_flush_returns_true_when_ready_at_immediate_deadline() {
+    async fn wait_jsonl_flush_expires_without_starting_io_at_zero_deadline() {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("network.jsonl");
         let request = jsonl_request(&log_path);
@@ -1048,7 +1344,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(wait_jsonl_flush(dir.path(), Duration::ZERO, &request).await);
+        assert!(!wait_jsonl_flush(dir.path(), Duration::ZERO, &request).await);
     }
 
     #[tokio::test(start_paused = true)]

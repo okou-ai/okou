@@ -35,13 +35,13 @@ export const CHAT_THREAD_WORK_HISTORY_TEXT_CLASS =
   "text-sm leading-5 text-muted-foreground";
 export const CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS = "!text-muted-foreground";
 
-// Keep the entry animation, but do not let its duration also animate the
-// responsive margin: that would continue changing layout after resize.
+// `transition-none` keeps the responsive margin from animating, which would
+// otherwise continue changing layout after resize.
 export const CHAT_THREAD_USER_MESSAGE_ROW_CLASS =
-  "flex flex-col items-end min-w-0 animate-in fade-in slide-in-from-bottom-2 duration-300 transition-none @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "flex flex-col items-end min-w-0 duration-300 transition-none @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS =
-  "flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300";
+  "flex flex-col gap-2 duration-300";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS =
   "flex flex-col gap-2 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
@@ -59,8 +59,10 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
 
+// Reveal immediately so hover does not create and remove a temporary opacity
+// layer in the scrolling transcript beside the assistant's SVG icons.
 export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS =
-  "flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150";
+  "flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
   "pl-1.5 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";
@@ -78,8 +80,9 @@ export function ChatUserMessageBubble({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      data-slot="chat-user-message"
       className={cn(
-        "okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden",
+        "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden bg-gray-200 text-foreground",
         className,
       )}
       {...props}
@@ -95,7 +98,7 @@ export function ChatAssistantMessageBody({
     <div
       data-chat-selection-source
       className={cn(
-        "okou-chat-bubble-assistant p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere]",
+        "p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere] bg-transparent border-none border-current",
         className,
       )}
       {...props}

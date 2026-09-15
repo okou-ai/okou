@@ -194,7 +194,7 @@ test("Related feedback notes are grouped with clear source links", async () => {
   assertBefore(group, after);
 });
 
-test("Structured message context survives navigation and split view", async () => {
+async function openStructuredContextChat() {
   const userMessage = {
     version: 1,
     parts: [
@@ -246,6 +246,10 @@ test("Structured message context survives navigation and split view", async () =
   await expect(
     screen.findByText("source-context.bin"),
   ).resolves.toBeInTheDocument();
+}
+
+test("Structured message context survives navigation away and back", async () => {
+  await openStructuredContextChat();
   fireEvent.click(await findFastControl("link", "Agents"));
   await expect(
     screen.findByRole("heading", { name: "Agents" }),
@@ -261,7 +265,11 @@ test("Structured message context survives navigation and split view", async () =
     findFastControl("link", "Open chat Source thread"),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Page not found")).not.toBeInTheDocument();
+  await expect(screen.findByText("source-context.bin")).resolves.toBeVisible();
+});
 
+test("Structured message context stays in its pane when a companion chat opens", async () => {
+  await openStructuredContextChat();
   fireEvent.click(await findFastControl("link", "Companion chat"), {
     altKey: true,
   });
@@ -444,6 +452,41 @@ test("Sent template references stay inline and read-only", async () => {
   }
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByText("Create")).toBeNull();
+});
+
+test("A sent Intro Video reference is labelled Intro video, not Video", async () => {
+  // The chip names the product, not the envelope: creative video and talking
+  // avatar still share `type: "video"`, so a label derived from the wire type
+  // alone would be wrong for one of them.
+  const userMessage = {
+    version: 1,
+    parts: [
+      {
+        type: "template",
+        titleSnapshot: "Intro video",
+        template: {
+          type: "intro-video",
+          selection: {},
+        },
+      },
+      { type: "text", text: "for the launch." },
+    ],
+  } satisfies UserMessageDocument;
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [userEventWith(userMessage)],
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const reference = await waitFor(() => {
+    const element = document.querySelector<HTMLElement>(
+      "[data-structured-template-reference]",
+    );
+    expect(element).not.toBeNull();
+    return element!;
+  });
+  expect(reference).toHaveAttribute("title", "Intro video · Intro video");
 });
 
 function documentRoot(): HTMLElement {

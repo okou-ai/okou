@@ -100,11 +100,6 @@ describe("Desktop IPC boundary", () => {
       readonly channel: string;
       readonly args: readonly unknown[];
     }[] = [
-      {
-        channel: COMPUTER_USE_CHANNELS.setExperimentalCuaEnabled,
-        args: [true],
-      },
-      { channel: COMPUTER_USE_CHANNELS.selectDriver, args: ["cua"] },
       { channel: COMPUTER_USE_CHANNELS.getState, args: [] },
       { channel: COMPUTER_USE_CHANNELS.refreshPermissions, args: [] },
       {
@@ -223,12 +218,10 @@ describe("Desktop IPC boundary", () => {
       rendererUrl,
       getMainWindow: () => trustedWindow,
     });
-    const handler = electronMock.handlers.get(
-      COMPUTER_USE_CHANNELS.selectDriver,
-    )!;
+    const handler = electronMock.handlers.get(COMPUTER_USE_CHANNELS.start)!;
     const reject = (event: IpcEvent) =>
       expect(
-        Promise.resolve().then(() => handler(event, "cua")),
+        Promise.resolve().then(() => handler(event, { userInitiated: true })),
       ).rejects.toThrow("unavailable on this page");
     await reject({ sender: {}, senderFrame: trustedFrame }); // auth/recorder/other local window
     await reject({
@@ -242,57 +235,32 @@ describe("Desktop IPC boundary", () => {
     const stale = { ...trustedWindow, isDestroyed: () => true };
     installComputerUseIpc(api, { rendererUrl, getMainWindow: () => stale });
     await expect(
-      invokeIpc(COMPUTER_USE_CHANNELS.selectDriver, rendererUrl, "cua"),
+      invokeIpc(COMPUTER_USE_CHANNELS.start, rendererUrl, {
+        userInitiated: true,
+      }),
     ).rejects.toThrow("unavailable on this page");
-    expect(api.selectDriver).not.toHaveBeenCalled();
+    expect(api.start).not.toHaveBeenCalled();
   });
 
-  it("validates new driver writes and rejects forged start authority", async () => {
+  it("rejects forged start authority", async () => {
     const { installComputerUseIpc } = await import("./computer-use-electron");
     const api = createComputerUseApi();
     installComputerUseIpc(api, {
       rendererUrl,
       getMainWindow: () => trustedWindow,
     });
-    for (const invalid of [null, 1, "true", {}, [true]]) {
-      await expect(
-        invokeIpc(
-          COMPUTER_USE_CHANNELS.setExperimentalCuaEnabled,
-          rendererUrl,
-          invalid,
-        ),
-      ).rejects.toThrow("boolean");
-    }
-    for (const invalid of [
-      null,
-      "CUA",
-      "other",
-      { driver: "cua", available: true },
-    ]) {
-      await expect(
-        invokeIpc(COMPUTER_USE_CHANNELS.selectDriver, rendererUrl, invalid),
-      ).rejects.toThrow("Unknown Computer Use driver");
-    }
     for (const invalid of [
       null,
       "true",
       {},
       { userInitiated: "true" },
-      { userInitiated: true, driver: "cua", tool: "click" },
+      { userInitiated: true, tool: "click" },
     ]) {
       await expect(
         invokeIpc(COMPUTER_USE_CHANNELS.start, rendererUrl, invalid),
       ).rejects.toThrow("Invalid Computer Use start options");
     }
     expect(api.start).not.toHaveBeenCalled();
-    await invokeIpc(
-      COMPUTER_USE_CHANNELS.setExperimentalCuaEnabled,
-      rendererUrl,
-      true,
-    );
-    await invokeIpc(COMPUTER_USE_CHANNELS.selectDriver, rendererUrl, "cua");
-    expect(api.setExperimentalCuaEnabled).toHaveBeenCalledExactlyOnceWith(true);
-    expect(api.selectDriver).toHaveBeenCalledExactlyOnceWith("cua");
   });
 
   it("rejects recorder handlers from every frame but the recorder overlays", async () => {
@@ -539,12 +507,6 @@ describe("Desktop IPC boundary", () => {
 });
 
 function createComputerUseApi(): {
-  readonly setExperimentalCuaEnabled: ReturnType<
-    typeof vi.fn<(enabled: boolean) => Promise<DesktopComputerUseState>>
-  >;
-  readonly selectDriver: ReturnType<
-    typeof vi.fn<(driver: "okou" | "cua") => Promise<DesktopComputerUseState>>
-  >;
   readonly getState: ReturnType<typeof vi.fn<() => DesktopComputerUseState>>;
   readonly refreshPermissions: ReturnType<
     typeof vi.fn<() => Promise<DesktopComputerUseState>>
@@ -596,8 +558,6 @@ function createComputerUseApi(): {
 } {
   const state = createComputerUseState();
   return {
-    setExperimentalCuaEnabled: vi.fn(async () => state),
-    selectDriver: vi.fn(async () => state),
     getState: vi.fn(() => state),
     refreshPermissions: vi.fn(async () => state),
     start: vi.fn(async () => state),

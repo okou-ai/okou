@@ -111,13 +111,8 @@ async function failed() {
   });
 }
 
-test.each([
-  "ai.okou.desktop",
-  "ai.okou.desktop.dev",
-  "ai.vm0.zero.desktop",
-  "ai.vm0.zero.desktop.dev",
-])(
-  "signed-out entry preserves explicit %s in the absolute Auth v2 callback",
+test.each(["ai.okou.desktop", "ai.okou.desktop.dev"])(
+  "signed-out entry preserves explicit %s in the absolute hosted auth callback",
   async (scheme) => {
     const documents = navigation();
     await page(`/desktop-auth/start?callbackScheme=${scheme}`, null);
@@ -132,6 +127,32 @@ test.each([
     );
   },
 );
+
+test("the skeleton covers the page until the Clerk runtime resolves", async () => {
+  const clerkLoad = context.mocks.clerk().runtimePending();
+  const documents = navigation();
+
+  const pageReady = setupPage({
+    context,
+    host: "app.okou.ai",
+    path: `/desktop-auth/start?callbackScheme=${SCHEME}`,
+  });
+
+  // The app root mounts nothing before the runtime resolves, so publishing the
+  // page any earlier would replace the skeleton with a blank document.
+  const skeleton = await screen.findByTestId("app-skeleton");
+  expect(skeleton).not.toHaveAttribute("aria-hidden", "true");
+  expect(
+    screen.queryByRole("heading", { name: "Sign in to Desktop" }),
+  ).toBeNull();
+
+  clerkLoad.resolve();
+  await pageReady;
+
+  await waitFor(() => {
+    expect(documents).toStrictEqual([CALLBACK]);
+  });
+});
 
 test("signed-in entry goes straight to the callback", async () => {
   const documents = navigation();
@@ -161,17 +182,16 @@ test.each(["sign-in", "sign-up"])(
       path: `/${mode}?redirect_url=${encodeURIComponent(CALLBACK)}`,
       auth: null,
     });
-    await screen.findByLabelText("Email address");
+    const auth = await screen.findByTestId(`clerk-${mode}`);
     const other = mode === "sign-in" ? "/sign-up" : "/sign-in";
-    const link = queryAllByRoleFast("link").find((item) => {
-      return item.getAttribute("href")?.startsWith(other);
-    });
-    expect(link).toBeDefined();
-    expect(
-      new URL(link!.getAttribute("href")!, location.origin).searchParams.get(
-        "redirect_url",
-      ),
-    ).toBe(CALLBACK);
+    const switchUrl =
+      mode === "sign-in"
+        ? auth.dataset.clerkSignUpUrl
+        : auth.dataset.clerkSignInUrl;
+    expect(switchUrl).toBeDefined();
+    const destination = new URL(switchUrl!, location.origin);
+    expect(destination.pathname).toBe(other);
+    expect(destination.searchParams.get("redirect_url")).toBe(CALLBACK);
   },
 );
 
@@ -261,7 +281,7 @@ test.each(["bad", "expired", "replayed"])(
   },
 );
 
-test("ticket session tasks preserve the handoff without passing the ticket to Auth v2", async () => {
+test("ticket session tasks preserve the handoff without exposing the ticket to hosted auth", async () => {
   const documents = navigation();
   context.mocks.clerk();
   context.mocks.api(desktopAuthConsumeContract.consume, ({ respond }) => {
@@ -270,10 +290,7 @@ test("ticket session tasks preserve the handoff without passing the ticket to Au
   mockedClerk.setActive.mockImplementation(async (params) => {
     await params.navigate?.({
       session: {
-        id: "pending",
-        status: "pending",
         currentTask: { key: "setup-mfa" },
-        user: null,
       },
       decorateUrl: (url) => {
         return url;
@@ -645,64 +662,20 @@ test("cancellation after IPC starts discards its delayed acknowledgement", async
   expect(documents).toStrictEqual([]);
 });
 
-test.each([
-  ["app.okou.ai", "app.okou.ai"],
-  ["app.okou.ai", "app.okou.ai"],
-  ["app.okou.ai", "app.okou.ai"],
-] as const)(
-  "browser required organization task from %s to %s retains its scheme and cannot be preempted by the global watcher",
-  async (host, callbackHost) => {
-    const clerk = context.mocks.clerk();
-    const destination = CALLBACK.replace("app.okou.ai", callbackHost).replace(
-      SCHEME,
-      "ai.okou.desktop.dev",
-    );
-    mockedClerk.setActive.mockImplementation(async (params) => {
-      clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
-      clerk.stateChanged();
-      await params.navigate?.({
-        session: {
-          id: "pending",
-          status: "active",
-          user: { organizationMemberships: [] },
-        },
-        decorateUrl: (url) => {
-          return url;
-        },
-      });
-    });
-    await setupPage({
-      context,
-      host,
-      path: `/sign-in/tasks/choose-organization?redirect_url=${encodeURIComponent(destination)}`,
-      auth: {
-        organization: { activeOrg: null, memberships: [alpha, beta] },
-        session: { token: "pending-token" },
-        user: {
-          id: "pending-user",
-          fullName: "Pending User",
-          clientSessions: [
-            {
-              id: "pending",
-              status: "pending",
-              currentTask: { key: "choose-organization" },
-              user: {
-                fullName: "Pending User",
-                organizationMemberships: [alpha, beta],
-              },
-            },
-          ],
-        },
-      },
-    });
-    await screen.findByRole("heading", { name: "Choose an organization" });
-    expect(document.querySelector('a[href="/"]')).toBeNull();
-    click(button("Continue with Beta"));
-    await waitFor(() => {
-      expect(location.href).toBe(destination);
-    });
-  },
-);
+test("a required organization task stays in hosted auth with its Desktop callback", async () => {
+  const destination = CALLBACK.replace(SCHEME, "ai.okou.desktop.dev");
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: `/sign-in/tasks/choose-organization?redirect_url=${encodeURIComponent(destination)}`,
+    auth: null,
+  });
+
+  const signIn = await screen.findByTestId("clerk-sign-in");
+  expect(location.pathname).toBe("/sign-in/tasks/choose-organization");
+  expect(signIn).toHaveAttribute("data-clerk-force-redirect-url", destination);
+  expect(mockedClerk.setActive).not.toHaveBeenCalled();
+});
 
 test("protocol errors, navigation and telemetry do not capture credentials", async () => {
   const documents = navigation();
@@ -752,7 +725,7 @@ test("protocol errors, navigation and telemetry do not capture credentials", asy
   ).resolves.toBeNull();
 });
 
-test("signed-out browser callback returns to Auth v2 with the explicit scheme", async () => {
+test("signed-out browser callback returns to hosted auth with the explicit scheme", async () => {
   const documents = navigation();
   await page(`/desktop-auth/callback?callbackScheme=${SCHEME}`, null);
   await waitFor(() => {
@@ -897,7 +870,7 @@ test("forced workspace selection survives a required session task", async () => 
   expect(tokens).toStrictEqual([]);
 });
 
-test("Desktop Auth v2 continuation works in browsers without URL.canParse", async () => {
+test("Desktop hosted auth continuation works without URL.canParse", async () => {
   class BrowserURL extends URL {}
   Object.defineProperty(BrowserURL, "canParse", { value: undefined });
   vi.stubGlobal("URL", BrowserURL);
@@ -907,6 +880,6 @@ test("Desktop Auth v2 continuation works in browsers without URL.canParse", asyn
     path: `/sign-in?redirect_url=${encodeURIComponent(CALLBACK)}`,
     auth: null,
   });
-  await screen.findByLabelText("Email address");
-  expect(document.querySelector('a[href="/"]')).toBeNull();
+  const signIn = await screen.findByTestId("clerk-sign-in");
+  expect(signIn).toHaveAttribute("data-clerk-force-redirect-url", CALLBACK);
 });

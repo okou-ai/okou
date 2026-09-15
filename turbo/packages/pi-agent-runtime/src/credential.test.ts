@@ -124,45 +124,37 @@ describe("Pi agent credential resolution", () => {
     },
   );
 
-  it.each([
-    undefined,
-    "openai-responses",
-    "openai-completions",
-    "openai-codex-responses",
-  ] as const)(
-    "materializes legacy %s routes as public Responses",
-    async (api) => {
-      const config = piModelConfigSchema.parse({
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
-        ...(api === undefined ? {} : { api }),
-        apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENAI_API_KEY",
-      });
+  it("materializes canonical Gen1 as public Responses", async () => {
+    const config = piModelConfigSchema.parse({
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5.6-terra",
+      apiKeyEnv: "OPENAI_API_KEY",
+      credentialSecretName: "OPENAI_API_KEY",
+    });
 
-      await expect(
-        materializePiAgentModelConfig({
-          config,
-          target: "direct",
-          resolveCredential(binding) {
-            expect(binding).toMatchObject({
-              kind: "api-key",
-              environment: "OPENAI_API_KEY",
-              secretName: "OPENAI_API_KEY",
-            });
-            return "legacy-key";
-          },
-        }),
-      ).resolves.toStrictEqual({
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-5.6-terra",
-        dialect: "openai-responses",
-        apiKey: "legacy-key",
-      });
-    },
-  );
+    await expect(
+      materializePiAgentModelConfig({
+        config,
+        target: "direct",
+        resolveCredential(binding) {
+          expect(binding).toMatchObject({
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: "OPENAI_API_KEY",
+          });
+          return "selected-key";
+        },
+      }),
+    ).resolves.toStrictEqual({
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      model: "gpt-5.6-terra",
+      dialect: "openai-responses",
+      apiKey: "selected-key",
+      transport: "sse",
+    });
+  });
 
   it.each([2, 3] as const)(
     "materializes exact subscription bindings from generation %s",

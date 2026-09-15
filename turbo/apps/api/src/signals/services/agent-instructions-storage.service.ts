@@ -46,6 +46,7 @@ function instructionVolumeInput(args: WriteAgentInstructionsStorageArgs) {
   return {
     orgId: args.orgId,
     storageName: getInstructionsStorageName(args.agentName.toLowerCase()),
+    piResourceIndex: true as const,
     files: instructionFilesForFramework({
       content: args.instructions,
       framework: args.framework,

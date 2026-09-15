@@ -67,6 +67,7 @@ import {
   ArrowUp,
   Bolt,
   Check,
+  Clapperboard,
   Download,
   Globe,
   Image as ImageIcon,
@@ -195,6 +196,14 @@ import {
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
+import {
+  defaultPresentationTemplateThemeId,
+  presentationTemplateColorSystemId,
+  toIllustrationGenerationTemplate,
+  toPresentationGenerationTemplate,
+  toVideoGenerationTemplate,
+  toWebsiteGenerationTemplate,
+} from "./composer-template-catalog.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -216,6 +225,7 @@ import {
   type MediaModelPanelState,
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
+import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
@@ -263,11 +273,10 @@ import {
 import {
   codexFastModeEnabled$,
   modelPickerFlyoutEnabled$,
-  modelPickerMenuEnabled$,
   customConnectorMcpEnabled$,
-  voiceInputV2Enabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
+import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   selectedComputerUseHostId,
   visibleComputerUseHosts,
@@ -296,10 +305,6 @@ import type {
 import {
   audioInputAvailable$,
   audioInputQuota$,
-  sttRecording$,
-  sttStarting$,
-  sttTranscribing$,
-  sttVoiceLevel$,
 } from "../../signals/voice-io/voice-io-stt.ts";
 import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
@@ -311,6 +316,11 @@ import {
 } from "./avatar-template-picker.tsx";
 import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
+import {
+  markVideoPreviewPlaying,
+  resetVideoPreview,
+  startVideoPreview,
+} from "./video-preview-hover.ts";
 import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
@@ -699,22 +709,6 @@ function isSelectedPresentationTemplate(
   );
 }
 
-function toPresentationGenerationTemplate(
-  item: PresentationTemplateItem,
-  colorSystemId = presentationTemplateColorSystemId(
-    defaultPresentationTemplateThemeId(item),
-  ),
-): GenerationTemplateRequest {
-  return {
-    type: "presentation",
-    selection: {
-      templateId: item.templateId,
-      colorSystemId,
-      previewUrl: item.embedUrl,
-    },
-  };
-}
-
 function toImportedPresentationGenerationTemplate(
   template: PresentationTemplateSummary,
 ): GenerationTemplateRequest {
@@ -763,17 +757,6 @@ function isSelectedIllustrationTemplate(
   );
 }
 
-function toIllustrationGenerationTemplate(
-  item: IllustrationTemplateItem,
-): GenerationTemplateRequest {
-  return {
-    type: "illustration",
-    selection: {
-      illustrationStyleId: item.illustrationStyleId,
-    },
-  };
-}
-
 function selectedIllustrationTemplateItem(
   value: GenerationTemplateRequest | undefined,
 ): IllustrationTemplateItem | undefined {
@@ -801,17 +784,6 @@ function isSelectedVideoTemplate(
  * pin and the member default, and the rest from the composer's own settings
  * chip, so nothing about a run is frozen into the message that started it.
  */
-function toVideoGenerationTemplate(
-  item: VideoTemplateItem,
-): GenerationTemplateRequest {
-  return {
-    type: "video",
-    selection: {
-      stylePresetId: item.id,
-    },
-  };
-}
-
 function selectedVideoTemplateItem(
   value: GenerationTemplateRequest | undefined,
 ): VideoTemplateItem | undefined {
@@ -880,15 +852,6 @@ function isSelectedWebsiteTemplate(
   );
 }
 
-function toWebsiteGenerationTemplate(
-  item: WebsiteTemplateItem,
-): GenerationTemplateRequest {
-  return {
-    type: "website",
-    selection: { websiteTemplateId: item.id },
-  };
-}
-
 function selectedWebsiteTemplateItem(
   value: GenerationTemplateRequest | undefined,
 ): WebsiteTemplateItem | undefined {
@@ -900,43 +863,6 @@ function selectedWebsiteTemplateItem(
 
 function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
-}
-
-function playVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.defaultMuted = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "metadata";
-  detach(video.play(), Reason.DomCallback);
-}
-
-function markVideoTemplatePreviewPlaying(
-  video: HTMLVideoElement | null,
-  playing: boolean,
-): void {
-  if (!video) {
-    return;
-  }
-  video.dataset.previewPlaying = playing ? "true" : "false";
-}
-
-function resetVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.pause();
-  video.currentTime = 0;
-  markVideoTemplatePreviewPlaying(video, false);
-}
-
-function toggleVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video || (!video.paused && !video.ended)) {
-    return;
-  }
-  playVideoTemplatePreview(video);
 }
 
 function videoTemplatePosterImage(item: VideoTemplateItem): string {
@@ -957,10 +883,10 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
       onMouseEnter={(event) => {
-        toggleVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        startVideoPreview(event.currentTarget.querySelector("video"));
       }}
       onMouseLeave={(event) => {
-        resetVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        resetVideoPreview(event.currentTarget.querySelector("video"));
       }}
     >
       <video
@@ -971,16 +897,16 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         muted
         loop
         onPlaying={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, true);
+          markVideoPreviewPlaying(event.currentTarget, true);
         }}
         onPause={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
         onEnded={(event) => {
-          resetVideoTemplatePreview(event.currentTarget);
+          resetVideoPreview(event.currentTarget);
         }}
         onError={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
       >
         <source src={item.previewWebm} type="video/webm; codecs=vp9" />
@@ -991,7 +917,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         alt=""
         aria-hidden="true"
         data-video-template-poster=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover transition-opacity duration-200 peer-data-[preview-playing=true]:opacity-0"
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover peer-data-[preview-playing=true]:opacity-0"
       />
       <IconTooltipButton
         type="button"
@@ -1007,7 +933,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          toggleVideoTemplatePreview(
+          startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
         }}
@@ -1043,9 +969,9 @@ const TEMPLATE_TILE_RING_SELECTED = "ring-1 ring-primary";
 const TEMPLATE_TILE_MEDIA =
   "relative overflow-hidden border border-border bg-muted";
 const TEMPLATE_TILE_SCRIM =
-  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity duration-150 group-hover/tile:opacity-100";
+  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 group-hover/tile:opacity-100";
 const TEMPLATE_TILE_USE =
-  "absolute bottom-2 right-2 z-20 h-[30px] rounded-lg bg-primary px-3 text-[12.5px] font-medium text-primary-foreground opacity-100 transition-opacity duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/tile:opacity-100";
+  "absolute bottom-2 right-2 z-20 h-[30px] rounded-lg bg-primary px-3 text-[12.5px] font-medium text-primary-foreground opacity-100 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/tile:opacity-100";
 // Caption metrics track the illustration card: same text size, and enough
 // breathing room under the artwork that the title never crowds it.
 const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
@@ -2209,16 +2135,6 @@ function presentationTemplateThemeName(
   return PRESENTATION_TEMPLATE_THEME_NAMES[theme.id]();
 }
 
-function defaultPresentationTemplateThemeId(
-  item: PresentationTemplateItem,
-): string {
-  return item.colorSystemId?.replace("color-system:", "") ?? "warm-sand";
-}
-
-function presentationTemplateColorSystemId(themeId: string): string {
-  return `color-system:${themeId}`;
-}
-
 function findPresentationTemplateTheme(
   themeId: string,
 ): PresentationTemplateTheme {
@@ -3364,7 +3280,7 @@ function TemplatePreviewPage({
     <>
       <DialogHeader
         data-presentation-template-detail-header=""
-        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none"
+        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
       >
         <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
           <button
@@ -3382,7 +3298,7 @@ function TemplatePreviewPage({
           </span>
         </DialogTitle>
       </DialogHeader>
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3">
           <div
             role="group"
@@ -4367,10 +4283,12 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   introVideoEnabled,
+  creativeVideoOnly,
   onChange,
 }: {
   selectedCategory: string;
   introVideoEnabled: boolean;
+  creativeVideoOnly: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -4416,7 +4334,7 @@ function TemplatePickerCategoryNav({
             label: t(($) => {
               return $.artifacts.templates.introVideo;
             }),
-            Icon: Presentation,
+            Icon: Clapperboard,
           },
         ]
       : []),
@@ -4435,6 +4353,9 @@ function TemplatePickerCategoryNav({
       Icon: Route,
     },
   ];
+  const visibleCategories = categoryOptions.filter(({ value }) => {
+    return !creativeVideoOnly || value === "video";
+  });
 
   return (
     <>
@@ -4449,7 +4370,7 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryOptions.map(({ value, label, Icon }) => {
+            {visibleCategories.map(({ value, label, Icon }) => {
               return (
                 <SelectItem key={value} value={value}>
                   <span className="flex items-center gap-2">
@@ -4474,7 +4395,7 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
           >
-            {categoryOptions.map(({ value, label, Icon }, categoryIndex) => {
+            {visibleCategories.map(({ value, label, Icon }, categoryIndex) => {
               const selected = value === selectedCategory;
               return (
                 <button
@@ -4489,15 +4410,16 @@ function TemplatePickerCategoryNav({
                   onKeyDown={(event) => {
                     let nextIndex: number | null = null;
                     if (event.key === "ArrowDown") {
-                      nextIndex = (categoryIndex + 1) % categoryOptions.length;
+                      nextIndex =
+                        (categoryIndex + 1) % visibleCategories.length;
                     } else if (event.key === "ArrowUp") {
                       nextIndex =
-                        (categoryIndex - 1 + categoryOptions.length) %
-                        categoryOptions.length;
+                        (categoryIndex - 1 + visibleCategories.length) %
+                        visibleCategories.length;
                     } else if (event.key === "Home") {
                       nextIndex = 0;
                     } else if (event.key === "End") {
-                      nextIndex = categoryOptions.length - 1;
+                      nextIndex = visibleCategories.length - 1;
                     }
                     if (nextIndex === null) {
                       return;
@@ -4507,7 +4429,7 @@ function TemplatePickerCategoryNav({
                       ?.querySelectorAll<HTMLElement>("[role=tab]")
                       .item(nextIndex);
                     nextTab?.focus();
-                    onChange(categoryOptions[nextIndex]?.value ?? value);
+                    onChange(visibleCategories[nextIndex]?.value ?? value);
                   }}
                   className={cn(
                     "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -4817,16 +4739,14 @@ function importedPptImageCandidateSource(
     return null;
   }
   const resolvedPreviewSourceUrl = previewSourceUrl ?? desiredSourceUrl;
-  if (
-    state.active === null &&
-    resolvedPreviewSourceUrl !== desiredSourceUrl &&
-    !importedPptImageLoadFailed(
+  if (state.active === null && resolvedPreviewSourceUrl !== desiredSourceUrl) {
+    return importedPptImageLoadFailed(
       state.failed,
       desiredUrl,
       resolvedPreviewSourceUrl,
     )
-  ) {
-    return resolvedPreviewSourceUrl;
+      ? null
+      : resolvedPreviewSourceUrl;
   }
   return importedPptImageLoadFailed(state.failed, desiredUrl, desiredSourceUrl)
     ? null
@@ -5523,7 +5443,7 @@ function ImportedPresentationTemplatePreviewHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
+    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
       <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
         <button
           type="button"
@@ -5716,7 +5636,8 @@ function ImportedPresentationTemplatePreviewPage({
   const loadedDetail =
     currentDetail?.id === summary.id
       ? currentDetail
-      : lastResolvedDetail?.id === summary.id
+      : detailLoadable.state === "loading" &&
+          lastResolvedDetail?.id === summary.id
         ? lastResolvedDetail
         : null;
   const detail =
@@ -5757,7 +5678,7 @@ function ImportedPresentationTemplatePreviewPage({
         title={title}
         onBack={onBack}
       />
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3 lg:overflow-y-auto">
           <ImportedPresentationTemplateMainPreview
             title={title}
@@ -5792,10 +5713,18 @@ function ImportedPresentationTemplatePreviewPage({
 function useImportedPresentationTemplatePickerItems(
   signals: ComposerSignals,
 ): readonly ImportedPresentationTemplatePickerItem[] {
+  const current = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolved = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
   const items =
-    useLastResolved(
-      signals.template.importedPresentationTemplatePickerItems$,
-    ) ?? [];
+    current.state === "hasData"
+      ? current.data
+      : current.state === "loading"
+        ? (lastResolved ?? [])
+        : [];
   const deletedTemplateIds = useGet(
     signals.template.importedPresentationTemplateDeletedIds$,
   );
@@ -5804,6 +5733,64 @@ function useImportedPresentationTemplatePickerItems(
     : items.filter((item) => {
         return !deletedTemplateIds.has(item.template.id);
       });
+}
+
+function ImportedPresentationTemplateLibraryStatus({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const templates = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolvedTemplates = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const realtime = useLoadable(
+    signals.template.presentationTemplatesRealtimeReady$,
+  );
+  const retryCatalog = useSet(
+    signals.template.retryImportedPresentationTemplates$,
+  );
+  let message: string;
+  let retry: (() => void) | undefined;
+  if (templates.state === "loading") {
+    if (lastResolvedTemplates?.length) {
+      return null;
+    }
+    message = t(($) => {
+      return $.chat.templates.importedLoading;
+    });
+  } else if (templates.state === "hasError") {
+    if (realtime.state === "hasError") {
+      message = t(($) => {
+        return $.chat.templates.importedUnavailable;
+      });
+    } else {
+      message = t(($) => {
+        return $.chat.templates.importedLoadFailed;
+      });
+      retry = retryCatalog;
+    }
+  } else {
+    return null;
+  }
+  return (
+    <div
+      className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+      role={templates.state === "hasError" ? "alert" : "status"}
+    >
+      <span>{message}</span>
+      {retry ? (
+        <Button type="button" variant="quiet" size="sm" onClick={retry}>
+          {t(($) => {
+            return $.chat.templates.retry;
+          })}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 function useImportedPresentationTemplates(
@@ -5889,6 +5876,7 @@ export function ComposerPresentationRecommendations({
         </Button>
       </div>
       <div className="grid min-w-0 grid-cols-2 items-start gap-4 sm:grid-cols-4">
+        <ImportedPresentationTemplateLibraryStatus signals={signals} />
         <PptImportCard
           signals={signals}
           compact
@@ -5969,6 +5957,7 @@ function PptTemplateGrid({
   // then the built-in templates.
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ImportedPresentationTemplateLibraryStatus signals={signals} />
       <PptImportCard signals={signals} onImported={onImported} />
       {importedItems.map(({ imageBuffers, template }) => {
         return (
@@ -6031,6 +6020,8 @@ function TemplatePickerDialog({
   const openBillingPlans = useSet(openSettingsBillingPlans$);
   const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const creativeVideoOnly = creativeVideo && category === "video";
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
@@ -6417,6 +6408,7 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 introVideoEnabled={introVideoEnabled}
+                creativeVideoOnly={creativeVideoOnly}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -6809,23 +6801,6 @@ function selectedComposerTemplateAttachment(
     : undefined;
 }
 
-function ComposerImportedTemplateUrlRefreshLifecycle({
-  signals,
-}: {
-  signals: ComposerSignals;
-}) {
-  const setImportedTemplateUrlRefreshLifecycleRef = useSet(
-    signals.template.importedPresentationTemplateUrlRefreshLifecycleRef$,
-  );
-  return (
-    <span
-      ref={setImportedTemplateUrlRefreshLifecycleRef}
-      aria-hidden="true"
-      className="pointer-events-none absolute size-px overflow-hidden opacity-0"
-    />
-  );
-}
-
 function TemplatePickerButton({
   picker,
   presentationItems,
@@ -6845,7 +6820,12 @@ function TemplatePickerButton({
     useGet(featureSwitch$)[FeatureSwitchKey.IntroVideo] === true;
   const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
   const createMode = useGet(signals.create.mode$);
-  const templateMode = createMode === "image" ? "illustration" : createMode;
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const templateMode = creativeVideo
+    ? "video"
+    : createMode === "image"
+      ? "illustration"
+      : createMode;
   const templateLabel =
     templateMode === "illustration"
       ? t(($) => {
@@ -8747,26 +8727,14 @@ function ComputerUseDownloadDialog({
 // ---------------------------------------------------------------------------
 
 interface MicButtonStatus {
-  readonly recording: boolean;
   readonly starting: boolean;
-  readonly transcribing: boolean;
   readonly quotaLoading: boolean;
 }
 
 function micButtonAriaLabel(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.starting;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribing;
     });
   }
   if (status.quotaLoading) {
@@ -8780,19 +8748,9 @@ function micButtonAriaLabel(status: MicButtonStatus): string {
 }
 
 function micButtonTooltip(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.openingMicrophone;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribingProgress;
     });
   }
   if (status.quotaLoading) {
@@ -8805,17 +8763,6 @@ function micButtonTooltip(status: MicButtonStatus): string {
   });
 }
 
-function voiceDraftMicButtonStatus(
-  recording: boolean,
-  action: ComposerActions["voiceAction"],
-) {
-  return {
-    recording: recording && action !== "start",
-    starting: action === "start",
-    transcribing: action === "finish" || action === "retry",
-  };
-}
-
 function MicButton({
   signals,
   actions,
@@ -8826,32 +8773,16 @@ function MicButton({
   const available = useGet(audioInputAvailable$);
   const quotaState = useLoadableState(audioInputQuota$);
   const quotaResolved = useLastResolved(audioInputQuota$) !== undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   // The last resolved status keeps this control stable while a composer
   // target reads its stored draft; run$ awaits that read before acting.
   const voiceDraftStatus = useLastResolved(signals.voice.state$)?.status;
-  const sttRecording = useGet(sttRecording$);
-  const sttStarting = useGet(sttStarting$);
-  const sttTranscribing = useGet(sttTranscribing$);
-  const capture = useGet(signals.voice.capture$);
-  const { recording, starting, transcribing } = voiceInputV2Enabled
-    ? voiceDraftMicButtonStatus(capture !== null, actions.voiceAction)
-    : {
-        recording: sttRecording,
-        starting: sttStarting,
-        transcribing: sttTranscribing,
-      };
-  const voiceLevel = useGet(sttVoiceLevel$);
-  const voiceLevelFill = `${Math.round((voiceLevel / 3) * 100)}%`;
+  const starting = actions.voiceAction === "start";
 
   const signal = useGet(pageSignal$);
-  const draftLoading = voiceInputV2Enabled && voiceDraftStatus === undefined;
-  const actionDisabled =
-    starting || transcribing || (!recording && !quotaResolved);
+  const draftLoading = voiceDraftStatus === undefined;
+  const actionDisabled = starting || !quotaResolved;
   const status = {
-    recording,
     starting,
-    transcribing,
     quotaLoading: quotaState === "loading" && !quotaResolved,
   };
 
@@ -8876,34 +8807,20 @@ function MicButton({
               // Background draft checks should not dim the mic on thread switches.
               "disabled:opacity-100": draftLoading && !actionDisabled,
               "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
-                recording || starting || transcribing,
+                starting,
             })}
             data-composer-voice-toggle
             onClick={handleClick}
             disabled={actionDisabled || draftLoading}
             aria-label={micButtonAriaLabel(status)}
-            aria-busy={starting || transcribing}
-            aria-keyshortcuts={
-              voiceInputV2Enabled
-                ? COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS
-                : undefined
-            }
+            aria-busy={starting}
+            aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
           >
-            {starting || transcribing ? (
-              <span className="mic-starting-spinner" aria-hidden="true" />
-            ) : recording ? (
-              <>
-                <span
-                  className="mic-volume-icon-meter"
-                  aria-hidden="true"
-                  style={
-                    {
-                      "--mic-volume-fill": voiceLevelFill,
-                    } as CSSProperties
-                  }
-                />
-                <Mic size={17} className="relative" />
-              </>
+            {starting ? (
+              <span
+                className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
+                aria-hidden="true"
+              />
             ) : (
               <Mic size={18} />
             )}
@@ -8915,11 +8832,9 @@ function MicButton({
           className="flex flex-col items-center gap-1 py-1.5"
         >
           <span>{micButtonTooltip(status)}</span>
-          {voiceInputV2Enabled && (
-            <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
-              {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
-            </kbd>
-          )}
+          <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+            {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
+          </kbd>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -9680,7 +9595,7 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-3",
+    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-2",
     "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center sm:[&>[data-slot=select-value]]:justify-start",
     "[&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
@@ -9704,10 +9619,13 @@ function ComposerRunModelPickerControl({
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
   const { t } = useTranslation();
-  const modelMenuEnabled = useGet(modelPickerMenuEnabled$);
+  // One switch owns how the picker looks. Effort keeps its own switch, because
+  // it is a run setting the composer shows beside the model rather than a way
+  // of drawing the model list.
+  const modelMenuEnabled = useGet(modelPickerFlyoutEnabled$);
   // The flyout needs the room a phone does not have; narrow viewports keep the
   // menu's pages until the sheet layout lands.
-  const modelFlyoutEnabled = useGet(modelPickerFlyoutEnabled$) && desktopLayout;
+  const modelFlyoutEnabled = modelMenuEnabled && desktopLayout;
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
@@ -9720,11 +9638,10 @@ function ComposerRunModelPickerControl({
           return $.chat.composer.selectModel;
         })}
         triggerClassName={composerModelPickerTriggerClassName()}
-        menuSignals={
-          modelMenuEnabled || modelFlyoutEnabled
-            ? signals.model.menu
-            : undefined
-        }
+        menuSignals={modelMenuEnabled ? signals.model.menu : undefined}
+        // The effort control beside it carries the bolt when Fast is on, so the
+        // model keeps its own name.
+        fastShownByCaller
         flyoutLayout={modelFlyoutEnabled}
         onSelected={() => {
           setModelPickerOpen(false);
@@ -9866,14 +9783,33 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
-      <ComposerRunModelPickerControl
-        signals={signals}
-        value={value}
-        onChange={onChange}
-        codexFastModeEnabled={codexFastModeEnabled}
-        desktopLayout={desktopLayout}
-        mediaModelPanel={mediaModelPanel}
-      />
+      {/* Effort and the model are one choice about the next message, so they sit
+          as a pair: no gap between them and 8px of padding each, which leaves
+          16px between the two labels. The row's own gap then separates the pair
+          from the controls that do something else.
+
+          Effort sits level with the model rather than behind it. It is the only
+          way to reach effort and Fast now that the picker's settings page is
+          gone, so it shows at every width; the level's name is one short word,
+          which the row can afford even on a phone. */}
+      <div className="flex items-center">
+        <ChatEffortTrigger
+          value={value}
+          onChange={onChange}
+          triggerClassName={cn(
+            "px-2 text-sm text-muted-foreground",
+            COMPOSER_CONTROL_FOCUS_CLASS,
+          )}
+        />
+        <ComposerRunModelPickerControl
+          signals={signals}
+          value={value}
+          onChange={onChange}
+          codexFastModeEnabled={codexFastModeEnabled}
+          desktopLayout={desktopLayout}
+          mediaModelPanel={mediaModelPanel}
+        />
+      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
     </>
   );
@@ -10050,10 +9986,11 @@ function ComposerExistingMediaModelPickerSlot({
 
 function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const createMode = useGet(signals.create.mode$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
   if (createMode === "image" && signals.imageModel) {
     return <ComposerCreateImageModelPicker model={signals.imageModel} />;
   }
-  if (createMode === "video" && signals.videoModel) {
+  if (creativeVideo && signals.videoModel) {
     return (
       <ComposerCreateVideoModelPicker
         model={signals.videoModel}
@@ -10102,16 +10039,21 @@ function ComposerModelScopeCard({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="relative z-0 mx-3 sm:ml-auto sm:mr-4 sm:w-fit sm:max-w-[calc(100%_-_2rem)]">
+    <div className="relative z-0">
       {/* The surface extends one content-height behind the composer. The
           composer stays above it (z-10), while the controls remain fully
-          visible in the half that protrudes below. */}
+          visible in the half that protrudes below. It spans the composer's
+          width and repeats the card's own rounded-3xl, so the only corners it
+          ever shows — the bottom two — continue the card's outline instead of
+          turning inside it. */}
       <div
-        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-xl bg-gray-50"
+        className="pointer-events-none absolute inset-x-0 -top-full bottom-0 rounded-3xl bg-gray-50"
         aria-hidden="true"
       />
+      {/* Both ends sit 20px in, matching the text column of the card above:
+          the ghost action already carries 12px of its own padding. */}
       <div
-        className="relative flex flex-wrap items-center gap-2 p-1 pl-3 text-xs sm:flex-nowrap"
+        className="relative flex flex-wrap items-center gap-2 py-1 pl-5 pr-2 text-xs sm:flex-nowrap"
         role="group"
         aria-label={label}
         aria-live="polite"
@@ -10157,6 +10099,7 @@ function ComposerTemporaryModelNotice({
     updateUserModelPreference$,
   );
   const codexFastModeEnabled = useGet(codexFastModeEnabled$);
+  const featureSwitches = useGet(featureSwitch$);
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveModelFirstUserDefaultSelection({
     userPreference,
@@ -10170,10 +10113,16 @@ function ComposerTemporaryModelNotice({
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
+  const effort = preferredChatReasoningEffort(selection, featureSwitches);
+  const defaultEffort = preferredChatReasoningEffort(
+    defaultSelection,
+    featureSwitches,
+  );
+  const effortChanged = effort !== defaultEffort;
   if (
     !selection ||
     !defaultSelection ||
-    (!modelChanged && !serviceTierChanged)
+    (!modelChanged && !serviceTierChanged && !effortChanged)
   ) {
     return withChatScrollLayout(null);
   }
@@ -10184,9 +10133,15 @@ function ComposerTemporaryModelNotice({
       ? $.settings.models.picker.fast
       : $.settings.models.picker.standard;
   });
-  const scopedModelLabel = serviceTierChanged
-    ? `${modelName} ${runSpeedLabel}`
-    : modelName;
+  const scopedModelLabel = [
+    modelName,
+    serviceTierChanged ? runSpeedLabel : undefined,
+    effortChanged && effort
+      ? effort.charAt(0).toUpperCase() + effort.slice(1)
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const useForFutureChats = () => {
     if (updating) {
       return;
@@ -10196,6 +10151,14 @@ function ComposerTemporaryModelNotice({
         {
           selectedModel: selection.selectedModel,
           serviceTier: selectionServiceTier,
+          ...(effort === undefined
+            ? {}
+            : {
+                modelSettingsPatch: {
+                  model: selection.selectedModel,
+                  effort,
+                },
+              }),
         },
         pageSignal,
       ),
@@ -10861,10 +10824,10 @@ function ComposerFooter({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const createMode = useGet(signals.create.mode$);
-  const narrowVideoGap =
-    createMode === "video" ? "@max-[344px]/composer:gap-0" : undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const narrowVideoGap = creativeVideo
+    ? "@max-[344px]/composer:gap-0"
+    : undefined;
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
   const status =
@@ -10881,7 +10844,6 @@ function ComposerFooter({
     ComposerVoiceInputStatus,
     "idle"
   > | null =
-    voiceInputV2Enabled &&
     status !== undefined &&
     status !== "idle" &&
     (status !== "recording" || capture !== null)
@@ -10890,10 +10852,13 @@ function ComposerFooter({
   return withChatScrollLayout(
     <div
       className={cn(
-        "flex shrink-0 items-center justify-between gap-1 sm:gap-2",
+        "shrink-0 items-center justify-between gap-1 sm:gap-2",
+        creativeVideo && !activeVoiceDraftStatus
+          ? "grid grid-cols-[minmax(0,1fr)_auto] @min-[640px]/composer:flex"
+          : "flex",
         activeVoiceDraftStatus ? "px-2 pb-3 pt-3" : "px-4 pb-4 pt-1",
         narrowVideoGap,
-        createMode === "video" && "@max-[344px]/composer:px-3",
+        creativeVideo && "@max-[344px]/composer:px-3",
       )}
     >
       {activeVoiceDraftStatus ? (
@@ -10906,24 +10871,23 @@ function ComposerFooter({
         />
       ) : (
         <>
-          <div
-            className={cn(
-              "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
-              narrowVideoGap,
-            )}
-          >
-            <ComposerAttachButton signals={signals} />
-            <ComposerTemplatePickerSlot signals={signals} />
-            <ComposerWorkflowPromptSlot signals={signals} />
-            <ComposerConnectorsSlot
-              signals={signals}
-              actions={connectorActions}
-            />
-            {/* Sits with the other input-scoped controls rather than beside
-                the model picker: it configures the message being written,
-                not which model the composer points at. */}
+          <div className="contents @min-[640px]/composer:flex @min-[640px]/composer:min-w-0 @min-[640px]/composer:items-center @min-[640px]/composer:gap-1.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
+                narrowVideoGap,
+              )}
+            >
+              <ComposerAttachButton signals={signals} />
+              <ComposerTemplatePickerSlot signals={signals} />
+              <ComposerWorkflowPromptSlot signals={signals} />
+              <ComposerConnectorsSlot
+                signals={signals}
+                actions={connectorActions}
+              />
+              <ComposerPresentationOptions signals={signals} />
+            </div>
             <ComposerVideoOptionsChip signals={signals} />
-            <ComposerPresentationOptions signals={signals} />
           </div>
           <div
             className={cn(
@@ -10957,11 +10921,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   return (
     <Card
       data-slot="chat-composer-card"
+      surface="composer"
       className={cn(
-        // Paint focus on the existing border. A separately promoted border
-        // with a negative inset can snap differently from the card and SVGs.
-        "@container/composer relative z-10 overflow-visible rounded-3xl border-gray-300 bg-card shadow-[var(--okou-card-shadow)] transition-[border-color] duration-[220ms] ease-[cubic-bezier(0.4,0,0.2,1)] focus-within:border-surface-focus motion-reduce:transition-none",
-        "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:opacity-0 after:shadow-[var(--okou-composer-focus-veil)] after:transition-opacity after:duration-[220ms] after:ease-[cubic-bezier(0.4,0,0.2,1)] after:content-[''] focus-within:after:opacity-100 motion-reduce:after:transition-none",
+        "@container/composer z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
@@ -10991,7 +10953,6 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           ref={actions.bind}
           className={cn("flex flex-col", layoutHeightClassNames.shell)}
         >
-          <ComposerImportedTemplateUrlRefreshLifecycle signals={signals} />
           <ComposerCreateControls signals={signals} />
           <ComposerAttachments signals={signals} />
           <ComposerSelectedTask signals={signals} />

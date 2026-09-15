@@ -6,7 +6,6 @@ import {
   chatThreadPinContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -28,18 +27,18 @@ import {
 
 const context = testContext();
 
-async function prepare(caseId: number, enabled = true, tied = false) {
+async function prepare(caseId: number, tied = false) {
   const auth = chatListAuth(caseId);
   const pinnedAt = "2026-09-01T00:00:00Z";
   const snapshot = [
     chatListThread(3, "First pin", {
       pinnedAt,
-      pinOrder: enabled ? "a0" : "a2",
+      pinOrder: "a0",
     }),
     chatListThread(2, "Second pin", { pinnedAt, pinOrder: tied ? "a0" : "a1" }),
     chatListThread(1, "Last pin", {
       pinnedAt,
-      pinOrder: enabled ? "a2" : "a0",
+      pinOrder: "a2",
     }),
     chatListThread(4, "Regular thread"),
   ];
@@ -50,7 +49,6 @@ async function prepare(caseId: number, enabled = true, tied = false) {
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
-    featureSwitches: { [FeatureSwitchKey.StableChatThreadNavigation]: enabled },
   });
   await screen.findByText("First pin");
   expect(sidebarThreadTitles()).toStrictEqual([
@@ -154,7 +152,7 @@ test("moving a pin between equal ranks preserves the requested order", async () 
   context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
     return respond(204);
   });
-  await prepare(63, true, true);
+  await prepare(63, true);
   click(menuButton("Last pin"));
   await screen.findByRole("menu");
   click(menuItem("Move up"));
@@ -201,23 +199,6 @@ test("new pins receive a rank ahead of all existing pins", async () => {
     ]);
   });
   pending.resolve();
-});
-
-test("the disabled switch keeps pinning available with activity sorting", async () => {
-  await prepare(65, false);
-  click(menuButton("Last pin"));
-  await screen.findByRole("menu");
-  expect(menuItem("Unpin chat")).toBeVisible();
-  expect(
-    queryAllByRoleFast("menuitem").map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).not.toContain("Move up");
-  expect(
-    queryAllByRoleFast("menuitem").map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).not.toContain("Move down");
 });
 
 test("touch users can move a pin up and down through the thread menu", async () => {

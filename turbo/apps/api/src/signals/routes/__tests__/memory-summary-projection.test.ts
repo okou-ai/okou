@@ -10,6 +10,7 @@ import {
   MEMORY_ARTIFACT_NAME,
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
+import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -439,14 +440,6 @@ describe("memory summary projection", () => {
       source_hash: declaredFile("memory_summary.md", secondContent).hash,
       source_size: secondContent.length,
     });
-
-    const serializedLogs = JSON.stringify([
-      ...context.mocks.axiomLogging.debug.mock.calls,
-      ...context.mocks.axiomLogging.info.mock.calls,
-      ...context.mocks.axiomLogging.warn.mock.calls,
-      ...context.mocks.axiomLogging.error.mock.calls,
-    ]);
-    expect(serializedLogs).not.toContain(firstContent.toString("utf8"));
   });
 
   const invalidCases: readonly {
@@ -599,26 +592,6 @@ describe("memory summary projection", () => {
       archive: () => {
         return tarGz([
           { path: "memory_summary.md", content: Buffer.alloc(64 * 1024 + 1) },
-        ]);
-      },
-      status: "over_limit",
-    },
-    {
-      name: "oversized summary tokens",
-      files: () => {
-        return [
-          declaredFile(
-            "memory_summary.md",
-            Buffer.from("memory ".repeat(3000), "utf8"),
-          ),
-        ];
-      },
-      archive: () => {
-        return tarGz([
-          {
-            path: "memory_summary.md",
-            content: Buffer.from("memory ".repeat(3000), "utf8"),
-          },
         ]);
       },
       status: "over_limit",
@@ -790,6 +763,76 @@ describe("memory summary projection", () => {
       status: "pending",
       last_error_class: "read_integrity_mismatch",
       has_content: false,
+    });
+  });
+
+  it("materializes a full source above the prompt injection budget", async () => {
+    const summary = Buffer.from(
+      `v1\n## User Profile\n${" token".repeat(2936)}`,
+      "utf8",
+    );
+    const tokenCount = encode(summary.toString("utf8")).length;
+    expect(tokenCount).toBe(2943);
+    expect(summary.length).toBeLessThanOrEqual(64 * 1024);
+    const declared = declaredFile("memory_summary.md", summary);
+    const version = await publishVersion({
+      files: [declared],
+      archive: tarGz([{ path: "memory_summary.md", content: summary }]),
+    });
+
+    await expect(run(version)).resolves.toMatchObject({ ready: 1 });
+
+    // The stored projection describes the complete source; the runtime renderer
+    // is the only place that applies the 2500-token injection budget.
+    await expect(inspect(version)).resolves.toMatchObject({
+      status: "ready",
+      last_error_class: null,
+      source_hash: declared.hash,
+      source_size: summary.length,
+      token_count: tokenCount,
+    });
+    await expect(read(version)).resolves.toMatchObject({
+      content: summary.toString("utf8"),
+      source_hash: declared.hash,
+      source_size: summary.length,
+      token_count: tokenCount,
+    });
+  });
+
+  it("reads an authentic ready projection above the prompt injection budget", async () => {
+    const content = Buffer.from("seeded summary", "utf8");
+    const version = await publishVersion({
+      files: [declaredFile("memory_summary.md", content)],
+      archive: tarGz([{ path: "memory_summary.md", content }]),
+    });
+    await run(version);
+
+    // The runtime renderer applies the 2500-token prompt budget, so a larger
+    // authentic source must not be treated as corrupt on the read path.
+    const largeSummary = Array.from({ length: 300 }, (_, index) => {
+      return `- decision-${index.toString()}: keep repository-native checks`;
+    }).join("\n");
+    const largeTokenCount = encode(largeSummary).length;
+    expect(largeTokenCount).toBeGreaterThan(2500);
+    expect(Buffer.byteLength(largeSummary, "utf8")).toBeLessThanOrEqual(
+      64 * 1024,
+    );
+    await stateAction({
+      action: "seed-ready",
+      ...projectionScope(version),
+      content: largeSummary,
+    });
+
+    await expect(read(version)).resolves.toMatchObject({
+      content: largeSummary,
+      source_size: Buffer.byteLength(largeSummary, "utf8"),
+      token_count: largeTokenCount,
+    });
+    await expect(inspect(version)).resolves.toMatchObject({
+      status: "ready",
+      last_error_class: null,
+      has_content: true,
+      token_count: largeTokenCount,
     });
   });
 });

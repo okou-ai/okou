@@ -1,7 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import {
   browserContract,
   type BrowserSession,
@@ -39,24 +35,17 @@ const SUSPENDED_SCREENSHOT_URL =
   "https://images.example.test/browser-suspended.png";
 const ACTIVE_BROWSER_URL = "https://browser.example.test/live/initial";
 const RESUMED_BROWSER_URL = "https://browser.example.test/live/resumed";
-const appStyles = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), "../../css/index.css"),
-  "utf8",
-);
 
+/**
+ * The chat card surface is Tailwind utilities on the element itself, so the
+ * App's utility output is the whole style source; nothing has to be lifted out
+ * of the stylesheet. Colors are not observable here — happy-dom resolves
+ * neither `var()` nor `@layer`, which is why these checks stay on the border
+ * geometry the card's arbitrary width owns.
+ */
 async function createRenderedAppStyles(
   signal: AbortSignal,
 ): Promise<(element: HTMLElement) => void> {
-  const sharedCardRule = appStyles.match(
-    /\.okou-app \.okou-chat-card,\s*\.okou-app \.okou-chat-frame\s*\{[^}]+\}/u,
-  )?.[0];
-  if (!sharedCardRule) {
-    throw new Error("The shared chat card style rule was not found");
-  }
-  const renderedSharedCardRule = sharedCardRule.replace(
-    "hsl(var(--gray-400))",
-    "rgb(128, 128, 128)",
-  );
   const compiler = await compile("@tailwind utilities;");
   const styleElement = document.createElement("style");
   document.head.append(styleElement);
@@ -69,10 +58,7 @@ async function createRenderedAppStyles(
   );
 
   return (element) => {
-    styleElement.textContent = [
-      renderedSharedCardRule,
-      compiler.build([...element.classList]),
-    ].join("\n");
+    styleElement.textContent = compiler.build([...element.classList]);
   };
 }
 
@@ -161,7 +147,7 @@ function buttonsByName(
   });
 }
 
-test("Follow a managed browser session from its chat card", async () => {
+async function openManagedBrowserChat() {
   const sessionReady = context.mocks.deferred<void>();
   let browser = managedBrowserSession({
     status: "active",
@@ -197,6 +183,56 @@ test("Follow a managed browser session from its chat card", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
+  return {
+    sessionReady,
+    foreignBrowserUrl,
+    untrustedBrowserUrl,
+    updateBrowser(next: ReturnType<typeof managedBrowserSession>) {
+      browser = next;
+      context.mocks.ably.trigger("browserSessionChanged", {
+        threadId: RUN_THREAD_ID,
+      });
+    },
+  };
+}
+
+/**
+ * The unavailable card is the fail-closed branch: the browser does not belong to
+ * this chat or has been removed, so its control must not be actionable. Its
+ * `disabled`, label and markers reach the DOM through `ChatCard`'s render-prop
+ * merge rather than as direct JSX attributes, so the page-level guarantee is
+ * asserted here. A status outside the session fetch's accepted `200`/`404` is
+ * what drives the component into that branch.
+ */
+test("Keep the unavailable browser card inert when the session cannot be read", async () => {
+  installCapabilityChat({
+    events: completedConversation(
+      `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
+    ),
+  });
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
+    expect(params.threadId).toBe(RUN_THREAD_ID);
+    return respond(503, {
+      error: { code: "BROWSER_UNAVAILABLE", message: "Browser unavailable" },
+    });
+  });
+
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+
+  const card = await findButton("Browser unavailable");
+  expect(card).toBeDisabled();
+  expect(card).toHaveTextContent("Cloud browser");
+  expect(card).toHaveAttribute("data-browser-session-status", "unavailable");
+
+  click(card);
+  expect(
+    screen.queryByRole("complementary", { name: "Live browser" }),
+  ).toBeNull();
+});
+
+test("Render a managed browser card from loading to live", async () => {
+  const { sessionReady } = await openManagedBrowserChat();
   const renderAppStyles = await createRenderedAppStyles(context.signal);
   const loadingCard = await screen.findByTestId("browser-session-card-loading");
   renderAppStyles(loadingCard);
@@ -218,7 +254,12 @@ test("Follow a managed browser session from its chat card", async () => {
     "src",
     INITIAL_SCREENSHOT_URL,
   );
+});
 
+test("Follow suspension and resumption in the live browser panel", async () => {
+  const { sessionReady, updateBrowser } = await openManagedBrowserChat();
+  sessionReady.resolve();
+  const card = await findButton("Open Research browser");
   click(card);
 
   const sidebar = await screen.findByRole("complementary", {
@@ -234,14 +275,13 @@ test("Follow a managed browser session from its chat card", async () => {
     INITIAL_SCREENSHOT_URL,
   );
 
-  browser = managedBrowserSession({
-    status: "suspended",
-    screenshotUrl: SUSPENDED_SCREENSHOT_URL,
-    liveUrl: null,
-  });
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: RUN_THREAD_ID,
-  });
+  updateBrowser(
+    managedBrowserSession({
+      status: "suspended",
+      screenshotUrl: SUSPENDED_SCREENSHOT_URL,
+      liveUrl: null,
+    }),
+  );
 
   await waitFor(() => {
     expect(buttonsByName("Open Research browser")[0]).toHaveTextContent(
@@ -254,14 +294,13 @@ test("Follow a managed browser session from its chat card", async () => {
   ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
   expect(within(sidebar).getByText("Browser not live")).toBeVisible();
 
-  browser = managedBrowserSession({
-    status: "active",
-    screenshotUrl: SUSPENDED_SCREENSHOT_URL,
-    liveUrl: RESUMED_BROWSER_URL,
-  });
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: RUN_THREAD_ID,
-  });
+  updateBrowser(
+    managedBrowserSession({
+      status: "active",
+      screenshotUrl: SUSPENDED_SCREENSHOT_URL,
+      liveUrl: RESUMED_BROWSER_URL,
+    }),
+  );
 
   await waitFor(() => {
     expect(screen.getByText("Live")).toBeVisible();
@@ -270,7 +309,13 @@ test("Follow a managed browser session from its chat card", async () => {
     screen.findByTitle("Live browser: Research"),
   ).resolves.toHaveAttribute("src", RESUMED_BROWSER_URL);
   expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
+});
 
+test("Keep foreign and untrusted browser URLs as ordinary links", async () => {
+  const { sessionReady, foreignBrowserUrl, untrustedBrowserUrl } =
+    await openManagedBrowserChat();
+  sessionReady.resolve();
+  await findButton("Open Research browser");
   const foreignLink = linkByName("Other conversation browser");
   expect(foreignLink).toHaveAttribute("href", foreignBrowserUrl);
   expect(foreignLink.closest("[data-browser-session-card]")).toBeNull();

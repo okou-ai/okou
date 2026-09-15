@@ -22,6 +22,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -36,7 +37,7 @@ function mockThreads(count: number): void {
     {
       agentId: AGENT_ID,
       ownerId: "test-user-123",
-      displayName: "Zero",
+      displayName: "Nova",
       description: null,
       sound: null,
       avatarUrl: null,
@@ -112,22 +113,25 @@ function resizeWindow(): void {
 }
 
 test("entering the scrolled list keeps the visible threads available for navigation", async () => {
-  mockThreads(120);
+  // Thirty rows exceed this five-row viewport plus its overscan. Row 21
+  // starts outside the top window while keeping the rendered fixture small.
+  mockThreads(30);
   mockViewportHeight(() => {
-    return 612;
-  });
-  await setupPage({ context, path: `/chats/${threadId(80)}` });
+    return 5 * ROW_HEIGHT;
+  }, 30);
+  await setupPage({ context, path: `/chats/${threadId(20)}` });
   const sidebar = screen.getByTestId("chat-list-column");
-  await within(sidebar).findByText("History 81");
+  await within(sidebar).findByText("History 21");
   const viewport = within(sidebar).getByTestId("sidebar-scroll-area");
   await waitFor(() => {
-    expect(viewport.scrollTop).toBe(80 * ROW_HEIGHT);
+    expect(viewport.scrollTop).toBe(20 * ROW_HEIGHT);
   });
   viewport.scrollTop = 0;
   fireEvent.scroll(viewport);
   const title = await within(sidebar).findByText("History 1");
+  expect(within(sidebar).queryByText("History 21")).not.toBeInTheDocument();
   const link = title.closest("a");
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   act(() => {
     viewport.focus();
   });
@@ -380,7 +384,7 @@ function mockPinnedGrid(): string {
     return {
       agentId: `c0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
       ownerId: "test-user-123",
-      displayName: index === 0 ? "Zero" : `Agent ${index + 1}`,
+      displayName: index === 0 ? "Nova" : `Agent ${index + 1}`,
       description: null,
       sound: null,
       avatarUrl: null,
@@ -508,6 +512,7 @@ test("Refresh virtualization when the upgrade card appears and disappears", asyn
     return respond(200, {
       showUsagePack: false,
       tier,
+      ...billingPlanCapabilities(tier),
       credits: 10_000,
       onboardingPaymentPending: false,
       subscriptionStatus: "active",

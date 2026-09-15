@@ -3,16 +3,6 @@
   "selectors": [
     {
       "file": "apps/platform/src/views/css/index.css",
-      "atRules": ["@layer base"],
-      "selector": ".cl-drawerHeader",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "Clerk owns this drawer class; the adapter aligns its embedded header.",
-      "upstream": "@clerk/react drawer DOM",
-      "removal": "Remove with the Clerk drawer integration or when Clerk exposes a supported appearance hook."
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
       "atRules": [],
       "selector": "[data-color-mode*=\"light\"] .wmde-markdown,.wmde-markdown[data-color-mode*=\"light\"]",
       "kind": "third-party-dom-adapter",
@@ -38,6 +28,16 @@
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
+      "upstream": "@uiw/react-markdown-preview generated DOM",
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+    },
+    {
+      "file": "apps/platform/src/views/css/index.css",
+      "atRules": [],
+      "selector": ".wmde-markdown p",
+      "kind": "third-party-dom-adapter",
+      "owner": "frontend-platform",
+      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content. This paragraph rhythm previously shared its rule with the first-party okou-markdown-card class, which is why it is allowlisted later than its siblings.",
       "upstream": "@uiw/react-markdown-preview generated DOM",
       "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
     },
@@ -385,26 +385,6 @@
       "file": "apps/platform/src/views/css/index.css",
       "atRules": [],
       "selector": ".wmde-markdown pre>code::-webkit-scrollbar-thumb",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
-      "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
-      "selector": ".wmde-markdown pre .copied",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
-      "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
-      "selector": ".wmde-markdown pre:hover .copied:hover",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",
       "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",

@@ -6,6 +6,8 @@ import type { ChatEvent } from "./chat-event-types.ts";
 const L = logger("AutoScroll");
 const AT_BOTTOM_THRESHOLD_PX = 10;
 const SCROLL_ANCHOR_ATTRIBUTE = "data-chat-scroll-anchor-event-id";
+const SCROLL_ANCHOR_ALIASES_ATTRIBUTE =
+  "data-chat-scroll-anchor-alias-event-ids";
 const SCROLL_COMMIT_REVISION_ATTRIBUTE = "data-chat-scroll-commit-revision";
 const SCROLL_COMMIT_TO_TAIL_ATTRIBUTE = "data-chat-scroll-commit-to-tail";
 
@@ -52,7 +54,7 @@ export interface ChatThreadScrollSignals {
   readonly isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>;
   readonly readRenderedThreadScrollPosition$: Command<
     ThreadScrollPosition | null,
-    []
+    [excludedAnchorAncestors?: string]
   >;
   readonly autoScroll$: Command<
     Promise<void>,
@@ -121,10 +123,29 @@ function scrollAnchorForEvent(
   container: HTMLElement,
   eventId: string,
 ): HTMLElement | null {
+  const anchor = scrollAnchors(container).find((candidate) => {
+    return candidate.getAttribute(SCROLL_ANCHOR_ATTRIBUTE) === eventId;
+  });
+  if (anchor) {
+    return anchor;
+  }
+  // A projection can replace source messages with one retained body. Resolve
+  // their anchors within that same group until the next capture holds its
+  // current event, including when a live answer replaces the previous one.
+  const projectedGroup = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      `[${SCROLL_ANCHOR_ALIASES_ATTRIBUTE}]`,
+    ),
+  ).find((group) => {
+    return group
+      .getAttribute(SCROLL_ANCHOR_ALIASES_ATTRIBUTE)
+      ?.split(" ")
+      .includes(eventId);
+  });
   return (
-    scrollAnchors(container).find((anchor) => {
-      return anchor.getAttribute(SCROLL_ANCHOR_ATTRIBUTE) === eventId;
-    }) ?? null
+    projectedGroup?.querySelector<HTMLElement>(
+      `[${SCROLL_ANCHOR_ATTRIBUTE}]`,
+    ) ?? null
   );
 }
 
@@ -193,14 +214,29 @@ function scrollToPosition(
   return true;
 }
 
-function firstVisibleScrollAnchor(container: HTMLElement): HTMLElement | null {
-  const anchors = scrollAnchors(container);
+function firstVisibleScrollAnchor(
+  container: HTMLElement,
+  excludedAnchorAncestors?: string,
+  preferredAnchor?: HTMLElement | null,
+): HTMLElement | null {
+  const anchors = scrollAnchors(container).filter((anchor) => {
+    return !excludedAnchorAncestors || !anchor.closest(excludedAnchorAncestors);
+  });
   const containerRect = container.getBoundingClientRect();
+  const visibleAnchors = anchors.filter((anchor) => {
+    const rect = anchor.getBoundingClientRect();
+    return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+  });
   return (
-    anchors.find((anchor) => {
-      const rect = anchor.getBoundingClientRect();
-      return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+    visibleAnchors.find((anchor) => {
+      return anchor === preferredAnchor;
     }) ??
+    visibleAnchors[0] ??
+    (excludedAnchorAncestors
+      ? anchors.find((anchor) => {
+          return anchor.getBoundingClientRect().top >= containerRect.bottom;
+        })
+      : undefined) ??
     anchors.at(-1) ??
     null
   );
@@ -208,17 +244,29 @@ function firstVisibleScrollAnchor(container: HTMLElement): HTMLElement | null {
 
 function captureScrollPosition(
   container: HTMLElement,
+  excludedAnchorAncestors?: string,
+  preferredAnchor?: HTMLElement | null,
 ): ThreadScrollPosition | null {
-  const anchor = firstVisibleScrollAnchor(container);
+  const anchor = firstVisibleScrollAnchor(
+    container,
+    excludedAnchorAncestors,
+    preferredAnchor,
+  );
   const targetEventId = anchor?.getAttribute(SCROLL_ANCHOR_ATTRIBUTE);
   if (!anchor || !targetEventId) {
     return null;
   }
+  const anchorRect = anchor.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  // If the entire viewport is being removed, continue at the nearest retained
+  // message rather than jumping to an unrelated message at the thread's end.
+  const removedViewport =
+    excludedAnchorAncestors &&
+    (anchorRect.bottom <= containerRect.top ||
+      anchorRect.top >= containerRect.bottom);
   return {
     targetEventId,
-    viewportOffsetTop:
-      anchor.getBoundingClientRect().top -
-      container.getBoundingClientRect().top,
+    viewportOffsetTop: removedViewport ? 0 : anchorRect.top - containerRect.top,
   };
 }
 
@@ -332,20 +380,30 @@ function createInternalScrollSignals(
       }
     },
   );
-  const readRenderedThreadScrollPosition$ = command(({ get }) => {
-    const currentPosition = get(threadScrollPosition$);
-    if (currentPosition === null) {
-      return null;
-    }
-    const container = get(scrollContainer$);
-    if (!container) {
-      return currentPosition;
-    }
-    if (isAtBottom(container)) {
-      return null;
-    }
-    return captureScrollPosition(container) ?? currentPosition;
-  });
+  const readRenderedThreadScrollPosition$ = command(
+    ({ get }, excludedAnchorAncestors?: string) => {
+      const currentPosition = get(threadScrollPosition$);
+      if (currentPosition === null) {
+        return null;
+      }
+      const container = get(scrollContainer$);
+      if (!container) {
+        return currentPosition;
+      }
+      if (isAtBottom(container)) {
+        return null;
+      }
+      // Keep the reader's held message when it survives the layout change.
+      // Collapsing content can expose an earlier message above that anchor.
+      return (
+        captureScrollPosition(
+          container,
+          excludedAnchorAncestors,
+          scrollAnchorForEvent(container, currentPosition.targetEventId),
+        ) ?? (excludedAnchorAncestors ? null : currentPosition)
+      );
+    },
+  );
   const bindScrollContainer$ = command(
     ({ set }, container: HTMLElement): void => {
       set(internalScrollContainer$, container);
@@ -584,6 +642,10 @@ function createRenderScrollSignals(
       set(internalPendingRequest$, request);
       if (position === null) {
         await set(scroll.clearThreadScrollPosition$, signal);
+      } else {
+        // Layout commits and the matching render commit must restore the same
+        // anchor, including when a projection removes the previously held one.
+        await set(scroll.setThreadScrollPosition$, position, signal);
       }
     },
   );

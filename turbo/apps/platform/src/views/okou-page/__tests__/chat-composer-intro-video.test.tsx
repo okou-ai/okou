@@ -12,7 +12,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
   startPage,
@@ -22,6 +21,7 @@ import {
   AGENT_ID,
   context,
   expectInlineTemplate,
+  mockPlayableMedia,
   mockTemplateChat,
   openTemplatePicker,
   sendComposerMessage,
@@ -49,6 +49,8 @@ const AVATAR: Readonly<IntroVideoAvatar> = {
   groupId: "daphne",
   name: "Daphne in Grey blazer",
   defaultVoiceId: "daphne-voice",
+  defaultVoiceName: "Daphne - Warm & Friendly",
+  defaultVoiceSampleUrl: "https://files.example.test/daphne-voice.mp3",
   previewImageUrl: "https://files.example.test/daphne.png",
 };
 const VOICE = Object.freeze({
@@ -58,6 +60,8 @@ const VOICE = Object.freeze({
   gender: "female" as const,
   sampleUrl: "https://files.example.test/annie.mp3",
 });
+/** HeyGen lists some voices under a second id that plays the same sample. */
+const VOICE_TWIN = Object.freeze({ ...VOICE, id: "annie-second-id" });
 
 function installCatalogs() {
   const capture = mockTemplateChat();
@@ -79,7 +83,11 @@ function installCatalogs() {
     });
   });
   context.mocks.api(introVideoPresenterContract.voices, ({ respond }) => {
-    return respond(200, { voices: [VOICE], hasMore: false, nextToken: null });
+    return respond(200, {
+      voices: [VOICE, VOICE_TWIN],
+      hasMore: false,
+      nextToken: null,
+    });
   });
   return capture;
 }
@@ -144,7 +152,7 @@ test.each([
 test.each([
   `/agents/${AGENT_ID}/chat?templatePicker=intro-video`,
   "/?templatePicker=intro-video",
-])("Intro video deep links wait for feature hydration at %s", async (path) => {
+])("Intro video deep links wait for feature switches at %s", async (path) => {
   installCatalogs();
   context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   const featureResponse = createDeferredPromise<void>(context.signal);
@@ -168,7 +176,7 @@ test.each([
   expect(control("Intro video", dialog, "tab")).toBeVisible();
 });
 
-test("Expanded style tags combine with search and preserve the selected style", async () => {
+test("Expanded style tags filter the gallery and preserve the selected style", async () => {
   installCatalogs();
   const { dialog } = await openIntroVideo();
   expect(control("Use selection", dialog)).toBeDisabled();
@@ -183,12 +191,11 @@ test("Expanded style tags combine with search and preserve the selected style", 
   expect(within(dialog).getByText("Watercolor")).toBeVisible();
   expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
   expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
-  await fill(within(dialog).getByLabelText("Search styles"), "no match");
+  click(control("Pop culture", tags));
   expect(within(dialog).getByRole("status")).toHaveTextContent(
     "No matches found",
   );
-  await fill(within(dialog).getByLabelText("Search styles"), "");
-  click(control("Handmade and materials", tags));
+  click(control("Pop culture", tags));
   expect(control("Handmade and materials", tags)).toHaveAttribute(
     "aria-pressed",
     "false",
@@ -225,16 +232,42 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
     return expect(capture.selectedTemplates).toHaveLength(1);
   });
   expect(capture.selectedTemplates[0]).toStrictEqual({
-    type: "video",
+    type: "intro-video",
     selection: {
-      stylePresetId: "explainer-video",
-      explainerOptions: {
+      options: {
         style: { kind: "catalog", style: STYLES[0] },
         avatar: { kind: "none" },
         voice: { kind: "catalog", voice: VOICE },
       },
     },
   });
+});
+
+test("A voice the provider repeats under a second id is listed once", async () => {
+  installCatalogs();
+  const { dialog } = await openIntroVideo();
+  click(control("Voice", dialog, "tab"));
+  await within(dialog).findByLabelText("Select voice Annie");
+  expect(within(dialog).getAllByLabelText("Select voice Annie")).toHaveLength(
+    1,
+  );
+});
+
+test("The chosen avatar's own voice can be auditioned at the voice step", async () => {
+  installCatalogs();
+  const { dialog } = await openIntroVideo();
+  click(control("Avatar", dialog, "tab"));
+  await within(dialog).findByText("Daphne");
+  click(control("Choose an avatar: Daphne in Grey blazer", dialog));
+  click(control("Voice", dialog, "tab"));
+  const preview = await within(dialog).findByLabelText(
+    "Preview voice Daphne - Warm & Friendly",
+  );
+  expect(preview).toBeEnabled();
+  click(within(dialog).getByText("No voiceover"));
+  expect(control("Voice", dialog, "tab")).toHaveTextContent("No voiceover");
+  click(within(dialog).getByText("Avatar’s voice"));
+  expect(control("Voice", dialog, "tab")).toHaveTextContent("Avatar’s voice");
 });
 
 test("Applying and reopening a template restores all settings without creating another chip", async () => {
@@ -321,20 +354,42 @@ test("Style loading retries a failed later page and excludes portrait-only refer
   expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
 });
 
-test("Style preview playback and failure do not select a style or resume after leaving the gallery", async () => {
+test("Hovering a style plays its preview and leaving restores the thumbnail", async () => {
   installCatalogs();
-  const { dialog } = await openIntroVideo();
-  click(control("Preview Minimalism", dialog));
-  const preview = within(dialog).getByLabelText("Minimalism");
-  expect(preview.tagName).toBe("VIDEO");
+  const media = mockPlayableMedia();
+  const { dialog, user } = await openIntroVideo();
+  const previewControl = control("Preview Minimalism", dialog);
+  const preview = previewControl.parentElement?.querySelector("video");
+  if (!preview) {
+    throw new Error("Style preview video not found");
+  }
+  await user.hover(previewControl);
+  expect(media.play).toHaveBeenCalledTimes(1);
+  fireEvent.playing(preview);
+  expect(preview).toHaveAttribute("data-preview-playing", "true");
   expect(control("Select style Minimalism", dialog)).toHaveAttribute(
     "aria-pressed",
     "false",
   );
+  await user.unhover(previewControl);
+  expect(media.pause).toHaveBeenCalledTimes(1);
+  expect(preview).toHaveAttribute("data-preview-playing", "false");
+});
+
+test("A failed style preview keeps its thumbnail and stays selectable", async () => {
+  installCatalogs();
+  const media = mockPlayableMedia();
+  const { dialog, user } = await openIntroVideo();
+  const previewControl = control("Preview Minimalism", dialog);
+  const preview = previewControl.parentElement?.querySelector("video");
+  if (!preview) {
+    throw new Error("Style preview video not found");
+  }
+  await user.click(previewControl);
+  expect(media.play).toHaveBeenCalledTimes(1);
   fireEvent.error(preview);
-  expect(within(dialog).getByRole("status")).toHaveTextContent(
-    "A video preview is not available",
-  );
+  expect(preview).toHaveAttribute("data-preview-playing", "false");
+  expect(previewControl).toBeVisible();
   click(control("Select style Minimalism", dialog));
   expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
   click(control("Voice", dialog, "tab"));
@@ -397,6 +452,9 @@ test("Desktop recording handoff keeps both uploaded files with the intro video s
   await expectInlineTemplate("Intro video");
   const message = screen.getByRole("textbox", { name: "Message" });
   expect(message).toHaveTextContent("desktop screen recording");
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
   const user = userEvent.setup({ delay: null });
   await user.click(message);
   await user.keyboard("{Enter}");
@@ -433,10 +491,9 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
             type: "template",
             titleSnapshot: "Intro video",
             template: {
-              type: "video",
+              type: "intro-video",
               selection: {
-                stylePresetId: "explainer-video",
-                explainerOptions: {
+                options: {
                   style: { kind: "catalog", style: STYLES[0]! },
                   avatar: { kind: "none" },
                   voice: { kind: "none" },
@@ -455,6 +512,9 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
     featureSwitches: { [FeatureSwitchKey.IntroVideo]: false },
   });
   await expectInlineTemplate("Intro video");
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
   const message = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(message);
@@ -472,4 +532,66 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
     expect(capture.sentMessages).toHaveLength(1);
   });
   expect(capture.selectedTemplates).toHaveLength(0);
+});
+
+test("Intro Video never displays or submits the preceding Creative Video settings", async () => {
+  const capture = installCatalogs();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.IntroVideo]: true,
+      [FeatureSwitchKey.ComposerCreateCommands]: true,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+    },
+  });
+  const user = userEvent.setup({ delay: null });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const tasks = screen.getByRole("group", { name: "Choose a task" });
+  click(control("Video", tasks));
+  click(
+    await waitFor(() => {
+      return control("Video options 16:9 · 8s · 720p");
+    }),
+  );
+  const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
+  const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
+    return radio.textContent?.trim() === "9:16";
+  });
+  if (!portrait) {
+    throw new Error("Portrait ratio missing");
+  }
+  click(portrait);
+  await user.keyboard("{Escape}");
+  click(control("Remove Video"));
+  const dialog = await openTemplatePicker(user);
+  click(control("Intro video", dialog, "tab"));
+  click(await within(dialog).findByLabelText("Select style Minimalism"));
+  click(control("Voice", dialog, "tab"));
+  click(within(dialog).getByText("No voiceover"));
+  await waitFor(() => {
+    expect(control("Use selection", dialog)).toBeEnabled();
+  });
+  click(control("Use selection", dialog));
+  await expectInlineTemplate("Intro video");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Video options ");
+    }),
+  ).toBeFalsy();
+  expect(
+    screen.queryByRole("combobox", { name: "Video models" }),
+  ).not.toBeInTheDocument();
+  await user.click(editor);
+  await user.keyboard(" Explain our product{Enter}");
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]?.type).toBe("intro-video");
+  expect(
+    capture.sentMessages[0]?.parts.some((part) => {
+      return part.type === "additional_info";
+    }),
+  ).toBeFalsy();
 });

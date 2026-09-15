@@ -23,6 +23,7 @@ import {
 } from "../services/billing-checkout.service";
 import { updateAutoRechargeConfig$ } from "../services/billing.service";
 import { loadOrgPlanCapabilities } from "../services/org-plan-entitlement-read.service";
+import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
 import type { RouteEntry } from "../route-entry";
 
 const adminRequired = Object.freeze({
@@ -89,10 +90,17 @@ const creditCheckoutAuthed$ = command(
         );
       }
       const db = set(writeDb$);
-      await db
-        .insert(orgMetadataCanonicalWrites)
-        .values({ orgId: auth.orgId })
-        .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId });
+      await db.transaction(async (tx) => {
+        const rows = await tx
+          .insert(orgMetadataCanonicalWrites)
+          .values({ orgId: auth.orgId })
+          .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
+          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+        for (const row of rows) {
+          await ensureOrgMetadataPlanEntitlement(tx, row);
+        }
+        signal.throwIfAborted();
+      });
       signal.throwIfAborted();
       const updateResult = await set(
         updateAutoRechargeConfig$,
