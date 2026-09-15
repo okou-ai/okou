@@ -1577,7 +1577,7 @@ describe("Pi API facade", () => {
         api: "openai-responses",
         provider: "deepseek",
       }),
-    ).not.toHaveProperty("failureReason");
+    ).toHaveProperty("failureReason", "usage_limit");
   });
 
   it("projects native session state into a narrow inspection result", () => {

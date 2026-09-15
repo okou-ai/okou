@@ -185,6 +185,46 @@ describe("Pi API-first transition precedence", () => {
     { status: 403, failureReason: undefined, outcome: "arbitrate-terminal" },
     { status: 525, failureReason: undefined, outcome: "sandbox-first" },
     {
+      status: 429,
+      failureReason: "provider_rate_limited",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 200,
+      failureReason: "provider_overloaded",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 503,
+      failureReason: "provider_server_error",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 200,
+      failureReason: "provider_stream_timeout",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 200,
+      failureReason: "response_connection_lost",
+      outcome: "sandbox-first",
+    },
+    {
+      status: 400,
+      failureReason: "context_window_exceeded",
+      outcome: "arbitrate-terminal",
+    },
+    {
+      status: 200,
+      failureReason: "output_token_limit",
+      outcome: "arbitrate-terminal",
+    },
+    {
+      status: 401,
+      failureReason: "invalid_credentials",
+      outcome: "arbitrate-terminal",
+    },
+    {
       status: 525,
       failureReason: "reconnect_required" as const,
       outcome: "arbitrate-terminal",

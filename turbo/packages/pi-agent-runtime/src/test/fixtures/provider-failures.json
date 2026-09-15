@@ -1,0 +1,142 @@
+[
+  {
+    "message": "{\"error\":\"insufficient_credits\"}",
+    "reason": "insufficient_credits"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"Our servers are currently overloaded. Please try again later.\"}}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "Codex error: Our servers are currently overloaded. Please try again later.",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"private provider content\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"authentication_error\",\"message\":\"private provider content\"}}",
+    "reason": "invalid_credentials"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"private provider content\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"context_window_exceeded\",\"message\":\"private provider content\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"prompt_too_long\",\"message\":\"private provider content\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"private provider content\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"rate_limit_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"overloaded_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"server_overloaded\",\"message\":\"private provider content\"}}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"server_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"internal_server_error\",\"message\":\"private provider content\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"insufficient_quota\",\"message\":\"private provider content\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"usage_limit_reached\",\"message\":\"private provider content\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"usage_not_included\",\"message\":\"private provider content\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"billing_hard_limit_reached\",\"message\":\"private provider content\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"insufficient_credits\",\"message\":\"private provider content\"}}",
+    "reason": "insufficient_credits"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"content_policy_violation\",\"message\":\"private provider content\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"content_filter\",\"message\":\"private provider content\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":\"model_not_found\",\"message\":\"private provider content\"}}",
+    "reason": "unsupported_model"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"unsupported_model\",\"message\":\"private provider content\"}}",
+    "reason": "unsupported_model"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"You have hit your ChatGPT usage limit.\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 240000 tokens > 200000 maximum\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":\"TOKEN_REFRESH_FAILED\",\"failureReason\":\"reconnect_required\",\"connectors\":[\"codex-oauth-token\"]}",
+    "reason": "reconnect_required"
+  },
+  {
+    "message": "terminated",
+    "reason": "response_connection_lost"
+  },
+  {
+    "message": "Codex SSE response body timed out after 30000ms",
+    "reason": "provider_stream_timeout"
+  },
+  {
+    "message": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Invalid tool schema\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"code\":\"rate_limit_exceeded\"}}}",
+    "reason": null
+  },
+  {
+    "message": "The tool printed {\"error\":{\"code\":\"overloaded_error\"}}",
+    "reason": null
+  },
+  {
+    "message": "Terminated while reading a tool file",
+    "reason": null
+  },
+  {
+    "message": "Our servers are currently overloaded. Please try again later. is an example.",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":\"TOKEN_REFRESH_FAILED\",\"failureReason\":\"reconnect_required\",\"connectors\":[\"unrelated\"]}",
+    "reason": null
+  },
+  {
+    "message": "API Error: 400 {\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Invalid tool schema\"}}",
+    "reason": null
+  }
+]

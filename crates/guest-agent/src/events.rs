@@ -344,6 +344,9 @@ fn codex_error_failure_reason(error: Option<&Value>) -> Option<FailureReason> {
     if let Some(failure_reason) = codex_error_info_failure_reason(error) {
         return Some(failure_reason);
     }
+    if let Some(reason) = crate::provider_failure::provider_error_reason(error) {
+        return Some(reason);
+    }
     if codex_error_message(Some(error))
         .as_deref()
         .is_some_and(is_content_policy_rejection_message)
@@ -376,6 +379,13 @@ fn codex_error_info_failure_reason(error: &Value) -> Option<FailureReason> {
         "contextWindowExceeded" => Some(FailureReason::ContextWindowExceeded),
         "rateLimitExceeded" => Some(FailureReason::ProviderRateLimited),
         "serverOverloaded" => Some(FailureReason::ProviderOverloaded),
+        "internalServerError" => Some(FailureReason::ProviderServerError),
+        "unauthorized" => Some(FailureReason::InvalidCredentials),
+        "responseTooManyFailedAttempts" => error
+            .pointer("/codex_error_info/responseTooManyFailedAttempts/httpStatusCode")
+            .and_then(Value::as_u64)
+            .and_then(|status| u16::try_from(status).ok())
+            .and_then(crate::provider_failure::http_failure_reason),
         "responseStreamConnectionFailed" | "responseStreamDisconnected" => {
             Some(FailureReason::ResponseConnectionLost)
         }
@@ -853,6 +863,58 @@ mod tests {
                 failure_reason: None,
             })
         );
+    }
+
+    #[test]
+    fn codex_terminal_events_preserve_provider_codes_before_text_projection() {
+        for (code, reason) in [
+            (
+                "context_length_exceeded",
+                FailureReason::ContextWindowExceeded,
+            ),
+            ("rate_limit_exceeded", FailureReason::ProviderRateLimited),
+            ("server_error", FailureReason::ProviderServerError),
+            ("insufficient_quota", FailureReason::UsageLimit),
+            ("model_not_found", FailureReason::UnsupportedModel),
+        ] {
+            let error = serde_json::json!({"code": code, "message": "provider request failed"});
+            for event in [
+                serde_json::json!({"type": "error", "message": "provider request failed", "error": error}),
+                serde_json::json!({"type": "turn.completed", "turn": {"status": "failed", "error": error}}),
+            ] {
+                let diagnostic =
+                    masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")).unwrap();
+                assert_eq!(diagnostic.failure_reason, Some(reason));
+                assert_eq!(diagnostic.message, "provider request failed");
+            }
+            let success = serde_json::json!({"type": "turn.completed", "turn": {"status": "completed", "error": error}});
+            assert!(
+                masked_codex_failure_diagnostic(&success, &SecretMasker::from_raw("")).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn codex_retry_exhaustion_uses_only_its_structured_http_status() {
+        for (status, reason) in [
+            (429, Some(FailureReason::ProviderRateLimited)),
+            (503, Some(FailureReason::ProviderServerError)),
+            (529, Some(FailureReason::ProviderOverloaded)),
+            (401, None),
+            (999, None),
+        ] {
+            let event = serde_json::json!({"type": "turn.completed", "turn": {
+                "status": "failed", "error": {"message": "request failed", "codex_error_info": {
+                    "responseTooManyFailedAttempts": {"httpStatusCode": status}
+                }}
+            }});
+            assert_eq!(
+                masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                    .unwrap()
+                    .failure_reason,
+                reason
+            );
+        }
     }
 
     #[test]

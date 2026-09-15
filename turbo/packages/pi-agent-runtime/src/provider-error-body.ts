@@ -172,6 +172,7 @@ function jsonEnvelopeHeaders(headers: Headers): Headers {
 /** Wrap a fetch so opaque provider error bodies keep their observed status. */
 export function preserveProviderErrorStatus(
   fetchImpl: NonNullable<SimpleStreamOptions["fetch"]>,
+  observeError?: (status: number, body: string) => void,
 ): NonNullable<SimpleStreamOptions["fetch"]> {
   return async (input, init) => {
     const response = await fetchImpl(input, init);
@@ -191,6 +192,7 @@ export function preserveProviderErrorStatus(
       });
     }
     const text = new TextDecoder().decode(body.bytes);
+    observeError?.(response.status, text);
     if (isJsonBody(text)) {
       return new Response(body.bytes, {
         status: response.status,
