@@ -1867,6 +1867,10 @@
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "continue": "Continue",
+        "newRunCurrentSettings": "Continuing starts a new run using your current settings.",
+        "originalAccount": "This run used your personal subscription: {{account}}.",
+        "originalAccountUnavailable": "This run used a personal subscription. Its original account is no longer connected.",
+        "originalAccountUnknown": "This run used a personal subscription. Its original account could not be verified.",
         "resetAndTryAgain": "Reset and try again",
         "resetsAt": "Resets {{time}}",
         "selectModel": "Switch model",
@@ -1876,10 +1880,6 @@
         "unavailableDescription": "This model isn't supported by the connected ChatGPT account. Switch to another model to continue.",
         "unavailableTitle": "Selected model isn't available",
         "usageDescription": "You can continue when your usage limit resets, or switch models now.",
-        "originalAccount": "This run used your personal subscription: {{account}}.",
-        "originalAccountUnavailable": "This run used a personal subscription. Its original account is no longer connected.",
-        "originalAccountUnknown": "This run used a personal subscription. Its original account could not be verified.",
-        "newRunCurrentSettings": "Continuing starts a new run using your current settings.",
         "usageTitle": "{{framework}} limit reached"
       },
       "runCancelled": "Paused mid-thought — pick it back up whenever."
