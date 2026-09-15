@@ -1,0 +1,71 @@
+name: KMS Production Retirement
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Inspect the exact old key or schedule its authorized deletion"
+        required: true
+        default: source-status
+        type: choice
+        options:
+          - source-status
+          - retire-source
+      verification_run_id:
+        description: "For retirement: accepted current verify-target run ID"
+        type: string
+      verification_artifact_sha256:
+        description: "For retirement: independently collected verification archive SHA-256"
+        type: string
+      expected_deployment_id:
+        description: "For retirement: unchanged production API deployment from that proof"
+        type: string
+      accept_historical_recovery_loss:
+        description: "Apply the approved loss of recovery for historical old-key ciphertext"
+        type: boolean
+        default: false
+
+concurrency:
+  group: kms-production-operation-32264
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  retirement:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Inspect or retire only the old production key
+        env:
+          KMS_OPERATION: ${{ inputs.operation }}
+          VERIFICATION_RUN_ID: ${{ inputs.verification_run_id }}
+          VERIFICATION_ARTIFACT_SHA256: ${{ inputs.verification_artifact_sha256 }}
+          EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
+          ACCEPT_HISTORICAL_RECOVERY_LOSS: ${{ inputs.accept_historical_recovery_loss }}
+          SOURCE_AUDIT_WINDOW_START: "2026-09-10T07:38:23.484Z"
+          EXPECTED_BACKUP_SHA256: 60d1500d90c83a8b40996c3e9e6fbb9453ffbf598a9ae1c670d38f60b340e9f8
+          DOPPLER_SERVICE_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/kms-production-migration.py
+      - name: Retain sanitized retirement receipt and audit
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kms-production-retirement-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/kms-source-retirement-reports/*.json
+            ${{ runner.temp }}/kms-production-reports/source-audit.json
+          if-no-files-found: warn
+          retention-days: 30
