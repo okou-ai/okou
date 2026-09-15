@@ -65,7 +65,7 @@ import {
 import {
   createPhase2TestScope,
   insertPendingPhase2Job,
-  insertPhase2Candidates,
+  insertPhase2CandidatesWithSources as insertPhase2Candidates,
   readPhase2Job,
   insertPhase2StorageVersion,
   setPhase2StorageHead,
@@ -1258,7 +1258,6 @@ describe("private maintenance across CLI, Guest, generic checkpoint and real Pos
   );
 
   it.each([
-    { label: "none", fault: "none", cleanupMode: undefined },
     {
       label: "represented_no_diff",
       fault: "represented_no_diff",

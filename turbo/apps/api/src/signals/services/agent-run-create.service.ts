@@ -1092,6 +1092,8 @@ export interface CreateAgentRunArgs {
   readonly piExecution: boolean;
   /** Private non-interactive Pi memory maintenance input and claim fence. */
   readonly piMemoryPhase2Maintenance?: PiMemoryPhase2Maintenance;
+  /** In-memory private admission fence; never serialized into run metadata. */
+  readonly validatePiMemoryPhase2Admission?: (tx: Tx) => Promise<void>;
   readonly timing?: ApiDispatchTimingCollector;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
 }
@@ -6652,6 +6654,7 @@ async function buildStoredExecutionContextDraft(args: {
   readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly includeOkouTokenSecret: boolean | undefined;
+  readonly piMemoryPhase2Maintenance: PiMemoryPhase2Maintenance | undefined;
 }): Promise<BuiltStoredExecutionContextDraft> {
   const permissions = args.permissionManifest;
   const langfuseEnvironment = piLangfuseExecutionEnvironment(args);
@@ -6730,7 +6733,9 @@ async function buildStoredExecutionContextDraft(args: {
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets: await encryptPersistentSecretsMap(
         mergeRecords(executionSecrets.secrets, langfuseEnvironment.secrets) ??
-          null,
+          // Private BYOK maintenance has dynamic references but no Okou token.
+          // Firewall auth still needs an encrypted runtime namespace.
+          (args.piMemoryPhase2Maintenance ? {} : null),
         args.featureSwitchContext,
       ),
       secretConnectorMap: executionSecrets.secretConnectorMap,
@@ -8238,6 +8243,13 @@ async function persistFailedLaunch(
   args: CommitFailedLaunchArgs,
   message: string,
 ): Promise<FailedLaunchCommitResult> {
+  if (args.createArgs.piMemoryPhase2Maintenance) {
+    const validate = args.createArgs.validatePiMemoryPhase2Admission;
+    if (!validate) {
+      throw new Error("Private maintenance requires source admission");
+    }
+    await validate(tx);
+  }
   await acquireOfficialWorkflowRunCatalogAdmissionLock(
     tx,
     args.context.officialWorkflowRun,
@@ -8730,6 +8742,13 @@ async function commitPreparedLaunchUnderLock(
       args,
       threadSessionValidation,
     );
+    if (args.createArgs.piMemoryPhase2Maintenance) {
+      const validate = args.createArgs.validatePiMemoryPhase2Admission;
+      if (!validate) {
+        throw new Error("Private maintenance requires source admission");
+      }
+      await validate(tx);
+    }
     if (failure) {
       return failure;
     }
@@ -9599,6 +9618,9 @@ function agentRunResolutionOptions(
     throw new Error(
       "Pi memory maintenance payload and execution identity must match",
     );
+  }
+  if (args.validatePiMemoryPhase2Admission && !privateMaintenanceIdentity) {
+    throw new Error("Phase 2 admission belongs only to private maintenance");
   }
   if (
     privateMaintenanceIdentity &&
