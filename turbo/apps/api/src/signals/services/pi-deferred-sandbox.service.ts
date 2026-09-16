@@ -258,6 +258,10 @@ async function assertDeferredContinuationWithinLimits(
  * An unsupported continuation is finalized truthfully instead of becoming
  * queued executable demand. Already-incurred inference usage, diagnostics and
  * the retained object references stay on the Run; nothing is truncated.
+ *
+ * No intent exists yet, so no deferred terminal side effects are scheduled: the
+ * producer that called this interface owns the response for its own request,
+ * and `publishPiSandboxDemand` reports `false` for an already terminal Run.
  */
 async function acceptDeferredContinuationSize(
   tx: Tx,

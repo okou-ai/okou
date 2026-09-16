@@ -45,11 +45,7 @@ export function serializeDeferredHandoff(data: {
 }
 
 /** Thrown before a continuation can become an executable job. */
-export class PiDeferredHandoffUnsupportedError extends Error {
-  constructor(message: string) {
-    super(message);
-  }
-}
+export class PiDeferredHandoffUnsupportedError extends Error {}
 
 /** Validate as early as both inputs exist: history first, then the aggregate. */
 export function assertDeferredHandoffWithinLimits(data: {
