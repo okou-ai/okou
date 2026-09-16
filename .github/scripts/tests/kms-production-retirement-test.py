@@ -133,7 +133,7 @@ class RetirementCliTest(unittest.TestCase):
                 key["MultiRegion"] = True
             run = {
                 "id": 54321,
-                "repository": {"full_name": "vm0-ai/vm0"},
+                "repository": {"full_name": "vm0-ai/okou"},
                 "workflow_id": 353130414,
                 "path": ".github/workflows/kms-production-preflight.yml",
                 "event": "workflow_dispatch",
@@ -146,6 +146,8 @@ class RetirementCliTest(unittest.TestCase):
             }
             if scenario == "wrong-run":
                 run["conclusion"] = "failure"
+            if scenario == "wrong-repository":
+                run["repository"]["full_name"] = "another-owner/okou"
             if scenario == "wrong-actor":
                 run["actor"]["login"] = "another-user"
             state = {
@@ -176,12 +178,12 @@ class RetirementCliTest(unittest.TestCase):
                 "RUNNER_TEMP": str(root),
                 "KMS_OPERATION": "retire-source",
                 "GITHUB_RUN_ATTEMPT": "1",
-                "GITHUB_REPOSITORY": "vm0-ai/vm0",
+                "GITHUB_REPOSITORY": "vm0-ai/okou",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
                 "GITHUB_SHA": "c" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/kms-production-retire.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-retire.yml@refs/heads/main",
                 "EXPECTED_BACKUP_SHA256": hashlib.sha256(
                     json.dumps(snapshot, separators=(",", ":")).encode()
                 ).hexdigest(),
@@ -239,6 +241,7 @@ class RetirementCliTest(unittest.TestCase):
     def test_proof_and_artifact_failures_leave_key_usable(self):
         for scenario in [
             "wrong-run",
+            "wrong-repository",
             "wrong-actor",
             "archive-changed",
             "nested-source",
@@ -317,6 +320,7 @@ class RetirementCliTest(unittest.TestCase):
         for overrides in [
             {"GITHUB_RUN_ATTEMPT": "2"},
             {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY": "another-owner/okou"},
             {"GITHUB_WORKFLOW_REF": "other"},
             {"ACCEPT_HISTORICAL_RECOVERY_LOSS": "false"},
         ]:

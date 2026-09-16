@@ -1,3 +1,4 @@
+import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -274,6 +275,7 @@ interface NormalSendArgs {
   readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }
 
 interface PreparedNormalSend {
@@ -1869,6 +1871,7 @@ interface AppendUnassociatedUserMessageParams {
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }
 
 async function resolveExistingUnassociatedClientEventId(
@@ -1945,7 +1948,6 @@ async function appendUnassociatedUserMessageTransaction(
   );
 
   const explicitId = params.clientEventId ?? undefined;
-  const fileMetadata = params.attachFileMetadata;
   if (params.requiredOfficialWorkflowIds?.length === 0) {
     throw new Error("Official Workflow source claim cannot be empty");
   }
@@ -2002,6 +2004,15 @@ async function appendUnassociatedUserMessageTransaction(
     },
   );
   if (inserted) {
+    if (params.getStartedWorkflowId) {
+      await recordGetStartedWorkflow(tx, {
+        orgId: params.orgId,
+        userId: params.userId,
+        workflowId: params.getStartedWorkflowId,
+        sourceEventId: inserted.id,
+      });
+    }
+
     await measureApiDispatchTiming(
       params.timing,
       "api_dispatch_pre_create_agent_web_chat_queue_first_enqueue_register_input_assets",
@@ -2011,7 +2022,7 @@ async function appendUnassociatedUserMessageTransaction(
           chatThreadId: params.threadId,
           userId: params.userId,
           orgId: params.orgId,
-          files: fileMetadata ?? [],
+          files: params.attachFileMetadata ?? [],
         });
       },
     );
@@ -3036,6 +3047,7 @@ async function queueUnassociatedNormalEvent(params: {
   readonly orgId: string;
   readonly publicBrand: PublicBrand;
   readonly requiredOfficialWorkflowIds?: readonly string[];
+  readonly getStartedWorkflowId?: string;
 }): Promise<{
   readonly response:
     | CreatedChatEventResponse
@@ -3059,6 +3071,7 @@ async function queueUnassociatedNormalEvent(params: {
     triggerSource: params.prepared.triggerSource,
     agentRunSource: params.prepared.agentRunSource,
     publicBrand: params.publicBrand,
+    getStartedWorkflowId: params.getStartedWorkflowId,
     ...(params.requiredOfficialWorkflowIds === undefined
       ? {}
       : {
@@ -3992,6 +4005,7 @@ const sendQueueFirstNormalEvent$ = command(
           ),
           orgId: args.orgId,
           publicBrand: args.publicBrand,
+          getStartedWorkflowId: args.getStartedWorkflowId,
           ...(args.requiredOfficialWorkflowIds === undefined
             ? {}
             : {

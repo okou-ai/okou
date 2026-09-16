@@ -2567,10 +2567,12 @@ jobs:
       codex-organization-id: ${{ steps.account.outputs.codex-organization-id }}
       claude-organization-id: ${{ steps.account.outputs.claude-organization-id }}
       mock-claude-organization-id: ${{ steps.account.outputs.mock-claude-organization-id }}
+      codex-built-in-organization-id: ${{ steps.account.outputs.codex-built-in-organization-id }}
       runner-email: ${{ steps.account.outputs.runner-email }}
       codex-email: ${{ steps.account.outputs.codex-email }}
       claude-email: ${{ steps.account.outputs.claude-email }}
       mock-claude-email: ${{ steps.account.outputs.mock-claude-email }}
+      codex-built-in-email: ${{ steps.account.outputs.codex-built-in-email }}
       runner-shard-matrix: ${{ steps.shards.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2584,6 +2586,8 @@ jobs:
           node-version: 22
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
+      - name: Check runner E2E model policy
+        run: cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts
       - name: Generate runner E2E shard matrix
         id: shards
         shell: bash
@@ -2624,6 +2628,7 @@ jobs:
           E2E_RUNNER_CODEX_ORGANIZATION_ID: ${{ steps.account.outputs.codex-organization-id }}
           E2E_RUNNER_CLAUDE_ORGANIZATION_ID: ${{ steps.account.outputs.claude-organization-id }}
           E2E_RUNNER_MOCK_CLAUDE_ORGANIZATION_ID: ${{ steps.account.outputs.mock-claude-organization-id }}
+          E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID: ${{ steps.account.outputs.codex-built-in-organization-id }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Upload runner E2E Checkout diagnostics
         if: failure()
@@ -2642,6 +2647,7 @@ jobs:
             /tmp/e2e-api-credentials-runner-real-codex.json
             /tmp/e2e-api-credentials-runner-real-claude.json
             /tmp/e2e-api-credentials-runner-mock-claude.json
+            /tmp/e2e-api-credentials-runner-real-codex-built-in.json
           retention-days: 1
 
   cli-e2e-03-runner-bootstrap:
@@ -2779,6 +2785,34 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Bootstrap built-in Codex account
+        shell: bash
+        run: |
+          set -euo pipefail
+          token=$(jq -er '.token | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-codex-built-in.json)
+          api_url=$(jq -er '.apiUrl | select(type == "string" and length > 0)' /tmp/e2e-api-credentials-runner-real-codex-built-in.json)
+          echo "::add-mask::$token"
+
+          headers=(-H "Authorization: Bearer ${token}" -H "Content-Type: application/json")
+          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
+            headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
+          fi
+
+          curl -fsS "${headers[@]}" \
+            -X PUT \
+            -d '{"policies":[{"model":"gpt-5.6-luna","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]}' \
+            "${api_url}/api/model-policies" \
+            >/dev/null
+
+          # Preserve Codex billing/fallback coverage without touching the Pi account.
+          curl -fsS "${headers[@]}" \
+            -X POST \
+            -d '{"switches":{"_realAgentInPreview":true,"piLoop":false}}' \
+            "${api_url}/api/feature-switches" \
+            | jq -e '.effectiveSwitches._realAgentInPreview == true and .effectiveSwitches.piLoop == false' \
+            >/dev/null
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap real Claude account
         shell: bash
         run: |
@@ -2900,6 +2934,7 @@ jobs:
             /tmp/e2e-api-credentials-runner.json \
             /tmp/e2e-api-credentials-runner-real-codex.json \
             /tmp/e2e-api-credentials-runner-real-claude.json \
+            /tmp/e2e-api-credentials-runner-real-codex-built-in.json \
             /tmp/e2e-api-credentials-runner-mock-claude.json; do
             jq -er '.token | select(type == "string" and length > 0)' "$credential_file" >/dev/null
             jq -er '.apiUrl | select(type == "string" and length > 0)' "$credential_file" >/dev/null

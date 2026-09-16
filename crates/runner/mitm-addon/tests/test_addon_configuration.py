@@ -16,11 +16,9 @@ from mitmproxy.addonmanager import Loader
 import logging_utils
 import mitm_addon
 import platform_api
-import runner_flush_lifecycle
 import usage
 import usage.buffer as usage_buffer
 from tests.control_helpers import exchange, log_flush_request, status_request
-from tests.pending_helpers import assert_pending
 from tests.usage_helpers import install_recording_usage_timer
 
 
@@ -112,30 +110,17 @@ class TestAddonConfiguration:
         assert module.__name__ not in sys.modules
         spec.loader.exec_module(module)
 
-    def test_load_registers_usage_options_and_signal_handler_without_pending_write(self, tmp_path):
+    def test_load_registers_control_and_delivery_options(self):
         master = _RecordingMaster()
-        loader = Loader(master)
-        pending_path = tmp_path / "usage-pending"
-
-        # OS signal registration is process-global boundary state. Handler
-        # behavior is covered by test_runner_usage_flush_signal.py.
-        with (
-            patch.object(mitm_addon, "__file__", _addon_file_path(tmp_path)),
-            patch.object(mitm_addon.signal, "signal") as signal_handler,
-        ):
-            mitm_addon.load(loader)
-
-        option_names = [option.name for option in master.options.added]
-        assert "okou_usage_state_id" in option_names
-        assert "okou_control_socket_dir" in option_names
-        assert "okou_client_session_id" in option_names
-        assert "okou_client_version" in option_names
-        assert "okou_usage_flush_interval_seconds" in option_names
-        assert not pending_path.exists()
-        signal_handler.assert_called_once_with(
-            runner_flush_lifecycle.RUNNER_USAGE_FLUSH_SIGNAL,
-            runner_flush_lifecycle.handle_runner_usage_flush_signal,
-        )
+        mitm_addon.load(Loader(master))
+        option_names = {option.name for option in master.options.added}
+        assert {
+            "okou_usage_state_id",
+            "okou_control_socket_dir",
+            "okou_client_session_id",
+            "okou_client_version",
+            "okou_usage_flush_interval_seconds",
+        } <= option_names
 
     def test_load_rejects_unreviewed_mitmproxy_version(self):
         loader = Loader(_RecordingMaster())
@@ -160,18 +145,6 @@ class TestAddonConfiguration:
             ),
         ):
             mitm_addon.load(loader)
-
-    def test_configure_writes_pending_state_with_usage_state_id(self, tmp_path):
-        pending_path = tmp_path / "usage-pending"
-
-        with (
-            patch.object(mitm_addon, "__file__", _addon_file_path(tmp_path)),
-            patch.object(mitm_addon.ctx, "options", _Options(), create=True),
-        ):
-            mitm_addon.configure({"okou_usage_state_id"})
-
-        state = assert_pending(pending_path, flows=0, buffered=0, reports=0)
-        assert state["usageStateId"] == "runner-usage-state-id"
 
     async def test_running_serves_status_and_log_flush(self, tmp_path, addon_control_cleanup):
         run_id = str(uuid.uuid4())
@@ -220,36 +193,6 @@ class TestAddonConfiguration:
         assert exchange(tmp_path, status_request("runner-usage-state-id"))["data"] == {
             "state": "running"
         }
-
-    def test_configure_writes_fallback_pending_state_id_when_usage_state_id_is_empty(
-        self, tmp_path
-    ):
-        pending_path = tmp_path / "usage-pending"
-
-        with (
-            patch.object(mitm_addon, "__file__", _addon_file_path(tmp_path)),
-            patch.object(
-                mitm_addon.ctx,
-                "options",
-                _Options(usage_state_id=""),
-                create=True,
-            ),
-        ):
-            mitm_addon.configure({"okou_usage_state_id"})
-
-        state = assert_pending(pending_path, flows=0, buffered=0, reports=0)
-        uuid.UUID(state["usageStateId"])
-
-    def test_configure_ignores_unrelated_option_updates(self, tmp_path):
-        pending_path = tmp_path / "usage-pending"
-
-        with (
-            patch.object(mitm_addon, "__file__", _addon_file_path(tmp_path)),
-            patch.object(mitm_addon.ctx, "options", _Options(), create=True),
-        ):
-            mitm_addon.configure({"okou_api_url"})
-
-        assert not pending_path.exists()
 
     def test_configure_snapshots_client_headers(self):
         with patch.object(

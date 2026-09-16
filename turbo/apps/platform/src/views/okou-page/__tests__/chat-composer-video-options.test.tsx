@@ -206,13 +206,15 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
 }
 
 test.each([false, true])(
-  "Keep video settings collapsed until requested with Create enabled: %s",
+  "Keep video settings collapsed until requested with the slash panel on: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
     await selectVideoTemplate();
     expect(
@@ -226,15 +228,44 @@ test.each([false, true])(
   },
 );
 
+test("Keep the video spec with the run controls below the message", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
+  });
+  await selectVideoTemplate();
+  /*
+    The spec is a setting for the run, not content for this message, so it
+    belongs in the action row beside the model that decides which values exist
+    — not in the lane above the input, which clears on send.
+
+    This pins the band the control sits in, not its markup: every other case in
+    this file resolves it by accessible name, so when it was moved into that
+    lane the whole suite stayed green.
+  */
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const spec = fastControl("button", "Video options 16:9 · 8s · 720p");
+  expect(editor.compareDocumentPosition(spec)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(spec.compareDocumentPosition(sendButton())).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
 test.each([false, true])(
-  "Submit default video options with Create enabled: %s",
+  "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
 
     const prompt = "Generate the first cinematic clip.";
@@ -291,14 +322,16 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "Submit a selected video ratio with Create enabled: %s",
+  "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
 
     const prompt = "Generate the portrait cinematic clip.";
@@ -366,7 +399,7 @@ test.each(["task", "command"] as const)(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerCreateCommands]: entry === "command",
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: entry === "command",
         [FeatureSwitchKey.ComposerTaskChips]: entry === "task",
       },
     });
@@ -381,8 +414,11 @@ test.each(["task", "command"] as const)(
         ),
       );
     } else {
-      await fill(editor, "/create video");
-      await userEvent.setup({ delay: null }).keyboard("{Enter}");
+      await fill(editor, "/");
+      // Presentation leads the panel's Make rows, so Video is the third.
+      await userEvent
+        .setup({ delay: null })
+        .keyboard("{ArrowDown}{ArrowDown}{Enter}");
       await enterText(prompt);
     }
     click(await screen.findByRole("combobox", { name: "Video models" }));
@@ -529,7 +565,6 @@ async function restoreTemplateDraft(
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.IntroVideo]: true,
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });

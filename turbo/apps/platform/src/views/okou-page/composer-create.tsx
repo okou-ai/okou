@@ -1,6 +1,5 @@
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
-import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -83,9 +82,14 @@ export function ComposerSelectedTask({
   );
   const Icon = task ? TASK_ICONS[task] : null;
   /*
-    The type's own options sit on this line, beside the chip they describe. In
-    the action row below they were 260px right and 112px down from it, among
+    The presentation options sit on this line, beside the chip they describe.
+    In the action row below they were 260px right and 112px down from it, among
     controls that act on the message rather than on the artifact.
+
+    Video is the exception, and it is not the same case: its spec has to be read
+    against the model that accepts it, and that model's picker lives in the
+    action row, so the spec is back there next to the connectors rather than two
+    rows above the value it depends on.
 
     The row is not the chip's: the chip is gated by a switch the options are
     not, so it also has to stand on its own. `empty:hidden` keeps it from
@@ -137,7 +141,6 @@ export function ComposerSelectedTask({
         </Button>
       ) : null}
       <ComposerPresentationOptions signals={signals} />
-      <ComposerVideoOptionsChip signals={signals} />
     </div>,
   );
 }

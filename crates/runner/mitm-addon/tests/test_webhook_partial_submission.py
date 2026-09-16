@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 import usage
-from tests.pending_helpers import assert_current_pending
+from tests.pending_helpers import assert_pending
 
 _THREAD_PREFIX = "webhook-partial-submit"
 
@@ -48,8 +48,7 @@ def _fail_worker_start(
 def test_fallback_owns_delivery_after_worker_start_failure(
     tmp_path, usage_webhook_server, capsys, callback_fails
 ):
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     other_report = usage.counters.admit_pending_report()
     outcomes: list[tuple[str, usage.webhook.WebhookDeliveryOutcome]] = []
 
@@ -57,7 +56,7 @@ def test_fallback_owns_delivery_after_worker_start_failure(
         def on_outcome(outcome: usage.webhook.WebhookDeliveryOutcome) -> None:
             outcomes.append((run_id, outcome))
             assert usage.webhook.pending_delivery_payload_count_for_tests() == 1
-            assert_current_pending(pending_path, flows=0, buffered=0, reports=2)
+            assert_pending(control_root, flows=0, buffered=0, reports=2)
             if callback_fails and run_id == "A":
                 raise RuntimeError("callback failed")
 
@@ -86,7 +85,7 @@ def test_fallback_owns_delivery_after_worker_start_failure(
             assert [body["runId"] for body in usage_webhook_server.json_bodies()] == ["A"]
             assert outcomes == [("A", "success")]
             assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-            assert_current_pending(pending_path, flows=0, buffered=0, reports=1)
+            assert_pending(control_root, flows=0, buffered=0, reports=1)
 
             # Recover worker creation and drain A's surviving work item before B.
             assert enqueue("B")
@@ -98,15 +97,14 @@ def test_fallback_owns_delivery_after_worker_start_failure(
                 future.result(timeout=5)
 
         assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-        assert_current_pending(pending_path, flows=0, buffered=0, reports=1)
+        assert_pending(control_root, flows=0, buffered=0, reports=1)
         assert "usage_pending_counter_underflow" not in capsys.readouterr().err
     finally:
         other_report.release()
 
 
 def test_existing_worker_owns_delivery_before_submit_raises(tmp_path, usage_webhook_server, capsys):
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     other_report = usage.counters.admit_pending_report()
     worker_occupied = threading.Event()
     release_worker = threading.Event()
@@ -153,7 +151,7 @@ def test_existing_worker_owns_delivery_before_submit_raises(tmp_path, usage_webh
                 assert [body["runId"] for body in usage_webhook_server.json_bodies()] == ["A"]
                 assert outcomes == ["success"]
                 assert usage.webhook.pending_delivery_payload_count_for_tests() == 1
-                assert_current_pending(pending_path, flows=0, buffered=0, reports=2)
+                assert_pending(control_root, flows=0, buffered=0, reports=2)
             finally:
                 release_worker.set()
                 release_callback.set()
@@ -163,7 +161,7 @@ def test_existing_worker_owns_delivery_before_submit_raises(tmp_path, usage_webh
                 future.result(timeout=5)
 
         assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-        assert_current_pending(pending_path, flows=0, buffered=0, reports=1)
+        assert_pending(control_root, flows=0, buffered=0, reports=1)
         assert outcomes == ["success"]
         assert "usage_pending_counter_underflow" not in capsys.readouterr().err
     finally:
@@ -171,15 +169,14 @@ def test_existing_worker_owns_delivery_before_submit_raises(tmp_path, usage_webh
 
 
 def test_partial_submit_rollback_preserves_next_delivery(tmp_path, usage_webhook_server, capsys):
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     outcomes: list[tuple[str, usage.webhook.WebhookDeliveryOutcome]] = []
 
     def enqueue(run_id: str) -> bool:
         def on_outcome(outcome: usage.webhook.WebhookDeliveryOutcome) -> None:
             outcomes.append((run_id, outcome))
             assert usage.webhook.pending_delivery_payload_count_for_tests() == 1
-            assert_current_pending(pending_path, flows=0, buffered=0, reports=1)
+            assert_pending(control_root, flows=0, buffered=0, reports=1)
 
         return usage.webhook.enqueue_webhook_delivery(
             usage_webhook_server.url(),
@@ -203,7 +200,7 @@ def test_partial_submit_rollback_preserves_next_delivery(tmp_path, usage_webhook
         assert usage_webhook_server.request_count == 0
         assert outcomes == []
         assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-        assert_current_pending(pending_path, flows=0, buffered=0, reports=0)
+        assert_pending(control_root, flows=0, buffered=0, reports=0)
 
         assert enqueue("B")
         executor.shutdown(wait=True)
@@ -214,5 +211,5 @@ def test_partial_submit_rollback_preserves_next_delivery(tmp_path, usage_webhook
             future.result(timeout=5)
 
     assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-    assert_current_pending(pending_path, flows=0, buffered=0, reports=0)
+    assert_pending(control_root, flows=0, buffered=0, reports=0)
     assert "usage_pending_counter_underflow" not in capsys.readouterr().err

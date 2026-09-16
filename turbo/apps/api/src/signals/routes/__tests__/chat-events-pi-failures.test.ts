@@ -66,6 +66,54 @@ const {
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first provider policies", () => {
+  it.each([200, 503])(
+    "keeps explicit queue expiry terminal after HTTP %s without a Sandbox retry",
+    async (status) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      mockPiResourceArchiveDownloads();
+      const message =
+        "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
+      let modelCalls = 0;
+      server.use(
+        http.post("https://api.openai.com/v1/responses", () => {
+          modelCalls++;
+          const error = { code: "server_error", message };
+          return status === 200
+            ? nativeCodexSseResponse(
+                `data: ${JSON.stringify({ type: "response.failed", response: { status: "failed", error } })}\n\n`,
+              )
+            : HttpResponse.json({ error }, { status });
+        }),
+      );
+      const checkpointObjects = mockPiCheckpointObjectStore();
+      const { anchor, anchorClaim, run, usagePricingResolution } =
+        await queueCapabilityProvenPiRun({
+          actor,
+          agentId,
+          runnerGroup,
+          prompt: "stop after the provider expires its queue",
+        });
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
+        usagePricingResolution,
+      });
+      await waitForRunStatus(actor, run.runId, "failed");
+      await flushWaitUntilForTest();
+      expect(modelCalls).toBe(1);
+      expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+      expect(
+        (await chat.listThreadEvents(actor, run.threadId)).events,
+      ).toContainEqual(
+        expect.objectContaining({
+          runId: run.runId,
+          eventType: "run.failed",
+          failureReason: "provider_queue_timeout",
+        }),
+      );
+      await api.requestClaimRunnerJob(true, run.runId, [404]);
+    },
+    90_000,
+  );
+
   it("lets canonical cancellation win before provider ownership without API artifacts", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await publishPendingPiInstructions(actor, agentId);

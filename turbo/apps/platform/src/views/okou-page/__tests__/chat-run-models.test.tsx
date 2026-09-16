@@ -513,8 +513,13 @@ test.each([
     "Your connected model provider account has insufficient balance.",
   ],
   ["built-in", undefined, "The current model is unavailable."],
+  [
+    "queue expiry",
+    "provider_queue_timeout",
+    "Oops, something went wrong. Please try again later.",
+  ],
 ] as const)(
-  "A balance failure (%s) displays its message without a recovery action",
+  "A terminal provider failure (%s) displays its message without a recovery action",
   async (_owner, failureReason, message) => {
     configureModelPolicies(["gpt-5.6-sol"]);
     installRunChat({

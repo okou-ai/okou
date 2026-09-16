@@ -260,6 +260,7 @@ export function decideApiFirstTurnRecovery(
   const coordinationRemains = facts.observedAt < facts.coordinationDeadlineAt;
   const apiModelFailed =
     failure instanceof PiApiFirstTurnModelFailureError &&
+    // Explicit queue expiry is terminal: another attempt can repeat the full wait.
     (!failure.failureReason ||
       [
         "provider_rate_limited",

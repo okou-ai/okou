@@ -1492,11 +1492,18 @@ async fn execute_cli_inner(
                             }
                             if let Some(projection) = pi_rpc_projection.as_mut() {
                                 match projection.project(event, &pi_rpc_response_tx, line.len()) {
-                                    Ok(Some(projected)) => event = projected,
-                                    Ok(None) => {
-                                        agent_log.write_raw_line(line.as_bytes()).await;
-                                        continue;
-                                    }
+                                    Ok(projected) => {
+                                        if let Some(containment) = workload_containment
+                                            && let Some(timestamp) = projection.runtime_progress_at() {
+                                            containment.record_runtime_progress(timestamp);
+                                        }
+                                        if let Some(projected) = projected {
+                                            event = projected;
+                                        } else {
+                                            agent_log.write_raw_line(line.as_bytes()).await;
+                                            continue;
+                                        }
+                                    },
                                     Err(error) => {
                                         agent_log.write_raw_line(line.as_bytes()).await;
                                         active_input_controller.close_terminal();

@@ -70,21 +70,34 @@ async function setupComposer(enabled = true): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled },
   });
   return await findComposerEditor();
 }
 
+/** The panel's rows act on mousedown, which only a full pointer sequence fires. */
+async function clickPanelRow(label: string, menu: HTMLElement): Promise<void> {
+  await userEvent.setup({ delay: null }).click(button(label, menu));
+}
+
+/** The panel row that enters a create mode, and the mode it lands in. */
+const CREATE_MODE_ROWS = {
+  presentation: { row: "Presentation", mode: "Create presentation" },
+  image: { row: "Illustration", mode: "Create image" },
+  video: { row: "Video", mode: "Create video" },
+} as const;
+
 async function chooseCommand(
   editor: HTMLElement,
   text: string,
-  label: string,
+  command: keyof typeof CREATE_MODE_ROWS,
 ): Promise<void> {
+  const { row, mode } = CREATE_MODE_ROWS[command];
   await fill(editor, text);
   const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button(label, menu));
+  await clickPanelRow(row, menu);
   await waitFor(() => {
-    expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(label);
+    expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(mode);
   });
 }
 
@@ -96,7 +109,7 @@ test("Create commands stay hidden until enabled", async () => {
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
 });
 
-test("Choose a video through the consolidated Create entry with the keyboard and submit its settings", async () => {
+test("Choose a video from the slash panel with the keyboard and submit its settings", async () => {
   setupModels();
   const submissions: {
     userMessage?: UserMessageDocument;
@@ -109,36 +122,23 @@ test("Choose a video through the consolidated Create entry with the keyboard and
   });
   const editor = await setupComposer();
   const user = userEvent.setup({ delay: null });
-  await fill(editor, "A train crossing the mountains /create");
+  await fill(editor, "A train crossing the mountains /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  expect(button("Create", menu)).toBeInTheDocument();
-  await user.keyboard("{Enter}");
-  const types = await screen.findByRole("listbox", { name: "Choose a type" });
-  expect(
-    within(types)
-      .getAllByRole("option")
-      .map((item) => {
-        return item.getAttribute("aria-label");
-      }),
-  ).toStrictEqual(["Presentation", "Video", "Image"]);
-  expect(
-    within(types).getByRole("option", { name: "Presentation" }),
-  ).toHaveFocus();
-  const card = editor.closest('[data-slot="chat-composer-card"]');
-  expect(card).toContainElement(types);
-  expect(card).toContainElement(
-    screen.getByRole("combobox", { name: "Choose a type" }),
-  );
-  expect(button("Send")).toBeDisabled();
-  await user.keyboard("{ArrowRight}{Enter}");
+  expect(button("Video", menu)).toBeInTheDocument();
+  // Presentation leads the panel's Make rows, so Video is the third.
+  await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
   await waitFor(() => {
     expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(
       "Create video",
     );
   });
-  expect(types).not.toBeInTheDocument();
+  expect(menu).not.toBeInTheDocument();
+  const card = editor.closest('[data-slot="chat-composer-card"]');
+  expect(card).toContainElement(
+    screen.getByRole("combobox", { name: "Choose a type" }),
+  );
   expect(editor).toHaveTextContent("A train crossing the mountains");
-  expect(editor).not.toHaveTextContent("/create");
+  expect(editor).not.toHaveTextContent("/");
   expect(submissions).toHaveLength(0);
   const videoPicker = await screen.findByRole("combobox", {
     name: "Video models",
@@ -217,7 +217,7 @@ test.each(["presentation", "video", "image"] as const)(
     await setupPage({
       context,
       path: `/chats/${THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: true },
+      featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
     });
     const text = await screen.findByText("Our launch brief");
     const message = text.closest<HTMLElement>('[data-role="user"]');
@@ -259,17 +259,13 @@ test("A queued Create message keeps its intent separate from user-authored text"
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: true },
+    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
   });
   await screen.findByText("Review the launch brief");
 
   const followupEditor = await findComposerEditor();
   const prompt = "Create a presentation. Keep these words in my message.";
-  await chooseCommand(
-    followupEditor,
-    `${prompt} /create presentation`,
-    "Create presentation",
-  );
+  await chooseCommand(followupEditor, `${prompt} /`, "presentation");
   click(screen.getByRole("combobox", { name: "Slide count" }));
   click(await screen.findByRole("option", { name: "20–24 slides" }));
   await waitFor(() => {
@@ -330,7 +326,7 @@ test("A queued Create message keeps its intent separate from user-authored text"
 test("Image mode combines styles and image models while preserving the prompt", async () => {
   setupModels();
   const editor = await setupComposer();
-  await chooseCommand(editor, "A quiet garden /create image", "Create image");
+  await chooseCommand(editor, "A quiet garden /", "image");
   expect(button("Add style")).toBeInTheDocument();
   const picker = await screen.findByRole("combobox", { name: "Image models" });
   click(picker);
@@ -366,7 +362,7 @@ test("Image mode sends when the model menu is still open", async () => {
     },
   });
   const editor = await setupComposer();
-  await chooseCommand(editor, "A quiet garden /create image", "Create image");
+  await chooseCommand(editor, "A quiet garden /", "image");
   await waitFor(() => {
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
@@ -437,7 +433,7 @@ const createTemplateScenarios = [
 
 test.each(createTemplateScenarios)(
   "$commandLabel adds multiple templates without replacing the existing text or chip",
-  async ({ mode, commandLabel, pickerLabel, selectLabel, templates }) => {
+  async ({ mode, pickerLabel, selectLabel, templates }) => {
     setupModels();
     mockChatLifecycle(context);
     const editor = await setupComposer();
@@ -446,7 +442,7 @@ test.each(createTemplateScenarios)(
     if (!first || !second) {
       throw new Error(`Expected two ${mode} templates`);
     }
-    await chooseCommand(editor, `Our launch /create ${mode}`, commandLabel);
+    await chooseCommand(editor, "Our launch /", mode);
     click(button(pickerLabel));
     await screen.findByRole("dialog");
     click(await screen.findByLabelText(`${selectLabel} ${first.title}`));
@@ -521,9 +517,9 @@ test.each(createTemplateScenarios)(
     });
     const user = userEvent.setup({ delay: null });
     await user.click(editor);
-    await user.paste(` /create ${mode}`);
+    await user.paste(" /");
     const menu = await screen.findByTestId("slash-workflow-menu");
-    click(button(commandLabel, menu));
+    await clickPanelRow(CREATE_MODE_ROWS[mode].row, menu);
     await waitFor(() => {
       expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(
         commandLabel,
@@ -588,9 +584,9 @@ test("Multiple templates keep a generic toolbar label and all references survive
   await selectTemplate(second);
   // Page bootstrap can remount the editor while the template dialogs are open.
   await user.click(await findComposerEditor());
-  await user.paste(" /create presentation");
+  await user.paste(" /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Create presentation", menu));
+  await clickPanelRow("Presentation", menu);
   await waitFor(() => {
     expect(button("Add template")).toBeInTheDocument();
   });
@@ -620,9 +616,9 @@ test("Presentation adds another template when the draft already has one", async 
   }
   await selectTemplate(first);
   await user.click(editor);
-  await user.paste(" /create presentation");
+  await user.paste(" /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Create presentation", menu));
+  await clickPanelRow("Presentation", menu);
   await waitFor(() => {
     expect(button("Add template")).toBeInTheDocument();
   });
@@ -638,21 +634,14 @@ test("Presentation adds another template when the draft already has one", async 
   });
 });
 
-test("The slash menu exposes one Create entry that opens the image style flow", async () => {
+test("The slash panel's Illustration row opens the image style flow", async () => {
   setupModels();
   const editor = await setupComposer();
   const user = userEvent.setup({ delay: null });
   await user.click(editor);
   await user.keyboard("/");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  expect(
-    queryAllByRoleFast("button", menu).filter((item) => {
-      return item.getAttribute("aria-label")?.startsWith("Create");
-    }),
-  ).toHaveLength(1);
-  click(button("Create", menu));
-  const types = await screen.findByRole("listbox", { name: "Choose a type" });
-  click(within(types).getByRole("option", { name: "Image" }));
+  await clickPanelRow("Illustration", menu);
   await waitFor(() => {
     expect(screen.getByTestId("composer-create-mode")).toHaveTextContent(
       "Create image",
@@ -668,7 +657,7 @@ test("The slash menu exposes one Create entry that opens the image style flow", 
   });
 });
 
-test("Canceling and switching Create preserve slash text and template references", async () => {
+test("Switching Create preserves slash text and template references", async () => {
   setupModels();
   const submissions: UserMessageDocument[] = [];
   mockChatLifecycle(context, {
@@ -686,31 +675,15 @@ test("Canceling and switching Create preserve slash text and template references
   }
   await selectTemplate(template);
   await user.click(editor);
-  await user.paste("Our launch /create");
+  await user.paste("Our launch /");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Create", menu));
-  const chooser = await screen.findByRole("listbox", {
-    name: "Choose a type",
-  });
-  expect(chooser).toBeVisible();
-  expect(editor).not.toBeVisible();
-  expect(button("Send")).toBeDisabled();
   expect(submissions).toHaveLength(0);
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(chooser).not.toBeInTheDocument();
-  });
-  expect(editor).toHaveTextContent("Our launch");
-  expect(composerInlineTemplates()).toHaveLength(1);
-
-  await user.paste(" /create");
-  const reopened = await screen.findByTestId("slash-workflow-menu");
-  click(button("Create", reopened));
-  const types = await screen.findByRole("listbox", { name: "Choose a type" });
-  click(within(types).getByRole("option", { name: "Presentation" }));
+  await clickPanelRow("Presentation", menu);
   const chip = await screen.findByTestId("composer-create-mode");
   expect(chip).toHaveTextContent("Create presentation");
-  expect(types).not.toBeInTheDocument();
+  expect(menu).not.toBeInTheDocument();
+  expect(editor).toHaveTextContent("Our launch");
+  expect(composerInlineTemplates()).toHaveLength(1);
   await user.paste(" /notes");
   click(screen.getByRole("combobox", { name: "Choose a type" }));
   click(await screen.findByRole("option", { name: "Image" }));
@@ -750,7 +723,7 @@ async function setupComposerWithChipCover(
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTemplateChipCover]: chipCover,
     },
   });
@@ -769,11 +742,7 @@ async function addPresentationTemplate(
   editor: HTMLElement,
   title: string,
 ): Promise<void> {
-  await chooseCommand(
-    editor,
-    "Our launch /create presentation",
-    "Create presentation",
-  );
+  await chooseCommand(editor, "Our launch /", "presentation");
   click(button("Add template"));
   await screen.findByRole("dialog");
   click(await screen.findByLabelText(`Select template ${title}`));
@@ -833,7 +802,7 @@ test("A template with no cover keeps the template glyph on its chip", async () =
   if (!template) {
     throw new Error("Expected a video template");
   }
-  await chooseCommand(editor, "Our launch /create video", "Create video");
+  await chooseCommand(editor, "Our launch /", "video");
   click(button("Add template"));
   await screen.findByRole("dialog");
   click(
@@ -849,11 +818,7 @@ test("Reopening and dismissing the in-composer picker preserves the selected sce
   setupModels();
   const editor = await setupComposer();
   const user = userEvent.setup({ delay: null });
-  await chooseCommand(
-    editor,
-    "Our quarterly update /create presentation",
-    "Create presentation",
-  );
+  await chooseCommand(editor, "Our quarterly update /", "presentation");
   const trigger = screen.getByRole("combobox", { name: "Choose a type" });
   const card = editor.closest('[data-slot="chat-composer-card"]');
   expect(card).toContainElement(trigger);

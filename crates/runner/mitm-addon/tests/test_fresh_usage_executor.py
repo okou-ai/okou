@@ -9,7 +9,7 @@ import pytest
 
 import usage
 import usage.buffer as usage_buffer
-from tests.pending_helpers import assert_current_pending
+from tests.pending_helpers import assert_pending
 from tests.usage_helpers import (
     UsageWebhookServer,
     fresh_usage_executor_context,
@@ -105,9 +105,8 @@ def test_fresh_usage_executor_uses_owned_executor_when_global_changes(tmp_path, 
 
 
 def test_fresh_usage_executor_drains_retryable_delivery_after_join(tmp_path, mitm_ctx):
-    pending_path = tmp_path / "usage-pending"
+    control_root = tmp_path / "delivery-control"
     proxy_log_path = tmp_path / "proxy.jsonl"
-    usage.set_pending_path(str(pending_path))
     timers = install_recording_usage_timer()
     server = UsageWebhookServer()
     server.queue_response(500)
@@ -131,10 +130,9 @@ def test_fresh_usage_executor_drains_retryable_delivery_after_join(tmp_path, mit
     assert server.json_bodies() == [server.json_bodies()[0]] * 3
     assert len(timers) == 1
     assert timers[0].cancelled is True
-    assert_current_pending(
-        pending_path,
+    assert_pending(
+        control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="fixture-drained",
     )

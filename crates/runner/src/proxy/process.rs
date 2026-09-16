@@ -2,8 +2,8 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead};
@@ -12,7 +12,7 @@ use tracing::{Instrument, error, info, warn};
 
 use super::control;
 use super::control::{ControlHandle, ControlTarget};
-use super::flush::{UsageFlushTarget, new_usage_state_id, usage_flush_state_guard};
+use super::delivery::{DeliveryTarget, FlushTask};
 use super::log_flush::MitmJsonlFlushHandle;
 use super::managed_process::ManagedMitmdump;
 use super::registry::{ProxyRegistryHandle, SandboxRegistration, write_empty_registry};
@@ -232,9 +232,9 @@ pub struct MitmProxy {
     crash_tx: mpsc::Sender<()>,
     /// Set to `true` during graceful `stop()` / `Drop` to suppress crash notifications.
     stopping: Arc<AtomicBool>,
-    /// Per-mitmdump-process token written by the addon to `usage-pending`.
+    /// Private control generation, rotated before every replacement launch.
     usage_state_id: String,
-    usage_flush_state: Arc<Mutex<UsageFlushTarget>>,
+    delivery_flush: Option<FlushTask>,
     control: ControlHandle,
 }
 
@@ -289,12 +289,7 @@ impl MitmProxy {
         write_empty_registry(&config.registry_path).await?;
 
         let (crash_tx, crash_rx) = mpsc::channel(1);
-        let (usage_state_id, usage_state_started_at_ms) = new_usage_state_id();
-        let usage_flush_state = Arc::new(Mutex::new(UsageFlushTarget::new(
-            usage_state_id.clone(),
-            usage_state_started_at_ms,
-            Some(Arc::clone(&runtime)),
-        )));
+        let usage_state_id = uuid::Uuid::new_v4().to_string();
         let control = ControlHandle::default();
 
         Ok((
@@ -306,7 +301,7 @@ impl MitmProxy {
                 crash_tx,
                 stopping: Arc::new(AtomicBool::new(false)),
                 usage_state_id,
-                usage_flush_state,
+                delivery_flush: None,
                 control,
             },
             crash_rx,
@@ -409,8 +404,8 @@ impl MitmProxy {
         Ok(())
     }
 
-    /// Current mitmdump usage state expected in the usage-pending state file.
-    pub fn usage_flush_target(&mut self) -> Option<UsageFlushTarget> {
+    /// Freeze the live launch; callers never follow a later replacement.
+    pub fn usage_flush_target(&mut self) -> Option<DeliveryTarget> {
         let child_exited = match self.child.as_mut()?.try_wait() {
             Ok(Some(status)) => {
                 error!(
@@ -436,62 +431,17 @@ impl MitmProxy {
         }
 
         let _child_pid = self.child.as_ref().and_then(|child| child.id())?;
-        Some(usage_flush_state_guard(&self.usage_flush_state).clone())
+        self.control.target().map(DeliveryTarget)
     }
 
-    /// Ask the running addon to flush buffered webhook work before shutdown.
+    /// Queue a bounded background control wake without blocking the main loop.
     pub fn request_usage_flush(&mut self) -> bool {
-        let Some(child) = self.child.as_mut() else {
+        let Some(target) = self.usage_flush_target() else {
             return false;
         };
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                error!(
-                    r#type = "usage_underbilling",
-                    reason = "mitm_exited_before_usage_flush",
-                    underbilling_class = "risk",
-                    component = "runner",
-                    code = status.code(),
-                    "mitmdump exited before usage flush request"
-                );
-                return false;
-            }
-            Ok(None) => {}
-            Err(e) => {
-                warn!(error = %e, "failed to query mitmdump status before usage flush request");
-            }
-        }
-
-        let signaled = child.child().is_some_and(send_usage_flush_signal);
-        if !signaled {
-            error!(
-                r#type = "usage_underbilling",
-                reason = "usage_flush_request_failed",
-                underbilling_class = "risk",
-                component = "runner",
-                "failed to request mitmdump usage flush"
-            );
-            return false;
-        }
-
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                error!(
-                    r#type = "usage_underbilling",
-                    reason = "usage_flush_request_failed",
-                    underbilling_class = "risk",
-                    component = "runner",
-                    code = status.code(),
-                    "mitmdump exited after usage flush request"
-                );
-                false
-            }
-            Ok(None) => true,
-            Err(e) => {
-                warn!(error = %e, "failed to query mitmdump status after usage flush request");
-                true
-            }
-        }
+        self.delivery_flush
+            .get_or_insert_with(FlushTask::new)
+            .request(target.0)
     }
 
     /// Transfer any lingering child and fresh parameters to the restart owner,
@@ -510,20 +460,15 @@ impl MitmProxy {
     /// then adopts the result with `complete_restart`.
     pub fn begin_restart(&mut self) -> MitmRestartParams {
         self.control.set_target(None);
+        self.delivery_flush = None;
         // Each monitor keeps its own flag: an old child's delayed EOF must
         // never be interpreted as a crash of the replacement.
         self.stopping.store(true, Ordering::Release);
         let old_child = self.child.take();
         let new_stopping = Arc::new(AtomicBool::new(false));
         self.stopping = Arc::clone(&new_stopping);
-        let (usage_state_id, usage_state_started_at_ms) = new_usage_state_id();
+        let usage_state_id = uuid::Uuid::new_v4().to_string();
         self.usage_state_id = usage_state_id.clone();
-        {
-            // Preserve publication ownership across addon identity changes.
-            let mut target = usage_flush_state_guard(&self.usage_flush_state);
-            target.expected_usage_state_id = usage_state_id.clone();
-            target.usage_state_started_at_ms = usage_state_started_at_ms;
-        }
         MitmRestartParams {
             old_child,
             config: self.config.clone(),
@@ -548,6 +493,7 @@ impl MitmProxy {
     /// Gracefully stop mitmdump (SIGTERM → timeout → SIGKILL).
     pub async fn stop(&mut self) -> RunnerResult<()> {
         self.control.set_target(None);
+        self.delivery_flush = None;
         self.stopping.store(true, Ordering::Release);
         let Some(child) = self.child.take() else {
             return Ok(());
@@ -558,6 +504,7 @@ impl MitmProxy {
     /// Immediately kill and reap mitmdump without the graceful SIGTERM window.
     pub async fn kill_now(&mut self) -> RunnerResult<()> {
         self.control.set_target(None);
+        self.delivery_flush = None;
         self.stopping.store(true, Ordering::Release);
         let Some(child) = self.child.take() else {
             return Ok(());
@@ -598,23 +545,11 @@ impl MitmProxy {
                 crash_tx,
                 stopping: Arc::new(AtomicBool::new(false)),
                 usage_state_id: "test-usage-state-id".to_string(),
-                usage_flush_state: Arc::new(Mutex::new(UsageFlushTarget::new(
-                    "test-usage-state-id".to_string(),
-                    super::flush::now_millis(),
-                    None,
-                ))),
+                delivery_flush: None,
                 control: ControlHandle::default(),
             },
             crash_rx,
         )
-    }
-
-    pub fn usage_state_id_for_test(&self) -> &str {
-        &self.usage_state_id
-    }
-
-    pub(super) fn usage_flush_state_for_test(&self) -> Arc<Mutex<UsageFlushTarget>> {
-        Arc::clone(&self.usage_flush_state)
     }
 
     pub fn set_control_directory_for_test(&self, directory: PathBuf) {
@@ -639,6 +574,7 @@ impl MitmProxy {
 impl Drop for MitmProxy {
     fn drop(&mut self) {
         self.stopping.store(true, Ordering::Release);
+        self.delivery_flush = None;
         drop(self.child.take());
     }
 }
@@ -967,17 +903,6 @@ fn find_available_port() -> RunnerResult<u16> {
         .map_err(|e| RunnerError::Internal(format!("local_addr: {e}")))?
         .port();
     Ok(port)
-}
-
-fn send_usage_flush_signal(child: &tokio::process::Child) -> bool {
-    let Some(pid) = child.id() else {
-        return false;
-    };
-    nix::sys::signal::kill(
-        nix::unistd::Pid::from_raw(pid as i32),
-        nix::sys::signal::Signal::SIGUSR1,
-    )
-    .is_ok()
 }
 
 #[cfg(test)]
@@ -2378,6 +2303,8 @@ exit 42
             .unwrap();
         proxy.set_child_for_test(child);
 
+        let control_directory = tempfile::tempdir().unwrap();
+        proxy.set_control_directory_for_test(control_directory.path().to_path_buf());
         assert!(proxy.usage_flush_target().is_some());
 
         proxy.stop().await.unwrap();
@@ -2415,61 +2342,6 @@ exit 42
         proxy.kill_now().await.unwrap();
 
         assert!(proxy.child.is_none());
-    }
-
-    #[tokio::test]
-    async fn request_usage_flush_signals_child() {
-        let dir = tempfile::tempdir().unwrap();
-        let signal_file = dir.path().join("usage-flush-requested");
-
-        let (mut proxy, _crash_rx) = MitmProxy::noop();
-        let mut command = tokio::process::Command::new("python3");
-        command
-            .arg("-c")
-            .arg(
-                r#"
-import os
-import signal
-
-import sys
-
-signal_file = sys.argv[1]
-usage_signal = signal.SIGUSR1
-signal.pthread_sigmask(signal.SIG_BLOCK, {usage_signal})
-os.write(1, b"ready\n")
-while True:
-    received_signal = signal.sigwait({usage_signal})
-    if received_signal == usage_signal:
-        fd = os.open(signal_file, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o644)
-        os.close(fd)
-        os.write(1, b"signaled\n")
-"#,
-            )
-            .arg(&signal_file)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true);
-        let mut child = command.spawn().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let mut ready_lines = tokio::io::BufReader::new(stdout).lines();
-        proxy.set_child_for_test(child);
-
-        let ready = tokio::time::timeout(Duration::from_secs(2), ready_lines.next_line())
-            .await
-            .expect("child did not become ready for SIGUSR1")
-            .unwrap();
-        assert_eq!(ready.as_deref(), Some("ready"));
-
-        assert!(proxy.request_usage_flush());
-
-        let signaled = tokio::time::timeout(Duration::from_secs(2), ready_lines.next_line())
-            .await
-            .expect("child did not observe SIGUSR1")
-            .unwrap();
-        assert_eq!(signaled.as_deref(), Some("signaled"));
-        assert!(signal_file.exists(), "child did not observe SIGUSR1");
-        proxy.kill_now().await.unwrap();
     }
 
     #[test]

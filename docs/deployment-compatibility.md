@@ -909,16 +909,42 @@ uses persisted run ownership to display a platform-owned balance failure as
 metadata. Model unavailability is presentation, not a completion failure reason.
 The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
 use generic failure copy for an unknown token instead of rejecting the run or
-showing the vm0 recharge card. No schema migration is required.
+showing the vm0 recharge card. The token addition required no schema migration.
 
-Prefer API readers before the runner writer for this change. Old runners and
-retained rows can still have missing reasons or legacy upstream affordability
-text labeled `insufficient_credits`; exact legacy presentation remains supported
-without inferring an unobserved status or suppressing unknown diagnostics. Remove
-that compatibility only after old runners drain and affected retained rows are
-gone or migrated. Public run, activity, HTTP callback, model-error event, and network-export
-projections keep built-in balance details internal; rolling back these readers
-can restore the prior disclosure behavior even though the tokens remain readable.
+The #34219 cleanup follows the reader/writer rollout in #34251. The production
+read on 2026-09-16 found API `1.607.0`, App `0.902.2`, and all three running
+Runners on `0.194.6`, containing the owner-aware reader and structured writer
+commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`.
+
+Historical errors remain as stored, including missing or misclassified failure
+reasons. No data migration or repair is required. The user accepted that those
+records may display raw errors or the old incorrect credit classification after
+terminal text inference is removed. Terminal readers use the persisted cause.
+Current failed provider-event detection and network-export redaction remain.
+The production rollback resolver enforces the commit above for both the API
+target and its independently resolved Runner tag, preventing an older writer or
+public reader from returning for new runs.
+
+This change does not certify alert delivery. #34219 remains open for actual
+built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+verification. Runner INFO events are below the Axiom upload threshold, and the
+investigation token could not read monitor configuration.
+
+Pi queue expiry adds `provider_queue_timeout` under the same open-token
+contract. Prefer API/App readers and terminal policy before the patched CLI;
+Guest and Runner typed contracts ship as a supported pair. An old API's
+transient allowlist excludes the new token. Old Guests may ignore the optional
+runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
+generic server/overload evidence from exact terminal text. It cannot undo
+retries already performed by an old SDK. No new protocol, database column or
+session format is introduced, and local-deadline handoff is unchanged.
+
+Queued or active commit-addressed contexts can retain the old CLI. Release
+acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
+the controlled fixture against that artifact, and observe a fixed 24-hour
+window for unique affected runs, actual statuses/attempts and built-in warning
+visibility. No occurrence means no observed exposure, not proven recovery.
+Rollback can restore old retry behavior; retained reason tokens stay readable.
 
 Avoid one-shot protocol flips:
 
@@ -1464,7 +1490,15 @@ Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
 The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. With SSH enabled, Access management and
+schema or private Runner contract. Unified host forms also accept inline Access
+creation in the host write request. Existing `configId` selections remain valid;
+responses still return only the resolved binding. Deploy API support before the
+App uses inline creation. An older API rejects that write alternative; staff
+clients should refresh after the current API/App deployment, without a second
+save path or automatic fallback. Existing rows and older App requests remain
+valid, and Runner versions do not need a new decoder for this management change.
+
+With SSH enabled, Access management and
 protected host creation are available without an additional opt-in. With SSH off,
 both transports' management, guest inventory and fresh authority are unavailable.
 Already-bound hosts are never silently converted to Direct. Removing a binding

@@ -15,7 +15,6 @@ import pytest
 
 import jsonl_writer
 import runner_control
-import runner_flush_lifecycle
 from tests.control_helpers import (
     control_connection,
     exchange,
@@ -84,18 +83,17 @@ def saturated_flush_clients(
         yield connections
 
 
-def test_flush_progresses_with_delivery_owner_blocked_and_no_main_loop(tmp_path, control):
+def test_flush_progresses_without_main_loop(tmp_path, control):
     run_id = str(uuid4())
     path = tmp_path / f"network-{run_id}.jsonl"
-    # The same owner lock held by a running billing drain. The calling thread
-    # has no running asyncio reactor and blocks on the actual control socket.
-    with runner_flush_lifecycle._usage_flush_signal_lock:
-        jsonl_writer.write_jsonl_line(str(path), b'{"action":"ALLOW"}\n', "network")
-        result = exchange(tmp_path, log_flush_request(path, run_id))
-        data = _mapping(result["data"])
-        assert data["state"] == "processed"
-        assert data["pending"] == 0
-        assert path.read_bytes() == b'{"action":"ALLOW"}\n'
+    # The calling thread has no running asyncio reactor and blocks on the
+    # actual control socket. Blocked HTTP delivery is covered in delivery tests.
+    jsonl_writer.write_jsonl_line(str(path), b'{"action":"ALLOW"}\n', "network")
+    result = exchange(tmp_path, log_flush_request(path, run_id))
+    data = _mapping(result["data"])
+    assert data["state"] == "processed"
+    assert data["pending"] == 0
+    assert path.read_bytes() == b'{"action":"ALLOW"}\n'
 
 
 def test_cancelled_clients_retain_bounded_prefix_capacity(tmp_path, control):

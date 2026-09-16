@@ -106,7 +106,6 @@ test("collapses those buttons into the add menu's rows", async () => {
 test("leaves starting a generation to the task chips", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
-    [FeatureSwitchKey.ComposerCreateCommands]: true,
     [FeatureSwitchKey.ComposerTaskChips]: true,
   });
 

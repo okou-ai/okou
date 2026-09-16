@@ -132,6 +132,29 @@ native streaming path. Failed native assistant messages carry this evidence in
 `okou_model_request`. Both stream iteration and `result()` expose the same
 diagnostic. Bedrock keeps its native SDK transport without fetch diagnostics.
 
+Request rejection and response-body read failure also retain optional
+`transportFailure` before the SDK reduces the exception to display text. It
+contains the observed `request` or `response_body` phase, whether the model caller's
+signal was already aborted, and allowlisted exception names and direct/nested
+Node or Undici codes. Causal inspection stops after four nested errors. It never
+includes messages, stack traces, URLs, headers, bodies, addresses or raw causes.
+Signal state reports the model caller, not an SDK-created timeout signal, and
+does not establish user cancellation. SDK-owned timeouts that do not reject a
+fetch/body read retain their existing timeout diagnostics. A bare `terminated`
+result still cannot establish the original cause.
+
+The response observer uses one demand-driven reader, forwards original bytes
+and errors, propagates cancellation, and releases its reader on termination.
+Evidence resets on every fetch attempt and is published only on a failed
+assistant message; success and abort retain their existing lifecycle. API-first
+failure telemetry and Runner terminal logs carry the same reduced evidence.
+Semantic errors and non-fetch transports can legitimately omit it. Older Guest
+readers ignore the additive field and current readers accept its absence; no
+public reason token or database migration changes. Verify both the deployed CLI
+and Runner artifact before attributing production diagnostics to this change,
+then observe the exact failure signature in a bounded window. Historical errors
+cannot be retrospectively diagnosed from the new fields.
+
 Guest projects this evidence into the failed terminal result and optional
 `FailureDiagnostic.modelRequest`. A failed retry records the attempt number and
 limit from its native `auto_retry_start` event. A scheduled sleep does not count
@@ -159,8 +182,9 @@ native classifiers.
 API-first and Guest use the allowlisted reason from the selected terminal
 message before its display text. The Guest's public result carries it separately
 from `modelRequest`, whose shape is unchanged. Older Guests ignore the additive
-runtime field; newer Guests still accept messages without it. All reasons
-already exist in the API/Runner taxonomy, so no database migration is needed.
+runtime field; newer Guests still accept messages without it. The open reason
+token contract accepts additive API/Runner taxonomy entries without a database
+migration.
 
 A settled final Pi `length` response fails with `output_token_limit`; partial
 assistant text stays in its event. API-first still transfers a pending tool
@@ -168,6 +192,24 @@ continuation instead of treating it as a final truncated answer. Transient
 API-first failures retain the existing sandbox recovery and ownership guards.
 Retry budgets, cancellation, Runner logging rules and user-owned-provider
 warning suppression are unchanged.
+
+The exact failed-provider sentence "We were unable to start processing your
+request within the 900-second timeout limit. Please try again later." is
+`provider_queue_timeout`. Recognized SDK error envelopes and code prefixes are
+accepted; generic timeouts, other durations and quoted successful output are
+not. This reason refines generic server/overload evidence, while explicit
+credential, billing, usage and context reasons keep precedence. Actual HTTP
+status is retained, including a failed stream delivered with HTTP 200.
+
+The pinned pi-ai patch vetoes further transport, native assistant and summary
+retries for this result, including an upstream retry hint. API-first also keeps
+it outside the Sandbox recovery allowlist. Completed tools, failed history,
+cancellation and independently accepted input retain native ownership. This
+does not shorten the first provider wait or introduce a total run timer.
+Presentation stays a generic failed run without a replay or model-switch action;
+built-in completion warnings remain visible. See the
+[patch contract](../turbo/patches/pi-pending-tools.md#provider-declared-queue-expiry)
+for removal criteria.
 
 ## Shared bootstrap, distinct session policies
 

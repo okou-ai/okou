@@ -200,23 +200,37 @@ of the Service Token.
 
 When SSH is available, `/connectors/ssh` includes a **Cloudflare Access** view beside
 **Hosts** and **Credentials**. It lists the configuration count and affected hosts,
-and supports adding, renaming, replacing a Service Token and deleting unused
+and supports adding, editing and deleting unused
 configurations. Referenced configurations cannot be deleted until their hosts are
 rebound or deleted. Client ID and Client Secret are never read back, including
-when replacing a token.
+when replacing a token. Both resource editors show public metadata and an
+explicit replacement checkbox: **Replace authentication** for an SSH credential,
+**Replace Service Token** for Access. Unchecked replacement fields are absent,
+not masked readback. Only changed metadata and explicitly requested replacements
+are submitted; effective shared changes apply to the displayed referencing hosts.
 
 Host forms explicitly select **Direct** or **Cloudflare Access**. Direct uses a
 public hostname/IP and a configurable SSH port. Access uses the published hostname
-and fixed gateway port 443, plus an existing Access configuration. The SSH login
-credential is selected independently. **Create Access configuration** opens a
-focused step in the same dialog; returning preserves the host draft and SSH
-secret inputs. Success selects the new configuration. That saved configuration
-remains available if the subsequent host save fails or is cancelled; retrying the
-host save reuses it rather than creating another configuration.
+and fixed gateway port 443. Host, Access configuration and SSH credential are
+separate sections of one form. Both resource selectors offer existing resources
+or an inline **Create new** form. An empty list initially expands creation, one
+resource is visibly selected, and multiple resources require a choice. These
+defaults apply once, after successful loading; notifications never reset a choice,
+and loading errors are not empty lists. Edits retain their saved bindings. A
+deleted selection requires explicit reselection or creation.
+
+One host Save creates any inline resources and binds them in the same owner-locked
+database transaction. Validation, reference or version failure creates neither
+resource nor host. Cancelling before Save creates nothing. Independent **Add**
+actions in the resource views intentionally save reusable resources without a
+host. Selecting an existing resource never edits it; rebinding or deleting a host
+does not delete the previously referenced resource. Saving does not test connectivity.
 
 Pending and failed saves retain input in the mounted form. Cancellation,
 navigation, owner changes and loss of feature access clear secret inputs and
-cancel pending UI work. Stale Access revisions preserve the draft and display
+cancel pending UI work. Switching away from new-resource or secret-replacement
+fields clears their secrets; Direct excludes Access fields. Stale Credential and
+Access revisions preserve the draft and display
 latest metadata and affected hosts; the user must explicitly review it before
 saving against the new revision. A further concurrent change still fails the
 revision check. Load failures offer **Retry** and remain distinct from feature
@@ -236,6 +250,14 @@ An omitted transport on edit preserves the current binding. The Platform submits
 the selected transport explicitly, including when retrying after reviewing a
 concurrent change. Switching to Direct requires SSH eligibility and the current
 host generation.
+
+Host writes additionally accept
+`transport: {type: "cloudflare_access", create: {name, credentials: {clientId, clientSecret}}}`.
+This secret-bearing write selection is separate from the resolved metadata response;
+Runner authority and stored bindings are unchanged. Failed responses do not prove
+rollback after an ambiguous network loss. Do not automatically replay saves;
+[#34503](https://github.com/vm0-ai/okou/issues/34503) tracks explicit save-result
+confirmation and duplicate prevention separately.
 
 See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
 and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).

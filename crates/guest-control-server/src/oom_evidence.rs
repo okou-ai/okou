@@ -75,6 +75,7 @@ impl EvidenceMonitor {
             guest_boot_id,
             started_boottime_us: started,
             sampled_at: timestamp(),
+            runtime_progress_at: None,
             kernel_cursor: None,
             kernel_status,
             groups: initial.clone(),
@@ -92,6 +93,20 @@ impl EvidenceMonitor {
             kernel_status,
             last_sequence: None,
         })
+    }
+
+    pub(crate) fn record_runtime_progress(&mut self, progress: Option<u64>) {
+        if let Some(progress) = progress
+            && SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .is_ok_and(|now| u128::from(progress) <= now.as_millis())
+            && self
+                .evidence
+                .runtime_progress_at
+                .is_none_or(|previous| progress > previous)
+        {
+            self.evidence.runtime_progress_at = Some(progress);
+        }
     }
 
     pub(crate) fn capture(&mut self, reason: CaptureReason) -> OomEvidence {

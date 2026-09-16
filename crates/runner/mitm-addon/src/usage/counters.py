@@ -1,41 +1,20 @@
-"""Pending counters for in-flight flows, buffered work, and pending reports.
+"""Coherent process-local delivery observations; never a billing receipt."""
 
-The runner reads the pending-count file before sending SIGTERM so it can
-wait until flows are processed, buffered usage and retained reports are
-enqueued, and admitted reports are delivered. Counter mutations update memory
-only; runner-requested snapshots are JSON written atomically (tmp +
-``Path.replace``) so the runner can reject stale state from an old mitmproxy
-process or old flush request.
-"""
-
-import os
 import threading
-import time
-import uuid
 from dataclasses import dataclass
-from pathlib import Path
-
-import runner_flush_request
-import state_file
+from typing import Literal
 
 from .underbilling import log_usage_underbilling
 
+DeliveryOutcome = Literal["success", "retryable_failure", "permanent_failure"]
+
 _counter_lock = threading.Lock()
-_pending_state_publisher = state_file.AtomicJsonPublisher()
 _buffered_usage_events = 0
-_pending_path = ""
-_usage_state_id = str(uuid.uuid4())
-# One-shot guard: sustained pending snapshot write failure makes the runner
-# hit the bounded usage-drain timeout without any local signal pointing at
-# filesystem trouble.  Emit one error signal per addon process on first failure —
-# enough to seed the operator investigation without spamming logs under
-# persistent FS pressure.  Deliberately uses the canonical underbilling
-# helper's process event because the per-job proxy log shares the same
-# filesystem we just failed to write and is likely affected by the same root
-# cause. The runner parses the versioned event envelope and re-emits it as
-# structured tracing fields.
-_pending_write_error_logged = False
-_FLUSH_REQUEST_FILE = "usage-flush-request"
+_outcomes: dict[DeliveryOutcome, int] = {
+    "success": 0,
+    "retryable_failure": 0,
+    "permanent_failure": 0,
+}
 
 
 @dataclass
@@ -53,99 +32,34 @@ _pending_reports = _PendingCounter("reports")
 def reset_for_tests() -> None:
     """Reset mutable counter state between tests."""
     global _buffered_usage_events
-    global _pending_path, _usage_state_id, _pending_write_error_logged
     with _counter_lock:
         for counter in (_in_flight_flows, _buffered_reports, _pending_reports):
             counter.value = 0
             counter.underflow_logged = False
         _buffered_usage_events = 0
-        _pending_path = ""
-        _usage_state_id = str(uuid.uuid4())
-        _pending_write_error_logged = False
+        for outcome in _outcomes:
+            _outcomes[outcome] = 0
 
 
-def set_pending_path(path: str, usage_state_id: str | None = None) -> None:
-    """Set the path/state id for the pending-count file and write current state."""
-    global _pending_path, _usage_state_id
+def delivery_snapshot() -> dict[str, object]:
+    """Copy outstanding work and known webhook outcomes without I/O.
+
+    Outcomes count completed delivery attempts (including the existing HTTP
+    retry cycle), not individual API attempts, source records or billable units.
+    They are process-local and do not account for every pre-admission discard.
+    """
     with _counter_lock:
-        _pending_path = path
-        if usage_state_id:
-            _usage_state_id = usage_state_id
-        pending_path, state = _pending_snapshot_locked()
-    _write_pending_state(pending_path, state)
+        return {
+            "flows": _in_flight_flows.value,
+            "buffered": _buffered_usage_events + _buffered_reports.value,
+            "reports": _pending_reports.value,
+            "outcomes": dict(_outcomes),
+        }
 
 
-def current_usage_state_id() -> str:
-    """Return the current runner-generated usage state id."""
+def record_delivery_outcome(outcome: DeliveryOutcome) -> None:
     with _counter_lock:
-        return _usage_state_id
-
-
-def _pending_snapshot_locked(flush_request_id: str | None = None) -> tuple[str, dict[str, object]]:
-    state: dict[str, object] = {
-        "pid": os.getpid(),
-        "usageStateId": _usage_state_id,
-        "updatedAtMs": int(time.time() * 1000),
-        "flows": _in_flight_flows.value,
-        "buffered": _buffered_usage_events + _buffered_reports.value,
-        "reports": _pending_reports.value,
-    }
-    if flush_request_id:
-        state["flushRequestId"] = flush_request_id
-    return _pending_path, state
-
-
-def write_pending_snapshot(flush_request_id: str | None = None) -> None:
-    """Write an explicit pending-count snapshot for runner shutdown polling."""
-    with _counter_lock:
-        pending_path, state = _pending_snapshot_locked(flush_request_id)
-    _write_pending_state(pending_path, state)
-
-
-def read_usage_flush_request_id() -> str | None:
-    """Read the current runner usage-flush request id if it matches this addon."""
-    with _counter_lock:
-        pending_path = _pending_path
-        usage_state_id = _usage_state_id
-    if not pending_path:
-        return None
-
-    marker_path = Path(pending_path).with_name(_FLUSH_REQUEST_FILE)
-    request = runner_flush_request.read_runner_flush_request(
-        marker_path,
-        get_usage_state_id=lambda: usage_state_id,
-    )
-    if request is None:
-        return None
-    return request.flush_request_id
-
-
-def _write_pending_state(pending_path: str, state: dict[str, object]) -> None:
-    """Atomically write a pending-count snapshot to file."""
-    global _pending_write_error_logged
-    if not pending_path:
-        return
-    try:
-        _pending_state_publisher.publish(Path(pending_path), state)
-    except OSError as exc:
-        # Best-effort: the runner polls this file to wait for in-flight
-        # flows, buffered work, and pending reports to drain before
-        # SIGTERM. Transient write failures are upper-bounded by the
-        # runner's drain timeout and mitmdump stop timeout.
-        if not _pending_write_error_logged:
-            _pending_write_error_logged = True
-            log_usage_underbilling(
-                "",
-                (
-                    "Failed to write pending count. Subsequent failures in this process will "
-                    "be silent; runner shutdown may hit the bounded proxy stop timeout."
-                ),
-                "pending_snapshot_write_failed",
-                "risk",
-                error=str(exc),
-                error_type=type(exc).__name__,
-                pending_path=pending_path,
-            )
+        _outcomes[outcome] += 1
 
 
 def increment_in_flight_flows() -> None:

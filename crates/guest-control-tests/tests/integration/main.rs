@@ -9,6 +9,7 @@
 mod exec;
 mod exec_control;
 mod file_write_status;
+mod read_file;
 mod shutdown;
 mod storage_manifest;
 mod support;

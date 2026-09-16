@@ -1,3 +1,7 @@
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
@@ -13446,6 +13450,9 @@ describe("usage pack allocation management", () => {
       const billing = await readBillingStatus(fixture);
       expect(billing.showUsagePack).toBeTruthy();
 
+      context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
+        { id: `inv_${randomUUID()}` },
+      );
       const client = setupApp({ context, routes: orgInviteRoutes })(
         orgInviteContract,
       );
@@ -14749,6 +14756,7 @@ describe("usage pack allocation management", () => {
         redirectUrl: "https://app.okou.ai",
         privateMetadata: {
           usagePackInvitationPurchaseId: activePurchaseId,
+          getStartedClaimId: expect.any(String),
         },
       }),
     );
@@ -15186,9 +15194,17 @@ describe("usage pack allocation management", () => {
 
   it("activates one paid invitation exactly once after Clerk acceptance", async () => {
     const purchase = await beginInvitationPurchase();
+    await setGetStartedEnabled(context, purchase.fixture);
     const invitationId = `inv_paid_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);
     await payInvitationPurchase(purchase, invitationId);
+    expect(
+      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
+        (q) => {
+          return q.key === "invite";
+        },
+      ),
+    ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
 
     const pending = await readUsagePackState(
       purchase.fixture.orgId,
@@ -15287,6 +15303,13 @@ describe("usage pack allocation management", () => {
         idempotencyKey: expect.stringContaining(purchase.purchaseId),
       }),
     );
+    expect(
+      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
+        (q) => {
+          return q.key === "invite";
+        },
+      ),
+    ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
   });
 
   it("activates one paid invitation exactly once after Clerk creates the membership", async () => {

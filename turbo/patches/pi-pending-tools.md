@@ -107,6 +107,24 @@ to the sandbox's native continuation. `MemoryPiSession` remains byte-backed.
 The restricted Phase 2 system-prompt equality check includes the exact trailing
 newline added by 0.85.1; its tools, model, ownership and prompt body are unchanged.
 
+## Provider-declared queue expiry
+
+For #34461, the pi-ai patch shares one exact-message predicate between
+`isRetryableProviderError` and `isRetryableAssistantError`. Both reject the
+observed 900-second queue-expiry failure before generic timeout/5xx matching
+or retry hints. Error objects, messages, ordinary backoff and retry settings
+remain unchanged. The same native assistant predicate owns summary retries.
+`provider-queue-timeout.test.ts` exercises real HTTP and stream failures,
+native session settlement, an earlier transient, completed tools, cancellation
+and independent accepted input. The shared provider-failure fixture protects
+diagnostic precedence in TypeScript and Rust.
+
+Remove these hunks and their helper together only when the pinned upstream SDK
+implements the same terminal behavior at both retry owners and these boundary
+tests pass against it. A version bump alone is insufficient. Regenerate the
+patch and pnpm hash using `pnpm patch` / `pnpm patch-commit`; retain the other
+independent integration hunks.
+
 ## Session compatibility
 
 `src/test/fixtures/pi-0.84.1-session.jsonl` in `pi-agent-runtime` was generated

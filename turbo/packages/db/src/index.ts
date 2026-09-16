@@ -1,3 +1,4 @@
+import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
 import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
@@ -146,6 +147,7 @@ import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...getStartedClaimSchema,
   ...accountErasureSchema,
   ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,

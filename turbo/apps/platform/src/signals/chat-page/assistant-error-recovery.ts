@@ -248,6 +248,7 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   provider_rate_limited: null,
   provider_overloaded: "model-capacity",
   provider_stream_timeout: null,
+  provider_queue_timeout: null,
   provider_server_error: null,
   response_connection_lost: null,
   safety_policy_refusal: null,

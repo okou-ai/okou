@@ -540,7 +540,6 @@ test("Intro Video never displays or submits the preceding Creative Video setting
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.IntroVideo]: true,
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });

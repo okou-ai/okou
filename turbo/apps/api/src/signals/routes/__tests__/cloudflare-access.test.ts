@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import {
   sshConnectionsContract,
   sshConnectionResponseSchema,
@@ -67,6 +68,199 @@ const connections = () => {
     sshConnectionsContract,
   );
 };
+const credentials = () => {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshCredentialsContract,
+  );
+};
+
+async function resources() {
+  return {
+    hosts: (await accept(connections().list({ headers }), [200])).body
+      .connections,
+    credentials: (await accept(credentials().list({ headers }), [200])).body
+      .credentials,
+    configs: (await accept(configs().list({ headers }), [200])).body.configs,
+  };
+}
+
+describe("inline SSH resource creation", () => {
+  const login = {
+    name: "Inline login",
+    username: "deploy",
+    authentication: {
+      method: "password" as const,
+      password: "inline-password-canary",
+    },
+  };
+  const gateway = { name: "Inline gateway", credentials: token };
+
+  it.each(["create", "update"] as const)(
+    "%s supports each reuse/new combination and returns only resolved metadata",
+    async (operation) => {
+      await owner();
+      const existingConfig = await config();
+      const existingHost = await host(existingConfig.id);
+      let current = existingHost;
+      for (const newAccess of [false, true]) {
+        for (const newCredential of [false, true]) {
+          const before = await resources();
+          const fields = {
+            displayName: "Combined host",
+            host: "new.example.com",
+            port: 443,
+            credential: newCredential
+              ? { create: login }
+              : { id: existingHost.credentialId },
+            transport: newAccess
+              ? { type: "cloudflare_access" as const, create: gateway }
+              : {
+                  type: "cloudflare_access" as const,
+                  configId: existingConfig.id,
+                },
+          };
+          const result =
+            operation === "create"
+              ? (
+                  await accept(
+                    connections().create({ headers, body: fields }),
+                    [201],
+                  )
+                ).body
+              : (
+                  await accept(
+                    connections().update({
+                      headers,
+                      params: { connectionId: current.id },
+                      body: {
+                        ...fields,
+                        expectedGeneration: current.generation,
+                      },
+                    }),
+                    [200],
+                  )
+                ).body;
+          current = result;
+          const parsed = sshConnectionResponseSchema.parse(result);
+          expect(parsed).toStrictEqual(result);
+          expect(JSON.stringify(result)).not.toContain("canary");
+          expect(result).toMatchObject({
+            transport: {
+              type: "cloudflare_access",
+              configId: expect.any(String),
+            },
+          });
+          const after = await resources();
+          expect(after.hosts).toHaveLength(
+            before.hosts.length + (operation === "create" ? 1 : 0),
+          );
+          expect(after.credentials).toHaveLength(
+            before.credentials.length + Number(newCredential),
+          );
+          expect(after.configs).toHaveLength(
+            before.configs.length + Number(newAccess),
+          );
+          expect(after.hosts).toContainEqual(result);
+          expect(
+            after.credentials.find((entry) => {
+              return entry.id === result.credentialId;
+            })?.hosts,
+          ).toContainEqual({ id: result.id, displayName: result.displayName });
+          if (!("transport" in parsed)) {
+            throw new Error("Missing protected transport");
+          }
+          const selectedConfigId = parsed.transport.configId;
+          expect(
+            after.configs.find((entry) => {
+              return entry.id === selectedConfigId;
+            })?.hosts,
+          ).toContainEqual({ id: result.id, displayName: result.displayName });
+        }
+      }
+    },
+  );
+
+  it("rejects invalid references, destinations and stale versions without creating either resource", async () => {
+    const other = await owner();
+    const otherConfig = await config();
+    const otherHost = await host();
+    await owner({ orgId: other.orgId });
+    const existingHost = await host();
+    const initial = await resources();
+    const fields = {
+      displayName: "Rejected host",
+      host: "ssh.example.com",
+      port: 443,
+      credential: { create: login },
+      transport: { type: "cloudflare_access" as const, create: gateway },
+    };
+    for (const credentialId of [randomUUID(), otherHost.credentialId]) {
+      await accept(
+        connections().create({
+          headers,
+          body: { ...fields, credential: { id: credentialId } },
+        }),
+        [404],
+      );
+      await accept(
+        connections().update({
+          headers,
+          params: { connectionId: existingHost.id },
+          body: {
+            ...fields,
+            expectedGeneration: existingHost.generation,
+            credential: { id: credentialId },
+          },
+        }),
+        [404],
+      );
+    }
+    for (const configId of [randomUUID(), otherConfig.id]) {
+      const transport = { type: "cloudflare_access" as const, configId };
+      await accept(
+        connections().create({ headers, body: { ...fields, transport } }),
+        [404],
+      );
+      await accept(
+        connections().update({
+          headers,
+          params: { connectionId: existingHost.id },
+          body: {
+            ...fields,
+            expectedGeneration: existingHost.generation,
+            transport,
+          },
+        }),
+        [404],
+      );
+    }
+    await accept(
+      connections().create({ headers, body: { ...fields, host: "127.0.0.1" } }),
+      [400],
+    );
+    await accept(
+      connections().update({
+        headers,
+        params: { connectionId: existingHost.id },
+        body: {
+          ...fields,
+          expectedGeneration: existingHost.generation,
+          port: 22,
+        },
+      }),
+      [400],
+    );
+    await accept(
+      connections().update({
+        headers,
+        params: { connectionId: existingHost.id },
+        body: { ...fields, expectedGeneration: existingHost.generation + 1 },
+      }),
+      [409],
+    );
+    await expect(resources()).resolves.toStrictEqual(initial);
+  });
+});
 const runner = () => {
   return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
 };

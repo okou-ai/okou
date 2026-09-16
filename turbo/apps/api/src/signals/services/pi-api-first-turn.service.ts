@@ -2538,6 +2538,9 @@ function modelFailureTelemetry(
         ...(diagnostic.httpStatus === undefined
           ? {}
           : { modelFailureHttpStatus: diagnostic.httpStatus }),
+        ...(diagnostic.transportFailure
+          ? { modelTransportFailure: diagnostic.transportFailure }
+          : {}),
       }
     : {};
 }

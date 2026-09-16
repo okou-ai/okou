@@ -722,6 +722,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   provider_rate_limited: "generic",
   provider_overloaded: "overloaded",
   provider_stream_timeout: "generic",
+  provider_queue_timeout: "generic",
   provider_server_error: "generic",
   response_connection_lost: "generic",
   safety_policy_refusal: "content-policy",
@@ -773,7 +774,6 @@ function formatStructuredRunError(params: {
     case "provider-balance": {
       return formatRunBalanceError({
         failureReason: params.failureReason,
-        message: params.errorMessage,
         modelProvider: params.modelProviderType,
       })!;
     }
@@ -841,18 +841,6 @@ export function formatRunErrorForExternalSurface(params: {
 }): string {
   const errorMessage = params.message.trim() || "Run failed";
   const modelProviderType = params.modelProviderType;
-  if ([undefined, "insufficient_credits"].includes(params.failureReason)) {
-    const balanceMessage = formatRunBalanceError({
-      failureReason: params.failureReason,
-      message: errorMessage,
-      modelProvider: modelProviderType,
-      framework: params.framework,
-    });
-    if (balanceMessage !== undefined) {
-      return balanceMessage;
-    }
-  }
-
   if (params.failureReason !== undefined) {
     return formatStructuredRunError({
       failureReason: params.failureReason,
