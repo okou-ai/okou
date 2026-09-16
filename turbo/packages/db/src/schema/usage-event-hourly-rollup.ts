@@ -45,21 +45,11 @@ export const usageEventHourlyRollup = pgTable(
     shortWindowId: uuid("short_window_id"),
     weeklyWindowId: uuid("weekly_window_id"),
     quantity: bigint("quantity", { mode: "number" }).notNull(),
-    // Additive provenance retained when raw usage is compacted.
-    nonDeduplicatedQuantity: bigint("non_deduplicated_quantity", {
-      mode: "number",
-    })
-      .notNull()
-      .default(0),
     creditsCharged: bigint("credits_charged", { mode: "number" }).notNull(),
     allowanceUnits: bigint("allowance_units", { mode: "number" }).notNull(),
   },
   (table) => {
     return [
-      check(
-        "chk_usage_event_hourly_non_deduplicated_quantity",
-        sql`${table.nonDeduplicatedQuantity} >= 0 AND ${table.nonDeduplicatedQuantity} <= ${table.quantity}`,
-      ),
       index("idx_usage_event_hourly_rollup_billing_run").on(table.billingRunId),
       check(
         "usage_event_hourly_rollup_billing_context_check",

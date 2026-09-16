@@ -500,7 +500,6 @@ async function insertUsageEvent(
     readonly provider?: string;
     readonly category?: string;
     readonly quantity?: number;
-    readonly nonDeduplicatedQuantity?: number;
     readonly status?: string;
     readonly creditsCharged?: number;
     readonly idempotencyKey?: string;
@@ -529,7 +528,6 @@ async function insertUsageEvent(
         provider: args.provider ?? "x",
         category: args.category ?? "tweet.read",
         quantity: args.quantity ?? 1,
-        nonDeduplicatedQuantity: args.nonDeduplicatedQuantity,
         status,
         creditsCharged: args.creditsCharged ?? null,
         billingError: args.billingError ?? null,
@@ -815,7 +813,6 @@ async function materializeHourlyUsage(
         shortWindowId: usageAllowanceAllocations.shortWindowId,
         weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
         quantity: usageEvent.quantity,
-        nonDeduplicatedQuantity: usageEvent.nonDeduplicatedQuantity,
         creditsCharged: usageEvent.creditsCharged,
         allowanceUnits: usageAllowanceAllocations.unitsApplied,
       })
@@ -852,7 +849,6 @@ async function materializeHourlyUsage(
           shortWindowId: row.shortWindowId,
           weeklyWindowId: row.weeklyWindowId,
           quantity: row.quantity,
-          nonDeduplicatedQuantity: row.nonDeduplicatedQuantity,
           creditsCharged: row.creditsCharged ?? 0,
           allowanceUnits: row.allowanceUnits ?? 0,
         };
@@ -1083,7 +1079,6 @@ async function mutateUsageStateEventWriteState(
         provider: body.provider,
         category: body.category,
         quantity: body.quantity,
-        nonDeduplicatedQuantity: body.non_deduplicated_quantity,
         status: body.status,
         creditsCharged: body.credits_charged,
         idempotencyKey: body.idempotency_key,

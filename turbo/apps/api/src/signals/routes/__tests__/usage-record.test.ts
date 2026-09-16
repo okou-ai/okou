@@ -4,7 +4,6 @@ import { createStore } from "ccstate";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { mapsContract } from "@okouai/api-contracts/contracts/maps";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
-import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
 
@@ -26,15 +25,12 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import {
-  attachUsageAllowance$,
-  insertUsageEvent$,
   materializeHourlyUsage$,
   readUsageStorageCounts$,
   seedRun$,
 } from "./helpers/usage-state";
 import { mapsRoutes } from "../maps";
 import { usageRecordRoutes } from "../usage-record";
-import { testUsageStateRoutes } from "../test-usage-state";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -348,207 +344,10 @@ function uniqueProvider(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
-async function compactUsageRecord(orgId: string) {
-  return await accept(
-    setupApp({ context, routes: testUsageStateRoutes })(
-      testUsageStateContract,
-    ).compact({ body: { orgId } }),
-    [200],
-  );
-}
-
 describe("GET /api/usage/record", () => {
   afterEach(() => {
     clearMockNow();
   });
-
-  it("preserves non-deduplicable quantities across raw and repeated hourly consolidation", async () => {
-    mockNow(nowDate());
-    const fixture = await entitledRecordActor();
-    const orgId = fixture.actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an org-scoped actor");
-    }
-    const run = await createUnthreadedRun(fixture.actor, {
-      prompt: "Non-deduplicable resource usage",
-      triggerSource: "slack",
-    });
-    const processedAt = new Date(nowDate().getTime() - 5 * DAY_MS);
-    // Resource-aware production writers are a later slice. Seed their finalized
-    // facts through the existing fixture boundary and verify customer APIs.
-    const usage = {
-      orgId,
-      userId: fixture.actor.userId,
-      runId: run.runId,
-      kind: "connector",
-      provider: "x",
-      category: "posts.read",
-      status: "processed",
-      processedAt,
-    };
-    await store.set(
-      insertUsageEvent$,
-      { ...usage, quantity: 5, nonDeduplicatedQuantity: 2, creditsCharged: 15 },
-      context.signal,
-    );
-    const read = async () => {
-      mocks.clerk.session(fixture.actor.userId, orgId);
-      return await accept(
-        apiClient().get({
-          query: { range: "7d", tz: "UTC" },
-          headers: authHeaders(),
-        }),
-        [200],
-      );
-    };
-    const initial = await read();
-    expect(initial.body.rows[0]?.breakdown).toStrictEqual([
-      {
-        kind: "connector",
-        credits: 15,
-        providers: [
-          {
-            provider: "x",
-            credits: 15,
-            nonDeduplicatedQuantity: 2,
-            usageKinds: [{ kind: "connector", credits: 15 }],
-          },
-        ],
-      },
-    ]);
-    await compactUsageRecord(orgId);
-    expect((await read()).body).toStrictEqual(initial.body);
-
-    await store.set(
-      insertUsageEvent$,
-      { ...usage, quantity: 4, nonDeduplicatedQuantity: 3, creditsCharged: 10 },
-      context.signal,
-    );
-    const mixed = await read();
-    expect(mixed.body.rows[0]?.breakdown[0]?.providers[0]).toStrictEqual({
-      provider: "x",
-      credits: 25,
-      nonDeduplicatedQuantity: 5,
-      usageKinds: [{ kind: "connector", credits: 25 }],
-    });
-    await compactUsageRecord(orgId);
-    expect((await read()).body).toStrictEqual(mixed.body);
-    await compactUsageRecord(orgId);
-    expect((await read()).body).toStrictEqual(mixed.body);
-
-    const members = await billing.readUsageMembers(fixture.actor, {
-      range: "7d",
-      tz: "UTC",
-    });
-    expect(members.body.members).toContainEqual(
-      expect.objectContaining({
-        userId: fixture.actor.userId,
-        creditsCharged: 25,
-        nonDeduplicatedQuantity: 5,
-      }),
-    );
-    const today = await accept(
-      apiClient().get({
-        query: { range: "today", tz: "UTC" },
-        headers: authHeaders(),
-      }),
-      [200],
-    );
-    expect(today.body.rows).toStrictEqual([]);
-  });
-
-  it.each([0, 7])(
-    "keeps annotated zero-debit usage with %i allowance units scoped to its owner",
-    async (allowanceUnits) => {
-      const fixture = await entitledRecordActor();
-      const orgId = fixture.actor.orgId;
-      if (!orgId) {
-        throw new Error("Expected an org-scoped actor");
-      }
-      const run = await createUnthreadedRun(fixture.actor, {
-        prompt: "Funded resource usage",
-        triggerSource: "slack",
-      });
-      const eventId = await store.set(
-        insertUsageEvent$,
-        {
-          orgId,
-          userId: fixture.actor.userId,
-          runId: run.runId,
-          kind: "connector",
-          provider: "x",
-          category: "posts.read",
-          quantity: 3,
-          nonDeduplicatedQuantity: 2,
-          creditsCharged: 0,
-          status: "processed",
-          processedAt: new Date(nowDate().getTime() - 5 * DAY_MS),
-        },
-        context.signal,
-      );
-      if (allowanceUnits > 0) {
-        await store.set(
-          attachUsageAllowance$,
-          {
-            orgId,
-            runId: run.runId,
-            usageEventId: eventId,
-            unitsApplied: allowanceUnits,
-            consumedUnits: allowanceUnits,
-          },
-          context.signal,
-        );
-      }
-      for (const compact of [false, true]) {
-        if (compact) {
-          await compactUsageRecord(orgId);
-        }
-        mocks.clerk.session(fixture.actor.userId, orgId);
-        const own = await accept(
-          apiClient().get({
-            query: { range: "7d", tz: "UTC" },
-            headers: authHeaders(),
-          }),
-          [200],
-        );
-        expect(own.body.rows[0]?.breakdown[0]?.providers[0]).toStrictEqual({
-          provider: "x",
-          credits: allowanceUnits,
-          nonDeduplicatedQuantity: 2,
-          usageKinds: [{ kind: "connector", credits: allowanceUnits }],
-        });
-        const members = await billing.readUsageMembers(fixture.actor, {
-          range: "7d",
-          tz: "UTC",
-        });
-        expect(members.body.members).toContainEqual(
-          expect.objectContaining({
-            userId: fixture.actor.userId,
-            nonDeduplicatedQuantity: 2,
-          }),
-        );
-      }
-      await billing.requestUsageMembers(
-        { ...fixture.actor, orgRole: "org:member" },
-        { range: "7d", tz: "UTC" },
-        [403],
-      );
-      for (const [userId, currentOrgId] of [
-        [`user_${randomUUID()}`, orgId],
-        [fixture.actor.userId, `org_${randomUUID()}`],
-      ] as const) {
-        mocks.clerk.session(userId, currentOrgId);
-        const other = await accept(
-          apiClient().get({
-            query: { range: "7d", tz: "UTC" },
-            headers: authHeaders(),
-          }),
-          [200],
-        );
-        expect(other.body.rows).toStrictEqual([]);
-      }
-    },
-  );
 
   it("returns 401 when not authenticated", async () => {
     const response = await accept(
