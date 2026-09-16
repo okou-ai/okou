@@ -204,6 +204,8 @@ function connectProtocolTransport(
   };
 }
 
+// A future feature's event has no existing page interaction. Exercise the
+// production MessagePort boundary so new events cannot close the chat read port.
 test.each(["user", "org", "credential"] as const)(
   "Forward new %s events without registering their names and keep chat reads available",
   async (scope) => {
