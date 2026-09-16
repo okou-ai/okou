@@ -339,6 +339,23 @@ test("A send carries the task and its slide count into the thread it opens", asy
   ).toHaveTextContent("16–20 slides");
 });
 
+// Workflow is not a create mode, so it travels as the task chips' own
+// selection rather than through the type the slash panel also sets.
+test("A send carries a general task into the thread it opens", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupChips();
+  click(
+    button("Workflow", screen.getByRole("group", { name: "Choose a task" })),
+  );
+  await fill(editor, "Draft a weekly digest");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  const threadEditor = await findComposerEditor();
+  expect(selectedTask(threadEditor, "Workflow")).toBeVisible();
+});
+
 test("Visualization starts with no selected preferences", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();
