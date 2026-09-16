@@ -312,6 +312,7 @@ import {
   personalModelProviderAccountById,
 } from "./model-provider-account.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
+import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
 import {
   connectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
@@ -9025,9 +9026,7 @@ async function commitPreparedLaunch(
         "api_dispatch_admission_lock_wait",
         "nested",
         async () => {
-          await tx.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtext(${args.createArgs.orgId}))`,
-          );
+          await lockPreparedLaunchAdmission(tx, args.createArgs.orgId);
         },
       );
       const admissionLockHeldStartedAt = now();

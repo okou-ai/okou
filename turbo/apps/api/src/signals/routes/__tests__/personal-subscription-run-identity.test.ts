@@ -14,6 +14,7 @@ import { describe, expect, it, onTestFinished, test } from "vitest";
 import {
   countBlockedPersonalSubscriptionMutationsFixture,
   countWaitingPersonalSubscriptionMutationsFixture,
+  observePreparedLaunchAdmissionFixture,
 } from "../../../test-fixtures/personal-subscription";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
@@ -815,19 +816,39 @@ describe("personal subscription run identity", () => {
         orgId: f.actor.orgId,
         signal: context.signal,
       });
+      const holdingSettled = Promise.allSettled([lock.done]);
+      const admission = observePreparedLaunchAdmissionFixture({
+        orgId: f.actor.orgId,
+        signal: context.signal,
+      });
+      const sending = admission.track(() => {
+        return createChatFilesBddApi(context).requestSendEvent(
+          f.actor,
+          { agentId: f.agentId, prompt: "admission race", model: f.model },
+          [409],
+        );
+      });
+      const sendingSettled = Promise.allSettled([sending]);
       onTestFinished(async () => {
         lock.release();
-        await lock.done;
+        await Promise.all([holdingSettled, sendingSettled]);
       });
-      const sending = createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        { agentId: f.agentId, prompt: "admission race", model: f.model },
-        [409],
-      );
-      await expect.poll(lock.waiterCount).toBe(1);
+      // The held PostgreSQL lock prevents final validation/insertion after
+      // this request finishes preparation, even before its waiter is visible.
+      // Surface early HTTP errors instead of timing out waiting for admission.
+      await Promise.race([
+        admission.attempted,
+        (async () => {
+          const early = await sending;
+          throw new Error(
+            `Chat request completed before final admission: ${early.status}`,
+          );
+        })(),
+      ]);
       await support.deletePersonalModelProviderAccount(f.actor, f.connected.id);
       await connect(f.actor, f.type, "identity-b");
       lock.release();
+      await lock.done;
       const denied = await sending;
       expect(denied.status).toBe(409);
       expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
