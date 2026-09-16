@@ -226,6 +226,26 @@ interface HeyGenRequestOptions {
   readonly retryRateLimit: boolean;
 }
 
+/**
+ * Every HeyGen failure funnels through one shared error wrapper, so a status
+ * alone cannot say which call failed. A static label per call site keeps that
+ * attribution in the log without putting provider resource ids in it.
+ */
+type HeyGenOperation =
+  | "generate-speech"
+  | "get-avatar-look"
+  | "get-avatar-video-status"
+  | "get-video-agent-session"
+  | "get-video-agent-voice"
+  | "get-voice"
+  | "list-public-avatars"
+  | "list-public-voices"
+  | "list-video-agent-styles"
+  | "scan-public-avatar-looks"
+  | "scan-public-voices"
+  | "submit-avatar-video"
+  | "submit-video-agent";
+
 function errorBody(message: string, code: string): HeyGenErrorBody {
   return { error: { message, code } };
 }
@@ -338,17 +358,48 @@ function providerErrorMessage(value: unknown): string | undefined {
   return optionalString(value.error.message);
 }
 
+const PROVIDER_BODY_SNIPPET_MAX_LENGTH = 200;
+
+/**
+ * A gateway failure answers with its own error page instead of HeyGen's JSON
+ * envelope, so `providerErrorMessage` finds nothing and every such event logs
+ * the same unusable fallback. Keep a bounded, redacted slice of that body so
+ * the error class stays distinguishable. Only a body that is not JSON at all
+ * qualifies, which excludes any response shaped like a request echo.
+ */
+function providerBodySnippet(body: string): string | undefined {
+  const collapsed = redactPresignedUrls(body).replace(/\s+/gu, " ").trim();
+  if (!collapsed) {
+    return undefined;
+  }
+  return collapsed.length > PROVIDER_BODY_SNIPPET_MAX_LENGTH
+    ? `${collapsed.slice(0, PROVIDER_BODY_SNIPPET_MAX_LENGTH)}…`
+    : collapsed;
+}
+
+interface HeyGenFailureContext {
+  readonly operation: HeyGenOperation;
+  readonly body: string;
+  readonly parsed: unknown;
+}
+
 function heyGenProviderError(
   response: Response,
-  value: unknown,
+  context: HeyGenFailureContext,
 ): HeyGenErrorResponse {
-  const rawMessage = providerErrorMessage(value);
+  const rawMessage = providerErrorMessage(context.parsed);
   const providerMessage = rawMessage
     ? redactPresignedUrls(rawMessage)
     : "Unknown provider error";
+  const providerBody =
+    !rawMessage && context.parsed === undefined
+      ? providerBodySnippet(context.body)
+      : undefined;
   L.warn("HeyGen API request failed", {
+    operation: context.operation,
     status: response.status,
     providerMessage,
+    ...(providerBody === undefined ? {} : { providerBody }),
   });
   if (response.status === 400) {
     return badRequest(`HeyGen rejected the request: ${providerMessage}`);
@@ -379,9 +430,13 @@ function heyGenProviderError(
 
 async function readHeyGenResponse(
   response: Response,
+  operation: HeyGenOperation,
 ): Promise<unknown | HeyGenErrorResponse> {
-  const value = safeJsonParse(await response.text());
-  return response.ok ? value : heyGenProviderError(response, value);
+  const body = await response.text();
+  const parsed = safeJsonParse(body);
+  return response.ok
+    ? parsed
+    : heyGenProviderError(response, { operation, body, parsed });
 }
 
 function heyGenAspectRatio(
@@ -641,7 +696,7 @@ async function getHeyGenSampledVoice(
   if (response.status === 404) {
     return undefined;
   }
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "get-voice");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -678,7 +733,7 @@ async function listHeyGenPublicAvatars(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "list-public-avatars");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -804,7 +859,7 @@ export async function listHeyGenPublicStyles(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "list-video-agent-styles");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -878,7 +933,7 @@ export async function getHeyGenAvatarLook(
   if (response.status === 404) {
     return null;
   }
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "get-avatar-look");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -912,7 +967,10 @@ export async function getHeyGenAvatarLook(
       apiKey,
       signal,
     );
-    const publicBody = await readHeyGenResponse(publicResponse);
+    const publicBody = await readHeyGenResponse(
+      publicResponse,
+      "scan-public-avatar-looks",
+    );
     if (isHeyGenErrorResponse(publicBody)) {
       return publicBody;
     }
@@ -1010,7 +1068,7 @@ export async function verifyHeyGenVideoAgentVoice(
   if (response.status === 404) {
     return false;
   }
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "get-video-agent-voice");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -1041,7 +1099,10 @@ export async function verifyHeyGenVideoAgentVoice(
       apiKey,
       signal,
     );
-    const publicBody = await readHeyGenResponse(publicResponse);
+    const publicBody = await readHeyGenResponse(
+      publicResponse,
+      "scan-public-voices",
+    );
     if (isHeyGenErrorResponse(publicBody)) {
       return publicBody;
     }
@@ -1136,7 +1197,7 @@ async function listHeyGenPublicVoices(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "list-public-voices");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -1251,7 +1312,7 @@ export async function generateHeyGenSpeech(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "generate-speech");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -1322,7 +1383,7 @@ export async function submitHeyGenAvatarVideo(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "submit-avatar-video");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -1417,7 +1478,7 @@ export async function submitHeyGenVideoAgent(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "submit-video-agent");
   return isHeyGenErrorResponse(body)
     ? body
     : parseHeyGenVideoAgentSession(body);
@@ -1437,7 +1498,7 @@ export async function getHeyGenVideoAgentSession(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "get-video-agent-session");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }
@@ -1468,7 +1529,7 @@ export async function getHeyGenAvatarVideoStatus(
     apiKey,
     signal,
   );
-  const body = await readHeyGenResponse(response);
+  const body = await readHeyGenResponse(response, "get-avatar-video-status");
   if (isHeyGenErrorResponse(body)) {
     return body;
   }

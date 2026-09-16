@@ -70,6 +70,24 @@ const PRICING_ROWS = [
     unitSize: 60,
   },
 ] as const satisfies readonly UsagePricingRow[];
+// A gateway answers with its own page rather than HeyGen's error envelope, and
+// it is long enough that an unbounded log would carry the whole document.
+const GATEWAY_ERROR_PAGE = `<html>
+  <head><title>502 Bad Gateway</title></head>
+  <body>
+    ${"upstream connect error or disconnect/reset before headers. ".repeat(6)}
+  </body>
+</html>`;
+
+function heyGenFailureLog(): readonly unknown[] {
+  const call = context.mocks.axiomLogging.warn.mock.calls.find(([message]) => {
+    return message === "HeyGen API request failed";
+  });
+  if (!call) {
+    throw new Error("Expected a HeyGen provider failure log");
+  }
+  return call;
+}
 
 interface Fixture {
   readonly orgId: string;
@@ -736,6 +754,56 @@ describe("Managed Intro Video Agent", () => {
     expect(provider.videoRequests).toBe(1);
     expect(provider.submissions).toHaveLength(1);
     await expect(credits(f)).resolves.toBe(9390);
+  });
+
+  it("attributes an opaque gateway failure to its operation with a bounded body", async () => {
+    const f = await fixture();
+    mockProvider();
+    context.mocks.axiomLogging.warn.mockClear();
+    server.use(
+      http.post(HEYGEN_CREATE_URL, () => {
+        return new HttpResponse(GATEWAY_ERROR_PAGE, {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        });
+      }),
+    );
+
+    const body = request();
+    expect((await submit(f, body)).status).toBe(202);
+
+    const [, fields] = heyGenFailureLog();
+    expect(fields).toMatchObject({
+      context: "HeyGen",
+      operation: "submit-video-agent",
+      status: 502,
+      // A gateway page carries no HeyGen error envelope, so the message stays
+      // the fallback; the snippet is what still identifies the failure class.
+      providerMessage: "Unknown provider error",
+      providerBody: expect.stringContaining("502 Bad Gateway"),
+    });
+    // 200 retained characters plus the truncation mark, never the whole page.
+    expect(fields).toMatchObject({
+      providerBody: expect.stringMatching(/^.{201}$/su),
+    });
+  });
+
+  it("keeps a structured provider message without repeating the response body", async () => {
+    const f = await fixture();
+    const provider = mockProvider();
+    provider.submitStatus = 503;
+    context.mocks.axiomLogging.warn.mockClear();
+
+    expect((await submit(f, request())).status).toBe(202);
+
+    const [, fields] = heyGenFailureLog();
+    expect(fields).toMatchObject({
+      context: "HeyGen",
+      operation: "submit-video-agent",
+      status: 503,
+      providerMessage: "Submission outcome is unknown",
+    });
+    expect(fields).not.toHaveProperty("providerBody");
   });
 
   it("rejects conflicting request IDs and hides another user's generation", async () => {
