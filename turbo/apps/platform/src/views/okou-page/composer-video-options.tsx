@@ -32,12 +32,21 @@ import {
  * rows. Concentric corners: the popover is 12px and the gap between panels
  * matches its padding at 6px, so a panel is `rounded-md` (12 − 6).
  *
- * The fill is the lightest grey in the scale — `gray-50` was heavy enough that
- * the panels read as the subject rather than as grouping.
+ * The fill is the lightest stop that still separates from the surface behind it.
+ * Light used to take `gray-0` against a white popover, which worked while the
+ * neutral ramp was cool: the panel was no darker than the card but it was a
+ * different hue, and that alone drew the block. On the current warm ramp the
+ * hue difference is gone and `gray-0` is #FEFDFD on #FFFFFF — 1.015:1, which is
+ * nothing, so the pane rendered as the run of loose rows this component exists
+ * to avoid. `gray-100` restores the separation at 1.081:1 and is still quiet
+ * enough that the panel groups rather than becomes the subject; `gray-200`
+ * (1.174:1) reads as a filled control instead of a grouping. Dark is unchanged,
+ * where the panel is a step *down* from a `gray-100` popover and already carries
+ * 1.249:1.
  */
 function SettingsPanel({ children }: { readonly children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 rounded-md bg-gray-0 px-2.5 py-2 dark:bg-gray-50">
+    <div className="flex flex-col gap-2 rounded-md bg-gray-100 px-2.5 py-2 dark:bg-gray-50">
       {children}
     </div>
   );
