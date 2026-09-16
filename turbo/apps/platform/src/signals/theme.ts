@@ -21,7 +21,7 @@ export type { ColorTheme, ThemePreference };
 
 /**
  * The product's own palette, and the value a workspace starts on. Selecting it
- * is the absence of a preset rather than a ninth one, so the App writes no
+ * is the absence of a preset rather than another one, so the App writes no
  * palette attribute while it is active and every token resolves to the shared
  * values the interface carried before the gradient color themes shipped.
  */

@@ -1278,6 +1278,17 @@ capabilities in their client version. The API projects a stored locale to
 writes that the client did not advertise. Keep this compatibility layer until
 stale browser clients and API rollback windows have closed.
 
+### Retired Limelight color theme
+
+`limelight` is removed from `COLOR_THEMES`, so the API no longer parses it in
+either direction. Migration `1145_retire_limelight_color_theme` moves stored
+selections to `citrus-spark`, which declares the same two colours; it must run
+before the API that rejects the value, which is the normal migrate-then-promote
+order. The App is promoted after the API, so between the two an already-open
+bundle can still offer Limelight and receive `400` on that one write; every
+other palette, and the member's stored selection, is unaffected. The palette was
+only reachable under the `GradientColorThemes` rollout switch.
+
 ### Treat Database/API Transitions as a First-class Boundary
 
 Schema changes have two independent compatibility directions:

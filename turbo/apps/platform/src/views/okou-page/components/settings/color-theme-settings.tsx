@@ -79,12 +79,6 @@ function useColorThemeOptions(): readonly ColorThemeOption[] {
         return $.settings.preferences.appearance.colorTheme.options.deepLagoon;
       }),
     },
-    {
-      value: "limelight",
-      label: t(($) => {
-        return $.settings.preferences.appearance.colorTheme.options.limelight;
-      }),
-    },
   ];
 }
 
