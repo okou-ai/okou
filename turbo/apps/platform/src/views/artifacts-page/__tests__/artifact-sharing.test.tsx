@@ -96,7 +96,7 @@ function sharingStatus(
   audience: ArtifactShareStatus["audience"] = "private",
 ): ArtifactShareStatus {
   return {
-    ownerUrl: new URL(canonical, location.origin).href,
+    ownerUrl: new URL(canonical, "http://localhost").href,
     shareId: audience === "private" ? null : shareId,
     audience,
     organization: { id: "org_test", name: "Acme" },
