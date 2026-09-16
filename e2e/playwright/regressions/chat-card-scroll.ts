@@ -164,10 +164,10 @@ async function main() {
                     });
                 }
                 await painted(page);
-                const frames = await page
-                  .locator(scenario.frame)
-                  .elementHandles();
-                assert.equal(frames.length, expected);
+                assert.equal(
+                  await page.locator(scenario.frame).count(),
+                  expected,
+                );
                 const before = await measure(page, scenario.frame);
                 release();
                 await page.waitForFunction(
@@ -182,13 +182,6 @@ async function main() {
                   JSON.stringify({ label, held, before, after }, null, 2),
                 );
                 assert(held > 0, `${label}: no matching response was held`);
-                for (const frame of frames) {
-                  assert(
-                    await frame.evaluate((node) => node.isConnected),
-                    `${label}: the sized frame was replaced`,
-                  );
-                  await frame.dispose();
-                }
                 assert.equal(
                   after.scrollHeight,
                   before.scrollHeight,

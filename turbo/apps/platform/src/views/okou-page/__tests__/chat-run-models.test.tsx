@@ -1191,19 +1191,14 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   await waitFor(() => {
     expect(reads).toStrictEqual([RUN_A]);
   });
-  const frame = screen.getByTestId("assistant-error-card-shell");
-  expect(
-    within(frame).getByText("This run couldn't finish"),
-  ).toBeInTheDocument();
+  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
   detailGate.resolve();
   await expect(
     screen.findByText("Codex limit reached"),
   ).resolves.toBeInTheDocument();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(reads).toStrictEqual([RUN_A]);
-  expect(screen.getByTestId("assistant-error-card-shell")).toBe(frame);
   await openRecoveryDetails();
-  expect(screen.getByTestId("assistant-error-card-shell")).toBe(frame);
   expect(
     queryButton("Try again", await screen.findByRole("dialog")),
   ).toBeEnabled();

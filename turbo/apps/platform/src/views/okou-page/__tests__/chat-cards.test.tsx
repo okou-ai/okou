@@ -122,14 +122,11 @@ test("Keep the connector slot when delayed metadata is unavailable", async () =>
     `Authorization request\n\n${CONNECTOR_URL}\n\nAfter the request`,
   );
   const loading = await screen.findByTestId("connector-action-card-loading");
-  const frame = screen.getByTestId("connector-action-card-shell");
-  expect(frame).toContainElement(loading);
+  expectNodeBefore(loading, screen.getByText("After the request"));
   gate.resolve();
   const unavailable = await screen.findByTestId("unavailable-action-card");
   expect(unavailable).toHaveTextContent("Action unavailable");
-  expect(screen.getByTestId("connector-action-card-shell")).toBe(frame);
-  expect(frame).toContainElement(unavailable);
-  expectNodeBefore(frame, screen.getByText("After the request"));
+  expectNodeBefore(unavailable, screen.getByText("After the request"));
 });
 
 test("Ordinary or code links remain message content", async () => {

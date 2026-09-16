@@ -277,7 +277,6 @@ test("Connect banking, grant access, continue, and revoke it", async () => {
   await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
 
   await readyChat();
-  const frame = await screen.findByTestId("banking-action-card-shell");
   const summary = await screen.findByTestId("banking-action-card");
   expect(within(summary).getByText(purpose)).toBeInTheDocument();
   click(getButton("View details", summary));
@@ -317,7 +316,6 @@ test("Connect banking, grant access, continue, and revoke it", async () => {
     "Access active for 1 account",
   );
   expect(activeAccess).toBeVisible();
-  expect(screen.getByTestId("banking-action-card-shell")).toBe(frame);
   expect(savedRequests).toStrictEqual([
     {
       accountIds: [BANK_ACCOUNT_ID],

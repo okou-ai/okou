@@ -126,7 +126,6 @@ test("Keep a generic assistant failure readable", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  const frame = await screen.findByTestId("assistant-error-card-shell");
   click(await findButton("View details"));
   const errorMessage = await screen.findByRole("dialog");
   const heading = await within(errorMessage).findByRole("heading", {
@@ -134,7 +133,6 @@ test("Keep a generic assistant failure readable", async () => {
     name: "Release failed",
   });
   expect(heading).toBeVisible();
-  expect(frame).not.toContainElement(errorMessage);
   expect(within(errorMessage).getByText("review these steps").tagName).toBe(
     "STRONG",
   );

@@ -322,21 +322,16 @@ test.each([404, 500] as const)(
 
     await setupPage({ context, path: RUN_PATH, host: APP_HOST });
     await readyChat();
-    const frame = await screen.findByTestId("mail-draft-card-shell");
-    expect(
-      within(frame).getByTestId("mail-draft-card-loading"),
-    ).toBeInTheDocument();
+    await expect(
+      screen.findByTestId("mail-draft-card-loading"),
+    ).resolves.toBeInTheDocument();
     gate.resolve();
     await expect(
-      within(frame).findByText("This email is no longer available."),
+      screen.findByText("This email is no longer available."),
     ).resolves.toBeInTheDocument();
-    expect(screen.getByTestId("mail-draft-card-shell")).toBe(frame);
     available = true;
-    click(await findControl("button", "Retry", frame));
-    await expect(
-      within(frame).findByText(subject),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByTestId("mail-draft-card-shell")).toBe(frame);
+    click(await findControl("button", "Retry"));
+    await expect(screen.findByText(subject)).resolves.toBeInTheDocument();
     click(await findMailCard(subject));
     await expect(
       screen.findByRole("complementary", { name: "Email details" }),

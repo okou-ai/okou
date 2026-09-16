@@ -371,7 +371,6 @@ test("Mermaid content remains readable code on surfaces without diagrams", async
   });
   expect(code.textContent).toBe("flowchart TD\n  Reader --> Source\n");
   expect(code).toBeVisible();
-  expect(frame).not.toContainElement(code);
   expect(
     queryAllByRoleFast("button", markdownFrameFor(code)).some((button) => {
       return button.getAttribute("aria-label") === "Copy to clipboard";

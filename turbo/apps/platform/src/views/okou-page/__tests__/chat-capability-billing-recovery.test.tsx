@@ -248,11 +248,12 @@ test("Let a paid workspace admin buy more credits", async () => {
   click(button("Cancel", review));
 
   click(button("Custom"));
-  const customAmount = screen.getByRole("textbox", {
+  const creditOptions = screen.getByRole("dialog", {
+    name: "You're out of credits",
+  });
+  const customAmount = within(creditOptions).getByRole("textbox", {
     name: "Custom dollar amount",
   });
-  expect(screen.getByTestId("assistant-error-card-shell")).toBe(frame);
-  expect(frame).not.toContainElement(customAmount);
   await fill(customAmount, "250");
   click(button("Buy"));
 

@@ -156,7 +156,7 @@ pnpm exec tsx playwright/regressions/chat-card-scroll.ts \
 The thread must overflow by at least 240px. Choose the appropriate card-family
 argument and count, and use fixtures with ready or unavailable resources as
 needed. The script holds matching GET responses, preserves them unchanged,
-then checks frame identity, geometry, and reading position after release. It
+then checks card geometry and reading position after release. It
 saves geometry only. Exercise action dialogs and their completed/error states
 in the page integration tests and in preview acceptance as well; this read-only
 loading regression does not authorize or execute those actions.
