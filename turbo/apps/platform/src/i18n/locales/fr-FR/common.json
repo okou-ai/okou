@@ -730,6 +730,11 @@
           "shortDescription": "Repère tôt les doubles réservations de l'agenda.",
           "title": "Détecter les conflits dans Google Calendar"
         },
+        "catch-leads-gmail": {
+          "description": "Repérer les signaux d'achat dans les nouveaux e-mails et enregistrer les prospects qualifiés.",
+          "shortDescription": "Repère les signaux d'achat et note les leads.",
+          "title": "Capturer les prospects depuis Gmail"
+        },
         "chase-overdue-asana-tasks": {
           "description": "Trouvez les tâches Asana en retard et relancez leurs responsables sur Slack.",
           "shortDescription": "Relance les responsables des tâches Asana en retard.",
@@ -744,6 +749,11 @@
           "description": "Comparez les dépenses publicitaires et le ROAS au mois dernier et signalez les écarts dans Slack.",
           "shortDescription": "Compare dépenses et ROAS au mois dernier.",
           "title": "Comparer Google Ads au mois dernier"
+        },
+        "daily-standup-report": {
+          "description": "Rassemblez chaque matin les signaux produit et ingénierie, rédigez un court rapport et publiez-le dans Slack.",
+          "shortDescription": "Publie chaque matin un brief produit et ingénierie.",
+          "title": "Rapport de standup quotidien"
         },
         "draft-github-release-notes-notion": {
           "description": "Transformer les PR fusionnés depuis la dernière version en notes claires dans Notion.",
@@ -810,6 +820,11 @@
           "shortDescription": "Transforme e-mails et réunions en plan de journée.",
           "title": "Brief du matin"
         },
+        "new-gmail-contacts-hubspot": {
+          "description": "Ajoutez et enrichissez les expéditeurs de courriels inconnus en tant que contacts HubSpot.",
+          "shortDescription": "Ajoute les expéditeurs inconnus à HubSpot.",
+          "title": "Ajouter de nouveaux contacts Gmail à HubSpot"
+        },
         "onboard-new-hires-asana": {
           "description": "Créer la liste de contrôle des tâches d'intégration pour chaque nouvelle embauche dans Asana.",
           "shortDescription": "Crée une checklist d'intégration par arrivée.",
@@ -824,6 +839,16 @@
           "description": "Rédiger un journal des modifications à partir du travail récemment livré et le publier sur Slack.",
           "shortDescription": "Rédige un changelog et le publie dans Slack.",
           "title": "Publier les notes de version sur Slack"
+        },
+        "prep-google-calendar-meetings": {
+          "description": "Rechercher les participants externes et envoyer un briefing avant les réunions.",
+          "shortDescription": "Envoie un brief avant les réunions externes.",
+          "title": "Préparation pour les réunions Google Calendar"
+        },
+        "research-calendar-meetings": {
+          "description": "Recherchez les personnes que vous allez rencontrer avant chaque événement du calendrier.",
+          "shortDescription": "Étudie vos interlocuteurs avant chaque événement.",
+          "title": "Recherchez vos réunions du calendrier"
         },
         "send-bugs-github-slack": {
           "description": "Créez des issues GitHub à partir des rapports portant l’étiquette bug et alertez l’équipe sur Slack.",
@@ -864,6 +889,11 @@
           "description": "Mettre en évidence les plus grands changements hebdomadaires dans l'utilisation des fonctionnalités depuis PostHog.",
           "shortDescription": "Montre les plus gros écarts d'usage de la semaine.",
           "title": "Suivre l'utilisation des fonctionnalités avec PostHog"
+        },
+        "track-keyword-ranks-ahrefs": {
+          "description": "Suivez les positions de vos mots-clés dans Ahrefs et consignez les plus gros mouvements dans Notion.",
+          "shortDescription": "Rapporte les mouvements de positions de la semaine.",
+          "title": "Suivre les classements des mots-clés avec Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Surveillez les déploiements Vercel, reliez-les aux commits GitHub et signalez les échecs dans Slack.",

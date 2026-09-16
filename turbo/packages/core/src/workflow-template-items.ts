@@ -92,6 +92,23 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: gmail required.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the Gmail label name, handling rules, and final action.",
   }),
   defineWorkflowTemplate({
+    id: "workflow-template:daily-standup-report",
+    category: "Engineering",
+    title: "Daily standup report",
+    description:
+      "Pull product and engineering signals each morning, create a short report, and post it to Slack.",
+    shortDescription: "Post a morning product and engineering brief.",
+    connectorSlugs: ["github", "sentry", "slack"],
+    behavior: [
+      "Create a scheduled workflow that runs every weekday or every morning.",
+      "Pull recent GitHub activity and Sentry issues.",
+      "Summarize changes, incidents, usage movement, blockers, and notable risks.",
+      "Post the final standup report to a Slack channel selected by the user.",
+    ],
+    missingInfo:
+      "Connectors: github, slack required; sentry optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the schedule, timezone, Slack channel, metric scope, and any required report sections.",
+  }),
+  defineWorkflowTemplate({
     id: "workflow-template:github-pr-summarizer",
     category: "Engineering",
     title: "GitHub PR summarizer",
@@ -319,6 +336,22 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: x, notion required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the keywords or accounts, cadence, Notion database, Slack channel, and alert thresholds.",
   }),
   defineWorkflowTemplate({
+    id: "workflow-template:track-keyword-ranks-ahrefs",
+    category: "Marketing",
+    title: "Track keyword ranks with Ahrefs",
+    description:
+      "Track keyword rankings in Ahrefs and report the movers in Notion.",
+    shortDescription: "Report the week's keyword rank movers.",
+    connectorSlugs: ["ahrefs", "notion"],
+    behavior: [
+      "Read keyword positions",
+      "Movers identified",
+      "Reported in Notion",
+    ],
+    missingInfo:
+      "Connectors: ahrefs required; notion optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
+  }),
+  defineWorkflowTemplate({
     id: "workflow-template:draft-newsletter-mailchimp",
     category: "Marketing",
     title: "Draft the newsletter in Mailchimp",
@@ -349,6 +382,53 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: google-ads, slack required; meta-ads optional.\nSuggested trigger: Add a schedule trigger (e.g. every morning).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
+  }),
+  defineWorkflowTemplate({
+    id: "workflow-template:catch-leads-gmail",
+    category: "Sales",
+    title: "Catch leads from Gmail",
+    description:
+      "Spot buying signals in new email and log the qualified leads.",
+    shortDescription: "Spot buying signals and log qualified leads.",
+    connectorSlugs: ["gmail", "google-sheets", "slack"],
+    behavior: [
+      "Scan new mail",
+      "Lead researched and logged",
+      "Next step suggested",
+    ],
+    missingInfo:
+      "Connectors: gmail required; google-sheets, slack optional.\nResearch the lead with the built-in web capabilities. Do not request an enrichment connector.\nSuggested trigger: Add a gmail-new-message event trigger so it runs on each new incoming email.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
+  }),
+  defineWorkflowTemplate({
+    id: "workflow-template:new-gmail-contacts-hubspot",
+    category: "Sales",
+    title: "Add new Gmail contacts to HubSpot",
+    description: "Add and enrich unknown email senders as HubSpot contacts.",
+    shortDescription: "Add unknown email senders to HubSpot.",
+    connectorSlugs: ["gmail", "hubspot"],
+    behavior: [
+      "Spot an unknown sender",
+      "Contact created and researched",
+      "Logged for follow-up",
+    ],
+    missingInfo:
+      "Connectors: gmail, hubspot required.\nResearch the sender with the built-in web capabilities. Do not request an enrichment connector.\nSuggested trigger: Add a gmail-new-message event trigger so it runs on each new incoming email.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
+  }),
+  defineWorkflowTemplate({
+    id: "workflow-template:prep-google-calendar-meetings",
+    category: "Sales",
+    title: "Prep for Google Calendar meetings",
+    description:
+      "Research external attendees and send a prep brief before meetings.",
+    shortDescription: "Send a prep brief before external meetings.",
+    connectorSlugs: ["google-calendar", "slack"],
+    behavior: [
+      "A meeting is added",
+      "Attendee researched",
+      "Prep brief sent to Slack",
+    ],
+    missingInfo:
+      "Connectors: google-calendar required; slack optional.\nResearch the attendees with the built-in web capabilities. Do not request a research connector.\nSuggested trigger: Add a google-calendar-event-created event trigger, or a morning schedule that scans the day's meetings.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:support-ticket-router",
@@ -534,6 +614,22 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     behavior: ["Read new mail", "Sorted by urgency", "Replies drafted"],
     missingInfo:
       "Connectors: gmail required.\nSuggested trigger: Add a gmail-new-message event trigger so it runs on each new incoming email.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
+  }),
+  defineWorkflowTemplate({
+    id: "workflow-template:research-calendar-meetings",
+    category: "Everyone",
+    title: "Research your calendar meetings",
+    description:
+      "Research the people you're meeting before each calendar event.",
+    shortDescription: "Research the people you meet before each event.",
+    connectorSlugs: ["google-calendar", "slack"],
+    behavior: [
+      "A meeting is added",
+      "Attendees researched",
+      "Dossier delivered",
+    ],
+    missingInfo:
+      "Connectors: google-calendar required; slack optional.\nResearch the attendees with the built-in web capabilities. Do not request a search connector.\nSuggested trigger: Add a google-calendar-event-created event trigger, or a morning schedule that scans the day's meetings.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:summarize-gmail-newsletters",

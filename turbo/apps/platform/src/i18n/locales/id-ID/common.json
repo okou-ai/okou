@@ -710,6 +710,11 @@
           "shortDescription": "Temukan jadwal ganda di kalender lebih awal.",
           "title": "Deteksi konflik Google Calendar"
         },
+        "catch-leads-gmail": {
+          "description": "Temukan sinyal pembelian di email baru dan catat lead yang memenuhi syarat.",
+          "shortDescription": "Kenali sinyal beli dan catat lead yang layak.",
+          "title": "Tangkap lead dari Gmail"
+        },
         "chase-overdue-asana-tasks": {
           "description": "Temukan tugas Asana yang terlambat dan ingatkan pemiliknya di Slack.",
           "shortDescription": "Ingatkan pemilik tugas Asana yang lewat tenggat.",
@@ -724,6 +729,11 @@
           "description": "Bandingkan belanja iklan dan ROAS dengan bulan lalu, lalu tandai anomalinya di Slack.",
           "shortDescription": "Bandingkan belanja iklan dan ROAS dengan bulan lalu.",
           "title": "Bandingkan Google Ads vs bulan lalu"
+        },
+        "daily-standup-report": {
+          "description": "Kumpulkan sinyal produk dan engineering tiap pagi, buat laporan singkat, lalu posting ke Slack.",
+          "shortDescription": "Posting ringkasan produk dan engineering tiap pagi.",
+          "title": "Laporan standup harian"
         },
         "draft-github-release-notes-notion": {
           "description": "Ubah PR yang digabung sejak rilis terakhir menjadi catatan yang rapi di Notion.",
@@ -790,6 +800,11 @@
           "shortDescription": "Ubah email dan rapat jadi rencana harian singkat.",
           "title": "Ringkasan pagi"
         },
+        "new-gmail-contacts-hubspot": {
+          "description": "Tambahkan dan lengkapi pengirim email yang belum dikenal sebagai kontak HubSpot.",
+          "shortDescription": "Tambahkan pengirim email tak dikenal ke HubSpot.",
+          "title": "Tambahkan kontak Gmail baru ke HubSpot"
+        },
         "onboard-new-hires-asana": {
           "description": "Buat checklist tugas onboarding untuk setiap karyawan baru di Asana.",
           "shortDescription": "Buat checklist onboarding untuk tiap karyawan baru.",
@@ -804,6 +819,16 @@
           "description": "Susun changelog dari pekerjaan yang baru dirilis dan posting ke Slack.",
           "shortDescription": "Susun changelog lalu posting ke Slack.",
           "title": "Posting catatan rilis ke Slack"
+        },
+        "prep-google-calendar-meetings": {
+          "description": "Teliti peserta eksternal dan kirim brief persiapan sebelum meeting.",
+          "shortDescription": "Kirim ringkasan persiapan sebelum rapat eksternal.",
+          "title": "Siapkan meeting Google Calendar"
+        },
+        "research-calendar-meetings": {
+          "description": "Teliti orang yang akan Anda temui sebelum setiap event kalender.",
+          "shortDescription": "Teliti orang yang akan Anda temui sebelum acara.",
+          "title": "Teliti meeting kalender Anda"
         },
         "send-bugs-github-slack": {
           "description": "Arsipkan laporan bertanda bug sebagai issue GitHub dan beri tahu tim di Slack.",
@@ -844,6 +869,11 @@
           "description": "Tampilkan pergeseran mingguan terbesar dalam penggunaan fitur dari PostHog.",
           "shortDescription": "Tampilkan perubahan penggunaan terbesar minggu ini.",
           "title": "Lacak penggunaan fitur dengan PostHog"
+        },
+        "track-keyword-ranks-ahrefs": {
+          "description": "Lacak peringkat kata kunci di Ahrefs dan catat perubahan terbesarnya di Notion.",
+          "shortDescription": "Laporkan pergerakan peringkat kata kunci minggu ini.",
+          "title": "Lacak peringkat kata kunci dengan Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Pantau deploy Vercel, hubungkan dengan commit GitHub, dan beri tahu Slack saat gagal.",

@@ -710,6 +710,11 @@
           "shortDescription": "カレンダーの二重予約を早めに見つけます。",
           "title": "Google Calendar の競合を捕捉する"
         },
+        "catch-leads-gmail": {
+          "description": "新しいメール内の購入シグナルを特定し、見込み客を記録します。",
+          "shortDescription": "購買の兆しを見つけて有望なリードを記録します。",
+          "title": "Gmail からのリードを獲得する"
+        },
         "chase-overdue-asana-tasks": {
           "description": "期限を過ぎた Asana タスクを見つけて、その所有者に Slack を指示します。",
           "shortDescription": "期限切れの Asana タスクの担当者に声をかけます。",
@@ -724,6 +729,11 @@
           "description": "広告費と ROAS を先月と比較し、異常があれば Slack に通知します。",
           "shortDescription": "広告費と ROAS を先月と比べます。",
           "title": "Google 広告と先月の比較"
+        },
+        "daily-standup-report": {
+          "description": "毎朝プロダクトとエンジニアリングの指標を集めて短いレポートを作成し、Slack に投稿します。",
+          "shortDescription": "毎朝プロダクトと開発の要点を投稿します。",
+          "title": "デイリースタンドアップレポート"
         },
         "draft-github-release-notes-notion": {
           "description": "前回のリリース以降にマージされた PR を Notion のクリーン ノートに変換します。",
@@ -790,6 +800,11 @@
           "shortDescription": "メールと予定を短い一日の計画にします。",
           "title": "モーニングブリーフ"
         },
+        "new-gmail-contacts-hubspot": {
+          "description": "不明なメール送信者を HubSpot 連絡先として追加して強化します。",
+          "shortDescription": "未登録の送信者を HubSpot に追加します。",
+          "title": "新しい Gmail 連絡先を HubSpot に追加します"
+        },
         "onboard-new-hires-asana": {
           "description": "Asana で各新入社員のオンボーディング タスク チェックリストを作成します。",
           "shortDescription": "新しい仲間ごとに受け入れ用のチェックリストを作ります。",
@@ -804,6 +819,16 @@
           "description": "最近出荷された作業から変更ログを作成し、Slack に投稿します。",
           "shortDescription": "変更点をまとめて Slack に投稿します。",
           "title": "リリース ノートを Slack に投稿します"
+        },
+        "prep-google-calendar-meetings": {
+          "description": "外部出席者を調査し、会議の前に準備概要を送信します。",
+          "shortDescription": "社外ミーティングの前に準備メモを送ります。",
+          "title": "Google Calendar 会議の準備をする"
+        },
+        "research-calendar-meetings": {
+          "description": "カレンダーの各イベントの前に、会う人について調べてください。",
+          "shortDescription": "予定の前に会う相手を調べます。",
+          "title": "カレンダー上の会議を調査する"
         },
         "send-bugs-github-slack": {
           "description": "バグタグを付けたレポートを GitHub Issueとしてファイルし、Slack でチームに警告します。",
@@ -844,6 +869,11 @@
           "description": "PostHog からの機能使用量の週ごとの最大の変化を明らかにします。",
           "shortDescription": "今週いちばん動いた利用状況を知らせます。",
           "title": "PostHog を使用して機能の使用状況を追跡する"
+        },
+        "track-keyword-ranks-ahrefs": {
+          "description": "Ahrefs でキーワード順位を追跡し、変動の大きいものを Notion にまとめます。",
+          "shortDescription": "今週の検索順位の変動をまとめます。",
+          "title": "Ahrefs でキーワード ランクを追跡する"
         },
         "vercel-deploy-digest": {
           "description": "Vercel のデプロイを監視して GitHub のコミットと紐づけ、失敗したら Slack に通知します。",

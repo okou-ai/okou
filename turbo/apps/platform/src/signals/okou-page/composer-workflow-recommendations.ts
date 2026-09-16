@@ -31,7 +31,7 @@ export const WORKFLOW_RECOMMENDATIONS = [
   },
   {
     id: "meetings",
-    templateId: null,
+    templateId: "workflow-template:research-calendar-meetings",
     connectors: ["google-calendar"],
   },
   {

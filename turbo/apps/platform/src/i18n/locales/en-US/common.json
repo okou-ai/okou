@@ -711,6 +711,11 @@
           "shortDescription": "Catch double-bookings in your calendar early.",
           "title": "Catch Google Calendar conflicts"
         },
+        "catch-leads-gmail": {
+          "description": "Spot buying signals in new email and log the qualified leads.",
+          "shortDescription": "Spot buying signals and log qualified leads.",
+          "title": "Catch leads from Gmail"
+        },
         "chase-overdue-asana-tasks": {
           "description": "Find overdue Asana tasks and nudge their owners on Slack.",
           "shortDescription": "Nudge the owners of overdue Asana tasks.",
@@ -725,6 +730,11 @@
           "description": "Compare ad spend and ROAS to last month and flag anomalies in Slack.",
           "shortDescription": "Compare ad spend and ROAS to last month.",
           "title": "Compare Google Ads vs last month"
+        },
+        "daily-standup-report": {
+          "description": "Pull product and engineering signals each morning, create a short report, and post it to Slack.",
+          "shortDescription": "Post a morning product and engineering brief.",
+          "title": "Daily standup report"
         },
         "draft-github-release-notes-notion": {
           "description": "Turn the PRs merged since the last release into clean notes in Notion.",
@@ -791,6 +801,11 @@
           "shortDescription": "Turn mail and meetings into a short daily plan.",
           "title": "Morning brief"
         },
+        "new-gmail-contacts-hubspot": {
+          "description": "Add and enrich unknown email senders as HubSpot contacts.",
+          "shortDescription": "Add unknown email senders to HubSpot.",
+          "title": "Add new Gmail contacts to HubSpot"
+        },
         "onboard-new-hires-asana": {
           "description": "Create the onboarding task checklist for each new hire in Asana.",
           "shortDescription": "Create an onboarding checklist per new hire.",
@@ -805,6 +820,16 @@
           "description": "Draft a changelog from recently shipped work and post it to Slack.",
           "shortDescription": "Draft a changelog and post it to Slack.",
           "title": "Post release notes to Slack"
+        },
+        "prep-google-calendar-meetings": {
+          "description": "Research external attendees and send a prep brief before meetings.",
+          "shortDescription": "Send a prep brief before external meetings.",
+          "title": "Prep for Google Calendar meetings"
+        },
+        "research-calendar-meetings": {
+          "description": "Research the people you're meeting before each calendar event.",
+          "shortDescription": "Research the people you meet before each event.",
+          "title": "Research your calendar meetings"
         },
         "send-bugs-github-slack": {
           "description": "File bug-tagged reports as GitHub issues and alert the team on Slack.",
@@ -845,6 +870,11 @@
           "description": "Surface the biggest weekly shifts in feature usage from PostHog.",
           "shortDescription": "Surface the week's biggest usage shifts.",
           "title": "Track feature usage with PostHog"
+        },
+        "track-keyword-ranks-ahrefs": {
+          "description": "Track keyword rankings in Ahrefs and report the movers in Notion.",
+          "shortDescription": "Report the week's keyword rank movers.",
+          "title": "Track keyword ranks with Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Monitor Vercel deployments, link them to GitHub commits, and alert Slack on failures.",

@@ -711,6 +711,11 @@
           "shortDescription": "कैलेंडर की डबल-बुकिंग समय रहते पकड़ें।",
           "title": "Google Calendar संघर्षों को पकड़ें"
         },
+        "catch-leads-gmail": {
+          "description": "नए ईमेल में स्पॉट खरीदारी संकेत और योग्य लीड लॉग करें।",
+          "shortDescription": "खरीद के संकेत पहचानें और लीड दर्ज करें।",
+          "title": "Gmail से लीड पकड़ें"
+        },
         "chase-overdue-asana-tasks": {
           "description": "अतिदेय आसन कार्यों को खोजें और Slack पर उनके मालिकों को प्रेरित करें।",
           "shortDescription": "देर से चल रहे Asana टास्क के मालिकों को याद दिलाएँ।",
@@ -725,6 +730,11 @@
           "description": "विज्ञापन खर्च और ROAS की पिछले महीने से तुलना करें और गड़बड़ी Slack में बताएँ।",
           "shortDescription": "विज्ञापन खर्च और ROAS की पिछले महीने से तुलना करें।",
           "title": "Google विज्ञापनों की तुलना पिछले महीने से करें"
+        },
+        "daily-standup-report": {
+          "description": "हर सुबह प्रोडक्ट और इंजीनियरिंग के आंकड़े जुटाएँ, छोटी रिपोर्ट बनाएँ और Slack पर पोस्ट करें।",
+          "shortDescription": "हर सुबह प्रोडक्ट और इंजीनियरिंग ब्रीफ़ पोस्ट करें।",
+          "title": "दैनिक स्टैंडअप रिपोर्ट"
         },
         "draft-github-release-notes-notion": {
           "description": "पिछली रिलीज के बाद से मर्ज किए गए पीआर को Notion में साफ नोट्स में बदलें।",
@@ -791,6 +801,11 @@
           "shortDescription": "मेल और मीटिंग से दिन की छोटी योजना बनाएँ।",
           "title": "सुबह की ब्रीफ़"
         },
+        "new-gmail-contacts-hubspot": {
+          "description": "अज्ञात ईमेल प्रेषकों को HubSpot संपर्कों के रूप में जोड़ें और समृद्ध करें।",
+          "shortDescription": "अनजान ईमेल भेजने वालों को HubSpot में जोड़ें।",
+          "title": "HubSpot में नए Gmail संपर्क जोड़ें"
+        },
         "onboard-new-hires-asana": {
           "description": "आसन में प्रत्येक नए कर्मचारी के लिए ऑनबोर्डिंग कार्य चेकलिस्ट बनाएं।",
           "shortDescription": "हर नई भर्ती के लिए ऑनबोर्डिंग चेकलिस्ट बनाएँ।",
@@ -805,6 +820,16 @@
           "description": "हाल ही में भेजे गए कार्य से एक चेंजलॉग ड्राफ्ट करें और इसे Slack पर पोस्ट करें।",
           "shortDescription": "चेंजलॉग लिखकर Slack पर पोस्ट करें।",
           "title": "Slack पर रिलीज़ नोट्स पोस्ट करें"
+        },
+        "prep-google-calendar-meetings": {
+          "description": "बाहरी उपस्थित लोगों पर शोध करें और बैठकों से पहले तैयारी का विवरण भेजें।",
+          "shortDescription": "बाहरी मीटिंग से पहले तैयारी ब्रीफ़ भेजें।",
+          "title": "Google Calendar बैठकों के लिए तैयारी"
+        },
+        "research-calendar-meetings": {
+          "description": "प्रत्येक कैलेंडर ईवेंट से पहले उन लोगों पर शोध करें जिनसे आप मिल रहे हैं।",
+          "shortDescription": "हर मीटिंग से पहले लोगों के बारे में जानें।",
+          "title": "अपनी कैलेंडर बैठकों पर शोध करें"
         },
         "send-bugs-github-slack": {
           "description": "GitHub इश्यू के रूप में बग-टैग की गई रिपोर्ट दर्ज करें और Slack पर टीम को सचेत करें।",
@@ -845,6 +870,11 @@
           "description": "PostHog से फीचर उपयोग में सबसे बड़ा साप्ताहिक बदलाव सामने आया।",
           "shortDescription": "इस हफ़्ते उपयोग में सबसे बड़े बदलाव दिखाएँ।",
           "title": "PostHog के साथ फीचर उपयोग को ट्रैक करें"
+        },
+        "track-keyword-ranks-ahrefs": {
+          "description": "Ahrefs में कीवर्ड रैंकिंग ट्रैक करें और सबसे बड़े बदलाव Notion में दर्ज करें।",
+          "shortDescription": "इस हफ़्ते की कीवर्ड रैंक हलचल बताएँ।",
+          "title": "Ahrefs के साथ कीवर्ड रैंक ट्रैक करें"
         },
         "vercel-deploy-digest": {
           "description": "Vercel डिप्लॉयमेंट पर नज़र रखें, उन्हें GitHub कमिट से जोड़ें और विफलता पर Slack में सूचित करें।",

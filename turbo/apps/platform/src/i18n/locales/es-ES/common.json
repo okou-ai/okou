@@ -730,6 +730,11 @@
           "shortDescription": "Detecta pronto las reservas duplicadas.",
           "title": "Detectar conflictos en Google Calendar"
         },
+        "catch-leads-gmail": {
+          "description": "Detecta las señales de compra en el correo nuevo y registra los leads calificados.",
+          "shortDescription": "Detecta señales de compra y registra los leads.",
+          "title": "Detectar leads en Gmail"
+        },
         "chase-overdue-asana-tasks": {
           "description": "Encuentra tareas vencidas de Asana y recuerda a sus responsables que deben completarlas mediante Slack.",
           "shortDescription": "Recuerda las tareas de Asana ya vencidas.",
@@ -744,6 +749,11 @@
           "description": "Compara la inversión y el ROAS con el mes pasado y señala las anomalías en Slack.",
           "shortDescription": "Compara inversión y ROAS con el mes pasado.",
           "title": "Comparar Google Ads con el mes anterior"
+        },
+        "daily-standup-report": {
+          "description": "Reúne cada mañana las señales de producto e ingeniería, crea un informe breve y publícalo en Slack.",
+          "shortDescription": "Publica cada mañana el resumen de producto e ingeniería.",
+          "title": "Informe diario de standup"
         },
         "draft-github-release-notes-notion": {
           "description": "Convierte los PR fusionados desde la última versión en notas claras dentro de Notion.",
@@ -810,6 +820,11 @@
           "shortDescription": "Convierte correo y reuniones en un plan diario.",
           "title": "Resumen matinal"
         },
+        "new-gmail-contacts-hubspot": {
+          "description": "Añade como contactos de HubSpot a remitentes desconocidos y completa sus datos.",
+          "shortDescription": "Añade a HubSpot los remitentes desconocidos.",
+          "title": "Añadir nuevos contactos de Gmail a HubSpot"
+        },
         "onboard-new-hires-asana": {
           "description": "Crea la lista de tareas de incorporación para cada nuevo empleado en Asana.",
           "shortDescription": "Crea una checklist de alta por cada incorporación.",
@@ -824,6 +839,16 @@
           "description": "Redacta un registro de cambios a partir del trabajo publicado recientemente y compártelo en Slack.",
           "shortDescription": "Redacta un changelog y publícalo en Slack.",
           "title": "Publicar notas de la versión en Slack"
+        },
+        "prep-google-calendar-meetings": {
+          "description": "Investiga a los asistentes externos y envía un resumen previo antes de las reuniones.",
+          "shortDescription": "Envía un resumen antes de las reuniones externas.",
+          "title": "Prepara las reuniones de Google Calendar"
+        },
+        "research-calendar-meetings": {
+          "description": "Investiga a las personas que vas a conocer antes de cada evento del calendario.",
+          "shortDescription": "Investiga a quien verás antes de cada reunión.",
+          "title": "Investiga tus reuniones en el calendario"
         },
         "send-bugs-github-slack": {
           "description": "Registra los informes etiquetados como errores en incidencias de GitHub y avisa al equipo en Slack.",
@@ -864,6 +889,11 @@
           "description": "Destaca los mayores cambios semanales en el uso de funciones según PostHog.",
           "shortDescription": "Muestra los mayores cambios de uso de la semana.",
           "title": "Seguir el uso de funciones con PostHog"
+        },
+        "track-keyword-ranks-ahrefs": {
+          "description": "Sigue las posiciones de tus palabras clave en Ahrefs y anota los mayores cambios en Notion.",
+          "shortDescription": "Informa de los cambios de posición de la semana.",
+          "title": "Seguir posiciones de palabras clave con Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Vigila los despliegues de Vercel, enlázalos con los commits de GitHub y avisa en Slack de los fallos.",
