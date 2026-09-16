@@ -6457,6 +6457,11 @@
     "resetHelp": "Reimposta solo dopo aver verificato indipendentemente la nuova identità del server. La prossima connessione considererà attendibile e memorizzerà una nuova chiave host.",
     "retry": "Riprova",
     "save": "Salva",
+    "saveRecovery": {
+      "checkResult": "Verifica il risultato",
+      "notSaved": "Non è stato salvato nulla. I dati inseriti sono ancora qui; puoi modificarli o salvare di nuovo.",
+      "uncertain": "Non abbiamo potuto confermare se le modifiche sono state salvate. Verifica il risultato prima di riprovare o modificare. Se chiudi, controlla l’elenco prima di aggiungerle di nuovo."
+    },
     "summary_one": "{{count}} host configurato",
     "summary_many": "{{count}} host configurati",
     "summary_other": "{{count}} host configurati",

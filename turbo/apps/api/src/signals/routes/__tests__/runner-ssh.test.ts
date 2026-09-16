@@ -121,6 +121,7 @@ async function fixture(runtimeOverrides: Partial<RuntimeBody> = {}) {
     config().create({
       headers: sessionHeaders,
       body: {
+        saveAttemptId: randomUUID(),
         displayName: "SSH fixture",
         host: "ssh.example.com",
         credential: inlineSshKey("deploy", privateKey, passphrase),
@@ -173,7 +174,11 @@ describe("SSH authority invalidation", () => {
         config().update({
           headers: sessionHeaders,
           params: { connectionId: f.connectionId },
-          body: { expectedGeneration: generation, ...update },
+          body: {
+            saveAttemptId: randomUUID(),
+            expectedGeneration: generation,
+            ...update,
+          },
         }),
         [200],
       );
@@ -240,6 +245,7 @@ describe("SSH authority invalidation", () => {
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
         body: {
+          saveAttemptId: randomUUID(),
           expectedGeneration: 1,
           credential: inlineSshKey("new-login", privateKey, passphrase),
         },
@@ -277,6 +283,7 @@ describe("SSH authority invalidation", () => {
             headers: sessionHeaders,
             params: { connectionId: f.connectionId },
             body: {
+              saveAttemptId: randomUUID(),
               expectedGeneration: 1,
               credential: inlineSshKey(username, privateKey, passphrase),
             },
@@ -399,6 +406,7 @@ describe("shared credential runtime authority", () => {
       config().create({
         headers: sessionHeaders,
         body: {
+          saveAttemptId: randomUUID(),
           displayName: "Shared host",
           host: "shared.example.com",
           credential: { id: f.credentialId },
@@ -410,6 +418,7 @@ describe("shared credential runtime authority", () => {
       config().create({
         headers: sessionHeaders,
         body: {
+          saveAttemptId: randomUUID(),
           displayName: "Unrelated",
           host: "unrelated.example.com",
           credential: inlineSshKey("other", "unrelated-key"),
@@ -511,6 +520,7 @@ describe("shared credential runtime authority", () => {
         headers: sessionHeaders,
         params: { connectionId: shared.body.id },
         body: {
+          saveAttemptId: randomUUID(),
           expectedGeneration: 2,
           credential: { id: unrelated.body.credentialId },
         },
@@ -601,6 +611,7 @@ describe("SSH connection observations", () => {
         config().create({
           headers: sessionHeaders,
           body: {
+            saveAttemptId: randomUUID(),
             displayName: "Independent login",
             host: "SSH.example.com.",
             credential: inlineSshKey(
@@ -660,6 +671,7 @@ describe("SSH connection observations", () => {
           headers: sessionHeaders,
           params: { connectionId: f.connectionId },
           body: {
+            saveAttemptId: randomUUID(),
             expectedGeneration: 2,
             credential: inlineSshKey(
               "rotated-login",
@@ -790,6 +802,7 @@ describe("SSH connection observations", () => {
         headers: sessionHeaders,
         params: { connectionId: f.connectionId },
         body: {
+          saveAttemptId: randomUUID(),
           expectedGeneration: 2,
           credential: inlineSshKey("deploy", "replacement"),
         },
@@ -1098,6 +1111,7 @@ describe("official Runner SSH authority", () => {
       config().create({
         headers: sessionHeaders,
         body: {
+          saveAttemptId: randomUUID(),
           displayName: "Hidden host",
           host: "hidden.example.com",
           credential: inlineSshKey("deploy", privateKey),
@@ -1222,6 +1236,7 @@ describe("official Runner SSH authority", () => {
         params: { connectionId: f.connectionId },
         headers: sessionHeaders,
         body: {
+          saveAttemptId: randomUUID(),
           expectedGeneration: 2,
           credential: inlineSshKey("new-user", "rotated-key"),
         },
@@ -1312,7 +1327,11 @@ describe("official Runner SSH authority", () => {
       config().update({
         params: { connectionId: f.connectionId },
         headers: sessionHeaders,
-        body: { expectedGeneration: 1, host: "new.example.com" },
+        body: {
+          saveAttemptId: randomUUID(),
+          expectedGeneration: 1,
+          host: "new.example.com",
+        },
       }),
       [200],
     );

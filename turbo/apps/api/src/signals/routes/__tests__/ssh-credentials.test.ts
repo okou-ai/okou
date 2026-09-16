@@ -72,7 +72,10 @@ describe("reusable SSH credential owner routes", () => {
     useSecretKmsProbe();
     await owner();
     const created = await accept(
-      credentials().create({ headers, body: passwordBody }),
+      credentials().create({
+        headers,
+        body: { saveAttemptId: randomUUID(), ...passwordBody },
+      }),
       [201],
     );
     expect(created.body).toMatchObject({
@@ -89,6 +92,7 @@ describe("reusable SSH credential owner routes", () => {
         connections().create({
           headers,
           body: {
+            saveAttemptId: randomUUID(),
             displayName,
             host: "ssh.example.com",
             credential: { id: created.body.id },
@@ -153,7 +157,10 @@ describe("reusable SSH credential owner routes", () => {
     const kms = useSecretKmsProbe();
     const first = await owner();
     const created = await accept(
-      credentials().create({ headers, body: passwordBody }),
+      credentials().create({
+        headers,
+        body: { saveAttemptId: randomUUID(), ...passwordBody },
+      }),
       [201],
     );
     for (const other of [{ orgId: first.orgId }, { userId: first.userId }]) {
@@ -179,6 +186,7 @@ describe("reusable SSH credential owner routes", () => {
           connections().create({
             headers,
             body: {
+              saveAttemptId: randomUUID(),
               displayName: "Denied",
               host: "ssh.example.com",
               credential: { id: credentialId },
@@ -241,7 +249,10 @@ describe("reusable SSH credential owner routes", () => {
     useSecretKmsProbe();
     await owner();
     const created = await accept(
-      credentials().create({ headers, body: passwordBody }),
+      credentials().create({
+        headers,
+        body: { saveAttemptId: randomUUID(), ...passwordBody },
+      }),
       [201],
     );
     const params = { credentialId: created.body.id };
@@ -301,7 +312,10 @@ describe("reusable SSH credential owner routes", () => {
     useSecretKmsProbe();
     await owner();
     const created = await accept(
-      credentials().create({ headers, body: passwordBody }),
+      credentials().create({
+        headers,
+        body: { saveAttemptId: randomUUID(), ...passwordBody },
+      }),
       [201],
     );
     const [bound, deleted] = await Promise.all([
@@ -309,6 +323,7 @@ describe("reusable SSH credential owner routes", () => {
         connections().create({
           headers,
           body: {
+            saveAttemptId: randomUUID(),
             displayName: "Concurrent",
             host: "ssh.example.com",
             credential: { id: created.body.id },

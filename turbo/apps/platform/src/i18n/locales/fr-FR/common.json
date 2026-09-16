@@ -6457,6 +6457,11 @@
     "resetHelp": "Réinitialisez uniquement après avoir vérifié indépendamment la nouvelle identité du serveur. La prochaine connexion fera confiance à une nouvelle clé d’hôte et la mémorisera.",
     "retry": "Réessayer",
     "save": "Enregistrer",
+    "saveRecovery": {
+      "checkResult": "Vérifier le résultat",
+      "notSaved": "Rien n’a été enregistré. Vos saisies sont conservées ; vous pouvez les modifier ou enregistrer à nouveau.",
+      "uncertain": "Nous n’avons pas pu confirmer si vos modifications ont été enregistrées. Vérifiez le résultat avant de réessayer ou de modifier. Si vous fermez cette fenêtre, consultez la liste avant de les ajouter à nouveau."
+    },
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",

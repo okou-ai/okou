@@ -60,7 +60,9 @@ export const cloudflareAccessContract = c.router({
     method: "POST",
     path: "/api/ssh/cloudflare-access/configs",
     headers: authHeadersSchema,
-    body: createCloudflareAccessRequestSchema,
+    body: createCloudflareAccessRequestSchema.extend({
+      saveAttemptId: z.uuid(),
+    }),
     responses: { 201: cloudflareAccessConfigSchema, ...errors },
   },
   update: {
@@ -96,7 +98,7 @@ export type CloudflareAccessConfig = z.infer<
   typeof cloudflareAccessConfigSchema
 >;
 export type CreateCloudflareAccessRequest = z.infer<
-  typeof cloudflareAccessContract.create.body
+  typeof createCloudflareAccessRequestSchema
 >;
 export type UpdateCloudflareAccessRequest = z.infer<
   typeof cloudflareAccessContract.update.body

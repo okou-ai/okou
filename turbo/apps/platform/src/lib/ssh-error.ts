@@ -3,6 +3,11 @@ import { i18n } from "../i18n/index.ts";
 
 export function localizedSshError(code: string): string | undefined {
   switch (code) {
+    case SSH_ERROR_CODES.SAVE_ATTEMPT_RESOLVED: {
+      return i18n.t(($) => {
+        return $.ssh.saveRecovery.uncertain;
+      });
+    }
     case SSH_ERROR_CODES.ACCESS_UNAVAILABLE: {
       return i18n.t(($) => {
         return $.ssh.cloudflare.unavailable;

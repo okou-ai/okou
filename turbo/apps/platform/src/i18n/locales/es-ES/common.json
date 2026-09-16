@@ -6457,6 +6457,11 @@
     "resetHelp": "Restablece la clave solo después de verificar de forma independiente la nueva identidad del servidor. La siguiente conexión confiará en una nueva clave del host y la guardará.",
     "retry": "Reintentar",
     "save": "Guardar",
+    "saveRecovery": {
+      "checkResult": "Comprobar resultado",
+      "notSaved": "No se guardó nada. Tus datos siguen aquí; puedes editarlos o volver a guardar.",
+      "uncertain": "No pudimos confirmar si se guardaron los cambios. Comprueba el resultado antes de reintentar o editar. Si cierras, revisa la lista antes de añadirlos de nuevo."
+    },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",

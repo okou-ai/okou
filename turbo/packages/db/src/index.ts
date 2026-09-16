@@ -143,6 +143,7 @@ import * as piMemoryPhase2CheckpointSchema from "./schema/pi-memory-phase2-check
 import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publication-provenance";
 import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
+import * as sshSaveAttemptSchema from "./schema/ssh-save-attempt";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
@@ -292,6 +293,7 @@ export const schema = {
   ...piMemoryPublicationProvenanceSchema,
   ...sshConnectionSchema,
   ...sshCredentialSchema,
+  ...sshSaveAttemptSchema,
   ...agentSshAccessSchema,
   ...cloudflareAccessConfigSchema,
 };

@@ -12,7 +12,13 @@ import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
-import { lockSshOwner, sshCredentialFailure } from "./ssh-credential.service";
+import { sshCredentialFailure } from "./ssh-credential.service";
+import { lockSshOwner } from "./ssh-owner.service";
+import {
+  findSshSaveAttempt,
+  recordSshSaveAttempt,
+  sshSaveAttemptResolved,
+} from "./ssh-save-attempt.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 
 interface Owner {
@@ -163,6 +169,7 @@ export async function createCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Owner;
   readonly body: CreateCloudflareAccessRequest;
+  readonly saveAttemptId: string;
   readonly featureContext: FeatureSwitchContext;
 }) {
   const prepared = await prepareCloudflareAccessConfig(
@@ -171,9 +178,16 @@ export async function createCloudflareAccessConfig(args: {
   );
   const config = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
-    return insertCloudflareAccessConfig(tx, args.owner, prepared);
+    if (await findSshSaveAttempt(tx, args.owner, args.saveAttemptId)) {
+      return sshSaveAttemptResolved;
+    }
+    const value = await insertCloudflareAccessConfig(tx, args.owner, prepared);
+    await recordSshSaveAttempt(tx, args.owner, args.saveAttemptId, true);
+    return { ok: true as const, value };
   });
-  await publishSshClientInvalidation(args.owner);
+  if (config.ok) {
+    await publishSshClientInvalidation(args.owner);
+  }
   return config;
 }
 function lockReferencingHosts(tx: Transaction, owner: Owner, configId: string) {

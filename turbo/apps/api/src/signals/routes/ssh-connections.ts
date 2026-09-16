@@ -5,6 +5,8 @@ import {
 import { sshErrorResponse } from "../../lib/ssh-error";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import { sshSaveAttemptsContract } from "@okouai/api-contracts/contracts/ssh-save-attempts";
+import { resolveSshSaveAttempt } from "../services/ssh-save-attempt.service";
 import {
   createSshCredential,
   deleteSshCredential,
@@ -307,10 +309,13 @@ const createSshCredentialInner$ = command(
       db: set(writeDb$),
       owner,
       body: body.data,
+      saveAttemptId: body.data.saveAttemptId,
       featureContext,
     });
     signal.throwIfAborted();
-    return { status: 201 as const, body: credential };
+    return credential.ok
+      ? { status: 201 as const, body: credential.value }
+      : mapSshFailure(credential);
   },
 );
 const updateSshCredentialInner$ = command(
@@ -380,7 +385,32 @@ const deleteSshCredentialInner$ = command(
   },
 );
 
+const resolveSshSaveAttemptInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const owner = get(organizationAuthContext$);
+    const featureContext = await get(sshFeatureContext$);
+    signal.throwIfAborted();
+    if (!featureContext) {
+      return sshConfigurationUnavailable;
+    }
+    const body = await get(bodyResultOf(sshSaveAttemptsContract.resolve));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const { attemptId } = get(pathParamsOf(sshSaveAttemptsContract.resolve));
+    const result = await resolveSshSaveAttempt(set(writeDb$), owner, attemptId);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: result };
+  },
+);
+
 export const sshConnectionsRoutes: readonly RouteEntry[] = [
+  {
+    route: sshSaveAttemptsContract.resolve,
+    handler: authRoute(sshAuth, resolveSshSaveAttemptInner$),
+  },
   {
     route: sshCredentialsContract.list,
     handler: authRoute(sshAuth, listSshCredentialsInner$),

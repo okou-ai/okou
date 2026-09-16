@@ -6391,6 +6391,11 @@
     "resetHelp": "Setzen Sie den Schlüssel erst zurück, nachdem Sie die neue Serveridentität unabhängig geprüft haben. Die nächste Verbindung vertraut einem neuen Hostschlüssel und speichert ihn.",
     "retry": "Erneut versuchen",
     "save": "Speichern",
+    "saveRecovery": {
+      "checkResult": "Ergebnis prüfen",
+      "notSaved": "Es wurde nichts gespeichert. Ihre Eingaben sind noch vorhanden; Sie können sie bearbeiten oder erneut speichern.",
+      "uncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Prüfen Sie das Ergebnis, bevor Sie es erneut versuchen oder Änderungen vornehmen. Wenn Sie dieses Fenster schließen, prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen."
+    },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
     "title": "SSH-Hosts",

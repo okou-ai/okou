@@ -11,6 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import { sshSaveAttemptsContract } from "@okouai/api-contracts/contracts/ssh-save-attempts";
 import {
   cloudflareAccessContract,
   type CloudflareAccessConfig,
@@ -57,10 +58,12 @@ export const cancelSshPrivateKeyFile$ = command(({ set }) => {
 });
 const resetFormSave$ = resetSignal();
 const resetAccessFormSave$ = resetSignal();
+const resetSaveConfirmation$ = resetSignal();
 export const mountSshForm$ = onRef(
   command(({ set }, form: HTMLFormElement, signal: AbortSignal) => {
     signal.addEventListener("abort", () => {
       set(resetFormSave$);
+      set(abandonSshSave$);
       form.reset();
       set(cancelSshPrivateKeyFile$);
     });
@@ -74,6 +77,7 @@ export const mountSshAccessForm$ = onRef(
       "abort",
       () => {
         set(resetAccessFormSave$);
+        set(abandonSshSave$);
         form.reset();
       },
       { once: true },
@@ -183,6 +187,7 @@ const sshClients$ = computed(async (get) => {
     access: createClient(agentSshAccessContract, options),
     credentials: createClient(sshCredentialsContract, options),
     cloudflare: createClient(cloudflareAccessContract, options),
+    saves: createClient(sshSaveAttemptsContract, options),
   };
 });
 export interface SshDialogState {
@@ -203,6 +208,108 @@ export interface SshDialogState {
   readonly config: CloudflareAccessConfig | null;
 }
 const dialog$ = state<SshDialogState | null>(null);
+// Only the non-secret submission identity survives a request failure. The
+// mounted form owns its draft; a terminal confirmation reconciles this identity.
+const unresolvedSave$ = state<{
+  readonly dialog: SshDialogState;
+  readonly id: string;
+} | null>(null);
+const saveMessage$ = state<string | null>(null);
+export const sshSaveMessage$ = computed((get) => {
+  return get(saveMessage$);
+});
+export const sshSaveUncertain$ = computed((get) => {
+  const attempt = get(unresolvedSave$);
+  return attempt !== null && attempt.dialog === get(dialog$);
+});
+const abandonSshSave$ = command(({ set }) => {
+  set(resetSaveConfirmation$);
+  set(unresolvedSave$, null);
+  set(saveMessage$, null);
+});
+
+const beginSshSave$ = command(({ set }, dialog: SshDialogState, id: string) => {
+  set(saveMessage$, null);
+  set(unresolvedSave$, { dialog, id });
+});
+const finishSshSave$ = command(
+  (
+    { get, set },
+    dialog: SshDialogState,
+    result:
+      | { readonly status: 200 }
+      | { readonly status: 201 }
+      | {
+          readonly status: 400 | 404 | 409 | 500;
+          readonly body: { readonly error: { readonly code: string } };
+        },
+  ) => {
+    if (get(dialog$) !== dialog) {
+      return false;
+    }
+    if (result.status === 200 || result.status === 201) {
+      set(unresolvedSave$, null);
+      return true;
+    }
+    if (
+      result.status === 500 ||
+      result.body.error.code === SSH_ERROR_CODES.SAVE_ATTEMPT_RESOLVED
+    ) {
+      return false;
+    }
+    set(unresolvedSave$, null);
+    if (result.status === 400) {
+      set(saveMessage$, result.body.error.code);
+    } else {
+      set(conflict$, result.body.error.code);
+      set(invalidateSsh$);
+    }
+    return false;
+  },
+);
+
+export const resolveSshSave$ = command(
+  async ({ get, set }, parentSignal: AbortSignal) => {
+    const attempt = get(unresolvedSave$);
+    if (!attempt) {
+      return;
+    }
+    const signal = set(resetSaveConfirmation$, parentSignal);
+    const dialog = await get(sshDialog$);
+    signal.throwIfAborted();
+    if (dialog !== attempt.dialog) {
+      return;
+    }
+    const clients = await get(sshClients$);
+    signal.throwIfAborted();
+    if (clients.identity !== dialog.identity) {
+      return;
+    }
+    const result = await accept(
+      clients.saves.resolve({
+        params: { attemptId: attempt.id },
+        body: {},
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    if (dialog.identity !== (await get(sshIdentity$))) {
+      return;
+    }
+    signal.throwIfAborted();
+    if (get(dialog$) !== dialog || get(unresolvedSave$) !== attempt) {
+      return;
+    }
+    set(unresolvedSave$, null);
+    set(invalidateSsh$);
+    if (result.body.saved) {
+      set(closeSshDialog$);
+    } else {
+      set(saveMessage$, "not-saved");
+    }
+  },
+);
 export const sshEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.SshAccess];
 });
@@ -375,6 +482,7 @@ export const sshSingleConnectionName$ = computed(async (get) => {
   return connections?.length === 1 ? connections[0]?.displayName : null;
 });
 export const closeSshDialog$ = command(({ set }) => {
+  set(abandonSshSave$);
   set(cancelSshPrivateKeyFile$);
   set(conflict$, null);
   return set(dialog$, null);
@@ -397,6 +505,7 @@ export const sshObservationsSnapshot$ = computed(async (get) => {
   };
 });
 export const refreshSsh$ = command(({ set }) => {
+  set(abandonSshSave$);
   set(view$, "hosts");
   set(cancelSshPrivateKeyFile$);
   set(dialog$, null);
@@ -665,7 +774,7 @@ export const saveSshCloudflare$ = command(
     const signal = set(resetAccessFormSave$, parentSignal);
     const dialog = await get(sshDialog$);
     signal.throwIfAborted();
-    if (!dialog || !get(sshEnabled$)) {
+    if (!dialog || !get(sshEnabled$) || get(sshSaveUncertain$)) {
       return;
     }
     const clients = await get(sshClients$);
@@ -675,17 +784,24 @@ export const saveSshCloudflare$ = command(
     }
     let conflict: string | null = null;
     if (dialog.kind === "create-access") {
-      await accept(
+      const saveAttemptId = crypto.randomUUID();
+      const body = cloudflareAccessContract.create.body.parse({
+        saveAttemptId,
+        name: textField(form, "accessName"),
+        credentials: accessCredentialsFromForm(form),
+      });
+      set(beginSshSave$, dialog, saveAttemptId);
+      const result = await accept(
         clients.cloudflare.create({
-          body: cloudflareAccessContract.create.body.parse({
-            name: textField(form, "accessName"),
-            credentials: accessCredentialsFromForm(form),
-          }),
+          body,
           fetchOptions: { signal },
         }),
-        [201],
+        [201, 400, 404, 409, 500],
         signal,
       );
+      if (!set(finishSshSave$, dialog, result)) {
+        return;
+      }
     } else {
       conflict = await updateAccessConfig(
         clients.cloudflare,
@@ -815,16 +931,7 @@ async function saveCredentialForm(
   },
   signal: AbortSignal,
 ): Promise<string | null> {
-  if (dialog.kind === "create-credential") {
-    await accept(
-      client.create({
-        body: credentialFromForm(form, editor),
-        fetchOptions: { signal },
-      }),
-      [201],
-      signal,
-    );
-  } else if (
+  if (
     dialog.kind === "edit-credential" ||
     dialog.kind === "delete-credential"
   ) {
@@ -920,7 +1027,7 @@ export const saveSsh$ = command(
     const signal = set(resetFormSave$, parentSignal);
     const dialog = await get(sshDialog$);
     signal.throwIfAborted();
-    if (!dialog) {
+    if (!dialog || get(sshSaveUncertain$)) {
       return;
     }
     const clients = await get(sshClients$);
@@ -930,11 +1037,19 @@ export const saveSsh$ = command(
     }
     const editor = get(credentialEditor$);
     let conflicted: string | null = null;
-    if (
-      ["create-credential", "edit-credential", "delete-credential"].includes(
-        dialog.kind,
-      )
-    ) {
+    if (dialog.kind === "create-credential") {
+      const saveAttemptId = crypto.randomUUID();
+      const body = { ...credentialFromForm(form, editor), saveAttemptId };
+      set(beginSshSave$, dialog, saveAttemptId);
+      const result = await accept(
+        clients.credentials.create({ body, fetchOptions: { signal } }),
+        [201, 400, 404, 409, 500],
+        signal,
+      );
+      if (!set(finishSshSave$, dialog, result)) {
+        return;
+      }
+    } else if (["edit-credential", "delete-credential"].includes(dialog.kind)) {
       conflicted = await saveCredentialForm(
         clients.credentials,
         dialog,
@@ -947,13 +1062,20 @@ export const saveSsh$ = command(
       const transport = get(transportEditor$);
       const fields = hostFieldsFromForm(dialog, form, editor, transport);
       if (dialog.kind === "create") {
-        const body = createSshConnectionRequestSchema.parse(fields);
+        const saveAttemptId = crypto.randomUUID();
+        const body = createSshConnectionRequestSchema.parse({
+          ...fields,
+          saveAttemptId,
+        });
+        set(beginSshSave$, dialog, saveAttemptId);
         const result = await accept(
           client.create({ body, fetchOptions: { signal } }),
-          [201, 404],
+          [201, 400, 404, 409, 500],
           signal,
         );
-        conflicted = result.status === 201 ? null : result.body.error.code;
+        if (!set(finishSshSave$, dialog, result)) {
+          return;
+        }
       } else {
         const connection = dialog.connection;
         if (!connection) {
@@ -981,16 +1103,21 @@ export const saveSsh$ = command(
           );
           conflicted = result.status === 409 ? result.body.error.code : null;
         } else {
+          const saveAttemptId = crypto.randomUUID();
           const body = updateSshConnectionRequestSchema.parse({
+            saveAttemptId,
             expectedGeneration: get(reviewedVersion$) ?? connection.generation,
             ...fields,
           });
+          set(beginSshSave$, dialog, saveAttemptId);
           const result = await accept(
             client.update({ params, body, fetchOptions: { signal } }),
-            [200, 404, 409],
+            [200, 400, 404, 409, 500],
             signal,
           );
-          conflicted = result.status === 200 ? null : result.body.error.code;
+          if (!set(finishSshSave$, dialog, result)) {
+            return;
+          }
         }
       }
     }

@@ -470,6 +470,13 @@
       "when": 1789528865735,
       "tag": "1144_get_started_rewards",
       "breakpoints": true
+    },
+    {
+      "idx": 1145,
+      "version": "7",
+      "when": 1789542353307,
+      "tag": "1145_ssh_save_attempts",
+      "breakpoints": true
     }
   ]
 }

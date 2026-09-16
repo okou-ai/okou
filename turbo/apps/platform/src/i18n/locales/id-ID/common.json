@@ -6372,6 +6372,11 @@
     "resetHelp": "Reset hanya setelah memverifikasi identitas server baru secara independen. Koneksi berikutnya akan memercayai dan menyimpan kunci host baru.",
     "retry": "Coba lagi",
     "save": "Simpan",
+    "saveRecovery": {
+      "checkResult": "Periksa hasil",
+      "notSaved": "Tidak ada yang tersimpan. Isianmu masih ada; kamu dapat mengedit atau menyimpannya lagi.",
+      "uncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Periksa hasilnya sebelum mencoba lagi atau mengedit. Jika kamu menutup, periksa daftar sebelum menambahkannya lagi."
+    },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
     "title": "Host SSH",

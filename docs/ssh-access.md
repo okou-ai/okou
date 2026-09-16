@@ -49,8 +49,11 @@ locally. File selection does not upload anything or parse the key format; Save
 submits the credential. Keys, passphrases and passwords preserve whitespace.
 Secrets are write-only and stay outside the sandbox. Use a least-privilege
 remote SSH user. Submitted input stays only in the open form while saving;
-controls are disabled until the request completes. A retryable failure preserves
-the input so the user can correct it or click Save again. Successful saves close
+controls are disabled until the request completes. A known input rejection preserves
+the input so the user can correct it or click Save again. An uncertain host save
+or credential/Access creation keeps the fields frozen and offers **Check result**.
+Confirmation closes the form when the save committed, or unlocks the retained
+input for a new Save when nothing was saved. It never resends secrets. Successful saves close
 the form and clear its secrets, as do cancellation, navigation and owner changes.
 Changing authentication methods clears the previous method's inputs. Secrets
 are never stored in reactive state or browser caches. A background notification
@@ -76,6 +79,37 @@ preserving learned host keys. Renaming a credential leaves host generations
 unchanged. Host/port changes clear only that host's learned identity. Stale host
 generations or credential revisions are not automatically retried. Review the
 latest host metadata in the dialog, or reopen a credential, before saving again.
+
+### Save outcome confirmation
+
+Host create/update and standalone credential/Access create requests require a
+random `saveAttemptId`. Inline resource payloads do not have separate identities.
+The resource changes and a secret-free terminal receipt commit together under
+the existing SSH owner lock. A consumed identity is never reapplied, even with
+changed input or after deleting the resource. A replay reaching the write
+transaction returns `SSH_SAVE_ATTEMPT_RESOLVED`; existing validation or host-edit
+preflight checks may reject it earlier. This is single-use identity, not cached
+response replay. Use confirmation, not another mutation, to determine the outcome.
+
+`POST /api/ssh/save-attempts/:attemptId/resolve` takes an empty body and returns
+`{ saved: true }` when the operation committed. Otherwise it records and returns
+`{ saved: false }` under the same lock. This terminal negative result prevents a
+late original request from writing; a read-only lookup would not provide that
+guarantee. Confirmation can be retried with the same ID. Known validation failures
+do not consume an identity. A new Save after confirmed failure uses a new ID.
+
+Receipts are scoped to organization/user and contain only the operation ID,
+boolean outcome and creation time. No request payload, secret, ciphertext, hash
+or resource metadata is retained. Receipts have no TTL and survive resource
+deletion; expiring them would reopen old IDs. Final Clerk user/org erasure removes
+them, while ordinary membership changes do not reset their history.
+
+Closing or navigating away clears the local draft and attempt ID and aborts UI
+work, but does not claim to cancel a server commit. If an uncertain form is
+abandoned, inspect the refreshed list before intentionally starting a new save.
+No background mutation retry or secret persistence is introduced. Normal edits
+to existing credentials/Access configurations, deletion and host-key reset keep
+their existing concurrency contracts.
 
 ### Owner storage and pre-GA cutover
 
