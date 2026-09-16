@@ -4,7 +4,6 @@ import {
   type UpdateUserPreferencesRequest,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { apiClient$ } from "../../api-client.ts";
-import { clerk$ } from "../../auth.ts";
 import {
   initializeMorningBriefEnrollment$,
   retryMorningBriefPreference$,
@@ -54,12 +53,6 @@ export const updateUserPreference$ = command(
       }),
       [200],
     );
-    signal.throwIfAborted();
-
-    // Force JWT refresh so updated membership metadata is available immediately
-    const clerk = await get(clerk$);
-    signal.throwIfAborted();
-    await clerk.session?.getToken({ skipCache: true });
     signal.throwIfAborted();
 
     set(reloadUserPreferences$);
