@@ -39,8 +39,9 @@ impl OomEvidence {
             || self.dropped_incidents != 0
             || self.incidents.is_empty()
             || self.groups.iter().enumerate().any(|(index, group)| {
-                self.groups[..index]
+                self.groups
                     .iter()
+                    .take(index)
                     .any(|other| other.inode == group.inode)
             })
             || !usable_kernel_status(self.kernel_status)
@@ -55,7 +56,18 @@ impl OomEvidence {
         // A counter increase after the last retained incident is not covered by
         // its continuation witness (including deferred kernel/counter races).
         if self.incidents.last().is_none_or(|incident| {
-            incident.groups[0].delta.oom_kill != total || incident.groups[2].delta.oom_kill != total
+            [
+                (&incident.groups[0], &self.groups[0]),
+                (&incident.groups[2], &self.groups[2]),
+            ]
+            .into_iter()
+            .any(|(observed, current)| {
+                let observed = &observed.delta;
+                let current = &current.delta;
+                observed.oom != current.oom
+                    || observed.oom_kill != current.oom_kill
+                    || observed.oom_group_kill != current.oom_group_kill
+            })
         }) {
             return false;
         }
@@ -150,42 +162,51 @@ fn usable_kernel_status(status: EvidenceStatus) -> bool {
 }
 
 fn valid_groups(groups: &[MemorySnapshot; 3], current: &[MemorySnapshot; 3]) -> bool {
-    groups.iter().enumerate().all(|(index, group)| {
-        let role = ["workload", "runtime", "tools"][index];
-        let path = if index == 0 {
-            current[0].cgroup.clone()
-        } else {
-            format!("{}/{role}", current[0].cgroup)
-        };
-        group.role == role
-            && group.cgroup == path
-            && group.inode.is_some()
-            && group.inode == current[index].inode
-            && group.baseline == current[index].baseline
-            && group.local_baseline == current[index].local_baseline
-            && matches!(
-                group.status,
-                EvidenceStatus::Available | EvidenceStatus::Partial
-            )
-            && group.delta == group.events.delta(&group.baseline)
-            && group.local_delta == group.local_events.delta(&group.local_baseline)
-            && [
-                group.delta.oom,
-                group.delta.oom_kill,
-                group.delta.oom_group_kill,
-                group.local_delta.oom,
-                group.local_delta.oom_kill,
-                group.local_delta.oom_group_kill,
-            ]
-            .iter()
-            .all(Option::is_some)
-            && group.local_delta.oom_kill == Some(0)
-            && group.local_delta.oom_group_kill == Some(0)
-            && (index != 1
-                || (group.delta.oom == Some(0)
-                    && group.delta.oom_kill == Some(0)
-                    && group.delta.oom_group_kill == Some(0)))
-    })
+    groups
+        .iter()
+        .zip(current)
+        .zip(["workload", "runtime", "tools"])
+        .all(|((group, latest), role)| {
+            let path = if role == "workload" {
+                current[0].cgroup.clone()
+            } else {
+                format!("{}/{role}", current[0].cgroup)
+            };
+            group.role == role
+                && group.cgroup == path
+                && group.inode.is_some_and(|inode| inode > 0)
+                && group.inode == latest.inode
+                && group.baseline == latest.baseline
+                && group.local_baseline == latest.local_baseline
+                && matches!(
+                    group.status,
+                    EvidenceStatus::Available | EvidenceStatus::Partial
+                )
+                && group.delta == group.events.delta(&group.baseline)
+                && group.local_delta == group.local_events.delta(&group.local_baseline)
+                && [
+                    group.delta.oom,
+                    group.delta.oom_kill,
+                    group.delta.oom_group_kill,
+                    group.local_delta.oom,
+                    group.local_delta.oom_kill,
+                    group.local_delta.oom_group_kill,
+                ]
+                .iter()
+                .all(Option::is_some)
+                && group.local_delta.oom <= group.delta.oom
+                && group.delta.oom <= latest.delta.oom
+                && group.delta.oom_kill <= latest.delta.oom_kill
+                && group.delta.oom_group_kill <= latest.delta.oom_group_kill
+                && group.local_delta.oom_kill == Some(0)
+                && group.local_delta.oom_group_kill == Some(0)
+                && (role != "runtime"
+                    || (group.delta.oom == Some(0)
+                        && group.delta.oom_kill == Some(0)
+                        && group.delta.oom_group_kill == Some(0)))
+        })
+        && groups[0].delta.oom >= groups[2].delta.oom
+        && groups[0].delta.oom_group_kill == groups[2].delta.oom_group_kill
 }
 
 #[cfg(test)]
@@ -290,6 +311,35 @@ mod tests {
     }
 
     #[test]
+    fn contradictory_hierarchical_counters_remain_unproven() {
+        for retained in [false, true] {
+            for field in ["oom", "oom_group_kill"] {
+                let mut value = serde_json::to_value(fixture()).unwrap();
+                let groups = if retained {
+                    &mut value["incidents"][0]["groups"]
+                } else {
+                    &mut value["groups"]
+                };
+                // Each counter delta is arithmetically valid in isolation, but
+                // the tool subtree cannot exceed its enclosing workload.
+                groups[2]["events"][field] = 2.into();
+                groups[2]["delta"][field] = 2.into();
+                let evidence: OomEvidence = serde_json::from_value(value).unwrap();
+                assert!(!evidence.proves_contained_tool_oom());
+            }
+            let mut evidence = fixture();
+            let groups = if retained {
+                &mut evidence.incidents[0].groups
+            } else {
+                &mut evidence.groups
+            };
+            groups[2].local_events.oom = Some(2);
+            groups[2].local_delta.oom = Some(2);
+            assert!(!evidence.proves_contained_tool_oom());
+        }
+    }
+
+    #[test]
     fn stale_identity_corruption_and_absent_or_early_progress_remain_unproven() {
         let mutations: &[fn(&mut OomEvidence)] = &[
             |e| e.runtime_progress_at = None,
@@ -299,6 +349,7 @@ mod tests {
             |e| e.guest_boot_id = None,
             |e| e.operation_id = "stale".into(),
             |e| e.groups[1].inode = Some(99),
+            |e| e.groups[1].inode = Some(0),
             |e| e.groups[2].cgroup.push_str("/stale"),
             |e| e.groups[0].status = EvidenceStatus::Recreated,
             |e| e.incidents[0].id = "another-operation:1".into(),
@@ -310,6 +361,10 @@ mod tests {
             |e| e.kernel_cursor = Some(1),
             |e| e.dropped_incidents = 1,
             |e| e.incidents[0].captured_at = e.sampled_at.clone(),
+            |e| {
+                e.groups[0].events.oom = Some(2);
+                e.groups[0].delta.oom = Some(2);
+            },
             |e| {
                 for i in [0, 2] {
                     e.groups[i].delta.oom_kill = Some(2);

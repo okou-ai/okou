@@ -130,9 +130,8 @@ impl WorkloadContainment {
         let progress = self
             .runtime_progress_at
             .load(std::sync::atomic::Ordering::Relaxed);
-        let mut request_bytes = vec![request];
+        let mut request_bytes = vec![if progress > 0 { request + 2 } else { request }];
         if progress > 0 {
-            request_bytes[0] += 2;
             request_bytes.extend_from_slice(&progress.to_be_bytes());
         }
         tokio::time::timeout(EVIDENCE_IO_TIMEOUT, stream.write_all(&request_bytes))
