@@ -79,8 +79,7 @@ Preventing growth is an interim guardrail, not completion of this goal.
   that contract instead of creating a parallel variable or token registry.
 - Lint and agent instructions enforce the same boundary. Failures direct
   contributors to this guide and the underlying fix; business selectors cannot
-  be authorized by disabling lint, expanding a baseline, or adding an allowlist
-  entry.
+  be authorized by disabling lint or adding an allowlist entry.
 
 Passing the current lint establishes compliance with the guardrail.
 
@@ -201,8 +200,9 @@ canonical state layer. Each override keys off `[data-theme="dark"]` and
 `[data-gradient-color-themes]` alone and wraps the theme test in `:where()`, so
 it stays at the specificity of the rule it refines and source order decides
 between them. Do not reach for the paired `.dark` class here: a class in the
-selector registers a new first-party class-selector declaration and fails the
-shrink-only baseline. The two document-level theme selectors that do spell it
+selector is a first-party class-selector declaration, and the policy fails any
+that the allowlist does not name. The two document-level theme selectors that do
+spell it
 are `global-environment` entries in `turbo/style-allowlist.json`, not a
 precedent for a new rule.
 
@@ -302,7 +302,7 @@ Integration and connector tests scope controls through the documented
 `data-slot="integration-card"`, `data-slot="connector-card"`,
 `data-slot="badge"`, and `data-slot="sidebar-thread-title"` component
 boundaries. These slots carry no styles; tests must not locate surfaces through
-utility or legacy class names.
+class names.
 
 The `--okou-card-*` variables are read directly by page-level surfaces — the
 queue drawer's cards, the mail draft card, the onboarding pickers, and the
@@ -698,8 +698,8 @@ rather than the height the rest of the app measures.
 `p-safe` is an `@utility` instead of a theme entry because its four sides carry
 four different values, which no single spacing token can express. Registering it
 is not an exception to the selector boundary: `@utility` emits into
-`@layer utilities` and declares no class selector, so the shrink-only baseline
-does not record it.
+`@layer utilities` and declares no class selector, so the policy does not see a
+selector to reject.
 
 `position: fixed` changes where a box is laid out, not where it sits in the DOM,
 so a shell's custom properties still inherit into a fixed cover.
@@ -779,9 +779,9 @@ keyed at `:root` rather than four selectors. `signals/theme.ts` writes
 `data-theme` and `data-gradient-color-themes` onto the document element; each
 theme test wraps in `:where()` so it stays at the specificity of the rule it
 refines and source order decides between them. Do not add the paired `.dark`
-class: a class in the selector registers a first-party class-selector
-declaration against the shrink-only baseline, and the document-level selectors
-that spell it are allowlisted rather than exemplary.
+class: a class in the selector is a first-party class-selector declaration, and
+the document-level selectors that spell it are allowlisted rather than
+exemplary.
 
 Consumers spell `before:bg-[length:100%_100%]` beside the two background
 utilities. `background-size: 100% 100%` and the initial `auto auto` size a
@@ -953,9 +953,9 @@ Mermaid fence before a diagram marker replaces it: `marked` writes the class for
 a Markdown fence, and a message carrying raw
 `<pre><code class="language-mermaid">` HTML writes it directly. Both are
 external DOM contracts being parsed, not first-party styling, so neither the
-legacy baseline nor `no-unknown-classes` counts them — the baseline resolves
-class attributes and class-helper calls, and the rule reads class attributes
-only. Page tests that query `code.language-mermaid` likewise match
+policy nor `no-unknown-classes` counts them — the policy only counts the tokens
+the allowlist names, and the rule reads class attributes only. Page tests that
+query `code.language-mermaid` likewise match
 pipeline-generated markup, not this component.
 
 ### Markdown card block spacing
@@ -1074,6 +1074,17 @@ also identify their upstream DOM owner. A styling convenience, missing utility,
 or existing first-party convention is not an exception. Vendored CSS is pinned
 by exact path and SHA-256 rather than by a directory-wide ignore.
 
+A `selectors` entry matches exactly: the file, the enclosing conditional
+at-rules, the nested selector ancestry, and the selector itself all have to
+agree, so the same rule moved under a different media query is a different
+selector. Normally only a rule that spells a class needs an entry, but a
+class-qualified `@scope` qualifies every declaration inside it, so its `:scope`,
+`&`, and bare element rules count as first-party class declarations too. Any
+first-party class-selector rule the allowlist does not name fails lint — there
+is no grandfathered set behind it. The check runs both ways: an entry that no
+longer matches a rule also fails, so removing the CSS means removing the entry
+in the same change.
+
 ### Third-party attribution of borrowed class names
 
 A class that looks like a vendor's is not automatically that vendor's. The
@@ -1091,49 +1102,23 @@ custom property threaded through an arbitrary or data-type-hinted utility. Bare
 fallback. The two `lucide` rules remain for the real `lucide-react` DOM,
 including the allowlisted `svg.lucide-ellipsis circle` entry.
 
-`toaster` in `components/ui/sonner.tsx` is the mirror case. It is one of the two
-legacy class dependencies left in Platform and UI, beside `wmde-markdown` in
-`markdown-frame.tsx`. Sonner neither defines nor requires that class; the
-component invents it, hands it to Sonner's `className` prop, and then anchors
-its own `group-[.toaster]:` variants on it. Sonner's actual contract is the
-`[data-sonner-toaster]` attribute it puts on its own list element. Both are `classDependencies` entries in
-`turbo/style-allowlist.json`, which is where a class carrying a third party's
-DOM contract belongs: the baseline is a ratchet for debt, and neither of these
-is expected to go until its renderer does.
+`toaster` in `components/ui/sonner.tsx` is the mirror case. Sonner neither
+defines nor requires that class; the component invents it, hands it to Sonner's
+`className` prop, and then anchors its own `group-[.toaster]:` variants on it.
+Sonner's actual contract is the `[data-sonner-toaster]` attribute it puts on its
+own list element. It and `wmde-markdown` in `markdown-frame.tsx` are the two
+`classDependencies` entries in `turbo/style-allowlist.json`, which is where a
+class carrying a third party's DOM contract belongs; neither is expected to go
+until its renderer does.
 
 An entry authorizes a count in a file, not a class. A second use in the same
-file, or any use in another file, still fails lint; a count that has fallen
-points back at the allowlist, because `pnpm lint:style:prune` cannot reach an
-entry it does not own. A class a first-party element invents for itself is not
-this kind of exception and is drained — the borrowed-name rule above is what
-separates the two.
-
-## Shrink-only legacy state
-
-`turbo/style-legacy-baseline.json` records current first-party selector
-declarations as normalized CSS AST atoms, including nested selector ancestry,
-conditional at-rules, `@scope` roots and limits, and `@apply` contents. A
-class-qualified scope also freezes its `:scope`, `&`, and element-selector
-declarations; scope boundaries participate in exact baseline and adapter
-matching. Legacy class dependencies are counted at their consuming attributes or
-calls, resolving local constants, imported aliases, and re-exports. Reusing an
-existing constant in another consumer is a new dependency. The baseline also
-fingerprints existing inline or injected styles that are not permanent adapters.
-
-The baseline is not an allowlist and has no command that expands it. A new
-selector, a changed declaration, a new use of an existing legacy class, or a new
-style injection fails lint. Removing legacy state intentionally makes the
-baseline stale; `pnpm lint:style:prune` only intersects the baseline with
-current source and refuses to authorize growth. Pre-commit compares the baseline
-with `HEAD`, while CI compares it with the pull request or merge-queue base SHA,
-so manually editing source and baseline together cannot bypass the ratchet.
-
-Commands run from `turbo`. An invalid Git reference, unreadable baseline, or
-malformed JSON fails with a nonzero exit status and a pointer to this guide.
-Only a reference commit genuinely predating the baseline file permits its
-initial introduction. That bootstrap case applies to local/CI repository
-history, not production version compatibility; once the target base contains the
-baseline, the ratchet is mandatory.
+file fails lint, any use in another file fails, and so does a count that has
+fallen — lower it in the allowlist, or delete the entry. Uses are counted at the
+consuming attribute or call, resolving local constants, imported aliases, and
+re-exports, so passing an already-authorized constant to a second component is a
+new dependency rather than a free one. A class a first-party element invents for
+itself is not this kind of exception and takes a utility instead — the
+borrowed-name rule above is what separates the two.
 
 ## Enforcement and feedback
 
@@ -1145,13 +1130,20 @@ pnpm lint:style
 
 The check has three layers:
 
-1. The repository policy compares CSS AST atoms, legacy class dependency counts,
-   injected-style fingerprints, exact adapter entries, and vendored file hashes.
+1. The repository policy checks every first-party CSS class-selector
+   declaration, class dependency count, injected-style fingerprint, and vendored
+   file hash against `turbo/style-allowlist.json`, and validates that the
+   allowlist's own entries carry their required metadata.
 2. `@eslint/css` parses first-party CSS with Tailwind v4 syntax and disallows
    inline ESLint configuration for this check.
 3. `eslint-plugin-better-tailwindcss/no-unknown-classes` validates component
-   class strings against the real App Tailwind entry point while accepting only
-   the recorded legacy tokens.
+   class strings against the real App Tailwind entry point, ignoring only the
+   allowlisted class dependency tokens.
+
+The policy needs no Git history and no reference commit: the allowlist is the
+whole expectation, so the same command gives the same answer on a branch, in the
+merge queue, and on a contributor's machine. An unreadable or malformed
+`style-allowlist.json` fails it outright.
 
 CI runs this as the independent required `lint-style` job. The pre-commit hook
 runs the fast repository policy so the most actionable boundary failures are
@@ -1161,9 +1153,9 @@ full command keeps a failing exit status for policy, CSS, Tailwind, or test
 failures.
 
 When a style check fails, read this guide and replace business styling with the
-appropriate Tailwind utilities and registered tokens. Prune the baseline when
-legacy code has been removed. Do not suppress the check or add a business
-styling exception to make it pass.
+appropriate Tailwind utilities and registered tokens. When a change removes CSS
+or a class an entry covers, remove that entry in the same change. Do not
+suppress the check or add a business styling exception to make it pass.
 
 ## App palette previews
 

@@ -1,18 +1,16 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { globSync, readFileSync, writeFileSync } from "node:fs";
+import { globSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { fork } from "@eslint/css-tree";
 import { tailwind4 } from "tailwind-csstree";
 import ts from "typescript";
 
-import { collectLegacyClassUsages } from "./style-class-usage.mjs";
+import { collectClassUsages } from "./style-class-usage.mjs";
 
 const STYLE_POLICY_VERSION = 1;
 const PROJECT_ROOT = process.cwd();
 const ALLOWLIST_PATH = resolve(PROJECT_ROOT, "style-allowlist.json");
-const BASELINE_PATH = resolve(PROJECT_ROOT, "style-legacy-baseline.json");
 const CSS_GLOBS = ["apps/platform/src/**/*.css", "packages/ui/src/**/*.css"];
 const SOURCE_GLOBS = [
   "apps/platform/src/**/*.ts",
@@ -96,55 +94,7 @@ function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function assertBaseline(baseline) {
-  if (!isRecord(baseline) || baseline.version !== STYLE_POLICY_VERSION) {
-    throw new Error(
-      `Style baseline must be a version ${STYLE_POLICY_VERSION} object.`,
-    );
-  }
-  if (
-    !Array.isArray(baseline.legacyClassTokens) ||
-    !baseline.legacyClassTokens.every(
-      (token) => typeof token === "string" && token.length > 0,
-    )
-  ) {
-    throw new Error(
-      "Style baseline legacyClassTokens must contain non-empty strings.",
-    );
-  }
-  for (const field of ["cssAtoms", "styleInjections"]) {
-    if (
-      !isRecord(baseline[field]) ||
-      !Object.values(baseline[field]).every(
-        (records) => Array.isArray(records) && records.every(isRecord),
-      )
-    ) {
-      throw new Error(
-        `Style baseline ${field} must map files to arrays of records.`,
-      );
-    }
-  }
-  if (!isRecord(baseline.classUsages)) {
-    throw new Error(
-      "Style baseline classUsages must map files to class counts.",
-    );
-  }
-  for (const [file, usage] of Object.entries(baseline.classUsages)) {
-    if (
-      !isRecord(usage) ||
-      !Object.values(usage).every(
-        (count) => Number.isSafeInteger(count) && count > 0,
-      )
-    ) {
-      throw new Error(
-        `Style baseline classUsages in ${file} must contain positive integer counts.`,
-      );
-    }
-  }
-}
-
-export function validatePolicyFiles(allowlist, baseline) {
-  assertBaseline(baseline);
+export function validatePolicyFiles(allowlist) {
   const errors = [];
   if (allowlist.version !== STYLE_POLICY_VERSION) {
     errors.push(`style-allowlist.json version must be ${STYLE_POLICY_VERSION}`);
@@ -514,44 +464,22 @@ function countBy(records, key) {
   return counts;
 }
 
-function compareRecords(file, current, expected, key, label, issues) {
-  const currentCounts = countBy(current, key);
-  const expectedCounts = countBy(expected, key);
-  const reportedGrowth = new Set();
-  const reportedStale = new Set();
-
-  for (const record of current) {
+// Anything the allowlist did not claim is a violation. There is no grandfathered
+// set to compare against: the migration that needed one is finished.
+function reportRecords(file, records, key, label, issues) {
+  const reported = new Set();
+  for (const record of records) {
     const recordKey = key(record);
-    if (
-      (currentCounts.get(recordKey) ?? 0) >
-        (expectedCounts.get(recordKey) ?? 0) &&
-      !reportedGrowth.has(recordKey)
-    ) {
-      reportedGrowth.add(recordKey);
-      issues.push({
-        type: "growth",
-        file,
-        line: record.line ?? 1,
-        message: `New ${label} is forbidden. Use Tailwind utilities in the component; business code must not expand the style allowlist.`,
-      });
+    if (reported.has(recordKey)) {
+      continue;
     }
-  }
-
-  for (const record of expected) {
-    const recordKey = key(record);
-    if (
-      (expectedCounts.get(recordKey) ?? 0) >
-        (currentCounts.get(recordKey) ?? 0) &&
-      !reportedStale.has(recordKey)
-    ) {
-      reportedStale.add(recordKey);
-      issues.push({
-        type: "stale",
-        file,
-        line: 1,
-        message: `Legacy ${label} was removed or changed. Run \`pnpm lint:style:prune\` to ratchet the baseline down.`,
-      });
-    }
+    reported.add(recordKey);
+    issues.push({
+      type: "growth",
+      file,
+      line: record.line ?? 1,
+      message: `New ${label} is forbidden. Use Tailwind utilities in the component; business code must not expand the style allowlist.`,
+    });
   }
 }
 
@@ -560,11 +488,7 @@ function stableRecord(record) {
   return stable;
 }
 
-function collectCurrentStyleState({
-  root = PROJECT_ROOT,
-  allowlist,
-  baseline,
-}) {
+function collectCurrentStyleState({ root = PROJECT_ROOT, allowlist }) {
   const issues = [];
   const allowlistedSelectors = new Set(allowlist.selectors.map(selectorKey));
   const seenSelectors = new Set();
@@ -634,28 +558,27 @@ function collectCurrentStyleState({
   const sourceFiles = globSync(SOURCE_GLOBS, { cwd: root })
     .filter(isProductionSource)
     .sort();
-  const classUsages = collectLegacyClassUsages(root, sourceFiles, [
-    ...new Set([
-      ...baseline.legacyClassTokens,
-      ...allowlist.classDependencies.map((entry) => {
-        return entry.token;
-      }),
-    ]),
-  ]);
+  const classUsages = collectClassUsages(
+    root,
+    sourceFiles,
+    allowlist.classDependencies.map((entry) => {
+      return entry.token;
+    }),
+  );
 
   for (const file of sourceFiles) {
     const text = readFileSync(resolve(root, file), "utf8");
-    const legacyInjections = [];
+    const injections = [];
     for (const injection of collectStyleInjections(file, text)) {
       const key = injectionKey(injection);
       if (allowlistedInjections.has(key)) {
         seenInjections.add(key);
         continue;
       }
-      legacyInjections.push(stableRecord(injection));
+      injections.push(stableRecord(injection));
     }
-    if (legacyInjections.length > 0) {
-      styleInjections[file] = legacyInjections;
+    if (injections.length > 0) {
+      styleInjections[file] = injections;
     }
   }
 
@@ -676,9 +599,8 @@ function collectCurrentStyleState({
 export function checkStylePolicy({
   root = PROJECT_ROOT,
   allowlist = readJson(ALLOWLIST_PATH),
-  baseline = readJson(BASELINE_PATH),
 } = {}) {
-  const issues = validatePolicyFiles(allowlist, baseline).map((message) => {
+  const issues = validatePolicyFiles(allowlist).map((message) => {
     return {
       type: "policy",
       file: "style-allowlist.json",
@@ -686,27 +608,22 @@ export function checkStylePolicy({
       message,
     };
   });
-  const current = collectCurrentStyleState({ root, allowlist, baseline });
+  const current = collectCurrentStyleState({ root, allowlist });
   issues.push(...current.issues);
 
-  const cssFiles = new Set([
-    ...Object.keys(current.cssAtoms),
-    ...Object.keys(baseline.cssAtoms),
-  ]);
+  const cssFiles = new Set(Object.keys(current.cssAtoms));
   for (const file of cssFiles) {
-    compareRecords(
+    reportRecords(
       file,
       current.cssAtoms[file] ?? [],
-      baseline.cssAtoms[file] ?? [],
       cssAtomKey,
       "first-party CSS class selector declaration",
       issues,
     );
   }
 
-  // An allowlisted class dependency pins an exact count in an exact file, the
-  // way a baseline entry does. It is not prunable, so a count that no longer
-  // matches points at the allowlist rather than at the ratchet.
+  // An allowlisted class dependency pins an exact count in an exact file. It is
+  // the only expectation there is: every other use of the token is a violation.
   const allowlistedUsage = {};
   for (const entry of allowlist.classDependencies) {
     allowlistedUsage[entry.file] ??= {};
@@ -715,21 +632,18 @@ export function checkStylePolicy({
 
   const sourceFiles = new Set([
     ...Object.keys(current.classUsages),
-    ...Object.keys(baseline.classUsages),
     ...Object.keys(allowlistedUsage),
   ]);
   for (const file of sourceFiles) {
     const currentUsage = current.classUsages[file] ?? {};
-    const baselineUsage = baseline.classUsages[file] ?? {};
     const allowedUsage = allowlistedUsage[file] ?? {};
     for (const token of new Set([
       ...Object.keys(currentUsage),
-      ...Object.keys(baselineUsage),
       ...Object.keys(allowedUsage),
     ])) {
       const allowed = allowedUsage[token];
       const actual = currentUsage[token] ?? 0;
-      const expected = allowed ?? baselineUsage[token] ?? 0;
+      const expected = allowed ?? 0;
       if (actual > expected) {
         issues.push({
           type: "growth",
@@ -737,200 +651,35 @@ export function checkStylePolicy({
           line: 1,
           message:
             allowed === undefined
-              ? `Legacy class \`${token}\` usage grew from ${expected} to ${actual}. Replace the new use with Tailwind utilities.`
+              ? `Class \`${token}\` is allowlisted for another file, not this one. Use Tailwind utilities here.`
               : `Allowlisted class \`${token}\` usage grew from ${expected} to ${actual}. An allowlist entry authorizes an exact count; it is not a license to spread the class.`,
         });
       } else if (actual < expected) {
+        // Reaching here means `allowed` is defined: an absent entry expects 0,
+        // and a count cannot fall below it.
         issues.push({
           type: "stale",
           file,
           line: 1,
-          message:
-            allowed === undefined
-              ? `Legacy class \`${token}\` usage fell from ${expected} to ${actual}. Run \`pnpm lint:style:prune\` to ratchet the baseline down.`
-              : `Allowlisted class \`${token}\` usage fell from ${expected} to ${actual}. Lower the count in style-allowlist.json, or remove the entry.`,
+          message: `Allowlisted class \`${token}\` usage fell from ${expected} to ${actual}. Lower the count in style-allowlist.json, or remove the entry.`,
         });
       }
     }
   }
 
-  const injectionFiles = new Set([
-    ...Object.keys(current.styleInjections),
-    ...Object.keys(baseline.styleInjections),
-  ]);
-  for (const file of injectionFiles) {
-    compareRecords(
+  for (const file of Object.keys(current.styleInjections)) {
+    reportRecords(
       file,
       current.styleInjections[file] ?? [],
-      baseline.styleInjections[file] ?? [],
-      (record) => JSON.stringify([record.kind, record.fingerprint]),
+      (record) => {
+        return JSON.stringify([record.kind, record.fingerprint]);
+      },
       "inline or injected stylesheet",
       issues,
     );
   }
 
   return { current, issues };
-}
-
-function intersection(expected, current, key) {
-  const available = countBy(current, key);
-  return expected.filter((record) => {
-    const recordKey = key(record);
-    const count = available.get(recordKey) ?? 0;
-    if (count === 0) {
-      return false;
-    }
-    available.set(recordKey, count - 1);
-    return true;
-  });
-}
-
-function prunedBaseline(baseline, current) {
-  const cssAtoms = {};
-  for (const [file, atoms] of Object.entries(baseline.cssAtoms)) {
-    const retained = intersection(
-      atoms,
-      current.cssAtoms[file] ?? [],
-      cssAtomKey,
-    );
-    if (retained.length > 0) {
-      cssAtoms[file] = retained;
-    }
-  }
-
-  const classUsages = {};
-  const usedTokens = new Set();
-  for (const [file, expected] of Object.entries(baseline.classUsages)) {
-    const actual = current.classUsages[file] ?? {};
-    const retained = {};
-    for (const [token, count] of Object.entries(expected)) {
-      const nextCount = Math.min(count, actual[token] ?? 0);
-      if (nextCount > 0) {
-        retained[token] = nextCount;
-        usedTokens.add(token);
-      }
-    }
-    if (Object.keys(retained).length > 0) {
-      classUsages[file] = retained;
-    }
-  }
-
-  const styleInjections = {};
-  for (const [file, injections] of Object.entries(baseline.styleInjections)) {
-    const retained = intersection(
-      injections,
-      current.styleInjections[file] ?? [],
-      (record) => JSON.stringify([record.kind, record.fingerprint]),
-    );
-    if (retained.length > 0) {
-      styleInjections[file] = retained;
-    }
-  }
-
-  return {
-    version: STYLE_POLICY_VERSION,
-    legacyClassTokens: baseline.legacyClassTokens.filter((token) => {
-      return usedTokens.has(token);
-    }),
-    cssAtoms,
-    classUsages,
-    styleInjections,
-  };
-}
-
-function reportBaselineRecordGrowth(
-  currentByFile,
-  referenceByFile,
-  key,
-  label,
-  errors,
-) {
-  for (const [file, records] of Object.entries(currentByFile)) {
-    const currentCounts = countBy(records, key);
-    const referenceCounts = countBy(referenceByFile[file] ?? [], key);
-    for (const [recordKey, count] of currentCounts) {
-      if (count > (referenceCounts.get(recordKey) ?? 0)) {
-        errors.push(
-          `Shrink-only baseline added ${label} in ${file}; remove the addition and use Tailwind utilities.`,
-        );
-      }
-    }
-  }
-}
-
-function baselineGrowthErrors(baseline, reference) {
-  const errors = [];
-  const referenceTokens = new Set(reference.legacyClassTokens);
-  for (const token of baseline.legacyClassTokens) {
-    if (!referenceTokens.has(token)) {
-      errors.push(
-        `Shrink-only baseline added legacy class token \`${token}\`; remove the addition and use Tailwind utilities.`,
-      );
-    }
-  }
-
-  reportBaselineRecordGrowth(
-    baseline.cssAtoms,
-    reference.cssAtoms,
-    cssAtomKey,
-    "a CSS selector declaration",
-    errors,
-  );
-  reportBaselineRecordGrowth(
-    baseline.styleInjections,
-    reference.styleInjections,
-    (record) => JSON.stringify([record.kind, record.fingerprint]),
-    "an inline or injected stylesheet",
-    errors,
-  );
-
-  for (const [file, usage] of Object.entries(baseline.classUsages)) {
-    const referenceUsage = reference.classUsages[file] ?? {};
-    for (const [token, count] of Object.entries(usage)) {
-      if (count > (referenceUsage[token] ?? 0)) {
-        errors.push(
-          `Shrink-only baseline grew legacy class \`${token}\` from ${referenceUsage[token] ?? 0} to ${count} in ${file}; remove the addition and use Tailwind utilities.`,
-        );
-      }
-    }
-  }
-  return errors;
-}
-
-function baselineAtGitRef(ref) {
-  const commit = execFileSync(
-    "git",
-    ["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`],
-    {
-      cwd: PROJECT_ROOT,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  ).trim();
-  const baselineFile = "turbo/style-legacy-baseline.json";
-  const entry = execFileSync(
-    "git",
-    ["ls-tree", "--full-tree", "--name-only", "-z", commit, "--", baselineFile],
-    {
-      cwd: PROJECT_ROOT,
-      encoding: "utf8",
-    },
-  );
-  // The initial lint PR has no baseline on its base commit. Only that actual
-  // absence skips the ratchet; Git failures and malformed existing data fail.
-  // This is repository-history bootstrap, not deployed-version compatibility.
-  // Remove when all supported ratchet refs contain the baseline; tracked by #32402.
-  if (entry === "") {
-    return undefined;
-  }
-  const baseline = JSON.parse(
-    execFileSync("git", ["show", `${commit}:${baselineFile}`], {
-      cwd: PROJECT_ROOT,
-      encoding: "utf8",
-    }),
-  );
-  assertBaseline(baseline);
-  return baseline;
 }
 
 function printIssues(issues) {
@@ -942,47 +691,7 @@ function printIssues(issues) {
 }
 
 function run() {
-  const prune = process.argv.slice(2).includes("--prune");
-  const baseline = readJson(BASELINE_PATH);
-  assertBaseline(baseline);
-  const ratchetRef = process.env.STYLE_POLICY_RATCHET_REF ?? "HEAD";
-  const referenceBaseline = baselineAtGitRef(ratchetRef);
-  const baselineErrors =
-    referenceBaseline === undefined
-      ? []
-      : baselineGrowthErrors(baseline, referenceBaseline);
-  if (baselineErrors.length > 0) {
-    printIssues(
-      baselineErrors.map((message) => ({
-        type: "baseline-growth",
-        file: "style-legacy-baseline.json",
-        line: 1,
-        message,
-      })),
-    );
-    process.exitCode = 1;
-    return;
-  }
-
   const result = checkStylePolicy();
-  const blocking = result.issues.filter((issue) => {
-    return issue.type !== "stale";
-  });
-
-  if (prune) {
-    if (blocking.length > 0) {
-      printIssues(blocking);
-      process.exitCode = 1;
-      return;
-    }
-    writeFileSync(
-      BASELINE_PATH,
-      `${JSON.stringify(prunedBaseline(baseline, result.current), null, 2)}\n`,
-    );
-    console.log("Pruned style-legacy-baseline.json; no allowance was added.");
-    return;
-  }
-
   if (result.issues.length > 0) {
     printIssues(result.issues);
     process.exitCode = 1;
@@ -998,7 +707,7 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
     printIssues([
       {
         type: "configuration",
-        file: "style-legacy-baseline.json",
+        file: "style-allowlist.json",
         line: 1,
         message: error.message,
       },

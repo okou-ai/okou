@@ -429,19 +429,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 1
       - uses: ./.github/actions/toolchain-init
       - name: Lint app styles
         working-directory: turbo
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          CHECKOUT_REF: ${{ github.ref }}
-          PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-        run: |
-          STYLE_POLICY_RATCHET_REF=$(../.github/scripts/changed-base-ref.sh)
-          export STYLE_POLICY_RATCHET_REF
-          pnpm lint:style
+        run: pnpm lint:style
 
   lint-types:
     needs: [detect-turbo-ts-checks]

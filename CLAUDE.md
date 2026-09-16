@@ -46,8 +46,8 @@ Use [the documentation index](docs/docs.md) to select relevant guidance.
 Business UI uses Tailwind utilities and shared semantic tokens. First-party
 selectors, CSS modules, runtime stylesheets, and CSS-in-JS are prohibited in
 Platform and UI. Exact global/third-party exceptions belong in
-`turbo/style-allowlist.json`; the legacy baseline only shrinks. Read the styles
-guide before changing either boundary.
+`turbo/style-allowlist.json`, which business code must not expand. Read the
+styles guide before changing that boundary.
 
 ## Development and Verification
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -17,6 +17,8 @@ import { dirname, join } from "node:path";
 import { ESLint } from "eslint";
 
 import { checkStylePolicy } from "./style-policy.mjs";
+
+const OTHER = "apps/platform/src/other.tsx";
 
 const EMPTY_ALLOWLIST = {
   version: 1,
@@ -41,30 +43,7 @@ function createWorkspace(testContext, files) {
   return root;
 }
 
-function git(root, ...args) {
-  return execFileSync("git", args, {
-    cwd: dirname(root),
-    encoding: "utf8",
-  }).trim();
-}
-
-function commitBaseline(root) {
-  git(root, "add", "turbo/style-legacy-baseline.json");
-  git(
-    root,
-    "-c",
-    "user.name=style-policy-test",
-    "-c",
-    "user.email=style-policy-test@example.invalid",
-    "commit",
-    "--quiet",
-    "-m",
-    "fixture baseline",
-  );
-  return git(root, "rev-parse", "HEAD");
-}
-
-function createCommandWorkspace(t, files, baseline) {
+function createCommandWorkspace(t, files, allowlist = EMPTY_ALLOWLIST) {
   const root = createWorkspace(t, files);
   mkdirSync(join(root, "scripts"));
   for (const file of ["style-policy.mjs", "style-class-usage.mjs"]) {
@@ -75,28 +54,15 @@ function createCommandWorkspace(t, files, baseline) {
     join(root, "node_modules"),
     "dir",
   );
-  writeFileSync(
-    join(root, "style-allowlist.json"),
-    JSON.stringify(EMPTY_ALLOWLIST),
-  );
-  writeFileSync(
-    join(root, "style-legacy-baseline.json"),
-    JSON.stringify(baseline),
-  );
-  git(root, "init", "--quiet", "--template=");
-  commitBaseline(root);
+  writeFileSync(join(root, "style-allowlist.json"), JSON.stringify(allowlist));
   return root;
 }
 
-function runPolicy(root, args = [], ref = "HEAD") {
+function runPolicy(root, args = []) {
   return spawnSync(
     process.execPath,
     [join(root, "scripts/style-policy.mjs"), ...args],
-    {
-      cwd: root,
-      env: { ...process.env, STYLE_POLICY_RATCHET_REF: ref },
-      encoding: "utf8",
-    },
+    { cwd: root, encoding: "utf8" },
   );
 }
 
@@ -106,74 +72,46 @@ function assertRejected(result, diagnostic) {
   assert.match(result.stderr, /Read docs\/styles\.md/);
 }
 
-function emptyBaseline(legacyClassTokens = []) {
+// An allowlist that authorizes one class dependency, for the tests that need a
+// token the class-usage scanner will look for.
+function allowlistWith(file, token, count = 1) {
   return {
-    version: 1,
-    legacyClassTokens,
-    cssAtoms: {},
-    classUsages: {},
-    styleInjections: {},
+    ...EMPTY_ALLOWLIST,
+    classDependencies: [
+      {
+        file,
+        token,
+        count,
+        kind: "third-party-dom-adapter",
+        owner: "frontend-platform",
+        rationale: "The renderer keys on this class.",
+        upstream: "example renderer DOM",
+        removal: "Remove when the renderer is replaced.",
+      },
+    ],
   };
 }
 
-test("freezes existing selector declarations and class dependencies", (t) => {
+test("a selector the allowlist does not name is a violation", (t) => {
   const root = createWorkspace(t, {
     "apps/platform/src/example.css": ".legacy { color: red }",
     "apps/platform/src/view.tsx":
       'export const View = () => <div className="legacy" />;',
   });
-  const baseline = {
-    ...emptyBaseline(["legacy"]),
-    cssAtoms: {
-      "apps/platform/src/example.css": [
-        {
-          atRules: [],
-          selector: ".legacy",
-          property: "color",
-          value: "red",
-          important: false,
-        },
-      ],
-    },
-    classUsages: {
-      "apps/platform/src/view.tsx": { legacy: 1 },
-    },
-  };
+
+  const result = checkStylePolicy({ root, allowlist: EMPTY_ALLOWLIST });
+
+  // The selector is reported. The class is not, because nothing authorizes the
+  // token, so the scanner is not looking for it — `no-unknown-classes` is what
+  // catches a class the allowlist never names.
   assert.deepEqual(
-    checkStylePolicy({ root, allowlist: EMPTY_ALLOWLIST, baseline }).issues,
-    [],
-  );
-
-  writeFileSync(
-    join(root, "apps/platform/src/example.css"),
-    ".legacy { color: blue }",
-  );
-  writeFileSync(
-    join(root, "apps/platform/src/view.tsx"),
-    'export const View = () => <><div className="legacy" /><div className="legacy" /></>;',
-  );
-  const result = checkStylePolicy({
-    root,
-    allowlist: EMPTY_ALLOWLIST,
-    baseline,
-  });
-
-  assert.equal(
-    result.issues.some(({ message }) => {
-      return message.includes("Legacy class `legacy` usage grew from 1 to 2");
+    result.issues.map((issue) => {
+      return issue.type;
     }),
-    true,
+    ["growth"],
   );
-  assert.equal(
-    result.issues.some(({ type }) => type === "growth"),
-    true,
-  );
-  assert.equal(
-    result.issues.some(({ type }) => type === "stale"),
-    true,
-  );
+  assert.match(result.issues[0].message, /New first-party CSS class selector/u);
 });
-
 test("an exact third-party selector allowlist does not authorize siblings", (t) => {
   const file = "apps/platform/src/example.css";
   const root = createWorkspace(t, { [file]: ".adapter { color: blue }" });
@@ -192,11 +130,10 @@ test("an exact third-party selector allowlist does not authorize siblings", (t) 
       },
     ],
   };
-  const baseline = emptyBaseline();
-  assert.deepEqual(checkStylePolicy({ root, allowlist, baseline }).issues, []);
+  assert.deepEqual(checkStylePolicy({ root, allowlist }).issues, []);
 
   writeFileSync(join(root, file), ".adapter, .sibling { color: blue }");
-  const result = checkStylePolicy({ root, allowlist, baseline });
+  const result = checkStylePolicy({ root, allowlist });
   assert.equal(
     result.issues.some(({ type }) => type === "growth"),
     true,
@@ -215,17 +152,15 @@ test("counts literal legacy classes without matching longer class names", (t) =>
       'document.querySelectorAll(".legacy + .legacy-extra + .legacy");',
     ].join("\n"),
   });
-  const baseline = {
-    ...emptyBaseline(["legacy", "custom[part]+token"]),
-    classUsages: {
-      [file]: { legacy: 5, "custom[part]+token": 1 },
-    },
+  const allowlist = {
+    ...allowlistWith(file, "legacy", 5),
+    classDependencies: [
+      ...allowlistWith(file, "legacy", 5).classDependencies,
+      ...allowlistWith(file, "custom[part]+token", 1).classDependencies,
+    ],
   };
 
-  assert.deepEqual(
-    checkStylePolicy({ root, allowlist: EMPTY_ALLOWLIST, baseline }).issues,
-    [],
-  );
+  assert.deepEqual(checkStylePolicy({ root, allowlist }).issues, []);
 });
 
 test("an allowlisted class dependency authorizes one file, not the class", (t) => {
@@ -254,7 +189,6 @@ test("an allowlisted class dependency authorizes one file, not the class", (t) =
   const issues = checkStylePolicy({
     root,
     allowlist,
-    baseline: emptyBaseline(),
   }).issues;
 
   assert.deepEqual(
@@ -263,7 +197,7 @@ test("an allowlisted class dependency authorizes one file, not the class", (t) =
     }),
     [{ file: other, type: "growth" }],
   );
-  assert.match(issues[0].message, /Replace the new use with Tailwind/u);
+  assert.match(issues[0].message, /allowlisted for another file/u);
 });
 
 test("an allowlisted class dependency rejects a higher count in its own file", (t) => {
@@ -293,7 +227,6 @@ test("an allowlisted class dependency rejects a higher count in its own file", (
   const issues = checkStylePolicy({
     root,
     allowlist,
-    baseline: emptyBaseline(),
   }).issues;
 
   assert.equal(issues.length, 1);
@@ -325,7 +258,6 @@ test("an allowlisted class dependency reports a count that no longer matches", (
   const issues = checkStylePolicy({
     root,
     allowlist,
-    baseline: emptyBaseline(),
   }).issues;
 
   assert.equal(issues.length, 1);
@@ -346,7 +278,6 @@ test("rejects a new inline stylesheet", (t) => {
   const result = checkStylePolicy({
     root,
     allowlist: EMPTY_ALLOWLIST,
-    baseline: emptyBaseline(),
   });
 
   assert.deepEqual(
@@ -380,12 +311,11 @@ test("pins vendored CSS by exact hash", (t) => {
       },
     ],
   };
-  const baseline = emptyBaseline();
-  assert.deepEqual(checkStylePolicy({ root, allowlist, baseline }).issues, []);
+  assert.deepEqual(checkStylePolicy({ root, allowlist }).issues, []);
 
   writeFileSync(join(root, file), ".upstream { color: blue }");
   assert.equal(
-    checkStylePolicy({ root, allowlist, baseline }).issues.some(({ type }) => {
+    checkStylePolicy({ root, allowlist }).issues.some(({ type }) => {
       return type === "vendor";
     }),
     true,
@@ -415,139 +345,94 @@ test("the Tailwind lint cannot be disabled inline", async () => {
   );
 });
 
-function selectorBaseline(property = "color", value = "red") {
+// An allowlist that authorizes exactly one selector, optionally inside a scope.
+function selectorAllowlist(file, selector, extra = {}) {
   return {
-    ...emptyBaseline(["legacy"]),
-    cssAtoms: {
-      "apps/platform/src/example.css": [
-        {
-          atRules: [],
-          selector: ".legacy",
-          property,
-          value,
-          important: false,
-        },
-      ],
-    },
+    ...EMPTY_ALLOWLIST,
+    selectors: [
+      {
+        file,
+        atRules: [],
+        selector,
+        kind: "third-party-dom-adapter",
+        owner: "frontend-infra",
+        rationale: "The upstream widget owns this DOM class.",
+        upstream: "example-widget",
+        removal: "Remove with the widget.",
+        ...extra,
+      },
+    ],
   };
 }
 
-test("the command rejects nested declarations and apply under a frozen class", (t) => {
+test("an allowlisted selector does not authorize what nests inside it", (t) => {
   const file = "apps/platform/src/example.css";
   const root = createCommandWorkspace(
     t,
-    { [file]: ".legacy { color: red }" },
-    selectorBaseline(),
+    { [file]: ".adapter { color: red }" },
+    selectorAllowlist(file, ".adapter"),
   );
   assert.equal(runPolicy(root).status, 0);
-  for (const addition of [
+
+  for (const nested of [
     "&:hover { color: blue }",
     "span { color: blue }",
     "@media (hover: hover) { color: blue }",
-    "@media (hover: hover) { &:hover { color: blue } }",
-    "@apply bg-red-500;",
   ]) {
-    writeFileSync(join(root, file), `.legacy { color: red; ${addition} }`);
-    assertRejected(
-      runPolicy(root),
-      /New first-party CSS class selector declaration/,
-    );
-  }
-});
-
-test("the command freezes apply contents and the parent of a nested selector", (t) => {
-  const file = "apps/platform/src/example.css";
-  const root = createCommandWorkspace(
-    t,
-    { [file]: ".legacy { @apply bg-red-500; }" },
-    selectorBaseline("@apply", "bg-red-500"),
-  );
-  assert.equal(runPolicy(root).status, 0);
-  writeFileSync(join(root, file), ".legacy { @apply bg-blue-500; }");
-  assertRejected(runPolicy(root), /New first-party CSS/);
-
-  const baseline = selectorBaseline();
-  baseline.cssAtoms[file][0].parentSelectors = ["section"];
-  writeFileSync(
-    join(root, "style-legacy-baseline.json"),
-    JSON.stringify(baseline),
-  );
-  commitBaseline(root);
-  writeFileSync(join(root, file), "section { .legacy { color: red } }");
-  assert.equal(runPolicy(root).status, 0);
-  writeFileSync(join(root, file), "aside { .legacy { color: red } }");
-  assertRejected(runPolicy(root), /New first-party CSS/);
-});
-
-test("the command rejects class-qualified scope roots and limits", (t) => {
-  const file = "apps/platform/src/example.css";
-  const original = ".legacy { color: red }";
-  const root = createCommandWorkspace(
-    t,
-    { [file]: original },
-    selectorBaseline(),
-  );
-  assert.equal(runPolicy(root).status, 0);
-  for (const addition of [
-    "@scope (.legacy) { :scope { color: blue } }",
-    "@scope (.legacy) { &:hover { color: blue } }",
-    "@scope (.legacy) { span { color: blue } }",
-    "@scope (.legacy) { @media (hover: hover) { span { color: blue } } }",
-    "@scope (main) to (.legacy) { span { color: blue } }",
-    "@scope (.legacy) { @scope (section) { span { color: blue } } }",
-    "@scope (.legacy) { @scope { span { color: blue } } }",
-    "@SCOPE (.legacy) { span { color: blue } }",
-  ]) {
-    writeFileSync(join(root, file), `${original}\n${addition}`);
+    writeFileSync(join(root, file), `.adapter { color: red; ${nested} }`);
     assertRejected(runPolicy(root), /New first-party CSS/);
-    assertRejected(runPolicy(root, ["--prune"]), /New first-party CSS/);
   }
+
+  // The entry authorizes the selector, so its own declarations — `@apply`
+  // included — are ordinary reviewed code rather than a second selector.
+  writeFileSync(
+    join(root, file),
+    ".adapter { color: red; @apply bg-red-500; }",
+  );
+  assert.equal(runPolicy(root).status, 0);
 });
 
-test("the command freezes scope boundaries and scoped declarations", (t) => {
+test("an allowlisted selector does not authorize a different parent", (t) => {
   const file = "apps/platform/src/example.css";
-  const scope = "@scope (.legacy) to (.boundary)";
-  const original = `${scope} { span { color: red } }`;
-  const baseline = {
-    ...emptyBaseline(["legacy"]),
-    cssAtoms: {
-      [file]: [
-        {
-          atRules: [scope],
-          parentSelectors: [scope],
-          selector: "span",
-          property: "color",
-          value: "red",
-          important: false,
-        },
-      ],
-    },
-  };
-  const root = createCommandWorkspace(t, { [file]: original }, baseline);
+  const root = createCommandWorkspace(
+    t,
+    { [file]: ".adapter { color: red }" },
+    selectorAllowlist(file, ".adapter"),
+  );
   assert.equal(runPolicy(root).status, 0);
+
+  // The same declaration under another parent is a different selector.
+  writeFileSync(join(root, file), "section { .adapter { color: red } }");
+  assertRejected(runPolicy(root), /New first-party CSS/);
+});
+
+test("a class-qualified scope root or limit needs its own entry", (t) => {
+  const file = "apps/platform/src/example.css";
+  const scope = "@scope (.adapter) to (.boundary)";
+  const root = createCommandWorkspace(
+    t,
+    { [file]: `${scope} { span { color: red } }` },
+    selectorAllowlist(file, "span", {
+      atRules: [scope],
+      parentSelectors: [scope],
+    }),
+  );
+  assert.equal(runPolicy(root).status, 0);
+
   for (const changed of [
-    original.replace(".legacy", ".other"),
-    original.replace(".boundary", ".other"),
-    original.replace("span", "button"),
-    original.replace("red", "blue"),
-    `${scope} { @scope (section) { span { color: red } } }`,
+    `@scope (.other) to (.boundary) { span { color: red } }`,
+    `@scope (.adapter) to (.other) { span { color: red } }`,
+    `${scope} { button { color: red } }`,
   ]) {
     writeFileSync(join(root, file), changed);
     assertRejected(runPolicy(root), /New first-party CSS/);
   }
-  writeFileSync(join(root, file), "");
-  assert.equal(runPolicy(root, ["--prune"]).status, 0);
-  assert.deepEqual(
-    JSON.parse(readFileSync(join(root, "style-legacy-baseline.json"), "utf8")),
-    emptyBaseline(),
-  );
 });
-
 test("the command matches scope adapters exactly without leaking context to siblings", (t) => {
   const file = "apps/platform/src/example.css";
   const scope = "@scope (.adapter) to (.boundary)";
   const original = `${scope} { span { color: red } }`;
-  const root = createCommandWorkspace(t, { [file]: original }, emptyBaseline());
+  const root = createCommandWorkspace(t, { [file]: original });
   const allowlist = {
     ...EMPTY_ALLOWLIST,
     selectors: [
@@ -581,22 +466,25 @@ test("the command matches scope adapters exactly without leaking context to sibl
   }
 });
 
-test("dialog content styling remains subject to the legacy class ratchet", (t) => {
+test("dialog content styling stays subject to the class dependency rule", (t) => {
   const file = "apps/platform/src/view.tsx";
   const root = createCommandWorkspace(
     t,
     {
       [file]:
         'export const View = () => <DialogContent contentClassName="flex" />;',
+      // The entry has to point at a file that really carries the class once,
+      // or the policy reports the authorized count as no longer matching.
+      [OTHER]: 'export const Other = () => <div className="legacy" />;',
     },
-    emptyBaseline(["legacy"]),
+    allowlistWith(OTHER, "legacy"),
   );
   assert.equal(runPolicy(root).status, 0);
   writeFileSync(
     join(root, file),
     'const CONTENT = "legacy"; export const View = () => <DialogContent contentClassName={CONTENT} />;',
   );
-  assertRejected(runPolicy(root), /usage grew from 0 to 1/);
+  assertRejected(runPolicy(root), /allowlisted for another file/);
 });
 
 test("the command counts local and re-exported class aliases at each consumer", (t) => {
@@ -609,10 +497,7 @@ test("the command counts local and re-exported class aliases at each consumer", 
       [file]:
         'const CARD = "legacy"; export const View = () => <div className={CARD}/>;',
     },
-    {
-      ...emptyBaseline(["legacy"]),
-      classUsages: { [file]: { legacy: 1 } },
-    },
+    allowlistWith(file, "legacy"),
   );
   const declarations = [
     'const CARD = "legacy";',
@@ -640,7 +525,7 @@ test("the command counts local and re-exported class aliases at each consumer", 
     join(root, "apps/platform/src/extra.tsx"),
     'import { ROOT } from "./index"; export const Extra = () => <div className={ROOT}/>;',
   );
-  assertRejected(runPolicy(root), /usage grew from 0 to 1/);
+  assertRejected(runPolicy(root), /allowlisted for another file/);
 });
 
 test("class resolution respects lexical scopes, repeated expressions, and cycles", (t) => {
@@ -650,15 +535,16 @@ test("class resolution respects lexical scopes, repeated expressions, and cycles
     {
       [file]:
         'const CARD = "legacy"; function View() { const CARD = "flex"; return <div className={CARD}/>; }',
+      [OTHER]: 'export const Other = () => <div className="legacy" />;',
     },
-    emptyBaseline(["legacy"]),
+    allowlistWith(OTHER, "legacy"),
   );
   assert.equal(runPolicy(root).status, 0);
   writeFileSync(
     join(root, file),
     'const CARD = "legacy"; export const View = () => <div className={cn(CARD, CARD)}/>;',
   );
-  assertRejected(runPolicy(root), /usage grew from 0 to 2/);
+  assertRejected(runPolicy(root), /allowlisted for another file/);
   for (const expression of [
     "cn({ legacy: enabled })",
     "cn({ [CARD]: enabled })",
@@ -669,112 +555,11 @@ test("class resolution respects lexical scopes, repeated expressions, and cycles
       join(root, file),
       `const CARD = "legacy"; export const View = () => <div className={${expression}}/>;`,
     );
-    assertRejected(runPolicy(root), /usage grew from 0 to 1/);
+    assertRejected(runPolicy(root), /allowlisted for another file/);
   }
   writeFileSync(
     join(root, file),
     'const A = B; const B = A; export const View = () => <div className={cn(A, "legacy")}/>;',
   );
-  assertRejected(runPolicy(root), /usage grew from 0 to 1/);
-});
-
-test("pruning persists only removals and refuses source growth", (t) => {
-  const file = "apps/platform/src/example.css";
-  const root = createCommandWorkspace(
-    t,
-    { [file]: ".legacy { color: red }" },
-    selectorBaseline(),
-  );
-  writeFileSync(join(root, file), "");
-  assertRejected(runPolicy(root), /baseline down/);
-  const pruned = runPolicy(root, ["--prune"]);
-  assert.equal(pruned.status, 0, pruned.stderr);
-  const baselineFile = join(root, "style-legacy-baseline.json");
-  assert.deepEqual(
-    JSON.parse(readFileSync(baselineFile, "utf8")),
-    emptyBaseline(),
-  );
-  assert.equal(runPolicy(root).status, 0);
-  writeFileSync(join(root, file), ".new-class { color: blue }");
-  assertRejected(runPolicy(root, ["--prune"]), /New first-party CSS/);
-  assert.deepEqual(
-    JSON.parse(readFileSync(baselineFile, "utf8")),
-    emptyBaseline(),
-  );
-});
-
-test("the command rejects baseline growth against the selected Git reference", (t) => {
-  const file = "apps/platform/src/view.tsx";
-  const root = createCommandWorkspace(t, { [file]: "" }, emptyBaseline());
-  const base = git(root, "rev-parse", "HEAD");
-  const grown = {
-    ...emptyBaseline(["legacy"]),
-    classUsages: { [file]: { legacy: 1 } },
-  };
-  writeFileSync(
-    join(root, "style-legacy-baseline.json"),
-    JSON.stringify(grown),
-  );
-  writeFileSync(
-    join(root, file),
-    'export const View = () => <div className="legacy"/>;',
-  );
-  assertRejected(runPolicy(root), /Shrink-only baseline/);
-  assertRejected(runPolicy(root, ["--prune"]), /Shrink-only baseline/);
-  commitBaseline(root);
-  assert.equal(runPolicy(root).status, 0);
-  assertRejected(runPolicy(root, [], base), /Shrink-only baseline/);
-});
-
-test("the command fails visibly for malformed existing baselines and invalid Git refs", (t) => {
-  const root = createCommandWorkspace(t, {}, emptyBaseline());
-  const baselineFile = join(root, "style-legacy-baseline.json");
-  writeFileSync(baselineFile, "{ invalid json }");
-  commitBaseline(root);
-  writeFileSync(baselineFile, JSON.stringify(emptyBaseline()));
-  assertRejected(runPolicy(root), /style-policy\/configuration/);
-  assertRejected(
-    runPolicy(root, [], "nonexistent-style-policy-ref"),
-    /style-policy\/configuration/,
-  );
-  writeFileSync(baselineFile, "{ invalid json }");
-  assertRejected(runPolicy(root), /style-policy\/configuration/);
-});
-
-test("only a genuinely absent reference baseline permits initial introduction", (t) => {
-  const root = createCommandWorkspace(t, {}, emptyBaseline());
-  git(root, "rm", "--cached", "turbo/style-legacy-baseline.json");
-  git(
-    root,
-    "-c",
-    "user.name=style-policy-test",
-    "-c",
-    "user.email=style-policy-test@example.invalid",
-    "commit",
-    "--quiet",
-    "-m",
-    "fixture without baseline",
-  );
-  const result = runPolicy(root);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Style policy passed/);
-});
-
-test("invalid baseline counters and empty tokens fail instead of weakening the ratchet", (t) => {
-  const file = "apps/platform/src/view.tsx";
-  const root = createCommandWorkspace(t, { [file]: "" }, emptyBaseline());
-  const baselineFile = join(root, "style-legacy-baseline.json");
-  for (const count of ["not-a-number", null, -1, 1.5]) {
-    const malformed = {
-      ...emptyBaseline(["legacy"]),
-      classUsages: { [file]: { legacy: count } },
-    };
-    writeFileSync(baselineFile, JSON.stringify(malformed));
-    assertRejected(runPolicy(root), /positive integer counts/);
-  }
-  commitBaseline(root);
-  writeFileSync(baselineFile, JSON.stringify(emptyBaseline()));
-  assertRejected(runPolicy(root), /positive integer counts/);
-  writeFileSync(baselineFile, JSON.stringify(emptyBaseline([""])));
-  assertRejected(runPolicy(root), /non-empty strings/);
+  assertRejected(runPolicy(root), /allowlisted for another file/);
 });
