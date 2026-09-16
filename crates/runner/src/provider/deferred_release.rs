@@ -1063,6 +1063,9 @@ mod tests {
 
         let old_directory = old.directory.clone();
         drop(old);
+        // The busy probe consumed the root entry. One heartbeat closes that
+        // scan, one sends the bounded batch, and one resumes its peer cursor.
+        current_outbox.recover_foreign(&client, &current).await;
         current_outbox.recover_foreign(&client, &current).await;
         current_outbox.recover_foreign(&client, &current).await;
 
