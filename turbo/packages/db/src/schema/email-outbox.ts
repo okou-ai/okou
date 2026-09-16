@@ -32,7 +32,12 @@ import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
  *
  * Drain worker processes pending items at ≤2 req/s.
  * Items are retried up to 3 times with exponential backoff.
- * Expired items (>15 min) are cleaned up by cron.
+ *
+ * `createdAt` alone fixes a row's 15-minute deadline. The drain admits a row
+ * against that deadline while preparing it and rechecks the same deadline
+ * immediately before calling the provider, so preparation work cannot carry an
+ * item past its own lifetime; a row that crosses it in between fails locally
+ * without a provider request. Expired items are then cleaned up by cron.
  */
 export const emailOutbox = pgTable(
   "email_outbox",

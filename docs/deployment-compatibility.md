@@ -1830,7 +1830,7 @@ commit-addressed co-built CLI. Drain existing v4 intents/leases and release
 receipts before rolling the API back below that floor. No switch is enabled by
 the consumer implementation.
 
-## Email outbox provider replay (#34645)
+## Email outbox provider replay and send-time expiry (#34645, #34695)
 
 Migration 1148 adds nullable `email_outbox.provider_idempotency_key` and
 `email_outbox.provider_request`, plus a unique index over the key. Apply it
@@ -1852,10 +1852,22 @@ Recovery and bounds:
   drain re-selects it and replays the same request; the abandoned attempt's
   completion is fenced on `(status, attempts)` and cannot overwrite the newer
   one. `sending` is now a durable state, not only an in-transaction marker.
-- Expiry is evaluated against the clock reached immediately before the send, not
-  the timestamp the batch started with, so a paced backlog cannot send items past
-  the 15-minute outbox TTL. Expired and attempt-exhausted rows are failed without
-  contacting the provider and are then removed by the existing cleanup.
+- A row's deadline is its persisted creation time plus the 15-minute TTL. No
+  claim, retry or lease moves it. Preparation admits a row against that deadline
+  rather than against the timestamp its batch started with, and the drain then
+  rechecks the same deadline against a fresh clock after the claim commits and
+  immediately before the provider call, because the suppression lookup, the claim
+  update and that commit all take real time. A row that reaches its deadline
+  inside that window makes no provider request: its owned attempt is failed with
+  `Email outbox item expired before contacting the provider`, under the same
+  `(id, status, attempts)` fence as any other completion, so it cannot overwrite a
+  newer claim or recreate a row that was removed meanwhile. It keeps its committed
+  request and key, because an earlier attempt may still be unresolved at the
+  provider and that pair is the only record of it. Attempt-exhausted rows are
+  failed the same way, and the existing cleanup removes both.
+- Expiry decides admission, not retraction. Once `resend.emails.send` has been
+  called the email belongs to the provider, so a request already in flight is
+  delivered whether or not the deadline passes while it is outstanding.
 - Three attempts within a 15-minute TTL stay well inside Resend's documented
   24-hour idempotency retention. Outside that window the provider no longer
   replays a key, so this is bounded retry safety, not unlimited exactly-once
@@ -1868,9 +1880,11 @@ Recovery and bounds:
 
 Mixed-version limitation: an old drain worker selects only `pending` rows and
 sends without a key, so it can still duplicate a row that a new worker returned
-to `pending`. Full retry protection starts once every drain worker runs the new
-path. Row locking with `SKIP LOCKED` keeps the two versions from processing the
-same row at the same time, and an old worker never claims a `sending` row.
+to `pending`. A worker predating the send-time recheck also samples expiry only
+while preparing, so it can still send a row that crossed its deadline during that
+preparation. Both protections start once every drain worker runs the new path.
+Row locking with `SKIP LOCKED` keeps the two versions from processing the same
+row at the same time, and an old worker never claims a `sending` row.
 
 Scale at the time of the change: a fully paginated masked read at 2026-09-16
 09:56:29 UTC found 1,008 retained outbox rows, all `sent` and none past one

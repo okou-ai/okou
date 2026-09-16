@@ -65,6 +65,13 @@ function outboxDrainDelayMs(): number {
     : OUTBOX_DRAIN_DELAY_MS;
 }
 const OUTBOX_TTL_MS = 15 * 60 * 1000;
+// Preparation admits a row against its deadline; the provider boundary rechecks
+// the same deadline. The two outcomes are distinct because only the second one
+// can follow a committed request and key.
+const OUTBOX_EXPIRED_BEFORE_DELIVERY_ERROR =
+  "Email outbox item expired before delivery";
+const OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR =
+  "Email outbox item expired before contacting the provider";
 export const CREDIT_LOW_BALANCE_EMAIL_SUBJECT =
   "Your credit balance is running low";
 export const OFFICIAL_AUTOMATION_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS = 180;
@@ -392,6 +399,12 @@ type ProviderSendOutcome =
   // second email for the same row, so stop here and keep the failure visible.
   | { readonly kind: "conflict"; readonly error: string };
 
+type OutboxAttemptOutcome =
+  | ProviderSendOutcome
+  // The row reached its own deadline while this attempt was preparing, so the
+  // attempt resolved locally and never reached the provider.
+  | { readonly kind: "expired" };
+
 async function sendProviderRequest(
   request: ProviderRequest,
   idempotencyKey: string,
@@ -462,6 +475,9 @@ interface PreparedOutboxItem {
   readonly attempts: number;
   readonly idempotencyKey: string;
   readonly request: ProviderRequest;
+  // The row's own deadline, carried from its persisted creation time so the
+  // send boundary rechecks the original lifetime instead of this claim's.
+  readonly expiresAtMs: number;
   readonly preparedAtMs: number;
 }
 
@@ -527,15 +543,19 @@ async function prepareNextOutboxItem(
     const committedRequest: unknown = row.provider_request;
     const hasCommittedRequest =
       committedRequest !== null && committedRequest !== undefined;
-    // Decide against the real clock reached at this send, not the timestamp the
-    // batch started with: a paced batch can outlive its own items.
+    // Admit against the real clock reached here, not the timestamp the batch
+    // started with: a paced batch can outlive its own items. The provider
+    // boundary rechecks the same deadline once this claim has committed.
     const preparedAtMs = now();
+    // Derived once from the persisted creation time. Neither this claim nor a
+    // later retry may extend it.
+    const expiresAtMs = row.created_at.getTime() + OUTBOX_TTL_MS;
 
-    if (row.created_at.getTime() + OUTBOX_TTL_MS <= preparedAtMs) {
+    if (expiresAtMs <= preparedAtMs) {
       return await resolveWithoutSending(
         tx,
         itemId,
-        "Email outbox item expired before delivery",
+        OUTBOX_EXPIRED_BEFORE_DELIVERY_ERROR,
       );
     }
     if (attempts > MAX_ATTEMPTS) {
@@ -585,7 +605,14 @@ async function prepareNextOutboxItem(
 
     return {
       kind: "prepared",
-      item: { id: itemId, attempts, idempotencyKey, request, preparedAtMs },
+      item: {
+        id: itemId,
+        attempts,
+        idempotencyKey,
+        request,
+        expiresAtMs,
+        preparedAtMs,
+      },
     };
   });
 }
@@ -593,7 +620,7 @@ async function prepareNextOutboxItem(
 async function completeOutboxItem(
   db: Db,
   item: PreparedOutboxItem,
-  outcome: ProviderSendOutcome,
+  outcome: OutboxAttemptOutcome,
 ): Promise<void> {
   const completion =
     outcome.kind === "sent"
@@ -607,19 +634,28 @@ async function completeOutboxItem(
           // reconciliation against the provider.
           providerRequest: null,
         }
-      : outcome.kind === "retry" && item.attempts < MAX_ATTEMPTS
+      : outcome.kind === "expired"
         ? {
-            status: "pending" as const,
-            lastError: outcome.error,
-            nextRetryAt: new Date(
-              item.preparedAtMs + BACKOFF_BASE_MS * 4 ** (item.attempts - 1),
-            ),
-          }
-        : {
+            // This attempt sent nothing, so the committed request and key stay
+            // on the row: an earlier attempt may still be unresolved at the
+            // provider, and that ambiguity is the only evidence of it.
             status: "failed" as const,
-            lastError: outcome.error,
+            lastError: OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR,
             nextRetryAt: null,
-          };
+          }
+        : outcome.kind === "retry" && item.attempts < MAX_ATTEMPTS
+          ? {
+              status: "pending" as const,
+              lastError: outcome.error,
+              nextRetryAt: new Date(
+                item.preparedAtMs + BACKOFF_BASE_MS * 4 ** (item.attempts - 1),
+              ),
+            }
+          : {
+              status: "failed" as const,
+              lastError: outcome.error,
+              nextRetryAt: null,
+            };
 
   const [completed] = await db
     .update(emailOutbox)
@@ -654,6 +690,15 @@ async function drainNextOutboxItem(
     return false;
   }
   if (prepared.kind === "resolved") {
+    return true;
+  }
+
+  // Preparation admitted this row, then spent real time on the suppression
+  // lookup, the claim update and its commit. This is the last point at which no
+  // email exists yet, so the original deadline is rechecked against a fresh
+  // clock here rather than trusting the sample preparation started with.
+  if (now() >= prepared.item.expiresAtMs) {
+    await completeOutboxItem(db, prepared.item, { kind: "expired" });
     return true;
   }
 

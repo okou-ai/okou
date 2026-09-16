@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { z } from "zod";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
+import {
+  holdEmailOutboxClaim,
+  holdEmailOutboxRemoval,
+  rejectEmailOutboxCompletion,
+  waitForEmailOutboxBlocked,
+} from "../../../test-fixtures/email-outbox";
 import { createDeferredPromise } from "../../utils";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 
@@ -20,6 +27,81 @@ function providerKey(itemId: string): string {
 // inside that window.
 const SEND_LEASE_MS = 60_000;
 const FIRST_BACKOFF_MS = 1000;
+// A row is deliverable for 15 minutes after it was enqueued, whichever attempt
+// reaches it.
+const OUTBOX_TTL_MS = 15 * 60 * 1000;
+const EXPIRED_BEFORE_PROVIDER_ERROR =
+  "Email outbox item expired before contacting the provider";
+const DRAIN_ROUTE = "POST /api/test/email-outbox-state/drain";
+
+const providerOptionsSchema = z.object({ idempotencyKey: z.string() });
+
+interface AcceptedEmail {
+  readonly id: string;
+  readonly key: string;
+  readonly payload: string;
+}
+
+// Key order differs between a freshly rendered request and the same request
+// decoded from its committed snapshot, so compare the values rather than the
+// serialization the provider happened to receive.
+function payloadIdentity(payload: unknown): string {
+  return JSON.stringify(payload, (_key, value: unknown) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return value;
+    }
+    return Object.fromEntries(
+      Object.entries(value).sort(([left], [right]) => {
+        return left.localeCompare(right);
+      }),
+    );
+  });
+}
+
+/**
+ * A provider that owns one email per idempotency key: replaying a key returns
+ * the email it already accepted, and a different payload under a live key is
+ * rejected. Delivery count is therefore measured at the provider, not inferred
+ * from two mock responses carrying the same literal id.
+ */
+function useIdempotentProvider(): {
+  readonly accepted: () => readonly AcceptedEmail[];
+} {
+  const accepted = new Map<string, AcceptedEmail>();
+  context.mocks.resend.send.mockImplementation(
+    (payload: unknown, options: unknown) => {
+      const { idempotencyKey } = providerOptionsSchema.parse(options);
+      const identity = payloadIdentity(payload);
+      const existing = accepted.get(idempotencyKey);
+      if (existing) {
+        return Promise.resolve(
+          existing.payload === identity
+            ? { data: { id: existing.id }, error: null }
+            : {
+                data: null,
+                error: {
+                  name: "invalid_idempotent_request",
+                  message: "key already used with a different payload",
+                  statusCode: 409,
+                },
+              },
+        );
+      }
+      const email: AcceptedEmail = {
+        id: `resend-accepted-${randomUUID()}`,
+        key: idempotencyKey,
+        payload: identity,
+      };
+      accepted.set(idempotencyKey, email);
+      return Promise.resolve({ data: { id: email.id }, error: null });
+    },
+  );
+  return {
+    accepted: () => {
+      return [...accepted.values()];
+    },
+  };
+}
 
 function providerCall(index: number): {
   readonly payload: unknown;
@@ -449,6 +531,126 @@ describe("email outbox provider replay", () => {
 
     await expect(outbox.cleanupExpiredItems([expired.id])).resolves.toBe(1);
     await expect(outbox.readItem(expired.id)).resolves.toBeNull();
+  });
+
+  it("expires an item that reaches its deadline while its request is prepared", async () => {
+    const baseTime = pinTime();
+    const deadlineMs = baseTime + 1000;
+    const crossing = await seedItem({
+      status: "pending",
+      createdAt: new Date(deadlineMs - OUTBOX_TTL_MS),
+    });
+    const sibling = await seedItem({ status: "pending", createdAt: nowDate() });
+    context.mocks.resend.send.mockResolvedValue({
+      data: { id: "resend-sibling" },
+      error: null,
+    });
+
+    const claim = await holdEmailOutboxClaim(crossing.id, context.signal);
+    const drained = outbox.drainItems([crossing.id, sibling.id]);
+    await claim.waitForBlocked();
+    // Preparation already admitted the row against the clock. Its deadline is
+    // reached while the suppression lookup, claim update and commit run.
+    mockNow(deadlineMs);
+    await claim.release();
+
+    await expect(drained).resolves.toBe(2);
+    // Equality at the deadline expires the item, so only the still-valid
+    // sibling reaches the provider.
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    expect(providerCall(0).payload).toMatchObject({ to: sibling.toAddress });
+    await expect(outbox.readItem(crossing.id)).resolves.toMatchObject({
+      status: "failed",
+      attempts: 1,
+      resend_id: null,
+      // The committed request and key stay on the row: they are the only record
+      // of the delivery identity this claim prepared.
+      has_provider_request: true,
+      provider_idempotency_key: providerKey(crossing.id),
+      last_error: EXPIRED_BEFORE_PROVIDER_ERROR,
+    });
+    await expect(outbox.readItem(sibling.id)).resolves.toMatchObject({
+      status: "sent",
+      resend_id: "resend-sibling",
+    });
+  });
+
+  it("never revives a row removed while its expired attempt was resolving", async () => {
+    const baseTime = pinTime();
+    const deadlineMs = baseTime + 1000;
+    const item = await seedItem({
+      status: "pending",
+      createdAt: new Date(deadlineMs - OUTBOX_TTL_MS),
+    });
+
+    const claim = await holdEmailOutboxClaim(item.id, context.signal);
+    const drained = outbox.drainItems([item.id]);
+    const claimingSession = await claim.waitForBlocked();
+    mockNow(deadlineMs);
+
+    // Queued behind the suspended claim, so the removal owns the row before the
+    // expired resolution can write it.
+    const pendingRemoval = holdEmailOutboxRemoval(item.id, context.signal);
+    await waitForEmailOutboxBlocked(claimingSession);
+    await claim.release();
+    const removal = await pendingRemoval;
+    await removal.waitForBlocked();
+    await removal.release();
+
+    await expect(drained).resolves.toBe(1);
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
+    await expect(outbox.readItem(item.id)).resolves.toBeNull();
+  });
+
+  it("replays one delivery after its completion write fails", async () => {
+    const baseTime = pinTime();
+    const item = await seedItem({ status: "pending", createdAt: nowDate() });
+    const key = providerKey(item.id);
+    const provider = useIdempotentProvider();
+
+    const restoreCompletion = await rejectEmailOutboxCompletion(
+      item.id,
+      context.signal,
+    );
+    onTestFinished(restoreCompletion);
+
+    // The provider accepts the request and the worker then fails to record it.
+    await expect(outbox.drainItems([item.id])).rejects.toThrow(
+      `Unknown response status 500 for ${DRAIN_ROUTE}`,
+    );
+
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
+    expect(provider.accepted()).toHaveLength(1);
+    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
+      status: "sending",
+      attempts: 1,
+      resend_id: null,
+      // The durable snapshot survived the failed completion, so the accepted
+      // email is still recoverable.
+      has_provider_request: true,
+      provider_idempotency_key: key,
+    });
+
+    await restoreCompletion();
+    mockNow(baseTime + SEND_LEASE_MS);
+    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(2);
+    expect(providerCall(1).payload).toStrictEqual(providerCall(0).payload);
+    expect(providerCall(1).options).toStrictEqual({ idempotencyKey: key });
+    // The provider still owns exactly one email for this key; the replay
+    // resolved to it instead of accepting a second one.
+    const delivered = provider.accepted();
+    expect(delivered).toStrictEqual([
+      expect.objectContaining({ key, id: expect.any(String) }),
+    ]);
+    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
+      status: "sent",
+      attempts: 2,
+      resend_id: delivered[0]?.id,
+      provider_idempotency_key: key,
+      has_provider_request: false,
+    });
   });
 
   it("gives each outbox row its own provider key", async () => {
