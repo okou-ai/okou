@@ -288,7 +288,7 @@ describe("optional shared-thread titles", () => {
     expect(requests).toStrictEqual([]);
   });
 
-  it.each(["ingest", "flush"] as const)(
+  it.each(["ingest", "flush", "phase-abort"] as const)(
     "preserves a valid share when telemetry %s fails",
     async (mode) => {
       const fixture = await prepareShare();
@@ -298,7 +298,15 @@ describe("optional shared-thread titles", () => {
           return new HttpResponse(null, { status: 429 });
         }),
       );
-      mockAxiomSdkTelemetryFailure({ mode });
+      if (mode === "phase-abort") {
+        mockAxiomSdkTelemetryFailure({
+          mode: "ingest",
+          eventTypes: ["shared_thread_phase"],
+          error: new DOMException("Telemetry cancelled", "AbortError"),
+        });
+      } else {
+        mockAxiomSdkTelemetryFailure({ mode });
+      }
       const created = await accept(
         client().create(requestBody(fixture)),
         [201],

@@ -187,7 +187,12 @@ async function fixture() {
       return Promise.resolve({});
     }
     if (cmd instanceof GetObjectCommand) {
-      const body = objects.get(cmd.input.Key!);
+      // Host fixtures treat presigned uploads as complete, as does HEAD above.
+      const body =
+        objects.get(cmd.input.Key!) ??
+        (cmd.input.Key?.startsWith("private-sites/")
+          ? "Hosted fixture"
+          : undefined);
       if (body === undefined) {
         return Promise.reject(
           Object.assign(new Error("Missing"), { name: "NoSuchKey" }),
@@ -979,6 +984,13 @@ test("html sharing pins the selected version until an explicit update and resolv
     }),
     [200],
   );
+  const deliveryManifests = [...objects].filter(([key]) => {
+    return (
+      key.startsWith("shared-artifacts/") && key.endsWith("/manifest.json")
+    );
+  });
+  expect(deliveryManifests).toHaveLength(1);
+  expect(deliveryManifests[0]![1]).not.toContain("snapshotDependencies");
   const second = await host.prepareHostedSite(actor, {
     ...body,
     files: [hostedTextFile("/index.html", "<h1>Version two</h1>")],
