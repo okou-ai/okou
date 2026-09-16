@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "legacyClassTokens": ["toaster", "wmde-markdown"],
+  "legacyClassTokens": [],
   "cssAtoms": {
     "apps/platform/src/views/css/index.css": [
       {
@@ -19,14 +19,7 @@
       }
     ]
   },
-  "classUsages": {
-    "apps/platform/src/views/components/markdown-frame.tsx": {
-      "wmde-markdown": 1
-    },
-    "packages/ui/src/components/ui/sonner.tsx": {
-      "toaster": 1
-    }
-  },
+  "classUsages": {},
   "styleInjections": {
     "apps/platform/src/views/okou-page/avatar-maker.tsx": [
       {
