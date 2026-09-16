@@ -1,16 +1,14 @@
 use std::io;
 use std::time::Duration;
 
-use guest_control_proto::ExecTermination;
-
 use crate::{
     ExecCaptureRequest, ExecOperationResult, ExecOwnedCapturedOutput, FrameWriteObserver,
     GuestControlClient, exec_operation,
 };
 
 use super::{
-    MISSING_FILE_EXIT_CODE, normalize_file_exec_stderr, read_regular_file_command,
-    validate_guest_file_path,
+    MISSING_FILE_EXIT_CODE, file_exec_exit_code, normalize_file_exec_stderr,
+    read_regular_file_command, validate_guest_file_path,
 };
 
 fn read_exec_output(
@@ -24,21 +22,6 @@ fn read_exec_output(
             io::ErrorKind::InvalidData,
             format!("read_file result for {path} discarded {name} capture"),
         )),
-    }
-}
-
-fn read_terminal_error_message(prefix: String, stderr: &[u8], diagnostic: &str) -> String {
-    let mut details = Vec::new();
-    if !stderr.is_empty() {
-        details.push(format!("stderr: {}", String::from_utf8_lossy(stderr)));
-    }
-    if !diagnostic.is_empty() {
-        details.push(format!("diagnostic: {diagnostic}"));
-    }
-    if details.is_empty() {
-        prefix
-    } else {
-        format!("{prefix}: {}", details.join("; "))
     }
 }
 
@@ -65,10 +48,14 @@ fn validate_read_exec_result(
     let (stderr, stderr_truncated) = read_exec_output(path, "stderr", stderr)?;
 
     let stderr = normalize_file_exec_stderr(stderr, stderr_truncated);
-    match termination {
-        ExecTermination::Exited {
-            exit_code: MISSING_FILE_EXIT_CODE,
-        } => {
+    match file_exec_exit_code(
+        termination,
+        "read_file",
+        format_args!(" for {path}"),
+        &stderr,
+        &diagnostic,
+    )? {
+        MISSING_FILE_EXIT_CODE => {
             if stdout_truncated || !stdout.is_empty() {
                 let stdout_detail = if stdout_truncated {
                     "stdout truncated"
@@ -91,7 +78,7 @@ fn validate_read_exec_result(
             }
             Ok(None)
         }
-        ExecTermination::Exited { exit_code: 0 } => {
+        0 => {
             if stdout_truncated {
                 return Err(io::Error::other(format!(
                     "file {path} exceeded {max_bytes} bytes"
@@ -108,32 +95,9 @@ fn validate_read_exec_result(
             }
             Ok(Some(stdout))
         }
-        ExecTermination::Exited { exit_code: _ } => Err(io::Error::other(format!(
+        _ => Err(io::Error::other(format!(
             "failed to read file {path}: {}",
             String::from_utf8_lossy(&stderr)
-        ))),
-        ExecTermination::TimedOut => Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            read_terminal_error_message(
-                format!("read_file timed out for {path}"),
-                &stderr,
-                &diagnostic,
-            ),
-        )),
-        ExecTermination::Cancelled => Err(io::Error::other(read_terminal_error_message(
-            format!("read_file was cancelled for {path}"),
-            &stderr,
-            &diagnostic,
-        ))),
-        ExecTermination::StartFailed => Err(io::Error::other(read_terminal_error_message(
-            format!("read_file exec start failed for {path}"),
-            &stderr,
-            &diagnostic,
-        ))),
-        ExecTermination::WaitFailed => Err(io::Error::other(read_terminal_error_message(
-            format!("read_file exec wait failed for {path}"),
-            &stderr,
-            &diagnostic,
         ))),
     }
 }

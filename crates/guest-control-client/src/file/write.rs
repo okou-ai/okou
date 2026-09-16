@@ -18,7 +18,7 @@ use crate::{
     request_on_shared_with_composite_operation_and_observer_frame_builder,
 };
 
-use super::{normalize_file_exec_stderr, validate_guest_file_path};
+use super::{file_exec_exit_code, normalize_file_exec_stderr, validate_guest_file_path};
 
 /// Maximum content per write_file message. Leaves headroom below
 /// [`guest_control_proto::MAX_MESSAGE_SIZE`] for the path and frame overhead.
@@ -275,85 +275,30 @@ fn write_helper_exec_captured_output(
     }
 }
 
-fn write_helper_terminal_message(prefix: String, stderr: &[u8], diagnostic: &str) -> String {
-    let mut details = Vec::new();
-    if !stderr.is_empty() {
-        details.push(format!("stderr: {}", String::from_utf8_lossy(stderr)));
-    }
-    if !diagnostic.is_empty() {
-        details.push(format!("diagnostic: {diagnostic}"));
-    }
-    if details.is_empty() {
-        prefix
-    } else {
-        format!("{prefix}: {}", details.join("; "))
-    }
-}
-
 fn validate_cleanup_result(result: ExecOperationResult) -> io::Result<()> {
     let (termination, stderr, diagnostic) = write_helper_exec_output("cleanup command", result)?;
-    match termination {
-        ExecTermination::Exited { exit_code: 0 } => Ok(()),
-        ExecTermination::Exited { exit_code } => Err(io::Error::other(format!(
+    match file_exec_exit_code(termination, "cleanup command", "", &stderr, &diagnostic)? {
+        0 => Ok(()),
+        exit_code => Err(io::Error::other(format!(
             "cleanup command failed with exit code {exit_code}: {}",
             String::from_utf8_lossy(&stderr)
-        ))),
-        ExecTermination::TimedOut => Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            write_helper_terminal_message(
-                "cleanup command timed out".to_string(),
-                &stderr,
-                &diagnostic,
-            ),
-        )),
-        ExecTermination::Cancelled => Err(io::Error::other(write_helper_terminal_message(
-            "cleanup command was cancelled".to_string(),
-            &stderr,
-            &diagnostic,
-        ))),
-        ExecTermination::StartFailed => Err(io::Error::other(write_helper_terminal_message(
-            "cleanup command exec start failed".to_string(),
-            &stderr,
-            &diagnostic,
-        ))),
-        ExecTermination::WaitFailed => Err(io::Error::other(write_helper_terminal_message(
-            "cleanup command exec wait failed".to_string(),
-            &stderr,
-            &diagnostic,
         ))),
     }
 }
 
 fn validate_rename_result(path: &str, result: ExecOperationResult) -> io::Result<()> {
     let (termination, stderr, diagnostic) = write_helper_exec_output("rename command", result)?;
-    match termination {
-        ExecTermination::Exited { exit_code: 0 } => Ok(()),
-        ExecTermination::Exited { exit_code } => Err(io::Error::other(format!(
+    match file_exec_exit_code(
+        termination,
+        "rename command",
+        format_args!(" while moving temp file to {path}"),
+        &stderr,
+        &diagnostic,
+    )? {
+        0 => Ok(()),
+        exit_code => Err(io::Error::other(format!(
             "failed to rename temp file to {path} with exit code {exit_code}: {}",
             String::from_utf8_lossy(&stderr)
-        ))),
-        ExecTermination::TimedOut => Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            write_helper_terminal_message(
-                format!("rename command timed out while moving temp file to {path}"),
-                &stderr,
-                &diagnostic,
-            ),
-        )),
-        ExecTermination::Cancelled => Err(io::Error::other(write_helper_terminal_message(
-            format!("rename command was cancelled while moving temp file to {path}"),
-            &stderr,
-            &diagnostic,
-        ))),
-        ExecTermination::StartFailed => Err(io::Error::other(write_helper_terminal_message(
-            format!("rename command exec start failed while moving temp file to {path}"),
-            &stderr,
-            &diagnostic,
-        ))),
-        ExecTermination::WaitFailed => Err(io::Error::other(write_helper_terminal_message(
-            format!("rename command exec wait failed while moving temp file to {path}"),
-            &stderr,
-            &diagnostic,
         ))),
     }
 }
