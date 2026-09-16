@@ -1879,7 +1879,7 @@
         "moreAccounts_one": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Needs attention",
-        "nextCategories": "More categories",
+        "nextCategories": "Next categories",
         "noResultsBody": "Try a product name, or build your own from an API or MCP server.",
         "noResultsTitle": "No connector matches “{{query}}”",
         "openDetailAria": "Open {{connector}} details",

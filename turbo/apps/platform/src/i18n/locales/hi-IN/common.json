@@ -1879,7 +1879,7 @@
         "moreAccounts_one": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "ध्यान देने की ज़रूरत",
-        "nextCategories": "और श्रेणियाँ",
+        "nextCategories": "अगली श्रेणियाँ",
         "noResultsBody": "किसी प्रोडक्ट का नाम आज़माएँ, या API या MCP सर्वर से अपना बनाएँ।",
         "noResultsTitle": "“{{query}}” से मेल खाता कोई कनेक्टर नहीं",
         "openDetailAria": "{{connector}} का विवरण खोलें",

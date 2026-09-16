@@ -1879,7 +1879,7 @@
         "moreAccounts_one": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Braucht Aufmerksamkeit",
-        "nextCategories": "Weitere Kategorien",
+        "nextCategories": "Nächste Kategorien",
         "noResultsBody": "Versuchen Sie einen Produktnamen oder erstellen Sie eine eigene aus einer API oder einem MCP-Server.",
         "noResultsTitle": "Keine Integration passt zu „{{query}}“",
         "openDetailAria": "Details zu {{connector}} öffnen",

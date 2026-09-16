@@ -23,9 +23,9 @@ import { sshSummary$ } from "../../signals/ssh.ts";
 import {
   bindConnectorCategoryRail$,
   connectorCategoryRailTravel$,
-  measureRail,
   setConnectorCategoryRailTravel$,
 } from "../../signals/okou-page/settings/connector-category-rail.ts";
+import { measureRail } from "../../signals/okou-page/rail-travel.ts";
 import { RailPager } from "./rail-pager.tsx";
 import { REMOTE_ACCESS_CATEGORY } from "../../signals/okou-page/settings/ssh-connector.ts";
 import type {
@@ -295,6 +295,17 @@ const CHIP_RAIL_FADE = {
     "[mask-image:linear-gradient(to_right,#000_calc(100%_-_48px),transparent)]",
   both: "[mask-image:linear-gradient(to_right,transparent,#000_48px,#000_calc(100%_-_48px),transparent)]",
 } as const;
+/**
+ * Every chip is a button, so the row is walked by Tab as well as by the pagers,
+ * and the browser scrolls whichever chip takes focus into view. `scroll-px-12`
+ * is the fade's own width on both sides, so a chip scrolled in that way stops
+ * clear of the dissolve rather than resting inside it; the two have to stay
+ * equal. Lifting the mask while the row holds focus covers what scroll padding
+ * cannot -- a chip already at rest under the fade when focus arrives -- so a
+ * keyboard user never lands on a control the row dimmed. `composer-rail.tsx`
+ * pairs the same two.
+ */
+const CHIP_RAIL_FADE_OFF = "focus-within:[mask-image:none]";
 
 /**
  * The dialog's own surface is `--card`, not `--background`: in dark the two are
@@ -367,9 +378,10 @@ function DirectoryCategoryChips({
             setTravel(measureRail(event.currentTarget));
           }}
           className={cn(
-            "overflow-x-auto scroll-smooth px-6 py-1",
+            "overflow-x-auto scroll-smooth scroll-px-12 px-6 py-1",
             "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
             fade,
+            CHIP_RAIL_FADE_OFF,
           )}
         >
           <div className="flex w-max gap-1.5">

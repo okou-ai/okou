@@ -1873,7 +1873,7 @@
         "matchCount_other": "{{count}} hasil",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Perlu perhatian",
-        "nextCategories": "Kategori lainnya",
+        "nextCategories": "Kategori berikutnya",
         "noResultsBody": "Coba nama produk, atau buat sendiri dari API atau server MCP.",
         "noResultsTitle": "Tidak ada konektor yang cocok dengan “{{query}}”",
         "openDetailAria": "Buka detail {{connector}}",

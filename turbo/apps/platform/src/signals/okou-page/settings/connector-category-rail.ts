@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 
 import { onRef } from "../../utils.ts";
-import { measureRail, observeRail, type RailTravel } from "../rail-travel.ts";
+import { observeRail, type RailTravel } from "../rail-travel.ts";
 
 /**
  * Whether the directory's category row can still travel. The row is one modal
@@ -41,5 +41,3 @@ export const bindConnectorCategoryRail$ = onRef(
     });
   }),
 );
-
-export { measureRail };

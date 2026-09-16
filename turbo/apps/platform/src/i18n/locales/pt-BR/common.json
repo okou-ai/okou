@@ -1912,7 +1912,7 @@
         "moreAccounts_many": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Precisa de atenção",
-        "nextCategories": "Mais categorias",
+        "nextCategories": "Próximas categorias",
         "noResultsBody": "Tente o nome de um produto ou crie o seu a partir de uma API ou servidor MCP.",
         "noResultsTitle": "Nenhum conector corresponde a “{{query}}”",
         "openDetailAria": "Abrir detalhes de {{connector}}",
