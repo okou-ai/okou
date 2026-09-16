@@ -498,6 +498,13 @@
       "when": 1789556208626,
       "tag": "1148_email_outbox_provider_replay",
       "breakpoints": true
+    },
+    {
+      "idx": 1149,
+      "version": "7",
+      "when": 1789561628531,
+      "tag": "1149_morning_brief_installed_preferences",
+      "breakpoints": true
     }
   ]
 }

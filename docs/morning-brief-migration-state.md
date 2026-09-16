@@ -92,6 +92,106 @@ mutation, exactly as the preference surface does today.
   has Morning Brief, and turning it off must not discard choices the user made
   while it was on.
 
+## The installed preference projection
+
+`morning_brief_installed_preferences` holds at most one row per
+`(org_id, user_id)`: a copy of the `installed` state above, written by the real
+Settings writers and read back by the real Settings reader
+([#34693](https://github.com/vm0-ai/okou/issues/34693)). It is a persistence and
+serialization rehearsal for the native pipeline, **not** an authority, an
+execution record, or a cache that makes anything faster. The legacy installation
+and its automation still decide everything; the legacy queries all still run.
+
+`FeatureSwitchKey.SimpleMorningBrief` gates both directions and is off by
+default, so the production path is unchanged until it is turned on.
+
+### What is copied, and when it may be used
+
+The row stores `projection_version` plus the fields needed to reproduce and
+check the managed installed state: the selected `workflow_id`, its
+`automation_id` and `agent_id`, the bound `chat_thread_id`, `enabled`,
+`cron_expression`, `timezone` and `next_run_at`. Nothing else — no source
+bodies, prompts, results, credentials, usage or delivery attempts.
+
+The Settings GET always loads and answers from the live canonical state first.
+Only then, and only while the switch is on, may the projection supply the
+response, and only when **every** field above still equals that live state and
+`projection_version` is the version the reader understands. Anything else —
+no row, an unsupported version, a different selected installation, a schedule
+the scheduler advanced, a timezone an older binary changed — silently keeps the
+legacy answer.
+
+The row's own `updated_at` is not freshness evidence. Old API binaries, the
+automation poller, catalog reconciliation and thread deletion all change the
+legacy state without writing here, which is exactly why equality against a
+freshly loaded state is the only accepted proof. GET itself never writes,
+installs, repairs, backfills or creates a thread, and `absent`, `pending`,
+`inconsistent` and pre-installation opt-out states never reach the projection at
+all.
+
+### Refresh is not atomic with the legacy write
+
+Writers refresh the row after a successful preference update, after enrollment
+completion or adoption, and after timezone synchronization. All three already
+hold the preference advisory lock, so they serialize against each other, but
+[that lock's transaction is not the legacy write's transaction](#reading-it-safely):
+the legacy mutation runs on the outer `Db` and has already committed when the
+copy starts.
+
+The refresh therefore never pretends to be atomic. It re-reads the canonical
+state inside its own bounded transaction, and if the copy fails, the failure is
+reported operationally while the committed legacy outcome is still returned —
+the user is not told a successful choice failed, and the mutation is not
+replayed. A later read falls back to legacy and still shows that choice. An
+expected skip (switch off, no installed brief, no membership parent) is recorded
+separately from an infrastructure failure, so a failure is never recorded as a
+healthy projection. Cancellation keeps propagating; a cancelled request does not
+leave a detached write behind.
+
+When the state is not `installed`, the refresh deletes the row instead of
+copying, so no description of a state the reader cannot reproduce survives.
+
+### The deletion fence is a cache lifetime, not erasure authority
+
+The row's lifetime is deliberately evictable:
+
+- A composite foreign key to `org_members_cache(org_id, user_id)` with
+  `ON DELETE CASCADE` covers today's membership, user, organization,
+  auth-cache invalidation and cache-list refresh deletions. The refresh locks
+  and rechecks that exact parent with `FOR KEY SHARE`, so a concurrent cleanup
+  either waits for the copy and then cascades it away, or has already removed
+  the parent and leaves nothing to write. **The refresh never creates or
+  refills that parent.**
+- Foreign keys to `agents(id)` and `chat_threads(id)` invalidate the copy when
+  the owning Agent or the destination thread is deleted. Neither deletion
+  creates a replacement thread or an enabled state; the legacy brief stays
+  paused or uninstalled exactly as it does today.
+- Native writes also pass the existing transaction-level
+  [erasure admission](../turbo/packages/db/src/operations/account-erasure.ts):
+  READ COMMITTED, sorted organization and user subject locks taken before any
+  business row and held through commit.
+
+The limits are as real as the guarantees. `org_members_cache` is a 60-second
+read-through role cache, not a tombstone: a concurrent membership read can
+refill it after a cleanup, and this projection's writer cannot prevent that.
+[The Clerk erasure bridge is still unregistered](account-erasure-foundation.md),
+so admission bounds this writer, not the world. None of this is global deletion
+finality, and the presence of a row never authorizes executing a brief.
+
+**Hard gate:** before native state becomes execution authority, this evictable
+cache lifetime must be replaced with durable membership and erasure ownership.
+Cutover must not inherit a disposable parent.
+
+### What this slice does not do
+
+It consumes no occurrence, claims no schedule, advances no due slot, and adds no
+Run, Chat event, email, provider request or user credit operation. S3b owns
+occurrence, attempt and lease state and lands with the first real S4 collection
+executor; S4 owns source collection; S7 owns the complete preference and
+enrollment materialization, the durable ownership above, and the cutover. The
+production counts below are automation inventory: they are not a native-row
+census, and they do not show that any preference has been migrated.
+
 ## Observed production scale
 
 A paginated MaskDB read on 2026-09-16 at 09:50:15–09:50:17 UTC, including
@@ -102,8 +202,17 @@ contexts identify 143 distinct destination threads for 143 automations; 24
 automations have no context. All 167 are reconciliation-current with result
 email enabled.
 
+A second paginated read on 2026-09-16 at 12:01:06–12:01:07 UTC, on the same
+all-production scope, found 168 `daily-delivery` automations — 161 enabled, 7
+disabled — across 167 `(org_id, owner_user_id)` pairs and 164 organizations, all
+reconciliation-current with result email enabled.
+
 `morning_brief_enrollments` and `workflow_user_automation_threads` are not
 exposed in MaskDB, so pending-enrollment counts and canonical thread bindings
 are unverified. Historical context counts are a lower bound on threads, not a
 count of those tables. Re-measure through supported application or database
 tooling before a cutover depends on these numbers.
+
+Neither read is a count of `morning_brief_installed_preferences`, which starts
+empty and needs no historical backfill: it is filled only when a member's own
+Settings writer runs while the implementation switch is on.

@@ -30,7 +30,12 @@ import {
   loadMorningBriefDefaultAgentId,
   loadMorningBriefMigrationState,
   loadMorningBriefOwnership,
+  type MorningBriefMigrationState,
 } from "./morning-brief-migration-state.service";
+import {
+  readMorningBriefPreferenceProjection,
+  refreshMorningBriefPreferenceProjection,
+} from "./morning-brief-preference-projection.service";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
@@ -187,14 +192,11 @@ async function loadPendingPreference(
  * The migration facts the state also carries — the additional installations it
  * left alone, and the thread the brief delivers into — stay internal.
  */
-async function loadInstalledPreference(
+async function projectInstalledPreference(
   db: ReadonlyDb,
   args: MorningBriefPreferenceArgs,
+  state: MorningBriefMigrationState,
 ): Promise<MorningBriefPreferenceResult & { readonly workflowId?: string }> {
-  const state = await loadMorningBriefMigrationState(
-    db,
-    morningBriefOwner(args),
-  );
   if (state.kind === "absent") {
     return await loadPendingPreference(db, args, state.enrollment);
   }
@@ -230,6 +232,17 @@ async function loadInstalledPreference(
   };
 }
 
+async function loadInstalledPreference(
+  db: ReadonlyDb,
+  args: MorningBriefPreferenceArgs,
+): Promise<MorningBriefPreferenceResult & { readonly workflowId?: string }> {
+  return await projectInstalledPreference(
+    db,
+    args,
+    await loadMorningBriefMigrationState(db, morningBriefOwner(args)),
+  );
+}
+
 const lockRowSchema = z.object({ acquired: z.boolean() });
 
 async function withMorningBriefPreferenceLock<T>(
@@ -263,6 +276,15 @@ async function withMorningBriefPreferenceLock<T>(
   }
 }
 
+/**
+ * Read the member's Morning Brief preference.
+ *
+ * The live canonical legacy state is loaded and answered from first. While the
+ * implementation switch is on, the native projection may hand back its own
+ * stored copy instead — but only one that still matches that state in every
+ * copied field. Missing, stale or unsupported native data simply keeps the
+ * legacy answer, and nothing on this path writes, installs or repairs.
+ */
 export const morningBriefPreference$ = command(
   async (
     { set },
@@ -271,7 +293,33 @@ export const morningBriefPreference$ = command(
   ): Promise<MorningBriefPreferenceResult> => {
     const db = set(writeDb$);
     signal.throwIfAborted();
-    return await loadInstalledPreference(db, args);
+    const state = await loadMorningBriefMigrationState(
+      db,
+      morningBriefOwner(args),
+    );
+    signal.throwIfAborted();
+    const legacy = await projectInstalledPreference(db, args, state);
+    signal.throwIfAborted();
+    if (state.kind !== "installed" || legacy.kind !== "ok") {
+      return legacy;
+    }
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
+      db,
+      args.orgId,
+      args.member.userId,
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(
+        FeatureSwitchKey.SimpleMorningBrief,
+        featureSwitchContext,
+      )
+    ) {
+      return legacy;
+    }
+    const projected = await readMorningBriefPreferenceProjection(db, state);
+    signal.throwIfAborted();
+    return projected === null ? legacy : { kind: "ok", preference: projected };
   },
 );
 
@@ -507,14 +555,16 @@ export const ensureMorningBriefDefaultEnabled$ = command(
     args: EnsureMorningBriefDefaultEnabledArgs,
     signal: AbortSignal,
   ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    return await withMorningBriefPreferenceLock(
-      set(writeDb$),
-      args,
-      signal,
-      async () => {
-        return await set(ensureMorningBriefWhileLocked$, args, signal);
-      },
-    );
+    const db = set(writeDb$);
+    return await withMorningBriefPreferenceLock(db, args, signal, async () => {
+      const outcome = await set(ensureMorningBriefWhileLocked$, args, signal);
+      await refreshMorningBriefPreferenceProjection(
+        db,
+        morningBriefOwner(args),
+        signal,
+      );
+      return outcome;
+    });
   },
 );
 
@@ -692,7 +742,17 @@ export const updateMorningBriefPreference$ = command(
       args,
       signal,
       async () => {
-        return await set(updateMorningBriefWhileLocked$, args, signal);
+        const outcome = await set(updateMorningBriefWhileLocked$, args, signal);
+        // The legacy mutation above runs on the outer `Db` and has already
+        // committed; holding the preference advisory lock does not make the
+        // two writes atomic. A failed copy is reported operationally and the
+        // real legacy outcome is still returned to the caller.
+        await refreshMorningBriefPreferenceProjection(
+          db,
+          morningBriefOwner(args),
+          signal,
+        );
+        return outcome;
       },
     );
     await publishMorningBriefChangedSafely(morningBriefOwner(args));
@@ -700,6 +760,57 @@ export const updateMorningBriefPreference$ = command(
     return result;
   },
 );
+
+async function synchronizeTimezoneWhileLocked(
+  db: Db,
+  identity: MorningBriefMemberIdentity,
+): Promise<void> {
+  const timezone = await loadOfficialWorkflowUserTimezone(db, identity);
+  if (!timezone || !isValidTimeZone(timezone)) {
+    return;
+  }
+  const { installation } = await loadMorningBriefOwnership(db, identity);
+  if (!installation) {
+    return;
+  }
+  const workflowId = installation.id;
+  await db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.workflowId, workflowId),
+          eq(
+            workflowAutomations.officialBlueprintKey,
+            MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+          ),
+        ),
+      )
+      .for("update");
+    for (const row of rows) {
+      if (
+        row.scheduleType !== "cron" ||
+        !row.cronExpression ||
+        row.timezone === timezone
+      ) {
+        continue;
+      }
+      const currentTime = nowDate();
+      await tx
+        .update(workflowAutomations)
+        .set({
+          timezone,
+          nextRunAt:
+            row.enabled && row.nextRunAt
+              ? calculateNextRun(row.cronExpression, timezone, currentTime)
+              : null,
+          updatedAt: currentTime,
+        })
+        .where(eq(workflowAutomations.id, row.id));
+    }
+  });
+}
 
 /** Updating the timezone never enables a paused schedule or schedules over an in-flight run. */
 export const synchronizeMorningBriefTimezone$ = command(
@@ -711,51 +822,8 @@ export const synchronizeMorningBriefTimezone$ = command(
     const db = set(writeDb$);
     const identity = morningBriefOwner(args);
     await withMorningBriefPreferenceLock(db, args, signal, async () => {
-      const timezone = await loadOfficialWorkflowUserTimezone(db, identity);
-      if (!timezone || !isValidTimeZone(timezone)) {
-        return;
-      }
-      const { installation } = await loadMorningBriefOwnership(db, identity);
-      if (!installation) {
-        return;
-      }
-      const workflowId = installation.id;
-      await db.transaction(async (tx) => {
-        const rows = await tx
-          .select()
-          .from(workflowAutomations)
-          .where(
-            and(
-              eq(workflowAutomations.workflowId, workflowId),
-              eq(
-                workflowAutomations.officialBlueprintKey,
-                MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-              ),
-            ),
-          )
-          .for("update");
-        for (const row of rows) {
-          if (
-            row.scheduleType !== "cron" ||
-            !row.cronExpression ||
-            row.timezone === timezone
-          ) {
-            continue;
-          }
-          const currentTime = nowDate();
-          await tx
-            .update(workflowAutomations)
-            .set({
-              timezone,
-              nextRunAt:
-                row.enabled && row.nextRunAt
-                  ? calculateNextRun(row.cronExpression, timezone, currentTime)
-                  : null,
-              updatedAt: currentTime,
-            })
-            .where(eq(workflowAutomations.id, row.id));
-        }
-      });
+      await synchronizeTimezoneWhileLocked(db, identity);
+      await refreshMorningBriefPreferenceProjection(db, identity, signal);
     });
     await publishMorningBriefChangedSafely(identity);
   },

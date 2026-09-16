@@ -667,6 +667,10 @@ export default [
       // NULL recovery, partial claims, rollback or a closed DB pool. Route
       // suites separately cover all externally constructible stop writers.
       "src/signals/services/__tests__/run-cancellation-state.service.test.ts",
+      // #34693 needs the persisted membership fence in both commit orders, the
+      // foreign-key cascades that invalidate a copy, and erasure closure, which
+      // has no production endpoint. The Settings routes cover the rest.
+      "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -839,6 +843,9 @@ export default [
       // Finite stop-intent transaction/history matrix, outside HTTP inputs;
       // retains the diagnostics restrictions in the named service block.
       "src/signals/services/__tests__/run-cancellation-state.service.test.ts",
+      // #34693's persisted membership fence, foreign-key cascades and erasure
+      // closure have no HTTP ingress; the Settings routes own everything else.
+      "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [

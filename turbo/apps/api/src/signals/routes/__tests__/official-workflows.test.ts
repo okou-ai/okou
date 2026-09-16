@@ -1701,6 +1701,20 @@ async function setMorningBriefEnabled(
   );
 }
 
+async function setSimpleMorningBriefEnabled(
+  actor: ApiTestUser,
+  enabled: boolean,
+): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Expected organization-scoped actor");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId: actor.orgId, userId: actor.userId },
+    { [FeatureSwitchKey.SimpleMorningBrief]: enabled },
+  );
+}
+
 async function deliverClerkOrganizationCreated(
   actor: ApiTestUser,
   createdAt: Date,
@@ -2654,6 +2668,391 @@ describe("Morning Brief preference", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
       { id: onAlternateAgent },
     ]);
+  });
+});
+
+describe("Morning Brief native preference projection", () => {
+  it("projects installed state and keeps every public response identical", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await cleanupCatalog();
+    });
+    const headers = authHeaders(actor);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+
+    // Enabled while the implementation switch is off, exactly like production.
+    const legacyEnabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(legacyEnabled.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      nextRunAt: expect.any(String),
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+
+    // Turning the switch on projects nothing by itself, so the live legacy
+    // state still answers and the read stays a read.
+    await setSimpleMorningBriefEnabled(actor, true);
+    const withoutProjection = await readBriefPreference(actor);
+    expect(withoutProjection.body).toStrictEqual(legacyEnabled.body);
+
+    // A real Settings write under the switch copies the state, and reading it
+    // back returns exactly what the legacy answer would have been.
+    const paused = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(paused.body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      nextRunAt: null,
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+    const projectedPause = await readBriefPreference(actor);
+    expect(projectedPause.body).toStrictEqual(paused.body);
+
+    const reenabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const projected = await readBriefPreference(actor);
+    expect(projected.body).toStrictEqual(reenabled.body);
+
+    // Switching the implementation off and on again changes nothing the user
+    // can see, and discards no choice they made while it was on.
+    await setSimpleMorningBriefEnabled(actor, false);
+    const withSwitchOff = await readBriefPreference(actor);
+    expect(withSwitchOff.body).toStrictEqual(projected.body);
+    await setSimpleMorningBriefEnabled(actor, true);
+    const withSwitchOn = await readBriefPreference(actor);
+    expect(withSwitchOn.body).toStrictEqual(projected.body);
+
+    // Timezone synchronization refreshes the copy instead of pinning the old
+    // schedule, and the answer stays identical once the switch is off again.
+    await bdd.updateUserTimezone(actor, "America/New_York");
+    await flushWaitUntilForTest();
+    const afterTimezone = await readBriefPreference(actor);
+    expect(afterTimezone.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "America/New_York",
+      nextRunAt: expect.any(String),
+    });
+    expect(afterTimezone.body.nextRunAt).not.toBe(projected.body.nextRunAt);
+    await setSimpleMorningBriefEnabled(actor, false);
+    const legacyAfterTimezone = await readBriefPreference(actor);
+    expect(legacyAfterTimezone.body).toStrictEqual(afterTimezone.body);
+  });
+
+  it("ignores a projection an older writer left behind", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await cleanupCatalog();
+    });
+    const headers = authHeaders(actor);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+    await setSimpleMorningBriefEnabled(actor, true);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+
+    // Roll the implementation switch back off, exactly like an older API
+    // binary or a rollback: the legacy writes still happen, the copy does not.
+    await setSimpleMorningBriefEnabled(actor, false);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await bdd.updateUserTimezone(actor, "America/New_York");
+    await flushWaitUntilForTest();
+
+    // The retained copy still describes an enabled Asia/Shanghai brief with a
+    // next run. None of it may reach the user.
+    await setSimpleMorningBriefEnabled(actor, true);
+    const read = await readBriefPreference(actor);
+    expect(read.body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      nextRunAt: null,
+      timezone: "America/New_York",
+      unavailableReason: null,
+    });
+  });
+
+  it("does not answer from a projection of an installation Settings no longer manages", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    if (!actor.orgId) {
+      throw new Error("Expected organization-scoped actor");
+    }
+    const alternate = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await cleanupCatalog();
+    });
+    const headers = authHeaders(actor);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+    await setSimpleMorningBriefEnabled(actor, true);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const managed = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(managed.body).toMatchObject({ enabled: false, status: "paused" });
+    const [enrolled] = await listMorningBriefInstallations(actor);
+    if (!enrolled) {
+      throw new Error("Expected a Preferences-managed installation");
+    }
+
+    // Ownership moves to an enabled installation on another Agent while the
+    // copy still describes the paused one Settings used to manage.
+    await setOfficialWorkflowsEnabled(actor, true);
+    const onAlternateAgent = await installMorningBriefFromCatalog(
+      actor,
+      alternate.agentId,
+    );
+    await accept(
+      installationClient().uninstall({
+        headers,
+        params: { workflowId: enrolled.id },
+      }),
+      [204],
+    );
+    const read = await readBriefPreference(actor);
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+    await expect(
+      readMorningBriefAutomations(actor, onAlternateAgent),
+    ).resolves.toMatchObject([{ enabled: true }]);
+  });
+
+  it("keeps absent, unavailable and opt-out states on their legacy answers", async () => {
+    const { actor } = await workflowBdd.setupWorkflowOrg();
+    await setMorningBriefEnabled(actor, true);
+    await setSimpleMorningBriefEnabled(actor, true);
+    const headers = authHeaders(actor);
+
+    const unavailable = await readBriefPreference(actor);
+    expect(unavailable.body).toMatchObject({
+      enabled: false,
+      timezone: null,
+      unavailableReason: "missing-timezone",
+    });
+
+    // An explicit opt-out before any installation stays an opt-out, and the
+    // switch neither installs a brief nor invents native state for it.
+    const optedOut = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(optedOut.body).toMatchObject({ enabled: false, status: "paused" });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    const afterOptOut = await readBriefPreference(actor);
+    expect(afterOptOut.body).toStrictEqual(optedOut.body);
+  });
+
+  it("answers each owner from their own state", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const enabledMember = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const pausedMember = await workflowBdd.setupWorkflowOrg({
+      timezone: "America/New_York",
+    });
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await cleanupCatalog();
+    });
+    for (const actor of [enabledMember.actor, pausedMember.actor]) {
+      await setOfficialWorkflowsEnabled(actor, false);
+      await setMorningBriefEnabled(actor, true);
+      await setSimpleMorningBriefEnabled(actor, true);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+    }
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(pausedMember.actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
+
+    const enabledRead = await readBriefPreference(enabledMember.actor);
+    expect(enabledRead.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+    });
+    const pausedRead = await readBriefPreference(pausedMember.actor);
+    expect(pausedRead.body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      nextRunAt: null,
+      timezone: "America/New_York",
+      unavailableReason: null,
+    });
+  });
+
+  it("invalidates the projection when the destination thread is deleted", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    await selectBuiltInDefaultModel(actor);
+    const { agentId } = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, agentId);
+      await cleanupCatalog();
+    });
+    const headers = authHeaders(actor);
+    await setMorningBriefEnabled(actor, true);
+    await setOfficialWorkflowsEnabled(actor, true);
+    const workflowId = await installMorningBriefFromCatalog(actor, agentId);
+    const [automation] = await readMorningBriefAutomations(actor, workflowId);
+    if (!automation) {
+      throw new Error("Expected the Morning Brief Automation");
+    }
+    const started = await accept(
+      automationClient().run({ headers, params: { id: automation.id } }),
+      [201],
+    );
+    if (started.body.runId) {
+      await runs.requestCancelRun(actor, started.body.runId, [200, 400]);
+    }
+
+    // Copy the state now that the brief owns a destination thread. Asking for
+    // the state it already has exercises the no-op completion path.
+    await setSimpleMorningBriefEnabled(actor, true);
+    const bound = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(bound.body).toMatchObject({ enabled: true, status: "enabled" });
+    const projectedBound = await readBriefPreference(actor);
+    expect(projectedBound.body).toStrictEqual(bound.body);
+
+    await chat.deleteThread(actor, started.body.chatThreadId);
+    const afterDelete = await readBriefPreference(actor);
+    expect(afterDelete.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      nextRunAt: null,
+    });
+    await expect(
+      readMorningBriefAutomations(actor, workflowId),
+    ).resolves.toMatchObject([{ enabled: false, chatThreadId: null }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
+  it("invalidates the projection when the owning Agent is deleted", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    if (!actor.orgId) {
+      throw new Error("Expected organization-scoped actor");
+    }
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await cleanupCatalog();
+    });
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected a default Agent");
+    }
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+    await setSimpleMorningBriefEnabled(actor, true);
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
+
+    // Repoint the org default so the Agent holding the brief can be deleted.
+    const replacement = await workflowBdd.createAgent(actor);
+    await setOrgDefaultAgentFixture({
+      orgId: actor.orgId,
+      agentId: replacement.agentId,
+    });
+    await bdd.deleteAgent(actor, onboarding.defaultAgentId);
+
+    const afterDelete = await readBriefPreference(actor);
+    expect(afterDelete.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      nextRunAt: null,
+      unavailableReason: null,
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
 });
 

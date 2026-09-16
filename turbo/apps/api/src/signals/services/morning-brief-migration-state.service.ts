@@ -24,6 +24,14 @@ import { loadWorkflowUserAutomationThreadId } from "./workflow-user-automation-t
  * [the migration contract](../../../../../../docs/morning-brief-migration-state.md).
  */
 
+/**
+ * Any reader of the canonical state, including a transaction.
+ *
+ * Callers that act on the result read it inside the transaction or lock that
+ * guards their mutation, so this deliberately admits more than a pooled `Db`.
+ */
+export type MorningBriefStateReader = Pick<ReadonlyDb, "select">;
+
 interface MorningBriefInstallation {
   readonly id: string;
   readonly agentId: string;
@@ -82,7 +90,7 @@ interface MorningBriefInstallationScope {
   readonly chatThreadId: string | null;
 }
 
-type MorningBriefMigrationState =
+export type MorningBriefMigrationState =
   | (MorningBriefStateBase & { readonly kind: "absent" })
   | (MorningBriefStateBase &
       MorningBriefInstallationScope & { readonly kind: "pending" })
@@ -104,7 +112,7 @@ type MorningBriefMigrationState =
  * a private Agent nobody else may use resolves to no default at all.
  */
 export async function loadMorningBriefDefaultAgentId(
-  db: ReadonlyDb,
+  db: MorningBriefStateReader,
   owner: MorningBriefMemberIdentity,
 ): Promise<string | null> {
   const [defaultAgent] = await db
@@ -135,7 +143,7 @@ export async function loadMorningBriefDefaultAgentId(
 
 /** Oldest first, so the adoption tie-break reads the head of this list. */
 async function loadMorningBriefInstallations(
-  db: ReadonlyDb,
+  db: MorningBriefStateReader,
   owner: MorningBriefMemberIdentity,
 ): Promise<readonly MorningBriefInstallation[]> {
   return await db
@@ -171,7 +179,7 @@ async function loadMorningBriefInstallations(
  * Installations that are not adopted keep running untouched.
  */
 export async function loadMorningBriefOwnership(
-  db: ReadonlyDb,
+  db: MorningBriefStateReader,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefOwnership> {
   const enrollment = await loadMorningBriefEnrollment(db, owner);
@@ -194,7 +202,7 @@ export async function loadMorningBriefOwnership(
 }
 
 async function loadMorningBriefAutomationState(
-  db: ReadonlyDb,
+  db: MorningBriefStateReader,
   owner: MorningBriefMemberIdentity,
   workflowId: string,
 ): Promise<MorningBriefAutomationState | MorningBriefInconsistency> {
@@ -255,7 +263,7 @@ async function loadMorningBriefAutomationState(
  * preference lock when the result has to stay true while acting on it.
  */
 export async function loadMorningBriefMigrationState(
-  db: ReadonlyDb,
+  db: MorningBriefStateReader,
   owner: MorningBriefMemberIdentity,
 ): Promise<MorningBriefMigrationState> {
   const ownership = await loadMorningBriefOwnership(db, owner);

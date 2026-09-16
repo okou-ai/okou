@@ -1876,3 +1876,51 @@ Scale at the time of the change: a fully paginated masked read at 2026-09-16
 09:56:29 UTC found 1,008 retained outbox rows, all `sent` and none past one
 attempt. That is retained row inventory under the 15-minute TTL, not historical
 volume, and it does not establish that an ambiguous send never happened.
+
+## Morning Brief installed preference projection (#34693)
+
+Migration 1149 adds the empty `morning_brief_installed_preferences` table, its
+indexes, and its foreign keys to `org_members_cache(org_id, user_id)`,
+`agents(id)` and `chat_threads(id)`. It is purely additive and needs no
+backfill, `LOCK TABLE` or historical scan, so apply it before promoting API
+code. An older API neither reads nor writes the table, and a rollback leaves it
+in place holding only derived rows.
+
+`FeatureSwitchKey.SimpleMorningBrief` stays off by default. While it is off the
+Settings read and write paths behave exactly as before; turning it on makes the
+Settings writers copy the member's installed state into the projection and lets
+the Settings GET answer from that copy. Turning it back off immediately restores
+the legacy read and write path and discards nothing: every user choice still
+lives in the legacy installation and its automation.
+
+Mixed-version and old-writer behavior is the reason the reader validates instead
+of trusting the row:
+
+- An old API binary changes the legacy state without refreshing the projection.
+  So does the automation poller advancing `next_run_at`, catalog reconciliation,
+  and thread deletion. A new binary therefore accepts a row only when its
+  `projection_version` matches and every copied field — selected installation,
+  automation, Agent, bound thread, enabled, cron expression, timezone and next
+  run — still equals the live canonical state. Any mismatch serves the legacy
+  answer, so a stale row can never restore an old enabled, schedule, timezone or
+  thread state.
+- The projection's own `updated_at` is not freshness evidence and is never used
+  as one.
+- The legacy mutation and the copy are not atomic: the mutation runs on the
+  outer `Db` and commits before the copy starts, even though both are inside the
+  preference advisory lock. A failed copy is reported operationally and the real
+  committed outcome is still returned; the next read falls back to legacy.
+
+The row's lifetime is an evictable cache, not durable ownership. The composite
+key to `org_members_cache` fences the current membership, user and organization
+cleanup paths, and the refresh locks and rechecks that exact parent with
+`FOR KEY SHARE` without ever recreating it. `org_members_cache` is a 60-second
+read-through role cache that a concurrent membership read can refill, and the
+Clerk erasure bridge is still unregistered, so this is a local fence rather than
+global deletion finality. Before native state becomes execution authority, that
+lifetime must be replaced with durable membership and erasure ownership.
+
+This slice transfers no execution ownership: it consumes no occurrence and adds
+no Run, Chat event, email, provider request or credit operation. See
+[the migration contract](morning-brief-migration-state.md) for the full
+invariants.
