@@ -349,6 +349,13 @@ function SharedThreadHandoff({
   );
 }
 
+/**
+ * The public conversation's own header. It sits inside the workspace sheet, as
+ * the chat page's header does: the sheet carries the canvas and its palette, so
+ * a header above it would paint a separate band across the top of the page. It
+ * keeps its fill only where it also keeps its rule, below `sm`, which is the
+ * app's mobile top bar.
+ */
 function SharedThreadHeader({
   brandName,
   homeUrl,
@@ -366,7 +373,7 @@ function SharedThreadHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:px-6 md:bg-transparent">
+    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:bg-transparent sm:px-6">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <a
           href={homeUrl}
@@ -535,15 +542,15 @@ export function SharedThreadPage({
       ref={mountRef}
       className="flex h-full min-h-0 flex-col bg-background text-foreground md:bg-sidebar"
     >
-      <SharedThreadHeader
-        brandName={BRAND_NAME}
-        homeUrl={homeUrl}
-        shareUrl={shareUrl}
-        signInUrl={signInUrl.toString()}
-        signUpUrl={signUpUrl.toString()}
-        title={sharedThread?.title ?? null}
-      />
       <WorkspaceInset beside="nothing">
+        <SharedThreadHeader
+          brandName={BRAND_NAME}
+          homeUrl={homeUrl}
+          shareUrl={shareUrl}
+          signInUrl={signInUrl.toString()}
+          signUpUrl={signUpUrl.toString()}
+          title={sharedThread?.title ?? null}
+        />
         {sharedThread ? (
           <>
             <SharedThreadTranscript

@@ -289,4 +289,11 @@ test("A public conversation reads inside the app's workspace sheet", async () =>
   expect(
     within(sheet).getByText("Make this conversation yours"),
   ).toBeInTheDocument();
+  // The title and its actions belong to the same sheet as the transcript, the
+  // way the chat page's own header does. Left outside it they would read as a
+  // separate band above the canvas.
+  expect(
+    within(sheet).getByRole("heading", { name: "Public launch plan" }),
+  ).toBeInTheDocument();
+  expect(getLinkByName("Sign up", sheet)).toBeInTheDocument();
 });
