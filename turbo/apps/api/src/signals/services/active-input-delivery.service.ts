@@ -45,6 +45,10 @@ interface ActiveInputDeliveryScope {
   readonly status: RunStatus;
 }
 
+interface ActiveInputReservationScope extends ActiveInputDeliveryScope {
+  readonly allowPendingApiOwner: boolean;
+}
+
 interface ActiveInputDeliveryReference {
   readonly deliveryId: string;
   readonly sourceEventId: string;
@@ -121,6 +125,13 @@ function isTerminalRunStatus(status: RunStatus): boolean {
     status === "timeout" ||
     status === "cancelled"
   );
+}
+
+function canReserveActiveInput(
+  status: RunStatus,
+  allowPendingApiOwner: boolean,
+): boolean {
+  return status === "running" || (allowPendingApiOwner && status === "pending");
 }
 
 async function loadActiveInputDeliveryScope(
@@ -217,7 +228,7 @@ async function prepareReservation(
 
 async function canReturnEmptyReservation(
   db: Db,
-  scope: ActiveInputDeliveryScope,
+  scope: ActiveInputReservationScope,
   signal: AbortSignal,
 ): Promise<boolean> {
   const [run] = await db
@@ -229,7 +240,10 @@ async function canReturnEmptyReservation(
         eq(agentRuns.chatThreadId, scope.chatThreadId),
         eq(agentRuns.userId, scope.userId),
         eq(agentRuns.orgId, scope.orgId),
-        eq(agentRuns.status, "running"),
+        inArray(
+          agentRuns.status,
+          scope.allowPendingApiOwner ? ["pending", "running"] : ["running"],
+        ),
         notExists(
           db
             .select({ id: activeInputDeliveries.id })
@@ -297,7 +311,7 @@ async function lockOpenDelivery(
 
 async function transitionReservation(
   tx: ActiveInputDeliveryTransaction,
-  scope: ActiveInputDeliveryScope,
+  scope: ActiveInputReservationScope,
   prepared: PreparedReservation,
 ): Promise<ReserveTransitionResult> {
   await lockPiApiFirstTurnLifecycle(tx, scope.runId);
@@ -330,14 +344,14 @@ async function transitionReservation(
       deliveryId: openDelivery.deliveryId,
       sourceEventId: item.sourceEventId,
     };
-    return status === "running"
+    return canReserveActiveInput(status, scope.allowPendingApiOwner)
       ? { outcome: "retrieve", ...reference }
       : { outcome: "held", ...reference };
   }
   if (isTerminalRunStatus(status)) {
     return { outcome: "terminal" };
   }
-  if (status !== "running") {
+  if (!canReserveActiveInput(status, scope.allowPendingApiOwner)) {
     return { outcome: "rejected", reason: "run_not_running" };
   }
   if (prepared.kind === "empty") {
@@ -409,28 +423,38 @@ async function materializeDelivery(
   return prompt;
 }
 
-export async function reserveActiveInputDelivery(
+interface ReserveActiveInputArgs {
+  readonly runId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly allowPendingApiOwner: boolean;
+}
+
+async function reserveActiveInputDeliveryForOwner(
   db: Db,
-  args: {
-    readonly runId: string;
-    readonly userId: string;
-    readonly orgId: string;
-  },
+  args: ReserveActiveInputArgs,
   signal: AbortSignal,
 ): Promise<ReserveActiveInputDeliveryResult> {
-  const scope = await loadActiveInputDeliveryScope(db, args, signal);
-  if (!scope) {
+  const loaded = await loadActiveInputDeliveryScope(db, args, signal);
+  if (!loaded) {
     return { outcome: "forbidden" };
   }
+  const scope: ActiveInputReservationScope = {
+    ...loaded,
+    allowPendingApiOwner: args.allowPendingApiOwner,
+  };
   while (true) {
-    const prepared =
-      scope.status === "running"
-        ? await prepareReservation(db, scope, signal)
-        : ({ kind: "empty" } as const);
+    const reservable = canReserveActiveInput(
+      scope.status,
+      scope.allowPendingApiOwner,
+    );
+    const prepared = reservable
+      ? await prepareReservation(db, scope, signal)
+      : ({ kind: "empty" } as const);
     // A committed open delivery hides its source from the pending query, so
     // recheck for one after an empty preparation before bypassing serialization.
     if (
-      scope.status === "running" &&
+      reservable &&
       prepared.kind === "empty" &&
       (await canReturnEmptyReservation(db, scope, signal))
     ) {
@@ -475,6 +499,32 @@ export async function reserveActiveInputDelivery(
     }
     return result;
   }
+}
+
+export async function reserveActiveInputDelivery(
+  db: Db,
+  args: Omit<ReserveActiveInputArgs, "allowPendingApiOwner">,
+  signal: AbortSignal,
+): Promise<ReserveActiveInputDeliveryResult> {
+  return await reserveActiveInputDeliveryForOwner(
+    db,
+    { ...args, allowPendingApiOwner: false },
+    signal,
+  );
+}
+
+/** Internal API-first owner seam. Pending v4 inference may reserve the same
+ * canonical delivery that a claimed Runner later retrieves. */
+export async function reservePendingPiApiFirstTurnInput(
+  db: Db,
+  args: Omit<ReserveActiveInputArgs, "allowPendingApiOwner">,
+  signal: AbortSignal,
+): Promise<ReserveActiveInputDeliveryResult> {
+  return await reserveActiveInputDeliveryForOwner(
+    db,
+    { ...args, allowPendingApiOwner: true },
+    signal,
+  );
 }
 
 async function replacePendingActiveInputEvent(

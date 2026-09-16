@@ -511,6 +511,7 @@ async function promoteAdmittedQueuedRun(
       args.row.prompt !== null
         ? {
             piApiFirstTurn: {
+              executionMode: "legacy-sandbox-race",
               runId: args.row.runId,
               runnerGroup: payload.runnerGroup,
               userId: args.row.userId,

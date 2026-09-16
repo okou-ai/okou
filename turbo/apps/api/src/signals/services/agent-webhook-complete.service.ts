@@ -1,5 +1,6 @@
 import {
   readPiInferenceLifecycle,
+  assertPiInferenceApiFailure,
   assertPiInferencePublication,
 } from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
@@ -513,6 +514,11 @@ async function lockCompletionRun(
     if (lifecycle.inference.phase !== "terminal") {
       assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
     }
+  } else if (
+    input.executionOwner === "api-first" &&
+    input.body.exitCode !== 0
+  ) {
+    assertPiInferenceApiFailure(lifecycle, input.inferenceOwnerEpoch);
   } else {
     assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
   }

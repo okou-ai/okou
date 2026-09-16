@@ -447,6 +447,26 @@ export function piInferenceOwnerPredicate(args: {
   );
 }
 
+/** API-owned failure may fence an admitted, ready, uncertain-provider, or
+ * publishing attempt. It never grants provider or Sandbox publication. */
+export function assertPiInferenceApiFailure(
+  lifecycle: Awaited<ReturnType<typeof readPiInferenceLifecycle>>,
+  ownerEpoch: number | undefined,
+): void {
+  if (!lifecycle) {
+    return;
+  }
+  if (
+    ownerEpoch !== lifecycle.inference.ownerEpoch ||
+    lifecycle.intent !== null ||
+    !["admitted", "ready", "provider", "publishing"].includes(
+      lifecycle.inference.phase,
+    )
+  ) {
+    throw new Error("Pi API failure requires the current inference owner");
+  }
+}
+
 /** Internal publication requires a fenced owner, even without a Runner job. */
 export function assertPiInferencePublication(
   lifecycle: Awaited<ReturnType<typeof readPiInferenceLifecycle>>,
