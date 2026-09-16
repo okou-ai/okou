@@ -6,8 +6,8 @@ control services and the native agent runtime.
 
 | Domain                             | `memory.min` | Purpose                                             |
 | ---------------------------------- | -----------: | --------------------------------------------------- |
-| Exec base and Agent operation      |      512 MiB | Carry combined descendant protection                |
-| Agent operation `control`          |      128 MiB | Guest Agent control work                            |
+| Exec base and Agent operation      |      640 MiB | Carry combined descendant protection                |
+| Agent operation `control`          |      256 MiB | Guest Agent control work                            |
 | Agent operation `workload`         |      384 MiB | Carry runtime protection                            |
 | `workload/runtime`                 |      384 MiB | Native agent runtime and its charged file pages     |
 | `workload/tools` and each `tool-N` |            0 | Share remaining capacity without reclaim protection |
@@ -19,7 +19,7 @@ Ordinary exec retains its smaller-Guest capacity support (including the 512 MiB
 CPU-fairness test Guests) because it does not receive these protected floors.
 The workload hard limit remains Guest-visible physical memory minus a separate
 128 MiB reserve for new control allocations. The reserve and control protection
-have different purposes even though their configured values match. Workload
+have different purposes and are configured independently. Workload
 `memory.high` remains `max`; there is no separate tools memory hard limit.
 
 ## Borrowing and pressure
@@ -53,6 +53,11 @@ rejects stale base protection along with its existing quiescence checks.
 Runner and Guest binaries ship together; existing draining artifacts retain their
 old policy and do not adopt another artifact's sandbox. See
 [deployment compatibility](deployment-compatibility.md#runner-process-drain).
+
+The 256 MiB control floor is a precautionary adjustment, not a confirmed fix for
+the heartbeat stall investigated in [#34710](https://github.com/vm0-ai/okou/issues/34710).
+After deployment, compare heartbeat gaps, metrics scheduling lag, memory pressure,
+and tool OOM outcomes by Runner version before attributing any improvement to it.
 
 Resource-policy validation must include real native progress and compiler outcomes,
 control delivery/high output, checkpoint/finalization, cancellation, cleanup and

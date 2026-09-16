@@ -77,7 +77,7 @@ pub const MATERIAL_CPU_THROTTLED_USEC: u64 = 1_000_000;
 /// Minimum protected memory for Guest control services.
 ///
 /// This protects charged Guest Agent use, not an allocation or usage ceiling.
-pub const CONTROL_MEMORY_MIN_BYTES: u64 = 128 * 1024 * 1024;
+pub const CONTROL_MEMORY_MIN_BYTES: u64 = 256 * 1024 * 1024;
 
 /// Protected memory for the native agent runtime, including its file-backed pages.
 ///
@@ -341,7 +341,7 @@ mod tests {
         assert_eq!(policy.memory_high, "max");
         assert_eq!(policy.memory_max_bytes, 3968 * 1024 * 1024);
         assert_eq!(policy.memory_oom_group, "0");
-        assert_eq!(policy.control_memory_min_bytes, 128 * 1024 * 1024);
+        assert_eq!(policy.control_memory_min_bytes, 256 * 1024 * 1024);
         assert_eq!(policy.runtime_memory_min_bytes, 384 * 1024 * 1024);
         assert_eq!(policy.pids_max, "max");
     }
@@ -366,7 +366,7 @@ mod tests {
         assert_eq!(policy.cpu_quota_us, 90_000);
         assert_eq!(policy.memory_high, "max");
         assert_eq!(policy.memory_max_bytes, 896 * 1024 * 1024);
-        assert_eq!(policy.control_memory_min_bytes, 128 * 1024 * 1024);
+        assert_eq!(policy.control_memory_min_bytes, 256 * 1024 * 1024);
         assert_eq!(policy.runtime_memory_min_bytes, 384 * 1024 * 1024);
     }
 

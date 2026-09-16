@@ -118,7 +118,7 @@ for controller in cpu memory pids; do
   grep -qw "$controller" "$parent/cgroup.subtree_control"
   grep -qw "$controller" "$parent/workload/cgroup.subtree_control"
 done
-expected_control_memory_min=$((128 * 1024 * 1024))
+expected_control_memory_min=$((256 * 1024 * 1024))
 expected_runtime_memory_min=$((384 * 1024 * 1024))
 expected_agent_memory_min=$((expected_control_memory_min + expected_runtime_memory_min))
 expected_workload_memory_reserve=$((128 * 1024 * 1024))

@@ -2588,8 +2588,8 @@ mod tests {
         configure_resource_policy(operation.path(), &control, &workload, true, policy).unwrap();
 
         for (path, expected) in [
-            (operation.path(), 512 * 1024 * 1024),
-            (control.as_path(), 128 * 1024 * 1024),
+            (operation.path(), 640 * 1024 * 1024),
+            (control.as_path(), 256 * 1024 * 1024),
             (workload.as_path(), 384 * 1024 * 1024),
         ] {
             assert_eq!(
