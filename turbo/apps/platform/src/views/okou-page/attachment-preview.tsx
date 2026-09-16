@@ -298,7 +298,9 @@ export function SitePreviewCard({
       className={`group/site-preview flex-col ${MEDIA_PREVIEW_CARD_CLASS} ${MEDIA_PREVIEW_CARD_HOVER_CLASS}`}
     >
       <div className="flex min-h-10 items-center border-b border-border/60 bg-background/95 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        {/* The card is a card, not a link: Markdown's anchor color reaches the
+            title through the enclosing <a> unless the title states its own. */}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {title}
         </span>
       </div>

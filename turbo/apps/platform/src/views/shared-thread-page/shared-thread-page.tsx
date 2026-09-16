@@ -37,6 +37,7 @@ import {
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
+import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
 
 /**
@@ -365,7 +366,7 @@ function SharedThreadHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:px-6">
+    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:px-6 md:bg-transparent">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <a
           href={homeUrl}
@@ -532,7 +533,7 @@ export function SharedThreadPage({
   return (
     <div
       ref={mountRef}
-      className="relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex h-full min-h-0 flex-col text-foreground"
+      className="flex h-full min-h-0 flex-col bg-background text-foreground md:bg-sidebar"
     >
       <SharedThreadHeader
         brandName={BRAND_NAME}
@@ -542,22 +543,24 @@ export function SharedThreadPage({
         signUpUrl={signUpUrl.toString()}
         title={sharedThread?.title ?? null}
       />
-      {sharedThread ? (
-        <>
-          <SharedThreadTranscript
-            assistantName={ASSISTANT_NAME}
-            groups={groups}
-            richContent={sharedThread.richContent}
-          />
-          <SharedThreadHandoff
-            assistantName={ASSISTANT_NAME}
-            handoffUrl={handoffUrl.toString()}
-            signInUrl={signInUrl.toString()}
-          />
-        </>
-      ) : (
-        <SharedThreadNotFound />
-      )}
+      <WorkspaceInset beside="nothing">
+        {sharedThread ? (
+          <>
+            <SharedThreadTranscript
+              assistantName={ASSISTANT_NAME}
+              groups={groups}
+              richContent={sharedThread.richContent}
+            />
+            <SharedThreadHandoff
+              assistantName={ASSISTANT_NAME}
+              handoffUrl={handoffUrl.toString()}
+              signInUrl={signInUrl.toString()}
+            />
+          </>
+        ) : (
+          <SharedThreadNotFound />
+        )}
+      </WorkspaceInset>
     </div>
   );
 }
