@@ -1,9 +1,7 @@
-import { piNativeTypeBindings } from "./pi-native-types";
-import type { z } from "zod";
-import { sshTypeBindings } from "./ssh-types";
-import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
-import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
+import { z } from "zod";
 import {
+  piApiFirstTurnConfigSchema,
+  piDeferredSandboxConfigSchema,
   activeInputDeliveryReserveResponseSchema,
   activeInputDeliveryReceiptResponseSchema,
   artifactMissingRootPolicySchema,
@@ -17,6 +15,10 @@ import {
   sessionHistoryEncodingSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
+import { piNativeTypeBindings } from "./pi-native-types";
+import { sshTypeBindings } from "./ssh-types";
+import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
+import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
 import {
   webhookCheckpointsContract,
@@ -214,7 +216,71 @@ export const rustTypeBindings = [
     ],
   },
   {
-    schema: piLaunchConfigSchema,
+    schema: z.object({
+      schemaVersion: z.literal(2),
+      apiFirstTurn: piDeferredSandboxConfigSchema.unwrap().pick({
+        schemaVersion: true,
+        ownerEpoch: true,
+        generation: true,
+        deadlineAt: true,
+        resourceSnapshotDigest: true,
+        baseSession: true,
+        sandboxEventSequenceStart: true,
+        historyHash: true,
+        runId: true,
+        activeInput: true,
+      }),
+    }),
+    rustModulePath: ["runners", "runs"],
+    rustTypeName: "PiDeferredLaunchConfig",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "PiDeferredLaunchConfig",
+        rustDoc: [
+          "Deferred Pi Runner validation view. The CLI validates the full immutable payload.",
+        ],
+        fields: {
+          schemaVersion: ["Outer Pi launch version."],
+          apiFirstTurn: ["Generation-fenced durable continuation."],
+        },
+      },
+      {
+        rustTypeName: "PiDeferredLaunchConfigApiFirstTurn",
+        rustDoc: ["Minimum deferred handoff identity accepted by the Runner."],
+        fields: {
+          schemaVersion: ["Deferred continuation version."],
+          ownerEpoch: ["Claimed inference owner epoch."],
+          generation: ["Claimed demand generation."],
+          deadlineAt: ["Execution startup deadline in Unix milliseconds."],
+          resourceSnapshotDigest: [
+            "Digest of the frozen resources validated by the CLI.",
+          ],
+          baseSession: ["Original canonical Pi session checkpoint."],
+          sandboxEventSequenceStart: [
+            "First unpublished Sandbox event sequence.",
+          ],
+          historyHash: ["Digest of the exact H1 or untouched H0 bytes."],
+          runId: ["Original Run authorized by the Sandbox token."],
+          activeInput: [
+            "Original Run has a thread capable of receiving active input.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "PiDeferredLaunchConfigApiFirstTurnBaseSession",
+        rustDoc: ["Captured H0 checkpoint."],
+        fields: {
+          sessionId: ["Canonical Pi session identifier."],
+          sha256: ["Original H0 history digest, or null for an empty session."],
+        },
+      },
+    ],
+  },
+  {
+    schema: piLaunchConfigSchema
+      .unwrap()
+      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema }),
     rustModulePath: ["runners", "runs"],
     rustTypeName: "PiLaunchConfig",
     direction: "response",

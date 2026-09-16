@@ -147,6 +147,13 @@ impl ApiRequestBuilder {
         Ok(FinalizedApiRequest { request, context })
     }
 
+    pub(crate) fn deferred_pi_reader(self) -> Self {
+        Self {
+            builder: self.builder.header("X-Pi-Deferred-Sandbox", "1"),
+            ..self
+        }
+    }
+
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {

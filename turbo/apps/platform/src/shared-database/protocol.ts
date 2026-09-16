@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { ApiError } from "../lib/api-error.ts";
 import { SharedDatabaseHttpError } from "./http-error.ts";
 import { computedKeySchema } from "./computed-key.ts";
@@ -100,6 +101,7 @@ const userRealtimeTopicSchema = z.union([
   z.literal("connectorPermissionUpdated"),
   z.literal("customConnectorListChanged"),
   z.literal("feishu:changed"),
+  z.literal(GET_STARTED_REWARDS_CHANGED_EVENT),
   z.literal("github:changed"),
   z.literal("modelPoliciesChanged"),
   z.literal("presentationTemplatesChanged"),

@@ -502,7 +502,20 @@ async function lockCompletionRun(
     input.body.runId,
     run.launchSnapshot,
   );
-  assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  const sandboxFence = input.auth.piSandbox;
+  if (sandboxFence) {
+    if (
+      lifecycle?.lease?.claimedOwnerEpoch !== sandboxFence.ownerEpoch ||
+      lifecycle.lease.claimedGeneration !== sandboxFence.generation
+    ) {
+      throw new Error("Stale Pi Sandbox completion");
+    }
+    if (lifecycle.inference.phase !== "terminal") {
+      assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
+    }
+  } else {
+    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  }
 
   return { ...run, status: runStatusSchema.parse(run.status) };
 }

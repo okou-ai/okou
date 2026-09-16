@@ -1,3 +1,4 @@
+import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -18,7 +19,7 @@ export async function stopErasureClosedComputeRun(
   tx: Tx,
   runId: string,
 ): Promise<void> {
-  await tx
+  const transitioned = await tx
     .update(agentRuns)
     .set({
       status: "cancelled",
@@ -30,7 +31,11 @@ export async function stopErasureClosedComputeRun(
         eq(agentRuns.id, runId),
         inArray(agentRuns.status, ["pending", "queued"]),
       ),
-    );
+    )
+    .returning({ launchSnapshot: agentRuns.launchSnapshot });
+  for (const run of transitioned) {
+    await fencePiInferenceTerminal(tx, runId, run.launchSnapshot, nowDate());
+  }
 }
 
 type TerminalRunStatus = Extract<
@@ -107,4 +112,28 @@ export async function transitionAgentRunsToTerminal(
   );
   await cleanupDisconnectedPersonalModelProviderAccounts(tx, transitioned);
   return transitioned;
+}
+
+/** The caller holds complete B1 and Run lifecycle locks. Durable consumer failure
+ * fences execution and schedules effects without deleting usage, provider,
+ * diagnostic or physical Sandbox cleanup evidence. */
+export async function failDeferredPiRun(
+  tx: Tx,
+  args: {
+    readonly runId: string;
+    readonly snapshot: typeof agentRuns.$inferSelect.launchSnapshot;
+    readonly at: Date;
+    readonly status: "failed" | "cancelled" | "timeout";
+    readonly error: string;
+  },
+): Promise<void> {
+  await tx
+    .update(agentRuns)
+    .set({ status: args.status, completedAt: args.at, error: args.error })
+    .where(eq(agentRuns.id, args.runId));
+  await fencePiInferenceTerminal(tx, args.runId, args.snapshot, args.at);
+  await tx
+    .update(agentRunSandboxIntent)
+    .set({ terminalEffectsPendingAt: args.at })
+    .where(eq(agentRunSandboxIntent.runId, args.runId));
 }

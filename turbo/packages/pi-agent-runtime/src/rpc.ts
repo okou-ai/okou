@@ -15,6 +15,7 @@ import {
 } from "./session-validation";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type {
+  PiPreheatedResourceSnapshot,
   PiMemoryRecallOutcome,
   PiMemoryRecallSelection,
   PiMemoryToolSourceUse,
@@ -138,6 +139,7 @@ function createRuntimeFactory(args: {
   readonly model: PiAgentModelConfig;
   readonly appendSystemPrompt: string | null;
   readonly memoryRecall?: PiMemoryRecallSelection;
+  readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
   readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
   readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
   readonly enableLangfuseObservability: boolean;
@@ -150,6 +152,7 @@ function createRuntimeFactory(args: {
       model: args.model,
       appendSystemPrompt: args.appendSystemPrompt,
       memoryRecall: args.memoryRecall,
+      resourceSnapshot: args.resourceSnapshot,
       onMemoryRecallOutcome: args.onMemoryRecallOutcome,
       onMemoryToolSourceUse: args.onMemoryToolSourceUse,
       sessionStartEvent,
@@ -199,8 +202,10 @@ export async function runPiOfficialRpcMode(args: {
   readonly model: PiAgentModelConfig;
   readonly appendSystemPrompt: string | null;
   readonly memoryRecall?: PiMemoryRecallSelection;
+  readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
   readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
   readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
+  readonly onFirstTool?: () => void;
   readonly sessionFile: string;
   readonly ownershipTransferMode: PiSandboxOwnershipTransferMode;
   readonly langfuseParent?: PiLangfuseParent;
@@ -229,7 +234,18 @@ export async function runPiOfficialRpcMode(args: {
       runtime.session,
       args.ownershipTransferMode,
     );
-    return await runRpcMode(runtime);
+    let firstTool = true;
+    const unsubscribe = runtime.session.subscribe((event) => {
+      if (firstTool && event.type === "tool_execution_start") {
+        firstTool = false;
+        args.onFirstTool?.();
+      }
+    });
+    try {
+      return await runRpcMode(runtime);
+    } finally {
+      unsubscribe();
+    }
   } finally {
     restoreLangfuseEnvironment();
   }

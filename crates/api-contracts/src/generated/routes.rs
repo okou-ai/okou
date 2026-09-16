@@ -67,6 +67,39 @@ pub mod runners {
                     crate::ResolvedRoute::new(CLAIM.method, path(params))
                 }
             }
+
+            /// Generated route bindings under `runners::jobs::by_id::release`.
+            pub mod release {
+                /// Record a physically destroyed deferred Pi Sandbox.
+                /// Route contract: `POST /api/runners/jobs/:id/release`.
+                pub const RELEASE: crate::RouteTemplate = crate::RouteTemplate {
+                    method: crate::Method::Post,
+                    path: "/api/runners/jobs/:id/release",
+                };
+
+                /// Path parameters for `POST /api/runners/jobs/:id/release`.
+                #[derive(Debug, Clone, Copy)]
+                pub struct Params<'a> {
+                    /// Value for the `:id` path parameter.
+                    pub id: &'a str,
+                }
+
+                /// Build the concrete path for `POST /api/runners/jobs/:id/release`.
+                /// Percent-encodes each path parameter as a URL path segment.
+                #[must_use]
+                pub fn path(params: Params<'_>) -> String {
+                    format!(
+                        "/api/runners/jobs/{}/release",
+                        crate::route::encode_path_segment(params.id),
+                    )
+                }
+
+                /// Build a resolved route for `POST /api/runners/jobs/:id/release`.
+                #[must_use]
+                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                    crate::ResolvedRoute::new(RELEASE.method, path(params))
+                }
+            }
         }
     }
 

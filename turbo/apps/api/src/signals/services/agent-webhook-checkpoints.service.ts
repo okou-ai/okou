@@ -233,7 +233,18 @@ async function lockCheckpointRunContext(
       input.body.runId,
       run.launchSnapshot,
     );
-    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+    if (
+      input.auth.piSandbox &&
+      (lifecycle?.inference.phase !== "sandbox_running" ||
+        lifecycle.intent?.generation !== input.auth.piSandbox.generation ||
+        lifecycle.lease?.state !== "claimed")
+    ) {
+      throw new Error("Stale Pi Sandbox publication");
+    }
+    assertPiInferencePublication(
+      lifecycle,
+      input.inferenceOwnerEpoch ?? input.auth.piSandbox?.ownerEpoch,
+    );
   }
 
   return run

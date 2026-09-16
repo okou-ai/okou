@@ -246,6 +246,11 @@ impl HomePaths {
         self.root.join("workspace-image-cache")
     }
 
+    /// Durable Pi obligations outlive version directories and deployment GC.
+    pub fn deferred_sandbox_recovery_dir(&self) -> PathBuf {
+        self.root.join("pi-sandbox-recovery")
+    }
+
     pub fn groups_dir(&self) -> PathBuf {
         self.root.join("groups")
     }

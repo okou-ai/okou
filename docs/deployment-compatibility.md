@@ -1774,3 +1774,14 @@ the additive column.
 Deploy the API across the serving fleet before enabling the Runner consumer in
 #34384. Unsupported endpoints and other inconclusive reads must not become
 disappearance decisions. This API slice alone adds no new stop-delay bound.
+
+## Deferred Pi Sandbox reader floor
+
+Before a v4 API-inference producer can emit Sandbox demand, deploy the
+[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
+Its optional Runner header is ignored by older APIs; older Runners remain
+excluded from v4 jobs. The outer Pi launch-config v2 contains a new versioned
+continuation slot, so enablement requires both the capable Runner and the
+commit-addressed co-built CLI. Drain existing v4 intents/leases and release
+receipts before rolling the API back below that floor. No switch is enabled by
+the consumer implementation.

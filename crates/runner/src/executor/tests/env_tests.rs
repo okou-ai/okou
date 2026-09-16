@@ -1261,6 +1261,11 @@ fn pi_execution_context_rejects_invalid_launch_fields_before_sandbox() {
         (
             "/apiFirstTurn/schemaVersion",
             json!(2),
+            "Deferred Pi launch is invalid",
+        ),
+        (
+            "/apiFirstTurn/schemaVersion",
+            json!(3),
             "schemaVersion must be 1",
         ),
         (
