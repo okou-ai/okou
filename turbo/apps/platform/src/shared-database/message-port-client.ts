@@ -23,6 +23,7 @@ import {
   type SharedDatabaseClientMessage,
   type SharedDatabaseRealtimeMessage,
   type SharedDatabaseRealtimeScope,
+  type SharedDatabaseRealtimeTopic,
   type SharedDatabaseWorkerMessage,
 } from "./protocol.ts";
 import { logger } from "../signals/log.ts";
@@ -187,10 +188,10 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
     this.close(reason);
   }
 
-  subscribeRealtime(
+  subscribeRealtime<TScope extends SharedDatabaseRealtimeScope>(
     subscriptionId: string,
-    scope: SharedDatabaseRealtimeScope,
-    topic: string,
+    scope: TScope,
+    topic: SharedDatabaseRealtimeTopic<NoInfer<TScope>>,
     listener: (message: SharedDatabaseRealtimeMessage) => void,
     onResync: () => void,
   ): Promise<void> {

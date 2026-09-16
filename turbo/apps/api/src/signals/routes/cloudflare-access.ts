@@ -64,10 +64,16 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     db: set(writeDb$),
     owner: get(organizationAuthContext$),
     body: body.data,
+    id: body.data.id,
     featureContext,
   });
   signal.throwIfAborted();
-  return { status: 201 as const, body: config };
+  if (!config.ok) {
+    return sshErrorResponse(409, config.code, config.message);
+  }
+  return config.value === undefined
+    ? { status: 204 as const, body: undefined }
+    : { status: 201 as const, body: config.value };
 });
 const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   const featureContext = await set(featureContext$, signal);

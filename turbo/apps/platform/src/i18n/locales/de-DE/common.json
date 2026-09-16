@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Zurück zu {{brandName}}",
+      "description": "Es ist möglicherweise privat oder nicht mehr verfügbar.",
+      "help": "Bitte die Person, die diesen Link geteilt hat, den Zugriff zu prüfen.",
+      "signedInAs": "Angemeldet als {{email}}",
+      "switchAccount": "Konto wechseln",
+      "switchAccountFailed": "Die Kontoauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
+      "title": "Du kannst dieses Artefakt nicht ansehen",
+      "tryAgain": "Erneut versuchen"
+    },
     "actions": {
       "backToAll": "Zurück zu allen Artefakten",
       "backToArtifacts": "Zurück zu den Artefakten",
@@ -581,8 +591,7 @@
     },
     "sharing": {
       "shareOrganization": "Mit der Organisation teilen",
-      "sharePublic": "Öffentlich teilen",
-      "unavailable": "Dieses Artefakt ist nicht verfügbar oder du hast keinen Zugriff."
+      "sharePublic": "Öffentlich teilen"
     },
     "sidebar": {
       "openSharedConversation": "Geteilte Unterhaltung öffnen",
@@ -1516,19 +1525,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "App täglich öffnen. Zurücksetzung um 00:00 UTC.",
+          "description": "Einmal am Tag, jeden Tag",
           "name": "Täglich einchecken",
           "unit": "pro Tag"
         },
         "connector": {
-          "description": "Per OAuth verbinden. Eine Prämie pro Connector.",
+          "action": "Verbinden",
+          "description": "Gmail, Notion und 100+ weitere",
           "name": "Connector verbinden",
           "unit": "pro Connector"
         },
         "inReview": "In Prüfung",
         "inReviewDescription": "Eingereicht, wartet auf Prüfung",
         "invite": {
-          "description": "Prämie bei angenommener Einladung, bis zu 15 Mitglieder.",
+          "action": "Einladen",
+          "description": "Jede Person, die du hinzufügst, zählt",
           "name": "Team einladen",
           "unit": "pro Mitglied"
         },
@@ -1539,6 +1550,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Belohnte Connectors: {{amount}}",
         "share": {
+          "action": "Teilen",
           "description": "Poste es und füge den Link hier ein",
           "name": "{{assistantName}} auf X teilen"
         },
@@ -1551,14 +1563,16 @@
           "title": "{{assistantName}} auf X teilen"
         },
         "slack": {
-          "description": "Erhalte 2.000 Organisations-Credits, einmal pro Organisation und Workspace.",
+          "action": "Hinzufügen",
+          "description": "Da, wo dein Team schon arbeitet",
           "name": "{{assistantName}} zu Slack hinzufügen"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Aufgabe ausprobieren und Credits verdienen.",
         "title": "Einstieg",
         "workflow": {
-          "description": "Einen selbst erstellten Workflow erfolgreich ausführen.",
+          "action": "Bauen",
+          "description": "Mach aus einer Routineaufgabe eine wiederverwendbare Fähigkeit",
           "name": "Workflow bauen"
         }
       },
@@ -5891,8 +5905,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Standard",
+            "goldenHour": "Golden hour"
           },
           "title": "Farbthema"
         },
@@ -6390,6 +6404,10 @@
     "resetHelp": "Setzen Sie den Schlüssel erst zurück, nachdem Sie die neue Serveridentität unabhängig geprüft haben. Die nächste Verbindung vertraut einem neuen Hostschlüssel und speichert ihn.",
     "retry": "Erneut versuchen",
     "save": "Speichern",
+    "saveRecovery": {
+      "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
+      "uncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Wiederholen Sie denselben Speichervorgang, oder schließen Sie das Formular und prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen."
+    },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
     "title": "SSH-Hosts",

@@ -4,10 +4,10 @@ import { authHeadersSchema, initContract } from "./base";
 const c = initContract();
 
 /** Marketing verifies the App bearer token and reads its own attribution cookies. */
-export const impactOnboardingContract = c.router({
+export const marketingOnboardingContract = c.router({
   record: {
     method: "POST",
-    path: "/api/marketing/impact/onboarding",
+    path: "/api/marketing/finish-onboarding",
     headers: authHeadersSchema,
     body: c.noBody(),
     responses: {

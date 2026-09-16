@@ -22,11 +22,10 @@ const OPENROUTER_CHAT_COMPLETIONS_URL =
 const OPENROUTER_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 
 /**
- * The model behind every internal fast-path generation: chat and shared-thread
- * titles, recommended follow-ups, notification summaries, initial thinking
- * copy, run summaries, and voice I/O polish. These are short, latency-sensitive
- * calls that are not user-selectable, so they share a single model rather than
- * one constant per service.
+ * The default model for internal fast-path generation: recommended follow-ups,
+ * notification summaries, initial thinking copy, and run/activity summaries.
+ * Chat and shared-thread titles use a separate, lighter model configured in
+ * chat-title.service.ts.
  */
 export const FAST_PATH_MODEL = "google/gemini-3.8-flash";
 

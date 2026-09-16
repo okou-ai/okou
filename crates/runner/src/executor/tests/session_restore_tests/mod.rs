@@ -1,5 +1,6 @@
 mod claude;
 mod codex;
+mod compression;
 mod identity;
 mod pi;
 mod validation;

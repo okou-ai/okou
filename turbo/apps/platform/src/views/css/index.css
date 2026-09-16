@@ -502,6 +502,20 @@ body {
   }
 }
 
+/* The product's own palette. It is the absence of a preset rather than another
+   one: `signals/theme.ts` writes no palette attribute while it is selected, so
+   every token keeps the shared values and none of the rules below key in. These
+   two exist for the one element that does carry the attribute, the picker's own
+   swatch, and they are not a designed pair: both are the brand stop the
+   interface already paints with, so the swatch shows the state it selects
+   rather than a new palette. The companion repeats the anchor because the
+   default state has no second colour and no gradient — the shared preview
+   gradient then resolves to one flat brand fill. */
+[data-color-theme="default"] {
+  --okou-color-theme-anchor: hsl(var(--primary-300));
+  --okou-color-theme-companion: hsl(var(--primary-300));
+}
+
 /* Each named theme pairs one anchor with one companion; the same pair drives
    picker swatches, primary actions, and the workspace ambience below. The HSL
    primary value also feeds the shared semantic token without duplicating it. */
@@ -568,13 +582,26 @@ body {
   --okou-color-theme-ring: 171.8 47.1% 33.3%;
 }
 
-[data-color-theme="limelight"] {
-  --okou-color-theme-primary: 70.6 67.5% 49.4%;
-  --okou-color-theme-primary-foreground: 40 4.3% 13.5%;
-  --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
-  --okou-color-theme-companion: #f4e33c;
-  --okou-color-theme-hue: 70.6;
-  --okou-color-theme-ring: 74.2 53.8% 41.6%;
+/* The wash behind the picker's selected option, owned at the document root so
+   it resolves on the default palette as well: that palette writes no attribute,
+   so the gradient rule that otherwise supplies this value never keys in and the
+   selected card would lose its fill. It is the same blend the palettes take
+   below, carrying the default palette's own colour, so one option's selected
+   card is not visibly heavier than another's. */
+:root {
+  --okou-color-theme-selected: color-mix(
+    in srgb,
+    #ffffff 84%,
+    hsl(var(--primary-300)) 16%
+  );
+}
+
+:root:where([data-theme="dark"]) {
+  --okou-color-theme-selected: color-mix(
+    in srgb,
+    hsl(var(--card)) 86%,
+    hsl(var(--primary-300)) 14%
+  );
 }
 
 /* Card geometry and elevation. These are document-level runtime theme values, so

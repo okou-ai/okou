@@ -453,6 +453,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Voltar para {{brandName}}",
+      "description": "Ele pode ser privado ou não estar mais disponível.",
+      "help": "Peça à pessoa que compartilhou este link para verificar o acesso.",
+      "signedInAs": "Conectado como {{email}}",
+      "switchAccount": "Trocar de conta",
+      "switchAccountFailed": "Não foi possível abrir o seletor de contas. Tente novamente.",
+      "title": "Você não pode visualizar este artefato",
+      "tryAgain": "Tentar novamente"
+    },
     "actions": {
       "backToAll": "Voltar para todos os artefatos",
       "backToArtifacts": "Voltar aos artefatos",
@@ -599,8 +609,7 @@
     },
     "sharing": {
       "shareOrganization": "Compartilhar com a organização",
-      "sharePublic": "Compartilhar publicamente",
-      "unavailable": "Este artefato não está disponível ou você não tem acesso."
+      "sharePublic": "Compartilhar publicamente"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversa compartilhada",
@@ -1540,19 +1549,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Abra o app diariamente. Reinicia às 00:00 UTC.",
+          "description": "Uma vez por dia, todo dia",
           "name": "Entrar todo dia",
           "unit": "por dia"
         },
         "connector": {
-          "description": "Conecte com OAuth. Uma recompensa por conector.",
+          "action": "Conectar",
+          "description": "Gmail, Notion e mais de 100",
           "name": "Conectar um conector",
           "unit": "por conector"
         },
         "inReview": "Em análise",
         "inReviewDescription": "Enviado, aguardando análise",
         "invite": {
-          "description": "Ganhe quando um convite for aceito, até 15 membros.",
+          "action": "Convidar",
+          "description": "Cada pessoa que você adiciona conta",
           "name": "Convide seu time",
           "unit": "por membro"
         },
@@ -1563,6 +1574,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Conectores recompensados: {{amount}}",
         "share": {
+          "action": "Compartilhar",
           "description": "Publique e cole o link aqui",
           "name": "Compartilhe o {{assistantName}} no X"
         },
@@ -1575,14 +1587,16 @@
           "title": "Compartilhe o {{assistantName}} no X"
         },
         "slack": {
-          "description": "Ganhe 2.000 créditos da organização, uma vez por organização e workspace.",
+          "action": "Adicionar",
+          "description": "Onde seu time já trabalha",
           "name": "Adicionar o {{assistantName}} ao Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Experimente uma tarefa e ganhe créditos.",
         "title": "Primeiros passos",
         "workflow": {
-          "description": "Execute com sucesso um workflow que você criou.",
+          "action": "Criar",
+          "description": "Transforme uma tarefa repetida em uma habilidade reutilizável",
           "name": "Criar um workflow"
         }
       },
@@ -5951,8 +5965,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Padrão",
+            "goldenHour": "Golden hour"
           },
           "title": "Tema de cores"
         },
@@ -6456,6 +6470,10 @@
     "resetHelp": "Redefina somente após verificar de forma independente a nova identidade do servidor. A próxima conexão confiará em uma nova chave de host e a armazenará.",
     "retry": "Tentar novamente",
     "save": "Salvar",
+    "saveRecovery": {
+      "resourceIdConflict": "Este ID de recurso não pode ser usado. Feche e reabra o formulário para tentar novamente.",
+      "uncertain": "Não foi possível confirmar se as alterações foram salvas. Tente salvar o mesmo conteúdo novamente ou feche e confira a lista antes de adicioná-las de novo."
+    },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",

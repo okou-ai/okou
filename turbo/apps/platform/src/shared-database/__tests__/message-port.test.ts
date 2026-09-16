@@ -1040,7 +1040,13 @@ test("Keep scopes, topics, and subscriber releases independent on one port", asy
   const userChannel = `user:${identity().userId}`;
   const orgChannel = `org:${identity().orgId}`;
   const messages: string[] = [];
-  const subscribe = (id: string, scope: "user" | "org", topicName = topic) => {
+  const subscribe = (
+    id: string,
+    scope: "user" | "org",
+    topicName:
+      | "presentationTemplatesChanged"
+      | "connectorPermissionUpdated" = topic,
+  ) => {
     return bridge.subscribeRealtime(
       id,
       scope,
