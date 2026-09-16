@@ -21,14 +21,18 @@ a rendered page can cover the behavior.
 ## Canonical Page Test
 
 `setupPage` is the canonical public helper that starts Platform. It initializes
-the requested locale, renders the complete Router, and resolves after the first
-page content is observable. Always await it before the first page assertion.
+the requested locale, awaits finite production bootstrap/setup, renders the
+complete Router, and resolves after the first page content is observable.
+Background loops are owned by their shared starters; ordinary setup does not
+detach a pending route setup. Always await it before the first page assertion.
 
 Startup belongs to the test context's original abort signal. Cancelling that
 lifetime rejects `setupPage()` and a pending `startPage().ready`; cancellation
 is not page readiness. Tests that inspect blocked startup may leave
 `startPage().ready` unawaited: the shared helper owns its cancellation rejection
-and observer cleanup.
+and observer cleanup. Such a test still needs a synchronization boundary before
+its first assertion; await `startPage().content`, which resolves on first
+observable page content and does not wait for the blocked startup request.
 
 Every page test follows this order:
 

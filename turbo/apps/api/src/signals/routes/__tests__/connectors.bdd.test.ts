@@ -1,4 +1,7 @@
-import { readGetStartedStatus } from "./helpers/get-started";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 /**
  * helper gap:
  * - Expired OAuth states, stale/hidden legacy connector rows, stale OAuth scope
@@ -258,9 +261,9 @@ const CONNECTOR_OAUTH_COOKIE_CLEARS = [
 
 describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant lifecycle", () => {
   it("keeps a manual-grant connection and authorization when realtime publishing fails", async () => {
-    mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
     const bdd = createBddApi(context);
     const actor = bdd.user();
+    await setGetStartedEnabled(context, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Manual Connector Agent",
     });
@@ -591,11 +594,11 @@ describe("CONN-02: OAuth start and callback", () => {
   });
 
   it("supports exact reconnect and sibling adds across OAuth callbacks", async () => {
-    mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
     mockGitHubConnectorOAuth();
 
     const bdd = createBddApi(context);
     const actor = bdd.user();
+    await setGetStartedEnabled(context, actor);
     const initialStart = await connectorsApi.startOauth(
       actor,
       "github",

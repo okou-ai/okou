@@ -171,7 +171,7 @@ const expectedVercelCrons = [
     path: cronSteerRunTimeBudgetContract.steer.path,
     schedule: "* * * * *",
   },
-  { path: cronGetStartedContract.process.path, schedule: "* * * * *" },
+  { path: cronGetStartedContract.process.path, schedule: "0 * * * *" },
 ] satisfies readonly VercelCron[];
 
 describe("vercel cron config", () => {

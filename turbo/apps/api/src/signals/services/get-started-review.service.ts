@@ -1,12 +1,13 @@
 import { chatEvents } from "@okouai/db/schema/chat-event";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { safeUrlParse } from "../utils";
 import { randomUUID } from "node:crypto";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import { env } from "../../lib/env";
 import type { Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import {
   grantGetStartedClaim,
   getStartedRewardsEnabled,
@@ -149,9 +150,6 @@ export async function processGetStartedClaims(
   options: { readonly claimIds?: readonly string[] },
   signal: AbortSignal,
 ): Promise<number> {
-  if (env("GET_STARTED_REWARDS_ROLLOUT") === "off") {
-    return 0;
-  }
   const { claimIds } = options;
   let processed = 0;
   for (let i = 0; i < 10; i++) {
@@ -199,9 +197,15 @@ export async function processGetStartedClaims(
     if (!claimed) {
       break;
     }
-    const result: Review = getStartedRewardsEnabled(claimed.orgId)
+    const enabled = await getStartedRewardsEnabled(
+      db,
+      claimed.orgId,
+      claimed.beneficiaryUserId ?? claimed.actorUserId,
+    );
+    signal.throwIfAborted();
+    const result: Review = enabled
       ? await reviewClaim(db, claimed, signal)
-      : { kind: "retry", reason: "rollout_unavailable" };
+      : { kind: "retry", reason: "feature_disabled" };
     signal.throwIfAborted();
     if (!claimed.leaseId) {
       throw new Error("Get started review has no lease");
@@ -211,9 +215,10 @@ export async function processGetStartedClaims(
       eq(getStartedClaims.leaseId, claimed.leaseId),
       eq(getStartedClaims.status, "reviewing"),
     );
+    let reviewed: GetStartedClaimRow | undefined;
     if (result.kind === "approve") {
-      await db.transaction(async (tx) => {
-        await grantGetStartedClaim(
+      reviewed = await db.transaction(async (tx) => {
+        return await grantGetStartedClaim(
           tx,
           claimed,
           result.rewardKey,
@@ -221,7 +226,7 @@ export async function processGetStartedClaims(
         );
       });
     } else if (result.kind === "reject") {
-      await db
+      [reviewed] = await db
         .update(getStartedClaims)
         .set({
           status: "rejected",
@@ -232,7 +237,8 @@ export async function processGetStartedClaims(
           leaseExpiresAt: null,
           updatedAt: nowDate(),
         })
-        .where(lease);
+        .where(lease)
+        .returning();
     } else {
       const delay = Math.min(
         30 * 60_000,
@@ -249,6 +255,16 @@ export async function processGetStartedClaims(
           updatedAt: nowDate(),
         })
         .where(lease);
+    }
+    // Notify only after the result and any credit writes have committed.
+    if (
+      reviewed?.beneficiaryUserId &&
+      ["granted", "rejected", "ineligible"].includes(reviewed.status)
+    ) {
+      await publishUserSignal(
+        [reviewed.beneficiaryUserId],
+        GET_STARTED_REWARDS_CHANGED_EVENT,
+      );
     }
     processed++;
   }

@@ -27,6 +27,7 @@ import {
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
   runnersActiveInputsContract,
+  runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
@@ -73,6 +74,7 @@ import { cliAuthRoutes } from "../../cli-auth";
 import { cronProcessUsageEventsRoutes } from "../../cron-process-usage-events";
 import { cronTelegramCleanupRoutes } from "../../cron-telegram-cleanup";
 import { runnersRoutes } from "../../runners";
+import { runnerCancellationRoutes } from "../../runner-cancellation";
 import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
@@ -535,6 +537,24 @@ export function createRunsApi(
           headers: runnerHeaders(true),
           params: { runId },
           body,
+        }),
+        [200],
+      );
+      return response.body;
+    },
+
+    async readRunnerCancellation(
+      sandboxToken: string,
+      runId: string,
+      runnerGroup: string,
+    ) {
+      const response = await accept(
+        setupAppWithRoutes({ context, routes: runnerCancellationRoutes })(
+          runnersCancellationContract,
+        ).get({
+          headers: { authorization: `Bearer ${sandboxToken}` },
+          params: { runId },
+          query: { runnerGroup, ...defaultRunnerIdentity },
         }),
         [200],
       );

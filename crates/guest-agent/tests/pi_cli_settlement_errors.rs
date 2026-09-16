@@ -177,11 +177,33 @@ fi
                 transport_attempts: 1,
                 retry_attempts: 0,
                 retry_limit: None,
+                transport_failure: None,
             })
         );
         let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
             terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
         assert_eq!(serde_json::to_value(reason)?, "provider_rate_limited");
+    }
+    if expected_failure_reason == Some(FailureReason::ResponseConnectionLost) {
+        assert_eq!(
+            result
+                .cli_observed_exit
+                .as_ref()
+                .and_then(|exit| exit.exit_code),
+            Some(0)
+        );
+        let request = terminal_failure
+            .diagnostic
+            .model_request
+            .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
+        assert_eq!(request.http_status, Some(200));
+        assert_eq!(
+            serde_json::to_value(request.transport_failure)?,
+            serde_json::json!({
+                "phase": "response_body", "signalAborted": false,
+                "errorName": "TypeError", "causeCode": "UND_ERR_RES_CONTENT_LENGTH_MISMATCH"
+            })
+        );
     }
 
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
@@ -265,6 +287,72 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
 -> Result<(), Box<dyn std::error::Error>> {
     let base_path = std::env::var_os("PATH").unwrap_or_default();
     let original_directory = std::env::current_dir()?;
+    for (run_id, message, result, reason, assistant_text) in [
+        (
+            "00000000-0000-4000-8000-000000000140",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "content": [],
+                "errorMessage": "Codex error: Our servers are currently overloaded. Please try again later."
+            }),
+            "Codex error: Our servers are currently overloaded. Please try again later.",
+            FailureReason::ProviderOverloaded,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000141",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "length",
+                "content": [{"type": "text", "text": "Partial answer"}]
+            }),
+            "Pi model response exceeded the output token limit.",
+            FailureReason::OutputTokenLimit,
+            Some("Partial answer"),
+        ),
+        (
+            "00000000-0000-4000-8000-000000000142",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses", "content": [],
+                "errorMessage": "You have hit your ChatGPT usage limit.",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1, "failureReason": "provider_rate_limited"}}]
+            }),
+            "You have hit your ChatGPT usage limit.",
+            FailureReason::ProviderRateLimited,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000143",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-responses", "content": [],
+                "errorMessage": "Service unavailable",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 503, "transportAttempts": 1}}]
+            }),
+            "Service unavailable",
+            FailureReason::ProviderServerError,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000144",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses", "content": [],
+                "errorMessage": "You have hit your ChatGPT usage limit.",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1, "failureReason": "provider_insufficient_credits"}}]
+            }),
+            "You have hit your ChatGPT usage limit.",
+            FailureReason::ProviderInsufficientCredits,
+            None,
+        ),
+    ] {
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(result),
+            Some(reason),
+            assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
     // Shared with the real TypeScript provider-boundary regression. No status
     // is inferred from the detail text by this guest entry point.
     let rate_limit: Value = serde_json::from_str(include_str!(
@@ -275,6 +363,19 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
         std::slice::from_ref(&rate_limit),
         ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
         Some(FailureReason::ProviderRateLimited),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    let terminated: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-stream-terminated.json"
+    ))?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000145",
+        &[terminated],
+        ExpectedTerminalResult::Exact("terminated"),
+        Some(FailureReason::ResponseConnectionLost),
         None,
         &base_path,
         &original_directory,

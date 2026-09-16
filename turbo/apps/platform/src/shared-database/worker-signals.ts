@@ -34,7 +34,7 @@ import {
   setRootSignal$,
 } from "../signals/root-signal.ts";
 import { logger } from "../signals/log.ts";
-import { settle } from "../signals/utils.ts";
+import { setDaemon, settle } from "../signals/utils.ts";
 import { throttleCommand } from "../signals/command-scheduling.ts";
 import {
   chatThreadIndicators$,
@@ -357,84 +357,83 @@ const runSharedDatabaseWorkerDaemons$ = command(
       L.warn("shared database realtime setup failed", setup.error);
       return;
     }
-    const subscriptions = await settle(
-      Promise.all([
-        set(
-          setAblyPayloadLoop$,
-          {
-            scope: "credential",
-            topic: null,
-            loopCommand$: handleSharedDatabaseRealtimeMessage$,
-            includeMessage: true,
-          },
-          signal,
-        ),
-        set(
-          setAblyLoop$,
-          {
-            scope: "credential",
-            topic: "threadListChanged",
-            loopCommand$: reloadWorkerChatIndicatorsFromRealtime$,
-            options: {
-              runOnSubscribe: true,
-            },
-          },
-          signal,
-        ),
-        set(
-          setAblyPayloadLoop$,
-          {
-            scope: "credential",
-            topic: "chatThreadReadCursorUpdated",
-            loopCommand$: reloadWorkerChatIndicatorsFromReadCursor$,
-          },
-          signal,
-        ),
-        set(
-          setAblyLoop$,
-          {
-            scope: "user",
-            topic: "computerUseHostsChanged",
-            loopCommand$: reloadWorkerComputerUseHostsFromRealtime$,
-            options: {
-              runOnSubscribe: true,
-            },
-          },
-          signal,
-        ),
-        set(
-          setAblyLoop$,
-          {
-            scope: "user",
-            topic: "billing:changed",
-            loopCommand$: reloadWorkerQueueDataFromRealtime$,
-            options: {
-              runOnSubscribe: true,
-            },
-          },
-          signal,
-        ),
-      ]),
+    const onError = (error: unknown) => {
+      L.warn("shared database realtime subscriptions failed", error);
+    };
+
+    set(
+      setAblyPayloadLoop$,
+      {
+        scope: "credential",
+        topic: null,
+        loopCommand$: handleSharedDatabaseRealtimeMessage$,
+        includeMessage: true,
+        options: { onError },
+      },
       signal,
     );
-    signal.throwIfAborted();
-    if (!subscriptions.ok) {
-      L.warn(
-        "shared database realtime subscriptions failed",
-        subscriptions.error,
-      );
-    }
+    set(
+      setAblyLoop$,
+      {
+        scope: "credential",
+        topic: "threadListChanged",
+        loopCommand$: reloadWorkerChatIndicatorsFromRealtime$,
+        options: {
+          onError,
+          runOnSubscribe: true,
+        },
+      },
+      signal,
+    );
+    set(
+      setAblyPayloadLoop$,
+      {
+        scope: "credential",
+        topic: "chatThreadReadCursorUpdated",
+        loopCommand$: reloadWorkerChatIndicatorsFromReadCursor$,
+        options: { onError },
+      },
+      signal,
+    );
+    set(
+      setAblyLoop$,
+      {
+        scope: "user",
+        topic: "computerUseHostsChanged",
+        loopCommand$: reloadWorkerComputerUseHostsFromRealtime$,
+        options: {
+          onError,
+          runOnSubscribe: true,
+        },
+      },
+      signal,
+    );
+    set(
+      setAblyLoop$,
+      {
+        scope: "user",
+        topic: "billing:changed",
+        loopCommand$: reloadWorkerQueueDataFromRealtime$,
+        options: {
+          onError,
+          runOnSubscribe: true,
+        },
+      },
+      signal,
+    );
   },
 );
 
 export const startSharedDatabaseWorkerDaemons$ = command(
-  ({ get, set }): Promise<void> | null => {
+  ({ get, set }): void => {
     if (get(workerDaemonsStartedState$)) {
-      return null;
+      return;
     }
     const signal = get(rootSignal$);
     set(workerDaemonsStartedState$, true);
-    return set(runSharedDatabaseWorkerDaemons$, signal);
+    setDaemon((ownerSignal) => {
+      return set(runSharedDatabaseWorkerDaemons$, ownerSignal);
+    }, signal);
   },
 );
 

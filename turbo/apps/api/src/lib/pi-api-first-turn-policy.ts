@@ -260,7 +260,14 @@ export function decideApiFirstTurnRecovery(
   const coordinationRemains = facts.observedAt < facts.coordinationDeadlineAt;
   const apiModelFailed =
     failure instanceof PiApiFirstTurnModelFailureError &&
-    !failure.failureReason &&
+    (!failure.failureReason ||
+      [
+        "provider_rate_limited",
+        "provider_overloaded",
+        "provider_server_error",
+        "provider_stream_timeout",
+        "response_connection_lost",
+      ].includes(failure.failureReason)) &&
     failure.diagnostic.httpStatus !== 401 &&
     failure.diagnostic.httpStatus !== 403 &&
     !facts.commitStarted &&

@@ -1,4 +1,7 @@
-import { readGetStartedStatus } from "./helpers/get-started";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -196,13 +199,13 @@ describe("Custom connector OAuth callbacks", () => {
   });
 
   it("replays an in-flight prefixed OAuth state and uses a plain nonce on reconnect", async () => {
-    mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
     mockEnv("APP_URL", "https://app.okou.ai");
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
     });
     const actor = createBddApi(context).user({ orgRole: "org:admin" });
     await connectors.updateFeatureSwitches(actor, {});
+    await setGetStartedEnabled(context, actor);
     const connector = await createCustomOAuthConnector(actor, provider);
     const legacyRedirectUri = "https://app.okou.ai/connectors/custom/callback";
     const state = `okou.${randomBytes(32).toString("hex")}`;

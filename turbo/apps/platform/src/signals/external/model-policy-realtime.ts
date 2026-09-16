@@ -7,20 +7,18 @@ import { invalidateOrgModelPolicies$ } from "./org-model-policies.ts";
  * here would read upstream usage for every notice and connection resync.
  */
 export const setupModelPolicyRealtime$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    await Promise.all(
-      (["user", "org"] as const).map((scope) => {
-        return set(
-          setAblyInvalidationLoop$,
-          {
-            scope,
-            topic: "modelPoliciesChanged",
-            invalidations: [invalidateOrgModelPolicies$],
-            options: { runOnSubscribe: true },
-          },
-          signal,
-        );
-      }),
-    );
+  ({ set }, signal: AbortSignal): void => {
+    for (const scope of ["user", "org"] as const) {
+      set(
+        setAblyInvalidationLoop$,
+        {
+          scope,
+          topic: "modelPoliciesChanged",
+          invalidations: [invalidateOrgModelPolicies$],
+          options: { runOnSubscribe: true },
+        },
+        signal,
+      );
+    }
   },
 );

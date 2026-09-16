@@ -1,5 +1,6 @@
 import mermaid from "@okouai/mermaid-lite";
 import {
+  act,
   screen,
   waitFor,
   waitForElementToBeRemoved,
@@ -53,6 +54,70 @@ function diagramButtons(container: ParentNode = document.body): HTMLElement[] {
     return button.getAttribute("aria-label") === "Expand diagram";
   });
 }
+
+test.each(["settings", "system"] as const)(
+  "An idle diagram remains available when the app theme changes through %s",
+  async (entry) => {
+    const media = context.mocks.browser.matchMedia((query) => {
+      return query === "(min-width: 48rem)";
+    });
+    const chat = createMarkdownChatFixture(context);
+    const rows = completedMessageRows(
+      chat,
+      ["```mermaid", "flowchart TD", "  Plan --> Launch", "```"].join("\n"),
+    );
+    chat.install({
+      rows: () => {
+        return rows;
+      },
+    });
+
+    await setupPage({
+      context,
+      path: chat.path,
+      host: "app.okou.ai",
+      locale: "en-US",
+    });
+    const image = await screen.findByRole("img", { name: "Diagram" });
+    const source = image.getAttribute("src");
+    expect(getButtonByName("Expand diagram")).toBeEnabled();
+
+    if (entry === "settings") {
+      const rail = await screen.findByTestId("labeled-nav-rail");
+      click(within(rail).getByLabelText("Test User"));
+      const menu = await screen.findByRole("menu");
+      click(within(menu).getByText("Settings"));
+      const settings = await screen.findByRole("dialog", { name: "Settings" });
+      const dark = await waitFor(() => {
+        return getButtonByName("Dark", settings);
+      });
+      click(dark);
+      const settingsRemoved = waitForElementToBeRemoved(settings);
+      click(within(settings).getByLabelText("Close"));
+      await settingsRemoved;
+    } else {
+      act(() => {
+        media.setMatches((query) => {
+          return (
+            query === "(min-width: 48rem)" ||
+            query === "(prefers-color-scheme: dark)"
+          );
+        });
+      });
+    }
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(screen.getByRole("img", { name: "Diagram" })).toHaveAttribute(
+      "src",
+      source,
+    );
+    expect(getButtonByName("Expand diagram")).toBeEnabled();
+    click(getButtonByName("Expand diagram"));
+    await expect(
+      screen.findByRole("dialog", { name: "diagram.svg preview" }),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 async function openMermaidSplitView() {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
@@ -192,6 +257,7 @@ test("Leaving the page releases the active Mermaid artifact split view blob", as
 });
 
 test("Completed Mermaid diagrams remain accessible and inspectable", async () => {
+  const browser = context.mocks.browser.blobDownload();
   const chat = createMarkdownChatFixture(context);
   const renderGate = context.mocks.deferred<void>();
   const renderDiagram = mermaid.render.bind(mermaid);
@@ -209,7 +275,7 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
     diagramSource,
     "```",
   ].join("\n");
-  const rows = completedMessageRows(chat, source);
+  const rows = [chat.outputMessage("Preparing diagrams.", { seqId: 1 })];
   chat.install({
     rows: () => {
       return rows;
@@ -221,6 +287,13 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
     path: chat.path,
     host: "app.okou.ai",
   });
+  await expect(screen.findByText("Preparing diagrams.")).resolves.toBeVisible();
+
+  rows.push(
+    chat.outputMessage(source, { seqId: 2 }),
+    chat.runCompleted({ seqId: 3 }),
+  );
+  context.mocks.ably.trigger(chat.realtimeTopic);
 
   const pendingActions = await waitFor(() => {
     const actions = diagramButtons();
@@ -254,6 +327,17 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
       }),
     ).toBeTruthy();
   });
+  const urls = screen.getAllByRole("img", { name: "Diagram" }).map((image) => {
+    return image.getAttribute("src");
+  });
+  expect(new Set(urls).size).toBe(2);
+  for (const url of urls) {
+    if (!url) {
+      throw new Error("Expected an independently owned diagram image URL");
+    }
+    expect(browser.blobForUrl(url)?.type).toBe("image/svg+xml");
+    expect(browser.revokedUrls).not.toContain(url);
+  }
 });
 
 test("A streaming Mermaid diagram stays readable until complete", async () => {

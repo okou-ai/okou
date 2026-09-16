@@ -439,8 +439,36 @@
     {
       "idx": 1140,
       "version": "7",
-      "when": 1789480280839,
-      "tag": "1140_get_started_rewards",
+      "when": 1789479963135,
+      "tag": "1140_usage_pack_deferred_schedule_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 1141,
+      "version": "7",
+      "when": 1789485912702,
+      "tag": "1141_pi_memory_stage1_billing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 1142,
+      "version": "7",
+      "when": 1789485938847,
+      "tag": "1142_validate_pi_memory_stage1_billing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 1143,
+      "version": "7",
+      "when": 1789489290832,
+      "tag": "1143_run_cancellation_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 1144,
+      "version": "7",
+      "when": 1789528865735,
+      "tag": "1144_get_started_rewards",
       "breakpoints": true
     }
   ]

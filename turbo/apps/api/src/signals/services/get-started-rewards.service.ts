@@ -6,24 +6,29 @@ import {
   type GetStartedQuestKey,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
-import { isStaffOrg } from "@okouai/core/staff-org";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { and, count, desc, eq, or, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
 import { grantOrgCredits } from "./onboarding-credit-grants.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 export type GetStartedClaimRow = typeof getStartedClaims.$inferSelect;
 
-/** Server-owned rollout; feature-switch overrides never authorize awards. */
-export function getStartedRewardsEnabled(orgId: string): boolean {
-  const rollout = env("GET_STARTED_REWARDS_ROLLOUT");
-  return rollout === "all" || (rollout === "staff" && isStaffOrg(orgId));
+/** Resolve the same registry and persisted overrides used by the App. */
+export async function getStartedRewardsEnabled(
+  db: Pick<Db, "select">,
+  orgId: string,
+  userId: string,
+): Promise<boolean> {
+  const context = await loadUserFeatureSwitchContext(db, orgId, userId);
+  return isFeatureEnabled(FeatureSwitchKey.GetStartedQuests, context);
 }
 
 export function getStartedUtcDay(at: Date): string {
@@ -63,7 +68,7 @@ export async function createGetStartedClaim(
     readonly sourceEventId?: string;
   },
 ): Promise<GetStartedClaimRow | null> {
-  if (!getStartedRewardsEnabled(args.orgId)) {
+  if (!(await getStartedRewardsEnabled(tx, args.orgId, args.userId))) {
     return null;
   }
   const reward = GET_STARTED_REWARDS[args.questKey];

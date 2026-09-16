@@ -55,8 +55,6 @@ base_dir="$1"
 fifo="$base_dir/usage-flush-child.fifo"
 request="$base_dir/mitm-addon/usage-flush-request"
 pending="$base_dir/mitm-addon/usage-pending"
-jsonl_request="$base_dir/mitm-addon/jsonl-flush-request"
-jsonl_state="$base_dir/mitm-addon/jsonl-flush-state"
 write_pending_snapshot() {
   [[ -f "$request" ]] || return 0
   flush_id="$(sed -n 's/.*"flushRequestId":"\([^"]*\)".*/\1/p' "$request")"
@@ -65,19 +63,9 @@ write_pending_snapshot() {
   now_ms="$(date +%s%3N)"
   printf '{"pid":%s,"usageStateId":"%s","updatedAtMs":%s,"flows":0,"buffered":0,"reports":0,"flushRequestId":"%s"}' "$$" "$state_id" "$now_ms" "$flush_id" > "$pending"
 }
-write_jsonl_flush_state() {
-  [[ -f "$jsonl_request" ]] || return 0
-  flush_id="$(sed -n 's/.*"flushRequestId":"\([^"]*\)".*/\1/p' "$jsonl_request")"
-  state_id="$(sed -n 's/.*"usageStateId":"\([^"]*\)".*/\1/p' "$jsonl_request")"
-  path="$(sed -n 's/.*"path":"\([^"]*\)".*/\1/p' "$jsonl_request")"
-  [[ -n "$flush_id" && -n "$state_id" && -n "$path" ]] || return 0
-  now_ms="$(date +%s%3N)"
-  printf '{"pid":%s,"usageStateId":"%s","updatedAtMs":%s,"flushRequestId":"%s","path":"%s","pending":0}' "$$" "$state_id" "$now_ms" "$flush_id" "$path" > "$jsonl_state"
-}
 mkfifo "$fifo"
 exec 3<>"$fifo"
-# Match the addon lifecycle: SIGUSR1 only wakes usage work, while the JSONL
-# marker watcher progresses independently.
+# SIGUSR1 only wakes the usage work owned by this external process.
 trap 'printf "signaled\n"; printf "\n" >&3' USR1
 trap 'exit 0' TERM
 echo ready
@@ -85,7 +73,6 @@ while true; do
   if read -r -t 0.05 _ <&3; then
     write_pending_snapshot
   fi
-  write_jsonl_flush_state
 done
 "#,
         )
@@ -205,7 +192,15 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
     // Keep the signal acknowledgement pipe open until the child is stopped.
     let _child_lines = install_usage_flush_child(&mut config).await;
     let addon_dir = config.paths.base_dir.join("mitm-addon");
-    config.proxy.mitm.set_addon_dir_for_test(addon_dir.clone());
+    std::fs::set_permissions(
+        &addon_dir,
+        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+    )
+    .unwrap();
+    config
+        .proxy
+        .mitm
+        .set_control_directory_for_test(addon_dir.clone());
     let mitm_jsonl_flush = config.proxy.mitm.jsonl_flush_handle();
     let write_started = Arc::new(tokio::sync::Notify::new());
     let release_write = Arc::new(tokio::sync::Semaphore::new(0));
@@ -219,6 +214,35 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
     // Seed a network log file so `upload_network_logs` has a payload to POST
     // (otherwise it early-returns on NotFound).
     let run_id = RunId::new_v4();
+    let mut addon_tasks = tokio::task::JoinSet::new();
+    let addon_listener = tokio::net::UnixListener::bind(addon_dir.join("control.sock")).unwrap();
+    let addon_path = config.exec_config.log_paths.network_log(run_id);
+    addon_tasks.spawn(async move {
+        use tokio::io::AsyncReadExt;
+        let (mut socket, _) = addon_listener.accept().await.unwrap();
+        let size = socket.read_u32().await.unwrap() as usize;
+        assert!(size <= 64 * 1024);
+        let mut bytes = vec![0; size];
+        socket.read_exact(&mut bytes).await.unwrap();
+        let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(request["method"], "logs.flush");
+        assert_eq!(request["params"]["runId"], run_id.to_string());
+        assert_eq!(request["params"]["path"], addon_path.to_string_lossy().as_ref());
+        // Model the external addon boundary: this record becomes available only
+        // after the deferred upload sends the exact run's flush request.
+        let mut file = tokio::fs::OpenOptions::new().append(true).open(&addon_path).await.unwrap();
+        file.write_all(br#"{"timestamp":"2026-01-01T00:00:02Z","type":"dns","host":"addon.example","port":53}
+"#).await.unwrap();
+        file.flush().await.unwrap();
+        let response = serde_json::to_vec(&serde_json::json!({
+            "requestId": request["requestId"], "generation": request["generation"],
+            "type": "result", "data": {
+                "runId": run_id, "path": addon_path, "boundary": 1, "pending": 0, "state": "processed"
+            }
+        })).unwrap();
+        socket.write_u32(response.len() as u32).await.unwrap();
+        socket.write_all(&response).await.unwrap();
+    });
     let network_log_path = config.exec_config.log_paths.network_log(run_id);
     std::fs::create_dir_all(network_log_path.parent().unwrap()).unwrap();
     std::fs::write(
@@ -275,9 +299,10 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
     };
     assert_eq!(payload["runId"], run_id.to_string());
     let logs = payload["networkLogs"].as_array().unwrap();
-    assert_eq!(logs.len(), 2);
+    assert_eq!(logs.len(), 3);
     assert_eq!(logs[0]["host"], "example.com");
     assert_eq!(logs[1]["host"], "pending.example");
+    assert_eq!(logs[2]["host"], "addon.example");
 
     // The job has reported completion; teardown must still join its deferred
     // upload. Enter Stopping through the real signal handler. Combining natural
@@ -327,20 +352,9 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
         .unwrap()
         .unwrap();
 
-    let jsonl_request: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(addon_dir.join("jsonl-flush-request")).unwrap(),
-    )
-    .unwrap();
-    let jsonl_state: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(addon_dir.join("jsonl-flush-state")).unwrap(),
-    )
-    .unwrap();
-    let network_log_path_string = network_log_path.to_string_lossy().to_string();
-    assert_eq!(jsonl_request["path"], network_log_path_string);
-    assert_eq!(
-        jsonl_state["flushRequestId"],
-        jsonl_request["flushRequestId"]
-    );
-    assert_eq!(jsonl_state["path"], network_log_path_string);
-    assert_eq!(jsonl_state["pending"], 0);
+    tokio::time::timeout(WAIT, addon_tasks.join_next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
 }

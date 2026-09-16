@@ -174,8 +174,18 @@ const loadRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
     set(recordAdAttribution$, get(searchParams$));
   }
 
-  await set(currentRoute.setup, routeSignal);
+  const [setup] = await Promise.allSettled([
+    set(currentRoute.setup, routeSignal),
+  ]);
   signal.throwIfAborted();
+  // Navigation may replace a route during its setup. The replacement owns the
+  // page now; cancellation of the old route does not cancel app bootstrap.
+  if (routeSignal.aborted) {
+    return;
+  }
+  if (setup.status === "rejected") {
+    throw setup.reason;
+  }
   if (currentRoute.analytics !== false) {
     capturePageView();
   }

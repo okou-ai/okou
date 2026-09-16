@@ -155,9 +155,6 @@ async function currentConnection(
   if (row.access === null) {
     throw new Error("SSH Cloudflare Access configuration is missing");
   }
-  if (!isFeatureEnabled(FeatureSwitchKey.CloudflareAccess, featureContext)) {
-    return null;
-  }
   if (lockAuthority) {
     // PostgreSQL cannot lock the nullable side of the outer join above. The
     // caller holds the host; lock its non-null protected configuration here.

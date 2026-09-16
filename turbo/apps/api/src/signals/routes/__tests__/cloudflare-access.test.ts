@@ -95,7 +95,6 @@ async function owner(overrides: Partial<Owner> = {}) {
   };
   await updateFeatureSwitchesForUser(context, result, {
     [FeatureSwitchKey.SshAccess]: true,
-    [FeatureSwitchKey.CloudflareAccess]: true,
   });
   authenticate(result);
   return result;
@@ -240,7 +239,7 @@ describe("Cloudflare Access owner configuration", () => {
     assertNotice();
   });
 
-  it("is default-off and session-only, and rejects unsafe token headers before encryption", async () => {
+  it("requires SSH eligibility and a session, and rejects unsafe token headers before encryption", async () => {
     await accept(configs().list({ headers: {} }), [401]);
     mocks.clerk.session(`user_off_${randomUUID()}`, `org_off_${randomUUID()}`);
     await accept(
@@ -982,7 +981,7 @@ describe("protected SSH authority", () => {
     },
   );
 
-  it("keeps Direct management and execution available when the Access feature is disabled", async () => {
+  it("gates Direct and Access management, inventory and execution together with SSH", async () => {
     const f = await fixture();
     const direct = await host();
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
@@ -991,31 +990,66 @@ describe("protected SSH authority", () => {
     await expect(resolve(f)).resolves.toMatchObject({
       outcome: "resolved_access",
     });
-    await updateFeatureSwitchesForUser(context, f, {
-      [FeatureSwitchKey.SshAccess]: true,
-      [FeatureSwitchKey.CloudflareAccess]: false,
-    });
-    authenticate(f);
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     expect(
       (
         await accept(inventory.list({ headers: f.guestHeaders }), [200])
       ).body.hosts.map((h) => {
         return h.id;
       }),
-    ).toStrictEqual([direct.id]);
+    ).toStrictEqual(expect.arrayContaining([f.host.id, direct.id]));
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.SshAccess]: false,
+    });
+    authenticate(f);
+    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await accept(inventory.list({ headers: f.guestHeaders }), [404]);
     await accept(configs().list({ headers }), [404]);
     await accept(
-      connections().update({
+      configs().create({
         headers,
-        params: { connectionId: direct.id },
-        body: {
-          expectedGeneration: direct.generation,
-          displayName: "Still direct",
-        },
+        body: { name: "Unavailable", credentials: token },
       }),
-      [200],
+      [404],
     );
+    await accept(
+      configs().update({
+        headers,
+        params: { configId: f.config.id },
+        body: { expectedRevision: f.config.revision, name: "Unavailable" },
+      }),
+      [404],
+    );
+    await accept(
+      configs().delete({
+        headers,
+        params: { configId: f.config.id },
+        body: { expectedRevision: f.config.revision },
+      }),
+      [404],
+    );
+    for (const connection of [direct, f.host]) {
+      const params = { connectionId: connection.id };
+      await accept(
+        connections().update({
+          headers,
+          params,
+          body: {
+            expectedGeneration: connection.generation,
+            displayName: "Unavailable",
+          },
+        }),
+        [404],
+      );
+      await accept(
+        connections().resetHostKey({
+          headers,
+          params,
+          body: { expectedGeneration: connection.generation },
+        }),
+        [404],
+      );
+      await accept(connections().delete({ headers, params }), [404]);
+    }
     expect(
       (
         await accept(
@@ -1027,12 +1061,21 @@ describe("protected SSH authority", () => {
           [200],
         )
       ).body.outcome,
-    ).toBe("resolved_password");
-    await accept(connections().list({ headers }), [200]);
-    await accept(
-      connections().delete({ headers, params: { connectionId: f.host.id } }),
-      [404],
-    );
+    ).toBe("unavailable");
+    await accept(connections().list({ headers }), [404]);
+    await updateFeatureSwitchesForUser(context, f, {
+      [FeatureSwitchKey.SshAccess]: true,
+    });
+    authenticate(f);
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toContainEqual(expect.objectContaining({ id: f.config.id, revision: 1 }));
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toHaveLength(2);
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved_access",
+    });
   });
 
   it("preserves host trust across rotation, protected edits and Access transitions; rejects stale evidence", async () => {

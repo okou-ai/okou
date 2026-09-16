@@ -1,19 +1,18 @@
-const CODEX_USAGE_LIMIT_SNIPPETS = [
-  "usage limit",
-  "usage_limit",
-  "usage-limit",
-  "usagelimit",
-] as const;
+import { classifyProviderFailure } from "@okouai/api-contracts/contracts/provider-failure";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import type { PiModelTransportFailure } from "./model-transport-diagnostics";
 
 /** Content-free evidence; never infer an HTTP status from provider prose. */
 export interface PiApiModelFailureDiagnostic {
   readonly category: "http_error" | "stream_terminated" | "aborted" | "unknown";
   readonly httpStatus?: number;
+  readonly transportFailure?: PiModelTransportFailure;
 }
 
 export function projectPiApiModelFailure(
   error: unknown,
   responseStatus?: number,
+  transportFailure?: PiModelTransportFailure,
 ): PiApiModelFailureDiagnostic {
   const httpStatus =
     responseStatus !== undefined &&
@@ -36,49 +35,40 @@ export function projectPiApiModelFailure(
         : error instanceof Error && error.name === "AbortError"
           ? "aborted"
           : "unknown";
-  return { category, ...(httpStatus === undefined ? {} : { httpStatus }) };
+  return {
+    category,
+    ...(httpStatus === undefined ? {} : { httpStatus }),
+    ...(transportFailure ? { transportFailure } : {}),
+  };
 }
 
 /** Only the request/stream boundary may create this recovery provenance. */
 export class PiApiModelRequestError extends Error {
   readonly diagnostic: PiApiModelFailureDiagnostic;
-  readonly failureReason: "reconnect_required" | "usage_limit" | undefined;
+  readonly failureReason: KnownRunFailureReason | undefined;
 
   constructor(error: unknown, provider: string, responseStatus?: number) {
     super("Pi API model request failed");
     this.name = "PiApiModelRequestError";
     this.diagnostic = projectPiApiModelFailure(error, responseStatus);
+    const reason = classifyPiApiProviderFailure(error, responseStatus);
     this.failureReason =
-      provider === "openai-codex"
-        ? classifyPiApiProviderFailure(error)
-        : undefined;
+      reason === "reconnect_required" && provider !== "openai-codex"
+        ? undefined
+        : reason;
   }
 }
 
-/** Reduce native provider diagnostics to the only subscription product states. */
+/** Reduce a failed provider request to a content-free public reason. */
 export function classifyPiApiProviderFailure(
   error: unknown,
-): "reconnect_required" | "usage_limit" | undefined {
+  responseStatus?: number,
+): KnownRunFailureReason | undefined {
   const message =
     typeof error === "string"
       ? error
       : error instanceof Error
         ? error.message
         : undefined;
-  if (!message) {
-    return undefined;
-  }
-  const normalized = message.toLowerCase();
-  if (
-    normalized.includes("token_refresh_failed") &&
-    normalized.includes("codex-oauth-token") &&
-    normalized.includes("reconnect_required")
-  ) {
-    return "reconnect_required";
-  }
-  return CODEX_USAGE_LIMIT_SNIPPETS.some((snippet) => {
-    return normalized.includes(snippet);
-  })
-    ? "usage_limit"
-    : undefined;
+  return classifyProviderFailure(message ?? "", responseStatus);
 }

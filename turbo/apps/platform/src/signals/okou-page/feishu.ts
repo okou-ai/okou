@@ -347,7 +347,7 @@ export const completeFeishuInstallationSetup$ = command(
         ? larkConnectContract
         : feishuConnectContract,
     );
-    await accept(
+    const result = await accept(
       client.updateInstallation({
         params: { installationId },
         body: { defaultAgentId, setupCompleted: true },
@@ -365,6 +365,11 @@ export const completeFeishuInstallationSetup$ = command(
           .botInstalled;
       }),
     );
+    if (!result.body.isConnected && result.body.connectUrl) {
+      const url = new URL(result.body.connectUrl);
+      url.searchParams.set("callbackTarget", "app");
+      window.location.assign(url.toString());
+    }
   },
 );
 
@@ -460,7 +465,7 @@ export const startFeishuSettingsRealtime$ = command(
     signal.throwIfAborted();
     set(internalInstallations$, current);
 
-    await set(
+    set(
       setAblyLoop$,
       {
         topic: "feishu:changed",

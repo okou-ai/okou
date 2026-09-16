@@ -1,4 +1,3 @@
-import { ImpactMarketingFrame } from "./components/impact-marketing-frame.tsx";
 import { StrictMode } from "react";
 import type { Store } from "ccstate";
 import { StoreProvider, useGet, useSet } from "ccstate-react";
@@ -65,16 +64,8 @@ export const setupRouter = (
       once: true,
     });
   }
-  detach(
-    store.set(listenForceUpgradeDialog$, signal),
-    Reason.Daemon,
-    "force-upgrade",
-  );
-  detach(
-    store.set(pollInstatusIssues$, signal),
-    Reason.Daemon,
-    "service status polling",
-  );
+  store.set(listenForceUpgradeDialog$, signal);
+  store.set(pollInstatusIssues$, signal);
   render(
     <StrictMode>
       <StoreProvider value={store}>
@@ -82,7 +73,6 @@ export const setupRouter = (
           <ClerkOptionsProvider>
             <Router />
           </ClerkOptionsProvider>
-          <ImpactMarketingFrame />
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <InstatusStatusNotice />

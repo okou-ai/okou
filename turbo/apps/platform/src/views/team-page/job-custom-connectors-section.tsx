@@ -13,7 +13,6 @@ import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/cu
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { customConnectors$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import {
-  agentCustomConnectorToggleSaving$,
   agentCustomConnectorGrants$,
   agentAddedCustomConnectors$,
   toggleAgentCustomConnector$,
@@ -36,22 +35,22 @@ import { customConnectorMcpEnabled$ } from "../../signals/external/feature-switc
 function JobCustomConnectorRow({
   connector,
   enabled,
-  loading,
   agentId,
   grants,
   grantsLoading,
   isLast,
-  onToggle,
 }: {
   readonly connector: CustomConnectorResponse;
   readonly enabled: boolean;
-  readonly loading: boolean;
   readonly agentId: string | undefined;
   readonly grants: readonly AgentCustomConnectorGrant[] | null;
   readonly grantsLoading: boolean;
   readonly isLast: boolean;
-  readonly onToggle: (id: string, checked: boolean) => void;
 }) {
+  const { t } = useTranslation("agents");
+  const signal = useGet(pageSignal$);
+  const [toggleLoadable, toggle] = useLoadableSet(toggleAgentCustomConnector$);
+  const saving = toggleLoadable.state === "loading";
   const openPermissions = useSet(openCustomConnectorPermissions$);
   const hasPermissionBundle =
     connector.kind === "http" && Boolean(connector.permissionBundleRef);
@@ -64,13 +63,16 @@ function JobCustomConnectorRow({
     if (!agentId) {
       return;
     }
-    openPermissions({
-      surface: "agent-detail",
-      agentId,
-      connectorId: connector.id,
-      initiallyAuthorized,
-      permissionNames,
-    });
+    openPermissions(
+      {
+        surface: "agent-detail",
+        agentId,
+        connectorId: connector.id,
+        initiallyAuthorized,
+        permissionNames,
+      },
+      signal,
+    );
   };
 
   return (
@@ -87,7 +89,7 @@ function JobCustomConnectorRow({
         <span className="font-mono">{customConnectorTarget(connector)}</span>
       }
       enabled={enabled}
-      loading={loading || (hasPermissionBundle && grantsLoading)}
+      loading={saving || (hasPermissionBundle && grantsLoading)}
       disabled={hasPermissionBundle && grants === null}
       showManage={
         enabled &&
@@ -103,7 +105,20 @@ function JobCustomConnectorRow({
           }
           return;
         }
-        onToggle(connector.id, checked);
+        if (saving) {
+          return;
+        }
+        detach(
+          (async () => {
+            await toggle(connector.id, checked, signal);
+            toast.success(
+              t(($) => {
+                return $.authorization.customConnectors.saved;
+              }),
+            );
+          })(),
+          Reason.DomCallback,
+        );
       }}
       onManage={() => {
         openPermissionDrawer(enabled);
@@ -137,9 +152,6 @@ function ConnectedJobCustomConnectorsSection({
   const addedLoadable = useLastLoadable(agentAddedCustomConnectors$);
   const added = addedLoadable.state === "hasData" ? addedLoadable.data : [];
   const addedSet = new Set(added);
-  const [, toggle] = useLoadableSet(toggleAgentCustomConnector$);
-  const pageSignal = useGet(pageSignal$);
-  const saving = useGet(agentCustomConnectorToggleSaving$);
   const permissionDraft = useGet(customConnectorPermissionDraft$);
   const closePermissions = useSet(closeCustomConnectorPermissions$);
   const permissionBundleLoadable = useLoadable(
@@ -152,25 +164,6 @@ function ConnectedJobCustomConnectorsSection({
       connector.kind === "http" || mcpEnabled || addedSet.has(connector.id)
     );
   });
-
-  const handleToggle = (id: string, checked: boolean) => {
-    if (saving) {
-      return;
-    }
-    detach(
-      (async () => {
-        const saved = await toggle(id, checked, pageSignal);
-        if (saved) {
-          toast.success(
-            t(($) => {
-              return $.authorization.customConnectors.saved;
-            }),
-          );
-        }
-      })(),
-      Reason.DomCallback,
-    );
-  };
 
   const activePermissionDraft =
     permissionDraft?.surface === "agent-detail" &&
@@ -211,14 +204,12 @@ function ConnectedJobCustomConnectorsSection({
             key={connector.id}
             connector={connector}
             enabled={addedSet.has(connector.id)}
-            loading={saving}
             agentId={detail?.agentId}
             grants={
               grantsLoadable.state === "hasData" ? grantsLoadable.data : null
             }
             grantsLoading={grantsLoadable.state === "loading"}
             isLast={index === visibleConnectors.length - 1}
-            onToggle={handleToggle}
           />
         );
       })}
@@ -236,13 +227,7 @@ function ConnectedJobCustomConnectorsSection({
           bundle={permissionBundle}
           loading={permissionBundleLoadable.state === "loading"}
           loadError={permissionBundleLoadable.state === "hasError"}
-          onClose={() => {
-            closePermissions({
-              surface: "agent-detail",
-              agentId: permissionTarget.draft.agentId,
-              connectorId: permissionTarget.draft.connectorId,
-            });
-          }}
+          onClose={closePermissions}
         />
       ) : null}
     </div>

@@ -4,6 +4,7 @@ import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import { randomUUID } from "node:crypto";
 import {
+  GET_STARTED_REWARDS_CHANGED_EVENT,
   cronGetStartedContract,
   getStartedContract,
 } from "@okouai/api-contracts/contracts/get-started";
@@ -20,6 +21,7 @@ import {
   scopedReviewRoutes,
 } from "../test-get-started-rewards";
 import { createRouteMocks } from "./helpers/route-test";
+import { setGetStartedEnabled } from "./helpers/get-started";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -44,10 +46,19 @@ const postId = () => {
   ).toString();
 };
 
-beforeEach(() => {
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
+async function enabledSession(
+  userId = `user_${randomUUID()}`,
+  orgId = `org_${randomUUID()}`,
+  orgRole: "org:admin" | "org:member" = "org:admin",
+) {
+  const actor = { userId, orgId, orgRole };
+  await setGetStartedEnabled(context, actor);
+  return actor;
+}
+
+beforeEach(async () => {
   mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "synthetic-socialkit-token");
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
 });
 
 function provider(id: string, text: string) {
@@ -80,7 +91,7 @@ function provider(id: string, text: string) {
 
 test("status never grants; concurrent check-ins and org switches preserve one award and its exact 168-hour expiry", async () => {
   const userId = `user_${randomUUID()}`;
-  mocks.clerk.session(userId, `org_${randomUUID()}`);
+  await enabledSession(userId, `org_${randomUUID()}`);
   mockNow(new Date("2026-09-15T23:59:59.123Z"));
   expect((await status()).claimedToday).toBeFalsy();
   const results = await Promise.all(
@@ -103,7 +114,7 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
       }),
     ).size,
   ).toBe(1);
-  mocks.clerk.session(userId, `org_${randomUUID()}`);
+  await enabledSession(userId, `org_${randomUUID()}`);
   expect(
     (await accept(client().checkin({ headers }), [200])).body,
   ).toStrictEqual(first);
@@ -123,8 +134,15 @@ test("status never grants; concurrent check-ins and org switches preserve one aw
   ).toBe(2);
 });
 
-test("the server rollout rejects rewards for authenticated non-staff users when disabled", async () => {
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "off");
+test("the shared getStartedQuests switch gates API rewards and supports the same persisted overrides", async () => {
+  const actor = {
+    userId: `user_${randomUUID()}`,
+    orgId: `org_${randomUUID()}`,
+  };
+  mocks.clerk.session(actor.userId, actor.orgId);
+  await expect(client().status({ headers })).resolves.toMatchObject({
+    status: 403,
+  });
   await expect(client().checkin({ headers })).resolves.toMatchObject({
     status: 403,
   });
@@ -135,24 +153,39 @@ test("the server rollout rejects rewards for authenticated non-staff users when 
     }),
     [403],
   );
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "staff");
+  await setGetStartedEnabled(context, actor);
   await expect(client().status({ headers })).resolves.toMatchObject({
-    status: 403,
+    status: 200,
   });
-  mocks.clerk.session(
-    `user_${randomUUID()}`,
-    "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
-  );
   await expect(client().checkin({ headers })).resolves.toMatchObject({
     status: 200,
     body: { status: "granted" },
   });
+  await setGetStartedEnabled(context, actor, false);
+  await expect(client().checkin({ headers })).resolves.toMatchObject({
+    status: 403,
+  });
+
+  const staff = {
+    userId: `user_${randomUUID()}`,
+    orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+  };
+  mocks.clerk.session(staff.userId, staff.orgId);
+  // The shared staff identity is read-only; credit writes use unique orgs above.
+  await expect(client().status({ headers })).resolves.toMatchObject({
+    status: 200,
+  });
 });
 
 test("x submission returns persisted pending state without calling SocialKit; review starts the 7-day lifetime", async () => {
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  await enabledSession(userId, orgId);
   const id = postId();
+  let providerCalls = 0;
   server.use(
     http.get("https://api.socialkit.dev/twitter/tweet", () => {
+      providerCalls++;
       throw new Error("Submission must not call the provider");
     }),
   );
@@ -170,9 +203,20 @@ test("x submission returns persisted pending state without calling SocialKit; re
     expiresAt: null,
   });
   expect((await status()).shareClaim).toStrictEqual(submitted.body);
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "off");
-  expect((await review([submitted.body.id])).body.processed).toBe(0);
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
+  expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
+    GET_STARTED_REWARDS_CHANGED_EVENT,
+    null,
+  );
+  expect(providerCalls).toBe(0);
+  await setGetStartedEnabled(context, { userId, orgId }, false);
+  await review([submitted.body.id]);
+  expect(providerCalls).toBe(0);
+  await setGetStartedEnabled(context, { userId, orgId });
+  expect((await status()).shareClaim).toMatchObject({
+    status: "pending",
+    reason: "feature_disabled",
+    grantedAt: null,
+  });
   expect(
     (
       await accept(
@@ -198,6 +242,14 @@ test("x submission returns persisted pending state without calling SocialKit; re
       return q.key === "share";
     })?.claimedCount,
   ).toBe(1);
+  expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(`user:${userId}`);
+  expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
+    `org:${orgId}`,
+  );
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+    GET_STARTED_REWARDS_CHANGED_EVENT,
+    null,
+  );
 });
 
 test("an interrupted review is reclaimed after its lease without duplicating a grant", async () => {
@@ -274,6 +326,10 @@ test("transient or mismatched provider evidence stays retryable, definite reject
     status: "rejected",
     reason: "post_must_mention_okou",
   });
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+    GET_STARTED_REWARDS_CHANGED_EVENT,
+    null,
+  );
   const secondId = postId();
   const replacement = await accept(
     client().submitShare({
@@ -287,6 +343,28 @@ test("transient or mismatched provider evidence stays retryable, definite reject
   expect((await status()).shareClaim?.status).toBe("granted");
 });
 
+test("a realtime delivery failure leaves the reviewed reward committed and spendable", async () => {
+  const id = postId();
+  const submitted = await accept(
+    client().submitShare({
+      headers,
+      body: { url: `https://x.com/example/status/${id}` },
+    }),
+    [202],
+  );
+  provider(id, "Okou helps my team");
+  context.mocks.ably.publish.mockRejectedValue(new Error("Ably unavailable"));
+  await review([submitted.body.id]);
+  expect((await status()).shareClaim?.status).toBe("granted");
+  const balance = await accept(
+    setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+      billingUsagePackCreditsContract,
+    ).get({ headers }),
+    [200],
+  );
+  expect(balance.body.bonusCredits).toBe(2000);
+});
+
 test("only a successful award reserves a post globally, including after the bonus expires", async () => {
   const id = postId();
   const first = await accept(
@@ -296,7 +374,7 @@ test("only a successful award reserves a post globally, including after the bonu
     }),
     [202],
   );
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
   const second = await accept(
     client().submitShare({
       headers,
@@ -309,7 +387,7 @@ test("only a successful award reserves a post globally, including after the bonu
   await review([first.body.id]);
   expect((await status()).shareClaim?.status).toBe("granted");
   mockNow(new Date("2027-01-01T00:00:00Z"));
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  await enabledSession(`user_${randomUUID()}`, `org_${randomUUID()}`);
   expect(
     (
       await accept(
@@ -345,7 +423,7 @@ test("invalid URLs and missing cron authorization are rejected", async () => {
 test("a personal bonus is spendable without a purchased Usage Pack and disappears exactly at expiry", async () => {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId, "org:member");
+  await enabledSession(userId, orgId, "org:member");
   const settlement = setupApp({ context, routes: testUsageSettlementRoutes })(
     testUsageSettlementContract,
   );

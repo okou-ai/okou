@@ -14,6 +14,11 @@ import {
   ComposerCreateVideoModelPicker,
   ComposerSelectedTask,
 } from "./composer-create.tsx";
+import {
+  ComposerAddMenu,
+  type ComposerAddMenuGroup,
+} from "./composer-add-menu.tsx";
+import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -951,11 +956,18 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
 }
 
 /**
- * Soft, cool-tinted card shadow matching the home chat composer
- * (`--okou-card-shadow`). The token is scoped to `.okou-app`, but the template
- * picker renders through a Base UI portal on `document.body` — outside that
- * scope — so the value is inlined here instead of referencing the CSS var.
- * Replaces Tailwind `shadow-sm`, whose hard black tint reads muddy on white.
+ * Soft, cool-tinted card shadow for the template picker. It reads as the home
+ * chat composer's elevation but is not that value: the blue-grey `220 12% 50%`
+ * here is a different tint from `--okou-card-shadow`'s warm `30 6% 45%`, and it
+ * carries slightly less alpha. Replaces Tailwind `shadow-sm`, whose hard black
+ * tint reads muddy on white.
+ *
+ * The picker renders through a Base UI portal on `document.body`, which used to
+ * force the literal because the token was scoped to `.okou-app`. That scope is
+ * gone — `--okou-card-shadow` is declared at `:root` and would resolve here —
+ * so keeping the literal is now a colour decision rather than a constraint.
+ * Adopting the token would also pick up its gradient-palette override, which
+ * this surface has never had.
  */
 const TEMPLATE_CARD_SHADOW =
   "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";
@@ -6826,32 +6838,28 @@ function selectedComposerTemplateAttachment(
     : undefined;
 }
 
-function TemplatePickerButton({
-  picker,
-  presentationItems,
-  runtime,
-  signals,
-}: {
-  picker: ComposerTemplatePicker;
-  presentationItems: readonly PresentationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
-  signals: ComposerSignals;
-}) {
+/**
+ * Which templates the picker should land on, what to call the affordance that
+ * opens it, and how to warm its covers. The toolbar button and the add menu's
+ * template row are two presentations of one decision, so neither recomputes
+ * the create-mode mapping for itself.
+ */
+function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
-  const mounted = useGet(signals.template.templatePickerMounted$);
-  const open = useGet(signals.template.templatePickerOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
   const introVideoEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.IntroVideo] === true;
-  const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
   const createMode = useGet(signals.create.mode$);
   const creativeVideo = useGet(signals.create.creativeVideo$);
+  const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
+  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
+  const runtime = signals.template.templatePreview;
   const templateMode = creativeVideo
     ? "video"
     : createMode === "image"
       ? "illustration"
       : createMode;
-  const templateLabel =
+  const label =
     templateMode === "illustration"
       ? t(($) => {
           return $.chat.composer.create.addStyle;
@@ -6863,19 +6871,12 @@ function TemplatePickerButton({
         : t(($) => {
             return $.artifacts.templates.template;
           });
-  const setOpen = useSet(signals.template.setTemplatePickerOpen$);
-  const completeClose = useSet(signals.template.completeTemplatePickerClose$);
-  const setReferenceValue = useSet(
-    signals.template.setTemplatePickerReferenceValue$,
-  );
-  const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
-  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
   const selectedCategory =
     templateMode === "presentation"
       ? "slides"
       : (templateMode ??
         resolveTemplatePickerCategory(category, introVideoEnabled));
-  const prewarmPicker = () => {
+  const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,
       initialTemplatePreviewImageUrlsForCategory({
@@ -6885,72 +6886,106 @@ function TemplatePickerButton({
       templatePreviewPrewarmImageCountForCategory(selectedCategory),
     );
   };
+  const open = () => {
+    prewarm();
+    openTemplatePicker({ kind: "insert", category: selectedCategory });
+  };
+  return { label, prewarm, open };
+}
 
+function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
+  const { label, prewarm, open } = useTemplatePickerTrigger(signals);
   return (
-    <>
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={templateLabel}
-              aria-pressed={false}
-              onPointerEnter={prewarmPicker}
-              onFocus={prewarmPicker}
-              onPointerDown={prewarmPicker}
-              onClick={() => {
-                prewarmPicker();
-                openTemplatePicker({
-                  kind: "insert",
-                  category: selectedCategory,
-                });
-              }}
-            >
-              {/* The label stays in the tooltip and the accessible name; the
-                  row beside it is all icons, and one worded control in it read
-                  as a different kind of thing. */}
-              <SwatchBook size={18} aria-hidden="true" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {templateLabel}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      {mounted && (
-        <TemplatePickerDialog
-          value={referenceValue ?? undefined}
-          onChange={picker.onChange}
-          open={open}
-          onClose={() => {
-            setOpen(false);
-          }}
-          onCloseComplete={() => {
-            setReferenceValue(null);
-            completeClose();
-          }}
-          presentationItems={presentationItems}
-          runtime={runtime}
-          signals={signals}
-        />
-      )}
-    </>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            iconSize="md"
+            className="shrink-0"
+            aria-label={label}
+            aria-pressed={false}
+            onPointerEnter={prewarm}
+            onFocus={prewarm}
+            onPointerDown={prewarm}
+            onClick={open}
+          >
+            {/* The label stays in the tooltip and the accessible name; the
+                row beside it is all icons, and one worded control in it read
+                as a different kind of thing. */}
+            <SwatchBook size={18} aria-hidden="true" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * Mounted independently of the button that opens it: the slash panel and an
+ * inline template chip's edit action reach the same dialog, so hiding the
+ * toolbar button must not take the dialog with it.
+ */
+function TemplatePickerDialogSlot({
+  picker,
+  presentationItems,
+  runtime,
+  signals,
+}: {
+  picker: ComposerTemplatePicker;
+  presentationItems: readonly PresentationTemplateItem[];
+  runtime: TemplatePreviewRuntime;
+  signals: ComposerSignals;
+}) {
+  const mounted = useGet(signals.template.templatePickerMounted$);
+  const open = useGet(signals.template.templatePickerOpen$);
+  const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
+  const setOpen = useSet(signals.template.setTemplatePickerOpen$);
+  const completeClose = useSet(signals.template.completeTemplatePickerClose$);
+  const setReferenceValue = useSet(
+    signals.template.setTemplatePickerReferenceValue$,
+  );
+  if (!mounted) {
+    return null;
+  }
+  return (
+    <TemplatePickerDialog
+      value={referenceValue ?? undefined}
+      onChange={picker.onChange}
+      open={open}
+      onClose={() => {
+        setOpen(false);
+      }}
+      onCloseComplete={() => {
+        setReferenceValue(null);
+        completeClose();
+      }}
+      presentationItems={presentationItems}
+      runtime={runtime}
+      signals={signals}
+    />
   );
 }
 
 function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
   const picker = useComposerTemplatePicker(signals);
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
   return (
-    <TemplatePickerButton
-      picker={picker}
-      presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
-      runtime={signals.template.templatePreview}
-      signals={signals}
-    />
+    <>
+      {!addMenuEnabled && <TemplatePickerButton signals={signals} />}
+      <TemplatePickerDialogSlot
+        picker={picker}
+        presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
+        runtime={signals.template.templatePreview}
+        signals={signals}
+      />
+    </>
   );
 }
 
@@ -6988,14 +7023,25 @@ function CreateWorkflowPromptButton({
   );
 }
 
-function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
+/** Turns the draft into a workflow prompt; a menu row once the add menu owns it. */
+function useCreateWorkflowPrompt(signals: ComposerSignals) {
   const createWorkflowPrompt = useSet(signals.workflow.createWorkflowPrompt$);
   const pageSignal = useGet(pageSignal$);
+  return () => {
+    detach(createWorkflowPrompt(pageSignal), Reason.DomCallback);
+  };
+}
+
+function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
+  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
+  if (addMenuEnabled) {
+    return null;
+  }
   return (
     <CreateWorkflowPromptButton
-      onCreateWorkflowPrompt={() => {
-        detach(createWorkflowPrompt(pageSignal), Reason.DomCallback);
-      }}
+      onCreateWorkflowPrompt={onCreateWorkflowPrompt}
     />
   );
 }
@@ -7238,7 +7284,7 @@ function AddConnectorsDialog({
       <DialogContent
         ref={registerConnectionDialog}
         maxWidth="2xl"
-        contentClassName="okou-app flex flex-col"
+        contentClassName="flex flex-col"
         aria-describedby={undefined}
       >
         <DialogHeader className="shrink-0">
@@ -9064,6 +9110,74 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  );
+}
+
+/**
+ * Exactly the three toolbar buttons the `+` replaces, in their old left-to-right
+ * order. The rule is separate because the first two add content to the message
+ * while the third rewrites the draft into a workflow prompt.
+ *
+ * Starting a presentation, image, video, website or visualization deliberately
+ * stays out: the task chips sit directly under the composer and already reach
+ * every one of them in a single click, so a second copy behind the `+` would be
+ * the longer route to the same place.
+ */
+function useComposerAddMenuGroups(
+  signals: ComposerSignals,
+): readonly ComposerAddMenuGroup[] {
+  const { t } = useTranslation();
+  const fileInput = useGet(signals.draft.composerFileInput$);
+  const template = useTemplatePickerTrigger(signals);
+  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
+  return [
+    [
+      {
+        id: "attach",
+        Icon: Paperclip,
+        label: t(($) => {
+          return $.chat.attachments.attach;
+        }),
+        onSelect: () => {
+          fileInput?.click();
+        },
+      },
+      {
+        id: "template",
+        Icon: SwatchBook,
+        label: template.label,
+        onSelect: template.open,
+        onPrewarm: template.prewarm,
+      },
+    ],
+    [
+      {
+        id: "workflow",
+        Icon: Route,
+        label: t(($) => {
+          return $.chat.composer.createWorkflow;
+        }),
+        onSelect: onCreateWorkflowPrompt,
+      },
+    ],
+  ];
+}
+
+/**
+ * Split from the switch below so the paperclip path never subscribes to the
+ * template picker's signals just to build rows it will not render.
+ */
+function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
+  return <ComposerAddMenu groups={useComposerAddMenuGroups(signals)} />;
+}
+
+function ComposerAddSlot({ signals }: { signals: ComposerSignals }) {
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
+  return addMenuEnabled ? (
+    <ComposerAddMenuSlot signals={signals} />
+  ) : (
+    <ComposerAttachButton signals={signals} />
   );
 }
 
@@ -10895,7 +11009,7 @@ function ComposerFooter({
                 narrowVideoGap,
               )}
             >
-              <ComposerAttachButton signals={signals} />
+              <ComposerAddSlot signals={signals} />
               <ComposerTemplatePickerSlot signals={signals} />
               <ComposerWorkflowPromptSlot signals={signals} />
               <ComposerConnectorsSlot
@@ -10903,6 +11017,19 @@ function ComposerFooter({
                 actions={connectorActions}
               />
             </div>
+            {/*
+              The video spec sits beside the connectors, at the head of the
+              controls that act on the run rather than on the message, and on
+              the same line as the model it is resolved against.
+
+              It is a sibling of the icon row rather than a member of it: below
+              640px this group is `display: contents`, so the chip reaches the
+              footer grid directly and its own `col-span-2 row-start-1 w-full`
+              gives it a full-width first row instead of competing with four
+              icons for a 344px line. Nested inside the row, those placements
+              would resolve against a flex box and do nothing.
+            */}
+            <ComposerVideoOptionsChip signals={signals} />
           </div>
           <div
             className={cn(

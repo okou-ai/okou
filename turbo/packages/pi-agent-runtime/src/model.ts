@@ -20,13 +20,11 @@ import type {
 import { clampThinkingLevel } from "@earendil-works/pi-ai";
 
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
-import { preserveProviderErrorStatus } from "./provider-error-body";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
 } from "./stream-options";
-import { guardPiUpstreamErrorBody } from "./upstream-error-body";
 
 const PI_AGENT_USER_AGENT = "okou-pi-agent/1.0";
 
@@ -73,6 +71,36 @@ function isCodexResponsesModel(
 }
 
 function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  // pi-ai 0.85.1 predates V4.1. These exact identities use the provider
+  // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
+  if (
+    (provider === "deepseek" &&
+      (model === "deepseek-flash" || model === "deepseek-v4.1-flash")) ||
+    (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash")
+  ) {
+    return {
+      id: model,
+      name: "DeepSeek V4.1 Flash",
+      provider,
+      api: "openai-responses",
+      baseUrl:
+        provider === "deepseek"
+          ? "https://api.deepseek.com"
+          : "https://openrouter.ai/api/v1",
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: "low",
+        medium: null,
+        high: "high",
+        max: "max",
+      },
+      input: ["text", "image"],
+      contextWindow: 1_048_576,
+      maxTokens: 384_000,
+      cost: { input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0 },
+    };
+  }
   return providerModels(provider).find((candidate) => {
     return candidate.id === model;
   });
@@ -315,15 +343,9 @@ export function piAgentStreamForConfig(
     const start = (fetch: NonNullable<PiAgentStreamOptions["fetch"]>) => {
       // Observe transport evidence before a body guard can consume or reject it.
       // Every public route still drops markup and bounds opaque gateway errors.
-      const boundaryFetch = preserveProviderErrorStatus(
-        guardPiUpstreamErrorBody(fetch),
-      );
       const responseOptions = {
         ...configuredOptions,
-        fetch: observePiResponseStatus(
-          boundaryFetch,
-          configuredOptions.onObservedResponseStatus,
-        ),
+        fetch,
       };
       if (config.dialect === "openai-responses") {
         if (!isResponsesModel(model)) {
@@ -349,10 +371,15 @@ export function piAgentStreamForConfig(
         responseOptions,
       );
     };
-    const fetch = configuredOptions.fetch ?? globalThis.fetch;
-    return config.dialect === "openai-codex-responses"
-      ? streamWithModelRequestDiagnostics(start, fetch)
-      : start(fetch);
+    const fetch = observePiResponseStatus(
+      configuredOptions.fetch ?? globalThis.fetch,
+      configuredOptions.onObservedResponseStatus,
+    );
+    return streamWithModelRequestDiagnostics(
+      start,
+      fetch,
+      configuredOptions.signal,
+    );
   };
 }
 

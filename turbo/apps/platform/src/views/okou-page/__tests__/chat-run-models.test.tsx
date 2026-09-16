@@ -61,6 +61,16 @@ function installRecoverySource(source: NonNullable<GetRunResponse["source"]>) {
   });
 }
 
+async function openRecoveryDetails(): Promise<HTMLElement> {
+  const card = await screen.findByTestId("assistant-error-recovery");
+  const trigger = queryButton("View details", card);
+  if (!trigger) {
+    throw new Error("Recovery details are unavailable");
+  }
+  click(trigger);
+  return screen.findByRole("dialog");
+}
+
 function configureModelPolicies(
   models: readonly SupportedRunModel[],
   options: {
@@ -456,7 +466,7 @@ test("A Codex capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -490,7 +500,7 @@ test("A structured capacity failure offers recovery despite generic provider tex
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(queryButton("Try again", recovery)).toBeVisible();
   expect(recovery).not.toHaveTextContent(providerError);
@@ -572,9 +582,11 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent("Cette exécution n’a pas pu se terminer");
     expect(card).toHaveTextContent(expected);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -620,13 +632,21 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
     expect(card).toHaveTextContent(action);
-    const link = queryAllByRoleFast("link", card).find((candidate) => {
-      return candidate.textContent === url;
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    const link = await waitFor(() => {
+      const candidate = queryAllByRoleFast("link", details).find((element) => {
+        return element.textContent === url;
+      });
+      if (!candidate) {
+        throw new Error("Localized guidance link is unavailable");
+      }
+      return candidate;
     });
     expect(link).toHaveAttribute("href", url);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -664,9 +684,11 @@ test.each([
     await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -723,8 +745,10 @@ test.each([
     const card = screen.getByRole("status");
     expect(card).toHaveTextContent(title);
     expect(card).toHaveTextContent(description);
-    expect(queryButton("Réessayer", card)).toBeInTheDocument();
-    expect(within(card).getByRole("combobox")).toBeInTheDocument();
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).toBeInTheDocument();
+    expect(within(details).getByRole("combobox")).toBeInTheDocument();
   },
 );
 
@@ -769,7 +793,7 @@ test("A Claude Code capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -832,7 +856,7 @@ test("Recover from a personal model account limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Codex limit reached");
   expect(recovery).toHaveTextContent(/resets/iu);
   expect(within(recovery).getByRole("combobox")).toBeVisible();
@@ -863,7 +887,7 @@ test("Recover when a model is at capacity", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   await expect(
@@ -962,6 +986,7 @@ test.each([false, true])(
       },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         "This run used your personal subscription: original-a@example.com.",
@@ -1027,6 +1052,7 @@ test.each(["unknown", "unavailable"] as const)(
       featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         status === "unknown"
@@ -1106,12 +1132,14 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
   });
   await readyChat();
+  await openRecoveryDetails();
   click(await findButton("Reset and try again"));
   await expect(
     screen.findByText("This recovery endpoint is unavailable."),
   ).resolves.toBeInTheDocument();
   expect(settingsResets).toStrictEqual([]);
   expect(sent).toStrictEqual([]);
+  click(await findButton("Close"));
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
 });
 
@@ -1163,12 +1191,17 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   await waitFor(() => {
     expect(reads).toStrictEqual([RUN_A]);
   });
+  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
   detailGate.resolve();
   await expect(
     screen.findByText("Codex limit reached"),
   ).resolves.toBeInTheDocument();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(reads).toStrictEqual([RUN_A]);
+  await openRecoveryDetails();
+  expect(
+    queryButton("Try again", await screen.findByRole("dialog")),
+  ).toBeEnabled();
 });
 
 test("Continue a run that reached its execution time limit", async () => {
@@ -1193,7 +1226,7 @@ test("Continue a run that reached its execution time limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1235,7 +1268,7 @@ test("Continue a run classified by a structured execution timeout reason", async
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1302,7 +1335,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   ).resolves.toBeVisible();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(queryButton("Continue")).toBeNull();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   expect(
@@ -1316,6 +1349,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);
   expect(sentModels).toHaveLength(0);
 
+  click(await findButton("Close"));
   await sendText("Try a new instruction with Luna");
 
   await expect(

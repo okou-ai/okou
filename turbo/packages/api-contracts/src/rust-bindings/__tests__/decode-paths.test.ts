@@ -16,6 +16,7 @@ const expectedBindings = [
   "runners::realtime::token::RESPONSE",
   "runners::runs::by_run_id::active_inputs::deliveries::by_delivery_id::receipt::RESPONSE",
   "runners::runs::by_run_id::active_inputs::reserve::RESPONSE",
+  "runners::runs::by_run_id::cancellation::RESPONSE",
   "runners::runs::by_run_id::connector_runtime::sync::RESPONSE",
 ] as const;
 

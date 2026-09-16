@@ -27,11 +27,17 @@ adaptation uses `createDeferredPromise`; it does not justify a file exemption.
 Within ESLint's application scope, `new AbortController` is reserved for
 `signals/utils.ts`, the browser polyfill, and the shared test context that owns
 the root test lifetime. Individual tests inherit `context.signal` or use a
-stable `resetSignal()` command. `createChildAbortController()` is prohibited;
-existing calls carry targeted `ccstate/no-create-child-abort-controller`
-suppressions until they migrate to the signal hierarchy.
+stable `resetSignal()` command. The `ccstate/no-create-child-abort-controller`
+rule remains enabled as an error to prevent reintroducing the removed
+imperative ownership helper. No migration suppressions remain.
 
-Polling and timed retries use `setLoop`. Do not implement a loop containing
+Polling and timed retries use the shared loop primitives: `setLoop` starts an
+owner-scoped daemon, while `waitLoopUntil` waits for completion. The Ably
+counterparts are `setAbly*Loop$` and `waitAbly*LoopUntil$`. They use
+`setDaemon(operation, signal)` in `signals/utils.ts`, the only definition site
+that may detach background work inside signals. Explicitly background startup
+flows can use `setDaemon` directly; finite command composition stays awaited.
+Feature commands pass their real owner signal and do not detach starters again. Do not implement a loop containing
 `sleep`, `delay`, or a timer, including through an import alias. Tests
 should await an event or operation completion instead. Testing Library's
 observable UI waits remain supported. Paging, stream reads, synchronous
@@ -40,15 +46,15 @@ iteration, and a loop waiting for an explicit event are not timed polling.
 The existing global ESLint exclusions for `src/mocks` and most top-level
 `src/__tests__` files also exclude those files from these rules. They still
 follow the polling policy; their current loops iterate data or dispatch events.
-`src/__tests__/authentication-startup.test.tsx` remains in scope so its child
-signals carry validated `ccstate/no-create-child-abort-controller` debt markers.
+`src/__tests__/authentication-startup.test.tsx` remains in scope for lifecycle
+enforcement.
 Raw primitives remain in the Web Animations, MSW, and Ably adapters that model
 external browser/protocol lifetimes. These broad exclusions are separate from
 the explicit primitive exceptions above.
 
-The multipart upload retry uses `setLoop` with its existing bounded attempt
-count and exponential delay. Its terminal error must propagate, so the helper's
-additional transient-error retries are disabled for that operation.
+Operations whose terminal error or result controls subsequent work use the
+waiting entry point. Preserve each operation's existing retry policy when
+selecting an entry point.
 
 ## Active module state
 

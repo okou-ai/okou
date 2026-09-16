@@ -1727,3 +1727,12 @@ export function resetApiTestMocks(): void {
   apiTestMocks.sentry.init.mockReset();
   apiTestMocks.sentry.nativeNodeFetchIntegration.mockReset();
 }
+
+/** Exercise the cost observation's best-effort boundary without exposing logs. */
+export function mockStage1CostLogFailure(): void {
+  apiTestMocks.axiomLogging.info.mockImplementation((message: unknown) => {
+    if (message === "Pi memory Stage 1 cost observed") {
+      throw new Error("Controlled cost transport failure");
+    }
+  });
+}

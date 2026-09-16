@@ -20,7 +20,10 @@ import { slackConnectRoutes } from "../slack-connect";
 import { slackOauthRoutes } from "../slack-oauth";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
-import { readGetStartedStatus } from "./helpers/get-started";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -240,8 +243,8 @@ beforeEach(() => {
 });
 
 test("installation grants bot and user scopes and connects the OAuth account", async () => {
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
   const current = actor();
+  await setGetStartedEnabled(context, current);
   const authorization = await startInstall();
   expect(authorization.origin).toBe("https://slack.com");
   expect(parameter(authorization, "scope").split(",")).toContain(
@@ -607,8 +610,8 @@ test("a Slack connect OAuth callback recovers a failed channel confirmation by D
 });
 
 test("an admin binds an anonymously installed workspace through user OAuth", async () => {
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
   const current = actor();
+  await setGetStartedEnabled(context, current);
   const anonymous = await accept(
     clients()(slackOauthContract).install({ query: {} }),
     [307],

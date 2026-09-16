@@ -356,10 +356,10 @@ export function createVoiceDraftTranscriptionSignals(
 
   // This observer starts newly appended computeds and owns their background
   // lifetime. Request ordering is entirely expressed by predecessor dependencies.
-  const watch$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const watch$ = command(({ get, set }, signal: AbortSignal) => {
     let wake = createDeferredPromise<void>(signal);
     set(wake$, wake);
-    await setLoop(
+    setLoop(
       async (loopSignal) => {
         const notified = Promise.allSettled([wake.promise]);
         if (get(segments$).length > 0) {

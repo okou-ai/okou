@@ -65,3 +65,20 @@ def exchange(directory: Path, request: dict[str, object] | None = None) -> dict[
             frame(json.dumps(status_request() if request is None else request).encode())
         )
         return read_reply(connection)
+
+
+def log_flush_request(
+    path: Path, run_id: str, generation: str = "generation-1"
+) -> dict[str, object]:
+    return status_request(generation) | {
+        "method": "logs.flush",
+        "params": {"runId": run_id, "path": str(path)},
+    }
+
+
+def registry_apply_request(digest: str, generation: str = "generation-1") -> dict[str, object]:
+    return status_request(generation) | {"method": "registry.apply", "params": {"digest": digest}}
+
+
+def registry_status_request(generation: str = "generation-1") -> dict[str, object]:
+    return status_request(generation) | {"method": "registry.status"}

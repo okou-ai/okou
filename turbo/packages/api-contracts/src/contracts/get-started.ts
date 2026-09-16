@@ -24,6 +24,7 @@ export const getStartedClaimStatusSchema = z.enum([
 export type GetStartedClaimStatus = z.infer<typeof getStartedClaimStatusSchema>;
 
 export const GET_STARTED_REWARD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const GET_STARTED_REWARDS_CHANGED_EVENT = "getStartedRewardsChanged";
 export const GET_STARTED_REWARDS = {
   connector: { amount: 100, limit: null, target: "user" },
   slack: { amount: 2000, limit: 1, target: "org" },

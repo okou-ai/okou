@@ -49,7 +49,7 @@ import {
   mountSshPrivateKey$,
   mountSshForm$,
   sshPrivateKeyFileResult$,
-  sshCloudflareEnabled$,
+  sshEnabled$,
   sshCloudflareConfigs$,
   sshTransportEditor$,
   chooseSshTransport$,
@@ -93,7 +93,7 @@ function EndpointFields({
   readonly active: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(sshCloudflareEnabled$);
+  const enabled = useGet(sshEnabled$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshTransport$);
   const protectedHost = editor.mode === "cloudflare_access";
@@ -643,7 +643,7 @@ function SshFormActions({
 }
 
 function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
-  const enabled = useGet(sshCloudflareEnabled$);
+  const enabled = useGet(sshEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const transport = useGet(sshTransportEditor$);
   const conflict = useGet(sshConflict$);
@@ -838,7 +838,7 @@ function HostCard({
   const { t } = useTranslation();
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
-  const enabled = useGet(sshCloudflareEnabled$);
+  const enabled = useGet(sshEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const configId =
     "transport" in connection ? connection.transport.configId : null;
@@ -1148,7 +1148,7 @@ export function SshConnectorPage() {
   const { t } = useTranslation();
   const view = useGet(sshView$);
   const changeView = useSet(changeSshView$);
-  const accessEnabled = useGet(sshCloudflareEnabled$);
+  const accessEnabled = useGet(sshEnabled$);
   return (
     <DetailPageShell>
       <DetailPageBreadcrumbBar>

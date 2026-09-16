@@ -313,62 +313,77 @@ describe("Axiom log source field", () => {
     );
   });
 
-  it("lifts sanitized provider-unavailable fields into the Axiom event root", () => {
-    const log = logger("provider-unavailable-test");
-    log.error("Clerk read unavailable during scrape authentication", {
-      type: "provider_unavailable",
-      provider: "clerk",
-      provider_status: 521,
-      failure_class: "transient_read_exhausted",
-      method: "POST",
-      route: "/api/scrape",
-    });
-
-    expect(axiomLogging.error).toHaveBeenCalledWith(
-      "Clerk read unavailable during scrape authentication",
-      {
+  it.each([
+    [521, "transient_read_exhausted"],
+    [null, "transport_read_exhausted"],
+  ])(
+    "lifts sanitized provider-unavailable fields for %s / %s",
+    (providerStatus, failureClass) => {
+      const log = logger("provider-unavailable-test");
+      log.error("Clerk read unavailable during scrape authentication", {
         type: "provider_unavailable",
         provider: "clerk",
-        provider_status: 521,
-        failure_class: "transient_read_exhausted",
+        provider_status: providerStatus,
+        failure_class: failureClass,
         method: "POST",
         route: "/api/scrape",
-        context: "provider-unavailable-test",
-        [EVENT]: {
-          source: "api",
+      });
+
+      expect(axiomLogging.error).toHaveBeenCalledWith(
+        "Clerk read unavailable during scrape authentication",
+        {
           type: "provider_unavailable",
           provider: "clerk",
-          provider_status: 521,
-          failure_class: "transient_read_exhausted",
+          provider_status: providerStatus,
+          failure_class: failureClass,
           method: "POST",
           route: "/api/scrape",
+          context: "provider-unavailable-test",
+          [EVENT]: {
+            source: "api",
+            type: "provider_unavailable",
+            provider: "clerk",
+            provider_status: providerStatus,
+            failure_class: failureClass,
+            method: "POST",
+            route: "/api/scrape",
+          },
         },
-      },
-    );
-  });
+      );
+    },
+  );
 
-  it("does not lift malformed provider-unavailable fields", () => {
-    const log = logger("malformed-provider-unavailable-test");
-    log.error("provider error", {
-      type: "provider_unavailable",
-      provider: "clerk",
-      provider_status: "521",
-      failure_class: "transient_read_exhausted",
-      method: "POST",
-      route: "/api/scrape",
-    });
+  it.each([
+    ["521", "transient_read_exhausted"],
+    [null, "transient_read_exhausted"],
+    [521, "transport_read_exhausted"],
+    [undefined, "transport_read_exhausted"],
+    [404, "transient_read_exhausted"],
+  ])(
+    "does not lift invalid provider status/class pair %s / %s",
+    (providerStatus, failureClass) => {
+      const log = logger("malformed-provider-unavailable-test");
+      log.error("provider error", {
+        type: "provider_unavailable",
+        provider: "clerk",
+        provider_status: providerStatus,
+        failure_class: failureClass,
+        method: "POST",
+        route: "/api/scrape",
+      });
 
-    expect(axiomLogging.error).toHaveBeenCalledWith("provider error", {
-      type: "provider_unavailable",
-      provider: "clerk",
-      provider_status: "521",
-      failure_class: "transient_read_exhausted",
-      method: "POST",
-      route: "/api/scrape",
-      context: "malformed-provider-unavailable-test",
-      [EVENT]: { source: "api" },
-    });
-  });
+      expect(axiomLogging.error).toHaveBeenCalledWith("provider error", {
+        type: "provider_unavailable",
+        provider: "clerk",
+        provider_status: providerStatus,
+        failure_class: failureClass,
+        method: "POST",
+        route: "/api/scrape",
+        context: "malformed-provider-unavailable-test",
+        [EVENT]: { source: "api" },
+      });
+    },
+  );
 
   it("lifts desktop update manifest outcome fields into the Axiom event root", () => {
     const log = logger("desktop-update-manifest-test");

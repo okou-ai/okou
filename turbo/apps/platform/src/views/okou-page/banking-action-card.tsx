@@ -25,6 +25,7 @@ import { useTranslation } from "react-i18next";
 
 import { i18n } from "../../i18n/index.ts";
 import { ChatCard } from "./components/chat-card.tsx";
+import { ChatCardDetails } from "./components/chat-card-details.tsx";
 import type {
   BankingCardUiState,
   BankingSignals,
@@ -57,7 +58,7 @@ const BANKING_GRANT_DURATIONS: readonly BankingGrantDuration[] = [
   "30d",
 ];
 
-const BANKING_COMPACT_CARD_HEIGHT_CLASS = "h-[136px] @[900px]:h-[88px]";
+const BANKING_CARD_HEIGHT_CLASS = "h-[136px] @[900px]:h-[88px]";
 
 interface BankingCardController {
   readonly status: BankingAccessRequestStatusResponse;
@@ -323,6 +324,17 @@ function useBankingCardController(
 }
 
 export function BankingActionCard({ signals }: { signals: BankingSignals }) {
+  return (
+    <ChatCard
+      data-testid="banking-action-card-shell"
+      className={cn("w-full", BANKING_CARD_HEIGHT_CLASS)}
+    >
+      <BankingActionCardState signals={signals} />
+    </ChatCard>
+  );
+}
+
+function BankingActionCardState({ signals }: { signals: BankingSignals }) {
   const loadable = useLoadable(signals.status$);
   const last = useLastLoadable(signals.status$);
   if (loadable.state === "loading" && last.state !== "hasData") {
@@ -339,20 +351,19 @@ export function BankingActionCard({ signals }: { signals: BankingSignals }) {
         : null;
   return status ? (
     <LoadedBankingActionCard signals={signals} status={status} />
-  ) : null;
+  ) : (
+    <BankingActionCardError signals={signals} />
+  );
 }
 
 function BankingActionCardLoading() {
   return (
-    <ChatCard
+    <div
       data-testid="banking-action-card-loading"
-      className={cn(
-        "flex w-full items-center justify-center p-3",
-        BANKING_COMPACT_CARD_HEIGHT_CLASS,
-      )}
+      className={cn("flex h-full w-full items-center justify-center p-3")}
     >
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-    </ChatCard>
+    </div>
   );
 }
 
@@ -360,12 +371,9 @@ function BankingActionCardError({ signals }: { signals: BankingSignals }) {
   const refresh = useSet(signals.refresh$);
   const { t } = useTranslation();
   return (
-    <ChatCard
+    <div
       data-testid="banking-action-card-error"
-      className={cn(
-        "flex w-full items-center gap-3 p-3",
-        BANKING_COMPACT_CARD_HEIGHT_CLASS,
-      )}
+      className={cn("flex h-full w-full items-center gap-3 p-3")}
     >
       <AlertCircle className="h-5 w-5 shrink-0 text-destructive" />
       <div className="min-w-0 flex-1 line-clamp-3 text-sm leading-5 text-muted-foreground">
@@ -378,7 +386,7 @@ function BankingActionCardError({ signals }: { signals: BankingSignals }) {
           return $.chat.banking.retry;
         })}
       </Button>
-    </ChatCard>
+    </div>
   );
 }
 
@@ -389,33 +397,53 @@ function LoadedBankingActionCard({
   readonly signals: BankingSignals;
   readonly status: BankingAccessRequestStatusResponse;
 }) {
+  const { t } = useTranslation();
   const controller = useBankingCardController(signals, status);
-  const compact =
-    controller.ui.localError === null &&
-    (controller.pending || controller.status.connection === null);
+  const summary =
+    controller.ui.localError ??
+    (controller.pending
+      ? t(($) => {
+          return $.chat.banking.waiting;
+        })
+      : controller.activeGrant &&
+          controller.grantMatchesRequest &&
+          controller.activeGrantAccountCount > 0
+        ? t(
+            ($) => {
+              return $.chat.banking.active;
+            },
+            {
+              count: controller.activeGrantAccountCount,
+            },
+          )
+        : signals.reason);
   return (
-    <ChatCard
+    <div
       data-testid="banking-action-card"
-      className={cn(
-        "w-full p-3 text-left",
-        compact &&
-          cn(
-            "flex flex-col justify-between gap-3 overflow-hidden @[900px]:flex-row @[900px]:items-center",
-            BANKING_COMPACT_CARD_HEIGHT_CLASS,
-          ),
-      )}
+      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-left @[900px]:flex-row @[900px]:items-center"
     >
       {controller.pending ? (
         <span ref={controller.pendingSessionPollerRef} hidden />
       ) : null}
       <BankingCardHeader
         agentName={status.agent.name}
-        reason={signals.reason}
-        compact={compact}
+        reason={summary}
+        compact
       />
-      <BankingCardErrorMessage message={controller.ui.localError} />
-      <BankingCardContent controller={controller} compact={compact} />
-    </ChatCard>
+      <ChatCardDetails
+        title={t(($) => {
+          return $.chat.banking.title;
+        })}
+      >
+        <BankingCardHeader
+          agentName={status.agent.name}
+          reason={signals.reason}
+          compact={false}
+        />
+        <BankingCardErrorMessage message={controller.ui.localError} />
+        <BankingCardContent controller={controller} compact={false} />
+      </ChatCardDetails>
+    </div>
   );
 }
 
@@ -443,7 +471,7 @@ function BankingCardHeader({
         <div
           className={cn(
             "mt-0.5 text-sm leading-5 text-muted-foreground",
-            compact ? "truncate" : "line-clamp-2",
+            compact && "truncate",
           )}
         >
           <span className="font-medium text-foreground/80">{agentName}</span>

@@ -16,6 +16,7 @@ fn containment_pair() -> (WorkloadContainment, UnixStream) {
         placement: Arc::new(tempfile::tempfile().unwrap().into()),
         workload_path: Arc::new(PathBuf::from("/unused")),
         tool_placement_endpoint: Arc::from("test-tool-endpoint"),
+        runtime_progress_at: Arc::default(),
         evidence_stream: Arc::new(Mutex::new(Some(EvidenceStream::Bootstrap(client)))),
     };
     (containment, peer)
@@ -366,4 +367,26 @@ async fn metrics_records_evidence_and_cancels_an_outstanding_capture() {
         fs::read_to_string(paths.metrics_log_file()).unwrap(),
         contents
     );
+}
+
+#[tokio::test]
+async fn native_progress_is_carried_only_on_the_owned_evidence_exchange() {
+    let (containment, peer) = containment_pair();
+    let mut peer = async_peer(peer);
+    containment.record_runtime_progress(20);
+    containment.record_runtime_progress(10);
+    containment.record_runtime_progress(u64::MAX);
+    let evidence = fixture();
+    let response = frame(&serde_json::to_vec(&evidence).unwrap());
+    let capture = containment.oom_evidence(CaptureReason::Sample);
+    let serve = async {
+        assert_eq!(peer.read_u8().await.unwrap(), 3);
+        assert_eq!(peer.read_u64().await.unwrap(), 20);
+        peer.write_all(&response).await.unwrap();
+    };
+    let (captured, ()) = tokio::join!(capture, serve);
+    assert_eq!(captured.unwrap(), evidence);
+    // The producer owns the proof: local progress never fabricates a proof in
+    // the returned envelope if root control has not confirmed its interval.
+    assert!(!evidence.proves_contained_tool_oom());
 }

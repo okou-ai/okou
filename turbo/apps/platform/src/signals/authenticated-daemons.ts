@@ -1,9 +1,9 @@
-import { runGetStartedRewards$ } from "./okou-page/get-started.ts";
+import { setupGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { setAuthenticatedIdentity$ } from "./auth-context.ts";
-import { subscribeEventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
+import { initializeChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupModelPolicyRealtime$ } from "./external/model-policy-realtime.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
@@ -24,7 +24,7 @@ import {
 import { setupMorningBriefRealtime$ } from "./okou-page/settings/morning-brief-preference.ts";
 import { initializeUserTimezone$ } from "./okou-page/settings/user-preferences.ts";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
-import { waitForOperation } from "./utils.ts";
+import { setDaemon, waitForOperation } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
   async (
@@ -37,16 +37,14 @@ const runAppRealtimeDaemons$ = command(
     if (!bridge) {
       return;
     }
-    await Promise.all([
-      set(runGetStartedRewards$, signal),
-      set(subscribePermissionUpdate$, signal),
-      set(setupBillingRealtime$, signal),
-      set(setupUserPreferenceRealtime$, signal),
-      set(setupModelPolicyRealtime$, signal),
-      set(setupMorningBriefRealtime$, signal),
-      set(subscribeCustomConnectorListChanged$, signal),
-      set(subscribeSshChanged$, signal),
-    ]);
+    set(setupGetStartedRewards$, signal);
+    set(subscribePermissionUpdate$, signal);
+    set(setupBillingRealtime$, signal);
+    set(setupUserPreferenceRealtime$, signal);
+    set(setupModelPolicyRealtime$, signal);
+    set(setupMorningBriefRealtime$, signal);
+    set(subscribeCustomConnectorListChanged$, signal);
+    set(subscribeSshChanged$, signal);
   },
 );
 
@@ -92,20 +90,22 @@ const initializeAuthenticatedRealtime$ = command(
 );
 
 /** Run user-scoped application realtime services for the root lifecycle. */
-export const runAuthenticatedRealtime$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    const initialization = set(initializeAuthenticatedRealtime$, signal);
-    // Install the catalog's operation before authentication or bridge setup can
-    // settle, so every startup failure reaches its consumers.
-    const templates = set(
-      subscribePresentationTemplatesChanged$,
-      initialization,
-      signal,
-    );
-    await Promise.all([
-      templates,
-      set(runAppRealtimeDaemons$, initialization, signal),
-    ]);
+export const setupAuthenticatedRealtime$ = command(
+  ({ set }, signal: AbortSignal): void => {
+    setDaemon(async (ownerSignal) => {
+      const initialization = set(initializeAuthenticatedRealtime$, ownerSignal);
+      // Claim the catalog's readiness before authentication or bridge setup can
+      // settle, so startup failures remain visible to its consumers.
+      const templates = set(
+        subscribePresentationTemplatesChanged$,
+        initialization,
+        ownerSignal,
+      );
+      await Promise.all([
+        templates,
+        set(runAppRealtimeDaemons$, initialization, ownerSignal),
+      ]);
+    }, signal);
   },
 );
 
@@ -122,7 +122,7 @@ export const setupAuthenticatedBootstrapData$ = command(
     await get(bridgeConnected$);
     signal.throwIfAborted();
     await Promise.all([
-      set(subscribeEventDrivenChatThreads$, signal),
+      set(initializeChatThreadEventSource$, signal),
       set(initializeUserTimezone$, signal),
     ]);
   },

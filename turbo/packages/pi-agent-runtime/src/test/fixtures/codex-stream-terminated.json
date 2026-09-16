@@ -1,0 +1,25 @@
+{
+  "role": "assistant",
+  "api": "openai-codex-responses",
+  "provider": "openai-codex",
+  "model": "gpt-5.6-terra",
+  "content": [],
+  "stopReason": "error",
+  "errorMessage": "terminated",
+  "diagnostics": [
+    {
+      "type": "okou_model_request",
+      "details": {
+        "transportAttempts": 1,
+        "httpStatus": 200,
+        "failureReason": "response_connection_lost",
+        "transportFailure": {
+          "phase": "response_body",
+          "signalAborted": false,
+          "errorName": "TypeError",
+          "causeCode": "UND_ERR_RES_CONTENT_LENGTH_MISMATCH"
+        }
+      }
+    }
+  ]
+}

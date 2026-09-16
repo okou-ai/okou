@@ -38,7 +38,13 @@ const rewardsUnavailable = Object.freeze({
 
 const status$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!getStartedRewardsEnabled(auth.orgId)) {
+  const enabled = await getStartedRewardsEnabled(
+    get(db$),
+    auth.orgId,
+    auth.userId,
+  );
+  signal.throwIfAborted();
+  if (!enabled) {
     return rewardsUnavailable;
   }
   const body = await getStartedStatus(get(db$), {
@@ -52,7 +58,13 @@ const status$ = command(async ({ get }, signal: AbortSignal) => {
 
 const checkin$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!getStartedRewardsEnabled(auth.orgId)) {
+  const enabled = await getStartedRewardsEnabled(
+    get(db$),
+    auth.orgId,
+    auth.userId,
+  );
+  signal.throwIfAborted();
+  if (!enabled) {
     return rewardsUnavailable;
   }
   const claim = await set(writeDb$).transaction((tx) => {
@@ -74,7 +86,13 @@ const shareBody$ = bodyResultOf(getStartedContract.submitShare);
 
 const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!getStartedRewardsEnabled(auth.orgId)) {
+  const enabled = await getStartedRewardsEnabled(
+    get(db$),
+    auth.orgId,
+    auth.userId,
+  );
+  signal.throwIfAborted();
+  if (!enabled) {
     return rewardsUnavailable;
   }
   const body = await get(shareBody$);

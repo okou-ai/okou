@@ -3581,28 +3581,10 @@ describe("Official Workflow installations", () => {
     ).toBeTruthy();
   });
 
-  it("projects installed state, guards mutations, and preserves reconfiguration identity", async () => {
-    const {
-      actor,
-      agentId,
-      dailyAutomation,
-      definitionName,
-      headers,
-      installBody,
-      installed,
-      orgId,
-    } = await installOfficialWorkflowLifecycleScenario();
+  it("projects installed Official Workflow state and accepted definition content", async () => {
+    const { dailyAutomation, definitionName, headers, installed, orgId } =
+      await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
-    const automationIds = installed.body.workflow.automations.map(
-      (automation) => {
-        return automation.id;
-      },
-    );
-    const automationThreadById = new Map(
-      installed.body.workflow.automations.map((automation) => {
-        return [automation.id, automation.chatThreadId] as const;
-      }),
-    );
     expect(installed.body.workflow.automations).toHaveLength(3);
     expect(installed.body.definition).toMatchObject({
       name: definitionName,
@@ -3698,7 +3680,11 @@ describe("Official Workflow installations", () => {
       [200],
     );
     expect(customStorage.body.storage_state).toBeNull();
+  });
 
+  it("rejects duplicate Official Workflow installation on the same agent", async () => {
+    const { definitionName, headers, installBody, installed } =
+      await installOfficialWorkflowLifecycleScenario();
     const duplicate = await accept(
       officialClient().install({
         headers,
@@ -3711,6 +3697,20 @@ describe("Official Workflow installations", () => {
       "Official Workflow is already installed on this agent",
     );
 
+    const unchanged = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
+  });
+
+  it("keeps Official installations independent across agents and removes a deleted agent's installation", async () => {
+    const { actor, definitionName, headers, installBody, installed } =
+      await installOfficialWorkflowLifecycleScenario();
+    const firstWorkflowId = installed.body.workflow.id;
     const { agentId: secondAgentId } = await workflowBdd.createAgent(actor);
     let secondAgentDeleted = false;
     onTestFinished(async () => {
@@ -3738,6 +3738,19 @@ describe("Official Workflow installations", () => {
       [404],
     );
 
+    const unchanged = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
+  });
+
+  it("rejects an Official installation when an ordinary workflow owns the agent name", async () => {
+    const { actor, definitionName, headers, installBody, installed } =
+      await installOfficialWorkflowLifecycleScenario();
     const { agentId: ordinaryAgentId } = await workflowBdd.createAgent(actor);
     let ordinaryAgentDeleted = false;
     onTestFinished(async () => {
@@ -3772,6 +3785,20 @@ describe("Official Workflow installations", () => {
     await bdd.deleteAgent(actor, ordinaryAgentId);
     ordinaryAgentDeleted = true;
 
+    const unchanged = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
+  });
+
+  it("rejects ordinary workflow and automation mutations of an Official installation", async () => {
+    const { agentId, dailyAutomation, headers, installed } =
+      await installOfficialWorkflowLifecycleScenario();
+    const firstWorkflowId = installed.body.workflow.id;
     await accept(
       workflowClient().update({
         headers,
@@ -3842,6 +3869,31 @@ describe("Official Workflow installations", () => {
         params: { id: dailyAutomation.id },
       }),
       [409],
+    );
+
+    const unchanged = await accept(
+      installationClient().get({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+      }),
+      [200],
+    );
+    expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
+  });
+
+  it("preserves automation identity and pause state when reconfiguring an Official installation", async () => {
+    const { dailyAutomation, headers, installed } =
+      await installOfficialWorkflowLifecycleScenario();
+    const firstWorkflowId = installed.body.workflow.id;
+    const automationIds = installed.body.workflow.automations.map(
+      (automation) => {
+        return automation.id;
+      },
+    );
+    const automationThreadById = new Map(
+      installed.body.workflow.automations.map((automation) => {
+        return [automation.id, automation.chatThreadId] as const;
+      }),
     );
     const pulseAutomation = installed.body.workflow.automations.find(
       (automation) => {
@@ -8792,22 +8844,19 @@ describe("Official Workflow Run admission", () => {
     ).resolves.toStrictEqual({ items: [], claim: beforeCleanup.claim });
   });
 
-  it("repairs stale reconciling, needs_reconfiguration, and failed admission state", async () => {
-    const { agentId, automation, headers } =
-      await installStaleAdmissionScenario();
-    const runnerGroup = runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const beforeRunFamily = await readAgentRunFamilyCountsFixture(
-      context,
-      agentId,
-    );
+  it.each(["reconciling", "needs_reconfiguration", "failed"] as const)(
+    "repairs stale %s admission state",
+    async (status) => {
+      const { agentId, automation, headers } =
+        await installStaleAdmissionScenario();
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const beforeRunFamily = await readAgentRunFamilyCountsFixture(
+        context,
+        agentId,
+      );
 
-    for (const status of [
-      "reconciling",
-      "needs_reconfiguration",
-      "failed",
-    ] as const) {
       await setOfficialWorkflowAutomationAdmissionStateFixture(
         context,
         automation.id,
@@ -8828,17 +8877,16 @@ describe("Official Workflow Run admission", () => {
         admitted.body.runId,
         `Repaired ${status} admission`,
       );
-    }
-
-    await expect(
-      readAgentRunFamilyCountsFixture(context, agentId),
-    ).resolves.toStrictEqual({
-      run_count: beforeRunFamily.run_count + 3,
-      callback_count: beforeRunFamily.callback_count + 6,
-      runner_job_count: beforeRunFamily.runner_job_count,
-      launch_queue_count: beforeRunFamily.launch_queue_count,
-    });
-  });
+      await expect(
+        readAgentRunFamilyCountsFixture(context, agentId),
+      ).resolves.toStrictEqual({
+        run_count: beforeRunFamily.run_count + 1,
+        callback_count: beforeRunFamily.callback_count + 2,
+        runner_job_count: beforeRunFamily.runner_job_count,
+        launch_queue_count: beforeRunFamily.launch_queue_count,
+      });
+    },
+  );
 
   it("repairs a stale applied fingerprint and reconciles a changed release at admission", async () => {
     const {

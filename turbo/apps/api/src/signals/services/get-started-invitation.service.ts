@@ -43,9 +43,6 @@ export async function revokeGetStartedInvitation(
   db: Db,
   args: { readonly orgId: string; readonly invitationId: string },
 ): Promise<void> {
-  if (!getStartedRewardsEnabled(args.orgId)) {
-    return;
-  }
   await db
     .update(getStartedClaims)
     .set({
@@ -75,9 +72,6 @@ export async function acceptGetStartedInvitation(
     readonly purchaseId?: string;
   },
 ): Promise<void> {
-  if (!getStartedRewardsEnabled(args.orgId)) {
-    return;
-  }
   if (!args.invitationId && !args.getStartedClaimId && !args.purchaseId) {
     return;
   }
@@ -148,7 +142,10 @@ export async function acceptGetStartedInvitation(
       }
       claim = created;
     }
-    if (claim.status === "granted" || claim.status === "ineligible") {
+    if (["granted", "ineligible"].includes(claim.status)) {
+      return;
+    }
+    if (!(await getStartedRewardsEnabled(tx, claim.orgId, claim.actorUserId))) {
       return;
     }
     if (

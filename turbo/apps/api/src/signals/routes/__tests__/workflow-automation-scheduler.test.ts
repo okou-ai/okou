@@ -1,4 +1,7 @@
-import { readGetStartedStatus } from "./helpers/get-started";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 import {
   scopedReviewContract,
   scopedReviewRoutes,
@@ -1267,8 +1270,8 @@ describe("okou workflow automation scheduler", () => {
 });
 
 test("rewards the creator after a scheduled workflow successfully completes", async () => {
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
   const scenario = await setup();
+  await setGetStartedEnabled(context, scenario.actor);
   const automation = await createDueLoopAutomation(scenario, 900);
   const threadId = await executeDueWorkflowAutomations(automation.automationId);
   const run = await onlyWorkflowRunMessage(threadId);

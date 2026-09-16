@@ -41,7 +41,6 @@ const SCHEMA = {
   OKOU_SCRAPE_FIRECRAWL_TOKEN: z.string().min(1).optional(),
   OKOU_WEB_SEARCH_PERPLEXITY_TOKEN: z.string().min(1).optional(),
   OKOU_SOCIAL_SOCIALKIT_TOKEN: z.string().min(1).optional(),
-  GET_STARTED_REWARDS_ROLLOUT: z.enum(["off", "staff", "all"]).default("off"),
   OKOU_FINANCE_APIDOJO_TOKEN: z.string().min(1).optional(),
   OKOU_SEO_DATAFORSEO_LOGIN: z.string().min(1).optional(),
   OKOU_SEO_DATAFORSEO_PASSWORD: z.string().min(1).optional(),

@@ -1,123 +1,133 @@
 import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { describe, expect, it } from "vitest";
+import { http, HttpResponse } from "msw";
+import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 
-import { accept, testContext } from "../../../__tests__/test-context";
+import { testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
-import { featureSwitchesRoutes } from "../feature-switches";
+import { server } from "../../../mocks/server";
+import { createDeferredPromise } from "../../utils";
+import { modelProvidersRoutes } from "../model-providers";
 import {
   createCodexExpiryFixture,
   credentials,
   expectExpiry,
-  routes,
+  expiryResponse,
   upstream,
 } from "./helpers/codex-reset-credit-expiry";
 
 const context = testContext();
 const fixture = createCodexExpiryFixture(context);
 
-async function forEachOwner(
-  userIds: readonly string[],
-  action: (userId: string) => Promise<void>,
-): Promise<void> {
-  const remainingOwners = userIds.values();
-  const results = await Promise.allSettled(
-    Array.from({ length: 8 }, async () => {
-      for (const userId of remainingOwners) {
-        await action(userId);
-      }
-    }),
-  );
-  // Join every worker before advancing the fixture or restoring a session,
-  // including when an owner's request or assertion fails.
-  for (const result of results) {
-    if (result.status === "rejected") {
-      throw result.reason;
-    }
-  }
-}
-
 describe("Codex expiry cache capacity", () => {
-  let prepared: Awaited<ReturnType<typeof prepareOwners>>;
-
-  async function prepareOwners() {
+  it("evicts old identity entries at bounded capacity", async () => {
     const remote = upstream();
     const first = await fixture();
     expectExpiry(await first.list(), remote.expiry);
-    const userIds = Array.from({ length: 129 }, () => {
-      return `user_expiry_${randomUUID()}`;
+    const cached = remote.detailsCalls;
+    expectExpiry(await first.list(), remote.expiry);
+    expect(remote.detailsCalls).toBe(cached);
+    let firstDetails = 0;
+    remote.details = (request) => {
+      if (request.headers.get("chatgpt-account-id") === first.auth.accountId) {
+        firstDetails += 1;
+      }
+      return expiryResponse(remote.expiry);
+    };
+
+    // The global bound includes in-flight entries. Hold real org connections
+    // at their upstream usage response, before unrelated account persistence.
+    const owners = Array.from({ length: 257 }, () => {
+      return { orgId: `org_expiry_${randomUUID()}`, auth: credentials() };
     });
-    const owners = new Set(userIds);
+    const orgIds = new Set(
+      owners.map((owner) => {
+        return owner.orgId;
+      }),
+    );
+    const accountIds = new Set<string>(
+      owners.map((owner) => {
+        return owner.auth.accountId;
+      }),
+    );
+    const startedAccounts = new Set<string>();
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const pressure = new AbortController();
+    const pressureSignal = AbortSignal.any([context.signal, pressure.signal]);
+    server.use(
+      http.get(
+        "https://chatgpt.com/backend-api/wham/usage",
+        async ({ request }) => {
+          const accountId = request.headers.get("chatgpt-account-id");
+          if (accountId && accountIds.has(accountId)) {
+            startedAccounts.add(accountId);
+            if (startedAccounts.size === owners.length) {
+              started.resolve();
+            }
+            await release.promise;
+          }
+          return HttpResponse.json({
+            rate_limit_reset_credits: { available_count: 1 },
+          });
+        },
+      ),
+    );
     context.mocks.clerk.authenticateRequest.mockImplementation((request) => {
       if (!(request instanceof Request)) {
         throw new Error("Expected a Clerk authentication request");
       }
-      const userId = request.headers.get("authorization")?.slice(7);
-      if (!userId || !owners.has(userId)) {
+      const orgId = request.headers.get("authorization")?.slice(7);
+      if (!orgId || !orgIds.has(orgId)) {
         throw new Error("Expected a capacity-test owner token");
       }
       return Promise.resolve({
         isAuthenticated: true,
         toAuth: () => {
-          return { userId, orgId: first.orgId, orgRole: "org:admin" };
+          return { userId: first.userId, orgId, orgRole: "org:admin" };
         },
       });
     });
-    const app = setupApp({
+    const providers = setupApp({
       context,
-      routes: [...routes, ...featureSwitchesRoutes],
-    });
-    const providers = app(personalModelProvidersMainContract);
-    const switches = app(featureSwitchesContract);
-    // Fresh users in this non-staff organization already use legacy bindings.
-    // Verify that public context once instead of writing the same disabled
-    // override for all 129 independent owners.
-    const defaults = await accept(
-      switches.get({ headers: { authorization: `Bearer ${userIds[0]}` } }),
-      [200],
-    );
-    expect(defaults.body.effectiveSwitches).toMatchObject({
-      [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-    });
-    // Establish the real provider records before exercising the reads. These
-    // 129 connect bindings plus the first owner's two bindings fit the cache.
-    await forEachOwner(userIds, async (userId) => {
-      await accept(
-        providers.upsert({
-          headers: { authorization: `Bearer ${userId}` },
-          body: {
-            type: "codex-oauth-token",
-            authMethod: "auth_json",
-            secrets: { CODEX_AUTH_JSON: credentials().raw },
-          },
+      routes: modelProvidersRoutes,
+      signal: pressureSignal,
+      rethrowErrors: true,
+    })(modelProvidersMainContract);
+    const outcomes = await Promise.allSettled([
+      ...owners.map(async (owner) => {
+        await expect(
+          providers.upsert({
+            headers: { authorization: `Bearer ${owner.orgId}` },
+            body: {
+              type: "codex-oauth-token",
+              authMethod: "auth_json",
+              secrets: { CODEX_AUTH_JSON: owner.auth.raw },
+            },
+          }),
+        ).rejects.toThrow("capacity pressure complete");
+      }),
+      started.promise
+        .then(async () => {
+          // All requests have passed auth/body parsing and allocated their
+          // expiry reader before reaching this external response boundary.
+          remote.expiry = new Date(now() + 7_200_000).toISOString();
+          expectExpiry(await first.list(), remote.expiry);
+          expect(firstDetails).toBe(1);
+        })
+        .finally(() => {
+          pressure.abort(
+            new DOMException("capacity pressure complete", "AbortError"),
+          );
+          release.resolve();
         }),
-        [200, 201],
-      );
-    });
-    return { first, remote, userIds, providers };
-  }
-
-  beforeEach(async () => {
-    prepared = await prepareOwners();
-  });
-
-  it("evicts old identity entries at bounded capacity", async () => {
-    const { first, remote, userIds, providers } = prepared;
-    // Each list adds its owner's read binding. Together with the prepared
-    // connect bindings, the reads exceed 256 and evict the oldest identity.
-    await forEachOwner(userIds, async (userId) => {
-      const listed = await accept(
-        providers.list({ headers: { authorization: `Bearer ${userId}` } }),
-        [200],
-      );
-      expectExpiry(listed.body.modelProviders, remote.expiry);
-    });
-    const before = remote.detailsCalls;
-    remote.expiry = new Date(now() + 7_200_000).toISOString();
-    expectExpiry(await first.list(), remote.expiry);
-    expect(remote.detailsCalls).toBe(before + 1);
+    ]);
+    // Own every request and the observer, including assertion/cancellation errors.
+    for (const outcome of outcomes) {
+      if (outcome.status === "rejected") {
+        throw outcome.reason;
+      }
+    }
   });
 });

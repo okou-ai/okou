@@ -1,4 +1,7 @@
-import { readGetStartedStatus } from "./helpers/get-started";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 import {
   scopedReviewContract,
   scopedReviewRoutes,
@@ -35,7 +38,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
   readWorkflowAutomationAutonomyFixture,
@@ -2900,9 +2903,9 @@ describe("workflow owner profile cancellation and capacity", () => {
 });
 
 test("awards the workflow creator only after a queued user workflow really succeeds", async () => {
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
+  await setGetStartedEnabled(context, actor);
   const agent = await createAgent(actor, {
     displayName: "Reward Workflow Agent",
     visibility: "private",

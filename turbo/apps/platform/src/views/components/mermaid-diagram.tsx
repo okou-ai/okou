@@ -3,7 +3,10 @@ import { useLoadable, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import type { MermaidDiagramSignals } from "../../signals/mermaid-diagram.ts";
+import type {
+  MermaidDiagramImage,
+  MermaidDiagramSignals,
+} from "../../signals/mermaid-diagram.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { IconTooltipButton } from "./icon-tooltip.tsx";
@@ -14,6 +17,31 @@ function MermaidCodeBlock({ signals }: { signals: MermaidDiagramSignals }) {
       <code>{signals.code}</code>
       <CodeBlockCopyButton code={signals.code} />
     </pre>
+  );
+}
+
+function DiagramImage({ image }: { image: MermaidDiagramImage }) {
+  const { t } = useTranslation();
+  const setImageRef = useSet(image.imageRef$);
+  return (
+    <img
+      ref={setImageRef}
+      alt={t(($) => {
+        return $.shared.mermaid.diagramLabel;
+      })}
+      // An absolutely positioned <img> whose width and height are `auto`
+      // is laid out at its own intrinsic size, so the inset alone leaves
+      // the diagram at lightbox scale and `object-fit` has nothing to fit
+      // into. The size is therefore stated: `calc` rather than `100%`,
+      // since a percentage resolves against the padding box, which the
+      // box's own padding would not clear.
+      //
+      // github-markdown-css paints every image on an opaque canvas
+      // colour from an unlayered rule, which a utility cannot outrank, so
+      // the transparent fill is important the way the retired rule's
+      // source order was.
+      className="absolute inset-2 w-[calc(100%-16px)] h-[calc(100%-16px)] object-contain bg-transparent!"
+    />
   );
 }
 
@@ -73,31 +101,13 @@ export function MermaidDiagramView({
           // File metadata lets each preview surface present the diagram as
           // diagram.svg with download support.
           openImageLightbox({
-            url: image.url,
             file: image.file,
             shareAvailable: false,
           });
         }}
       >
         {image ? (
-          <img
-            src={image.url}
-            alt={t(($) => {
-              return $.shared.mermaid.diagramLabel;
-            })}
-            // An absolutely positioned <img> whose width and height are `auto`
-            // is laid out at its own intrinsic size, so the inset alone leaves
-            // the diagram at lightbox scale and `object-fit` has nothing to fit
-            // into. The size is therefore stated: `calc` rather than `100%`,
-            // since a percentage resolves against the padding box, which the
-            // box's own padding would not clear.
-            //
-            // github-markdown-css paints every image on an opaque canvas
-            // colour from an unlayered rule, which a utility cannot outrank, so
-            // the transparent fill is important the way the retired rule's
-            // source order was.
-            className="absolute inset-2 w-[calc(100%-16px)] h-[calc(100%-16px)] object-contain bg-transparent!"
-          />
+          <DiagramImage image={image} />
         ) : (
           <span
             className="absolute inset-2 flex items-center justify-center text-muted-foreground"

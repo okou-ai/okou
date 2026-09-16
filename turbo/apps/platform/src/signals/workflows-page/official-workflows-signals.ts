@@ -110,16 +110,6 @@ export const installOfficialWorkflow$ = command(
     signal: AbortSignal,
   ): Promise<OfficialWorkflowInstallationResponse> => {
     signal.throwIfAborted();
-    const form = get(internalOfficialWorkflowConfigurationForm$);
-    if (
-      form?.target.operation === "install" &&
-      form.definitionName === input.definitionName
-    ) {
-      set(internalOfficialWorkflowConfigurationForm$, {
-        ...form,
-        submitted: true,
-      });
-    }
     const client = get(apiClient$)(officialWorkflowsContract);
     const result = await accept(
       client.install({
@@ -146,16 +136,6 @@ export const reconfigureOfficialWorkflow$ = command(
     signal: AbortSignal,
   ): Promise<OfficialWorkflowInstallationResponse> => {
     signal.throwIfAborted();
-    const form = get(internalOfficialWorkflowConfigurationForm$);
-    if (
-      form?.target.operation === "reconfigure" &&
-      form.target.workflowId === input.workflowId
-    ) {
-      set(internalOfficialWorkflowConfigurationForm$, {
-        ...form,
-        submitted: true,
-      });
-    }
     const client = get(apiClient$)(officialWorkflowInstallationsContract);
     const result = await accept(
       client.reconfigure({
@@ -186,8 +166,6 @@ export const uninstallOfficialWorkflow$ = command(
 );
 
 export interface OfficialWorkflowConfigurationForm {
-  /** Error feedback belongs to submissions made from this opening. */
-  readonly submitted: boolean;
   readonly target:
     | { readonly operation: "install" }
     | {

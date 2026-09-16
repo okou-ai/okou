@@ -2,10 +2,7 @@ import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
-import {
-  createGetStartedClaim,
-  getStartedRewardsEnabled,
-} from "./get-started-rewards.service";
+import { createGetStartedClaim } from "./get-started-rewards.service";
 
 /** Snapshot provenance with the queued input, before it can start or be deleted. */
 export async function recordGetStartedWorkflow(
@@ -17,9 +14,6 @@ export async function recordGetStartedWorkflow(
     readonly sourceEventId: string;
   },
 ): Promise<void> {
-  if (!getStartedRewardsEnabled(args.orgId)) {
-    return;
-  }
   const [workflow] = await tx
     .select({
       createdBy: workflows.createdBy,

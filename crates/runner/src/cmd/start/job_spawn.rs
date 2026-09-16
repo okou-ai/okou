@@ -522,6 +522,7 @@ struct DeferredUploadPhase {
     run_id: RunId,
     sandbox_token: String,
     exec_config: Arc<ExecutorConfig>,
+    mitm_log_flush: Option<crate::proxy::MitmRunLogFlush>,
 }
 
 impl DeferredUploadPhase {
@@ -530,6 +531,7 @@ impl DeferredUploadPhase {
             run_id,
             sandbox_token,
             exec_config,
+            mitm_log_flush,
         } = self;
 
         // Best-effort telemetry, deferred past `provider.complete` so the
@@ -546,8 +548,8 @@ impl DeferredUploadPhase {
                 .network_log_manager
                 .flush_path(&network_log_path)
                 .await;
-            if let Some(mitm_jsonl_flush) = exec_config.mitm_jsonl_flush.as_ref() {
-                let flushed = mitm_jsonl_flush.flush_path(&network_log_path).await;
+            if let Some(mitm_log_flush) = mitm_log_flush {
+                let flushed = mitm_log_flush.flush().await;
                 if !flushed {
                     warn!(
                         run_id = %run_id,
@@ -753,6 +755,10 @@ pub(super) async fn run_job(
         run_id,
         sandbox_token,
         exec_config: Arc::clone(&exec_config),
+        mitm_log_flush: exec_config
+            .mitm_jsonl_flush
+            .as_ref()
+            .map(|handle| handle.for_run(run_id, exec_config.log_paths.network_log(run_id))),
     };
 
     executor

@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import {
+  GET_STARTED_REWARDS_CHANGED_EVENT,
   getStartedContract,
   type GetStartedQuestKey,
   type GetStartedStatus,
@@ -12,11 +13,13 @@ import { accept } from "../../lib/accept.ts";
 import {
   createDeferredPromise,
   resetSignal,
+  setDaemon,
   settle,
   waitForOperation,
   withCleanup,
 } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 
 export type GetStartedQuestStatus = "todo" | "inReview" | "done" | "rejected";
 export interface GetStartedQuest {
@@ -166,7 +169,7 @@ export const submitSharePost$ = command(
 
 /** Each wait owns its timer and focus listeners, all released on root cancellation. */
 async function waitForRewardRefresh(
-  milliseconds: number,
+  milliseconds: number | null,
   signal: AbortSignal,
 ): Promise<void> {
   signal.throwIfAborted();
@@ -181,11 +184,14 @@ async function waitForRewardRefresh(
       wake();
     }
   };
-  const timer = window.setTimeout(wake, milliseconds);
+  const timer =
+    milliseconds === null ? null : window.setTimeout(wake, milliseconds);
   window.addEventListener("focus", wake);
   document.addEventListener("visibilitychange", visible);
   await withCleanup(next.promise, () => {
-    window.clearTimeout(timer);
+    if (timer !== null) {
+      window.clearTimeout(timer);
+    }
     window.removeEventListener("focus", wake);
     document.removeEventListener("visibilitychange", visible);
   });
@@ -220,19 +226,27 @@ const refreshAndCheckin$ = command(
   },
 );
 
-/** An authenticated app daemon; reward availability never delays route readiness. */
-export const runGetStartedRewards$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const switches = await get(featureSwitches$);
+const refreshGetStartedFromRealtime$ = command(
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const data = await set(refreshAndCheckin$, signal);
     signal.throwIfAborted();
-    if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-      return;
+    if (!data) {
+      return true;
     }
+    await set(reloadAccountMenuCreditBalances$, signal);
+    signal.throwIfAborted();
+    return false;
+  },
+);
+
+/** Focus and the next UTC boundary are explicit refresh triggers, not polling. */
+const refreshGetStartedOnFocusAndUtcDay$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     let previousEarnings: number | null = null;
     while (!signal.aborted) {
       const result = await settle(set(refreshAndCheckin$, signal), signal);
       signal.throwIfAborted();
-      let interval = 60_000;
+      let nextReset: number | null = null;
       if (result.ok) {
         const data = result.value;
         if (!data) {
@@ -246,19 +260,36 @@ export const runGetStartedRewards$ = command(
           signal.throwIfAborted();
         }
         previousEarnings = earnings;
-        const pending =
-          data.shareClaim?.status === "pending" ||
-          data.shareClaim?.status === "reviewing";
-        interval = Math.max(
+        nextReset = Math.max(
           250,
-          Math.min(
-            pending ? 15_000 : 60_000,
-            Date.parse(data.nextResetAt) - Date.parse(data.serverNow),
-          ),
+          Date.parse(data.nextResetAt) - Date.parse(data.serverNow),
         );
       }
-      await waitForRewardRefresh(interval, signal);
+      await waitForRewardRefresh(nextReset, signal);
       signal.throwIfAborted();
     }
+  },
+);
+
+/** An authenticated app daemon; reward availability never delays route readiness. */
+export const setupGetStartedRewards$ = command(
+  ({ get, set }, signal: AbortSignal): void => {
+    setDaemon(async (ownerSignal) => {
+      const switches = await get(featureSwitches$);
+      ownerSignal.throwIfAborted();
+      if (!switches[FeatureSwitchKey.GetStartedQuests]) {
+        return;
+      }
+      set(
+        setAblyLoop$,
+        {
+          topic: GET_STARTED_REWARDS_CHANGED_EVENT,
+          loopCommand$: refreshGetStartedFromRealtime$,
+          options: { runOnSubscribe: true },
+        },
+        ownerSignal,
+      );
+      await set(refreshGetStartedOnFocusAndUtcDay$, ownerSignal);
+    }, signal);
   },
 );

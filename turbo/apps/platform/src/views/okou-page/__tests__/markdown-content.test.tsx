@@ -353,10 +353,22 @@ test("Mermaid content remains readable code on surfaces without diagrams", async
   });
 
   await screen.findByText("flowchart TD", { exact: false });
-  const code = document.querySelector("code.language-mermaid");
-  if (!code) {
-    throw new Error("Expected a readable Mermaid code block");
+  const frame = screen.getByTestId("assistant-error-card-shell");
+  const details = queryAllByRoleFast("button", frame).find((button) => {
+    return button.getAttribute("aria-label") === "View details";
+  });
+  if (!details) {
+    throw new Error("Expected error details to remain accessible");
   }
+  click(details);
+  await screen.findByRole("dialog", { name: "This run couldn't finish" });
+  const code = await waitFor(() => {
+    const element = document.querySelector("code.language-mermaid");
+    if (!(element instanceof HTMLElement)) {
+      throw new Error("Expected a readable Mermaid code block");
+    }
+    return element;
+  });
   expect(code.textContent).toBe("flowchart TD\n  Reader --> Source\n");
   expect(code).toBeVisible();
   expect(

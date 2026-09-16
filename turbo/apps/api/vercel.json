@@ -122,7 +122,7 @@
     },
     {
       "path": "/api/cron/get-started-rewards",
-      "schedule": "* * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }

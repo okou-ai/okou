@@ -4,6 +4,10 @@ import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts
 
 import { piAgentStreamForConfig } from "./model";
 import {
+  piModelFailureReason,
+  piModelTransportFailure,
+} from "./model-request-diagnostics";
+import {
   measurePiPreparation,
   measurePiPreparationSync,
 } from "./preparation-timing";
@@ -88,11 +92,10 @@ export function projectPiApiAssistantMessage(
 ): PiApiAssistantMessage {
   const projection = projectAssistantContent(message, eventIdPrefix);
   const failureReason =
-    message.stopReason === "error" &&
-    message.api === "openai-codex-responses" &&
-    message.provider === "openai-codex"
-      ? classifyPiApiProviderFailure(message.errorMessage)
-      : undefined;
+    piModelFailureReason(message) ??
+    (message.stopReason === "error"
+      ? classifyPiApiProviderFailure(message.errorMessage, responseStatus)
+      : undefined);
   const projected = {
     content: projection.content,
     ...(projection.memoryCitation
@@ -119,6 +122,7 @@ export function projectPiApiAssistantMessage(
       failureDiagnostic: projectPiApiModelFailure(
         message.errorMessage,
         responseStatus,
+        piModelTransportFailure(message),
       ),
     };
   }

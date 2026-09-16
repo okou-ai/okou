@@ -7,13 +7,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead};
-use tokio::sync::{Mutex as AsyncMutex, mpsc};
+use tokio::sync::mpsc;
 use tracing::{Instrument, error, info, warn};
 
 use super::control;
-use super::flush::{
-    MitmJsonlFlushHandle, UsageFlushTarget, new_usage_state_id, usage_flush_state_guard,
-};
+use super::control::{ControlHandle, ControlTarget};
+use super::flush::{UsageFlushTarget, new_usage_state_id, usage_flush_state_guard};
+use super::log_flush::MitmJsonlFlushHandle;
 use super::managed_process::ManagedMitmdump;
 use super::registry::{ProxyRegistryHandle, SandboxRegistration, write_empty_registry};
 use super::runtime::{CANONICAL_RUNTIME_MARKER_ENV, MitmdumpRuntime};
@@ -235,7 +235,7 @@ pub struct MitmProxy {
     /// Per-mitmdump-process token written by the addon to `usage-pending`.
     usage_state_id: String,
     usage_flush_state: Arc<Mutex<UsageFlushTarget>>,
-    jsonl_flush_request_lock: Arc<AsyncMutex<()>>,
+    control: ControlHandle,
 }
 
 impl MitmProxy {
@@ -295,7 +295,7 @@ impl MitmProxy {
             usage_state_started_at_ms,
             Some(Arc::clone(&runtime)),
         )));
-        let jsonl_flush_request_lock = Arc::new(AsyncMutex::new(()));
+        let control = ControlHandle::default();
 
         Ok((
             Self {
@@ -307,7 +307,7 @@ impl MitmProxy {
                 stopping: Arc::new(AtomicBool::new(false)),
                 usage_state_id,
                 usage_flush_state,
-                jsonl_flush_request_lock,
+                control,
             },
             crash_rx,
         ))
@@ -340,7 +340,7 @@ impl MitmProxy {
             .await
             {
                 Ok(child) => {
-                    self.child = Some(child);
+                    self.complete_restart(child);
                     info!(port = self.port, "mitmdump started");
                     return Ok(());
                 }
@@ -377,6 +377,7 @@ impl MitmProxy {
         ProxyRegistryHandle {
             registry_path: self.config.registry_path.clone(),
             lock_path: self.config.registry_lock_path.clone(),
+            control: self.control.clone(),
             #[cfg(test)]
             connector_runtime_update_attempt_tx: None,
         }
@@ -384,15 +385,7 @@ impl MitmProxy {
 
     /// Create a cloneable handle for asking the addon to flush accepted JSONL writes.
     pub fn jsonl_flush_handle(&self) -> MitmJsonlFlushHandle {
-        MitmJsonlFlushHandle {
-            addon_dir: self.config.addon_dir.clone(),
-            usage_state: Arc::clone(&self.usage_flush_state),
-            request_lock: Arc::clone(&self.jsonl_flush_request_lock),
-            #[cfg(test)]
-            request_lock_poll_tx: None,
-            #[cfg(test)]
-            request_published_tx: None,
-        }
+        MitmJsonlFlushHandle::new(self.control.clone())
     }
 
     /// Register a sandbox in the proxy registry so the addon can identify its traffic.
@@ -401,14 +394,19 @@ impl MitmProxy {
         source_ip: &str,
         registration: &SandboxRegistration<'_>,
     ) -> RunnerResult<()> {
-        self.registry_handle()
+        let publication = self
+            .registry_handle()
             .register_sandbox(source_ip, registration)
-            .await
+            .await?;
+        publication.observe().await;
+        Ok(())
     }
 
     /// Unregister a sandbox from the proxy registry.
     pub async fn unregister_sandbox(&self, source_ip: &str) -> RunnerResult<()> {
-        self.registry_handle().unregister_sandbox(source_ip).await
+        let publication = self.registry_handle().unregister_sandbox(source_ip).await?;
+        publication.observe().await;
+        Ok(())
     }
 
     /// Current mitmdump usage state expected in the usage-pending state file.
@@ -511,6 +509,7 @@ impl MitmProxy {
     /// finishes old-child cleanup before starting the replacement; the caller
     /// then adopts the result with `complete_restart`.
     pub fn begin_restart(&mut self) -> MitmRestartParams {
+        self.control.set_target(None);
         // Each monitor keeps its own flag: an old child's delayed EOF must
         // never be interpreted as a crash of the replacement.
         self.stopping.store(true, Ordering::Release);
@@ -538,11 +537,17 @@ impl MitmProxy {
 
     /// Finish a restart by storing the newly spawned child process.
     pub fn complete_restart(&mut self, child: ManagedMitmdump) {
+        self.control
+            .set_target(child.control_directory().map(|directory| ControlTarget {
+                directory: directory.to_path_buf(),
+                generation: self.usage_state_id.clone(),
+            }));
         self.child = Some(child);
     }
 
     /// Gracefully stop mitmdump (SIGTERM → timeout → SIGKILL).
     pub async fn stop(&mut self) -> RunnerResult<()> {
+        self.control.set_target(None);
         self.stopping.store(true, Ordering::Release);
         let Some(child) = self.child.take() else {
             return Ok(());
@@ -552,6 +557,7 @@ impl MitmProxy {
 
     /// Immediately kill and reap mitmdump without the graceful SIGTERM window.
     pub async fn kill_now(&mut self) -> RunnerResult<()> {
+        self.control.set_target(None);
         self.stopping.store(true, Ordering::Release);
         let Some(child) = self.child.take() else {
             return Ok(());
@@ -597,7 +603,7 @@ impl MitmProxy {
                     super::flush::now_millis(),
                     None,
                 ))),
-                jsonl_flush_request_lock: Arc::new(AsyncMutex::new(())),
+                control: ControlHandle::default(),
             },
             crash_rx,
         )
@@ -605,6 +611,17 @@ impl MitmProxy {
 
     pub fn usage_state_id_for_test(&self) -> &str {
         &self.usage_state_id
+    }
+
+    pub(super) fn usage_flush_state_for_test(&self) -> Arc<Mutex<UsageFlushTarget>> {
+        Arc::clone(&self.usage_flush_state)
+    }
+
+    pub fn set_control_directory_for_test(&self, directory: PathBuf) {
+        self.control.set_target(Some(ControlTarget {
+            directory,
+            generation: self.usage_state_id.clone(),
+        }));
     }
 
     pub fn set_child_for_test(&mut self, child: tokio::process::Child) {
@@ -616,10 +633,6 @@ impl MitmProxy {
             .as_mut()
             .expect("test child installed")
             .set_reap_gate(gate);
-    }
-
-    pub fn set_addon_dir_for_test(&mut self, addon_dir: PathBuf) {
-        self.config.addon_dir = addon_dir;
     }
 }
 
@@ -1538,7 +1551,13 @@ exit 42
 
     async fn acquire_test_runtime(config: &ProxyConfig) -> Arc<MitmdumpRuntime> {
         tokio::fs::create_dir_all(&config.addon_dir).await.unwrap();
-        for name in ["runner_control.py", "addon_process_logging.py"] {
+        for name in [
+            "runner_control.py",
+            "registry_observation.py",
+            "state_file.py",
+            "addon_process_logging.py",
+            "jsonl_writer.py",
+        ] {
             let content = ADDON_FILES
                 .iter()
                 .find(|(file, _)| *file == name)

@@ -728,11 +728,11 @@ function ActionConnectorCard({
       data-testid="connector-action-card"
       className={cn(
         surfaceVariants(),
-        "flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between",
+        "flex min-h-[88px] w-full flex-col gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center @[640px]:justify-between",
         className,
       )}
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3 @[640px]:flex-1">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
           {icon}
         </div>
@@ -752,7 +752,7 @@ function ActionConnectorCard({
         type="button"
         disabled={complete || busy}
         onClick={onActivate}
-        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-[0.9375rem] font-medium text-foreground transition-colors hover:bg-state-hover disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-[0.9375rem] font-medium text-foreground transition-colors hover:bg-state-hover disabled:cursor-not-allowed disabled:opacity-60 @[640px]:w-auto"
       >
         {busy ? <Loader2 size={15} className="animate-spin" /> : null}
         {actionLabel}

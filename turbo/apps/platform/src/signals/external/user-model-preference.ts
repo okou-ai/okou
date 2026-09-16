@@ -138,8 +138,8 @@ const handleUserPreferenceChanged$ = command(
 );
 
 export const setupUserPreferenceRealtime$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(
+  ({ set }, signal: AbortSignal) => {
+    set(
       setAblyPayloadLoop$,
       {
         topic: "userPreferenceChanged",

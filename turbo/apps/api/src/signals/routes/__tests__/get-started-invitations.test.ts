@@ -8,16 +8,15 @@ import { z } from "zod";
 import { Webhook } from "svix";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { getStartedRoutes } from "../get-started";
 import { orgInviteRoutes } from "../org-invite";
 import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { createRouteMocks } from "./helpers/route-test";
+import { setGetStartedEnabled } from "./helpers/get-started";
 
 const context = testContext();
-const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const secret = `whsec_${Buffer.from("get-started-synthetic-secret").toString("base64")}`;
 const sentInvitation = z.object({
@@ -26,7 +25,6 @@ const sentInvitation = z.object({
 });
 
 beforeEach(async () => {
-  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
   mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
   const sdk = await vi.importActual<typeof import("@clerk/backend/webhooks")>(
     "@clerk/backend/webhooks",
@@ -47,7 +45,7 @@ async function org(userId = `user_${randomUUID()}`) {
     ).setup({ body: { org_id: orgId, credits: 0 } }),
     [200],
   );
-  mocks.clerk.session(userId, orgId);
+  await setGetStartedEnabled(context, { userId, orgId });
   return { userId, orgId };
 }
 
@@ -119,7 +117,7 @@ async function progress() {
 }
 
 test("revoking an invitation removes pending progress without consuming a reward slot", async () => {
-  await org();
+  const actor = await org();
   const invitation = await sendInvitation();
   await expect(progress()).resolves.toMatchObject({
     claimedCount: 0,
@@ -128,6 +126,7 @@ test("revoking an invitation removes pending progress without consuming a reward
   context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValueOnce(
     {},
   );
+  await setGetStartedEnabled(context, actor, false);
   await accept(
     setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).revoke({
       headers,
@@ -135,8 +134,28 @@ test("revoking an invitation removes pending progress without consuming a reward
     }),
     [200],
   );
+  await setGetStartedEnabled(context, actor);
   await expect(progress()).resolves.toMatchObject({
     claimedCount: 0,
+    pendingCount: 0,
+  });
+});
+
+test("invitation rewards follow the inviter's shared switch and remain idempotent after re-enabling", async () => {
+  const actor = await org();
+  const invitation = await sendInvitation();
+  const invitedUser = `user_${randomUUID()}`;
+  await setGetStartedEnabled(context, actor, false);
+  await accepted(actor.orgId, invitation, invitedUser);
+  await setGetStartedEnabled(context, actor);
+  await expect(progress()).resolves.toMatchObject({
+    claimedCount: 0,
+    pendingCount: 1,
+  });
+  await accepted(actor.orgId, invitation, invitedUser);
+  await accepted(actor.orgId, invitation, invitedUser);
+  await expect(progress()).resolves.toMatchObject({
+    claimedCount: 1,
     pendingCount: 0,
   });
 });

@@ -2,6 +2,7 @@ import {
   isPiExecutionRoute,
   isPiNativeModel,
   isPiGptModel,
+  isPiDeepSeekModel,
 } from "@okouai/core/pi-execution";
 import {
   piThinkingLevelForEffort,
@@ -15,6 +16,7 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import {
   getModelProviderPiEndpoint,
+  getBuiltInModelRouteCandidates,
   getProviderRuntimeModel,
   getSecretNameForType,
   isBuiltInModelProviderType,
@@ -109,15 +111,7 @@ function piCatalogProvider(
   if (isPiGptModel(selectedModel)) {
     return "openai";
   }
-  switch (selectedModel) {
-    case "deepseek-v4-flash":
-    case "deepseek-v4-pro": {
-      return "deepseek";
-    }
-    default: {
-      return null;
-    }
-  }
+  return isPiDeepSeekModel(selectedModel) ? "deepseek" : null;
 }
 
 function piRuntimeContract(args: {
@@ -434,9 +428,14 @@ function resolveResponsesPiModelConfig(
     return null;
   }
   const model = provider.environment.OPENAI_MODEL ?? provider.selectedModel;
-  if (
-    model !== getProviderRuntimeModel(concreteType.data, provider.selectedModel)
-  ) {
+  const expectedModel = isBuiltInModelProviderType(provider.type)
+    ? getBuiltInModelRouteCandidates(provider.selectedModel).find(
+        (candidate) => {
+          return candidate.providerType === concreteType.data;
+        },
+      )?.upstreamModel
+    : getProviderRuntimeModel(concreteType.data, provider.selectedModel);
+  if (model !== expectedModel) {
     return null;
   }
   if (!model) {

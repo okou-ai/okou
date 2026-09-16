@@ -1,5 +1,6 @@
 import {
   GET_STARTED_REWARDS,
+  GET_STARTED_REWARDS_CHANGED_EVENT,
   getStartedContract,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
@@ -256,8 +257,8 @@ test("Building a workflow opens the workflows page", async () => {
   });
 });
 
-test("Sharing on X persists an asynchronous submission and restores its review state", async () => {
-  configureQuestPage(context, "admin");
+test("Sharing on X restores pending state and an Ably review notification updates the open panel", async () => {
+  const data = configureQuestPage(context, "admin");
   await setupPage({
     context,
     path: questChatPath(),
@@ -293,6 +294,58 @@ test("Sharing on X persists an asynchronous submission and restores its review s
       return normalizedText(candidate).includes("Share Okou on X");
     }),
   ).toBeUndefined();
+
+  if (!data.shareClaim) {
+    throw new Error("Missing submitted X claim");
+  }
+  const share = data.quests.find((quest) => {
+    return quest.key === "share";
+  });
+  if (!share) {
+    throw new Error("Missing X quest");
+  }
+  data.shareClaim.status = "granted";
+  data.shareClaim.grantedAt = data.serverNow;
+  data.shareClaim.expiresAt = "2026-09-22T12:00:00.000Z";
+  Object.assign(share, {
+    claimedCount: 1,
+    earnedCredits: 2000,
+    canEarnMore: false,
+  });
+  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
+  await expect(within(panel).findByText("2,400")).resolves.toBeInTheDocument();
+  expect(within(panel).queryByText("In review")).not.toBeInTheDocument();
+});
+
+test("An Ably review notification restores a rejected submission without reopening the panel", async () => {
+  const data = configureQuestPage(context, "member");
+  data.shareClaim = {
+    id: "33333333-3333-4333-a333-333333333333",
+    questKey: "share",
+    status: "pending",
+    rewardAmount: 2000,
+    rewardTarget: "user",
+    reason: null,
+    submittedAt: data.serverNow,
+    grantedAt: null,
+    expiresAt: null,
+  };
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  const panel = await openQuestPanel();
+  expect(within(panel).getByText("In review")).toBeInTheDocument();
+  data.shareClaim.status = "rejected";
+  data.shareClaim.reason = "post_must_mention_okou";
+  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
+  await expect(
+    within(panel).findByText(
+      "This post is not eligible. Submit another public post mentioning Okou.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
 });
 
 test("The entry stays hidden while the switch is off", async () => {

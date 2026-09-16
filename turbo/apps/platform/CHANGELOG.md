@@ -11,6 +11,157 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.903.2](https://github.com/vm0-ai/okou/compare/app-v0.903.1...app-v0.903.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* complete lark and feishu setup permissions ([#34491](https://github.com/vm0-ai/okou/issues/34491)) ([13b706d](https://github.com/vm0-ai/okou/commit/13b706d293f61d6bd6f71b039baac2f54f19fdc7))
+* **platform:** follow the color preset on the checked switch track ([#34506](https://github.com/vm0-ai/okou/issues/34506)) ([9be1044](https://github.com/vm0-ai/okou/commit/9be10442d6ef4762d792330a9f4ff97bea18f5a7))
+* **platform:** weight the scale's dots per state, not once ([#34500](https://github.com/vm0-ai/okou/issues/34500)) ([f74f465](https://github.com/vm0-ai/okou/commit/f74f4651707da906bd4a18a119125680d0e0aeff))
+
+
+### Refactoring
+
+* **app:** remove the inert app shell class ([#34482](https://github.com/vm0-ai/okou/issues/34482)) ([b9c7da3](https://github.com/vm0-ai/okou/commit/b9c7da343512b84f20162b3bc6eaafb22b151686)), closes [#32402](https://github.com/vm0-ai/okou/issues/32402)
+* **app:** replace impact iframe with one onboarding request ([#34403](https://github.com/vm0-ai/okou/issues/34403)) ([4f33be6](https://github.com/vm0-ai/okou/commit/4f33be6e54d54757a49c796e5bacd87d75d2b274))
+* **ssh:** share rollout gating with cloudflare access ([#34489](https://github.com/vm0-ai/okou/issues/34489)) ([84a84fb](https://github.com/vm0-ai/okou/commit/84a84fba45ee6b5273b0ee5c6ade5a60a10b22c9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.1
+    * @okouai/core bumped to 8.668.2
+
+## [0.903.1](https://github.com/vm0-ai/okou/compare/app-v0.903.0...app-v0.903.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **app:** stop auto-opening the intro video template picker after a desktop recording ([#34330](https://github.com/vm0-ai/okou/issues/34330)) ([3576517](https://github.com/vm0-ai/okou/commit/3576517699e4a6df44e2b8daed03dc294a6304f7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.0
+    * @okouai/core bumped to 8.668.1
+
+## [0.903.0](https://github.com/vm0-ai/okou/compare/app-v0.902.3...app-v0.903.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** collapse the composer toolbar into one add menu ([#34394](https://github.com/vm0-ai/okou/issues/34394)) ([a54f703](https://github.com/vm0-ai/okou/commit/a54f703655d94b3552f856783294efbe97484a6b))
+
+
+### Bug Fixes
+
+* **app:** preserve fixed chat card frames across state changes ([#34449](https://github.com/vm0-ai/okou/issues/34449)) ([bd39850](https://github.com/vm0-ai/okou/commit/bd39850fb9cf1057ce90bd68fb6b6b0debd578c1))
+* **platform:** mark every effort stop, and let the dots recede ([#34455](https://github.com/vm0-ai/okou/issues/34455)) ([955469c](https://github.com/vm0-ai/okou/commit/955469c453af434d6d1b2e53d09d64a0a6a4522f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.668.0
+
+## [0.902.3](https://github.com/vm0-ai/okou/compare/app-v0.902.2...app-v0.902.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* **platform:** restore awaitable first page content boundary ([#34454](https://github.com/vm0-ai/okou/issues/34454)) ([abf0c90](https://github.com/vm0-ai/okou/commit/abf0c90d9a82dd9475bcb52fc03968ab87c4862c))
+
+
+### Refactoring
+
+* centralize mermaid rendering and remove fixed checkout paths ([#33878](https://github.com/vm0-ai/okou/issues/33878)) ([4e455ca](https://github.com/vm0-ai/okou/commit/4e455ca9e07705d9be5640e6b07c07fffe2ec5eb))
+* fold session output streaming into piloop ([#34445](https://github.com/vm0-ai/okou/issues/34445)) ([9a641d1](https://github.com/vm0-ai/okou/commit/9a641d19a9776261fd549d21fbe225e08d3ad3df))
+* **platform:** clarify chat thread event source semantics ([#34418](https://github.com/vm0-ai/okou/issues/34418)) ([fbededc](https://github.com/vm0-ai/okou/commit/fbededc38266747f4c75e01102b84815d4c7f0ec))
+* **platform:** separate background loop startup from completion ([#34399](https://github.com/vm0-ai/okou/issues/34399)) ([8bf690c](https://github.com/vm0-ai/okou/commit/8bf690c29c8488f6c4f3987b1885718ee68a28d2))
+* remove expired deployment compatibility ([#34452](https://github.com/vm0-ai/okou/issues/34452)) ([669012a](https://github.com/vm0-ai/okou/commit/669012a4802f76decbe32f881add2bad5bf07566))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.1
+    * @okouai/core bumped to 8.667.1
+
+## [0.902.2](https://github.com/vm0-ai/vm0/compare/app-v0.902.1...app-v0.902.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **app:** clear replaced replies from share selection ([#34406](https://github.com/vm0-ai/vm0/issues/34406)) ([cd3f756](https://github.com/vm0-ai/vm0/commit/cd3f756a99b03ce5f5ba88629e52b321fb7353d7))
+* keep mermaid diagrams white across app themes ([#34410](https://github.com/vm0-ai/vm0/issues/34410)) ([0d60752](https://github.com/vm0-ai/vm0/commit/0d6075230195f1e52804f6eaed37ecfd01552a81))
+
+
+### Refactoring
+
+* **app:** delete the dead desktop shell selection rules ([#34388](https://github.com/vm0-ai/vm0/issues/34388)) ([3f72de6](https://github.com/vm0-ai/vm0/commit/3f72de62f13ed4cdfb259502a97a787bcbdae5ef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.667.0
+
+## [0.902.1](https://github.com/vm0-ai/vm0/compare/app-v0.902.0...app-v0.902.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **platform:** give the effort scale's dots enough weight to read ([#34341](https://github.com/vm0-ai/vm0/issues/34341)) ([5204958](https://github.com/vm0-ai/vm0/commit/52049588ce58cf9b7f7635e34e5268be1aa0422a))
+
+
+### Refactoring
+
+* **platform:** finish child abort ownership migration ([#34402](https://github.com/vm0-ai/vm0/issues/34402)) ([f4d8819](https://github.com/vm0-ai/vm0/commit/f4d8819d452ae325cbf76a2da318db84a4a5172f)), closes [#33860](https://github.com/vm0-ai/vm0/issues/33860)
+* **platform:** own card tokens at the document root ([#34400](https://github.com/vm0-ai/vm0/issues/34400)) ([c96243b](https://github.com/vm0-ai/vm0/commit/c96243bd807481295e95824d4e9b0fdd9d8d8e65))
+* **platform:** simplify dialog loading state ([#34408](https://github.com/vm0-ai/vm0/issues/34408)) ([7a4f632](https://github.com/vm0-ai/vm0/commit/7a4f632a353ceb22ee739dace2f0952920eeb7a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.0
+    * @okouai/core bumped to 8.666.7
+
+## [0.902.0](https://github.com/vm0-ai/vm0/compare/app-v0.901.0...app-v0.902.0) (2026-09-15)
+
+
+### Features
+
+* **platform:** manage cloudflare access in ssh ([#34337](https://github.com/vm0-ai/vm0/issues/34337)) ([ba33b36](https://github.com/vm0-ai/vm0/commit/ba33b361378a00a815a6629fed67cd24dc20d646))
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+
+### Refactoring
+
+* **app:** migrate chat and calendar cancellation ownership ([#34369](https://github.com/vm0-ai/vm0/issues/34369)) ([ef4e6fe](https://github.com/vm0-ai/vm0/commit/ef4e6fe9f70d124d941dff55c2a6d841e487eefc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.1
+    * @okouai/core bumped to 8.666.6
+    * @okouai/ui bumped to 1.9.2
+
 ## [0.901.0](https://github.com/vm0-ai/vm0/compare/app-v0.900.0...app-v0.901.0) (2026-09-15)
 
 

@@ -3,6 +3,12 @@ import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
   {
+    method: "GET",
+    path: "/api/runners/runs/:runId/cancellation",
+    rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],
+    rustConstName: "GET",
+  },
+  {
     method: "POST",
     path: "/api/runners/runs/:runId/ssh/observations",
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "observations"],
@@ -102,6 +108,12 @@ const expectedBindings = [
   },
   {
     method: "POST",
+    path: "/api/webhooks/agent/session-output",
+    rustModulePath: ["webhooks", "agent", "session_output"],
+    rustConstName: "SEND",
+  },
+  {
+    method: "POST",
     path: "/api/webhooks/agent/checkpoints",
     rustModulePath: ["webhooks", "agent", "checkpoints"],
     rustConstName: "CREATE",
@@ -189,7 +201,9 @@ describe("Rust route bindings", () => {
 
     expect(secondRender).toBe(firstRender);
     for (const binding of expectedBindings) {
-      expect(firstRender).toContain("crate::Method::Post");
+      expect(firstRender).toContain(
+        binding.method === "GET" ? "crate::Method::Get" : "crate::Method::Post",
+      );
       expect(firstRender).toContain(`"${binding.path}"`);
     }
   });

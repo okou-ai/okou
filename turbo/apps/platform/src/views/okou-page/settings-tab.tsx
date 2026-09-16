@@ -326,6 +326,7 @@ export function SettingsTab({
 
   const [settingsLoadable, triggerUpdateSettings] =
     useLoadableSet(updateSettings$);
+  const updateSettings = useSet(updateSettings$);
   const saving = settingsLoadable.state === "loading";
 
   const handleResetSettings = () => {
@@ -465,7 +466,7 @@ export function SettingsTab({
                         agentId,
                         patch: { avatarUrl: newAvatarUrl },
                       });
-                      await triggerUpdateSettings(
+                      await updateSettings(
                         {
                           displayName: omitForDefaultAgent(
                             agentName,

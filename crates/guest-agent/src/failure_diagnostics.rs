@@ -268,6 +268,17 @@ fn with_cli_failure_reason(
     diagnostic: FailureDiagnostic,
     failure_message: &CliFailureMessage,
 ) -> FailureDiagnostic {
+    // Prefer evidence owned by the selected terminal event over its display text.
+    // The Pi SDK can rewrite ordinary HTTP 429 into ChatGPT usage-limit prose.
+    // A later, selected stderr failure still keeps its existing text precedence.
+    if matches!(
+        (diagnostic.framework, failure_message.source),
+        (AgentFramework::Pi, FailureDetailSource::PiResult)
+            | (AgentFramework::Codex, FailureDetailSource::CodexJsonl)
+    ) && let Some(reason) = failure_message.failure_reason
+    {
+        return diagnostic.with_failure_reason(reason);
+    }
     if let Some(reason) = classify_cli_failure_reason(
         diagnostic.framework,
         failure_message.source,
@@ -275,11 +286,11 @@ fn with_cli_failure_reason(
     )
     .or(failure_message.failure_reason)
     .or_else(|| {
-        (diagnostic.framework == AgentFramework::Pi
-            && diagnostic
-                .model_request
-                .is_some_and(|request| request.http_status == Some(429)))
-        .then_some(FailureReason::ProviderRateLimited)
+        (diagnostic.framework == AgentFramework::Pi)
+            .then_some(diagnostic.model_request)
+            .flatten()
+            .and_then(|request| request.http_status)
+            .and_then(crate::provider_failure::http_failure_reason)
     }) {
         diagnostic.with_failure_reason(reason)
     } else {
@@ -409,6 +420,18 @@ fn classify_cli_failure_reason(
     {
         return Some(FailureReason::ContextWindowExceeded);
     }
+    if matches!(
+        (framework, source),
+        (AgentFramework::Pi, FailureDetailSource::PiResult)
+            | (AgentFramework::Codex, FailureDetailSource::CodexJsonl)
+            | (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult
+            )
+    ) && let Some(reason) = crate::provider_failure::provider_failure_reason(failure_message)
+    {
+        return Some(reason);
+    }
     // Subscription/usage limits are an expected quota state for both Codex
     // (ChatGPT plan "usage limit" or API billing "quota exceeded") and Claude
     // Code (Max plan "session limit" / "weekly limit" /
@@ -508,27 +531,10 @@ fn is_provider_balance_response_error(normalized: &str) -> bool {
     let Some((Some(body), _)) = failure_patterns::parse_next_json_object(normalized, 0) else {
         return false;
     };
-    let Some(error) = body.get("error").and_then(Value::as_object) else {
+    let Some(error) = body.get("error").filter(|error| error.is_object()) else {
         return false;
     };
-    let code = error.get("code");
-    let error_type = error.get("type").and_then(Value::as_str);
-    matches!(
-        code.and_then(Value::as_str),
-        Some("billing" | "billing_error" | "insufficient_quota" | "payment_required")
-    ) || code.and_then(Value::as_u64) == Some(402)
-        || matches!(
-            error_type,
-            Some("billing" | "billing_error" | "insufficient_quota" | "payment_required")
-        )
-        || (error_type == Some("invalid_request_error")
-            && error
-                .get("message")
-                .and_then(Value::as_str)
-                .is_some_and(|message| {
-                    message
-                        .starts_with("your credit balance is too low to access the anthropic api.")
-                }))
+    crate::provider_failure::is_provider_balance_error(error)
 }
 
 fn has_insufficient_credits_response_envelope(normalized: &str) -> bool {

@@ -15,7 +15,7 @@ import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
 } from "./stream-options";
-import { guardPiUpstreamErrorBody } from "./upstream-error-body";
+import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
 
 function isMessages(model: Model<Api>): model is Model<"anthropic-messages"> {
   return model.api === "anthropic-messages";
@@ -70,7 +70,7 @@ export function streamPiNative(
     ...options,
     maxRetries: 0,
     fetch: observePiResponseStatus(
-      guardPiUpstreamErrorBody(options.fetch ?? nativePublicFetch),
+      options.fetch ?? nativePublicFetch,
       options.onObservedResponseStatus,
     ),
     // Neither ambient cache policy nor provider authentication is inherited.
@@ -97,10 +97,19 @@ export function streamPiNative(
   // images and cache points. Only the final request uses the upstream alias.
   if (isMessages(model)) {
     if (config.transport !== "sse") throw new Error("Pi Messages requires SSE");
-    return streamMessages(
-      { ...model, id: config.catalogModel },
-      nativeContext,
-      nativeOptions,
+    return streamWithModelRequestDiagnostics(
+      (fetch) => {
+        return streamMessages(
+          { ...model, id: config.catalogModel },
+          nativeContext,
+          {
+            ...nativeOptions,
+            fetch,
+          },
+        );
+      },
+      nativeOptions.fetch,
+      nativeOptions.signal,
     );
   }
   if (

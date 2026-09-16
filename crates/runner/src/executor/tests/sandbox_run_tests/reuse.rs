@@ -180,6 +180,12 @@ async fn execute_job_reuse_bypasses_fresh_pre_spawn_admission() {
 
 #[tokio::test]
 async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
+    for with_instructions in [false, true] {
+        assert_reused_decoded_delivery(with_instructions).await;
+    }
+}
+
+async fn assert_reused_decoded_delivery(with_instructions: bool) {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -215,7 +221,27 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
         })
         .await;
     let archive_url = server.url("/reused-archive.tar.gz");
-    let context = context_with_remote_storage(&archive_url, body.len());
+    let mut context = context_with_remote_storage(&archive_url, body.len());
+    if with_instructions {
+        let instructions_dir = home.storage_cache_dir("instructions", "v1");
+        std::fs::create_dir_all(&instructions_dir).unwrap();
+        std::fs::write(instructions_dir.join("archive.tar.gz"), &body).unwrap();
+        drop(
+            crate::lock::acquire(home.storage_lock("instructions", "v1"))
+                .await
+                .unwrap(),
+        );
+        let manifest = context.storage_manifest.as_mut().unwrap();
+        manifest.storages[0].mount_path = "/home/user/.claude/skills/workflow".into();
+        let mut instructions = api_storage(
+            "instructions",
+            "/home/user/.claude",
+            "v1",
+            &server.url("/instructions.tar.gz"),
+        );
+        instructions.instructions_target_filename = Some("CLAUDE.md".into());
+        manifest.storages.push(instructions);
+    }
 
     let task = tokio::spawn(async move {
         execute_job_reuse(
@@ -236,7 +262,7 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
     assert_eq!(outcome.exit_code(), 0, "error={:?}", outcome.error());
     full_get.assert_calls_async(0).await;
     let writes = overrides.write_files_calls();
-    assert!(writes.is_empty());
+    assert_eq!(writes.len(), usize::from(with_instructions));
     let manifests = overrides.storage_manifest_calls();
     assert_eq!(manifests.len(), 1);
     let (json, payload) =
@@ -251,6 +277,20 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
         manifest.storages[0].archive_url.as_deref(),
         Some(archive_url.as_str())
     );
+    if with_instructions {
+        assert_eq!(manifest.storages.len(), 2);
+        assert_eq!(
+            manifest.storages[1].instructions_target_filename.as_deref(),
+            Some("CLAUDE.md")
+        );
+        assert!(manifest.storages[1].extract_path.is_some());
+        assert_eq!(writes[0].files.len(), 1);
+        assert_eq!(writes[0].files[0].content, body);
+        assert_eq!(
+            manifest.storages[1].archive_url.as_deref(),
+            Some(format!("file://{}", writes[0].files[0].path).as_str())
+        );
+    }
     assert_no_telemetry_action(&telemetry, "storage_cache_fresh_delivery_single_request");
     assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
 }

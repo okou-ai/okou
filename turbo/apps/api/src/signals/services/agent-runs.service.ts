@@ -429,10 +429,8 @@ export function agentRunById(args: {
           : (run.result as GetRunResponse["result"]),
       error: run.error
         ? (formatRunBalanceError({
-            message: run.error,
             failureReason: run.failureReason,
             modelProvider: run.modelProvider,
-            framework: run.launchSnapshot?.framework,
           }) ?? run.error)
         : undefined,
       createdAt: run.createdAt.toISOString(),

@@ -633,6 +633,11 @@ export {
 } from "./runner-primitives";
 export {
   runnersPollContract,
+  runnersCancellationContract,
+  runnerCancellationModeSchema,
+  runnerCancellationResponseSchema,
+  type RunnerCancellationMode,
+  type RunnerCancellationResponse,
   runnersJobClaimContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,

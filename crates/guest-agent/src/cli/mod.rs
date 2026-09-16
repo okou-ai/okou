@@ -44,6 +44,7 @@ mod line_reader;
 mod pi_event_delivery;
 mod pi_memory_citation;
 mod pi_rpc;
+mod pi_session_output;
 mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
@@ -1133,8 +1134,22 @@ async fn execute_cli_inner(
     let (pi_rpc_startup_tx, pi_rpc_startup_rx) = tokio::sync::oneshot::channel();
     let mut pi_rpc_startup_tx = pi_rpc_execution.then_some(pi_rpc_startup_tx);
     let pi_rpc_cancellation = CancellationToken::new();
+    let pi_session_output = pi_rpc_execution
+        .then(|| {
+            pi_session_output::start(
+                http.clone(),
+                runtime.run_id.as_ref(),
+                runtime.pi_session_id.as_ref(),
+            )
+        })
+        .flatten();
     let mut pi_rpc_projection = pi_rpc_execution.then(|| {
-        pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
+        let projection =
+            pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref());
+        match pi_session_output {
+            Some(output) => projection.with_session_output(output),
+            None => projection,
+        }
     });
     let mut pi_rpc_startup_boundary = pi_rpc_execution.then(pi_rpc::PiRpcStartupBoundary::default);
     let mut stdin_write_handle = Some({
@@ -1477,11 +1492,18 @@ async fn execute_cli_inner(
                             }
                             if let Some(projection) = pi_rpc_projection.as_mut() {
                                 match projection.project(event, &pi_rpc_response_tx, line.len()) {
-                                    Ok(Some(projected)) => event = projected,
-                                    Ok(None) => {
-                                        agent_log.write_raw_line(line.as_bytes()).await;
-                                        continue;
-                                    }
+                                    Ok(projected) => {
+                                        if let Some(containment) = workload_containment
+                                            && let Some(timestamp) = projection.runtime_progress_at() {
+                                            containment.record_runtime_progress(timestamp);
+                                        }
+                                        if let Some(projected) = projected {
+                                            event = projected;
+                                        } else {
+                                            agent_log.write_raw_line(line.as_bytes()).await;
+                                            continue;
+                                        }
+                                    },
                                     Err(error) => {
                                         agent_log.write_raw_line(line.as_bytes()).await;
                                         active_input_controller.close_terminal();
@@ -1610,7 +1632,10 @@ async fn execute_cli_inner(
                                     let candidate = CliFailureDiagnostic {
                                         message: diagnostic.message,
                                         source,
-                                        failure_reason: None,
+                                        failure_reason: (source == FailureDetailSource::PiResult)
+                                            .then(|| event.get("failureReason"))
+                                            .flatten()
+                                            .and_then(|reason| serde_json::from_value(reason.clone()).ok()),
                                     };
                                     log_warn!(
                                         LOG_TAG,

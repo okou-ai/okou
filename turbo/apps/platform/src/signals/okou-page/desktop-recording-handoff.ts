@@ -104,10 +104,10 @@ export const applyDesktopRecordingHandoff$ = command(
     draft: DraftSignals,
     params: URLSearchParams,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<void> => {
     const handoff = handoffFromParams(params);
     if (!handoff) {
-      return false;
+      return;
     }
 
     set(draft.clear$);
@@ -128,6 +128,5 @@ export const applyDesktopRecordingHandoff$ = command(
       );
     }
     set(updateSearchParams$, withoutHandoffParams(params));
-    return !removedUnavailable;
   },
 );
