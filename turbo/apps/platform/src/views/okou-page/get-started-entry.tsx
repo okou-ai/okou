@@ -205,7 +205,14 @@ function QuestReward({
   );
 }
 
-const QUEST_ROW_CLASS = "gap-3 px-3 py-2.5";
+// A quest row renders as a menu item, or as a plain div once nothing is left to
+// open, so the row class has to carry the two rules `DropdownMenuItem` applies
+// on its own: the menu's text size and the 16px icon. Without them a finished
+// quest fell back to the document's 16px text and lucide's 24px default, which
+// set the done rows a size above the rows beside them and pushed their titles
+// 8px further right than the rest of the column.
+const QUEST_ROW_CLASS =
+  "gap-3 px-3 py-2.5 text-sm [&_svg]:size-4 [&_svg]:shrink-0";
 
 function QuestRowBody({
   quest,
@@ -476,7 +483,11 @@ function GetStartedPanel({
           </p>
         </div>
         <span className="flex h-[22px] shrink-0 items-center gap-1.5 rounded-full bg-brand-subtle px-2 text-xs font-semibold tabular-nums text-brand-text">
-          <Coins />
+          {/* A pill enforces no icon size the way Button and DropdownMenuItem
+              do, so the mark is sized against this one: 12px is what Badge
+              gives an icon in a pill, and lucide's 24px default overflowed the
+              22px box. */}
+          <Coins className="size-3 shrink-0" />
           {formatLocalizedNumber(summary.earnedCredits)}
         </span>
       </div>
