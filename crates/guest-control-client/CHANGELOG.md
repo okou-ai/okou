@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.20.15](https://github.com/vm0-ai/okou/compare/guest-control-client-v0.20.14...guest-control-client-v0.20.15) (2026-09-16)
+
 ## [0.20.14](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.13...guest-control-client-v0.20.14) (2026-09-15)
 
 ## [0.20.13](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.12...guest-control-client-v0.20.13) (2026-09-15)

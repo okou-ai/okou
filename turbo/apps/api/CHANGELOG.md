@@ -8,6 +8,33 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.608.0](https://github.com/vm0-ai/okou/compare/api-v1.607.2...api-v1.608.0) (2026-09-16)
+
+
+### Features
+
+* **api:** persist run stop intent for runner reconciliation ([#34393](https://github.com/vm0-ai/okou/issues/34393)) ([85d8092](https://github.com/vm0-ai/okou/commit/85d8092bfa38f6f2fa56afe046b847dcbe8de723))
+
+
+### Bug Fixes
+
+* align provider failure classification across pi, codex, and claude code ([#34396](https://github.com/vm0-ai/okou/issues/34396)) ([ff4f23f](https://github.com/vm0-ai/okou/commit/ff4f23fa72b471204d0a27bcbc5466679ab16042))
+
+
+### Performance Improvements
+
+* **api:** reuse coordinated subscription environment data ([#34417](https://github.com/vm0-ai/okou/issues/34417)) ([a0e2fe5](https://github.com/vm0-ai/okou/commit/a0e2fe56d5ada8141ad2b85230e3abd8bde0c13e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.0
+    * @okouai/core bumped to 8.668.1
+    * @okouai/db bumped to 1.264.0
+    * @okouai/pi-agent-runtime bumped to 1.31.2
+
 ## [1.607.2](https://github.com/vm0-ai/okou/compare/api-v1.607.1...api-v1.607.2) (2026-09-16)
 
 

@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.903.1](https://github.com/vm0-ai/okou/compare/app-v0.903.0...app-v0.903.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **app:** stop auto-opening the intro video template picker after a desktop recording ([#34330](https://github.com/vm0-ai/okou/issues/34330)) ([3576517](https://github.com/vm0-ai/okou/commit/3576517699e4a6df44e2b8daed03dc294a6304f7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.0
+    * @okouai/core bumped to 8.668.1
+
 ## [0.903.0](https://github.com/vm0-ai/okou/compare/app-v0.902.3...app-v0.903.0) (2026-09-16)
 
 

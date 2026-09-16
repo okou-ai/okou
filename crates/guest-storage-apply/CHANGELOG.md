@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.90](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.89...guest-storage-apply-v0.23.90) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** clean skills beneath cached instruction homes ([#34429](https://github.com/vm0-ai/okou/issues/34429)) ([24f4fea](https://github.com/vm0-ai/okou/commit/24f4fea3f60e92686b1771ba9a77ae0100d8d7af))
+
 ## [0.23.89](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.88...guest-storage-apply-v0.23.89) (2026-09-15)
 
 
