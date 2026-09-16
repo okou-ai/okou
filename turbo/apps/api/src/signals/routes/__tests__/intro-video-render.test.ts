@@ -23,6 +23,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { testContext } from "../../../__tests__/test-context";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -511,12 +512,22 @@ describe("managed Intro Video cloud rendering", () => {
     });
   });
 
-  it("hides provider input URLs while reporting user-storage render completion", async () => {
-    const { f, input, cloud, projectUrl } = await acceptUserStorageRender();
-    const response = await getRender(f, input.requestId);
-    expect(JSON.stringify(response)).not.toContain(projectUrl.toString());
-    cloud.status = "completed";
-    expect((await getRender(f, input.requestId)).status).toBe("completed");
+  describe("with an accepted user storage render", () => {
+    async function prepareScenario() {
+      const { f, input, cloud, projectUrl } = await acceptUserStorageRender();
+      return { f, input, projectUrl, cloud };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("hides provider input URLs while reporting user-storage render completion", async () => {
+      const { f, input, projectUrl, cloud } = preparedScenario;
+      const response = await getRender(f, input.requestId);
+      expect(JSON.stringify(response)).not.toContain(projectUrl.toString());
+      cloud.status = "completed";
+      expect((await getRender(f, input.requestId)).status).toBe("completed");
+    });
   });
 
   it.each([
@@ -800,40 +811,50 @@ describe("managed Intro Video cloud rendering", () => {
     expect(cloud.requests[1]).toStrictEqual(cloud.requests[0]);
   });
 
-  it("recovers transfer failures and settles the actual ledger once across duplicate callbacks", async () => {
-    const f = await fixture();
-    const input = await upload(f);
-    const cloud = provider();
-    const before = await balance(f);
-    await submit(f, input);
-    cloud.status = "completed";
-    cloud.downloadsFail = true;
-    const pending = await getRender(f, input.requestId);
-    expect(pending.phase).toBe("persisting");
-    expect(pending.billing.creditsCharged).toBeNull();
-    cloud.downloadsFail = false;
-    const callback = new URL(cloud.callbackUrl);
-    const event = {
-      event_data: { render_id: "hfr_test", callback_id: input.requestId },
-    };
-    for (let count = 0; count < 2; count += 1) {
-      const response = await app(f).request(
-        `${callback.pathname}${callback.search}`,
-        {
-          method: "POST",
-          body: JSON.stringify(event),
-          headers: { "content-type": "application/json" },
-        },
-      );
-      expect(response.status).toBe(200);
+  describe("with an uploaded render input", () => {
+    async function prepareScenario() {
+      const f = await fixture();
+      const input = await upload(f);
+      const cloud = provider();
+      const before = await balance(f);
+      return { f, input, cloud, before };
     }
-    const result = await getRender(f, input.requestId);
-    expect(result.status).toBe("completed");
-    expect(result.result?.contentType).toBe("video/mp4");
-    expect(result.result?.url).not.toBe(VIDEO_URL);
-    expect(result.billing.creditsCharged).toBe(before - (await balance(f)));
-    expect(result.billing.creditsCharged).toBe(110);
-    expect(cloud.requests).toHaveLength(1);
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("recovers transfer failures and settles the actual ledger once across duplicate callbacks", async () => {
+      const { f, input, cloud, before } = preparedScenario;
+      await submit(f, input);
+      cloud.status = "completed";
+      cloud.downloadsFail = true;
+      const pending = await getRender(f, input.requestId);
+      expect(pending.phase).toBe("persisting");
+      expect(pending.billing.creditsCharged).toBeNull();
+      cloud.downloadsFail = false;
+      const callback = new URL(cloud.callbackUrl);
+      const event = {
+        event_data: { render_id: "hfr_test", callback_id: input.requestId },
+      };
+      for (let count = 0; count < 2; count += 1) {
+        const response = await app(f).request(
+          `${callback.pathname}${callback.search}`,
+          {
+            method: "POST",
+            body: JSON.stringify(event),
+            headers: { "content-type": "application/json" },
+          },
+        );
+        expect(response.status).toBe(200);
+      }
+      const result = await getRender(f, input.requestId);
+      expect(result.status).toBe("completed");
+      expect(result.result?.contentType).toBe("video/mp4");
+      expect(result.result?.url).not.toBe(VIDEO_URL);
+      expect(result.billing.creditsCharged).toBe(before - (await balance(f)));
+      expect(result.billing.creditsCharged).toBe(110);
+      expect(cloud.requests).toHaveLength(1);
+    });
   });
 
   it("returns an actionable provider failure without a replacement charge", async () => {

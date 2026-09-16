@@ -1,3 +1,4 @@
+import { describe, beforeEach, it } from "vitest";
 import { Buffer } from "node:buffer";
 import {
   createHash,
@@ -1834,81 +1835,92 @@ describe("POST /api/webhooks/gmail", () => {
     );
   });
 
-  it("preserves metadata-only context through the workflow queue", async () => {
-    const gmailEmail = uniqueGmailEmail();
-    configureGmailEnv();
-    const runnerGroup = runsApi.configureRunnerGroup();
-    configureGmailWatchMock();
-    configureGmailMessageMocks(gmailEmail);
+  describe("with a metadata-only Gmail workflow", () => {
+    async function prepareScenario() {
+      const gmailEmail = uniqueGmailEmail();
+      configureGmailEnv();
+      const runnerGroup = runsApi.configureRunnerGroup();
+      configureGmailWatchMock();
+      configureGmailMessageMocks(gmailEmail);
 
-    const { actor, workflowId } = await setupFixture();
-    await connectGmail(actor, gmailEmail);
-    await configureWorkspaceModelProvider(actor);
+      const { actor, workflowId } = await setupFixture();
+      await connectGmail(actor, gmailEmail);
+      await configureWorkspaceModelProvider(actor);
 
-    const created = await accept(
-      automationsClient().create({
-        headers: authHeaders(actor),
-        params: { workflowId },
-        body: {
-          kind: "event",
-          eventType: "gmail-new-message",
-          eventConfig: {
-            provider: "gmail",
-            event: "new_message",
-            match: { body: { contains: "helpful reply" } },
+      const created = await accept(
+        automationsClient().create({
+          headers: authHeaders(actor),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "gmail-new-message",
+            eventConfig: {
+              provider: "gmail",
+              event: "new_message",
+              match: { body: { contains: "helpful reply" } },
+            },
           },
-        },
-      }),
-      [201],
-    );
-    const chatThreadId = requireAutomationChatThreadId(created.body);
-    await configureAutomationThreadModel(actor, chatThreadId);
-    const activeRun = await runAutomationNow(actor, created.body.id);
+        }),
+        [201],
+      );
+      const chatThreadId = requireAutomationChatThreadId(created.body);
+      await configureAutomationThreadModel(actor, chatThreadId);
+      return { actor, created, gmailEmail, chatThreadId, runnerGroup };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("preserves metadata-only context through the workflow queue", async () => {
+      const { actor, created, gmailEmail, chatThreadId, runnerGroup } =
+        preparedScenario;
+      const activeRun = await runAutomationNow(actor, created.body.id);
 
-    const response = await postGmailWebhook(
-      gmailPushBody({
+      const response = await postGmailWebhook(
+        gmailPushBody({
+          emailAddress: gmailEmail,
+          historyId: 101,
+          messageId: "pubsub-queued",
+        }),
+      );
+
+      expectResponseStatus(response, 200);
+      expect(response.body).toMatchObject({ dispatched: 1, duplicates: 0 });
+      await expect(workflowRunIds(actor, chatThreadId)).resolves.toStrictEqual([
+        activeRun.runId,
+      ]);
+
+      await completeRunThroughSandbox(runnerGroup, activeRun.runId);
+      const runIds = await workflowRunIds(actor, chatThreadId);
+      expect(runIds).toHaveLength(2);
+      const queuedRunId = runIds.find((runId) => {
+        return runId !== activeRun.runId;
+      });
+      if (!queuedRunId) {
+        throw new Error("Expected the queued Gmail event to start a run");
+      }
+
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(queuedRunId);
+      const appendSystemPrompt = claim.appendSystemPrompt;
+      if (typeof appendSystemPrompt !== "string") {
+        throw new Error("Expected appendSystemPrompt on the queued run");
+      }
+      expect(claim.prompt).toContain("Not included below: the email body.");
+      expect(claim.prompt).not.toContain("Please draft a helpful reply.");
+      expectGmailEventContextInPrompt(claim.prompt, {
+        automationId: created.body.id,
+        event: "new_message",
         emailAddress: gmailEmail,
-        historyId: 101,
-        messageId: "pubsub-queued",
-      }),
-    );
-
-    expectResponseStatus(response, 200);
-    expect(response.body).toMatchObject({ dispatched: 1, duplicates: 0 });
-    await expect(workflowRunIds(actor, chatThreadId)).resolves.toStrictEqual([
-      activeRun.runId,
-    ]);
-
-    await completeRunThroughSandbox(runnerGroup, activeRun.runId);
-    const runIds = await workflowRunIds(actor, chatThreadId);
-    expect(runIds).toHaveLength(2);
-    const queuedRunId = runIds.find((runId) => {
-      return runId !== activeRun.runId;
+        messageId: "msg-1",
+        threadId: "gmail-thread-1",
+        from: "Customer Example <customer@example.com>",
+        to: [gmailEmail],
+        cc: [],
+        subject: "Invoice needs a reply",
+      });
+      expect(appendSystemPrompt).toContain("# Agent Identity");
+      expect(appendSystemPrompt).not.toContain("# Current context");
     });
-    if (!queuedRunId) {
-      throw new Error("Expected the queued Gmail event to start a run");
-    }
-
-    await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(queuedRunId);
-    const appendSystemPrompt = claim.appendSystemPrompt;
-    if (typeof appendSystemPrompt !== "string") {
-      throw new Error("Expected appendSystemPrompt on the queued run");
-    }
-    expect(claim.prompt).toContain("Not included below: the email body.");
-    expect(claim.prompt).not.toContain("Please draft a helpful reply.");
-    expectGmailEventContextInPrompt(claim.prompt, {
-      automationId: created.body.id,
-      event: "new_message",
-      emailAddress: gmailEmail,
-      messageId: "msg-1",
-      threadId: "gmail-thread-1",
-      from: "Customer Example <customer@example.com>",
-      to: [gmailEmail],
-      cc: [],
-      subject: "Invoice needs a reply",
-    });
-    expect(appendSystemPrompt).toContain("# Agent Identity");
-    expect(appendSystemPrompt).not.toContain("# Current context");
   });
 });

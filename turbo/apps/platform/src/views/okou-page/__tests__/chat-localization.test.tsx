@@ -10,7 +10,7 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
   click,
@@ -273,73 +273,93 @@ async function expectLocalizedComposerAttributes(
   return composer;
 }
 
-test("A cancelled run keeps its meaning when the language changes", async () => {
-  const activeRun: ChatEventRow = {
-    id: EVENT_ID,
-    chatThreadId: THREAD_ID,
-    runId: RUN_ID,
-    revokesEventId: null,
-    contextType: null,
-    contextId: null,
-    runEventSequenceNumber: null,
-    runEventId: null,
-    seqId: 1,
-    createdAt: CREATED_AT,
-    eventType: "input.prompt",
-    payload: {
-      userMessage: {
-        version: 1,
-        parts: [{ type: "text", text: "Continue the active workflow" }],
-      },
-    },
-  };
-  let stoppedRequest: ChatEventSendBody | undefined;
-
-  configureExistingChat({
-    draft: null,
-    rows: [activeRun],
-    title: "Fluxo em andamento",
-  });
-  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    stoppedRequest = body;
-    return respond(201, {
+describe("with a localized running conversation", () => {
+  async function prepareScenario() {
+    const activeRun: ChatEventRow = {
+      id: EVENT_ID,
+      chatThreadId: THREAD_ID,
       runId: RUN_ID,
-      threadId: THREAD_ID,
-      status: "pending",
+      revokesEventId: null,
+      contextType: null,
+      contextId: null,
+      runEventSequenceNumber: null,
+      runEventId: null,
+      seqId: 1,
       createdAt: CREATED_AT,
+      eventType: "input.prompt",
+      payload: {
+        userMessage: {
+          version: 1,
+          parts: [{ type: "text", text: "Continue the active workflow" }],
+        },
+      },
+    };
+    let stoppedRequest: ChatEventSendBody | undefined;
+
+    configureExistingChat({
+      draft: null,
+      rows: [activeRun],
+      title: "Fluxo em andamento",
     });
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-
-  const stop = await findAction("button", "Parar");
-  click(stop);
-
-  const portugueseCancellation = await screen.findByText(
-    "Pausado no meio do raciocínio — retome quando quiser.",
-  );
-  expect(portugueseCancellation).toBeVisible();
-  await waitFor(() => {
-    expect(stoppedRequest).toMatchObject({
-      agentId: AGENT_ID,
-      threadId: THREAD_ID,
-      interruptsRunId: RUN_ID,
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      stoppedRequest = body;
+      return respond(201, {
+        runId: RUN_ID,
+        threadId: THREAD_ID,
+        status: "pending",
+        createdAt: CREATED_AT,
+      });
     });
+
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+    });
+
+    const stop = await findAction("button", "Parar");
+    return {
+      stop,
+      get stoppedRequest() {
+        return stoppedRequest;
+      },
+      set stoppedRequest(next: typeof stoppedRequest) {
+        stoppedRequest = next;
+      },
+    };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
   });
+  it("a cancelled run keeps its meaning when the language changes", async () => {
+    const { stop } = preparedScenario;
+    click(stop);
 
-  await changeLanguage(portuguese, english);
+    const portugueseCancellation = await screen.findByText(
+      "Pausado no meio do raciocínio — retome quando quiser.",
+    );
+    expect(portugueseCancellation).toBeVisible();
+    await waitFor(() => {
+      expect(preparedScenario.stoppedRequest).toMatchObject({
+        agentId: AGENT_ID,
+        threadId: THREAD_ID,
+        interruptsRunId: RUN_ID,
+      });
+    });
 
-  const englishCancellation = await screen.findByText(
-    "Paused mid-thought — pick it back up whenever.",
-  );
-  expect(englishCancellation).toBeVisible();
-  expect(
-    screen.queryByText("Pausado no meio do raciocínio — retome quando quiser."),
-  ).not.toBeInTheDocument();
-  expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+    await changeLanguage(portuguese, english);
+
+    const englishCancellation = await screen.findByText(
+      "Paused mid-thought — pick it back up whenever.",
+    );
+    expect(englishCancellation).toBeVisible();
+    expect(
+      screen.queryByText(
+        "Pausado no meio do raciocínio — retome quando quiser.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(pathname()).toBe(`/chats/${THREAD_ID}`);
+  });
 });
 
 test("Changing language translates the enabled composer controls", async () => {

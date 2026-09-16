@@ -3,7 +3,7 @@ import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-con
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
   fill,
@@ -198,22 +198,48 @@ async function prepareScrollableDesktopConnectorMenu() {
   };
 }
 
-test("Keep the desktop connector menu above while filtering", async () => {
-  const {
-    user,
-    searchInput,
-    layout,
-    popover,
-    trigger,
-    connectorList,
-    expandedListHeight,
-  } = await prepareScrollableDesktopConnectorMenu();
-  await filterConnectorMenu(user, searchInput, layout.notifyResize);
-  await waitFor(() => {
-    expect(popoverSide(popover, trigger)).toBe("top");
-    expect(connectorList.clientHeight).toBe(expandedListHeight);
-    expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
-    expect(screen.getByText("Add connectors")).toBeInTheDocument();
+describe("with an open desktop connector menu", () => {
+  async function prepareScenario() {
+    const {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    } = await prepareScrollableDesktopConnectorMenu();
+    return {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
+  });
+  it("keep the desktop connector menu above while filtering", async () => {
+    const {
+      user,
+      searchInput,
+      layout,
+      popover,
+      trigger,
+      connectorList,
+      expandedListHeight,
+    } = preparedScenario;
+    await filterConnectorMenu(user, searchInput, layout.notifyResize);
+    await waitFor(() => {
+      expect(popoverSide(popover, trigger)).toBe("top");
+      expect(connectorList.clientHeight).toBe(expandedListHeight);
+      expect(connectorList.scrollHeight).toBe(connectorList.clientHeight);
+      expect(screen.getByText("Add connectors")).toBeInTheDocument();
+    });
   });
 });
 

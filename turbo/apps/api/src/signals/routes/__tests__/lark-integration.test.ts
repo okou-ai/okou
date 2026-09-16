@@ -2,6 +2,7 @@ import { createDeferredPromise } from "../../utils";
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import {
   feishuConnectContract,
   larkConnectContract,
@@ -372,61 +373,71 @@ describe("Lark integration", () => {
       }),
     ).toHaveLength(1);
   });
-  it("answers an incoming Lark message with a Lark account-connect card", async () => {
-    const { install } = await fixture();
-    const installation = await install("lark");
-    const sent = createDeferredPromise<unknown>(context.signal);
-    server.use(
-      http.post(
-        "https://open.larksuite.com/open-apis/im/v1/messages/om_incoming/reply",
-        async ({ request }) => {
-          sent.resolve(await request.json());
-          return HttpResponse.json({
-            code: 0,
-            data: { message_id: "om_connect", chat_id: "oc_lark" },
-          });
-        },
-      ),
-    );
-    const app = createAppWithRoutes({
-      signal: context.signal,
-      routes: feishuEventsRoutes,
+  describe("with an installed Lark app", () => {
+    async function prepareScenario() {
+      const { install } = await fixture();
+      const installation = await install("lark");
+      return { installation };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    const response = await app.request(installation.callbackUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        schema: "2.0",
-        header: {
-          event_id: randomUUID(),
-          event_type: "im.message.receive_v1",
-          tenant_key: "lark-tenant",
-          app_id: installation.appId,
-          token: "test-verification",
-        },
-        event: {
-          sender: {
-            sender_id: { open_id: "ou_new_lark_user" },
-            sender_type: "user",
+    it("answers an incoming Lark message with a Lark account-connect card", async () => {
+      const { installation } = preparedScenario;
+      const sent = createDeferredPromise<unknown>(context.signal);
+      server.use(
+        http.post(
+          "https://open.larksuite.com/open-apis/im/v1/messages/om_incoming/reply",
+          async ({ request }) => {
+            sent.resolve(await request.json());
+            return HttpResponse.json({
+              code: 0,
+              data: { message_id: "om_connect", chat_id: "oc_lark" },
+            });
           },
-          message: {
-            message_id: "om_incoming",
-            chat_id: "oc_lark",
-            chat_type: "p2p",
-            message_type: "text",
-            content: JSON.stringify({ text: "Hello" }),
+        ),
+      );
+      const app = createAppWithRoutes({
+        signal: context.signal,
+        routes: feishuEventsRoutes,
+      });
+      const response = await app.request(installation.callbackUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          schema: "2.0",
+          header: {
+            event_id: randomUUID(),
+            event_type: "im.message.receive_v1",
+            tenant_key: "lark-tenant",
+            app_id: installation.appId,
+            token: "test-verification",
           },
-        },
-      }),
+          event: {
+            sender: {
+              sender_id: { open_id: "ou_new_lark_user" },
+              sender_type: "user",
+            },
+            message: {
+              message_id: "om_incoming",
+              chat_id: "oc_lark",
+              chat_type: "p2p",
+              message_type: "text",
+              content: JSON.stringify({ text: "Hello" }),
+            },
+          },
+        }),
+      });
+      expect(response.status).toBe(200);
+      const card = await sent.promise;
+      expect(card).toMatchObject({
+        reply_in_thread: true,
+        msg_type: "interactive",
+      });
+      expect(JSON.stringify(card)).toContain("in Lark");
+      expect(JSON.stringify(card)).toContain("/settings/lark?");
+      expect(JSON.stringify(card)).not.toContain("/settings/feishu");
     });
-    expect(response.status).toBe(200);
-    const card = await sent.promise;
-    expect(card).toMatchObject({
-      reply_in_thread: true,
-      msg_type: "interactive",
-    });
-    expect(JSON.stringify(card)).toContain("in Lark");
-    expect(JSON.stringify(card)).toContain("/settings/lark?");
-    expect(JSON.stringify(card)).not.toContain("/settings/feishu");
   });
 });

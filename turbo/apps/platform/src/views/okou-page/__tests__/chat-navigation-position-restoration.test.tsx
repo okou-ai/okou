@@ -1,6 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
+
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -431,74 +432,85 @@ async function expectAtLatestActivity(
   });
 }
 
-test("Restore the reading position during keyboard thread navigation", async () => {
-  context.mocks.browser.userAgent(LINUX_CHROME_USER_AGENT);
-  const user = userEvent.setup({ delay: null });
-  // Four message anchors in a shorter viewport keep message 2 away from both
-  // scroll boundaries without rendering an unrelated third exchange.
-  const viewportHeight = 240;
-  const currentEvents = conversationEvents("keyboard-current", "Current", 2);
-  mockThreadStories(KEYBOARD_CURRENT_THREAD_ID, [
-    {
-      id: KEYBOARD_PREVIOUS_THREAD_ID,
-      title: "Previous keyboard thread",
-      events: conversationEvents("keyboard-previous", "Previous", 1),
-    },
-    {
-      id: KEYBOARD_CURRENT_THREAD_ID,
-      title: "Current keyboard thread",
-      events: currentEvents,
-    },
-  ]);
+describe("with a measurable thread viewport", () => {
+  async function prepareScenario() {
+    context.mocks.browser.userAgent(LINUX_CHROME_USER_AGENT);
+    const user = userEvent.setup({ delay: null });
+    // Four message anchors in a shorter viewport keep message 2 away from both
+    // scroll boundaries without rendering an unrelated third exchange.
+    const viewportHeight = 240;
+    const currentEvents = conversationEvents("keyboard-current", "Current", 2);
+    mockThreadStories(KEYBOARD_CURRENT_THREAD_ID, [
+      {
+        id: KEYBOARD_PREVIOUS_THREAD_ID,
+        title: "Previous keyboard thread",
+        events: conversationEvents("keyboard-previous", "Previous", 1),
+      },
+      {
+        id: KEYBOARD_CURRENT_THREAD_ID,
+        title: "Current keyboard thread",
+        events: currentEvents,
+      },
+    ]);
 
-  await setupPage({
-    context,
-    host: APP_HOST,
-    path: `/chats/${KEYBOARD_CURRENT_THREAD_ID}`,
+    await setupPage({
+      context,
+      host: APP_HOST,
+      path: `/chats/${KEYBOARD_CURRENT_THREAD_ID}`,
+    });
+
+    const targetText = "Current message 2";
+    await waitForInteractiveThread(
+      KEYBOARD_CURRENT_THREAD_ID,
+      "Current keyboard thread",
+      targetText,
+    );
+    const initialGeometry = installChatScrollGeometry(
+      threadContainer(KEYBOARD_CURRENT_THREAD_ID),
+    );
+    initialGeometry.setViewportHeight(viewportHeight);
+    fireEvent.resize(window);
+    return { initialGeometry, targetText, user, viewportHeight };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
   });
+  it("restore the reading position during keyboard thread navigation", async () => {
+    const { initialGeometry, targetText, user, viewportHeight } =
+      preparedScenario;
+    await waitFor(() => {
+      expect(initialGeometry.atBottom()).toBeTruthy();
+    });
+    await chooseReadingPosition(initialGeometry, targetText);
+    expect(initialGeometry.atBottom()).toBeFalsy();
 
-  const targetText = "Current message 2";
-  await waitForInteractiveThread(
-    KEYBOARD_CURRENT_THREAD_ID,
-    "Current keyboard thread",
-    targetText,
-  );
-  const initialGeometry = installChatScrollGeometry(
-    threadContainer(KEYBOARD_CURRENT_THREAD_ID),
-  );
-  initialGeometry.setViewportHeight(viewportHeight);
-  fireEvent.resize(window);
-  await waitFor(() => {
-    expect(initialGeometry.atBottom()).toBeTruthy();
+    threadSection(KEYBOARD_CURRENT_THREAD_ID).focus();
+    expect(threadSection(KEYBOARD_CURRENT_THREAD_ID)).toHaveFocus();
+    await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
+    await waitForInteractiveThread(
+      KEYBOARD_PREVIOUS_THREAD_ID,
+      "Previous keyboard thread",
+      "Previous message 1",
+    );
+
+    threadSection(KEYBOARD_PREVIOUS_THREAD_ID).focus();
+    expect(threadSection(KEYBOARD_PREVIOUS_THREAD_ID)).toHaveFocus();
+    await user.keyboard("{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}");
+    await waitForInteractiveThread(
+      KEYBOARD_CURRENT_THREAD_ID,
+      "Current keyboard thread",
+      targetText,
+    );
+    const returnedGeometry = installChatScrollGeometry(
+      threadContainer(KEYBOARD_CURRENT_THREAD_ID),
+    );
+    returnedGeometry.setViewportHeight(viewportHeight);
+    fireEvent.resize(window);
+
+    await expectReadingPosition(returnedGeometry, targetText);
+    expect(returnedGeometry.atBottom()).toBeFalsy();
   });
-  await chooseReadingPosition(initialGeometry, targetText);
-  expect(initialGeometry.atBottom()).toBeFalsy();
-
-  threadSection(KEYBOARD_CURRENT_THREAD_ID).focus();
-  expect(threadSection(KEYBOARD_CURRENT_THREAD_ID)).toHaveFocus();
-  await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
-  await waitForInteractiveThread(
-    KEYBOARD_PREVIOUS_THREAD_ID,
-    "Previous keyboard thread",
-    "Previous message 1",
-  );
-
-  threadSection(KEYBOARD_PREVIOUS_THREAD_ID).focus();
-  expect(threadSection(KEYBOARD_PREVIOUS_THREAD_ID)).toHaveFocus();
-  await user.keyboard("{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}");
-  await waitForInteractiveThread(
-    KEYBOARD_CURRENT_THREAD_ID,
-    "Current keyboard thread",
-    targetText,
-  );
-  const returnedGeometry = installChatScrollGeometry(
-    threadContainer(KEYBOARD_CURRENT_THREAD_ID),
-  );
-  returnedGeometry.setViewportHeight(viewportHeight);
-  fireEvent.resize(window);
-
-  await expectReadingPosition(returnedGeometry, targetText);
-  expect(returnedGeometry.atBottom()).toBeFalsy();
 });
 
 test("Restore the reading position after switching threads from the sidebar", async () => {

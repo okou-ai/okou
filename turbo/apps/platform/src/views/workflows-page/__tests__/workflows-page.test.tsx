@@ -43,7 +43,7 @@ import {
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test, vi, type Mock } from "vitest";
+import { expect, test, vi, type Mock, describe, beforeEach, it } from "vitest";
 
 import {
   click,
@@ -4599,43 +4599,62 @@ test.each(["cancel", "navigate"] as const)(
   },
 );
 
-test("Do not recover the target Calendar automation by reconnecting another account", async () => {
-  const workflow = calendarRecoveryWorkflow();
-  workflow.automations.unshift(
-    googleCalendarWorkflowAutomation({ id: "healthy-other-calendar" }),
-  );
-  const reconnect = mockCalendarReconnect(workflow, "work");
-  const requestBudgetReached = context.mocks.deferred<void>();
-  let oauthCompleted = false;
-  let statusReads = 0;
-  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    if (oauthCompleted) {
-      statusReads++;
-      if (statusReads === 10) {
-        requestBudgetReached.resolve();
+describe("with a reconnecting Calendar account", () => {
+  async function prepareScenario() {
+    const workflow = calendarRecoveryWorkflow();
+    workflow.automations.unshift(
+      googleCalendarWorkflowAutomation({ id: "healthy-other-calendar" }),
+    );
+    const reconnect = mockCalendarReconnect(workflow, "work");
+    const requestBudgetReached = context.mocks.deferred<void>();
+    let oauthCompleted = false;
+    let statusReads = 0;
+    context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
+      if (oauthCompleted) {
+        statusReads++;
+        if (statusReads === 10) {
+          requestBudgetReached.resolve();
+        }
       }
-    }
-    return respond(200, publicWorkflowDetail(workflow));
-  });
-  await reconnect.open();
-  oauthCompleted = true;
-  reconnect.complete();
-  await requestBudgetReached.promise;
-  await expectUnconfirmedCalendarRecovery();
-  expect(
-    screen.getByText(
-      "Google Calendar needs to be reconnected before this automation can resume.",
-    ),
-  ).toBeVisible();
-  for (const enabled of screen.getAllByRole("switch")) {
-    expect(enabled).toBeChecked();
+      return respond(200, publicWorkflowDetail(workflow));
+    });
+    await reconnect.open();
+    return {
+      get oauthCompleted() {
+        return oauthCompleted;
+      },
+      set oauthCompleted(next: typeof oauthCompleted) {
+        oauthCompleted = next;
+      },
+      reconnect,
+      requestBudgetReached,
+    };
   }
-  expect(reconnect.submittedAccounts).toStrictEqual([
-    {
-      intent: "reconnect",
-      connectionId: "10000000-0000-4000-a000-000000000020",
-    },
-  ]);
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
+  });
+  it("do not recover the target Calendar automation by reconnecting another account", async () => {
+    const { reconnect, requestBudgetReached } = preparedScenario;
+    preparedScenario.oauthCompleted = true;
+    reconnect.complete();
+    await requestBudgetReached.promise;
+    await expectUnconfirmedCalendarRecovery();
+    expect(
+      screen.getByText(
+        "Google Calendar needs to be reconnected before this automation can resume.",
+      ),
+    ).toBeVisible();
+    for (const enabled of screen.getAllByRole("switch")) {
+      expect(enabled).toBeChecked();
+    }
+    expect(reconnect.submittedAccounts).toStrictEqual([
+      {
+        intent: "reconnect",
+        connectionId: "10000000-0000-4000-a000-000000000020",
+      },
+    ]);
+  });
 });
 
 test.each([
@@ -6027,61 +6046,80 @@ test("Release author requests on workflow navigation", async () => {
   expect(screen.queryByText("Previous Page Author")).not.toBeInTheDocument();
 });
 
-test("Bound the page's author cache while quickly moving between workflows", async () => {
-  const workflows = Array.from({ length: 33 }, (_, index) => {
+describe("with a complete workflow author catalog", () => {
+  async function prepareScenario() {
+    const workflows = Array.from({ length: 33 }, (_, index) => {
+      return {
+        ...salesResearch(),
+        id: `d0000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
+        name: `bounded-${index}`,
+        displayName: `Bounded Workflow ${index}`,
+        automations: [],
+      };
+    });
+    mockWorkflowApis(workflows);
+    let revision = "Initial";
+    context.mocks.api(
+      workflowsDetailContract.ownerProfile,
+      ({ params, respond }) => {
+        return respond(200, {
+          displayName: `${revision} ${params.workflowId}`,
+          imageUrl: null,
+        });
+      },
+    );
+    await setupPage({ context, path: "/workflows" });
+    await screen.findByText("Bounded Workflow 32");
+    const links = queryAllByRoleFast("link");
     return {
-      ...salesResearch(),
-      id: `d0000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
-      name: `bounded-${index}`,
-      displayName: `Bounded Workflow ${index}`,
-      automations: [],
+      links,
+      workflows,
+      get revision() {
+        return revision;
+      },
+      set revision(next: typeof revision) {
+        revision = next;
+      },
     };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
   });
-  mockWorkflowApis(workflows);
-  let revision = "Initial";
-  context.mocks.api(
-    workflowsDetailContract.ownerProfile,
-    ({ params, respond }) => {
-      return respond(200, {
-        displayName: `${revision} ${params.workflowId}`,
-        imageUrl: null,
-      });
-    },
-  );
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Bounded Workflow 32");
-  const links = queryAllByRoleFast("link");
-  await act(() => {
-    linkByAriaLabel("Open Bounded Workflow 0", links).focus();
-  });
-  await expect(
-    screen.findByText(`Initial ${workflows[0]?.id}`, {
-      selector: '[role="tooltip"] *',
-    }),
-  ).resolves.toBeInTheDocument();
+  it("bound the page's author cache while quickly moving between workflows", async () => {
+    const { links, workflows } = preparedScenario;
+    await act(() => {
+      linkByAriaLabel("Open Bounded Workflow 0", links).focus();
+    });
+    await expect(
+      screen.findByText(`Initial ${workflows[0]?.id}`, {
+        selector: '[role="tooltip"] *',
+      }),
+    ).resolves.toBeInTheDocument();
 
-  // Focus can move again before an author arrives; the page still owns each
-  // request. Observe the final row before checking that capacity evicts the first.
-  await act(() => {
-    for (const workflow of workflows.slice(1)) {
-      linkByAriaLabel(`Open ${workflow.displayName}`, links).focus();
-    }
-  });
-  await expect(
-    screen.findByText(`Initial ${workflows[32]?.id}`, {
-      selector: '[role="tooltip"] *',
-    }),
-  ).resolves.toBeInTheDocument();
+    // Focus can move again before an author arrives; the page still owns each
+    // request. Observe the final row before checking that capacity evicts the first.
+    await act(() => {
+      for (const workflow of workflows.slice(1)) {
+        linkByAriaLabel(`Open ${workflow.displayName}`, links).focus();
+      }
+    });
+    await expect(
+      screen.findByText(`Initial ${workflows[32]?.id}`, {
+        selector: '[role="tooltip"] *',
+      }),
+    ).resolves.toBeInTheDocument();
 
-  revision = "Evicted";
-  await act(() => {
-    linkByAriaLabel("Open Bounded Workflow 0", links).focus();
+    preparedScenario.revision = "Evicted";
+    await act(() => {
+      linkByAriaLabel("Open Bounded Workflow 0", links).focus();
+    });
+    await expect(
+      screen.findByText(`Evicted ${workflows[0]?.id}`, {
+        selector: '[role="tooltip"] *',
+      }),
+    ).resolves.toBeInTheDocument();
   });
-  await expect(
-    screen.findByText(`Evicted ${workflows[0]?.id}`, {
-      selector: '[role="tooltip"] *',
-    }),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Reuse a successful author profile until its TTL expires", async () => {

@@ -6033,201 +6033,161 @@ describe("Official Workflow installations", () => {
     ).resolves.toMatchObject({ autonomyBudget: 8, enabled: true });
   });
 
-  it.each([
+  describe.each([
     "dormant materialization",
     "current lifecycle gap",
     "discarded materialization",
   ] as const)(
     "repairs %s without duplicating identity, watch, or history",
-    async (phase) => {
-      installCatalogStorageFixture();
-      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-      const definitionName = `api-test-materialize-${suffix}`;
-      await syncCatalog(
-        catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
-      );
-      const setup = await workflowBdd.setupWorkflowOrg();
-      const { actor } = setup;
-      const { agentId } = await workflowBdd.createAgent(actor);
-      onTestFinished(async () => {
+    (phase) => {
+      async function prepareScenario() {
         installCatalogStorageFixture();
-        const createdRuns = await runs.listAgentRuns(actor, {
-          agent: agentId,
-          limit: 100,
-        });
-        for (const run of createdRuns.runs) {
-          await runs.requestCancelRun(actor, run.id, [200, 400]);
-        }
-        await flushWaitUntilForTest();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
-      });
-      mockGmailConnectorOAuth({ email: `materialize-${suffix}@example.test` });
-      await workflowBdd.connectConnector(actor, "gmail");
-      mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-      let watchCalls = 0;
-      let stopCalls = 0;
-      server.use(
-        http.post(
-          "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-          () => {
-            watchCalls++;
-            return HttpResponse.json({
-              historyId: String(100 + watchCalls),
-              expiration: "4102444800000",
-            });
-          },
-        ),
-        http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
-          stopCalls++;
-          return new HttpResponse(null, { status: 204 });
-        }),
-      );
-      await setOfficialWorkflowsEnabled(actor, true);
-      const headers = authHeaders(actor);
-      const installed = await accept(
-        officialClient().install({
-          headers,
-          params: { definitionName },
-          body: {
-            agentId,
-            blueprints: [{ blueprintKey: "gmail-trigger", bindings: [] }],
-          },
-        }),
-        [201],
-      );
-      const workflowId = installed.body.workflow.id;
-      const automation = installed.body.workflow.automations[0];
-      if (!automation) {
-        throw new Error("Expected Official Gmail Automation");
-      }
-      expect(automation).toMatchObject({
-        enabled: true,
-        official: {
-          intendedEnabled: true,
-          reconciliationStatus: "current",
-        },
-      });
-
-      runs.configureRunnerGroup();
-      runs.acceptStorageDownloads();
-      const historical = await accept(
-        automationClient().run({
-          headers,
-          params: { id: automation.id },
-        }),
-        [201],
-      );
-      if (!historical.body.runId) {
-        throw new Error("Expected historical Official Automation Run");
-      }
-      await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
-
-      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      await runOfficialWorkflowReconciliationWorker();
-      const removedIdentity = await readOfficialWorkflowReconciliationState({
-        workflowId,
-      });
-      expect(removedIdentity.body.identities).toStrictEqual([
-        expect.objectContaining({
-          id: automation.id,
-          automationId: null,
-          blueprintKey: "gmail-trigger",
-          state: "removed",
-          retainedIntendedEnabled: true,
-        }),
-      ]);
-
-      await syncCatalog(
-        catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
-      );
-      await runOfficialWorkflowReconciliationWorker();
-      const restored = await accept(
-        installationClient().get({ headers, params: { workflowId } }),
-        [200],
-      );
-      expect(restored.body.workflow.automations).toHaveLength(1);
-      expect(restored.body.workflow.automations[0]).toMatchObject({
-        id: automation.id,
-        chatThreadId: automation.chatThreadId,
-        enabled: true,
-        official: {
-          intendedEnabled: true,
-          reconciliationStatus: "current",
-        },
-      });
-      const historyCounts = await readAgentRunFamilyCountsFixture(
-        context,
-        agentId,
-      );
-
-      if (phase === "dormant materialization") {
-        await simulateDormantMaterializationCrash({
-          definitionName,
-          automationId: automation.id,
-        });
-        watchCalls = 0;
-        const crashed = await accept(
-          installationClient().get({ headers, params: { workflowId } }),
-          [200],
+        const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+        const definitionName = `api-test-materialize-${suffix}`;
+        await syncCatalog(
+          catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
         );
-        expect(crashed.body.workflow.automations).toHaveLength(1);
-        expect(crashed.body.workflow.automations[0]).toMatchObject({
-          id: automation.id,
-          enabled: false,
+        const setup = await workflowBdd.setupWorkflowOrg();
+        const { actor } = setup;
+        const { agentId } = await workflowBdd.createAgent(actor);
+        onTestFinished(async () => {
+          installCatalogStorageFixture();
+          const createdRuns = await runs.listAgentRuns(actor, {
+            agent: agentId,
+            limit: 100,
+          });
+          for (const run of createdRuns.runs) {
+            await runs.requestCancelRun(actor, run.id, [200, 400]);
+          }
+          await flushWaitUntilForTest();
+          await bdd.deleteAgent(actor, agentId);
+          await cleanupCatalog();
+        });
+        mockGmailConnectorOAuth({
+          email: `materialize-${suffix}@example.test`,
+        });
+        await workflowBdd.connectConnector(actor, "gmail");
+        mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
+        let watchCalls = 0;
+        let stopCalls = 0;
+        server.use(
+          http.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+            () => {
+              watchCalls++;
+              return HttpResponse.json({
+                historyId: String(100 + watchCalls),
+                expiration: "4102444800000",
+              });
+            },
+          ),
+          http.post(
+            "https://gmail.googleapis.com/gmail/v1/users/me/stop",
+            () => {
+              stopCalls++;
+              return new HttpResponse(null, { status: 204 });
+            },
+          ),
+        );
+        await setOfficialWorkflowsEnabled(actor, true);
+        const headers = authHeaders(actor);
+        const installed = await accept(
+          officialClient().install({
+            headers,
+            params: { definitionName },
+            body: {
+              agentId,
+              blueprints: [{ blueprintKey: "gmail-trigger", bindings: [] }],
+            },
+          }),
+          [201],
+        );
+        const workflowId = installed.body.workflow.id;
+        const automation = installed.body.workflow.automations[0];
+        if (!automation) {
+          throw new Error("Expected Official Gmail Automation");
+        }
+        return {
+          automation,
+          headers,
+          actor,
+          definitionName,
+          workflowId,
+          agentId,
+          get watchCalls() {
+            return watchCalls;
+          },
+          set watchCalls(next: typeof watchCalls) {
+            watchCalls = next;
+          },
+          get stopCalls() {
+            return stopCalls;
+          },
+          set stopCalls(next: typeof stopCalls) {
+            stopCalls = next;
+          },
+        };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
+      });
+      it("preserves the complete scenario", async () => {
+        const {
+          automation,
+          headers,
+          actor,
+          definitionName,
+          workflowId,
+          agentId,
+        } = preparedScenario;
+        expect(automation).toMatchObject({
+          enabled: true,
           official: {
             intendedEnabled: true,
-            reconciliationStatus: "reconciling",
+            reconciliationStatus: "current",
           },
         });
-        const crashedWork = await readOfficialWorkflowReconciliationState({
+
+        runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        const historical = await accept(
+          automationClient().run({
+            headers,
+            params: { id: automation.id },
+          }),
+          [201],
+        );
+        if (!historical.body.runId) {
+          throw new Error("Expected historical Official Automation Run");
+        }
+        await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
+
+        await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+        await runOfficialWorkflowReconciliationWorker();
+        const removedIdentity = await readOfficialWorkflowReconciliationState({
           workflowId,
         });
-        expect(crashedWork.body.reconciliationWork).toMatchObject([
-          {
-            definitionName,
-            state: "running",
-            leaseId: expect.any(String),
-            attemptCount: 0,
-          },
-        ]);
-        expect(crashedWork.body.identities).toStrictEqual([
+        expect(removedIdentity.body.identities).toStrictEqual([
           expect.objectContaining({
             id: automation.id,
             automationId: null,
             blueprintKey: "gmail-trigger",
-            state: "reconciling",
+            state: "removed",
             retainedIntendedEnabled: true,
-            retainedAppliedFingerprint: expect.any(String),
           }),
         ]);
 
-        const retried = await Promise.all([
-          runOfficialWorkflowReconciliationWorker(),
-          runOfficialWorkflowReconciliationWorker(),
-        ]);
-        expect(
-          retried.reduce((sum, result) => {
-            return sum + result.claimed;
-          }, 0),
-        ).toBe(1);
-        expect(
-          retried.reduce((sum, result) => {
-            return sum + result.completed;
-          }, 0),
-        ).toBe(1);
-        expect(
-          retried.reduce((sum, result) => {
-            return sum + result.installations;
-          }, 0),
-        ).toBe(1);
-
-        const recovered = await accept(
+        await syncCatalog(
+          catalog([activeDefinition(definitionName, [gmailBlueprint()])]),
+        );
+        await runOfficialWorkflowReconciliationWorker();
+        const restored = await accept(
           installationClient().get({ headers, params: { workflowId } }),
           [200],
         );
-        expect(recovered.body.workflow.automations).toHaveLength(1);
-        expect(recovered.body.workflow.automations[0]).toMatchObject({
+        expect(restored.body.workflow.automations).toHaveLength(1);
+        expect(restored.body.workflow.automations[0]).toMatchObject({
           id: automation.id,
           chatThreadId: automation.chatThreadId,
           enabled: true,
@@ -6236,153 +6196,236 @@ describe("Official Workflow installations", () => {
             reconciliationStatus: "current",
           },
         });
-        const recoveredIdentity = await readOfficialWorkflowReconciliationState(
-          {
-            workflowId,
-          },
+        const historyCounts = await readAgentRunFamilyCountsFixture(
+          context,
+          agentId,
         );
-        expect(recoveredIdentity.body.identities).toStrictEqual([
-          expect.objectContaining({
-            id: automation.id,
+
+        if (phase === "dormant materialization") {
+          await simulateDormantMaterializationCrash({
+            definitionName,
             automationId: automation.id,
-            blueprintKey: "gmail-trigger",
-            state: "active",
-          }),
-        ]);
-        expect(watchCalls).toBe(1);
-        await expect(
-          readAgentRunFamilyCountsFixture(context, agentId),
-        ).resolves.toStrictEqual(historyCounts);
-        await expect(
-          readOfficialWorkflowRunStateFixture(context, historical.body.runId),
-        ).resolves.toMatchObject({
-          provenance: {
-            definitions: [expect.objectContaining({ name: definitionName })],
-          },
-        });
-      } else if (phase === "current lifecycle gap") {
-        await simulateCurrentLifecycleGap({
-          definitionName,
-          automationId: automation.id,
-        });
-        watchCalls = 0;
-        const currentGap = await accept(
-          installationClient().get({ headers, params: { workflowId } }),
-          [200],
-        );
-        expect(currentGap.body.workflow.automations).toHaveLength(1);
-        expect(currentGap.body.workflow.automations[0]).toMatchObject({
-          id: automation.id,
-          enabled: false,
-          official: {
-            intendedEnabled: true,
-            reconciliationStatus: "current",
-          },
-        });
-        await expect(
-          runOfficialWorkflowReconciliationWorker(),
-        ).resolves.toStrictEqual(
-          expect.objectContaining({
-            claimed: 1,
-            completed: 1,
-            installations: 1,
-          }),
-        );
-        const currentGapRecovered = await accept(
-          installationClient().get({ headers, params: { workflowId } }),
-          [200],
-        );
-        expect(currentGapRecovered.body.workflow.automations).toHaveLength(1);
-        expect(currentGapRecovered.body.workflow.automations[0]).toMatchObject({
-          id: automation.id,
-          enabled: true,
-          official: {
-            intendedEnabled: true,
-            reconciliationStatus: "current",
-          },
-        });
-        expect(watchCalls).toBe(1);
-        await expect(
-          readAgentRunFamilyCountsFixture(context, agentId),
-        ).resolves.toStrictEqual(historyCounts);
-      } else {
-        watchCalls = 0;
-        stopCalls = 0;
-        await simulateDormantMaterializationDiscardCrash({
-          definitionName,
-          automationId: automation.id,
-        });
-        const discardGap = await accept(
-          installationClient().get({ headers, params: { workflowId } }),
-          [200],
-        );
-        expect(discardGap.body.workflow.automations).toHaveLength(1);
-        expect(discardGap.body.workflow.automations[0]).toMatchObject({
-          id: automation.id,
-          enabled: false,
-          official: {
-            intendedEnabled: true,
-            reconciliationStatus: "failed",
-          },
-        });
-        await runOfficialWorkflowReconciliationWorker();
-        const compensated = await accept(
-          installationClient().get({ headers, params: { workflowId } }),
-          [200],
-        );
-        expect(compensated.body.workflow.automations).toHaveLength(0);
-        expect(stopCalls).toBe(1);
-        expect(watchCalls).toBe(0);
-        const compensatedState = await readOfficialWorkflowReconciliationState({
-          workflowId,
-        });
-        expect(compensatedState.body.identities).toStrictEqual([
-          expect.objectContaining({
+          });
+          preparedScenario.watchCalls = 0;
+          const crashed = await accept(
+            installationClient().get({ headers, params: { workflowId } }),
+            [200],
+          );
+          expect(crashed.body.workflow.automations).toHaveLength(1);
+          expect(crashed.body.workflow.automations[0]).toMatchObject({
             id: automation.id,
-            automationId: null,
-            blueprintKey: "gmail-trigger",
-            state: "failed",
-            retainedIntendedEnabled: true,
-          }),
-        ]);
-        await makeOfficialWorkflowReconciliationWorkDue(definitionName);
-        await expect(
-          runOfficialWorkflowReconciliationWorker(),
-        ).resolves.toStrictEqual(
-          expect.objectContaining({
-            claimed: 1,
-            completed: 1,
-            installations: 1,
-          }),
-        );
-        const discardRecovered = await accept(
-          installationClient().get({ headers, params: { workflowId } }),
-          [200],
-        );
-        expect(discardRecovered.body.workflow.automations).toHaveLength(1);
-        expect(discardRecovered.body.workflow.automations[0]).toMatchObject({
-          id: automation.id,
-          enabled: true,
-          official: {
-            intendedEnabled: true,
-            reconciliationStatus: "current",
-          },
-        });
-        expect(watchCalls).toBe(1);
-        await expect(
-          readAgentRunFamilyCountsFixture(context, agentId),
-        ).resolves.toStrictEqual(historyCounts);
-        await expect(
-          runOfficialWorkflowReconciliationWorker(),
-        ).resolves.toStrictEqual({
-          claimed: 0,
-          completed: 0,
-          advanced: 0,
-          retried: 0,
-          installations: 0,
-        });
-        expect(watchCalls).toBe(1);
-      }
+            enabled: false,
+            official: {
+              intendedEnabled: true,
+              reconciliationStatus: "reconciling",
+            },
+          });
+          const crashedWork = await readOfficialWorkflowReconciliationState({
+            workflowId,
+          });
+          expect(crashedWork.body.reconciliationWork).toMatchObject([
+            {
+              definitionName,
+              state: "running",
+              leaseId: expect.any(String),
+              attemptCount: 0,
+            },
+          ]);
+          expect(crashedWork.body.identities).toStrictEqual([
+            expect.objectContaining({
+              id: automation.id,
+              automationId: null,
+              blueprintKey: "gmail-trigger",
+              state: "reconciling",
+              retainedIntendedEnabled: true,
+              retainedAppliedFingerprint: expect.any(String),
+            }),
+          ]);
+
+          const retried = await Promise.all([
+            runOfficialWorkflowReconciliationWorker(),
+            runOfficialWorkflowReconciliationWorker(),
+          ]);
+          expect(
+            retried.reduce((sum, result) => {
+              return sum + result.claimed;
+            }, 0),
+          ).toBe(1);
+          expect(
+            retried.reduce((sum, result) => {
+              return sum + result.completed;
+            }, 0),
+          ).toBe(1);
+          expect(
+            retried.reduce((sum, result) => {
+              return sum + result.installations;
+            }, 0),
+          ).toBe(1);
+
+          const recovered = await accept(
+            installationClient().get({ headers, params: { workflowId } }),
+            [200],
+          );
+          expect(recovered.body.workflow.automations).toHaveLength(1);
+          expect(recovered.body.workflow.automations[0]).toMatchObject({
+            id: automation.id,
+            chatThreadId: automation.chatThreadId,
+            enabled: true,
+            official: {
+              intendedEnabled: true,
+              reconciliationStatus: "current",
+            },
+          });
+          const recoveredIdentity =
+            await readOfficialWorkflowReconciliationState({
+              workflowId,
+            });
+          expect(recoveredIdentity.body.identities).toStrictEqual([
+            expect.objectContaining({
+              id: automation.id,
+              automationId: automation.id,
+              blueprintKey: "gmail-trigger",
+              state: "active",
+            }),
+          ]);
+          expect(preparedScenario.watchCalls).toBe(1);
+          await expect(
+            readAgentRunFamilyCountsFixture(context, agentId),
+          ).resolves.toStrictEqual(historyCounts);
+          await expect(
+            readOfficialWorkflowRunStateFixture(context, historical.body.runId),
+          ).resolves.toMatchObject({
+            provenance: {
+              definitions: [expect.objectContaining({ name: definitionName })],
+            },
+          });
+        } else if (phase === "current lifecycle gap") {
+          await simulateCurrentLifecycleGap({
+            definitionName,
+            automationId: automation.id,
+          });
+          preparedScenario.watchCalls = 0;
+          const currentGap = await accept(
+            installationClient().get({ headers, params: { workflowId } }),
+            [200],
+          );
+          expect(currentGap.body.workflow.automations).toHaveLength(1);
+          expect(currentGap.body.workflow.automations[0]).toMatchObject({
+            id: automation.id,
+            enabled: false,
+            official: {
+              intendedEnabled: true,
+              reconciliationStatus: "current",
+            },
+          });
+          await expect(
+            runOfficialWorkflowReconciliationWorker(),
+          ).resolves.toStrictEqual(
+            expect.objectContaining({
+              claimed: 1,
+              completed: 1,
+              installations: 1,
+            }),
+          );
+          const currentGapRecovered = await accept(
+            installationClient().get({ headers, params: { workflowId } }),
+            [200],
+          );
+          expect(currentGapRecovered.body.workflow.automations).toHaveLength(1);
+          expect(
+            currentGapRecovered.body.workflow.automations[0],
+          ).toMatchObject({
+            id: automation.id,
+            enabled: true,
+            official: {
+              intendedEnabled: true,
+              reconciliationStatus: "current",
+            },
+          });
+          expect(preparedScenario.watchCalls).toBe(1);
+          await expect(
+            readAgentRunFamilyCountsFixture(context, agentId),
+          ).resolves.toStrictEqual(historyCounts);
+        } else {
+          preparedScenario.watchCalls = 0;
+          preparedScenario.stopCalls = 0;
+          await simulateDormantMaterializationDiscardCrash({
+            definitionName,
+            automationId: automation.id,
+          });
+          const discardGap = await accept(
+            installationClient().get({ headers, params: { workflowId } }),
+            [200],
+          );
+          expect(discardGap.body.workflow.automations).toHaveLength(1);
+          expect(discardGap.body.workflow.automations[0]).toMatchObject({
+            id: automation.id,
+            enabled: false,
+            official: {
+              intendedEnabled: true,
+              reconciliationStatus: "failed",
+            },
+          });
+          await runOfficialWorkflowReconciliationWorker();
+          const compensated = await accept(
+            installationClient().get({ headers, params: { workflowId } }),
+            [200],
+          );
+          expect(compensated.body.workflow.automations).toHaveLength(0);
+          expect(preparedScenario.stopCalls).toBe(1);
+          expect(preparedScenario.watchCalls).toBe(0);
+          const compensatedState =
+            await readOfficialWorkflowReconciliationState({
+              workflowId,
+            });
+          expect(compensatedState.body.identities).toStrictEqual([
+            expect.objectContaining({
+              id: automation.id,
+              automationId: null,
+              blueprintKey: "gmail-trigger",
+              state: "failed",
+              retainedIntendedEnabled: true,
+            }),
+          ]);
+          await makeOfficialWorkflowReconciliationWorkDue(definitionName);
+          await expect(
+            runOfficialWorkflowReconciliationWorker(),
+          ).resolves.toStrictEqual(
+            expect.objectContaining({
+              claimed: 1,
+              completed: 1,
+              installations: 1,
+            }),
+          );
+          const discardRecovered = await accept(
+            installationClient().get({ headers, params: { workflowId } }),
+            [200],
+          );
+          expect(discardRecovered.body.workflow.automations).toHaveLength(1);
+          expect(discardRecovered.body.workflow.automations[0]).toMatchObject({
+            id: automation.id,
+            enabled: true,
+            official: {
+              intendedEnabled: true,
+              reconciliationStatus: "current",
+            },
+          });
+          expect(preparedScenario.watchCalls).toBe(1);
+          await expect(
+            readAgentRunFamilyCountsFixture(context, agentId),
+          ).resolves.toStrictEqual(historyCounts);
+          await expect(
+            runOfficialWorkflowReconciliationWorker(),
+          ).resolves.toStrictEqual({
+            claimed: 0,
+            completed: 0,
+            advanced: 0,
+            retried: 0,
+            installations: 0,
+          });
+          expect(preparedScenario.watchCalls).toBe(1);
+        }
+      });
     },
   );
 
@@ -9919,265 +9962,291 @@ describe("Official Workflow Run admission", () => {
     },
   );
 
-  it.each(officialQueueEncodings)(
+  describe.each(officialQueueEncodings)(
     "keeps a queued Official source claim retryable across an unexpected persisted-revision failure ($encoding $origin, persisted $storedBrand)",
-    async (queueCase) => {
-      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-      const definitionName = `api-test-queued-retry-${suffix}`;
-      const setup = await workflowBdd.setupWorkflowOrg();
-      const { actor } = setup;
-      const { agentId } = await workflowBdd.createAgent(actor);
-      const storage = installCatalogStorageFixture();
-      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-      const headers = authHeaders(actor);
-      await setOfficialWorkflowsEnabled(actor, true);
-      const installation = await accept(
-        officialClient().install({
-          headers,
-          params: { definitionName },
-          body: { agentId, blueprints: [] },
-        }),
-        [201],
-      );
-      onTestFinished(async () => {
-        installCatalogStorageFixture();
-        const createdRuns = await runs.listAgentRuns(actor, {
-          agent: agentId,
-          limit: 100,
-        });
-        for (const run of createdRuns.runs) {
-          await runs.requestCancelRun(actor, run.id, [200, 400]);
-        }
-        await flushWaitUntilForTest();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
-      });
-
-      runs.configureRunnerGroup();
-      runs.acceptStorageDownloads();
-      const first = await accept(
-        workflowClient().run({
-          headers,
-          params: { workflowId: installation.body.workflow.id },
-        }),
-        [200],
-      );
-      if (!first.body.runId) {
-        throw new Error("Expected first Official Workflow Run");
-      }
-      const firstRunId = first.body.runId;
-      await expect(runs.readRun(actor, firstRunId)).resolves.toMatchObject({
-        status: "pending",
-      });
-      await expect(
-        readOfficialWorkflowRunStateFixture(context, firstRunId),
-      ).resolves.toMatchObject({ runner_job_count: 1 });
-      const firstClaim = await runs.claimRunnerJob(firstRunId);
-      await setRunAutonomyBudgetFixture(context, firstRunId, 4);
-      const queueHeaders = officialQueueHeaders(actor, firstRunId, queueCase);
-      const beforeQueueEvents = await chat.listThreadEvents(
-        actor,
-        first.body.chatThreadId,
-      );
-      const beforeQueueEventIds = new Set(
-        beforeQueueEvents.events.map((event) => {
-          return event.id;
-        }),
-      );
-      const beforeQueuedRunFamily = await readAgentRunFamilyCountsFixture(
-        context,
-        agentId,
-      );
-
-      const queued = await accept(
-        workflowClient().run({
-          headers: queueHeaders,
-          extraHeaders: { origin: "https://app.okou.ai" },
-          params: { workflowId: installation.body.workflow.id },
-        }),
-        [200],
-      );
-      expect(queued.body.runId).toBeNull();
-      const afterQueued = await chat.listThreadEvents(
-        actor,
-        first.body.chatThreadId,
-      );
-      const queuedEvent = afterQueued.events.find((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          !beforeQueueEventIds.has(event.id)
+    (queueCase) => {
+      async function prepareScenario() {
+        const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+        const definitionName = `api-test-queued-retry-${suffix}`;
+        const setup = await workflowBdd.setupWorkflowOrg();
+        const { actor } = setup;
+        const { agentId } = await workflowBdd.createAgent(actor);
+        const storage = installCatalogStorageFixture();
+        await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+        const headers = authHeaders(actor);
+        await setOfficialWorkflowsEnabled(actor, true);
+        const installation = await accept(
+          officialClient().install({
+            headers,
+            params: { definitionName },
+            body: { agentId, blueprints: [] },
+          }),
+          [201],
         );
-      });
-      if (!queuedEvent) {
-        throw new Error("Expected persisted retryable Official queued message");
-      }
-
-      const queuedEventId = await prepareOfficialQueueEncoding({
-        eventId: queuedEvent.id,
-        workflowId: installation.body.workflow.id,
-        sourceRunId: firstRunId,
-        sourceThreadId: first.body.chatThreadId,
-        agentId,
-        ...queueCase,
-      });
-      const immutableSource = await assertOfficialQueueRawHistory(
-        actor,
-        first.body.chatThreadId,
-        queuedEventId,
-      );
-      await assertOfficialQueueSnapshot(
-        actor,
-        first.body.chatThreadId,
-        immutableSource,
-        storage,
-      );
-
-      await corruptOfficialWorkflowRevisionPayloadFixture(
-        context,
-        definitionName,
-      );
-      await webhooks.requestAgentComplete(
-        { runId: firstRunId, exitCode: 1 },
-        { authorization: `Bearer ${firstClaim.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-
-      const afterUnexpectedFailure = await listOfficialQueueEvents(
-        actor,
-        first.body.chatThreadId,
-        storage,
-      );
-      expect(
-        afterUnexpectedFailure.events.filter((event) => {
-          return event.revokesEventId === queuedEventId;
-        }),
-      ).toHaveLength(0);
-      await expect(
-        readAgentRunFamilyCountsFixture(context, agentId),
-      ).resolves.toStrictEqual({
-        run_count: beforeQueuedRunFamily.run_count,
-        callback_count: beforeQueuedRunFamily.callback_count,
-        runner_job_count: beforeQueuedRunFamily.runner_job_count,
-        launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
-      });
-
-      await cleanupCatalog();
-      await syncCatalog(
-        catalog([
-          activeDefinition(
-            definitionName,
-            [],
-            "Execute the repaired accepted Definition content.",
-          ),
-        ]),
-      );
-      const repaired = await readAcceptedDefinitionFixture(definitionName);
-      await withMockNowForTest(now() + 10 * 60 * 1000, async () => {
-        await reconcileStaleQueuedMessages(first.body.chatThreadId);
-      });
-      await flushWaitUntilForTest();
-
-      let retriedRunId: string | undefined;
-      await expect
-        .poll(async () => {
-          const listed = await runs.listAgentRuns(actor, {
+        onTestFinished(async () => {
+          installCatalogStorageFixture();
+          const createdRuns = await runs.listAgentRuns(actor, {
             agent: agentId,
             limit: 100,
           });
-          retriedRunId = listed.runs.find((run) => {
-            return run.id !== firstRunId;
-          })?.id;
-          return retriedRunId;
-        })
-        .toStrictEqual(expect.any(String));
-      if (!retriedRunId) {
-        throw new Error("Expected retried Official queued Run");
-      }
-      await expect(
-        readOfficialWorkflowRunStateFixture(context, retriedRunId),
-      ).resolves.toMatchObject({
-        provenance: {
-          definitions: [
-            {
-              name: definitionName,
-              revision: repaired.definition.revision,
-            },
-          ],
-        },
-        runner_job_count: 1,
-      });
-      const afterRetry = await listOfficialQueueEvents(
-        actor,
-        first.body.chatThreadId,
-        storage,
-      );
-      expect(
-        afterRetry.events.filter((event) => {
-          return (
-            event.revokesEventId === queuedEventId &&
-            event.runId === retriedRunId
-          );
-        }),
-      ).toHaveLength(1);
-      await expect(
-        readOfficialWorkflowQueueRunFixture(retriedRunId),
-      ).resolves.toStrictEqual({
-        triggerSource: queueCase.origin === "agent_run" ? "agent" : "web",
-        autonomyBudget: queueCase.origin === "agent_run" ? 3 : 10,
-      });
-      const retriedRun = await runs.readRun(actor, retriedRunId);
-      if (queueCase.origin === "agent_run") {
-        expect(retriedRun.appendSystemPrompt).toContain(
-          `SOURCE_RUN_ID: ${firstRunId}`,
-        );
-        expect(retriedRun.appendSystemPrompt).toContain(
-          `SOURCE_THREAD_ID: ${first.body.chatThreadId}`,
-        );
-      }
-      await expect(
-        readAgentRunFamilyCountsFixture(context, agentId),
-      ).resolves.toStrictEqual({
-        run_count: beforeQueuedRunFamily.run_count + 1,
-        callback_count: beforeQueuedRunFamily.callback_count + 1,
-        runner_job_count: beforeQueuedRunFamily.runner_job_count + 1,
-        launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
-      });
-      const retriedClaim = await runs.claimRunnerJob(retriedRunId);
-      const token = retriedClaim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected queued Run Okou token");
-      }
-      expect(verifyOkouToken(token)).toMatchObject({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        runId: retriedRunId,
-        capabilities: expect.arrayContaining(["agent:read"]),
-      });
+          for (const run of createdRuns.runs) {
+            await runs.requestCancelRun(actor, run.id, [200, 400]);
+          }
+          await flushWaitUntilForTest();
+          await bdd.deleteAgent(actor, agentId);
+          await cleanupCatalog();
+        });
 
-      await webhooks.requestAgentComplete(
-        { runId: retriedRunId, exitCode: 1 },
-        { authorization: `Bearer ${retriedClaim.sandboxToken}` },
-        [200],
-      );
-      await flushWaitUntilForTest();
-      await assertOfficialQueueSnapshot(
-        actor,
-        first.body.chatThreadId,
-        immutableSource,
-        storage,
-      );
-      await withMockNowForTest(now() + 20 * 60 * 1000, async () => {
-        await reconcileStaleQueuedMessages(first.body.chatThreadId);
+        runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        return {
+          headers,
+          installation,
+          actor,
+          agentId,
+          storage,
+          definitionName,
+        };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
       });
-      await flushWaitUntilForTest();
-      await expect(
-        readAgentRunFamilyCountsFixture(context, agentId),
-      ).resolves.toStrictEqual({
-        run_count: beforeQueuedRunFamily.run_count + 1,
-        callback_count: beforeQueuedRunFamily.callback_count + 1,
-        runner_job_count: beforeQueuedRunFamily.runner_job_count,
-        launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
+      it("preserves the complete scenario", async () => {
+        const {
+          headers,
+          installation,
+          actor,
+          agentId,
+          storage,
+          definitionName,
+        } = preparedScenario;
+        const first = await accept(
+          workflowClient().run({
+            headers,
+            params: { workflowId: installation.body.workflow.id },
+          }),
+          [200],
+        );
+        if (!first.body.runId) {
+          throw new Error("Expected first Official Workflow Run");
+        }
+        const firstRunId = first.body.runId;
+        await expect(runs.readRun(actor, firstRunId)).resolves.toMatchObject({
+          status: "pending",
+        });
+        await expect(
+          readOfficialWorkflowRunStateFixture(context, firstRunId),
+        ).resolves.toMatchObject({ runner_job_count: 1 });
+        const firstClaim = await runs.claimRunnerJob(firstRunId);
+        await setRunAutonomyBudgetFixture(context, firstRunId, 4);
+        const queueHeaders = officialQueueHeaders(actor, firstRunId, queueCase);
+        const beforeQueueEvents = await chat.listThreadEvents(
+          actor,
+          first.body.chatThreadId,
+        );
+        const beforeQueueEventIds = new Set(
+          beforeQueueEvents.events.map((event) => {
+            return event.id;
+          }),
+        );
+        const beforeQueuedRunFamily = await readAgentRunFamilyCountsFixture(
+          context,
+          agentId,
+        );
+
+        const queued = await accept(
+          workflowClient().run({
+            headers: queueHeaders,
+            extraHeaders: { origin: "https://app.okou.ai" },
+            params: { workflowId: installation.body.workflow.id },
+          }),
+          [200],
+        );
+        expect(queued.body.runId).toBeNull();
+        const afterQueued = await chat.listThreadEvents(
+          actor,
+          first.body.chatThreadId,
+        );
+        const queuedEvent = afterQueued.events.find((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            !beforeQueueEventIds.has(event.id)
+          );
+        });
+        if (!queuedEvent) {
+          throw new Error(
+            "Expected persisted retryable Official queued message",
+          );
+        }
+
+        const queuedEventId = await prepareOfficialQueueEncoding({
+          eventId: queuedEvent.id,
+          workflowId: installation.body.workflow.id,
+          sourceRunId: firstRunId,
+          sourceThreadId: first.body.chatThreadId,
+          agentId,
+          ...queueCase,
+        });
+        const immutableSource = await assertOfficialQueueRawHistory(
+          actor,
+          first.body.chatThreadId,
+          queuedEventId,
+        );
+        await assertOfficialQueueSnapshot(
+          actor,
+          first.body.chatThreadId,
+          immutableSource,
+          storage,
+        );
+
+        await corruptOfficialWorkflowRevisionPayloadFixture(
+          context,
+          definitionName,
+        );
+        await webhooks.requestAgentComplete(
+          { runId: firstRunId, exitCode: 1 },
+          { authorization: `Bearer ${firstClaim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+
+        const afterUnexpectedFailure = await listOfficialQueueEvents(
+          actor,
+          first.body.chatThreadId,
+          storage,
+        );
+        expect(
+          afterUnexpectedFailure.events.filter((event) => {
+            return event.revokesEventId === queuedEventId;
+          }),
+        ).toHaveLength(0);
+        await expect(
+          readAgentRunFamilyCountsFixture(context, agentId),
+        ).resolves.toStrictEqual({
+          run_count: beforeQueuedRunFamily.run_count,
+          callback_count: beforeQueuedRunFamily.callback_count,
+          runner_job_count: beforeQueuedRunFamily.runner_job_count,
+          launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
+        });
+
+        await cleanupCatalog();
+        await syncCatalog(
+          catalog([
+            activeDefinition(
+              definitionName,
+              [],
+              "Execute the repaired accepted Definition content.",
+            ),
+          ]),
+        );
+        const repaired = await readAcceptedDefinitionFixture(definitionName);
+        await withMockNowForTest(now() + 10 * 60 * 1000, async () => {
+          await reconcileStaleQueuedMessages(first.body.chatThreadId);
+        });
+        await flushWaitUntilForTest();
+
+        let retriedRunId: string | undefined;
+        await expect
+          .poll(async () => {
+            const listed = await runs.listAgentRuns(actor, {
+              agent: agentId,
+              limit: 100,
+            });
+            retriedRunId = listed.runs.find((run) => {
+              return run.id !== firstRunId;
+            })?.id;
+            return retriedRunId;
+          })
+          .toStrictEqual(expect.any(String));
+        if (!retriedRunId) {
+          throw new Error("Expected retried Official queued Run");
+        }
+        await expect(
+          readOfficialWorkflowRunStateFixture(context, retriedRunId),
+        ).resolves.toMatchObject({
+          provenance: {
+            definitions: [
+              {
+                name: definitionName,
+                revision: repaired.definition.revision,
+              },
+            ],
+          },
+          runner_job_count: 1,
+        });
+        const afterRetry = await listOfficialQueueEvents(
+          actor,
+          first.body.chatThreadId,
+          storage,
+        );
+        expect(
+          afterRetry.events.filter((event) => {
+            return (
+              event.revokesEventId === queuedEventId &&
+              event.runId === retriedRunId
+            );
+          }),
+        ).toHaveLength(1);
+        await expect(
+          readOfficialWorkflowQueueRunFixture(retriedRunId),
+        ).resolves.toStrictEqual({
+          triggerSource: queueCase.origin === "agent_run" ? "agent" : "web",
+          autonomyBudget: queueCase.origin === "agent_run" ? 3 : 10,
+        });
+        const retriedRun = await runs.readRun(actor, retriedRunId);
+        if (queueCase.origin === "agent_run") {
+          expect(retriedRun.appendSystemPrompt).toContain(
+            `SOURCE_RUN_ID: ${firstRunId}`,
+          );
+          expect(retriedRun.appendSystemPrompt).toContain(
+            `SOURCE_THREAD_ID: ${first.body.chatThreadId}`,
+          );
+        }
+        await expect(
+          readAgentRunFamilyCountsFixture(context, agentId),
+        ).resolves.toStrictEqual({
+          run_count: beforeQueuedRunFamily.run_count + 1,
+          callback_count: beforeQueuedRunFamily.callback_count + 1,
+          runner_job_count: beforeQueuedRunFamily.runner_job_count + 1,
+          launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
+        });
+        const retriedClaim = await runs.claimRunnerJob(retriedRunId);
+        const token = retriedClaim.platformEnvironment.OKOU_TOKEN;
+        if (!token) {
+          throw new Error("Expected queued Run Okou token");
+        }
+        expect(verifyOkouToken(token)).toMatchObject({
+          userId: actor.userId,
+          orgId: actor.orgId,
+          runId: retriedRunId,
+          capabilities: expect.arrayContaining(["agent:read"]),
+        });
+
+        await webhooks.requestAgentComplete(
+          { runId: retriedRunId, exitCode: 1 },
+          { authorization: `Bearer ${retriedClaim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        await assertOfficialQueueSnapshot(
+          actor,
+          first.body.chatThreadId,
+          immutableSource,
+          storage,
+        );
+        await withMockNowForTest(now() + 20 * 60 * 1000, async () => {
+          await reconcileStaleQueuedMessages(first.body.chatThreadId);
+        });
+        await flushWaitUntilForTest();
+        await expect(
+          readAgentRunFamilyCountsFixture(context, agentId),
+        ).resolves.toStrictEqual({
+          run_count: beforeQueuedRunFamily.run_count + 1,
+          callback_count: beforeQueuedRunFamily.callback_count + 1,
+          runner_job_count: beforeQueuedRunFamily.runner_job_count,
+          launch_queue_count: beforeQueuedRunFamily.launch_queue_count,
+        });
       });
     },
   );

@@ -4,7 +4,8 @@ import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-q
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { expect, test, vi, describe, beforeEach, it } from "vitest";
+
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../../signals/utils.ts";
@@ -82,39 +83,61 @@ async function uploadedAudio(request: Request) {
   return await file.arrayBuffer();
 }
 
-test.each(targets)(
-  "Release a forwarded $target microphone and audio context when its dialog closes during startup",
-  async ({ name }) => {
-    installVoiceBoundaries();
-    const moduleRequested = context.mocks.deferred<void>();
-    const moduleReady = context.mocks.deferred<void>();
-    const contextClosed = context.mocks.deferred<void>();
-    const trackStopped = context.mocks.deferred<void>();
-    context.mocks.browser.voiceInput({
-      rms: 0.12,
-      pcmWorkletReady: () => {
-        moduleRequested.resolve();
-        return moduleReady.promise;
-      },
-      onAudioContextClose: contextClosed.resolve,
-      onTrackStop: trackStopped.resolve,
+describe.each(targets)(
+  "release a forwarded $target microphone and audio context when its dialog closes during startup",
+  ({ name }) => {
+    async function prepareScenario() {
+      installVoiceBoundaries();
+      const moduleRequested = context.mocks.deferred<void>();
+      const moduleReady = context.mocks.deferred<void>();
+      const contextClosed = context.mocks.deferred<void>();
+      const trackStopped = context.mocks.deferred<void>();
+      context.mocks.browser.voiceInput({
+        rms: 0.12,
+        pcmWorkletReady: () => {
+          moduleRequested.resolve();
+          return moduleReady.promise;
+        },
+        onAudioContextClose: contextClosed.resolve,
+        onTrackStop: trackStopped.resolve,
+      });
+      await setupPage({ context, path: RUN_PATH });
+      await findEnabledButton("Voice input");
+      const dialog = await openForwardComposer(name);
+      return {
+        dialog,
+        moduleRequested,
+        moduleReady,
+        contextClosed,
+        trackStopped,
+      };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    await setupPage({ context, path: RUN_PATH });
-    await findEnabledButton("Voice input");
-    const dialog = await openForwardComposer(name);
-    click(await findEnabledButton("Voice input", dialog));
-    await moduleRequested.promise;
-    expect(queryButton("Starting voice input", dialog)).toBeDisabled();
-    click(await findEnabledButton("Close", dialog));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    it("preserves the complete scenario", async () => {
+      const {
+        dialog,
+        moduleRequested,
+        moduleReady,
+        contextClosed,
+        trackStopped,
+      } = preparedScenario;
+      click(await findEnabledButton("Voice input", dialog));
+      await moduleRequested.promise;
+      expect(queryButton("Starting voice input", dialog)).toBeDisabled();
+      click(await findEnabledButton("Close", dialog));
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+      moduleReady.resolve();
+      await Promise.all([contextClosed.promise, trackStopped.promise]);
+      await findEnabledButton("Voice input");
+      expect(
+        screen.queryByText("Voice transcription failed. Try again."),
+      ).not.toBeInTheDocument();
     });
-    moduleReady.resolve();
-    await Promise.all([contextClosed.promise, trackStopped.promise]);
-    await findEnabledButton("Voice input");
-    expect(
-      screen.queryByText("Voice transcription failed. Try again."),
-    ).not.toBeInTheDocument();
   },
 );
 
@@ -252,63 +275,82 @@ test("Keep the main recording alive when a simultaneous forward transcription is
   expect(mainEditor).not.toHaveTextContent("Discarded forward text.");
 });
 
-test.each(targets)(
-  "Reuse an unfinished $target recording in the forward dialog without replacing it",
-  async ({ name, path }) => {
-    const resetInitialPage$ = resetSignal();
-    const initialPageSignal = context.store.set(
-      resetInitialPage$,
-      context.signal,
-    );
-    installVoiceBoundaries();
-    context.mocks.browser.voiceInput({ rms: 0.12 });
-    const uploads: ArrayBuffer[] = [];
-    let successful = false;
-    context.mocks.http.post(
-      "*/api/voice-io/transcribe/segment",
-      async ({ request }) => {
-        uploads.push(await uploadedAudio(request));
-        return successful
-          ? HttpResponse.json({
-              transcript: "original",
-              polishedText: "Original recording.",
-              language: "en-US",
-            })
-          : HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
-      },
-    );
-    await setupPage({
-      locale: "en-US",
-      context: { ...context, signal: initialPageSignal },
-      path,
+describe.each(targets)(
+  "reuse an unfinished $target recording in the forward dialog without replacing it",
+  ({ name, path }) => {
+    async function prepareScenario() {
+      const resetInitialPage$ = resetSignal();
+      const initialPageSignal = context.store.set(
+        resetInitialPage$,
+        context.signal,
+      );
+      installVoiceBoundaries();
+      context.mocks.browser.voiceInput({ rms: 0.12 });
+      const uploads: ArrayBuffer[] = [];
+      let successful = false;
+      context.mocks.http.post(
+        "*/api/voice-io/transcribe/segment",
+        async ({ request }) => {
+          uploads.push(await uploadedAudio(request));
+          return successful
+            ? HttpResponse.json({
+                transcript: "original",
+                polishedText: "Original recording.",
+                language: "en-US",
+              })
+            : HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
+        },
+      );
+      await setupPage({
+        locale: "en-US",
+        context: { ...context, signal: initialPageSignal },
+        path,
+      });
+      return {
+        resetInitialPage$,
+        get successful() {
+          return successful;
+        },
+        set successful(next: typeof successful) {
+          successful = next;
+        },
+        uploads,
+      };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    click(await findEnabledButton("Voice input"));
-    click(await findEnabledButton("Stop recording"));
-    await findEnabledButton("Retry");
-    const saved = await recordings();
-    context.store.set(resetInitialPage$);
-    releasePageDom();
-    await setupPage({
-      locale: "en-US",
-      context: refreshedContext,
-      path: RUN_PATH,
+    it("preserves the complete scenario", async () => {
+      const { resetInitialPage$, uploads } = preparedScenario;
+      click(await findEnabledButton("Voice input"));
+      click(await findEnabledButton("Stop recording"));
+      await findEnabledButton("Retry");
+      const saved = await recordings();
+      context.store.set(resetInitialPage$);
+      releasePageDom();
+      await setupPage({
+        locale: "en-US",
+        context: refreshedContext,
+        path: RUN_PATH,
+      });
+      const originalComposer = await screen.findByRole("textbox", {
+        name: "Message",
+      });
+      const dialog = await openForwardComposer(name);
+      await findEnabledButton("Retry", dialog);
+      expect(queryButton("Voice input", dialog)).toBeNull();
+      await expect(recordings()).resolves.toStrictEqual(saved);
+      preparedScenario.successful = true;
+      click(await findEnabledButton("Retry", dialog));
+      await findEnabledButton("Voice input", dialog);
+      expect(
+        within(dialog).getByRole("textbox", { name: "Message" }),
+      ).toHaveTextContent("Original recording.");
+      expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+      expect(uploads).toHaveLength(2);
+      expect(uploads[1]).toStrictEqual(uploads[0]);
+      await expect(recordings()).resolves.toStrictEqual([]);
     });
-    const originalComposer = await screen.findByRole("textbox", {
-      name: "Message",
-    });
-    const dialog = await openForwardComposer(name);
-    await findEnabledButton("Retry", dialog);
-    expect(queryButton("Voice input", dialog)).toBeNull();
-    await expect(recordings()).resolves.toStrictEqual(saved);
-    successful = true;
-    click(await findEnabledButton("Retry", dialog));
-    await findEnabledButton("Voice input", dialog);
-    expect(
-      within(dialog).getByRole("textbox", { name: "Message" }),
-    ).toHaveTextContent("Original recording.");
-    expect(originalComposer).toHaveTextContent("Keep the existing notes.");
-    expect(uploads).toHaveLength(2);
-    expect(uploads[1]).toStrictEqual(uploads[0]);
-    await expect(recordings()).resolves.toStrictEqual([]);
   },
 );
