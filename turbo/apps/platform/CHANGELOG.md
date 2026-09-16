@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.905.0](https://github.com/vm0-ai/okou/compare/app-v0.904.0...app-v0.905.0) (2026-09-16)
+
+
+### Features
+
+* **ssh:** unify credential and access management flows ([#34529](https://github.com/vm0-ai/okou/issues/34529)) ([68f3e49](https://github.com/vm0-ai/okou/commit/68f3e49fa62edcd14e3888180cbb7244d4a7f2b1))
+
+
+### Refactoring
+
+* remove the unreachable composer choose command ([#34547](https://github.com/vm0-ai/okou/issues/34547)) ([8003fbb](https://github.com/vm0-ai/okou/commit/8003fbb8d61cb77c3cdb13c81f59a69625d11662))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.448.0
+    * @okouai/core bumped to 8.670.0
+
 ## [0.904.0](https://github.com/vm0-ai/okou/compare/app-v0.903.2...app-v0.904.0) (2026-09-16)
 
 

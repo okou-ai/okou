@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.610.0](https://github.com/vm0-ai/okou/compare/api-v1.609.0...api-v1.610.0) (2026-09-16)
+
+
+### Features
+
+* **ssh:** unify credential and access management flows ([#34529](https://github.com/vm0-ai/okou/issues/34529)) ([68f3e49](https://github.com/vm0-ai/okou/commit/68f3e49fa62edcd14e3888180cbb7244d4a7f2b1))
+
+
+### Bug Fixes
+
+* **api:** attribute heygen provider failures to their operation ([#34510](https://github.com/vm0-ai/okou/issues/34510)) ([f88e04d](https://github.com/vm0-ai/okou/commit/f88e04ded11c3cd56b0132546cd64d6aad23c1bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.448.0
+    * @okouai/core bumped to 8.670.0
+    * @okouai/db bumped to 1.265.1
+    * @okouai/pi-agent-runtime bumped to 1.31.5
+
 ## [1.609.0](https://github.com/vm0-ai/okou/compare/api-v1.608.1...api-v1.609.0) (2026-09-16)
 
 

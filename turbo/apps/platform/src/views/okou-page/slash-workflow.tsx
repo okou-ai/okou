@@ -7,7 +7,6 @@ import {
   FileText,
   Image,
   Presentation,
-  Sparkles,
   Video,
 } from "lucide-react";
 import { cn, PopoverContent } from "@okouai/ui";
@@ -20,7 +19,6 @@ import type {
 } from "../../signals/okou-page/workflow-composer-domain.ts";
 
 export const COMPOSER_CREATE_ICONS = {
-  choose: Sparkles,
   image: Image,
   video: Video,
   presentation: Presentation,

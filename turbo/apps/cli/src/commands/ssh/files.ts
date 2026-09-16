@@ -101,7 +101,11 @@ export function createFileCommand(
     )
     .addHelpText(
       "after",
-      `\n${FILE_LIMIT_HELP}\nPaths are literal: no shell expansion, recursion, resume or automatic parent-directory creation. Default: no overwrite. No automatic retry after an uncertain result.\n`,
+      `
+${FILE_LIMIT_HELP}
+Paths are literal: no shell expansion, recursion, resume, final symlinks, or automatic parent-directory creation. There is no shell/scp fallback. Default: no overwrite; use --overwrite only for intentional replacement. Keep the source unchanged until completion.
+Success reports streamed-byte SHA-256, not a filesystem snapshot. On failure, inspect failure_reason, effects, residue, limits, and guidance. Split oversized files or wait for a transfer slot. Never automatically retry effects=unknown; inspect the destination first. An unavailable helper or unsupported SFTP operation requires a supported Run/server, not a credential workaround.
+`,
     )
     .action(
       withErrorHandler(

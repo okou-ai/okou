@@ -147,6 +147,11 @@ export const listConnectorAccountsCommand = new Command()
   )
   .option("--search <text>", "Filter accounts by name or provider identity")
   .option("--json", "Output available accounts as JSON")
+  .addHelpText(
+    "after",
+    `
+Use only an exact connectionId returned for this connector; never invent an ID or reuse one from another connector. This is available-account inventory, not the account already admitted to the current Run. Inspect that selection with okou connector status <slug> --json. Requesting a switch changes only future runs in the current web chat.`,
+  )
   .action(
     withErrorHandler(
       async (slug: string, options: ListConnectorAccountOptions) => {

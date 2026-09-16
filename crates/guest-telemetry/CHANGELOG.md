@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.3.83](https://github.com/vm0-ai/okou/compare/guest-telemetry-v0.3.82...guest-telemetry-v0.3.83) (2026-09-16)
+
 ## [0.3.82](https://github.com/vm0-ai/okou/compare/guest-telemetry-v0.3.81...guest-telemetry-v0.3.82) (2026-09-16)
 
 ## [0.3.81](https://github.com/vm0-ai/okou/compare/guest-telemetry-v0.3.80...guest-telemetry-v0.3.81) (2026-09-16)

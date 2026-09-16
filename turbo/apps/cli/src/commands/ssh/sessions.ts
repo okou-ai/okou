@@ -69,9 +69,21 @@ async function output(
 }
 
 export function createSessionCommand(requireCapability: () => void) {
-  const session = new Command("session").description(
-    "Manage SSH commands and shells within the current Run (up to 8 retained sessions)",
-  );
+  const session = new Command("session")
+    .description(
+      "Manage SSH commands and shells within the current Run (up to 8 retained sessions)",
+    )
+    .addHelpText(
+      "after",
+      `
+Operational model:
+  - Start returns an ID before remote setup completes. Read for output and observed state; status is only one metadata snapshot.
+  - Read waits up to 10 seconds for progress by default. Follow next_command/next_cursor and respect lost ranges; avoid busy polling because only two reads per Run may wait concurrently.
+  - A successful read does not prove remote process success. Quiet wait expiry or read cancellation does not close the session.
+  - Recover admitted IDs with list after an uncertain start. Never automatically replay uncertain starts, writes, or signals.
+  - Include a newline when writing shell input. Closing retires Okou session state but does not prove a remote process stopped.
+  - Retained sessions belong to this Run and cannot be resumed from another Run.`,
+    );
   session.addCommand(
     new Command("start")
       .description(
@@ -82,6 +94,11 @@ export function createSessionCommand(requireCapability: () => void) {
       .option("--shell", "Start a persistent remote shell")
       .option("--pty", "Request an 80x24 xterm-256color terminal")
       .option("--json", "Print JSON")
+      .addHelpText(
+        "after",
+        `
+Start returns a session ID before remote setup completes; it is not proof that the command or shell started. Read the session for observed state and output. If admission is uncertain, recover IDs with okou ssh session list --json and never replay the start automatically.`,
+      )
       .action(
         withErrorHandler(
           async (

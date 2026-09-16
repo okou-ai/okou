@@ -652,7 +652,10 @@ Scope:
   full slug, custom UUID, or exact unique display name; qualify collisions with
   builtin: or custom:. Find UUIDs with connector custom list.
   --connector and --method require --url. URL permissions are derived from the
-  request, so --check-permission cannot be combined with --url.
+  request, so --check-permission cannot be combined with --url. Diagnose the
+  failed request before trying ad hoc credential or permission fixes. Prefer the
+  URL field returned by the firewall denial; omit query strings and fragments
+  when they may contain secrets.
   Inside a run, account identity comes from that run's admitted accounts.
   Outside a run, run routing/policy checks may be unavailable. Unavailable
   policy data is not an allow decision.
@@ -673,13 +676,18 @@ How connectors work:
   it does not replay the failed request or confirm the runner applied an update.
 
 Permission recovery:
-  For builtin deny/ask outcomes, use the exact permission-request command printed
-  for the failed URL and method. Custom HTTP permission bundles use Connectors
-  > agent access > Permissions. MCP connectors have no HTTP permission bundle.
+  First inspect okou whoami --permissions and skip access already granted. For
+  builtin deny/ask outcomes, use the exact permission-request command printed
+  for the failed URL and method, one concrete permission at a time. Do not turn
+  provider OAuth errors such as missing_scope or needed into Okou permissions.
+  Custom HTTP permission bundles use Connectors > agent access > Permissions.
+  MCP connectors have no HTTP permission bundle.
   Custom unknown endpoints require an administrator to review routing/permission
   definitions; there is no custom approval control.
   Callback examples are for a single supported action in the current web chat
-  for its current Agent. Custom settings guidance has no callback approval flow.`,
+  for its current Agent. When multiple access actions are needed, use ordinary
+  links and wait for all confirmations. Return every action URL verbatim. Custom
+  settings guidance has no callback approval flow.`,
   )
   .action(
     withErrorHandler(async (opts: CheckConnectorOptions, command: Command) => {

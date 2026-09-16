@@ -8,7 +8,7 @@ load '../../helpers/runner-api'
 
 BATS_TEST_TIMEOUT=600
 REAL_CLAUDE_MODEL="claude-sonnet-5"
-REAL_PI_MODEL="deepseek-v4-pro"
+REAL_PI_MODEL="deepseek-v4-flash"
 
 setup_file() {
     local credentials="/tmp/e2e-api-credentials-runner-real-claude.json"
@@ -34,7 +34,7 @@ setup_file() {
                 ] + [
                     {
                         model: $model,
-                        isDefault: false,
+                        isDefault: any(.policies[]; .model == $model and .isDefault),
                         defaultProviderType: "built-in",
                         credentialScope: "org",
                         modelProviderId: null

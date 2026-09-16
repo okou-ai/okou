@@ -56,6 +56,14 @@ const exec = new Command("exec")
   .argument("<connection-id>", "Exact ID from ssh host list")
   .requiredOption("--command <command>", "Remote command (up to 64 KiB UTF-8)")
   .option("--json", "Print structured outcome and base64 stdout/stderr")
+  .addHelpText(
+    "after",
+    `
+Safety:
+  - Use an exact current connection ID from okou ssh host list --json; list again after an unknown or unavailable ID.
+  - Inspect structured failure_reason and effects. effects=unknown means the remote command may have run; inspect remote state and never retry automatically.
+  - First contact learns the host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings; never accept it automatically.`,
+  )
   .action(
     withErrorHandler(
       async (
@@ -106,7 +114,19 @@ export const sshCommand = new Command("ssh")
   .description("Access owner-configured SSH hosts from an authorized Run")
   .addHelpText(
     "after",
-    `\nConnections use the owner's saved Direct or Cloudflare Access configuration; no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port. Ask the owner to check connection diagnostics in /connectors/ssh when setup fails.\n\nFile transfers (upload/download): ${FILE_LIMIT_HELP}\n`,
+    `
+Connections use the owner's saved Direct or Cloudflare Access configuration; credentials stay outside the sandbox and no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
+
+Operational safety:
+  - Start with okou ssh host list --json and use an exact current connection ID. Never invent an ID or automatically replay an uncertain command.
+  - The owner enables SSH access in Agent settings for all configured hosts; agents cannot grant access. Ask for a least-privilege remote SSH user. Configured does not mean connectivity tested.
+  - First contact learns a host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings, never automatic acceptance.
+  - Inspect structured failure_reason and effects instead of matching error text. effects=unknown means the remote operation may have run.
+  - Host inventory is live, while execution authority is cached for this Run and invalidated by notifications. End active Runs when immediate revocation is required.
+  - Ask the owner to check connection diagnostics in /connectors/ssh when setup fails.
+
+File transfers (upload/download): ${FILE_LIMIT_HELP}
+`,
   )
   .addCommand(
     new Command("host")

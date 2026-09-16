@@ -43,6 +43,8 @@ How to read the downloaded file:
   - PDF/text/csv/json/markdown: read the file directly
 
 Notes:
+  - Use this command for the ID in a [Web file] block or a private /artifacts/<hash> reference
+  - The output path is local to this runtime; users cannot open it directly
   - Authenticates via OKOU_TOKEN
   - Streams the file bytes directly to disk`,
   )

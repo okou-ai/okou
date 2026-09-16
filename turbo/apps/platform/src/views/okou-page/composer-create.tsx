@@ -202,16 +202,15 @@ export function ComposerCreateControls({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const choosing = useGet(signals.create.choosing$);
   const mode = useGet(signals.create.mode$);
   const task = useGet(signals.taskChips.task$);
   const pickerOpen = useGet(signals.create.pickerOpen$);
   const setPickerOpen = useSet(signals.create.setPickerOpen$);
   const setMode = useSet(signals.create.setMode$);
-  if (task || (!choosing && !mode)) {
+  if (task || !mode) {
     return withChatScrollLayout(null);
   }
-  const Icon = COMPOSER_CREATE_ICONS[mode ?? "choose"];
+  const Icon = COMPOSER_CREATE_ICONS[mode];
   return withChatScrollLayout(
     <div
       className="@container/create-controls flex shrink-0 items-center gap-1 px-4 pt-4 pb-1"
@@ -257,13 +256,7 @@ export function ComposerCreateControls({
         }}
       >
         <Icon className={CREATE_MODE_ICON_CLASS} aria-hidden />
-        <span className="truncate">
-          {mode
-            ? composerCreateModeLabel(mode)
-            : t(($) => {
-                return $.chat.composer.create.title;
-              })}
-        </span>
+        <span className="truncate">{composerCreateModeLabel(mode)}</span>
         <ChevronDown
           className={cn("shrink-0 opacity-50", pickerOpen && "rotate-180")}
           aria-hidden
@@ -284,13 +277,6 @@ export function ComposerCreateControls({
       >
         <X aria-hidden />
       </Button>
-      {choosing && (
-        <span className="ml-1 min-w-0 truncate text-sm text-muted-foreground @max-[350px]/create-controls:hidden">
-          {t(($) => {
-            return $.chat.composer.create.chooseScene;
-          })}
-        </span>
-      )}
     </div>,
   );
 }
