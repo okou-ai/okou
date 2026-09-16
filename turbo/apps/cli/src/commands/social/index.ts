@@ -1525,7 +1525,7 @@ const statusCommand = new Command()
 Reports public service health, not account access, quota, or balance.
 Overall includes service-wide health even when operations are filtered.
 Missing, invalid, unavailable, or older-than-five-minute observations are unknown.
-Requires social:read and the Social status feature to be enabled.
+Requires authentication, an organization, and social:read for capability tokens.
 Discover supported operations and constraints offline: okou social capabilities [platform] --json
 `,
   )
