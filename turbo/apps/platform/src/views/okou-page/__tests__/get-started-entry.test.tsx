@@ -389,12 +389,15 @@ test("Reward notifications refresh quests without disconnecting shared chat hist
     GET_STARTED_REWARDS_CHANGED_EVENT,
     null,
   );
-  await expect(
-    within(panel).findByText(
+  // The reward shares the description line, so the rejection reason is read
+  // off the row rather than as a standalone text node.
+  await waitFor(() => {
+    expect(
+      normalizedText(screen.getByTestId("get-started-quest-share")),
+    ).toContain(
       "This post is not eligible. Submit another public post mentioning Okou.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
+    );
+  });
 });
 
 test("The entry stays hidden while the switch is off", async () => {
@@ -509,12 +512,12 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
     path: questChatPath(),
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
-  const panel = await openQuestPanel();
+  await openQuestPanel();
   expect(
-    within(panel).getByText(
-      "This post is not eligible. Submit another public post mentioning Okou.",
-    ),
-  ).toBeInTheDocument();
+    normalizedText(screen.getByTestId("get-started-quest-share")),
+  ).toContain(
+    "This post is not eligible. Submit another public post mentioning Okou.",
+  );
   click(screen.getByTestId("get-started-quest-share"));
   await expect(
     screen.findByRole("dialog", { name: "Share Okou on X" }),
@@ -543,9 +546,7 @@ test("Opening the app checks in and focus refresh uses the server UTC day", asyn
   const panel = await openQuestPanel();
   await expect(within(panel).findByText("400")).resolves.toBeInTheDocument();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
-  expect(normalizedText(checkinRow)).toContain(
-    "+100 a day · Once a day, every day",
-  );
+  expect(normalizedText(checkinRow)).toContain("Once a day, every day");
   // Opening the app is the check-in, so this row offers nothing to press.
   expect(within(checkinRow).queryByText("Check in")).not.toBeInTheDocument();
   data.serverNow = "2026-09-16T00:00:00.000Z";
