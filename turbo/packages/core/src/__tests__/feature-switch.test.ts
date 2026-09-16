@@ -258,6 +258,34 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("should keep the simple Morning Brief implementation switch off for everyone", () => {
+    expect(FeatureSwitchKey.SimpleMorningBrief).toBe("simpleMorningBrief");
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context),
+      ).toBe(false);
+      // Selecting the replacement implementation never changes whether the
+      // user has Morning Brief.
+      expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, context)).toBe(
+        true,
+      );
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.SimpleMorningBrief]: true },
+      }),
+    ).toBe(true);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.SimpleMorningBrief]
+        ?.rolloutStage,
+    ).toBe("alpha");
+  });
+
   it("should return true when orgId matches even if userId does not", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.Lab, {
