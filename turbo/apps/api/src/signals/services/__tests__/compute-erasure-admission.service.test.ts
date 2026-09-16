@@ -520,33 +520,43 @@ describe("actual compute transactions versus the B1 projector", () => {
     };
   }
 
-  it.each(["shared", "separate"] as const)(
-    "measures bounded concurrent actual claims for %s subject sets",
-    async (mode) => {
-      const samples: Record<"shared" | "separate", number[]> = {
-        shared: [],
-        separate: [],
-      };
-      for (let round = 0; round < 2; round++) {
-        const first = await fixture();
-        const second = mode === "shared" ? first : await fixture();
-        const runs = [await pending(first), await pending(second)];
-        const started = performance.now();
-        const results = await Promise.all(
-          runs.map((run) => {
-            return api.requestClaimRunnerJob(true, run.runId, [200]);
-          }),
-        );
-        samples[mode].push(performance.now() - started);
-        expect(
-          results.map((result) => {
-            return result.status;
-          }),
-        ).toStrictEqual([200, 200]);
-      }
-      // Local end-to-end observations, deliberately no global throughput claim
-      // or latency threshold tied to a shared CI machine.
-      process.stdout.write(`B2B1_CLAIM_PAIR_MS ${JSON.stringify(samples)}\n`);
+  describe.each(["shared", "separate"] as const)(
+    "concurrent actual claims for %s subject sets",
+    (mode) => {
+      let rounds: Awaited<ReturnType<typeof pending>>[][];
+
+      beforeEach(async () => {
+        rounds = [];
+        for (let round = 0; round < 2; round++) {
+          const first = await fixture();
+          const second = mode === "shared" ? first : await fixture();
+          rounds.push([await pending(first), await pending(second)]);
+        }
+      });
+
+      it("measures bounded concurrent actual claims", async () => {
+        const samples: Record<"shared" | "separate", number[]> = {
+          shared: [],
+          separate: [],
+        };
+        for (const runs of rounds) {
+          const started = performance.now();
+          const results = await Promise.all(
+            runs.map((run) => {
+              return api.requestClaimRunnerJob(true, run.runId, [200]);
+            }),
+          );
+          samples[mode].push(performance.now() - started);
+          expect(
+            results.map((result) => {
+              return result.status;
+            }),
+          ).toStrictEqual([200, 200]);
+        }
+        // Local end-to-end observations, deliberately no global throughput claim
+        // or latency threshold tied to a shared CI machine.
+        process.stdout.write(`B2B1_CLAIM_PAIR_MS ${JSON.stringify(samples)}\n`);
+      });
     },
   );
 
@@ -2797,7 +2807,7 @@ describe("actual compute transactions versus the B1 projector", () => {
       );
 
       it.each(["success", "unusable", "failure", "deadline"] as const)(
-        "closure first blocks %s completion and final resurrection after an admitted provider request",
+        "rejects %s completion and final resurrection after closure commits during an admitted provider request",
         async (outcome) => {
           const f = await activityFixture();
           const entered = createDeferredPromise<void>(context.signal);
@@ -2823,9 +2833,11 @@ describe("actual compute transactions versus the B1 projector", () => {
                 ? ""
                 : "Late private phrase";
           });
-          const pending = summarize(f);
+          const pending = settle(summarize(f));
           await entered.promise;
-          const closure = await holdClosure(decision(f.userId));
+          // Keep the provider pending until closure commits. Polling for a DB
+          // waiter here races the activity writer's 250 ms lock deadline.
+          await close(decision(f.userId));
           // Physical collector deletion has no exposed API while B1 is dormant.
           await db
             .delete(runActivitySnapshots)
@@ -2836,9 +2848,10 @@ describe("actual compute transactions versus the B1 projector", () => {
             );
           }
           release.resolve();
-          await waitForBlockedBy(closure.pid);
-          await closure.release();
-          await expect(pending).resolves.toMatchObject(ineligible(f));
+          await expect(pending).resolves.toMatchObject({
+            ok: true,
+            value: ineligible(f),
+          });
           await expect(snapshot(f)).resolves.toHaveLength(0);
           expect(requests).toHaveLength(1);
         },
