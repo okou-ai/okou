@@ -3,13 +3,17 @@ import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+import { createRunReadsApi } from "../../routes/__tests__/helpers/api-bdd-run-reads";
 import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { withMockNowForTest } from "../../../lib/time";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { encryptPersistentSecretValue } from "../crypto.utils";
-import { captureDeferredMaintenance } from "../../../test-fixtures/pi-deferred-maintenance";
+import {
+  captureDeferredMaintenance,
+  captureDeferredMaintenanceCheckpoint,
+} from "../../../test-fixtures/pi-deferred-maintenance";
 import {
   holdDeferredRow,
   waitForDeferredBlocker,
@@ -57,6 +61,7 @@ import {
   agentRunSandboxLease,
 } from "@okouai/db/schema/agent-run-inference";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { piInferenceObjects } from "@okouai/db/schema/pi-inference-object";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
@@ -83,6 +88,11 @@ import {
 } from "../pi-inference-object.service";
 import { runnersRoutes } from "../../routes/runners";
 import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
+import { recordPiMemoryPhase2Checkpoint } from "../pi-memory-phase2-checkpoint.service";
+import {
+  handlePiMemoryPhase2MaintenanceCallback,
+  settlePiMemoryPhase2Checkpoint,
+} from "../pi-memory-phase2-maintenance.service";
 
 const context = testContext();
 const execute = promisify(execFile);
@@ -308,6 +318,51 @@ function claim(runId: string, capable: boolean, runnerId: string) {
       capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
     },
   });
+}
+
+function release(
+  runId: string,
+  body: {
+    readonly runnerId: string;
+    readonly ownerEpoch: number;
+    readonly generation: number;
+    readonly proof: "destroyed";
+  },
+) {
+  return setupApp({ context, routes: runnersRoutes })(
+    runnersJobClaimContract,
+  ).release({
+    params: { id: runId },
+    headers: {
+      authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
+    },
+    body,
+  });
+}
+
+async function createLegacyAdmissionFixture(displayName: string) {
+  const api = createRunsApi(context);
+  const bdd = createBddApi(context);
+  const actor = bdd.user();
+  if (!actor.orgId) {
+    throw new Error("Missing fixture org");
+  }
+  bdd.acceptAgentStorageWrites();
+  api.acceptStorageDownloads();
+  api.acceptTelemetryIngest();
+  api.configureRunnerGroup();
+  await api.grantProEntitlement(actor);
+  await api.ensureOrgModelProvider(actor);
+  const agent = await bdd.createAgent(actor, {
+    displayName,
+    visibility: "public",
+  });
+  await db()
+    .update(orgPlanEntitlements)
+    .set({ baseConcurrencyLimit: 1 })
+    .where(eq(orgPlanEntitlements.orgId, actor.orgId));
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  return { actor: { ...actor, orgId: actor.orgId }, agent, api };
 }
 
 describe("durable deferred Pi consumer through actual PostgreSQL and Runner routes", () => {
@@ -1057,69 +1112,124 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     );
     expect(result.body.apiStartTime).toBe(deferred.apiStartedAt.getTime());
   }, 60_000);
-  it("releases owned capacity after the private maintenance binding retires", async () => {
-    const f = await fixture({ maintenance: true });
-    const maintenance = f.maintenance;
-    if (!maintenance) {
-      throw new Error("Missing private lease");
-    }
-    await expect(
-      createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
-    ).resolves.toBeTruthy();
-    const runnerId = randomUUID();
-    await accept(claim(f.runId, true, runnerId), [200]);
-    // Normal maintenance success retires the live binding before the Runner
-    // proves physical destruction.
-    await db()
-      .update(piMemoryPhase2Jobs)
-      .set({
-        status: "idle",
-        completedRevision: 1,
-        claimedRevision: null,
-        claimedBaseVersionId: null,
-        leaseToken: null,
-        legacyLeaseToken: null,
-        sandboxLeaseToken: null,
-        leaseExpiresAt: null,
-        maintenanceRunId: null,
-        claimedSelectionDigest: null,
-        claimedSelectedCount: null,
-        claimedSelectedUtf8Bytes: null,
-      })
-      .where(
-        eq(piMemoryPhase2Jobs.memoryStorageId, maintenance.memoryStorageId),
+  it.each(["checkpoint", "completion"] as const)(
+    "releases owned capacity after real maintenance %s retirement",
+    async (transition) => {
+      const f = await fixture({ maintenance: true });
+      const maintenance = f.maintenance;
+      if (!maintenance) {
+        throw new Error("Missing private lease");
+      }
+      await expect(
+        createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
+      ).resolves.toBeTruthy();
+      const runnerId = randomUUID();
+      await accept(claim(f.runId, true, runnerId), [200]);
+      const checkpoint = await captureDeferredMaintenanceCheckpoint(
+        f,
+        maintenance,
       );
-    const app = setupApp({ context, routes: runnersRoutes });
-    const release = (body: {
-      runnerId: string;
-      ownerEpoch: number;
-      generation: number;
-      proof: "destroyed";
-    }) => {
-      return app(runnersJobClaimContract).release({
-        params: { id: f.runId },
-        headers: {
-          authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
-        },
-        body,
+      if (transition === "checkpoint") {
+        await db().transaction(async (tx) => {
+          await recordPiMemoryPhase2Checkpoint(tx, {
+            ...maintenance,
+            runId: f.runId,
+            orgId: f.orgId,
+            userId: f.userId,
+            versionId: checkpoint.versionId,
+          });
+          await settlePiMemoryPhase2Checkpoint(
+            tx,
+            f.runId,
+            checkpoint.versionId,
+          );
+        });
+      }
+      await db()
+        .update(agentRuns)
+        .set({ status: "completed", completedAt: new Date() })
+        .where(eq(agentRuns.id, f.runId));
+      const observed = await handlePiMemoryPhase2MaintenanceCallback(db(), {
+        runId: f.runId,
+        payload: { ...maintenance, orgId: f.orgId, userId: f.userId },
+        status: "completed",
       });
-    };
-    const mismatched = await accept(
-      release({ runnerId, ownerEpoch: 2, generation: 2, proof: "destroyed" }),
-      [200],
-    );
-    expect(mismatched.body).toStrictEqual({ outcome: "stale" });
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const released = await accept(
-        release({ runnerId, ownerEpoch: 2, generation: 1, proof: "destroyed" }),
+      expect(observed).toStrictEqual(
+        transition === "checkpoint"
+          ? { success: true, skipped: true }
+          : { success: true },
+      );
+      await expect(
+        db()
+          .select({
+            status: piMemoryPhase2Jobs.status,
+            maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
+            completedRevision: piMemoryPhase2Jobs.completedRevision,
+            checkpointId: piMemoryPhase2Jobs.lastMaintenanceCheckpointId,
+            checkpointVersion:
+              piMemoryPhase2Jobs.lastMaintenanceCheckpointVersionId,
+            outcome: piMemoryPhase2Jobs.lastMaintenanceOutcome,
+          })
+          .from(piMemoryPhase2Jobs)
+          .where(
+            eq(piMemoryPhase2Jobs.memoryStorageId, maintenance.memoryStorageId),
+          ),
+      ).resolves.toStrictEqual([
+        {
+          status: "idle",
+          maintenanceRunId: null,
+          completedRevision: 1,
+          checkpointId: checkpoint.id,
+          checkpointVersion: checkpoint.versionId,
+          outcome: "published",
+        },
+      ]);
+      const mismatched = await accept(
+        release(f.runId, {
+          runnerId,
+          ownerEpoch: 2,
+          generation: 2,
+          proof: "destroyed",
+        }),
         [200],
       );
-      expect(released.body).toStrictEqual({ outcome: "released" });
-    }
-    const state = await readRequiredPiFixture(f);
-    expect(state.lease?.state).toBe("released");
-    expect(state.inference.usageSettled).toBeFalsy();
-  }, 60_000);
+      expect(mismatched.body).toStrictEqual({ outcome: "stale" });
+      await expect(
+        db()
+          .select({
+            state: agentRunSandboxLease.state,
+            runnerId: agentRunSandboxLease.runnerId,
+          })
+          .from(agentRunSandboxLease)
+          .where(eq(agentRunSandboxLease.runId, f.runId)),
+      ).resolves.toStrictEqual([{ state: "claimed", runnerId }]);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const released = await accept(
+          release(f.runId, {
+            runnerId,
+            ownerEpoch: 2,
+            generation: 1,
+            proof: "destroyed",
+          }),
+          [200],
+        );
+        expect(released.body).toStrictEqual({ outcome: "released" });
+      }
+      await expect(
+        db()
+          .select({ state: agentRunSandboxLease.state })
+          .from(agentRunSandboxLease)
+          .where(eq(agentRunSandboxLease.runId, f.runId)),
+      ).resolves.toStrictEqual([{ state: "released" }]);
+      await expect(
+        db()
+          .select({ usageSettled: agentRunInference.usageSettled })
+          .from(agentRunInference)
+          .where(eq(agentRunInference.runId, f.runId)),
+      ).resolves.toStrictEqual([{ usageSettled: false }]);
+    },
+    60_000,
+  );
 
   it("rejects an oversized durable continuation before it can be claimed", async () => {
     const f = await fixture({ publish: false });
@@ -1233,58 +1343,236 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     await accept(claim(f.runId, true, randomUUID()), [404]);
   }, 60_000);
 
-  it("keeps a fresh legacy create behind older waiting Sandbox demand", async () => {
-    const api = createRunsApi(context);
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Missing fixture org");
-    }
-    bdd.acceptAgentStorageWrites();
-    api.acceptStorageDownloads();
-    api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
-    await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Fair direct admission fixture",
-      visibility: "public",
-    });
-    await db()
-      .update(orgPlanEntitlements)
-      .set({ baseConcurrencyLimit: 1 })
-      .where(eq(orgPlanEntitlements.orgId, actor.orgId));
-    // One free slot and one older persisted Sandbox demand. Waiting demand
-    // consumes no capacity, so the only reason to refuse the slot is order.
+  it.each(["deferred-first", "legacy-first"] as const)(
+    "bounds fresh legacy admission and duplicate consumers with %s lock order",
+    async (order) => {
+      const { actor, agent, api } = await createLegacyAdmissionFixture(
+        `Mixed admission ${order}`,
+      );
+      const deferred = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+      });
+      const held = await holdDeferredRow(context.signal, (tx) => {
+        return tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${actor.orgId}))`,
+        );
+      });
+      const startConsumer = () => {
+        return createStore().set(
+          consumeDeferredPiRun$,
+          deferred.runId,
+          context.signal,
+        );
+      };
+      const startLegacy = () => {
+        return api.requestCreateRun(
+          actor,
+          {
+            agentId: agent.agentId,
+            prompt: `fresh legacy ${order}`,
+            modelProvider: "anthropic-api-key",
+          },
+          [201],
+        );
+      };
+      const raced =
+        order === "deferred-first"
+          ? await (async () => {
+              const consumer = startConsumer();
+              const consumerPid = await held.waitForBlocked();
+              const legacy = startLegacy();
+              const legacyPid = await waitForDeferredBlocker(consumerPid);
+              const duplicate = startConsumer();
+              await waitForDeferredBlocker(legacyPid);
+              await held.release();
+              return {
+                legacy: await legacy,
+                consumers: await Promise.all([consumer, duplicate]),
+              };
+            })()
+          : await (async () => {
+              const legacy = startLegacy();
+              const legacyPid = await held.waitForBlocked();
+              const consumer = startConsumer();
+              const consumerPid = await waitForDeferredBlocker(legacyPid);
+              const duplicate = startConsumer();
+              await waitForDeferredBlocker(consumerPid);
+              await held.release();
+              return {
+                legacy: await legacy,
+                consumers: await Promise.all([consumer, duplicate]),
+              };
+            })();
+      expect(raced.legacy.body).toMatchObject({ status: "queued" });
+      if (!("runId" in raced.legacy.body)) {
+        throw new Error("Missing queued legacy Run");
+      }
+      const legacyRunId = raced.legacy.body.runId;
+      expect(
+        [...raced.consumers].sort((left, right) => {
+          return Number(left) - Number(right);
+        }),
+      ).toStrictEqual([false, true]);
+      await expect(
+        db()
+          .select({
+            runId: agentRunSandboxLease.runId,
+            state: agentRunSandboxLease.state,
+          })
+          .from(agentRunSandboxLease)
+          .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxLease.runId))
+          .where(eq(agentRuns.orgId, actor.orgId)),
+      ).resolves.toStrictEqual([{ runId: deferred.runId, state: "ready" }]);
+      await expect(
+        db()
+          .select({ runId: runnerJobQueue.runId })
+          .from(runnerJobQueue)
+          .innerJoin(agentRuns, eq(agentRuns.id, runnerJobQueue.runId))
+          .where(eq(agentRuns.orgId, actor.orgId)),
+      ).resolves.toStrictEqual([{ runId: deferred.runId }]);
+      await expect(
+        db()
+          .select({ runId: agentRunQueue.runId })
+          .from(agentRunQueue)
+          .innerJoin(agentRuns, eq(agentRuns.id, agentRunQueue.runId))
+          .where(eq(agentRuns.orgId, actor.orgId)),
+      ).resolves.toStrictEqual([{ runId: legacyRunId }]);
+      const runnerId = randomUUID();
+      const claimed = await accept(
+        claim(deferred.runId, true, runnerId),
+        [200],
+      );
+      expect(claimed.body.apiStartTime).toBe(deferred.apiStartedAt.getTime());
+      await accept(claim(deferred.runId, true, randomUUID()), [404]);
+      await expect(
+        db()
+          .select({
+            runId: agentRunSandboxLease.runId,
+            state: agentRunSandboxLease.state,
+          })
+          .from(agentRunSandboxLease)
+          .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxLease.runId))
+          .where(eq(agentRuns.orgId, actor.orgId)),
+      ).resolves.toStrictEqual([{ runId: deferred.runId, state: "claimed" }]);
+    },
+    90_000,
+  );
+
+  it("preserves nonqueue capacity errors and ordinary admission without older demand", async () => {
+    const { actor, agent } = await createLegacyAdmissionFixture(
+      "Nonqueue admission boundary",
+    );
+    const reads = createRunReadsApi(context);
+    const directRun = {
+      agentId: agent.agentId,
+      modelProviderType: "anthropic-api-key" as const,
+      vars: { OKOU_AGENT_ID: agent.agentId },
+      secrets: { OKOU_TOKEN: "direct-admission-boundary-token" },
+    };
+    const ordinary = await reads.requestCreateDirectRun(
+      actor,
+      { ...directRun, prompt: "ordinary direct legacy" },
+      [201],
+    );
+    expect(ordinary.body).toMatchObject({ status: "pending" });
+    const cancel = setupApp({ context, routes: runsCancelRoutes })(
+      runsCancelContract,
+    );
+    await accept(
+      cancel.cancel({
+        params: { id: ordinary.body.runId },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
     const deferred = await fixture({
       orgId: actor.orgId,
       userId: actor.userId,
     });
-    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-    const refused = await api.requestCreateRun(
+    const limited = await reads.requestCreateDirectRun(
       actor,
-      {
-        agentId: agent.agentId,
-        prompt: "fresh legacy",
-        modelProvider: "anthropic-api-key",
-      },
-      [201],
+      { ...directRun, prompt: "nonqueue behind deferred demand" },
+      [429],
     );
-    // This caller queues on the capacity outcome instead of starting; the
-    // unchanged `concurrentRunLimit()` return keeps a nonqueue caller's error.
-    expect(refused.body).toMatchObject({ status: "queued" });
-    // The older demand then takes the slot it was owed, on its original clock.
+    expect(limited.body).toMatchObject({
+      error: { code: "CONCURRENT_RUN_LIMIT" },
+    });
     await expect(
       createStore().set(consumeDeferredPiRun$, deferred.runId, context.signal),
     ).resolves.toBeTruthy();
-    const claimed = await accept(
-      claim(deferred.runId, true, randomUUID()),
-      [200],
-    );
-    expect(claimed.body.apiStartTime).toBe(deferred.apiStartedAt.getTime());
   }, 90_000);
 
-  it("recovers cleanup and release after a failed maintenance binding retires", async () => {
+  it.each(["closed", "expired"] as const)(
+    "advances later eligible demand after an older %s head",
+    async (headState) => {
+      const orgId = `org_${randomUUID()}`;
+      const baseTime = Date.now() - 10_000;
+      const head = await withMockNowForTest(baseTime, async () => {
+        return await fixture({ orgId, userId: `user_${randomUUID()}` });
+      });
+      const later = await withMockNowForTest(baseTime + 1000, async () => {
+        return await fixture({ orgId, userId: `user_${randomUUID()}` });
+      });
+      await db()
+        .update(orgPlanEntitlements)
+        .set({ baseConcurrencyLimit: 1 })
+        .where(eq(orgPlanEntitlements.orgId, orgId));
+      if (headState === "closed") {
+        const job = await projectErasureDecision(db(), {
+          subjectId: head.userId,
+          subjectKind: "user",
+          generation: 1,
+          authorityId: randomUUID(),
+          decisionRef: randomUUID(),
+          decisionSequence: 1n,
+          confirmationRef: randomUUID(),
+          previousDecisionRef: null,
+          dispositionVersion: 1,
+          requestedAt: new Date(),
+          deadlineAt: new Date("2099-01-01T00:00:00Z"),
+        });
+        onTestFinished(async () => {
+          await db()
+            .delete(accountErasureJobs)
+            .where(eq(accountErasureJobs.id, job.id));
+        });
+        await expect(
+          createStore().set(consumeDeferredPiRun$, head.runId, context.signal),
+        ).resolves.toBeFalsy();
+      } else {
+        await db()
+          .update(agentRunSandboxIntent)
+          .set({ enqueuedAt: new Date(0), expiresAt: new Date(1000) })
+          .where(eq(agentRunSandboxIntent.runId, head.runId));
+      }
+      await expect(
+        createStore().set(consumeDeferredPiRun$, later.runId, context.signal),
+      ).resolves.toBeTruthy();
+      if (headState === "expired") {
+        await expect(
+          createStore().set(consumeDeferredPiRun$, head.runId, context.signal),
+        ).resolves.toBeFalsy();
+      }
+      await expect(
+        db()
+          .select({ runId: runnerJobQueue.runId })
+          .from(runnerJobQueue)
+          .where(eq(runnerJobQueue.runId, later.runId)),
+      ).resolves.toStrictEqual([{ runId: later.runId }]);
+      await expect(
+        db()
+          .select({ runId: runnerJobQueue.runId })
+          .from(runnerJobQueue)
+          .where(eq(runnerJobQueue.runId, head.runId)),
+      ).resolves.toStrictEqual([]);
+      await accept(claim(later.runId, true, randomUUID()), [200]);
+    },
+    60_000,
+  );
+
+  it("recovers pending terminal delivery after real maintenance failure retirement", async () => {
     const f = await fixture({ maintenance: true });
     const maintenance = f.maintenance;
     if (!maintenance) {
@@ -1295,44 +1583,122 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     ).resolves.toBeTruthy();
     const runnerId = randomUUID();
     await accept(claim(f.runId, true, runnerId), [200]);
-    // A maintenance failure retires the same live binding a success does.
+    const url = `https://callback.example/maintenance-${f.runId}`;
+    const delivered: unknown[] = [];
+    let available = false;
+    server.use(
+      http.post(url, async ({ request }) => {
+        const body: unknown = await request.json();
+        if (available) {
+          delivered.push(body);
+        }
+        return HttpResponse.json({}, { status: available ? 200 : 503 });
+      }),
+    );
     await db()
-      .update(piMemoryPhase2Jobs)
-      .set({
+      .insert(agentRunCallbacks)
+      .values({
+        runId: f.runId,
+        url,
+        encryptedSecret: await encryptPersistentSecretValue(
+          "synthetic-maintenance-callback-secret",
+          f,
+        ),
+      });
+    await expect(
+      handlePiMemoryPhase2MaintenanceCallback(db(), {
+        runId: f.runId,
+        payload: { ...maintenance, orgId: f.orgId, userId: f.userId },
+        status: "failed",
+        error: "synthetic maintenance failure",
+      }),
+    ).resolves.toStrictEqual({ success: true });
+    await expect(
+      db()
+        .select({
+          status: piMemoryPhase2Jobs.status,
+          maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
+          retryCount: piMemoryPhase2Jobs.retryCount,
+          outcome: piMemoryPhase2Jobs.lastMaintenanceOutcome,
+        })
+        .from(piMemoryPhase2Jobs)
+        .where(
+          eq(piMemoryPhase2Jobs.memoryStorageId, maintenance.memoryStorageId),
+        ),
+    ).resolves.toStrictEqual([
+      {
         status: "retryable_failure",
-        claimedRevision: null,
-        claimedBaseVersionId: null,
-        leaseToken: null,
-        legacyLeaseToken: null,
-        sandboxLeaseToken: null,
-        leaseExpiresAt: null,
         maintenanceRunId: null,
         retryCount: 1,
-        retryAt: new Date(Date.now() + 60_000),
-        lastErrorClass: "maintenance_run_failed",
-        claimedSelectionDigest: null,
-        claimedSelectedCount: null,
-        claimedSelectedUtf8Bytes: null,
-      })
-      .where(
-        eq(piMemoryPhase2Jobs.memoryStorageId, maintenance.memoryStorageId),
-      );
-    // Cleanup-only terminal recovery converges instead of losing the owner.
-    await createStore().set(recoverDeferredPiRuns$, [f.runId], context.signal);
+        outcome: "failed",
+      },
+    ]);
+    const mismatched = await accept(
+      release(f.runId, {
+        runnerId,
+        ownerEpoch: 2,
+        generation: 2,
+        proof: "destroyed",
+      }),
+      [200],
+    );
+    expect(mismatched.body).toStrictEqual({ outcome: "stale" });
+    expect((await readRequiredPiFixture(f)).lease?.state).toBe("claimed");
     const released = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).release({
-        params: { id: f.runId },
-        headers: {
-          authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
-        },
-        body: { runnerId, ownerEpoch: 2, generation: 1, proof: "destroyed" },
+      release(f.runId, {
+        runnerId,
+        ownerEpoch: 2,
+        generation: 1,
+        proof: "destroyed",
       }),
       [200],
     );
     expect(released.body).toStrictEqual({ outcome: "released" });
+    await expect(
+      db()
+        .select({ pending: agentRunSandboxIntent.terminalEffectsPendingAt })
+        .from(agentRunSandboxIntent)
+        .where(eq(agentRunSandboxIntent.runId, f.runId)),
+    ).resolves.toMatchObject([{ pending: expect.any(Date) }]);
+    await createStore().set(recoverDeferredPiRuns$, [f.runId], context.signal);
+    expect(delivered).toStrictEqual([]);
+    await expect(
+      db()
+        .select({ pending: agentRunSandboxIntent.terminalEffectsPendingAt })
+        .from(agentRunSandboxIntent)
+        .where(eq(agentRunSandboxIntent.runId, f.runId)),
+    ).resolves.toMatchObject([{ pending: expect.any(Date) }]);
     expect((await readRequiredPiFixture(f)).lease?.state).toBe("released");
+    available = true;
+    await withMockNowForTest(Date.now() + 120_000, async () => {
+      await createStore().set(
+        recoverDeferredPiRuns$,
+        [f.runId],
+        context.signal,
+      );
+    });
+    expect(delivered).toStrictEqual([
+      expect.objectContaining({ runId: f.runId, status: "failed" }),
+    ]);
+    await expect(
+      db()
+        .select({ pending: agentRunSandboxIntent.terminalEffectsPendingAt })
+        .from(agentRunSandboxIntent)
+        .where(eq(agentRunSandboxIntent.runId, f.runId)),
+    ).resolves.toStrictEqual([{ pending: null }]);
+    const state = await readRequiredPiFixture(f);
+    expect(state.lease?.state).toBe("released");
+    expect(state.inference.usageSettled).toBeFalsy();
+    const duplicate = await accept(
+      release(f.runId, {
+        runnerId,
+        ownerEpoch: 2,
+        generation: 1,
+        proof: "destroyed",
+      }),
+      [200],
+    );
+    expect(duplicate.body).toStrictEqual({ outcome: "released" });
   }, 60_000);
 
   it("keeps an object a concurrent retain is still committing out of the sweep", async () => {

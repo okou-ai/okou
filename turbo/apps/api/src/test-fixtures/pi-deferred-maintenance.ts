@@ -1,15 +1,21 @@
-import { now } from "../lib/time";
-/** An actual private maintenance lease and its callback binding. */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { onTestFinished } from "vitest";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { checkpoints } from "@okouai/db/schema/checkpoint";
+import { conversations } from "@okouai/db/schema/conversation";
+import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
+import { storageVersions, storages } from "@okouai/db/schema/storage";
+import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { db } from "../lib/db";
+import { now } from "../lib/time";
 import { captureDeferredStorage } from "./pi-deferred-storage";
 
+/** An actual private maintenance lease and its callback binding. */
 export async function captureDeferredMaintenance(f: {
   runId: string;
   sessionId: string;
@@ -17,14 +23,15 @@ export async function captureDeferredMaintenance(f: {
   orgId: string;
 }) {
   const mount = await captureDeferredStorage(f);
+  const selected: readonly [] = [];
   const maintenance = {
     schemaVersion: 1 as const,
     memoryStorageId: mount.storageId,
     claimedRevision: 1,
     claimedBaseVersionId: mount.version,
     leaseToken: randomUUID(),
-    selectionDigest: mount.version,
-    selected: [],
+    selectionDigest: piMemoryPhase2SelectionDigest(selected),
+    selected,
   };
   await db()
     .insert(piMemoryPhase2Jobs)
@@ -65,4 +72,80 @@ export async function captureDeferredMaintenance(f: {
       .where(eq(piMemoryPhase2Jobs.memoryStorageId, mount.storageId));
   });
   return maintenance;
+}
+
+/** A valid changed-output checkpoint for the captured maintenance claim. */
+export async function captureDeferredMaintenanceCheckpoint(
+  f: {
+    runId: string;
+    userId: string;
+    orgId: string;
+  },
+  maintenance: {
+    memoryStorageId: string;
+    claimedBaseVersionId: string;
+  },
+) {
+  const versionId = createHash("sha256")
+    .update(`${f.runId}:maintenance-checkpoint`)
+    .digest("hex");
+  return await db().transaction(async (tx) => {
+    await tx.insert(storageVersions).values({
+      id: versionId,
+      storageId: maintenance.memoryStorageId,
+      s3Key: `${f.orgId}/${maintenance.memoryStorageId}/${versionId}`,
+      size: 16,
+      archiveSize: 8,
+      fileCount: 1,
+      createdBy: f.userId,
+    });
+    await tx
+      .update(storages)
+      .set({ headVersionId: versionId })
+      .where(eq(storages.id, maintenance.memoryStorageId));
+    await tx.insert(storageVersionLineage).values({
+      storageId: maintenance.memoryStorageId,
+      versionId,
+      parentVersionId: maintenance.claimedBaseVersionId,
+      runId: f.runId,
+    });
+    const [conversation] = await tx
+      .insert(conversations)
+      .values({
+        runId: f.runId,
+        cliAgentType: "pi",
+        cliAgentSessionId: f.runId,
+      })
+      .onConflictDoUpdate({
+        target: conversations.runId,
+        set: { cliAgentType: "pi", cliAgentSessionId: f.runId },
+      })
+      .returning({ id: conversations.id });
+    if (!conversation) {
+      throw new Error("Missing deferred maintenance conversation");
+    }
+    const [checkpoint] = await tx
+      .insert(checkpoints)
+      .values({
+        runId: f.runId,
+        conversationId: conversation.id,
+        storageMounts: [
+          {
+            orgId: f.orgId,
+            userId: f.userId,
+            name: "memory",
+            storageId: maintenance.memoryStorageId,
+            version: versionId,
+            mountPath: PI_MEMORY_ROOT,
+            writeback: true,
+            missingRootPolicy: "fail",
+          },
+        ],
+      })
+      .returning({ id: checkpoints.id });
+    if (!checkpoint) {
+      throw new Error("Missing deferred maintenance checkpoint");
+    }
+    return { id: checkpoint.id, versionId };
+  });
 }
