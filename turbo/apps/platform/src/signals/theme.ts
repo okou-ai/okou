@@ -19,7 +19,13 @@ import { onRef } from "./utils.ts";
 
 export type { ColorTheme, ThemePreference };
 
-const DEFAULT_COLOR_THEME: ColorTheme = "blue-horizon";
+/**
+ * The product's own palette, and the value a workspace starts on. Selecting it
+ * is the absence of a preset rather than a ninth one, so the App writes no
+ * palette attribute while it is active and every token resolves to the shared
+ * values the interface carried before the gradient color themes shipped.
+ */
+const DEFAULT_COLOR_THEME: ColorTheme = "default";
 
 const internalPreference$ = state<ThemePreference>("system");
 const internalResolved$ = state<"light" | "dark">("light");
@@ -51,6 +57,19 @@ export const themePreference$ = computed((get) => {
  */
 export const colorTheme$ = computed((get) => {
   return get(internalColorTheme$);
+});
+
+/**
+ * The palette a themed shell carries, or `undefined` when it carries none.
+ * Both the capability being off and the default palette being selected mean
+ * no palette attributes, so every shell asks this one question instead of
+ * pairing its own feature-switch read with the raw preference.
+ */
+export const paletteColorTheme$ = computed((get): ColorTheme | undefined => {
+  const enabled =
+    get(featureSwitchState$)[FeatureSwitchKey.GradientColorThemes] ?? false;
+  const colorTheme = get(colorTheme$);
+  return enabled && colorTheme !== DEFAULT_COLOR_THEME ? colorTheme : undefined;
 });
 
 function resolveTheme(preference: ThemePreference): "light" | "dark" {
@@ -132,19 +151,17 @@ export const syncColorThemePreference$ = command(
  * mounted. Document scope lets portaled dialogs and popovers inherit the same
  * semantic tokens as the app shell.
  */
-function applyColorThemeDocumentAttributes(
-  enabled: boolean,
-  colorTheme: ColorTheme,
-) {
+function applyColorThemeDocumentAttributes(colorTheme: ColorTheme | undefined) {
   const root = document.documentElement;
 
-  if (enabled) {
-    root.dataset.gradientColorThemes = "";
-    root.dataset.colorTheme = colorTheme;
-  } else {
+  if (colorTheme === undefined) {
     delete root.dataset.gradientColorThemes;
     delete root.dataset.colorTheme;
+    return;
   }
+
+  root.dataset.gradientColorThemes = "";
+  root.dataset.colorTheme = colorTheme;
 }
 
 /**
@@ -159,11 +176,8 @@ export const syncShellDocumentAttributes$ = command(
     }
 
     const shellMounted = get(shellDocumentAttributesMounted$);
-    const featureSwitches = get(featureSwitchState$);
     applyColorThemeDocumentAttributes(
-      shellMounted &&
-        (featureSwitches[FeatureSwitchKey.GradientColorThemes] ?? false),
-      get(colorTheme$),
+      shellMounted ? get(paletteColorTheme$) : undefined,
     );
   },
 );

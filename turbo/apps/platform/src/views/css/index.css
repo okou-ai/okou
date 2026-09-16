@@ -502,6 +502,17 @@ body {
   }
 }
 
+/* The product's own palette. It is the absence of a preset rather than a ninth
+   one: `signals/theme.ts` writes no palette attribute while it is selected, so
+   every token keeps the shared Amber-on-Linen values and none of the rules
+   below key in. The anchor and companion exist for the one element that does
+   carry the attribute, the picker's own swatch, which has to show what the
+   interface is made of. */
+[data-color-theme="default"] {
+  --okou-color-theme-anchor: hsl(38.8 100% 50%); /* #FFA500 - brand */
+  --okou-color-theme-companion: #faf5f3; /* Linen */
+}
+
 /* Each named theme pairs one anchor with one companion; the same pair drives
    picker swatches, primary actions, and the workspace ambience below. The HSL
    primary value also feeds the shared semantic token without duplicating it. */
@@ -575,6 +586,15 @@ body {
   --okou-color-theme-companion: #f4e33c;
   --okou-color-theme-hue: 70.6;
   --okou-color-theme-ring: 74.2 53.8% 41.6%;
+}
+
+/* The wash behind the picker's selected option, owned at the document root so
+   it resolves on the default palette as well: that palette writes no attribute,
+   so the gradient rule that otherwise supplies this value never keys in and the
+   selected card would lose its fill. The brand wash already tracks Light and
+   Dark, and the gradient palettes replace it with their own blend below. */
+:root {
+  --okou-color-theme-selected: hsl(var(--brand-subtle));
 }
 
 /* Card geometry and elevation. These are document-level runtime theme values, so
