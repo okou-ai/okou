@@ -1,9 +1,13 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactReferencesContract,
+  parseArtifactReference,
+} from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { webFileUrlRoutes } from "../web-file-url";
+import { artifactReferenceRoutes } from "../artifact-references";
 import { createHash, randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 
@@ -49,6 +53,23 @@ interface ArtifactActor {
   readonly agentId: string;
   readonly runnerGroup: string;
   readonly objectStore: ChatObjectStorage;
+}
+
+async function resolvePrivatePreviewReference(url: string) {
+  const reference = parseArtifactReference(url);
+  if (!reference) throw new Error("Expected a private preview reference");
+  const resolved = await accept(
+    setupApp({ context, routes: artifactReferenceRoutes })(
+      artifactReferencesContract,
+    ).resolve({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { reference: `${reference.hash}${reference.extension}` },
+    }),
+    [200],
+  );
+  expect(reference.hash).toMatch(/^[a-z0-9]{10}$/u);
+  expect(resolved.body.target.kind).toBe("file");
+  return resolved.body.target;
 }
 
 interface SnapshotRequest {
@@ -390,10 +411,9 @@ describe("video Artifact previews", () => {
         expect.stringMatching(/^Bearer [a-f0-9]{48}$/u),
       ]);
       const artifact = await findCatalogArtifact(actor, "private-video.mp4");
-      const reference = parseArtifactReference(artifact?.thumbnail?.url ?? "");
-      if (!reference?.id) {
-        throw new Error("Expected private poster reference");
-      }
+      const reference = await resolvePrivatePreviewReference(
+        artifact?.thumbnail?.url ?? "",
+      );
       expect(
         owner.objectStore.puts.filter((put) => {
           return put.contentType === "image/jpeg";
@@ -543,10 +563,9 @@ describe("video Artifact previews", () => {
     });
     await flushWaitUntilForTest();
     const artifact = await findCatalogArtifact(actor, "old-video.mp4");
-    const reference = parseArtifactReference(artifact?.thumbnail?.url ?? "");
-    if (!reference?.id) {
-      throw new Error("Expected a stable private poster reference");
-    }
+    const reference = await resolvePrivatePreviewReference(
+      artifact?.thumbnail?.url ?? "",
+    );
     expect(
       owner.objectStore.puts.filter((put) => {
         return put.contentType === "image/jpeg";
@@ -846,12 +865,9 @@ describe("hosted Artifact previews", () => {
         url: expect.stringMatching(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u),
       });
       const catalogArtifact = await findCatalogArtifact(actor, site);
-      const reference = parseArtifactReference(
+      const reference = await resolvePrivatePreviewReference(
         catalogArtifact?.thumbnail?.url ?? "",
       );
-      if (!reference?.id) {
-        throw new Error("Expected private screenshot reference");
-      }
       const filename = `preview-v3-${artifact.deploymentId}.webp`;
       expect(
         owner.objectStore.puts.filter((put) => {

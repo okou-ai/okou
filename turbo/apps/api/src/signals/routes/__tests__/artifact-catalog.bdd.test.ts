@@ -498,7 +498,11 @@ describe("GET /api/artifacts/catalog", () => {
       expect(file?.previewImageUrl).toBeUndefined();
       expect(
         capture.puts.filter(({ key }) => {
-          return !key.startsWith("private-sites/") && !key.startsWith("agent");
+          return (
+            !key.startsWith("private-sites/") &&
+            !key.startsWith("agent") &&
+            !key.startsWith("artifact-references/")
+          );
         }),
       ).toStrictEqual([]);
       const colleague = bdd.user({ orgId: owner.actor.orgId });

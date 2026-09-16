@@ -1,5 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
@@ -1348,6 +1349,7 @@ describe("POST /api/video-io/generate", () => {
         }
         return Promise.resolve({});
       });
+      installArtifactReferenceStorage(context);
       server.use(
         http.post(
           "https://files.okou.app/__artifact-video-poster",

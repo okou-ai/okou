@@ -160,11 +160,12 @@ describe("okou host clone command", () => {
     server.use(
       http.get(
         "http://localhost:3000/api/artifact-references/a1b2c3d4e5.html",
-        () =>
-          HttpResponse.json(
+        () => {
+          return HttpResponse.json(
             { error: { message: "Artifact unavailable", code: "NOT_FOUND" } },
             { status: 404 },
-          ),
+          );
+        },
       ),
     );
     const destination = join(tempDir, "shared-site");

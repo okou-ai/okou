@@ -494,17 +494,19 @@ test("another user's artifact and unavailable managed dependencies cannot be pub
 });
 
 test.each(["short", "legacy"] as const)(
-  "%s organization share references cannot authorize a public thread snapshot",
+  "%s organization share references cannot authorize a recipient to publish a thread snapshot",
   async (format) => {
     const f = await fixture();
-    const file = await f.upload();
+    const owner = bdd.user({ orgId: f.actor.orgId });
+    await flag(owner, true);
+    const file = await f.upload(owner);
     context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
       id: f.actor.orgId,
       name: "Owner organization",
     });
     const shared = await accept(
       api()(artifactSharesContract).update({
-        headers: headers(f.actor),
+        headers: headers(owner),
         body: {
           target: { kind: "file", id: file.id },
           audience: "organization",

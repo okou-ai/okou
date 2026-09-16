@@ -1,4 +1,5 @@
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -525,6 +526,17 @@ describe("Managed Intro Video Agent", () => {
   it("signs owned private references for Video Agent after rollback and rejects another owner's files", async () => {
     const f = await fixture();
     const provider = mockProvider();
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof HeadObjectCommand) {
+        expect(command.input.Bucket).toBe("test-private-artifacts");
+        return Promise.resolve({
+          ContentType: "application/pdf",
+          ContentLength: 128,
+        });
+      }
+      return Promise.resolve({});
+    });
+    installArtifactReferenceStorage(context);
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.PrivateArtifacts]: true,
     });
@@ -544,16 +556,6 @@ describe("Managed Intro Video Agent", () => {
     );
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.PrivateArtifacts]: false,
-    });
-    context.mocks.s3.send.mockImplementation((command) => {
-      if (command instanceof HeadObjectCommand) {
-        expect(command.input.Bucket).toBe("test-private-artifacts");
-        return Promise.resolve({
-          ContentType: "application/pdf",
-          ContentLength: 128,
-        });
-      }
-      return Promise.resolve({});
     });
     const input = request({ fileUrls: [prepared.body.url] });
     expect((await submit(f, input)).status).toBe(202);

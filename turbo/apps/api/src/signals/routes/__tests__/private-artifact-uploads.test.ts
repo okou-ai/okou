@@ -64,19 +64,15 @@ async function setPrivateArtifacts(enabled: boolean) {
   );
 }
 
-const references = new Map<string, string>();
-
 function mockStoredFile(id: string) {
   const key = `private-artifacts/${id}/report.html`;
+  const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((command) => {
     if (
       command instanceof GetObjectCommand &&
       command.input.Key?.startsWith("artifact-references/")
     ) {
-      return Promise.resolve({
-        Body: Readable.from([references.get(command.input.Key)!]),
-        ETag: '"reference"',
-      });
+      return storage(command);
     }
     if (
       command instanceof HeadObjectCommand ||
@@ -97,10 +93,19 @@ function mockStoredFile(id: string) {
 beforeEach(() => {
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  references.clear();
+  const references = new Map<string, string>();
   mocks.s3.listObjects([]);
   const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((command) => {
+    if (
+      command instanceof GetObjectCommand &&
+      command.input.Key?.startsWith("artifact-references/")
+    ) {
+      return Promise.resolve({
+        Body: Readable.from([Buffer.from(references.get(command.input.Key)!)]),
+        ETag: '"reference"',
+      });
+    }
     if (
       command instanceof PutObjectCommand &&
       command.input.Key?.startsWith("artifact-references/")
@@ -400,7 +405,14 @@ describe("private artifact uploads", () => {
     "%s multipart uploads in their recorded bucket after rollout is disabled",
     async (action) => {
       await setPrivateArtifacts(true);
+      const storage = context.mocks.s3.send.getMockImplementation()!;
       context.mocks.s3.send.mockImplementation((command) => {
+        if (
+          command instanceof PutObjectCommand &&
+          command.input.Key?.startsWith("artifact-references/")
+        ) {
+          return storage(command);
+        }
         if (command instanceof CreateMultipartUploadCommand) {
           expect(command.input.Bucket).toBe(bucket);
           return Promise.resolve({ UploadId: "upload-1" });

@@ -138,6 +138,22 @@ async function fixture() {
       });
     },
   );
+  context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
+    (input) => {
+      const { userId } = z.object({ userId: z.string() }).parse(input);
+      return Promise.resolve({
+        data: members.has(userId)
+          ? [
+              {
+                organization: { id: org },
+                publicUserData: { userId },
+                role: "org:member",
+              },
+            ]
+          : [],
+      });
+    },
+  );
   context.mocks.s3.getSignedUrl.mockResolvedValue(
     "https://private-r2.example/report.pdf?signature=temporary",
   );
@@ -914,6 +930,8 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
 
 test("html sharing pins the selected version until an explicit update and resolves to isolated content", async () => {
   const { owner, org, objects, members, session } = await fixture();
+  const organizationMemberships =
+    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
   const actor = createBddApi(context).user({ userId: owner, orgId: org });
   await createRunsApi(context).grantProEntitlement(actor);
   const host = createHostMapsBddApi(context);
@@ -975,6 +993,9 @@ test("html sharing pins the selected version until an explicit update and resolv
     url: share.body.url,
   });
   expect(share.body.shortUrl).toBe(`https://app.okou.ai${first.url}`);
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    organizationMemberships,
+  );
   const recipient = `user_${randomUUID()}`;
   members.add(recipient);
   session(recipient);

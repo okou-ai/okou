@@ -58,13 +58,17 @@ test("keeps runless deployments private across switch rollback and only issues o
   expect(completed.aliasUrl).toBeUndefined();
   expect(
     capture.puts
-      .filter(({ key }) => key.startsWith("private-sites/"))
+      .filter(({ key }) => {
+        return key.startsWith("private-sites/");
+      })
       .map(({ key }) => {
         return key;
       }),
   ).toStrictEqual([`private-sites/okou/${draft.deploymentId}/manifest.json`]);
   const manifest = JSON.parse(
-    capture.puts.find(({ key }) => key.endsWith("/manifest.json"))!.body,
+    capture.puts.find(({ key }) => {
+      return key.endsWith("/manifest.json");
+    })!.body,
   ) as Record<string, unknown>;
   expect(manifest.access).toBe("owner-private-v1");
   const files = await api.readHostedSiteFiles(
@@ -220,5 +224,9 @@ test("creates hostless references without requiring an API hostname", async () =
   mockEnv("OKOU_API_BACKEND_URL", undefined);
   const draft = await api.prepareHostedSite(actor, body);
   expect(draft.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
-  expect(capture.puts.some(({ key }) => key.startsWith("sites/"))).toBe(false);
+  expect(
+    capture.puts.some(({ key }) => {
+      return key.startsWith("sites/");
+    }),
+  ).toBe(false);
 });
