@@ -265,10 +265,8 @@ test.each([
 ] as const)(
   "unavailable links offer recovery without disclosing content: status %s, viewer %s",
   async (status, privateArtifacts) => {
-    context.mocks.data.userPreferences({
-      theme: "dark",
-      colorTheme: "blue-horizon",
-    });
+    context.mocks.browser.matchMedia(true);
+    context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
       return respond(status, {
         error: { code: "NOT_FOUND", message: "Artifact unavailable" },
