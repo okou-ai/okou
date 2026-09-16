@@ -13450,6 +13450,9 @@ describe("usage pack allocation management", () => {
       const billing = await readBillingStatus(fixture);
       expect(billing.showUsagePack).toBeTruthy();
 
+      context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
+        { id: `inv_${randomUUID()}` },
+      );
       const client = setupApp({ context, routes: orgInviteRoutes })(
         orgInviteContract,
       );
@@ -14753,6 +14756,7 @@ describe("usage pack allocation management", () => {
         redirectUrl: "https://app.okou.ai",
         privateMetadata: {
           usagePackInvitationPurchaseId: activePurchaseId,
+          getStartedClaimId: expect.any(String),
         },
       }),
     );
