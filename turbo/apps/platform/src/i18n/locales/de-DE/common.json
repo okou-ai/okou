@@ -6418,6 +6418,7 @@
     "pageCount_other": "{{count}} Seiten",
     "retry": "Erneut versuchen",
     "sharedBy": "Geteilt von {{owner}}",
+    "upload": "Präsentation hochladen",
     "visibility": {
       "change": "Ändern",
       "organization": "Organisation",

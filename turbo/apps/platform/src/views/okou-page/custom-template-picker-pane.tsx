@@ -6,6 +6,7 @@ import {
   MoreHorizontal,
   Search,
   Trash2,
+  Upload,
   User,
   Users,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  buttonVariants,
   cn,
 } from "@okouai/ui";
 import type {
@@ -34,6 +36,12 @@ import type {
 } from "@okouai/api-contracts/contracts/user-templates";
 
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import {
+  USER_TEMPLATE_IMPORT_ACCEPT,
+  importUserTemplateDeck$,
+} from "../../signals/okou-page/user-template-import.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   closeCustomTemplate$,
   customTemplateSearchQuery$,
@@ -334,7 +342,69 @@ function CustomTemplateCard({
   );
 }
 
-function CustomTemplatesEmpty() {
+/**
+ * Uploading is the ordinary chat path: the deck becomes an attachment, the
+ * message is sent, and the user lands in the thread that analyses it. The
+ * picker closes because that thread is where the work now is, and watching the
+ * analysis is what lets the user re-upload a deck it could not read.
+ *
+ * It owns the root signal rather than the page signal, like the composer's own
+ * send controls: the navigation this triggers aborts a page signal, which would
+ * kill the thread create and the run it just started.
+ */
+function CustomTemplateUploadButton({
+  signals,
+  onUploaded,
+  variant,
+}: {
+  readonly signals: ComposerSignals;
+  readonly onUploaded: () => void;
+  readonly variant: "default" | "outline";
+}) {
+  const { t } = useTranslation();
+  const rootSignal = useGet(rootSignal$);
+  const importDeck = useSet(importUserTemplateDeck$);
+  const label = t(($) => {
+    return $.templates.upload;
+  });
+  return (
+    <label
+      className={cn(
+        // Matches the search field beside it rather than the smaller toolbar
+        // metric, so the two controls share one baseline.
+        buttonVariants({ variant, size: "default" }),
+        "shrink-0 cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
+      )}
+    >
+      <Upload />
+      {label}
+      <input
+        type="file"
+        className="sr-only"
+        accept={USER_TEMPLATE_IMPORT_ACCEPT}
+        aria-label={label}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          // Clear the input so choosing the same deck again still fires.
+          event.currentTarget.value = "";
+          if (!file) {
+            return;
+          }
+          onUploaded();
+          detach(importDeck({ signals, file }, rootSignal), Reason.DomCallback);
+        }}
+      />
+    </label>
+  );
+}
+
+function CustomTemplatesEmpty({
+  signals,
+  onUploaded,
+}: {
+  readonly signals: ComposerSignals;
+  readonly onUploaded: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center rounded-[22px] border border-border bg-card px-6 py-12 text-center">
@@ -348,6 +418,13 @@ function CustomTemplatesEmpty() {
           return $.templates.empty.description;
         })}
       </p>
+      <div className="mt-5">
+        <CustomTemplateUploadButton
+          signals={signals}
+          onUploaded={onUploaded}
+          variant="default"
+        />
+      </div>
     </div>
   );
 }
@@ -548,7 +625,13 @@ function CustomTemplateDetail() {
  * category rail because it answers "who made it", while the seven below it
  * answer "what am I making".
  */
-export function CustomTemplatePickerPane() {
+export function CustomTemplatePickerPane({
+  signals,
+  onUploaded,
+}: {
+  readonly signals: ComposerSignals;
+  readonly onUploaded: () => void;
+}) {
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
   const setQuery = useSet(setCustomTemplateSearchQuery$);
@@ -569,7 +652,7 @@ export function CustomTemplatePickerPane() {
       query.trim().length > 0 ? (
         <TemplateEmptyPanel />
       ) : (
-        <CustomTemplatesEmpty />
+        <CustomTemplatesEmpty signals={signals} onUploaded={onUploaded} />
       )
     ) : (
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -579,23 +662,39 @@ export function CustomTemplatePickerPane() {
       </div>
     );
 
+  // The empty card carries its own upload button, so the toolbar keeps quiet
+  // there rather than offering the same verb twice on one screen.
+  const showsEmptyCard =
+    templatesLoadable.state === "hasData" &&
+    templatesLoadable.data.length === 0 &&
+    query.trim().length === 0;
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="relative w-56 shrink-0">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          aria-label={t(($) => {
-            return $.artifacts.templates.searchConnectors;
-          })}
-          className="h-9 pl-9 text-sm"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-          placeholder={t(($) => {
-            return $.artifacts.templates.searchConnector;
-          })}
-        />
+      <div className="flex items-center justify-between gap-3">
+        <div className="relative w-56 shrink-0">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label={t(($) => {
+              return $.artifacts.templates.searchConnectors;
+            })}
+            className="h-9 pl-9 text-sm"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+            placeholder={t(($) => {
+              return $.artifacts.templates.searchConnector;
+            })}
+          />
+        </div>
+        {showsEmptyCard ? null : (
+          <CustomTemplateUploadButton
+            signals={signals}
+            onUploaded={onUploaded}
+            variant="outline"
+          />
+        )}
       </div>
       {body}
     </div>

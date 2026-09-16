@@ -6397,6 +6397,7 @@
     "pageCount_other": "{{count}}페이지",
     "retry": "다시 시도",
     "sharedBy": "{{owner}} 님이 공유함",
+    "upload": "덱 업로드",
     "visibility": {
       "change": "변경",
       "organization": "조직",

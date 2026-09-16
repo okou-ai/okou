@@ -281,6 +281,37 @@ test("Opening a custom template shows its pages and management controls", async 
   expect(buttonByName("Use this template", dialog)).toBeUndefined();
 });
 
+function uploadControls(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>('input[type="file"]'),
+  ).filter((candidate) => {
+    return candidate.getAttribute("aria-label") === "Upload a deck";
+  });
+}
+
+test("The empty panel offers the upload that fills it", async () => {
+  mockCustomTemplates([]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("No templates yet");
+
+  // One upload, not two: the empty card owns the verb and the toolbar defers.
+  expect(uploadControls(dialog)).toHaveLength(1);
+  expect(uploadControls(dialog)[0]?.getAttribute("accept")).toBe(".pptx,.ppt");
+});
+
+test("A populated panel keeps upload in the toolbar", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+
+  expect(uploadControls(dialog)).toHaveLength(1);
+  expect(within(dialog).queryByText("No templates yet")).not.toBeInTheDocument();
+});
+
 async function openDetail(
   dialog: HTMLElement,
   title: string,

@@ -6397,6 +6397,7 @@
     "pageCount_other": "{{count}} ページ",
     "retry": "再試行",
     "sharedBy": "{{owner}} が共有",
+    "upload": "デッキをアップロード",
     "visibility": {
       "change": "変更",
       "organization": "組織",

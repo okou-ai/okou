@@ -6635,7 +6635,10 @@ function TemplatePickerCategoryContent({
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        <CustomTemplatePickerPane />
+        <CustomTemplatePickerPane
+          signals={signals}
+          onUploaded={onImportedPresentation}
+        />
       </div>
     );
   }

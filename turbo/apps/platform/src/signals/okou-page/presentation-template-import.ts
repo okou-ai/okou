@@ -36,14 +36,23 @@ function presentationTemplateImportPrompt(): string {
  * is sent, and the existing new-thread flow creates the thread and navigates
  * into it. The user then watches the analysis happen and can interrupt or
  * follow up, which a background job could not offer.
+ *
+ * The prompt is an argument because the same send serves two destinations: the
+ * official catalog and the caller's own. Nothing else about the sequence
+ * differs, and a second copy of it would be a second place for the
+ * failed-upload rule below to drift.
  */
-export const importPresentationTemplateDeck$ = command(
+export const submitDeckImport$ = command(
   async (
     { get, set },
-    args: { readonly signals: ComposerSignals; readonly file: File },
+    args: {
+      readonly signals: ComposerSignals;
+      readonly file: File;
+      readonly prompt: string;
+    },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const { signals, file } = args;
+    const { signals, file, prompt } = args;
     const before = new Set(get(signals.draft.attachments$));
     await set(signals.draft.uploadAttachment$, file, signal);
     signal.throwIfAborted();
@@ -56,10 +65,24 @@ export const importPresentationTemplateDeck$ = command(
     if (!attached) {
       return false;
     }
-    set(signals.draft.setDraftInput$, presentationTemplateImportPrompt());
+    set(signals.draft.setDraftInput$, prompt);
 
     const action = await get(signals.submission.primaryAction$);
     signal.throwIfAborted();
     return await set(signals.submission.submitCurrentInput$, action, signal);
+  },
+);
+
+export const importPresentationTemplateDeck$ = command(
+  async (
+    { set },
+    args: { readonly signals: ComposerSignals; readonly file: File },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    return await set(
+      submitDeckImport$,
+      { ...args, prompt: presentationTemplateImportPrompt() },
+      signal,
+    );
   },
 );

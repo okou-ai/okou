@@ -6410,6 +6410,7 @@
     "pageCount_other": "{{count}} pages",
     "retry": "Retry",
     "sharedBy": "Shared by {{owner}}",
+    "upload": "Upload a deck",
     "visibility": {
       "change": "Change",
       "organization": "Organization",

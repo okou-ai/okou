@@ -6487,6 +6487,7 @@
     "pageCount_other": "{{count}} pages",
     "retry": "Réessayer",
     "sharedBy": "Partagé par {{owner}}",
+    "upload": "Importer une présentation",
     "visibility": {
       "change": "Modifier",
       "organization": "Organisation",

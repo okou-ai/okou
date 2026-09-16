@@ -68,6 +68,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   artifact: ["artifact:read", "artifact:write", "file:read"],
   presentation: null,
   "presentation-template": "presentation-template:write",
+  "user-template": "user-template:write",
   maps: "maps:read",
   weather: "weather:read",
   scrape: "scrape:read",
@@ -349,6 +350,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     load: async () => {
       return (await import("./commands/presentation-template"))
         .presentationTemplateCommand;
+    },
+  },
+  {
+    name: "user-template",
+    description: "Publish custom templates extracted from an uploaded deck",
+    load: async () => {
+      return (await import("./commands/user-template")).userTemplateCommand;
     },
   },
   {
