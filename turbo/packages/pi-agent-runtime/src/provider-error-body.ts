@@ -1,4 +1,5 @@
 import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { classifyProviderFailure } from "@okouai/api-contracts/contracts/provider-failure";
 
 /**
  * Restate an opaque provider error body as the adapter's own JSON envelope.
@@ -202,7 +203,13 @@ export function preserveProviderErrorStatus(
     }
     const envelope = {
       error: {
-        message: providerHttpErrorMessage(response.status, text),
+        // Preserve exact queue expiry so native retry owners see the same
+        // terminal condition as our bounded diagnostic observer.
+        message:
+          classifyProviderFailure(text, response.status) ===
+          "provider_queue_timeout"
+            ? text.trim()
+            : providerHttpErrorMessage(response.status, text),
         type: "http_error",
       },
     };

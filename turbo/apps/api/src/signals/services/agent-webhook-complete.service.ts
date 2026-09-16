@@ -225,6 +225,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   provider_rate_limited: "suppress-byok",
   provider_overloaded: "suppress-byok",
   provider_stream_timeout: "suppress-byok",
+  provider_queue_timeout: "suppress-byok",
   provider_server_error: "suppress-byok",
   response_connection_lost: "suppress-byok",
   reconnect_required: "suppress-byok",

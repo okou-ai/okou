@@ -1,5 +1,77 @@
 [
   {
+    "message": "We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": " \nWE WERE UNABLE TO START PROCESSING YOUR REQUEST WITHIN THE 900-SECOND TIMEOUT LIMIT. PLEASE TRY AGAIN LATER. \n",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "server_error: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "unknown: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "Error Code timeout: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "Codex error: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "OpenAI API error (503): {\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"server_error\"}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "OpenAI API error (503): {\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"overloaded_error\"}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"invalid_api_key\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"queue_expired\"}}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"context_length_exceeded\"}}",
+    "reason": "context_window_exceeded"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"usage_limit_reached\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"rate_limit_exceeded\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\",\"code\":\"insufficient_quota\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "The tool printed: We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\"}}}",
+    "reason": null
+  },
+  {
+    "message": "We were unable to start processing your request within the 901-second timeout limit. Please try again later.",
+    "reason": null
+  },
+  {
+    "message": "Request timeout",
+    "reason": null
+  },
+  {
     "message": "API Error: 429 {\"error\":{\"code\":\"insufficient_quota\"}}",
     "reason": "provider_insufficient_credits"
   },

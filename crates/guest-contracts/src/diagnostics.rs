@@ -711,6 +711,8 @@ pub enum FailureReason {
     ProviderOverloaded,
     /// The provider stream timed out.
     ProviderStreamTimeout,
+    /// The provider explicitly expired a request before processing started.
+    ProviderQueueTimeout,
     /// The provider returned a server error.
     ProviderServerError,
     /// The response connection was lost.
@@ -743,6 +745,7 @@ impl FailureReason {
             Self::ProviderRateLimited => "provider_rate_limited",
             Self::ProviderOverloaded => "provider_overloaded",
             Self::ProviderStreamTimeout => "provider_stream_timeout",
+            Self::ProviderQueueTimeout => "provider_queue_timeout",
             Self::ProviderServerError => "provider_server_error",
             Self::ResponseConnectionLost => "response_connection_lost",
             Self::SafetyPolicyRefusal => "safety_policy_refusal",
@@ -771,6 +774,7 @@ impl From<FailureReason>
             FailureReason::ProviderRateLimited => Self::ProviderRateLimited,
             FailureReason::ProviderOverloaded => Self::ProviderOverloaded,
             FailureReason::ProviderStreamTimeout => Self::ProviderStreamTimeout,
+            FailureReason::ProviderQueueTimeout => Self::ProviderQueueTimeout,
             FailureReason::ProviderServerError => Self::ProviderServerError,
             FailureReason::ResponseConnectionLost => Self::ResponseConnectionLost,
             FailureReason::SafetyPolicyRefusal => Self::SafetyPolicyRefusal,
@@ -1503,6 +1507,10 @@ mod tests {
                 "provider_stream_timeout",
             ),
             (FailureReason::ProviderServerError, "provider_server_error"),
+            (
+                FailureReason::ProviderQueueTimeout,
+                "provider_queue_timeout",
+            ),
             (
                 FailureReason::ResponseConnectionLost,
                 "response_connection_lost",

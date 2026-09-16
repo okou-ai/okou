@@ -159,8 +159,9 @@ native classifiers.
 API-first and Guest use the allowlisted reason from the selected terminal
 message before its display text. The Guest's public result carries it separately
 from `modelRequest`, whose shape is unchanged. Older Guests ignore the additive
-runtime field; newer Guests still accept messages without it. All reasons
-already exist in the API/Runner taxonomy, so no database migration is needed.
+runtime field; newer Guests still accept messages without it. The open reason
+token contract accepts additive API/Runner taxonomy entries without a database
+migration.
 
 A settled final Pi `length` response fails with `output_token_limit`; partial
 assistant text stays in its event. API-first still transfers a pending tool
@@ -168,6 +169,24 @@ continuation instead of treating it as a final truncated answer. Transient
 API-first failures retain the existing sandbox recovery and ownership guards.
 Retry budgets, cancellation, Runner logging rules and user-owned-provider
 warning suppression are unchanged.
+
+The exact failed-provider sentence "We were unable to start processing your
+request within the 900-second timeout limit. Please try again later." is
+`provider_queue_timeout`. Recognized SDK error envelopes and code prefixes are
+accepted; generic timeouts, other durations and quoted successful output are
+not. This reason refines generic server/overload evidence, while explicit
+credential, billing, usage and context reasons keep precedence. Actual HTTP
+status is retained, including a failed stream delivered with HTTP 200.
+
+The pinned pi-ai patch vetoes further transport, native assistant and summary
+retries for this result, including an upstream retry hint. API-first also keeps
+it outside the Sandbox recovery allowlist. Completed tools, failed history,
+cancellation and independently accepted input retain native ownership. This
+does not shorten the first provider wait or introduce a total run timer.
+Presentation stays a generic failed run without a replay or model-switch action;
+built-in completion warnings remain visible. See the
+[patch contract](../turbo/patches/pi-pending-tools.md#provider-declared-queue-expiry)
+for removal criteria.
 
 ## Shared bootstrap, distinct session policies
 

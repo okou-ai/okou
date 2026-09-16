@@ -21,7 +21,7 @@ index 5d44bf071e84329250385366c0e6f623c7d910dd..1bae891a22bffee77ce4766b3b3c1e72
  //# sourceMappingURL=bedrock-converse-stream.d.ts.map
 \ No newline at end of file
 diff --git a/dist/api/bedrock-converse-stream.js b/dist/api/bedrock-converse-stream.js
-index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d715b109878e92dec50e2e9d87ff4dc37523a441 100644
+index 6bc6312906ec3d75f31d190994d21c87f1d0767d..d79051cb8b4dd9db3bda0526493449f2b1dc97f7 100644
 --- a/dist/api/bedrock-converse-stream.js
 +++ b/dist/api/bedrock-converse-stream.js
 @@ -43,10 +43,11 @@ export const stream = (model, context, options = {}) => {
@@ -109,3 +109,85 @@ index bf979d439f531c62494291050722f7e93435280d..429a00309d485aa5506cffa15a040be9
              const grammarToolInputProperties = createGrammarToolInputProperties(context.tools, model.compat?.supportsOpenAIGrammarTools ?? false);
              const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
              const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
+diff --git a/dist/utils/provider-queue-timeout.d.ts b/dist/utils/provider-queue-timeout.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..af6bdff0e88e49509f6c57fbc9814408ec07efce
+--- /dev/null
++++ b/dist/utils/provider-queue-timeout.d.ts
+@@ -0,0 +1,2 @@
++/** Only call for a failed provider request or assistant result. */
++export declare function isProviderQueueTimeout(error: unknown): boolean;
+diff --git a/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..dfdea7210e7a055b2f6b25acf61775649deb7ddf
+--- /dev/null
++++ b/dist/utils/provider-queue-timeout.js
+@@ -0,0 +1,31 @@
++import { normalizeProviderError } from "./error-body.js";
++
++/** Only call for a failed provider request or assistant result. */
++export function isProviderQueueTimeout(error) {
++    const normalized = typeof error === "string" ? { message: error } : normalizeProviderError(error);
++    let message = (normalized.body ?? normalized.message).trim()
++        .replace(/^(?:OpenAI|Anthropic) API error \(\d{3}\):\s*/i, "")
++        .replace(/^Codex error: /i, "")
++        .replace(/^\d{3}(?::| )\s*/, "");
++    if (message.startsWith("{")) {
++        try {
++            const body = JSON.parse(message);
++            const detail = body.error && typeof body.error === "object" ? body.error : body;
++            const code = typeof detail.code === "string" ? detail.code : detail.type;
++            // Specific provider failures keep their native policy even when
++            // accompanied by contradictory generic queue text.
++            if (detail.error === "insufficient_credits" || detail.code === 402 ||
++                (typeof code === "string" && /^(?:invalid_api_key|authentication_error|context_length_exceeded|context_window_exceeded|prompt_too_long|rate_limit_exceeded|rate_limit_error|usage_limit_reached|usage_not_included|content_policy_violation|model_not_found|unsupported_model|TOKEN_REFRESH_FAILED|billing|billing_error|insufficient_quota|payment_required|billing_hard_limit_reached|insufficient_credits)$/.test(code)))
++                return false;
++            message = detail.message;
++        }
++        catch {
++            return false;
++        }
++    }
++    return typeof message === "string" && message.trim()
++        .replace(/^Codex error: /i, "")
++        .replace(/^(?:Error Code )?(?:unknown|server_error|internal_server_error|overloaded_error|server_overloaded|timeout): /i, "")
++        .toLowerCase() ===
++        "we were unable to start processing your request within the 900-second timeout limit. please try again later.";
++}
+diff --git a/dist/utils/provider-retry.js b/dist/utils/provider-retry.js
+index a08fefd7e254f494f838ffa95affd6bf279973db..86a16a7dfcf62253756188d6adca9f6a9db00b2b 100644
+--- a/dist/utils/provider-retry.js
++++ b/dist/utils/provider-retry.js
+@@ -1,3 +1,4 @@
++import { isProviderQueueTimeout } from "./provider-queue-timeout.js";
+ const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
+ function isProviderError(error) {
+     if (!(error instanceof Error) || !("status" in error) || !("headers" in error))
+@@ -7,6 +8,9 @@ function isProviderError(error) {
+ }
+ /** Mirrors the pinned OpenAI/Anthropic SDK retry policy; review when either SDK is upgraded. */
+ function isRetryableProviderError(error) {
++    // A provider-declared expired queue must not start another long wait.
++    if (isProviderQueueTimeout(error))
++        return false;
+     const shouldRetry = error.headers?.get("x-should-retry");
+     if (shouldRetry === "true")
+         return true;
+diff --git a/dist/utils/retry.js b/dist/utils/retry.js
+index ce8c4cbc3bdbbfa2e8e59070cdcdee12a6bb7177..fa666965fb0e891058fac1ef42c4ee67952a4fd4 100644
+--- a/dist/utils/retry.js
++++ b/dist/utils/retry.js
+@@ -1,3 +1,4 @@
++import { isProviderQueueTimeout } from "./provider-queue-timeout.js";
+ function buildProviderErrorPattern(patterns) {
+     return new RegExp(patterns.join("|"), "i");
+ }
+@@ -168,6 +169,8 @@ export function isRetryableAssistantError(message) {
+     if (message.stopReason !== "error" || !message.errorMessage)
+         return false;
+     const errorMessage = message.errorMessage;
++    if (isProviderQueueTimeout(errorMessage))
++        return false;
+     if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage))
+         return false;
+     return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);

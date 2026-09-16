@@ -34,12 +34,18 @@ class ModelRequestEventStream extends AssistantMessageEventStream {
   private diagnose(message: AssistantMessage): AssistantMessage {
     if (!this.diagnosed && message.stopReason === "error") {
       this.diagnosed = true;
+      const terminalReason = classifyProviderFailure(
+        message.errorMessage ?? "",
+        this.observation.httpStatus,
+      );
+      const observedReason = this.observation.failureReason;
       const failureReason =
-        this.observation.failureReason ??
-        classifyProviderFailure(
-          message.errorMessage ?? "",
-          this.observation.httpStatus,
-        );
+        terminalReason === "provider_queue_timeout" &&
+        (observedReason === undefined ||
+          observedReason === "provider_server_error" ||
+          observedReason === "provider_overloaded")
+          ? terminalReason
+          : (observedReason ?? terminalReason);
       message.diagnostics = [
         ...(message.diagnostics ?? []),
         {

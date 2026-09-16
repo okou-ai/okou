@@ -277,6 +277,16 @@ fn with_cli_failure_reason(
             | (AgentFramework::Codex, FailureDetailSource::CodexJsonl)
     ) && let Some(reason) = failure_message.failure_reason
     {
+        if diagnostic.framework == AgentFramework::Pi
+            && matches!(
+                reason,
+                FailureReason::ProviderServerError | FailureReason::ProviderOverloaded
+            )
+            && crate::provider_failure::provider_failure_reason(&failure_message.message)
+                == Some(FailureReason::ProviderQueueTimeout)
+        {
+            return diagnostic.with_failure_reason(FailureReason::ProviderQueueTimeout);
+        }
         return diagnostic.with_failure_reason(reason);
     }
     if let Some(reason) = classify_cli_failure_reason(
