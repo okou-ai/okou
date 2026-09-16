@@ -256,7 +256,7 @@ describe("membership refresh through public PAT and Agent requests", () => {
     },
   );
 
-  it("isolates different users and organizations", async () => {
+  it("isolates negative membership by both user and organization", async () => {
     const actor = api.user();
     const otherOrg = api.user({ userId: actor.userId });
     const otherUser = api.user({ orgId: actor.orgId });
@@ -264,11 +264,13 @@ describe("membership refresh through public PAT and Agent requests", () => {
     server.use(
       http.get(membershipUrl, ({ params }) => {
         seen.push(String(params.userId));
-        return HttpResponse.json(membership(actor));
+        return HttpResponse.json(
+          membership(params.userId === otherUser.userId ? otherUser : otherOrg),
+        );
       }),
     );
-    await accept(statusRequest(agentToken(actor)), [404]);
-    await accept(statusRequest(agentToken(otherOrg)), [401]);
+    await accept(statusRequest(agentToken(actor)), [401]);
+    await accept(statusRequest(agentToken(otherOrg)), [404]);
     await accept(statusRequest(agentToken(otherUser)), [404]);
     expect(seen).toStrictEqual([
       actor.userId,
