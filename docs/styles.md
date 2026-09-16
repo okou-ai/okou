@@ -4,6 +4,24 @@ The App design system has one component-facing styling API: Tailwind utilities. 
 
 First-party CSS class selectors are not a second component API. New CSS modules, `<style>` elements, runtime stylesheet injection, and CSS-in-JS are subject to the same boundary because they otherwise bypass Tailwind and the token system.
 
+## Where to look
+
+| You are doing this                              | Read                                                                                                                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Drawing a border, a rule or a separator         | The hairline tokens in [Sources of truth](#sources-of-truth), then [Horizontal hairline rules](#horizontal-hairline-rules) or [The all-round hairline](#the-all-round-hairline) |
+| Building a card, panel or page surface          | [Page surfaces](#page-surfaces)                                                                                                                                                 |
+| Building a badge, tag or chip                   | [Inline badges](#inline-badges)                                                                                                                                                 |
+| Building a button or a select                   | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
+| Building a dialog, sheet or scrolling body      | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
+| Adding motion, or handling reduced motion       | [Animated layers](#animated-layers)                                                                                                                                             |
+| Styling on an ancestor's hover or focus         | [Ancestor state without the hover media query](#ancestor-state-without-the-hover-media-query)                                                                                   |
+| Reproducing an exact colour or gradient         | [Literal colours and gradients](#literal-colours-and-gradients)                                                                                                                 |
+| Drawing artwork rather than chrome              | [Illustration strokes](#illustration-strokes)                                                                                                                                   |
+| Choosing a page layout or covering the viewport | [Page layouts](#page-layouts)                                                                                                                                                   |
+| Adding a token or a variant                     | [Token and variant governance](#token-and-variant-governance)                                                                                                                   |
+| Adapting third-party or generated DOM           | [Exception boundary](#exception-boundary)                                                                                                                                       |
+| A style check failed                            | [Enforcement and feedback](#enforcement-and-feedback)                                                                                                                           |
+
 ## Final state
 
 The goal is zero first-party CSS class selectors for business styling. Preventing growth is an interim guardrail, not completion of this goal.
@@ -93,6 +111,11 @@ removed to avoid duplicate hints. The shared tooltip supports disabled triggers
 and preserves full-width tile layout. Visible labels and essential explanations
 remain available without hovering.
 
+## Component contracts
+
+A component owns its own utilities. Reach for the component rather than restating
+its treatment, and keep layout, stacking and container context at the call site.
+
 ### The composer card surface
 
 `Card` from `@okouai/ui` takes `surface="composer"` for the composer card and the
@@ -154,6 +177,38 @@ Merge the badge's line height **after** caller classes. `tailwind-merge` removes
 
 Control typography is a joint decision about font size, line height, height, and padding. Keep that decision in the shared component; fixed-height buttons and segments retain their own size scales. A line-height ratio is not a promise to center every label's ink: capitals, descenders, and fallback fonts have different extents. Verify stable baselines, descender clearance, icon alignment, and long-label wrapping in a browser across representative Latin and Chinese labels. Do not shift individual labels or impose a font-metric threshold on every control to make one word look centered.
 
+### Neutral button and select variants
+
+Use `Button variant="neutral"` for neutral actions and
+`SelectTrigger variant="neutral"` for neutral select controls. Each component
+owns its utilities; their public API does not export class strings.
+Use `Button asChild variant="neutral"` around a router `Link` for navigation
+styled as a button, and compose `Button` with `DialogTrigger` for dialog
+actions. The existing components own the interaction contract; `neutral` is
+only a visual variant. Link composition preserves the native anchor, ref,
+and navigation behavior without adding a wrapper.
+
+The components compose `border border-control-border bg-control-surface
+text-foreground [&:hover]:bg-state-hover-overlay` internally. Language,
+timezone, and voice-input settings all use the select variant. Dimensions,
+padding, and radius remain with the existing component and caller.
+
+State both interactions as overlays above the surface
+(`[&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay`), not as
+replacement fills. `hover:bg-state-hover` and `active:bg-state-pressed` set
+`background-color`, so they replace `bg-control-surface` rather than sitting on
+it: `gray-50` is a warm stop (hue 15°, saturation 40%) and the state layer is
+neutral, so a replacing fill drops the warm cast the resting fill carries, while
+an overlay stays in the same family.
+
+`text-foreground` is stated explicitly even where every current consumer already
+inherits it, so a control moved onto a differently coloured surface keeps this
+treatment.
+
+Preserve consumer-specific interaction colors when extracting shared styles.
+The official workflow Configure button, for example, retains its existing
+`hover:bg-primary-hover active:bg-primary-pressed` overrides.
+
 ### Chat scrollbars
 
 `ScrollBar` from `@okouai/ui` owns the shadcn Base UI scrollbar styling shared
@@ -195,151 +250,40 @@ previews retain their own clipping and internal scroll ownership.
 `IconTooltip` merges its disabled-child wrapper's utilities with `cn()`, and the
 Mermaid diagram box passes its own `wrapperClassName` into that slot.
 
-### Animated layers
+### Dialog viewport ownership
 
-`RunningIndicator` owns its Tailwind utilities directly in JSX. Reuse the
-component through its props; its internal class strings are not an exported
-styling API. Both animated layers set their resting offset through an arbitrary
-`[transform:translate(-50%,-50%)_scale(...)]` rather than Tailwind's
-`translate-*` and `scale-*` utilities.
+`DialogContent` owns the Base UI viewport and popup. Windowed dialogs are
+centered inside the four safe-area insets plus a 24 px gutter. Fullscreen
+dialogs paint to the viewport edges while their content and close control stay
+inside the safe-area insets. The environment values come from the existing
+`--sat`, `--sar`, `--sab`, `--sal`, and `--okou-viewport-height` properties;
+the shared primitive also works with native `env()` insets outside Platform.
 
-That is not a style preference. Those utilities set the individual `translate`
-and `scale` CSS properties, while the keyframes animate `transform`. The
-individual properties compose with an animated `transform` instead of being
-replaced by it, so the layer would carry the centring offset twice for the whole
-cycle and visibly misplace the indicator at every phase.
+Callers select `maxWidth`, `smMaxWidth`, `height`, and `mode`. The popup fills
+the available safe width and is capped by `maxWidth` (default `lg`);
+`smMaxWidth` changes that upper bound only from the shared `sm` breakpoint.
+Width caps never set a fixed width or determine height. Preserve existing
+breakpoints and units when migrating: `sm:max-w-[480px]` becomes
+`smMaxWidth={480}`, and `max-w-[25rem]` becomes `maxWidth="25rem"`.
+The artifact preview uses `maxWidth={1440} height={1000}`. Every variant is
+capped by the available viewport, so increasing a cap cannot increase the
+safe boundary.
 
-Register a keyframe animation as an `--animate-*` theme entry so consumers reach
-it through `animate-*` rather than an `animation` shorthand. A per-instance
-runtime value, such as the indicator's phase-anchoring
-`--running-indicator-delay`, stays a narrowly named custom property that the
-component sets, read through an arbitrary `[animation-delay:var(...)]`.
+The popup does not accept `className`, `style`, or `render`. Use
+`contentClassName` for the inner layout and `DialogBody` for a scrolling body
+below a fixed header. `contentClassName` remains subject to the style policy.
+The shared inner container protects vertical scrolling even when caller layout
+classes include `overflow-hidden`. Short panels must keep their footer actions
+reachable by scrolling; clipping the popup to its safe boundary is not enough.
+Use `showCloseButton` instead of CSS selectors that hide the close control.
+Business code must import the shared dialog rather than Base UI's dialog
+primitives; ESLint enforces this boundary. Preserve Base UI's focus, nested
+portal, outside-press, and animation-completion ownership when changing it.
 
-### Literal colours and gradients
+## Cross-cutting rules
 
-Tailwind's colour and gradient utilities interpolate in oklab, so they do not
-reproduce a literal `rgb()` fill or a plain `linear-gradient()`. Reach for the
-ergonomic utilities when a token supplies the colour, and for an exact arbitrary
-value such as `bg-[rgb(255_255_255_/_0.18)]` or
-`bg-[linear-gradient(to_top,#bdf9ff,#ffffff)]` when a specific value is part of
-the design.
-
-The mic starting spinner sets `[transform:rotate(0deg)_translateZ(0)]` for the
-same reason the running indicator does: its keyframes animate `transform`, and
-Tailwind's `rotate-*` utility sets the individual `rotate` property, which would
-compose with the animation rather than be replaced by it.
-
-### Ancestor state without the hover media query
-
-Tailwind wraps `hover:` and `group-hover:` in `@media (hover: hover)`, so a
-`group-hover:` utility is not equivalent to an ungated `.parent:hover .child`
-rule: the ungated form also fires on coarse pointers, where a tap leaves a
-sticky hover. Reproduce that contract with an arbitrary variant over the
-element's own semantic attribute, as in
-`[:is([data-sidebar-chat-thread-id]:hover,[data-sidebar-chat-thread-id]:focus-visible)_&]:…`,
-which generates the same unconditional descendant selector at the same
-specificity, and folds a two-state rule into one utility. This matches the
-unconditional `[&:hover]` form the choice and surface variants use; reach for
-`group-hover:` only when the media gate is wanted. The sidebar copy foreground
-is such a case: it keeps the guard deliberately, because a foreground that never
-repaints on a sticky tap state is the better behaviour there, while a title that
-never scrolls to its end would lose the affordance.
-
-Spell such a variant out at every call site. Tailwind's scanner is text-based,
-so a variant assembled from a constant produces a candidate that never appears
-in the source and therefore generates no CSS at all.
-
-A `@media (prefers-reduced-motion: reduce)` override that resets a value back to
-its initial belongs on `motion-safe:` on the rule it would override, rather than
-as a second `motion-reduce:` utility. Both utilities land in the same layer at
-the same specificity, so a `motion-reduce:` override would depend on Tailwind's
-emission order to win; `motion-safe:` simply does not apply, and the registered
-initial value is what reduced motion resolves to anyway.
-
-The sidebar thread title keeps its `@property --okou-nav-title-shift`
-registration in the App stylesheet. A registration is an at-rule rather than a
-class selector, and it is what lets a transition interpolate the length and
-`inherits: true` carry the animated value to the text span; the mask, the
-travel and the delayed hover transition are Tailwind utilities on the component.
-`data-slot="sidebar-thread-title"` identifies the clipping box for page tests
-and carries no styles.
-
-### Neutral button and select variants
-
-Use `Button variant="neutral"` for neutral actions and
-`SelectTrigger variant="neutral"` for neutral select controls. Each component
-owns its utilities; their public API does not export class strings.
-Use `Button asChild variant="neutral"` around a router `Link` for navigation
-styled as a button, and compose `Button` with `DialogTrigger` for dialog
-actions. The existing components own the interaction contract; `neutral` is
-only a visual variant. Link composition preserves the native anchor, ref,
-and navigation behavior without adding a wrapper.
-
-The components compose `border border-control-border bg-control-surface
-text-foreground [&:hover]:bg-state-hover-overlay` internally. Language,
-timezone, and voice-input settings all use the select variant. Dimensions,
-padding, and radius remain with the existing component and caller.
-
-State both interactions as overlays above the surface
-(`[&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay`), not as
-replacement fills. `hover:bg-state-hover` and `active:bg-state-pressed` set
-`background-color`, so they replace `bg-control-surface` rather than sitting on
-it: `gray-50` is a warm stop (hue 15°, saturation 40%) and the state layer is
-neutral, so a replacing fill drops the warm cast the resting fill carries, while
-an overlay stays in the same family.
-
-`text-foreground` is stated explicitly even where every current consumer already
-inherits it, so a control moved onto a differently coloured surface keeps this
-treatment.
-
-Preserve consumer-specific interaction colors when extracting shared styles.
-The official workflow Configure button, for example, retains its existing
-`hover:bg-primary-hover active:bg-primary-pressed` overrides.
-
-### Sidebar copy and nav chrome under the gradient color themes
-
-A treatment that applies only under the gradient palettes collapses to the
-variable layer rather than to a conditional selector. The raw values are defined
-at `:root` under the palette attributes, and each consumer reads a registered
-token that falls back to what it already had:
-
-```css
-:root[data-gradient-color-themes][data-color-theme] {
-  --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
-  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
-  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
-  --nav-border: hsl(var(--border) / 0.5);
-}
-```
-
-```css
---color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
---color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
---color-nav-border: var(--nav-border, var(--color-sidebar-border));
---color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
-```
-
-When the gradient themes are on, the raw values exist and every consumer
-resolves to them. Everywhere else they are unset and each consumer falls back to
-the foreground or surface it already had, so both sides keep their appearance
-without a conditional selector. Consumers whose value matches a registered
-fallback use `text-nav-copy`, `text-nav-copy-muted`, `border-nav-border` or
-`bg-nav-rail`; the rest carry their own fallback in the utility, including
-`var(--nav-copy, inherit)` where the consumer inherits its colour from an
-ancestor `Link` or `button` and must keep inheriting that ancestor's hover.
-
-This narrows the contract on purpose. A scoped rule overriding an _inherited_
-token on a whole subtree means any descendant spelling `border-sidebar-border`
-silently takes the gradient alpha; a named utility is opted into. A future nav
-descendant that wants the gradient stroke asks for `border-nav-border` by name.
-
-The expanded drawer carries `data-slot="sidebar-expanded"` so the account-menu
-test selects it through a documented slot.
-
-`group-hover` carries Tailwind's `@media (hover: hover)` guard, so the gradient
-themes do not paint the hover foreground onto a sticky tap state. Removing that
-guard would need either a first-party selector or a global `hover` variant
-override, and the guard is the better behaviour.
+These apply wherever the situation comes up, not only to the surface that first
+met it.
 
 ### Horizontal hairline rules
 
@@ -380,6 +324,130 @@ nor `no-unknown-classes` counts that consumer. The selector is unlayered, so its
 same element and that hover colour never paints; replacing the class activates
 it. Deciding between keeping a hover the tile has never had and deleting a
 utility the consumer spells is reviewed separately.
+
+### Top-edge clearance
+
+A control that meets the top edge of the surface holding it clears that edge by
+24px, and never by less than the vertical gap between the items below it.
+`DialogContent` carries `p-6` and the shared `DetailPageHeader` carries `pt-6`,
+so a page that composes its own header owes the same value rather than a smaller
+one of its own. The edge is read against the group's own rhythm: a clearance
+equal to the gap inside the group makes the first control read as cropped by the
+edge instead of placed against it.
+
+A sticky strip is measured in the state it is latched in, not only at rest. The
+connectors toolbar hands the page's top padding back with a negative margin and
+restates it as its own padding, so that padding is the clearance the segment
+control keeps once the strip is pinned to the scrollport. Page padding and strip
+padding therefore come from one value; raising only the strip would move the
+controls at the moment it latches. A header that hides its content at a
+breakpoint stops contributing padding there, so below `md` the page's own top
+padding owns the whole clearance.
+
+### Animated layers
+
+`RunningIndicator` owns its Tailwind utilities directly in JSX. Reuse the
+component through its props; its internal class strings are not an exported
+styling API. Both animated layers set their resting offset through an arbitrary
+`[transform:translate(-50%,-50%)_scale(...)]` rather than Tailwind's
+`translate-*` and `scale-*` utilities.
+
+That is not a style preference. Those utilities set the individual `translate`
+and `scale` CSS properties, while the keyframes animate `transform`. The
+individual properties compose with an animated `transform` instead of being
+replaced by it, so the layer would carry the centring offset twice for the whole
+cycle and visibly misplace the indicator at every phase.
+
+Register a keyframe animation as an `--animate-*` theme entry so consumers reach
+it through `animate-*` rather than an `animation` shorthand. A per-instance
+runtime value, such as the indicator's phase-anchoring
+`--running-indicator-delay`, stays a narrowly named custom property that the
+component sets, read through an arbitrary `[animation-delay:var(...)]`.
+
+A `@media (prefers-reduced-motion: reduce)` override that resets a value back to
+its initial belongs on `motion-safe:` on the rule it would override, rather than
+as a second `motion-reduce:` utility. Both utilities land in the same layer at
+the same specificity, so a `motion-reduce:` override would depend on Tailwind's
+emission order to win; `motion-safe:` simply does not apply, and the registered
+initial value is what reduced motion resolves to anyway.
+
+### Literal colours and gradients
+
+Tailwind's colour and gradient utilities interpolate in oklab, so they do not
+reproduce a literal `rgb()` fill or a plain `linear-gradient()`. Reach for the
+ergonomic utilities when a token supplies the colour, and for an exact arbitrary
+value such as `bg-[rgb(255_255_255_/_0.18)]` or
+`bg-[linear-gradient(to_top,#bdf9ff,#ffffff)]` when a specific value is part of
+the design.
+
+The mic starting spinner sets `[transform:rotate(0deg)_translateZ(0)]` for the
+same reason the running indicator does: its keyframes animate `transform`, and
+Tailwind's `rotate-*` utility sets the individual `rotate` property, which would
+compose with the animation rather than be replaced by it.
+
+### Ancestor state without the hover media query
+
+Tailwind wraps `hover:` and `group-hover:` in `@media (hover: hover)`, so a
+`group-hover:` utility is not equivalent to an ungated `.parent:hover .child`
+rule: the ungated form also fires on coarse pointers, where a tap leaves a
+sticky hover. Reproduce that contract with an arbitrary variant over the
+element's own semantic attribute, as in
+`[:is([data-sidebar-chat-thread-id]:hover,[data-sidebar-chat-thread-id]:focus-visible)_&]:…`,
+which generates the same unconditional descendant selector at the same
+specificity, and folds a two-state rule into one utility. This matches the
+unconditional `[&:hover]` form the choice and surface variants use; reach for
+`group-hover:` only when the media gate is wanted. The sidebar copy foreground
+is such a case: it keeps the guard deliberately, because a foreground that never
+repaints on a sticky tap state is the better behaviour there, while a title that
+never scrolls to its end would lose the affordance.
+
+Spell such a variant out at every call site. Tailwind's scanner is text-based,
+so a variant assembled from a constant produces a candidate that never appears
+in the source and therefore generates no CSS at all.
+
+The sidebar thread title keeps its `@property --okou-nav-title-shift`
+registration in the App stylesheet. A registration is an at-rule rather than a
+class selector, and it is what lets a transition interpolate the length and
+`inherits: true` carry the animated value to the text span; the mask, the
+travel and the delayed hover transition are Tailwind utilities on the component.
+`data-slot="sidebar-thread-title"` identifies the clipping box for page tests
+and carries no styles.
+
+### Illustration strokes
+
+`--border-width-illustration` (1px) and `--border-width-illustration-marker`
+(1.5px) are App-layer tokens for artwork that is drawn rather than chrome. They
+are a different decision from `--default-border-width`, not a competing value
+for it, in the same way `border-2` is: the hairline decides how thick _a
+border_ is, while an illustration owns the weight of its own outlines. Both are
+identical in Light and Dark, because a stroke weight is not a theme value.
+Consumers read them through `border-(length:--border-width-illustration*)`
+beside `border-solid`, the same shape `Card` uses for
+`--border-width-surface`.
+
+Their scope is artwork, and nothing else. A control, surface, card, input,
+divider or any other piece of product chrome takes the shared hairline; reach
+for these only for a drawing whose strokes are part of the picture. They live
+in the App token layer because the onboarding diagram is their only consumer
+today, and they promote to `@okouai/ui` when a second product surface draws
+with them. Adding a third weight is a token change, not a call-site decision.
+
+The first consumers are the onboarding diagram's tiles: the icon box, the
+connector stack items, the overflow badge and the two action cards take
+`--border-width-illustration`, and the six waypoint dots take the marker
+weight. Those tiles otherwise use the semantic `bg-card` fill and `border-border`
+stroke, `rounded-surface` for the action cards and the artwork's own
+`shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]` lift.
+
+`white` is not white here. `--color-white` is `hsl(var(--white))`, a
+theme-flipped token that resolves to a near-black in Dark, so a drawing that
+wants real white spells the literal `#ffffff`. Check any white in artwork
+against Dark before reaching for `border-white`.
+
+## Surface notes
+
+Decisions that belong to one surface. Read the relevant note before changing that
+surface; none of them generalizes on its own.
 
 ### Page layouts
 
@@ -432,47 +500,82 @@ does not record it.
 `position: fixed` changes where a box is laid out, not where it sits in the DOM,
 so a shell's custom properties still inherit into a fixed cover.
 
-### Top-edge clearance
+### Sidebar copy and nav chrome under the gradient color themes
 
-A control that meets the top edge of the surface holding it clears that edge by
-24px, and never by less than the vertical gap between the items below it.
-`DialogContent` carries `p-6` and the shared `DetailPageHeader` carries `pt-6`,
-so a page that composes its own header owes the same value rather than a smaller
-one of its own. The edge is read against the group's own rhythm: a clearance
-equal to the gap inside the group makes the first control read as cropped by the
-edge instead of placed against it.
+A treatment that applies only under the gradient palettes collapses to the
+variable layer rather than to a conditional selector. The raw values are defined
+at `:root` under the palette attributes, and each consumer reads a registered
+token that falls back to what it already had:
 
-A sticky strip is measured in the state it is latched in, not only at rest. The
-connectors toolbar hands the page's top padding back with a negative margin and
-restates it as its own padding, so that padding is the clearance the segment
-control keeps once the strip is pinned to the scrollport. Page padding and strip
-padding therefore come from one value; raising only the strip would move the
-controls at the moment it latches. A header that hides its content at a
-breakpoint stops contributing padding there, so below `md` the page's own top
-padding owns the whole clearance.
+```css
+:root[data-gradient-color-themes][data-color-theme] {
+  --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
+  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
+  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
+  --nav-border: hsl(var(--border) / 0.5);
+}
+```
 
-### Table header rules and the global scrollbar treatment
+```css
+--color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
+--color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
+--color-nav-border: var(--nav-border, var(--color-sidebar-border));
+--color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
+```
 
-The App stylesheet applies the scrollbar treatment — `scrollbar-width`,
-`scrollbar-color`, and the three `::-webkit-scrollbar*` rules — to `*`, and
-`@okouai/ui` is consumed only by the App, which imports that stylesheet. Do not
-restate those declarations on a surface. Reach for the scrollbar utilities only
-where a surface wants something other than the global treatment, as `DialogBody`
-does.
+When the gradient themes are on, the raw values exist and every consumer
+resolves to them. Everywhere else they are unset and each consumer falls back to
+the foreground or surface it already had, so both sides keep their appearance
+without a conditional selector. Consumers whose value matches a registered
+fallback use `text-nav-copy`, `text-nav-copy-muted`, `border-nav-border` or
+`bg-nav-rail`; the rest carry their own fallback in the utility, including
+`var(--nav-copy, inherit)` where the consumer inherits its colour from an
+ancestor `Link` or `button` and must keep inheriting that ancestor's hover.
 
-`TableHeader` writes `border-b border-b-border [&_tr]:border-b-0` for the header
-separator and its suppression on the header row. Tailwind's Preflight sets
-`border-collapse: collapse` on tables, and a collapsed border resolves to a
-whole CSS pixel, so the shared hairline and a literal `1px` compute the same
-`border-bottom-width` here; the hairline's half-ink behaviour applies to
-separate borders, not to a collapsed table edge.
+This narrows the contract on purpose. A scoped rule overriding an _inherited_
+token on a whole subtree means any descendant spelling `border-sidebar-border`
+silently takes the gradient alpha; a named utility is opted into. A future nav
+descendant that wants the gradient stroke asks for `border-nav-border` by name.
 
-`[&_tr]:border-b-0` is currently redundant for the same collapsing reason — the
-header row's own `border-b` loses to the row-group border at the same boundary —
-and is kept so a header row that later carries a wider border keeps today's
-appearance. Leaving the separator to `TableRow` instead is not equivalent: a row
-border never wins that boundary, so the header rule disappears and every body
-row shifts up.
+The expanded drawer carries `data-slot="sidebar-expanded"` so the account-menu
+test selects it through a documented slot.
+
+`group-hover` carries Tailwind's `@media (hover: hover)` guard, so the gradient
+themes do not paint the hover foreground onto a sticky tap state. Removing that
+guard would need either a first-party selector or a global `hover` variant
+override, and the guard is the better behaviour.
+
+### Card geometry at the document root
+
+`--okou-card-radius`, `--okou-chat-card-radius`, `--okou-card-shadow` and
+`--okou-chat-card-shadow` are owned at `:root`, for the reason
+`--okou-composer-focus-veil` records: a portaled surface is not a descendant of
+the app shell, so a scoped declaration never reaches it, and a card rendered
+through `SheetPortal` or `DialogContent` would resolve the radius to nothing and
+fall back to square corners. The palette override follows them, keyed on the
+`data-gradient-color-themes` attribute `signals/theme.ts` writes onto the
+document element.
+
+### The workspace canvas
+
+The workspace pane's `::before` paint layer reaches its fill and gradient
+through `bg-workspace-canvas` and `bg-workspace-canvas-image`, registered as
+`@theme inline` entries over `--okou-workspace-canvas-fill` and
+`--okou-workspace-canvas-image`. `inline` keeps the reference, so the theme and
+palette attributes decide at use time.
+
+The four variants — default and gradient palette, each in Light and Dark —
+differ only in a fill colour and a gradient, so they are two runtime values keyed
+at `:root` rather than four selectors. `signals/theme.ts` writes `data-theme`
+and `data-gradient-color-themes` onto the document element; each theme test
+wraps in `:where()` so it stays at the specificity of the rule it refines and
+source order decides between them. Do not add the paired `.dark` class: a class
+in the selector registers a first-party class-selector declaration against the
+shrink-only baseline.
+
+Consumers spell `before:bg-[length:100%_100%]` beside the two background
+utilities. `background-size: 100% 100%` and the initial `auto auto` size a
+gradient to the same box, so it is a stated rather than a load-bearing value.
 
 ### Chat message bubbles
 
@@ -538,86 +641,54 @@ transcript's Agent message, and the shared thread's rendered and rich-content
 Agent messages — rather than to any Markdown frame that happens to sit inside a
 bubble. A future in-bubble frame asks for the treatment by name.
 
-### Card geometry at the document root
+### Chat thinking states
 
-`--okou-card-radius`, `--okou-chat-card-radius`, `--okou-card-shadow` and
-`--okou-chat-card-shadow` are owned at `:root`, for the reason
-`--okou-composer-focus-veil` records: a portaled surface is not a descendant of
-the app shell, so a scoped declaration never reaches it, and a card rendered
-through `SheetPortal` or `DialogContent` would resolve the radius to nothing and
-fall back to square corners. The palette override follows them, keyed on the
-`data-gradient-color-themes` attribute `signals/theme.ts` writes onto the
-document element.
+The thinking and skeleton motions are registered `--animate-*` entries, so
+consumers reach them through `animate-thinking-in` and
+`animate-chat-skeleton-reveal`. The spinner keeps `animate-spin` and
+overrides only its duration, through `[animation-duration:1.4s]` beside
+`will-change-transform`. Keyframes stay in the stylesheet, because keyframes are
+not class selectors.
 
-### The workspace canvas
+`ShimmerText` in `chat-thread-page.tsx` owns the shimmer treatment.
+`--background-image-shimmer-text` is an `@theme inline` entry, so
+`bg-shimmer-text` emits the gradient with its `--muted-foreground` and
+`--foreground` references intact and each theme resolves them on the element;
+Tailwind's own gradient utilities interpolate in oklab and compose from three
+positions, so no `bg-*` utility can express its six colour stops.
+`--animate-shimmer` joins the `--animate-*` entries beside it on the same
+contract.
 
-The workspace pane's `::before` paint layer reaches its fill and gradient
-through `bg-workspace-canvas` and `bg-workspace-canvas-image`, registered as
-`@theme inline` entries over `--okou-workspace-canvas-fill` and
-`--okou-workspace-canvas-image`. `inline` keeps the reference, so the theme and
-palette attributes decide at use time.
+Two of its utilities need stating. `[background-size:200%_100%]` is an arbitrary
+property rather than `bg-size-*`, matching the effort slider's
+`[background-size:…]` beside its own aurora tokens. And
+`[-webkit-background-clip:text]` stays beside `bg-clip-text` because Tailwind
+emits only the unprefixed property; Chromium treats the two as aliases, so
+removing the prefixed declaration is a browser-support decision rather than a
+styling one.
 
-The four variants — default and gradient palette, each in Light and Dark —
-differ only in a fill colour and a gradient, so they are two runtime values keyed
-at `:root` rather than four selectors. `signals/theme.ts` writes `data-theme`
-and `data-gradient-color-themes` onto the document element; each theme test
-wraps in `:where()` so it stays at the specificity of the rule it refines and
-source order decides between them. Do not add the paired `.dark` class: a class
-in the selector registers a first-party class-selector declaration against the
-shrink-only baseline.
+### Table header rules and the global scrollbar treatment
 
-Consumers spell `before:bg-[length:100%_100%]` beside the two background
-utilities. `background-size: 100% 100%` and the initial `auto auto` size a
-gradient to the same box, so it is a stated rather than a load-bearing value.
+The App stylesheet applies the scrollbar treatment — `scrollbar-width`,
+`scrollbar-color`, and the three `::-webkit-scrollbar*` rules — to `*`, and
+`@okouai/ui` is consumed only by the App, which imports that stylesheet. Do not
+restate those declarations on a surface. Reach for the scrollbar utilities only
+where a surface wants something other than the global treatment, as `DialogBody`
+does.
 
-### Third-party attribution of borrowed class names
+`TableHeader` writes `border-b border-b-border [&_tr]:border-b-0` for the header
+separator and its suppression on the header row. Tailwind's Preflight sets
+`border-collapse: collapse` on tables, and a collapsed border resolves to a
+whole CSS pixel, so the shared hairline and a literal `1px` compute the same
+`border-bottom-width` here; the hairline's half-ink behaviour applies to
+separate borders, not to a collapsed table edge.
 
-A class that looks like a vendor's is not automatically that vendor's. The
-exception boundary follows who authors the element, not who the name resembles.
-A first-party element borrowing a vendor fingerprint to reach a first-party rule
-is legacy debt, not an adapter, and takes a utility instead.
-
-An icon stroke is `stroke-icon`. Tailwind resolves `stroke-*` against
-`--stroke-width-*` before it falls back to a bare number, so the token lives at
-`--stroke-width-icon` and emits `stroke-width: var(--stroke-width-icon)` as a
-plain named utility — the same shape the emoji spans use with
-`font-family-emoji`: a registered token read through its own namespace, not a
-custom property threaded through an arbitrary or data-type-hinted utility. Bare
-`stroke-2` keeps working, because the namespace lookup only precedes the numeric
-fallback. The two `lucide` rules remain for the real `lucide-react` DOM,
-including the allowlisted `svg.lucide-ellipsis circle` entry.
-
-`toaster` in `components/ui/sonner.tsx` is the mirror case, and the last legacy
-class dependency in Platform and UI. Sonner neither defines nor requires that
-class; the component invents it, hands it to Sonner's `className` prop, and then
-anchors its own `group-[.toaster]:` variants on it. Sonner's actual contract is
-the `[data-sonner-toaster]` attribute it puts on its own list element. There is
-also no mechanism to authorize this kind of dependency: `turbo/style-allowlist.json`
-holds CSS selectors, style injections and vendored files, so a legacy class named
-in a component's `className` can only be drained or left in the shrink-only
-baseline — never allowlisted.
-
-### Toast styling is decided by cascade layers, not specificity
-
-Sonner injects its stylesheet into `document.head` at module load, unlayered.
-Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
-`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
-That is why the toast class string carries `!` on most of its utilities, and it
-is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
-and `shadow-lg` — have never applied: a dark toast computes white on
-`rgb(23, 23, 23)` while `--color-popover` is `hsl(20 2.9% 20.2%)`, so the panel
-stays light in Dark. The component also passes no `theme` prop, so Sonner itself
-is permanently in its `light` palette. The `description`, `actionButton` and
-`cancelButton` entries are inert for the same reason.
-
-Restoring those declarations is a visual decision, not an equivalence repair, and
-it is tracked separately. Marking the four important does fix Dark, but it also
-moves the Light foreground, border and shadow, and — because `!important` beats
-Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
-with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
-Sonner's palette rather than the App's popover tokens. Draining `toaster` is
-blocked behind that choice, because whichever repair wins rewrites the same class
-string.
+`[&_tr]:border-b-0` is currently redundant for the same collapsing reason — the
+header row's own `border-b` loses to the row-group border at the same boundary —
+and is kept so a header row that later carries a wider border keeps today's
+appearance. Leaving the separator to `TableRow` instead is not equivalent: a row
+border never wins that boundary, so the header rule disappears and every body
+row shifts up.
 
 ### The Markdown code-fence copy control
 
@@ -681,69 +752,30 @@ has no vertical writing mode, so the two resolve the same way.
 
 `.wmde-markdown > :first-child` and `> :last-child` are unlayered, so they zero
 the outer margin of a first or last card and the utility applies everywhere
-else. The `.wmde-markdown p` selector is a `third-party-dom-adapter` entry
-alongside the fifteen sibling `.wmde-markdown` spacing selectors.
+else. The `.wmde-markdown p` selector is a `third-party-dom-adapter` entry, one of the
+seven `.wmde-markdown` rules that declare a margin.
 
-### Chat transcript cards
+### Toast styling is decided by cascade layers, not specificity
 
-`ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
-owns the surface shared by transcript notice cards, action cards and media
-frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
-element with `render` and gets no wrapper. It is App-owned rather than shared,
-because its radius and shadow read the App-only `--okou-chat-card-*` variables,
-which the App stylesheet declares at `:root`.
+Sonner injects its stylesheet into `document.head` at module load, unlayered.
+Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
+`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
+That is why the toast class string carries `!` on most of its utilities, and it
+is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
+and `shadow-lg` — have never applied: a dark toast computes white on
+`rgb(23, 23, 23)` while `--color-popover` is `hsl(20 2.9% 20.2%)`, so the panel
+stays light in Dark. The component also passes no `theme` prop, so Sonner itself
+is permanently in its `light` palette. The `description`, `actionButton` and
+`cancelButton` entries are inert for the same reason.
 
-The border is deliberately `border-[1px] border-gray-400` rather than the shared
-`border` hairline and a semantic border token. A fractional border visibly
-repaints when card contents resolve, so a card would flicker at its edge as an
-image or an iframe lands; a whole pixel does not. Unifying the transcript's
-border width and colour with the rest of the product is a separate visual
-decision.
-
-`cn()` merges the base with the caller's `className`, so a conflicting base
-utility is dropped rather than outranked and no layer ordering is involved. The
-browser session card's hover and selected borders rely on this.
-
-The radius and shadow use `rounded-[var(…)]` and `shadow-[var(…)]`, matching the
-call sites that read the page-level `--okou-card-*` siblings the same way.
-Tailwind's shadow utility composes `--tw-shadow`, so the serialized `box-shadow`
-carries four fully transparent placeholders; the painted result is unaffected,
-and a comparison should normalize them away rather than treat the string as the
-contract. One consequence is that `tailwind-merge` cannot classify an arbitrary
-`shadow-[var(…)]` as a box-shadow and so will not drop it for a caller's own
-`shadow-*`. No consumer overrides the shadow today. Registering `@theme` tokens
-and a named `shadow-*` scale in `cn()` would restore that, and is the documented
-route if a consumer ever needs it.
-
-Giving the artifact preview a card surface is a separate visual decision: its
-container currently has no card treatment, and adopting the shared base there
-would change its appearance substantially.
-
-### Chat thinking states
-
-An `animation` shorthand belongs in an `--animate-*` theme entry, so consumers
-reach the motion through `animate-thinking-in` and `animate-chat-skeleton-reveal`
-rather than respelling a shorthand. The spinner keeps `animate-spin` and
-overrides only its duration, through `[animation-duration:1.4s]` beside
-`will-change-transform`. Keyframes stay in the stylesheet, because keyframes are
-not class selectors.
-
-`ShimmerText` in `chat-thread-page.tsx` owns the shimmer treatment.
-`--background-image-shimmer-text` is an `@theme inline` entry, so
-`bg-shimmer-text` emits the gradient with its `--muted-foreground` and
-`--foreground` references intact and each theme resolves them on the element;
-Tailwind's own gradient utilities interpolate in oklab and compose from three
-positions, so no `bg-*` utility can express its six colour stops.
-`--animate-shimmer` joins the `--animate-*` entries beside it on the same
-contract.
-
-Two of its utilities need stating. `[background-size:200%_100%]` is an arbitrary
-property rather than `bg-size-*`, matching the effort slider's
-`[background-size:…]` beside its own aurora tokens. And
-`[-webkit-background-clip:text]` stays beside `bg-clip-text` because Tailwind
-emits only the unprefixed property; Chromium treats the two as aliases, so
-removing the prefixed declaration is a browser-support decision rather than a
-styling one.
+Restoring those declarations is a visual decision, not an equivalence repair, and
+it is tracked separately. Marking the four important does fix Dark, but it also
+moves the Light foreground, border and shadow, and — because `!important` beats
+Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
+with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
+Sonner's palette rather than the App's popover tokens. Draining `toaster` is
+blocked behind that choice, because whichever repair wins rewrites the same class
+string.
 
 ### The standalone PWA fixed cover
 
@@ -802,37 +834,6 @@ Page tests select the source node and source dot through
 `data-slot="onboarding-diagram-source-node"` and
 `data-slot="onboarding-diagram-source-dot"`, which carry no styles.
 
-### Illustration strokes
-
-`--border-width-illustration` (1px) and `--border-width-illustration-marker`
-(1.5px) are App-layer tokens for artwork that is drawn rather than chrome. They
-are a different decision from `--default-border-width`, not a competing value
-for it, in the same way `border-2` is: the hairline decides how thick _a
-border_ is, while an illustration owns the weight of its own outlines. Both are
-identical in Light and Dark, because a stroke weight is not a theme value.
-Consumers read them through `border-(length:--border-width-illustration*)`
-beside `border-solid`, the same shape `Card` uses for
-`--border-width-surface`.
-
-Their scope is artwork, and nothing else. A control, surface, card, input,
-divider or any other piece of product chrome takes the shared hairline; reach
-for these only for a drawing whose strokes are part of the picture. They live
-in the App token layer because the onboarding diagram is their only consumer
-today, and they promote to `@okouai/ui` when a second product surface draws
-with them. Adding a third weight is a token change, not a call-site decision.
-
-The first consumers are the onboarding diagram's tiles: the icon box, the
-connector stack items, the overflow badge and the two action cards take
-`--border-width-illustration`, and the six waypoint dots take the marker
-weight. Those tiles otherwise use the semantic `bg-card` fill and `border-border`
-stroke, `rounded-surface` for the action cards and the artwork's own
-`shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]` lift.
-
-`white` is not white here. `--color-white` is `hsl(var(--white))`, a
-theme-flipped token that resolves to a near-black in Dark, so a drawing that
-wants real white spells the literal `#ffffff`. Check any white in artwork
-against Dark before reaching for `border-white`.
-
 ## Exception boundary
 
 Only two exception kinds exist:
@@ -846,6 +847,34 @@ Clerk's public appearance API under the narrower rules in
 
 Every exception identifies the exact file and selector or injected-style fingerprint, its owner, rationale, and removal condition. Third-party adapters also identify their upstream DOM owner. A styling convenience, missing utility, or existing first-party convention is not an exception. Vendored CSS is pinned by exact path and SHA-256 rather than by a directory-wide ignore.
 
+### Third-party attribution of borrowed class names
+
+A class that looks like a vendor's is not automatically that vendor's. The
+exception boundary follows who authors the element, not who the name resembles.
+A first-party element borrowing a vendor fingerprint to reach a first-party rule
+is legacy debt, not an adapter, and takes a utility instead.
+
+An icon stroke is `stroke-icon`. Tailwind resolves `stroke-*` against
+`--stroke-width-*` before it falls back to a bare number, so the token lives at
+`--stroke-width-icon` and emits `stroke-width: var(--stroke-width-icon)` as a
+plain named utility — the same shape the emoji spans use with
+`font-family-emoji`: a registered token read through its own namespace, not a
+custom property threaded through an arbitrary or data-type-hinted utility. Bare
+`stroke-2` keeps working, because the namespace lookup only precedes the numeric
+fallback. The two `lucide` rules remain for the real `lucide-react` DOM,
+including the allowlisted `svg.lucide-ellipsis circle` entry.
+
+`toaster` in `components/ui/sonner.tsx` is the mirror case. It is one of the two
+legacy class dependencies left in Platform and UI, beside `wmde-markdown` in
+`markdown-frame.tsx`. Sonner neither defines nor requires that
+class; the component invents it, hands it to Sonner's `className` prop, and then
+anchors its own `group-[.toaster]:` variants on it. Sonner's actual contract is
+the `[data-sonner-toaster]` attribute it puts on its own list element. There is
+also no mechanism to authorize this kind of dependency: `turbo/style-allowlist.json`
+holds CSS selectors, style injections and vendored files, so a legacy class named
+in a component's `className` can only be drained or left in the shrink-only
+baseline — never allowlisted.
+
 ## Shrink-only legacy state
 
 `turbo/style-legacy-baseline.json` records current first-party selector declarations as normalized CSS AST atoms, including nested selector ancestry, conditional at-rules, `@scope` roots and limits, and `@apply` contents. A class-qualified scope also freezes its `:scope`, `&`, and element-selector declarations; scope boundaries participate in exact baseline and adapter matching. Legacy class dependencies are counted at their consuming attributes or calls, resolving local constants, imported aliases, and re-exports. Reusing an existing constant in another consumer is a new dependency. The baseline also fingerprints existing inline or injected styles that are not permanent adapters.
@@ -855,36 +884,6 @@ The baseline is not an allowlist and has no command that expands it. A new selec
 Commands run from `turbo`. An invalid Git reference, unreadable baseline, or malformed JSON fails with a nonzero exit status and a pointer to this guide. Only a reference commit genuinely predating the baseline file permits its initial introduction. That bootstrap case applies to local/CI repository history, not production version compatibility; once the target base contains the baseline, the ratchet is mandatory.
 
 ## Enforcement and feedback
-
-### Dialog viewport ownership
-
-`DialogContent` owns the Base UI viewport and popup. Windowed dialogs are
-centered inside the four safe-area insets plus a 24 px gutter. Fullscreen
-dialogs paint to the viewport edges while their content and close control stay
-inside the safe-area insets. The environment values come from the existing
-`--sat`, `--sar`, `--sab`, `--sal`, and `--okou-viewport-height` properties;
-the shared primitive also works with native `env()` insets outside Platform.
-
-Callers select `maxWidth`, `smMaxWidth`, `height`, and `mode`. The popup fills
-the available safe width and is capped by `maxWidth` (default `lg`);
-`smMaxWidth` changes that upper bound only from the shared `sm` breakpoint.
-Width caps never set a fixed width or determine height. Preserve existing
-breakpoints and units when migrating: `sm:max-w-[480px]` becomes
-`smMaxWidth={480}`, and `max-w-[25rem]` becomes `maxWidth="25rem"`.
-The artifact preview uses `maxWidth={1440} height={1000}`. Every variant is
-capped by the available viewport, so increasing a cap cannot increase the
-safe boundary.
-
-The popup does not accept `className`, `style`, or `render`. Use
-`contentClassName` for the inner layout and `DialogBody` for a scrolling body
-below a fixed header. `contentClassName` remains subject to the style policy.
-The shared inner container protects vertical scrolling even when caller layout
-classes include `overflow-hidden`. Short panels must keep their footer actions
-reachable by scrolling; clipping the popup to its safe boundary is not enough.
-Use `showCloseButton` instead of CSS selectors that hide the close control.
-Business code must import the shared dialog rather than Base UI's dialog
-primitives; ESLint enforces this boundary. Preserve Base UI's focus, nested
-portal, outside-press, and animation-completion ownership when changing it.
 
 Run the complete check from `turbo`:
 
@@ -901,6 +900,41 @@ The check has three layers:
 CI runs this as the independent required `lint-style` job. The pre-commit hook runs the fast repository policy so the most actionable boundary failures are returned before push. Both policy diagnostics and the full lint command's failure output direct contributors to `docs/styles.md` for the style guide. The full command keeps a failing exit status for policy, CSS, Tailwind, or test failures.
 
 When a style check fails, read this guide and replace business styling with the appropriate Tailwind utilities and registered tokens. Prune the baseline when legacy code has been removed. Do not suppress the check or add a business styling exception to make it pass.
+
+### Chat transcript cards
+
+`ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
+owns the surface shared by transcript notice cards, action cards and media
+frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
+element with `render` and gets no wrapper. It is App-owned rather than shared,
+because its radius and shadow read the App-only `--okou-chat-card-*` variables,
+which the App stylesheet declares at `:root`.
+
+The border is deliberately `border-[1px] border-gray-400` rather than the shared
+`border` hairline and a semantic border token. A fractional border visibly
+repaints when card contents resolve, so a card would flicker at its edge as an
+image or an iframe lands; a whole pixel does not. Unifying the transcript's
+border width and colour with the rest of the product is a separate visual
+decision.
+
+`cn()` merges the base with the caller's `className`, so a conflicting base
+utility is dropped rather than outranked and no layer ordering is involved. The
+browser session card's hover and selected borders rely on this.
+
+The radius and shadow use `rounded-[var(…)]` and `shadow-[var(…)]`, matching the
+call sites that read the page-level `--okou-card-*` siblings the same way.
+Tailwind's shadow utility composes `--tw-shadow`, so the serialized `box-shadow`
+carries four fully transparent placeholders; the painted result is unaffected,
+and a comparison should normalize them away rather than treat the string as the
+contract. One consequence is that `tailwind-merge` cannot classify an arbitrary
+`shadow-[var(…)]` as a box-shadow and so will not drop it for a caller's own
+`shadow-*`. No consumer overrides the shadow today. Registering `@theme` tokens
+and a named `shadow-*` scale in `cn()` would restore that, and is the documented
+route if a consumer ever needs it.
+
+Giving the artifact preview a card surface is a separate visual decision: its
+container currently has no card treatment, and adopting the shared base there
+would change its appearance substantially.
 
 ## App palette previews
 
