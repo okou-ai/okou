@@ -119,6 +119,32 @@ ID; the payload itself remains optional. The account resolver accepts 200 and
 returns a nullable account decision. Missing fields and a missing resolver are
 outside the supported API contract after the rollout verification below.
 
+### Retained browser request lifecycle
+
+While #33886 retains these senders, equivalent signup checks, ownership lookups
+and milestone bootstrap calls share pending work within one application root.
+Each operation retains at most its current user/session/organization/attribution
+key. A different key replaces and cancels the previous operation; a new root
+starts fresh. Token retrieval and response application verify that the captured
+identity is still current. The root owns shared transport; cancelling an
+individual caller only stops its wait.
+
+Successful signup checks, including `recorded:false`, do not repeat on unchanged
+navigation. Completion does not grant a signup conversion: the existing positive
+signup marker and conversion deduplication keys retain that role. A new
+organization or input performs another check, preserving the API's organization
+snapshot writes even when a first touch already exists. A successful check
+invalidates earlier ownership work because it may have established a first touch.
+
+Known ownership results are reused in that scope. Unknown ownership and failures
+are released so later calls can resolve or retry, without a background retry loop.
+Milestone bootstrap also completes for a known other account, but direct
+product-event synchronization remains active. Unknown ownership does not establish
+a historical baseline or advance delivery state. Existing consent handling,
+first-touch precedence, conversion IDs, checkout snapshots and marked-preview
+Clerk bypass are unchanged. The API contract is unchanged, so old and new App/API
+versions remain compatible; older open clients retain their previous read volume.
+
 Existing App requests remain supported. Already-open older clients retain their
 signup/onboarding/checkout JavaScript until refreshed; this response-contract
 cleanup does not change the App force-upgrade floor.
