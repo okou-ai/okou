@@ -183,7 +183,7 @@ fn validate_unique_mount_paths(storage_mounts: &[StorageMountEntry]) -> Result<(
 }
 
 /// Volume storage entry in the guest storage manifest.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageEntry {
     /// Guest filesystem path where the storage is mounted.

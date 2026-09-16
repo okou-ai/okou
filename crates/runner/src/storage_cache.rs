@@ -14,7 +14,11 @@
 //!
 //! Production source preparation first selects admissible extracted-file hits
 //! and pins their owned bytes in the plan. Those identities bypass archive
-//! prefetch and staging entirely. After successful direct use and Agent spawn,
+//! prefetch and staging entirely.
+//! Each selected mount must fit a bounded Guest request; larger combined
+//! manifests are batched by the executor without increasing payload budgets.
+//!
+//! After successful direct use and Agent spawn,
 //! the same bounded background owner can retire the redundant compressed entry
 //! while holding both formats' locks and validating the extracted replacement.
 //! Ordinary archive consumers retain the delivery and fill paths below.
@@ -1335,9 +1339,6 @@ async fn prepare_decoded_storage(
         return Ok(());
     }
     for batch in groups.chunks(decoded::LOOKUP_BATCH_SIZE) {
-        if plan.decoded_manifest_rejected() {
-            break;
-        }
         let keys = batch
             .iter()
             .map(|group| {
@@ -1383,8 +1384,10 @@ fn reuse_decoded(
     else {
         return Ok(false);
     };
-    if !plan.admit_decoded_manifest()? {
-        return Ok(false);
+    for target in &group.targets {
+        if !plan.decoded_entry_fits(target.handle)? {
+            return Ok(false);
+        }
     }
     let added = mounts
         .iter()
@@ -1397,7 +1400,9 @@ fn reuse_decoded(
                     .sum::<usize>()
         })
         .sum::<usize>();
-    if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES {
+    if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
+        || plan.decoded_mount_count() + mounts.len() > guest_contracts::storage_files::MAX_MOUNTS
+    {
         return Ok(false);
     }
     for mount in mounts {
@@ -2000,8 +2005,7 @@ fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
 }
 
 fn is_ordinary_storage_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
-    !plan.decoded_manifest_rejected()
-        && !group.targets.is_empty()
+    !group.targets.is_empty()
         && group
             .targets
             .iter()

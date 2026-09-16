@@ -735,9 +735,27 @@ and revalidates the lock only for a present entry, then reopens the directory
 under the lock. Missing, busy or unsupported entries keep ordinary delivery;
 malformed present cache data is an error, not an unverified hit.
 
-The bounded binary-manifest check is computed once on the first usable ready
-hit, before omitting archive staging. Miss-only runs do not clone and serialize
-the manifest just to decide whether an unused binary input would fit.
+Before omitting archive staging, a ready decoded mount must individually fit
+the existing 64 KiB canonical manifest bound. Other mounts' signed URLs or
+cleanup metadata do not reject that ready mount. Miss-only runs do not serialize
+entries to decide whether an unused binary input would fit. The selected files
+still share the 15 MiB payload and 1,024-mount limits across the entire run.
+
+After source resolution, a combined manifest that fits uses one Guest operation.
+An oversized combined manifest is composed into bounded existing-format
+requests: ordinary storage, artifacts, reused paths and all cleanup run first;
+decoded-only batches follow without repeating cleanup. The Runner validates
+decoded bindings against the complete manifest before partitioning, and the
+Guest validates each binary request. Every batch retains the existing 64 KiB
+manifest and 15 MiB payload limits, real source URLs and file/path validation.
+All batches are encoded before the first storage-apply operation, and a failure stops
+later batches and prevents Agent spawn. The existing non-transactional partial
+filesystem-change semantics remain; multiple requests do not imply rollback.
+Oversized ordinary JSON retains its existing manifest-file transport. No API,
+wire shape, persisted cache format, archive eligibility or generic stdin limit
+changes. Split runs can emit multiple Guest storage-apply operations inside one
+enclosing Runner storage-apply stage; per-helper entry indices are not globally
+unique within such a run.
 
 Lookup windows admit at most 128 identities with 128 KiB of owned key bytes,
 retaining the per-key limits. Non-admitted keys retain ordinary delivery;
