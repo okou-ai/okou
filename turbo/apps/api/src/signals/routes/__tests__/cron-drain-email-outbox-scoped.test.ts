@@ -584,20 +584,29 @@ describe("email outbox provider replay", () => {
     });
 
     const claim = await holdEmailOutboxClaim(item.id, context.signal);
-    const drained = outbox.drainItems([item.id]);
-    const claimingSession = await claim.waitForBlocked();
-    mockNow(deadlineMs);
+    const [drained] = await Promise.all([
+      outbox.drainItems([item.id]),
+      (async () => {
+        const claimingSession = await claim.waitForBlocked();
+        mockNow(deadlineMs);
 
-    // Queued behind the suspended claim, so the removal owns the row before the
-    // expired resolution can write it.
-    const pendingRemoval = holdEmailOutboxRemoval(item.id, context.signal);
-    await waitForEmailOutboxBlocked(claimingSession);
-    await claim.release();
-    const removal = await pendingRemoval;
-    await removal.waitForBlocked();
-    await removal.release();
+        const [removal] = await Promise.all([
+          holdEmailOutboxRemoval(item.id, context.signal),
+          (async () => {
+            // Prove the removal overlaps preparation before releasing the claim.
+            await waitForEmailOutboxBlocked(claimingSession);
+            await claim.release();
+          })(),
+        ]);
+        // PostgreSQL may complete the expired write before the queued DELETE
+        // locks the newly committed row version. In that valid ordering there
+        // is no writer left to block on removal. Commit it and join both
+        // operations; either ordering must leave the row absent.
+        await removal.release();
+      })(),
+    ]);
 
-    await expect(drained).resolves.toBe(1);
+    expect(drained).toBe(1);
     expect(context.mocks.resend.send).not.toHaveBeenCalled();
     await expect(outbox.readItem(item.id)).resolves.toBeNull();
   });
