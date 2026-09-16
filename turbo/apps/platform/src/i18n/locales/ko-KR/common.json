@@ -1769,7 +1769,6 @@
       "create": {
         "addStyle": "스타일 추가",
         "addTemplate": "템플릿 추가",
-        "chooseScene": "만들 항목 선택",
         "chooseType": "유형 선택",
         "exit": "만들기 모드 종료",
         "image": "이미지 만들기",
@@ -1778,12 +1777,10 @@
         "presentation": "프레젠테이션 만들기",
         "presentationDescription": "이야기를 담은 슬라이드",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
-        "question": "무엇을 실현하고 싶으신가요?",
         "settingsAdjusted": "이 모델에 맞게 일부 동영상 설정을 조정했습니다",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장",
-        "title": "만들기",
         "video": "동영상 만들기",
         "videoDescription": "아이디어를 영상으로 표현",
         "videoPlaceholder": "만들고 싶은 동영상을 설명하세요…"

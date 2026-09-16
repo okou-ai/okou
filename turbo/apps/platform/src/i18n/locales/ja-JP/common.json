@@ -1769,7 +1769,6 @@
       "create": {
         "addStyle": "スタイルを追加",
         "addTemplate": "テンプレートを追加",
-        "chooseScene": "作成するものを選択",
         "chooseType": "種類を選択",
         "exit": "作成モードを終了",
         "image": "画像を作成",
@@ -1778,12 +1777,10 @@
         "presentation": "プレゼンテーションを作成",
         "presentationDescription": "ストーリーを伝えるスライド",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
-        "question": "何を実現したいですか？",
         "settingsAdjusted": "このモデルに合わせて一部の動画設定を調整しました",
         "slideCount": "スライド数",
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚",
-        "title": "作成",
         "video": "動画を作成",
         "videoDescription": "アイデアを動画に",
         "videoPlaceholder": "作成したい動画を説明してください…"

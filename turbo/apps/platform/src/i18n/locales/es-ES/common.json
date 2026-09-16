@@ -1801,7 +1801,6 @@
       "create": {
         "addStyle": "Añadir estilo",
         "addTemplate": "Añadir plantilla",
-        "chooseScene": "Elige qué crear",
         "chooseType": "Elige un tipo",
         "exit": "Salir del modo de creación",
         "image": "Crear imagen",
@@ -1810,12 +1809,10 @@
         "presentation": "Crear presentación",
         "presentationDescription": "Diapositivas para tu historia",
         "presentationPlaceholder": "¿De qué trata tu presentación?",
-        "question": "¿Qué te gustaría hacer realidad?",
         "settingsAdjusted": "Se han ajustado algunas opciones de vídeo para este modelo",
         "slideCount": "Número de diapositivas",
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} diapositivas",
-        "title": "Crear",
         "video": "Crear vídeo",
         "videoDescription": "Da movimiento a tus ideas",
         "videoPlaceholder": "Describe el vídeo que quieres crear…"

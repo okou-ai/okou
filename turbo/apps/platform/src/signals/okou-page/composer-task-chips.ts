@@ -60,7 +60,7 @@ export function createComposerTaskChipsSignals(
   >(null);
   const visualization = createComposerVisualizationSignals();
   const task$ = computed((get): ComposerTask | null => {
-    if (!get(enabled$) || get(create.choosing$)) {
+    if (!get(enabled$)) {
       return null;
     }
     return get(create.mode$) ?? get(internalGeneralTask$);
