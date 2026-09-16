@@ -59,12 +59,13 @@ function checkPages(pages: readonly ResolvedUpload[]): string | null {
   return null;
 }
 
-const PRESENTATION_TEMPLATE_PACKAGE_LIMITS: TemplatePackageLimits = Object.freeze({
-  maxBytes: MAX_PRESENTATION_TEMPLATE_PACKAGE_BYTES,
-  maxFiles: MAX_PRESENTATION_TEMPLATE_PACKAGE_FILES,
-  maxFileBytes: MAX_PRESENTATION_TEMPLATE_PACKAGE_FILE_BYTES,
-  requiredPaths: REQUIRED_PRESENTATION_TEMPLATE_PACKAGE_FILES,
-});
+const PRESENTATION_TEMPLATE_PACKAGE_LIMITS: TemplatePackageLimits =
+  Object.freeze({
+    maxBytes: MAX_PRESENTATION_TEMPLATE_PACKAGE_BYTES,
+    maxFiles: MAX_PRESENTATION_TEMPLATE_PACKAGE_FILES,
+    maxFileBytes: MAX_PRESENTATION_TEMPLATE_PACKAGE_FILE_BYTES,
+    requiredPaths: REQUIRED_PRESENTATION_TEMPLATE_PACKAGE_FILES,
+  });
 
 type PublishResult =
   | { readonly kind: "published"; readonly templateId: string }
