@@ -1,4 +1,7 @@
-import { screen } from "@testing-library/react";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import userEvent from "@testing-library/user-event";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { marketingAcquisitionContract } from "@okouai/api-contracts/contracts/marketing-acquisition";
 import {
@@ -15,12 +18,23 @@ type ObservationBatch = ReturnType<
   typeof marketingAcquisitionContract.events.body.parse
 >;
 
-async function openOnboarding() {
+async function openOnboarding(enabled?: boolean) {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  await setupPage({ context, path: "/onboarding", host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: "/onboarding",
+    host: "app.okou.ai",
+    ...(enabled === undefined
+      ? {}
+      : {
+          featureSwitches: {
+            [FeatureSwitchKey.MarketingAcquisitionShadow]: enabled,
+          },
+        }),
+  });
   await expect(
     screen.findByRole("heading", { name: "What do you want to make first" }),
   ).resolves.toBeInTheDocument();
@@ -37,13 +51,10 @@ function chooseWorkflow() {
 
 const tabSession = sessionStorageSignals("okou.acquisitionSession");
 function accepted() {
-  return { recorded: true, shadowEnabled: true, consented: true };
+  return { recorded: true, consented: true };
 }
 
 test("consented shadow observations use the authenticated cookie request and survive onboarding navigation", async () => {
-  context.mocks.http.get(`${BASE}/config`, () => {
-    return Response.json({ shadowEnabled: true });
-  });
   const observed = context.mocks.deferred<{
     request: Request;
     body: ObservationBatch;
@@ -57,7 +68,7 @@ test("consented shadow observations use the authenticated cookie request and sur
     }
     return Response.json(accepted());
   });
-  await openOnboarding();
+  await openOnboarding(true);
   const { request, body } = await observed.promise;
   expect(request.headers.get("authorization")).toBe("Bearer test-token");
   expect(request.credentials).toBe("include");
@@ -77,30 +88,28 @@ test("consented shadow observations use the authenticated cookie request and sur
   ).resolves.toBeInTheDocument();
 });
 
-test("a disabled shadow configuration leaves onboarding usable without acquisition requests", async () => {
-  const configured = context.mocks.deferred<void>();
-  context.mocks.http.get(`${BASE}/config`, () => {
-    configured.resolve();
-    return Response.json({ shadowEnabled: false });
-  });
-  const requests: Request[] = [];
-  context.mocks.http.post(`${BASE}/events`, ({ request }) => {
-    requests.push(request);
-    return Response.json(accepted());
-  });
-  await openOnboarding();
-  await configured.promise;
-  chooseWorkflow();
-  await expect(
-    screen.findByRole("heading", { name: "What do you work on?" }),
-  ).resolves.toBeInTheDocument();
-  expect(requests).toStrictEqual([]);
-});
+test.each([undefined, false])(
+  "a default or explicitly disabled App switch (%s) leaves onboarding usable without acquisition requests",
+  async (enabled) => {
+    const requests: Request[] = [];
+    context.mocks.http.get(`${BASE}/config`, ({ request }) => {
+      requests.push(request);
+      return Response.json({});
+    });
+    context.mocks.http.post(`${BASE}/events`, ({ request }) => {
+      requests.push(request);
+      return Response.json(accepted());
+    });
+    await openOnboarding(enabled);
+    chooseWorkflow();
+    await expect(
+      screen.findByRole("heading", { name: "What do you work on?" }),
+    ).resolves.toBeInTheDocument();
+    expect(requests).toStrictEqual([]);
+  },
+);
 
 test("missing consent never sends buffered observations or writes a tab identifier", async () => {
-  context.mocks.http.get(`${BASE}/config`, () => {
-    return Response.json({ shadowEnabled: true });
-  });
   const skipped = context.mocks.deferred<void>();
   const batches: ObservationBatch[] = [];
   context.mocks.http.post(`${BASE}/events`, async ({ request }) => {
@@ -110,7 +119,7 @@ test("missing consent never sends buffered observations or writes a tab identifi
     skipped.resolve();
     return Response.json({ ...accepted(), consented: false });
   });
-  await openOnboarding();
+  await openOnboarding(true);
   await skipped.promise;
   chooseWorkflow();
   await expect(
@@ -125,9 +134,6 @@ test("missing consent never sends buffered observations or writes a tab identifi
 });
 
 test("an unacknowledged batch keeps its event IDs when a later step resumes delivery", async () => {
-  context.mocks.http.get(`${BASE}/config`, () => {
-    return Response.json({ shadowEnabled: true });
-  });
   const failed = context.mocks.deferred<ObservationBatch>();
   const retried = context.mocks.deferred<ObservationBatch>();
   let rejected = false;
@@ -145,7 +151,7 @@ test("an unacknowledged batch keeps its event IDs when a later step resumes deli
     }
     return Response.json(accepted());
   });
-  await openOnboarding();
+  await openOnboarding(true);
   const original = await failed.promise;
   chooseWorkflow();
   await expect(
@@ -164,4 +170,56 @@ test("an unacknowledged batch keeps its event IDs when a later step resumes deli
       }),
     ),
   );
+});
+
+test("the Lab switch starts observations and cancels an in-flight request when disabled", async () => {
+  const started = context.mocks.deferred<void>();
+  const aborted = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.http.post(`${BASE}/events`, async ({ request }) => {
+    request.signal.addEventListener(
+      "abort",
+      () => {
+        aborted.resolve();
+        response.resolve();
+      },
+      { once: true },
+    );
+    started.resolve();
+    await response.promise;
+    return Response.json(accepted());
+  });
+  let switches: Record<string, boolean> = {
+    [FeatureSwitchKey.Lab]: true,
+    [FeatureSwitchKey.MarketingAcquisitionShadow]: false,
+  };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  await setupPage({ context, path: "/_/lab", host: "app.okou.ai" });
+  await screen.findByRole("heading", { name: "Lab" });
+  const row = screen
+    .getByText(FeatureSwitchKey.MarketingAcquisitionShadow)
+    .closest("li");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error("Expected Marketing acquisition feature row");
+  }
+  const control = within(row).getByRole("switch");
+  expect(control).not.toBeChecked();
+  const user = userEvent.setup();
+  await user.click(control);
+  await started.promise;
+  await waitFor(() => {
+    expect(control).toBeChecked();
+  });
+  await user.click(control);
+  await aborted.promise;
+  await waitFor(() => {
+    expect(control).not.toBeChecked();
+  });
+  expect(context.store.get(tabSession.get$)).toBeNull();
 });

@@ -1,32 +1,30 @@
 import { now } from "../../lib/time.ts";
 import { command } from "ccstate";
-import {
-  marketingShadowConfiguration,
-  sendMarketingObservations,
-} from "../../lib/marketing-acquisition.ts";
+import { sendMarketingObservations } from "../../lib/marketing-acquisition.ts";
 import { authenticatedIdentity$, clerk$ } from "../auth.ts";
 import { apiClientRuntime$ } from "../api-client-runtime.ts";
 import { resolveApiBaseForTarget } from "../api-base.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
+import { registerFeatureSwitchListener$ } from "../external/feature-switch-state.ts";
 import {
   bestEffort,
   onDomEventFn,
+  resetSignal,
   setLoop,
-  settle,
   withCleanup,
 } from "../utils.ts";
 import {
   acknowledgeMarketingEvents$,
+  discardMarketingEvents$,
   marketingShadowEnabled$,
   marketingShadowEpoch$,
   pendingMarketingEvents$,
-  setMarketingShadowEnabled$,
 } from "./marketing-events.ts";
 
 const session = sessionStorageSignals("okou.acquisitionSession");
+const resetMarketingAcquisition$ = resetSignal();
 interface AcquisitionSession {
   baseUrl: string;
-  nextConfigurationAt: number;
   currentIdentity: string | undefined;
   sessionId: string | undefined;
   checkedSignup: boolean;
@@ -93,11 +91,6 @@ const drainMarketingObservations$ = command(
       if (get(marketingShadowEpoch$) !== epoch) {
         return;
       }
-      if (!response.shadowEnabled) {
-        set(setMarketingShadowEnabled$, false);
-        resetAssociation(scope);
-        return;
-      }
       if (!response.recorded) {
         return;
       }
@@ -134,15 +127,6 @@ const synchronizeMarketingAcquisition$ = command(
       signal,
       AbortSignal.timeout(10_000),
     ]);
-    if (now() >= scope.nextConfigurationAt) {
-      const config = await settle(
-        marketingShadowConfiguration(scope.baseUrl, requestSignal),
-        signal,
-      );
-      signal.throwIfAborted();
-      set(setMarketingShadowEnabled$, config.ok && config.value);
-      scope.nextConfigurationAt = now() + 60_000;
-    }
     if (get(marketingShadowEnabled$) !== true) {
       resetAssociation(scope);
       return;
@@ -165,35 +149,56 @@ const synchronizeMarketingAcquisition$ = command(
 
 /** Optional observations belong to the App lifetime, independently of route readiness. */
 export const setupMarketingAcquisition$ = command(
-  ({ set }, signal: AbortSignal) => {
+  ({ get, set }, signal: AbortSignal) => {
     const scope: AcquisitionSession = {
       baseUrl: resolveApiBaseForTarget("www"),
-      nextConfigurationAt: 0,
       currentIdentity: undefined,
       sessionId: undefined,
       checkedSignup: false,
       associated: false,
     };
+    let activeSignal: AbortSignal | undefined;
     let busy = false;
     async function synchronize(): Promise<void> {
-      if (busy) {
+      const requestSignal = activeSignal;
+      if (busy || !requestSignal || requestSignal.aborted) {
         return;
       }
       busy = true;
       await withCleanup(
         bestEffort(
-          set(synchronizeMarketingAcquisition$, scope, signal),
-          signal,
+          set(synchronizeMarketingAcquisition$, scope, requestSignal),
+          requestSignal,
         ),
         () => {
           busy = false;
         },
       );
     }
-    const resume = onDomEventFn(() => {
-      scope.nextConfigurationAt = 0;
-      return synchronize();
-    });
+    function reconcile(): void {
+      const enabled = get(marketingShadowEnabled$);
+      if (enabled === Boolean(activeSignal && !activeSignal.aborted)) {
+        return;
+      }
+      const nextSignal = set(resetMarketingAcquisition$, signal);
+      resetAssociation(scope);
+      activeSignal = enabled ? nextSignal : undefined;
+      if (!enabled) {
+        set(discardMarketingEvents$);
+        return;
+      }
+      // Retry unacknowledged observations only while the App switch is enabled.
+      setLoop(
+        async () => {
+          await synchronize();
+          return false;
+        },
+        10_000,
+        nextSignal,
+        { testIntervalMs: 10_000 },
+      );
+    }
+    const resume = onDomEventFn(synchronize);
     window.addEventListener(
       "okou:acquisition:queued",
       onDomEventFn(synchronize),
@@ -201,15 +206,7 @@ export const setupMarketingAcquisition$ = command(
     );
     window.addEventListener("focus", resume, { signal });
     window.addEventListener("online", resume, { signal });
-    // Recheck the runtime flag every minute and retry unacknowledged batches.
-    setLoop(
-      async () => {
-        await synchronize();
-        return false;
-      },
-      10_000,
-      signal,
-      { testIntervalMs: 10_000 },
-    );
+    set(registerFeatureSwitchListener$, reconcile, signal);
+    reconcile();
   },
 );

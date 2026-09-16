@@ -4,11 +4,8 @@ import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/
 import { mockApi } from "../msw-contract.ts";
 
 export const apiAttributionHandlers = [
-  mockApi(marketingAcquisitionContract.config, ({ respond }) =>
-    respond(200, { shadowEnabled: false }),
-  ),
   mockApi(marketingAcquisitionContract.events, ({ respond }) =>
-    respond(200, { recorded: false, shadowEnabled: false, consented: false }),
+    respond(200, { recorded: true, consented: false }),
   ),
   mockApi(impactOnboardingContract.record, ({ respond }) => {
     return respond(204);

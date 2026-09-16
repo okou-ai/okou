@@ -35,11 +35,6 @@ export type ObservedAcquisitionEvent = z.infer<
   typeof observedAcquisitionEventSchema
 >;
 export const marketingAcquisitionContract = c.router({
-  config: {
-    method: "GET",
-    path: "/api/marketing/acquisition/config",
-    responses: { 200: z.object({ shadowEnabled: z.boolean() }) },
-  },
   events: {
     method: "POST",
     path: "/api/marketing/acquisition/events",
@@ -54,7 +49,6 @@ export const marketingAcquisitionContract = c.router({
     responses: {
       200: z.object({
         recorded: z.boolean(),
-        shadowEnabled: z.boolean(),
         consented: z.boolean(),
       }),
       400: z.object({ error: z.string() }),

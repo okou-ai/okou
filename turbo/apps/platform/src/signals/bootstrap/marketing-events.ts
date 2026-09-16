@@ -1,6 +1,8 @@
 import { command, computed, state } from "ccstate";
 import type { ObservedAcquisitionEvent } from "@okouai/api-contracts/contracts/marketing-acquisition";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { authenticatedIdentity$ } from "../auth.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { now } from "../../lib/time.ts";
 
 interface PendingEvent {
@@ -10,27 +12,19 @@ interface PendingEvent {
 }
 // Business observations only. No URL attribution, cookies, or provider SDKs.
 const internalPendingMarketingEvents$ = state<readonly PendingEvent[]>([]);
-// Unknown buffers only business observations in memory until the Marketing config endpoint
-// supplies Marketing's runtime setting. A known disabled state discards them.
-const internalMarketingShadowEnabled$ = state<boolean | undefined>(undefined);
 const internalMarketingShadowEpoch$ = state(0);
 export const marketingShadowEpoch$ = computed((get) => {
   return get(internalMarketingShadowEpoch$);
 });
 export const marketingShadowEnabled$ = computed((get) => {
-  return get(internalMarketingShadowEnabled$);
+  return get(featureSwitch$)[FeatureSwitchKey.MarketingAcquisitionShadow];
 });
-export const setMarketingShadowEnabled$ = command(
-  ({ set }, enabled: boolean | undefined) => {
-    set(internalMarketingShadowEnabled$, enabled);
-    if (enabled !== true) {
-      set(internalMarketingShadowEpoch$, (epoch) => {
-        return epoch + 1;
-      });
-      set(internalPendingMarketingEvents$, []);
-    }
-  },
-);
+export const discardMarketingEvents$ = command(({ set }) => {
+  set(internalMarketingShadowEpoch$, (epoch) => {
+    return epoch + 1;
+  });
+  set(internalPendingMarketingEvents$, []);
+});
 export const pendingMarketingEvents$ = computed((get) => {
   return get(internalPendingMarketingEvents$);
 });
@@ -50,17 +44,14 @@ export const enqueueMarketingEvent$ = command(
     properties: ObservedAcquisitionEvent["properties"],
     signal: AbortSignal,
   ) => {
-    if (get(marketingShadowEnabled$) === false) {
+    if (!get(marketingShadowEnabled$)) {
       return undefined;
     }
     const at = now();
     const epoch = get(marketingShadowEpoch$);
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
-    if (
-      get(marketingShadowEnabled$) === false ||
-      get(marketingShadowEpoch$) !== epoch
-    ) {
+    if (!get(marketingShadowEnabled$) || get(marketingShadowEpoch$) !== epoch) {
       return undefined;
     }
     const event: ObservedAcquisitionEvent = {

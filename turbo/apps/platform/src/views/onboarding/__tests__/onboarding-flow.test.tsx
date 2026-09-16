@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   marketingAcquisitionContract,
   type ObservedAcquisitionEvent,
@@ -1436,9 +1437,6 @@ test.each([
   async ({ accountId, onboarding, checkout }) => {
     const marketing = "https://www.okou.ai/api/marketing/acquisition";
     const observations: ObservedAcquisitionEvent[] = [];
-    context.mocks.http.get(`${marketing}/config`, () => {
-      return Response.json({ shadowEnabled: true });
-    });
     context.mocks.http.post(`${marketing}/events`, async ({ request }) => {
       const batch = marketingAcquisitionContract.events.body.parse(
         await request.json(),
@@ -1446,7 +1444,6 @@ test.each([
       observations.push(...batch.events);
       return Response.json({
         recorded: true,
-        shadowEnabled: true,
         consented: true,
       });
     });
@@ -1470,6 +1467,7 @@ test.each([
       context,
       path: "/onboarding/video-template?choice=video",
       host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.MarketingAcquisitionShadow]: true },
     });
 
     await expect(
