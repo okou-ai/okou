@@ -26,6 +26,29 @@ const sharedArtifactViewer$ = computed((get) => {
   return createSharedArtifactViewerSignals();
 });
 
+const openPublicArtifact$ = command(
+  async ({ get }, reference: string, signal: AbortSignal) => {
+    const result = await accept(
+      get(apiClient$)(artifactReferencesContract, {
+        getToken: async () => {
+          return null;
+        },
+      }).publicUrl({
+        params: { reference },
+        fetchOptions: { signal, cache: "no-store" },
+      }),
+      // An older API has no public-reference route; retain its sign-in fallback.
+      [200, 400, 404],
+      signal,
+    );
+    if (result.status !== 200) return false;
+    const contentUrl = new URL(result.body.url);
+    contentUrl.hash = location.hash;
+    window.location.replace(contentUrl.href);
+    return true;
+  },
+);
+
 // Keep authorization on the existing resolver. Preview URLs stay inside the
 // viewer while the app URL remains the address recipients can copy.
 export const setupSharedArtifact$ = command(
@@ -41,6 +64,7 @@ export const setupSharedArtifact$ = command(
       return;
     }
     if (!clerk.user) {
+      if (await set(openPublicArtifact$, id, signal)) return;
       const returnUrl = new URL(
         `/artifacts/${encodeURIComponent(id)}`,
         location.origin,
@@ -61,6 +85,8 @@ export const setupSharedArtifact$ = command(
       [200, 400, 403, 404],
       signal,
     );
+    if (result.status !== 200 && (await set(openPublicArtifact$, id, signal)))
+      return;
     if (switches[FeatureSwitchKey.PrivateArtifacts] || result.status !== 200) {
       const referenceUrl = new URL(
         `/artifacts/${encodeURIComponent(id)}`,

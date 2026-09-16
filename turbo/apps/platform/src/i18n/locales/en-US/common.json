@@ -590,8 +590,18 @@
       "videoLabel": "Video preview for {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Share to organization",
-      "sharePublic": "Share to Public"
+      "onlyMe": "Only me",
+      "onlyMeDescription": "Only you can view this artifact",
+      "organization": "Organization",
+      "organizationDescription": "Anyone in {{organization}} with the link",
+      "publicAccess": "Public access",
+      "publicDescription": "Anyone with the link can view",
+      "accessLabel": "Who can access",
+      "copyLink": "Copy link",
+      "saving": "Saving…",
+      "savedAutomatically": "Changes saved automatically",
+      "loadFailed": "Unable to load permissions",
+      "retry": "Retry"
     },
     "sidebar": {
       "openSharedConversation": "Open shared conversation",

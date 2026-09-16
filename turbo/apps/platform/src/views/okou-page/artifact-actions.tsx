@@ -176,7 +176,6 @@ export function ArtifactShareButton({
       return $.artifacts.actions.share;
     });
   if (
-    shareUrl === null &&
     features?.[FeatureSwitchKey.PrivateArtifacts] &&
     isShareableArtifactReference(url)
   ) {

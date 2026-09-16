@@ -6,7 +6,7 @@ import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import {
   click,
@@ -19,6 +19,18 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+beforeEach(() => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact not found" },
+    });
+  });
+  context.mocks.api(artifactReferencesContract.publicUrl, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact unavailable" },
+    });
+  });
+});
 
 warmMermaidParser();
 const artifactId = "00000000-0000-4000-8000-000000000010";

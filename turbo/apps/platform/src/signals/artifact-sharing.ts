@@ -1,5 +1,6 @@
-import { command } from "ccstate";
+import { command, computed, state } from "ccstate";
 import {
+  artifactReferencePath,
   artifactReferencesContract,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
@@ -9,29 +10,17 @@ import {
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
 import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { isAuthenticatedAttachmentUrl } from "./attachment-resource-url.ts";
-import { pageVersion$ } from "./page-signal.ts";
-import { onRejection } from "./utils.ts";
-
-interface ArtifactShareSelection {
-  readonly url: string;
-  readonly audience: Exclude<ArtifactShareStatus["audience"], "private">;
-}
+import { resetSignal, withCleanup } from "./utils.ts";
 
 function artifactSharingTarget(url: string): ArtifactShareTarget | null {
   const id = privateHostedDeploymentId(url, resolveApiBase());
-  if (id) {
-    return { kind: "html", id };
-  }
-  if (!isAuthenticatedAttachmentUrl(url)) {
-    return null;
-  }
+  if (id) return { kind: "html", id };
+  if (!isAuthenticatedAttachmentUrl(url)) return null;
   const fileId = new URL(url).searchParams.get("file_id");
   return fileId ? { kind: "file", id: fileId } : null;
 }
@@ -43,102 +32,145 @@ export function isShareableArtifactReference(url: string): boolean {
   );
 }
 
-const resolveSharingTarget$ = command(
-  async ({ get }, url: string, signal: AbortSignal) => {
-    const reference = parseArtifactReference(url, location.origin);
-    if (!reference) {
-      return artifactSharingTarget(url);
-    }
-    const response = await accept(
-      get(apiClient$)(artifactReferencesContract).resolve({
-        params: { reference: `${reference.hash}${reference.extension}` },
-        fetchOptions: { signal, cache: "no-store" },
-      }),
-      [200],
-      signal,
+interface ShareRequest {
+  readonly key: string;
+  readonly url: string;
+  readonly copyUrl?: string;
+}
+const request$ = state<ShareRequest | null>(null);
+const reload$ = state(0);
+const resetShareSignal$ = resetSignal();
+
+export const artifactShareRequest$ = computed((get) => {
+  return get(request$);
+});
+
+export const artifactShareDetails$ = computed(async (get) => {
+  const request = get(request$);
+  get(reload$);
+  if (!request) return null;
+  const client = get(apiClient$);
+  const reference = parseArtifactReference(request.url, location.origin);
+  const target = reference
+    ? (
+        await accept(
+          client(artifactReferencesContract).resolve({
+            params: { reference: `${reference.hash}${reference.extension}` },
+            fetchOptions: { cache: "no-store" },
+          }),
+          [200],
+        )
+      ).body.target
+    : artifactSharingTarget(request.url);
+  if (!target) return null;
+  // The owner-only status endpoint is the authority. A successful resolve grants
+  // viewing, while 404 here means this viewer cannot manage the share.
+  const result = await accept(
+    client(artifactSharesContract).status({ body: target }),
+    [200, 404],
+  );
+  const status = result.status === 200 ? result.body : null;
+  const copyUrl = new URL(
+    status
+      ? reference
+        ? request.url
+        : artifactReferencePath(target.id)
+      : (request.copyUrl ?? request.url),
+    location.origin,
+  );
+  if (status) copyUrl.hash = reference?.fragment ?? "";
+  const audience =
+    status?.selectedTarget && status.selectedTarget.id !== target.id
+      ? "private"
+      : status?.audience;
+  return { request, target, status, audience, copyUrl: copyUrl.href };
+});
+
+export const closeArtifactShare$ = command(({ set }) => {
+  set(resetShareSignal$);
+});
+
+export const openArtifactShare$ = command(
+  async ({ get, set }, request: ShareRequest, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const operation = set(resetShareSignal$, signal);
+    operation.addEventListener(
+      "abort",
+      () => {
+        return set(request$, null);
+      },
+      {
+        once: true,
+      },
     );
-    return response.body.target;
+    set(request$, request);
+    const details = await get(artifactShareDetails$);
+    signal.throwIfAborted();
+    operation.throwIfAborted();
+    if (details && !details.status) {
+      await copyAttachmentLinkToClipboard(
+        details.copyUrl,
+        undefined,
+        operation,
+      );
+      signal.throwIfAborted();
+      set(closeArtifactShare$);
+    }
   },
 );
 
-const artifactShareUrl$ = command(
-  async ({ get, set }, args: ArtifactShareSelection, signal: AbortSignal) => {
+export const refreshArtifactShare$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(reload$, (value) => {
+      return value + 1;
+    });
+    await get(artifactShareDetails$);
     signal.throwIfAborted();
-    const pageVersion = get(pageVersion$);
-    const target = await set(resolveSharingTarget$, args.url, signal);
-    if (!target) {
-      return null;
-    }
-    const { body: status } = await accept(
-      get(apiClient$)(artifactSharesContract).status({
-        body: target,
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    if (get(pageVersion$) !== pageVersion) {
-      return null;
-    }
+  },
+);
+
+export const changeArtifactAudience$ = command(
+  async (
+    { get, set },
+    audience: ArtifactShareStatus["audience"],
+    signal: AbortSignal,
+  ) => {
+    const details = await get(artifactShareDetails$);
+    signal.throwIfAborted();
+    if (!details?.status || get(request$) !== details.request) return;
     if (
-      status.url &&
-      status.audience === args.audience &&
-      status.selectedTarget &&
-      status.selectedVersion === status.candidateVersion &&
-      // A current API explicitly reports null until the owner allocates the
-      // short organization link or named site URL. Older APIs omit the field.
-      // #32492 retires the absent-field reader after old APIs leave serving
-      // and rollback; the legacy response stays until the App floor advances.
-      !(
-        (args.audience === "organization" || target.kind === "html") &&
-        status.shortUrl === null
-      )
-    ) {
-      return status.shortUrl ?? status.url;
-    }
-    const response = await accept(
-      get(apiClient$)(artifactSharesContract).update({
-        body: { target, audience: args.audience },
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
+      details.audience === audience &&
+      (audience === "private" ||
+        details.status.selectedVersion === details.status.candidateVersion)
+    )
+      return;
+    await withCleanup(
+      accept(
+        get(apiClient$)(artifactSharesContract).update({
+          body: { target: details.target, audience },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      ),
+      () => {
+        return set(reload$, (value) => {
+          return value + 1;
+        });
+      },
     );
     signal.throwIfAborted();
-    if (get(pageVersion$) !== pageVersion) {
-      return null;
-    }
-    return response.body.shortUrl ?? response.body.url;
+    await get(artifactShareDetails$);
+    signal.throwIfAborted();
   },
 );
 
-export const shareArtifact$ = command(
-  async ({ set }, selection: ArtifactShareSelection, signal: AbortSignal) => {
+export const copyArtifactShare$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    const details = await get(artifactShareDetails$);
     signal.throwIfAborted();
-    const toastId = toast.loading(
-      i18n.t(($) => {
-        return $.artifacts.toasts.sharing;
-      }),
-    );
-    const dismissLoadingToast = () => {
-      toast.dismiss(toastId);
-      signal.removeEventListener("abort", dismissLoadingToast);
-    };
-    signal.addEventListener("abort", dismissLoadingToast, { once: true });
-    const shareUrl = await onRejection(
-      set(artifactShareUrl$, selection, signal),
-      dismissLoadingToast,
-    );
-    signal.throwIfAborted();
-    if (!shareUrl) {
-      dismissLoadingToast();
-      return;
+    if (details?.status && get(request$) === details.request) {
+      await copyAttachmentLinkToClipboard(details.copyUrl, undefined, signal);
     }
-    await onRejection(
-      copyAttachmentLinkToClipboard(shareUrl, toastId, signal),
-      dismissLoadingToast,
-    );
-    signal.throwIfAborted();
-    signal.removeEventListener("abort", dismissLoadingToast);
   },
 );
