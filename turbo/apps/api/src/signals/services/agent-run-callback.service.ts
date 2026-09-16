@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
@@ -82,6 +83,7 @@ interface DispatchSingleCallbackInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly featureSwitchContext: FeatureSwitchContext;
+  readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
 }
 
 export async function chatCallbackIdForRun(
@@ -289,6 +291,8 @@ export async function dispatchRunCallbacks(
     .select({
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
+      failureReason: agentRuns.failureReason,
+      modelProvider: agentRuns.modelProvider,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
@@ -336,6 +340,10 @@ export async function dispatchRunCallbacks(
       result,
       error,
       featureSwitchContext,
+      balanceContext: {
+        failureReason: run.failureReason,
+        modelProvider: run.modelProvider,
+      },
     });
     results.push(dispatchResult);
   }
@@ -382,6 +390,8 @@ export const dispatchRunCallbacks$ = command(
       .select({
         orgId: agentRuns.orgId,
         userId: agentRuns.userId,
+        failureReason: agentRuns.failureReason,
+        modelProvider: agentRuns.modelProvider,
       })
       .from(agentRuns)
       .where(eq(agentRuns.id, runId))
@@ -455,6 +465,10 @@ export const dispatchRunCallbacks$ = command(
             result,
             error,
             featureSwitchContext,
+            balanceContext: {
+              failureReason: run.failureReason,
+              modelProvider: run.modelProvider,
+            },
           });
       signal.throwIfAborted();
       results.push(dispatchResult);
@@ -646,7 +660,10 @@ async function dispatchHttpCallback(
     runId,
     status,
     result,
-    error,
+    error:
+      error === undefined
+        ? undefined
+        : (formatRunBalanceError(input.balanceContext) ?? error),
     payload: callback.payload,
   });
   const timestamp = Math.floor(now() / 1000);

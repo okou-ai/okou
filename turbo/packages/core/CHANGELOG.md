@@ -1,5 +1,69 @@
 # Changelog
 
+## [8.668.1](https://github.com/vm0-ai/okou/compare/core-v8.668.0...core-v8.668.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.0
+
+## [8.668.0](https://github.com/vm0-ai/okou/compare/core-v8.667.1...core-v8.668.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** collapse the composer toolbar into one add menu ([#34394](https://github.com/vm0-ai/okou/issues/34394)) ([a54f703](https://github.com/vm0-ai/okou/commit/a54f703655d94b3552f856783294efbe97484a6b))
+
+## [8.667.1](https://github.com/vm0-ai/okou/compare/core-v8.667.0...core-v8.667.1) (2026-09-16)
+
+
+### Refactoring
+
+* fold session output streaming into piloop ([#34445](https://github.com/vm0-ai/okou/issues/34445)) ([9a641d1](https://github.com/vm0-ai/okou/commit/9a641d19a9776261fd549d21fbe225e08d3ad3df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.1
+
+## [8.667.0](https://github.com/vm0-ai/vm0/compare/core-v8.666.7...core-v8.667.0) (2026-09-15)
+
+
+### Features
+
+* **memory:** attribute stage 1 cost and define daily budget guardrails ([#34288](https://github.com/vm0-ai/vm0/issues/34288)) ([5ee718c](https://github.com/vm0-ai/vm0/commit/5ee718ca99c65f0bf8e59b2aed23b2fabaa5a2b2))
+
+## [8.666.7](https://github.com/vm0-ai/vm0/compare/core-v8.666.6...core-v8.666.7) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.0
+
+## [8.666.6](https://github.com/vm0-ai/vm0/compare/core-v8.666.5...core-v8.666.6) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.1
+
+## [8.666.5](https://github.com/vm0-ai/vm0/compare/core-v8.666.4...core-v8.666.5) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.0
+
 ## [8.666.4](https://github.com/vm0-ai/vm0/compare/core-v8.666.3...core-v8.666.4) (2026-09-15)
 
 

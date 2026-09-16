@@ -174,7 +174,7 @@ impl Manager {
             let permit = Arc::clone(&self.capacity)
                 .try_acquire_owned()
                 .map_err(|_| FailureReason::ResourceExhausted)?;
-            let access = self.registration.session_access(params.ssh_connection_id)?;
+            let access = self.registration.lookup(params.ssh_connection_id)?;
             let (commands, receiver) = mpsc::channel(CAPACITY);
             let entry = Arc::new(Entry {
                 id: Uuid::new_v4(),

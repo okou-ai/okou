@@ -24,6 +24,11 @@
 //! reports required target preparation and downloads rather than
 //! transaction-wide success for every filesystem change.
 //!
+//! Cached ordinary storages and artifacts preserve their entire mount roots.
+//! Cached instructions preserve only the managed instruction filenames needed
+//! for normalization, allowing changed or removed skills beneath the same
+//! framework home to be cleaned independently.
+//!
 //! ## Archive metadata limits
 //!
 //! Each tar member has a 1 MiB budget for encoded metadata, including headers,

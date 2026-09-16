@@ -8,7 +8,7 @@
     "desktop:dev:forge": "OKOU_DESKTOP_PLATFORM_URL=https://app.vm7.ai:8443 pnpm -F @okouai/desktop dev",
     "desktop:make": "pnpm -F @okouai/desktop make",
     "lint": "turbo run lint --concurrency=1",
-    "lint:style": "node --test scripts/style-policy.test.mjs && node scripts/style-policy.mjs && node --test scripts/style-migration.test.mjs && node scripts/style-migration.mjs && eslint --config eslint.style.config.mjs --no-inline-config --max-warnings 0 'apps/platform/src/**/*.{css,ts,tsx}' 'packages/ui/src/**/*.{css,ts,tsx}' || { echo 'Style lint failed. Read docs/styles.md for the style guide before fixing these errors. Use Tailwind utilities and registered tokens; do not expand the allowlist or legacy baseline for business styling.' >&2; exit 1; }",
+    "lint:style": "node --test scripts/style-policy.test.mjs && node scripts/style-policy.mjs && eslint --config eslint.style.config.mjs --no-inline-config --max-warnings 0 'apps/platform/src/**/*.{css,ts,tsx}' 'packages/ui/src/**/*.{css,ts,tsx}' || { echo 'Style lint failed. Read docs/styles.md for the style guide before fixing these errors. Use Tailwind utilities and registered tokens; do not expand the allowlist or legacy baseline for business styling.' >&2; exit 1; }",
     "lint:style:prune": "node scripts/style-policy.mjs --prune",
     "format": "prettier --write --ignore-unknown .",
     "check-types": "turbo run check-types --concurrency=1",
@@ -27,8 +27,7 @@
     "deploy-cli:local": "bash ../scripts/deploy-cli-local.sh",
     "runner:submit": "bash ../scripts/dev-runner.sh submit",
     "runner:exec": "bash ../scripts/dev-runner.sh exec",
-    "runner:remove": "bash ../scripts/dev-runner.sh remove",
-    "style:migration:inventory": "node scripts/style-migration.mjs --json"
+    "runner:remove": "bash ../scripts/dev-runner.sh remove"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",

@@ -405,6 +405,7 @@ test("reading a pre-registry public grant preserves its working URL without publ
   const historical = artifactSharePolicySchema.parse(
     JSON.parse(objects.get(key)!),
   );
+  historical.publicToken = "a".repeat(24);
   delete historical.delivery;
   objects.set(key, JSON.stringify(historical));
   for (const alias of objects.keys()) {
@@ -423,7 +424,90 @@ test("reading a pre-registry public grant preserves its working URL without publ
   expect(objects).toStrictEqual(before);
 });
 
-test("a public hash collision preserves its existing registration and grants no publication", async () => {
+test("public filename collisions retry without replacing a historical file", async () => {
+  const { objects } = await fixture();
+  const target = await file();
+  const storage = context.mocks.s3.send.getMockImplementation()!;
+  let collision: string | undefined;
+  const existing = JSON.stringify({
+    version: 1,
+    kind: "legacy-file",
+    publicBrand: "okou",
+    audience: "public",
+    key: "artifacts/0123456789.pdf",
+    filename: "old.pdf",
+    contentType: "application/pdf",
+  });
+  context.mocks.s3.send.mockImplementation((cmd) => {
+    if (
+      !collision &&
+      cmd instanceof PutObjectCommand &&
+      cmd.input.Key?.startsWith("artifact-delivery/files/")
+    ) {
+      collision = cmd.input.Key;
+      objects.set(collision, existing);
+    }
+    return storage(cmd);
+  });
+  const published = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  const alias = new URL(published.body.url!).pathname.slice(1);
+  expect(alias).toMatch(/^[a-z0-9]{10}\.pdf$/u);
+  expect(collision).not.toBe(`artifact-delivery/files/${alias}.json`);
+  expect(objects.get(collision!)).toBe(existing);
+  const repeated = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  expect(repeated.body.url).toBe(published.body.url);
+});
+
+test("existing 24-character public file links survive updates and revoke normally", async () => {
+  const { objects } = await fixture();
+  const target = await file();
+  const published = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  const key = `artifact-shares/okou/${published.body.shareId}.json`;
+  const historical = artifactSharePolicySchema.parse(
+    JSON.parse(objects.get(key)!),
+  );
+  historical.publicToken = "a".repeat(24);
+  objects.set(key, JSON.stringify(historical));
+  const updated = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  expect(updated.body.url).toBe(`https://a.okou.io/${"a".repeat(24)}.pdf`);
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "private" },
+    }),
+    [200],
+  );
+  expect(JSON.parse(objects.get(key)!)).toMatchObject({
+    status: "revoked",
+    publicToken: null,
+  });
+});
+
+test("exhausted public hash collisions preserve registrations and grant no publication", async () => {
   const { objects } = await fixture();
   const target = await file();
   const storage = context.mocks.s3.send.getMockImplementation()!;
@@ -607,7 +691,7 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
     [200],
   );
   expect(publicShare.body.url).toMatch(
-    /^https:\/\/a\.okou\.io\/[a-f0-9]{24}\.pdf$/u,
+    /^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u,
   );
   const first = publicShare.body;
   const organization = await accept(

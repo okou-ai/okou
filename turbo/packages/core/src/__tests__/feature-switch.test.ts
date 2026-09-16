@@ -32,6 +32,45 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("defaults personal subscription priority by workspace and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_external" }]) {
+      expect(
+        isFeatureEnabled(
+          FeatureSwitchKey.PersonalSubscriptionPriority,
+          context,
+        ),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, {
+          ...context,
+          overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
+        }),
+      ).toBe(true);
+    }
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, staff),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalSubscriptionPriority, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
+      }),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PersonalModelProviderAccounts, {
+        orgId: "org_external",
+        overrides: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
+      }),
+    ).toBe(false);
+  });
+
   it("keeps Pi memory off for everyone until an explicit override enables it", () => {
     const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
     for (const context of [
@@ -102,7 +141,8 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.SshAccess, {})).toBe(false);
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.SshAccess]).toEqual({
       maintainer: "liangyou@okou.ai",
-      description: "Enable standalone Runner-mediated SSH configuration",
+      description:
+        "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
       rolloutStage: "beta",
     });
   });

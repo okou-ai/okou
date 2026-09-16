@@ -53,6 +53,15 @@ export function detach<T>(
   }
 }
 
+/** Start background work synchronously under the supplied owner. */
+export function setDaemon(
+  operation: (signal: AbortSignal) => Promise<unknown>,
+  signal: AbortSignal,
+): void {
+  signal.throwIfAborted();
+  detach(operation(signal), Reason.Daemon);
+}
+
 /** Shared test setup drains detached work after testContext aborts its lifetimes. */
 export async function clearAllDetached(): Promise<void> {
   for (const [promise, { reason, description }] of tracker.collected) {
@@ -308,22 +317,43 @@ async function waitForFibonacciRetry(
   signal.throwIfAborted();
 }
 
-/**
- * Run `loopBody` in a loop with `interval` between iterations.
- * Transient (non-abort) errors trigger fibonacci backoff retries.
- * Resolves when `loopBody` returns `true` (done) or rejects on abort.
- */
-export async function setLoop(
-  loopBody: (signal: AbortSignal) => Promise<boolean> | boolean,
+type LoopBody = (signal: AbortSignal) => Promise<boolean> | boolean;
+
+interface LoopOptions {
+  retryTransientErrors?: boolean;
+  shouldRetryError?: (error: unknown) => boolean;
+  logTransientErrors?: boolean;
+  /** Keep an intentionally owner-lived loop paced in tests until its signal aborts. */
+  testIntervalMs?: number;
+}
+
+/** Start an owner-scoped background loop; completion is tracked by detach. */
+export function setLoop(
+  loopBody: LoopBody,
   interval: number,
   signal: AbortSignal,
-  options: {
-    retryTransientErrors?: boolean;
-    shouldRetryError?: (error: unknown) => boolean;
-    logTransientErrors?: boolean;
-    /** Keep an intentionally owner-lived loop paced in tests until its signal aborts. */
-    testIntervalMs?: number;
-  } = {},
+  options: LoopOptions = {},
+): void {
+  setDaemon((ownerSignal) => {
+    return internalSetLoop(loopBody, interval, ownerSignal, options);
+  }, signal);
+}
+
+/** Wait until the body returns true; propagate failures and cancellation. */
+export function waitLoopUntil(
+  loopBody: LoopBody,
+  interval: number,
+  signal: AbortSignal,
+  options: LoopOptions = {},
+): Promise<void> {
+  return internalSetLoop(loopBody, interval, signal, options);
+}
+
+async function internalSetLoop(
+  loopBody: LoopBody,
+  interval: number,
+  signal: AbortSignal,
+  options: LoopOptions,
 ): Promise<void> {
   let fibIndex = 0;
   let loopCount = 0;
@@ -383,33 +413,6 @@ export function resetSignal(): Command<AbortSignal, AbortSignal[]> {
 
     return AbortSignal.any([controller.signal, ...signals]);
   });
-}
-
-/**
- * Create a local cancellation owner that always cascades its parent signal.
- * Aborting the child also removes its listener from the parent immediately.
- *
- * @deprecated Inherit an existing owner or use a stable resetSignal() command.
- */
-export function createChildAbortController(
-  parentSignal: AbortSignal,
-): AbortController {
-  const controller = new AbortController();
-  const onParentAbort = () => {
-    controller.abort(parentSignal.reason);
-  };
-  if (parentSignal.aborted) {
-    onParentAbort();
-  } else {
-    const removeParentListener = () => {
-      parentSignal.removeEventListener("abort", onParentAbort);
-    };
-    parentSignal.addEventListener("abort", onParentAbort, { once: true });
-    controller.signal.addEventListener("abort", removeParentListener, {
-      once: true,
-    });
-  }
-  return controller;
 }
 
 export function onDomEventFn<T>(callback: (e: T) => void | Promise<void>) {

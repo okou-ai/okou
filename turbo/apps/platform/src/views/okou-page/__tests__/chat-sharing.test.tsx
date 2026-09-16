@@ -1,4 +1,5 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { expect, test } from "vitest";
 
@@ -7,7 +8,9 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
@@ -145,6 +148,177 @@ test("Share selected message groups as a public conversation snapshot", async ()
   );
   expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
+});
+
+test("Replacing a selected live answer clears it before the next answer is shared", async () => {
+  const nextAnswerId = "b0000000-0000-4000-a000-000000000805";
+  const nextAnswer = "The revised launch plan has four phases.";
+  const chatEvents = standardConversation();
+  const createRequests: string[][] = [];
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Live launch planning",
+    chatEvents,
+    activeRunIds: ["launch-run"],
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
+    createRequests.push([...body.eventIds]);
+    return respond(201, { id: SHARED_THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  await screen.findByText(ANSWER);
+  await waitFor(() => {
+    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+  });
+  click(requiredButtonNamed("Share messages"));
+
+  const firstSelection = within(selectableGroupForText(ANSWER)).getByRole(
+    "checkbox",
+  );
+  click(firstSelection);
+  await waitFor(() => {
+    expect(firstSelection).toBeChecked();
+    expect(screen.getAllByText("1 selected").length).toBeGreaterThan(0);
+  });
+
+  act(() => {
+    chatEvents.push({
+      id: nextAnswerId,
+      role: "assistant",
+      content: nextAnswer,
+      runId: "launch-run",
+      createdAt: "2026-08-01T10:00:02Z",
+    });
+    createChatEvent(THREAD_ID);
+  });
+
+  await screen.findByText(nextAnswer);
+  expect(screen.queryByText(ANSWER)).not.toBeInTheDocument();
+  const nextSelection = within(selectableGroupForText(nextAnswer)).getByRole(
+    "checkbox",
+  );
+  expect(nextSelection).not.toBeChecked();
+  const shareButton = requiredButtonNamed("Share");
+  expect.soft(shareButton.closest("footer")).toHaveTextContent("0 selected");
+  expect.soft(shareButton).toBeDisabled();
+
+  click(nextSelection);
+  await waitFor(() => {
+    expect(nextSelection).toBeChecked();
+  });
+  expect.soft(shareButton.closest("footer")).toHaveTextContent("1 selected");
+  click(requiredButtonNamed("Share"));
+
+  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  expect(createRequests).toStrictEqual([[nextAnswerId]]);
+});
+
+test("A selected answer remains shareable after later turns move it outside the render window", async () => {
+  const chatEvents: MockChatEventInput[] = [
+    ...standardConversation(),
+    {
+      id: "launch-completed",
+      role: "assistant",
+      content: null,
+      runId: "launch-run",
+      runLifecycleEvent: "completed",
+      createdAt: "2026-08-01T10:00:02Z",
+    },
+  ];
+  const createRequests: string[][] = [];
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    threadTitle: "Growing launch conversation",
+    chatEvents,
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+  context.mocks.api(sharedThreadsContract.create, ({ body, respond }) => {
+    createRequests.push([...body.eventIds]);
+    return respond(201, { id: SHARED_THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  await screen.findByText(ANSWER);
+  await waitFor(() => {
+    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+  });
+  click(requiredButtonNamed("Share messages"));
+  const selection = within(selectableGroupForText(ANSWER)).getByRole(
+    "checkbox",
+  );
+  click(selection);
+  await waitFor(() => {
+    expect(selection).toBeChecked();
+    expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
+      "1 selected",
+    );
+  });
+
+  act(() => {
+    for (let turn = 1; turn <= 12; turn++) {
+      const minute = String(turn).padStart(2, "0");
+      const runId = `later-run-${String(turn)}`;
+      chatEvents.push(
+        {
+          id: `later-prompt-${String(turn)}`,
+          role: "user",
+          content: `Follow-up question ${String(turn)}`,
+          runId,
+          createdAt: `2026-08-01T10:${minute}:00Z`,
+        },
+        {
+          id: `later-answer-${String(turn)}`,
+          role: "assistant",
+          content: `Follow-up answer ${String(turn)}`,
+          runId,
+          createdAt: `2026-08-01T10:${minute}:01Z`,
+        },
+        {
+          id: `later-completed-${String(turn)}`,
+          role: "assistant",
+          content: null,
+          runId,
+          runLifecycleEvent: "completed",
+          createdAt: `2026-08-01T10:${minute}:02Z`,
+        },
+      );
+    }
+    createChatEvent(THREAD_ID);
+  });
+
+  await screen.findByText("Follow-up answer 12");
+  expect(screen.queryByText(ANSWER)).not.toBeInTheDocument();
+  const shareButton = requiredButtonNamed("Share");
+  expect(shareButton.closest("footer")).toHaveTextContent("1 selected");
+  expect(shareButton).toBeEnabled();
+  click(shareButton);
+
+  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  expect(createRequests).toStrictEqual([[ANSWER_EVENT_ID]]);
 });
 
 test.each(["running", "failed"] as const)(

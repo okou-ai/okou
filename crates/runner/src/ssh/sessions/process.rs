@@ -100,7 +100,6 @@ async fn execute(
                 credential: Arc::clone(&credential),
                 access: entry.access.clone(),
                 operation: Arc::clone(&entry.lease),
-                retained: true,
             },
             &setup,
             observation,

@@ -1,0 +1,1033 @@
+[
+  {
+    "name": "budget 19.99",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 19.99,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "19990000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 19.99,
+          "breached": false
+        }
+      ],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "budget 20",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 20,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "20000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 20,
+          "breached": true
+        }
+      ],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "budget 20.01",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 20.01,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "20010000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 20.01,
+          "breached": true
+        }
+      ],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "duplicate deliveries, categories and outcomes",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 20,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "20000000000"
+        }
+      },
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 20,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "outcome": "commit_failed",
+          "category": "tokens.cache_read",
+          "grossCreditValueNanoUsd": "20000000000"
+        }
+      },
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 20,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "20000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 20,
+          "breached": true
+        }
+      ],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "replay cannot reprice or shift accounting day",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 1,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "1000000000"
+        }
+      },
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "replay",
+          "usageStatus": "valid",
+          "pricingStatus": "replay",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T11:00:00.000Z",
+          "grossCreditValueUsd": null,
+          "priceBasis": null,
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": null
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 1,
+          "breached": false
+        }
+      ],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "later higher repricing preserves first estimate and alerts health",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 1,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "1000000000"
+        }
+      },
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T11:00:00.000Z",
+          "grossCreditValueUsd": 100,
+          "priceBasis": "changed",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "100000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 1,
+          "breached": false
+        }
+      ],
+      "healthProblem": true
+    }
+  },
+  {
+    "name": "same timestamp conflicting duplicate is deterministic and unhealthy",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 100,
+          "priceBasis": "z",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "100000000000"
+        }
+      },
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 1,
+          "priceBasis": "a",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "1000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 1,
+          "breached": false
+        }
+      ],
+      "healthProblem": true
+    }
+  },
+  {
+    "name": "unavailable first estimate cannot become available on replay",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "missing_price",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": null,
+          "priceBasis": null,
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": null
+        }
+      },
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T11:00:00.000Z",
+          "grossCreditValueUsd": 100,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "100000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": true
+    }
+  },
+  {
+    "name": "replay without original is a coverage gap",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "replay",
+          "usageStatus": "valid",
+          "pricingStatus": "replay",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": null,
+          "priceBasis": null,
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": null
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": true
+    }
+  },
+  {
+    "name": "legacy replay is unpriced history",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "legacy_replay",
+          "usageStatus": "valid",
+          "pricingStatus": "legacy_replay",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": null,
+          "priceBasis": null,
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": null
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": true
+    }
+  },
+  {
+    "name": "BYOK exclusion",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "byok",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 100,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "100000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "nonproduction exclusion",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-staging",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 100,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "100000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "future accounting day excluded",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-16T00:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 100,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "100000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "expired accounting day excluded",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-13T23:59:59.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 100,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "100000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "late arrival survives midnight as previous-day incident",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T00:05:00Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-14T23:59:59.000Z",
+          "observedAt": "2026-09-15T00:05:00.000Z",
+          "grossCreditValueUsd": 20,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "20000000000"
+        }
+      },
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000002",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 1,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "1000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-14",
+          "total": 20,
+          "breached": true
+        },
+        {
+          "day": "2026-09-15",
+          "total": 1,
+          "breached": false
+        }
+      ],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "unknown provider usage",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "not_recorded",
+          "usageStatus": "missing",
+          "pricingStatus": "missing_usage",
+          "accountingId": null,
+          "accountingAt": null,
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": null,
+          "priceBasis": null,
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": null
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": true
+    }
+  },
+  {
+    "name": "malformed observation missing identity",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": null,
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 20,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "20000000000"
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": true
+    }
+  },
+  {
+    "name": "zero usage has no billable anchor",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "zero_usage",
+          "usageStatus": "valid",
+          "pricingStatus": "zero_usage",
+          "accountingId": null,
+          "accountingAt": null,
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": null,
+          "priceBasis": null,
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": null
+        }
+      }
+    ],
+    "expected": {
+      "days": [],
+      "healthProblem": false
+    }
+  },
+  {
+    "name": "valid zero rate remains zero",
+    "now": "2026-09-15T12:00:00Z",
+    "events": [
+      {
+        "dataset": "vm0-web-logs-prod",
+        "_time": "2026-09-15T10:00:01Z",
+        "level": "info",
+        "source": "api",
+        "message": "Pi memory Stage 1 cost observed",
+        "fields": {
+          "context": "PiMemoryStage1Cost",
+          "operation": "pi_memory_stage1",
+          "costVersion": 1,
+          "billingMode": "builtin",
+          "model": "gpt-5.6-luna",
+          "ledgerStatus": "new",
+          "usageStatus": "valid",
+          "pricingStatus": "available",
+          "accountingId": "7a9b321a-0000-5000-8000-000000000001",
+          "accountingAt": "2026-09-15T10:00:00.000Z",
+          "observedAt": "2026-09-15T10:00:01.000Z",
+          "grossCreditValueUsd": 0,
+          "priceBasis": "[{\"category\":\"tokens.input\",\"quantity\":20000000,\"unitPrice\":1000,\"unitSize\":1000000}]",
+          "inputTokens": 20000000,
+          "outputTokens": 0,
+          "cacheReadTokens": 0,
+          "cacheCreationTokens": 0,
+          "currency": "USD",
+          "unit": "gross_credit_value",
+          "creditsPerUsd": 1000,
+          "grossCreditValueNanoUsd": "0"
+        }
+      }
+    ],
+    "expected": {
+      "days": [
+        {
+          "day": "2026-09-15",
+          "total": 0,
+          "breached": false
+        }
+      ],
+      "healthProblem": false
+    }
+  }
+]

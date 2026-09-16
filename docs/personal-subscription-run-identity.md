@@ -1,10 +1,10 @@
 # Personal subscription run identity
 
-This document covers the #34012 identity foundation, its #34098/#34111/#34164 repairs, and #34197 effective member routing for #34010. Subscription protocols, model catalogs, pricing, and account UI availability remain unchanged.
+This document covers the #34012 identity foundation, its #34098/#34111/#34164 repairs, #34197 effective member routing, C launch consumers, and the September 16 correction (#34430) for #34010. Subscription protocols, model catalogs, pricing, and account UI availability remain unchanged.
 
 ## Effective member routing (B)
 
-With the existing organization-scoped `PersonalSubscriptionPriority` enabled, a new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. The switch remains configured off, including staff; account UI availability is independent. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
+With the existing organization-scoped `PersonalSubscriptionPriority` enabled, a new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. The switch keeps `enabled: false` with the existing `STAFF_ORG_ID_HASHES` allowlist: staff workspaces default on and external workspaces default off. Explicit organization overrides under `__org__` still win; individual overrides cannot bypass its organization scope. Account UI availability (`_multipleSubscriptions`) remains independent. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
 
 `effective-model-route.service.ts` is the shared database-only leaf for model selection and the optional member projection. It validates logical model and policy structure, then chooses a logical personal candidate or the configured organization route. Missing nullable custom provider/surface references and mappings matter only when that organization route is selected. Unknown discriminators and contradictory policy structure remain errors. A chosen personal route never returns null because of subscription failure, so persisted-model reconciliation cannot turn reconnect, refresh, quota, KMS or provider errors into another model or paid API.
 
@@ -16,7 +16,7 @@ Effective provider selection precedes executor, session and model credit/billing
 
 The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is omitted while priority is off. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
 
-Legacy member/OAuth policies retain their subscription route and missing-connection guidance until D; B never invents an organization API for them. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the serving-writer drain, historical-context drain, executable rollback floor, D conversion and eventual E cleanup. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
+Organization Subscription policies retain their required subscription route and missing-connection guidance under either switch state; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the actual serving-writer, historical-context and executable rollback prerequisites. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes and the retained switch are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
 
 ## Launch consumers and policy writes (C)
 
@@ -24,8 +24,11 @@ Member UI and CLI consumers read the optional `memberEffective` projection
 through a separate member adapter. Administrative routing remains unchanged.
 The projection describes a local logical candidate, never a captured account
 or live quota guarantee. Missing projection fields retain the old API/OFF
-interpretation, including missing credentials on an unconverted Subscription
-policy. Failed refreshes retain the last resolved choices and the user's draft,
+interpretation, including missing credentials on an organization Subscription
+policy. Expanded model menus use the short **BYOK** badge for Claude/Codex
+personal routes in select, compact and flyout layouts; the tooltip retains the
+provider source and own-credentials help. The closed button and Fast guidance
+keep their existing presentation. Failed refreshes retain the last resolved choices and the user's draft,
 selected model, effort, and Fast preference.
 
 Authenticated user/org `modelPoliciesChanged` notices invalidate only the
@@ -37,9 +40,10 @@ Policy GET returns an opaque `revision` over the persisted administrative rows,
 independently of the requesting member. Settings submit that revision with the
 array they actually read. Priority-enabled PUT rejects missing or stale
 preconditions with a refresh/upgrade conflict before lazy seed/default repair
-or policy/preference changes. Unchanged legacy Subscription rows may be saved;
-new or resurrected member routes are rejected. A current admin may still
-intentionally edit, remove, or replace a route. The API-key-create flow reads a
+or policy/preference changes. With a current revision, an eligible admin can
+add a Subscription route, change an API route to Subscription, or edit an
+existing Subscription choice. Provider choices remain independent of the
+precondition requirement, with model/plan/provider validation unchanged. The API-key-create flow reads a
 fresh policy snapshot before constructing its subsequent conditional write.
 
 Replacement and seed/default repair share an organization-local transaction
@@ -53,9 +57,12 @@ not enable Priority for those callers or change Actions definitions.
 
 The canonical rollback resolver requires accepted B merge
 `8a5e1299b4d26bd114ccec017b84b7a83fb4a164` in addition to all prior floors and
-artifact checks. Before D converts policies, the controller must raise that
-floor to the then-known accepted C merge and close the serving-writer exposure
-window under R1. C neither converts stored policy rows nor activates Priority.
+artifact checks. The correction retains this executable floor and the actual
+credential writer/context compatibility gates. Cancellation of policy
+conversion creates no new conversion-specific floor or migration. No saved
+policy, model default, member preference or connection is rewritten by switch
+evaluation or the change to its default audience. The controller owns separate
+release and production acceptance.
 
 ## Binding and credential ownership
 
@@ -216,6 +223,22 @@ trigger acquires a provider lock. Ordinary profile requests happen after the
 snapshot transaction commits. The second transaction compares the complete
 provider, active selection, account identities, secret IDs and ciphertext
 bundle; a winning write, activation or deletion discards the delayed result.
+Exact environment preparation reuses the existing coordinator's completed
+account, selected model and encrypted account-secret rows. It retains the initial
+scoped account lookup and filters the completed inventory by the fixed
+ID/org/user/type and connected state, including connected inactive accounts.
+The coherent fragment uses six SQL statements instead of nine, excluding
+transaction control. Metadata-only Codex reconciliation supplies its updated
+account through `UPDATE RETURNING`. After a legacy import, this data reader
+refreshes the inventory inside the same transaction; it never returns the
+pre-import account or secrets. Compared with the account-only post-import read,
+that exceptional refresh adds four statements while replacing the three later
+environment reads for a surviving identity. Capture/readiness coordination
+callers retain their account-only result and existing SQL count.
+Environment builders preserve auth-method/required-secret checks and lazy
+firewall materialization; these encrypted observations are not persisted,
+logged, or retained for runtime auth or admission.
+
 Final admission is database-only; stored-secret decryption belongs to
 preparation. After environment/launch preparation,
 `preparePersonalSubscriptionAdmission` captures
@@ -225,27 +248,77 @@ The operation-local proof contains the fixed source ID and exact serialized
 encrypted snapshot; it is never written to run metadata or queue payloads.
 This also accepts independent KMS re-encryption of equivalent complete bundles.
 
-The final transaction retains the organization and A1 lifecycle fences, locks
-the same provider and bounded credential rows, compares the exact snapshot, and
-rechecks the connected account with its fixed org/user/type before inserting
-the run. It cannot call general reconciliation, KMS or a profile endpoint.
+The final transaction retains the organization and A1 lifecycle fences, takes
+the provider advisory lock once, locks the same provider and bounded credential
+rows, and compares the exact snapshot. It checks the captured account's fixed
+ID/org/user/type and connected state from that locked inventory before inserting
+the run; a connected inactive source remains valid. No second account SELECT is
+needed: the validated snapshot account also supplies the existing failed-run
+recovery identity digest. It cannot call general reconciliation, KMS or a profile
+endpoint.
 Changes to row IDs, account identity/selection, state or any ciphertext reject
 the original capture with existing guidance. Even equivalent re-encryption
 after the proof invalidates it; a fresh request can prove the new snapshot.
 The same proof is retained across the queue-payload encryption retry outside
 the final transaction. There is no sibling/account/model/payment reselection.
+Dispatch timings separate `api_dispatch_subscription_prepare_snapshot` (the
+short encrypted-state transaction), `api_dispatch_subscription_prepare_bundle_proof`
+(outside-lock equivalence, including KMS when ciphertext differs), and
+`api_dispatch_subscription_validate_admission` (the final locked check).
+Each carries only the bounded `subscription_provider_type` classification in
+addition to the collector's standard request metadata. These are nested spans;
+their percentiles must not be added to parent phase percentiles.
 Rotating refresh retains its existing single transaction/provider owner and
 checks the locked current bundle before spending the refresh token.
+
+Complete bundle materialization decrypts at most two stored fields concurrently
+under the same provider/credential owner. Each batch is joined before returning
+or propagating its first input-order failure; later batches do not start after
+failure. This adds no plaintext cache, early lock release, retry or transport
+cancellation. A slow sibling can extend error-return/lock-held time. Independent
+providers multiply this per-bundle fan-out; it is not a fleet-wide limit. See the
+[controlled experiment and limitations](subscription-decryption-experiment.md).
+Normal ciphertext equality and the exceptional serial equivalence proof remain
+unchanged, as do lazy environment preparation and database-only final admission.
 
 | Consumer                                                 | Coordination and observable boundary                                                                                                                                                                                                                                |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Settings list / lazy seed                                | Coordinates before returning accounts. An unresolved active Claude identity reports existing reconnect guidance and does not fetch usage with stale credentials.                                                                                                    |
-| Logical capture and internal direct account-ID capture   | Coordinates before selecting/returning the fixed account; re-reads the same ID. Missing/retired IDs cannot select a sibling. Public model-first requests do not accept arbitrary account IDs.                                                                       |
+| Logical capture and internal direct account-ID capture   | Selects from the completed coordination inventory. Logical capture may initialize its exact parent; concrete capture never initializes or substitutes a sibling. Missing/retired IDs fail closed. Public model-first requests do not accept arbitrary account IDs.  |
 | Environment preparation and final admission              | Exact account environment resolution coordinates; final lifecycle transaction rechecks the captured ID under the locked bundle. A late different identity fails admission, without reselection.                                                                     |
 | Existing exact-source firewall auth                      | Re-reads shared account credentials, including contexts created before this repair. Complete runtime bundles are materialized after any refresh so Authorization and account-ID headers cannot come from separate snapshots.                                        |
 | Runtime refresh state/input and mirror-capable mutations | Locked coordination precedes rotating input consumption. Inactive/retained exact IDs bypass active-mirror import; explicit connection/selection can commit its supplied account.                                                                                    |
 | Usage, reset and reconnect-state observation             | Reads the complete current account bundle. Retired management IDs remain unavailable. Codex import invalidates singleton/account reset-credit expiry epochs before/after mutation; current connection, activation, deletion and reset invalidation remain in place. |
 | Pi initial Codex credentials                             | Uses one shared bundle after refresh. Final validation carries the captured run ID and rejects every reconnect-required state before provider execution; see A3 below.                                                                                              |
+
+### Initialization and capture query ownership (#34374)
+
+Logical capture retains its scoped provider lookup, then uses the complete
+locked account inventory to decide whether initialization is needed. It does
+not issue a separate account-existence probe or read active selection again
+after coordination. The locked provider must still be the previously selected
+parent; deleting and recreating the same provider type cannot transfer authority.
+Retained-only inventories are not empty and never seed disconnected credentials.
+
+The actual historical singleton seed and Codex identity hydration remain. A
+successful seed obtains a fresh snapshot inside the same transaction. Coherent
+reconciliation returns the existing locked accounts; a metadata update returns
+the actual updated row, and identity import reads completed account state before
+commit. Claude profile proof remains outside locks and its second transaction
+still fences the complete original snapshot. Exact connected inactive accounts
+remain valid; an exact account retired by import cannot become its replacement.
+Connection preparation retains seed-only behavior so new authenticated credentials
+can repair an unavailable old bundle without first requiring successful import.
+
+For an initialized coherent provider, null-ID logical capture uses six SQL
+statements: provider lookup, provider advisory lock, locked provider, ordered
+accounts, ordered singleton secrets and ordered account secrets. BEGIN/COMMIT
+are additional transaction-control statements. Explicit logical IDs add the
+initial exact-ID probe; exact concrete capture uses that probe plus the five
+snapshot statements. Real initialization/import paths include their necessary
+writes and post-write reads and must be measured separately. These counts are
+not a production latency claim. Environment resolution and the fresh final
+admission proof retain their independent validation boundaries.
 
 ### Management import boundaries (#34142)
 
@@ -325,7 +398,8 @@ A/A followed by B/B after replacement, unchanged OAuth request counts, terminal
 refresh rejection, cancellation and membership revocation, session disposal and
 absence of output artifacts/Built-in usage on rejection. Priority-off deletion
 remains destructive. This repair changes no persisted shape, protocol, routing
-policy or feature configuration; priority remains default-off including staff.
+policy or feature configuration. Priority was default-off including staff at
+A3; #34430 changes only its default audience as described above.
 
 ## Pi API inference without Sandbox admission (#34242)
 

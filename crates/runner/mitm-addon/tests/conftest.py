@@ -61,8 +61,8 @@ def _reset_module_state() -> Iterator[None]:
     entries that change later tests' behaviour.
 
     The usage buffer owns a background timer in production, while runner flush
-    handling owns a usage signal worker and a JSONL marker watcher, so tests
-    reset them around each case to avoid cross-test callbacks.
+    handling owns a usage signal worker, so tests reset them around each case
+    to avoid cross-test callbacks.
     """
     auth_base_forwarder.reset_forward_request_state_for_tests()
     auth_base_transport.reset_transport_state_for_tests()

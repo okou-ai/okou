@@ -31,7 +31,7 @@ or inventing a request ID. Malformed or pipelined peers can observe a reset.
 
 Requests have exactly `requestId`, `generation`, `method`, and `params`. Identifiers
 match `[A-Za-z0-9_.-]{1,64}`; duplicate keys, non-JSON constants, and unknown fields
-are rejected. The only method is `proxy.status`, with empty object parameters:
+are rejected. `proxy.status` takes empty object parameters:
 
 ```json
 {
@@ -44,23 +44,99 @@ are rejected. The only method is `proxy.status`, with empty object parameters:
 
 A successful reply contains those identities, `"type": "result"`, and
 `"data": {"state": "running"}`. An error instead contains `"type": "error"` and
-`"code": "invalid_request"`, `"stale_generation"`, or `"unknown_method"`;
+`"code": "invalid_request"`, `"stale_generation"`, `"unknown_method"`, `"busy"`,
+`"not_ready"`, `"deadline"`, or `"internal_error"`;
 `requestId` is null when no valid correlation can be recovered. Error generation
 always identifies the serving addon. Rust rejects mismatched identities, unknown
 response fields/states, extra response bytes, and missing terminal EOF.
 
-The JSONL watcher starts before control admission. Shutdown stops control
-admission, closes every accepted socket (including tasks not yet started), and
-joins the I/O thread before existing blocking drains. This is a readiness
-snapshot, not an ongoing health guarantee or business-state acknowledgement.
-A lost reply after transmission means an unknown outcome; the transport does
-not automatically replay future mutations or move business state onto its thread.
+`logs.flush` takes exactly `runId` (a canonical UUID) and `path` (an absolute,
+normalized path ending in `network-{runId}.jsonl`). Runner freezes the original
+run, path, endpoint, and generation before execution; deferred upload never
+looks up a current IP registration or follows a replacement addon. The handler
+only observes the writer's path key and does not open the supplied path.
+Its result echoes `runId` and `path`, the captured `boundary` sequence, `pending`
+write count, and `state: processed|deadline`. Up to eight pending prefix tickets
+are admitted; exhaustion returns `busy`. Each request observes the prefix every
+50 ms for at most four seconds within the connection deadline. Later writes
+cannot extend the captured boundary.
 
-JSONL flush, registry/catalog consumption, SIGUSR1 delivery drain, and API/billing
-contracts remain unchanged. Old Runner instances retain their embedded addon;
-no API-first deployment or mixed Runner/addon protocol fallback is needed. This
+Shutdown stops control admission, closes every accepted socket (including tasks
+not yet started), and joins the I/O thread before existing blocking drains. The
+`logs.flush` method observes a writer-owned, accepted JSONL prefix: it captures
+the requested run/path boundary, waits for that prefix to be processed (including
+failed append attempts), and returns either `processed` or `deadline`. A
+`processed` result is not an fsync or durability acknowledgement. Cancellation
+does not release an admitted writer ticket, and a lost reply after transmission
+means an unknown outcome; the transport does not automatically replay future
+mutations or move business state onto its thread.
+
+SIGUSR1 delivery drain and API/billing contracts remain unchanged. The old JSONL marker request/state files and watcher
+are removed; Runner and the embedded addon use the private control socket for
+flush coordination. Old Runner instances retain their embedded addon; no
+API-first deployment or mixed Runner/addon protocol fallback is needed. This
 stage does not implement token accounting or guest RPC, and unit/packaged runtime
 tests do not claim production soak or a measured latency improvement.
+
+### Registry/catalog application receipts
+
+Runner still publishes complete atomic registry files. Each publication receipt
+contains the SHA-256 of the exact serialized bytes, separately from application
+evidence. Registration, unregistration and connector synchronization request
+acknowledgement after releasing registry and active-run locks. Their success and
+retry policies still describe publication: an unconfirmed acknowledgement never
+rolls back or automatically republishes configuration.
+Initial registration establishes local network-log attribution and runtime-sync
+tracking before waiting, including for already-unparked reused sandboxes.
+
+`registry.apply` takes exactly `{"digest":"<64 lowercase hex characters>"}`.
+It reads only the configured registry/catalog paths; neither policies nor caller
+paths travel in the request. One application can be admitted at a time. The
+existing mitmproxy event-loop owner runs validation, compilation and auth-cache
+reconciliation synchronously, retaining their ordering with request hooks.
+Additional applications receive `busy`. Control waits at most four seconds
+within its existing five-second connection deadline. A timeout or disconnect
+does not cancel admitted work or release its slot; owner completion does. Owner
+shutdown closes admission and cancels queued, not-yet-started work before the
+control server stops. No arbitrary worker mutates enforcement caches.
+The application owner records internal failures using only their exception type,
+even after the control waiter has timed out or stopped. Raw exceptions never
+enter the cross-thread application future; an active waiter receives the fixed
+`internal_error` response instead of an application receipt.
+
+The result contains `expectedDigest`, `state: applied|superseded|rejected`, and
+the actual `snapshot`. `applied` means the bytes actually loaded and compiled
+match the requested digest; `superseded` identifies different loaded bytes;
+`rejected` means the registry was unavailable. It does not acknowledge bytes
+merely because they were requested. If replacement occurs after opening, the
+receipt identifies that opened file and the bytes actually read, not the later
+path target. Subsequent requests retain their current-file checks.
+
+Available snapshots include the registry digest and opened-file identity
+(`device`, `inode`, `mtimeNs`, `size`), plus the catalog dependency. Catalog state
+is `not_used`, `available`, or `unavailable`; an available dependency includes
+its actual opened-file identity and validated catalog digest (without its
+`sha256:` prefix). An unavailable dependency includes its fixed failure reason
+and opened identity when known. Independent catalog replacement can change the
+compiled view without changing the registry digest. Existing catalog failure
+retry/reuse rules remain authoritative.
+
+An applied snapshot can contain unusable entries. `validEntries`,
+`rejectedEntries`, and `omittedEntries` are exact counts, with at most 32 rejected
+or omitted entry outcomes and explicit `truncated`. Outcomes carry only validated
+source IPs (null for invalid keys), fixed reasons, and omitted builtin/custom
+counts. Rejections precede omissions in the sample. Responses exclude raw entry
+keys, run credentials, policy bodies, routing variables and detailed exception
+messages. Registry-level unavailability includes the fixed reason and actual
+digest/file identity when available.
+
+`registry.status` takes empty parameters and returns the last completed loader
+observation, initially `unobserved`. Ordinary request-time loads update it too.
+It performs no file/API I/O or application and never certifies that disk is
+unchanged now. A short projection lock is not held during loading/compilation;
+status and JSONL flush can progress while application is stalled. These receipts
+are process-local observations, not durability receipts or a new policy source.
+Runner and addon ship together; shared catalog and API schemas do not change.
 
 ## Logging Boundaries
 

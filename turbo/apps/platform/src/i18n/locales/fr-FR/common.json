@@ -1538,6 +1538,51 @@
       "title": "Action indisponible"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "Une fois par jour, chaque jour",
+          "name": "Se connecter chaque jour",
+          "unit": "par jour"
+        },
+        "connector": {
+          "description": "Gmail, Notion et plus de 100 autres",
+          "name": "Connecter un connecteur",
+          "unit": "par connecteur"
+        },
+        "inReview": "En cours d'examen",
+        "inReviewDescription": "Envoyé, en attente d'examen",
+        "invite": {
+          "description": "Chaque personne ajoutée compte",
+          "name": "Invitez votre équipe",
+          "unit": "par membre"
+        },
+        "personalBalanceNote": "Les crédits vont sur votre solde personnel.",
+        "progressLabel": "Progression du démarrage",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "Publiez, puis collez le lien",
+          "name": "Partager {{assistantName}} sur X"
+        },
+        "shareDialog": {
+          "description": "Publiez ce que vous avez créé, puis collez le lien. Vous avez un seul envoi.",
+          "helper": "La publication doit être publique et mentionner {{assistantName}}.",
+          "inputLabel": "Lien de la publication",
+          "placeholder": "https://x.com/...",
+          "submit": "Envoyer",
+          "title": "Partager {{assistantName}} sur X"
+        },
+        "slack": {
+          "description": "Là où votre équipe travaille déjà",
+          "name": "Ajouter {{assistantName}} à Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "Terminez une étape, les crédits sont à vous.",
+        "title": "Démarrer",
+        "workflow": {
+          "description": "Transformez une tâche répétitive en automatisation",
+          "name": "Créer un workflow"
+        }
+      },
       "growth": {
         "addInSlack": "Ajouter {{assistantName}} dans Slack",
         "connect": "Connecter",
@@ -1743,7 +1788,11 @@
       "upgradeToRun": "Passez à Pro pour exécuter {{assistantName}}",
       "upgradeWorkspace": "Mettez à niveau votre espace de travail"
     },
+    "cards": {
+      "viewDetails": "Voir les détails"
+    },
     "composer": {
+      "add": "Ajouter",
       "agentSuggestions": "Agents",
       "configureModel": "Configurer le modèle",
       "create": {
@@ -2318,6 +2367,40 @@
             "prompt": "Créer une image pour mon site"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Rédiger une proposition pour un client",
+            "prompt": "Crée une présentation de proposition client. Demande-moi le client, la mission proposée, le calendrier et le prix."
+          },
+          "companyOverview": {
+            "label": "Expliquer ce que fait mon entreprise",
+            "prompt": "Crée une présentation de l'entreprise. Demande-moi ce que nous faisons, qui nous servons et ce que le public doit retenir."
+          },
+          "eventTalk": {
+            "label": "Préparer une intervention pour un événement",
+            "prompt": "Crée une présentation pour une intervention. Demande-moi l'événement, le public et l'idée unique à faire passer."
+          },
+          "pitchDeck": {
+            "label": "Présenter mon activité à des investisseurs",
+            "prompt": "Crée un pitch deck investisseurs pour mon activité. Demande-moi le problème, le produit, la traction et le montant recherché."
+          },
+          "productIntro": {
+            "label": "Présenter un nouveau produit",
+            "prompt": "Crée une présentation qui introduit un nouveau produit. Demande-moi ce qu'il fait, à qui il s'adresse et ce qui le distingue."
+          },
+          "resultsReadout": {
+            "label": "Présenter mes résultats",
+            "prompt": "Transforme mes résultats en présentation de restitution. Demande-moi les chiffres, la période couverte et la décision qu'ils soutiennent."
+          },
+          "teamUpdate": {
+            "label": "Préparer un point d'étape pour l'équipe",
+            "prompt": "Crée une présentation pour le point d'étape de mon équipe. Demande-moi ce qui s'est passé, ce qui arrive ensuite et qui sera présent."
+          },
+          "training": {
+            "label": "Former mon équipe sur un sujet",
+            "prompt": "Crée une présentation de formation sur un sujet que je choisis. Demande-moi qui est formé et ce qu'ils devront savoir faire ensuite."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Transformer une photo en vidéo",
@@ -2523,7 +2606,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -3639,7 +3721,7 @@
       },
       "feishu": {
         "addBot": "Ajouter un bot",
-        "addDialogDescription": "Créez une application personnalisée d'entreprise, activez son bot et complétez ces étapes dans la console développeur Feishu.",
+        "addDialogDescription": "Créez une application d’entreprise de type Agent, puis suivez ces étapes dans la console développeur Feishu.",
         "addDialogTitle": "Ajouter un bot Feishu",
         "agentDescription": "Choisissez l'agent qui devrait gérer les messages envoyés à ce bot.",
         "backToIntegrations": "Retour aux intégrations",
@@ -3652,14 +3734,14 @@
         "copied": "{{label}} copié",
         "copy": "Copier",
         "create": {
-          "descriptionAfter": ", créez une application personnalisée d'entreprise avec le nom et l'icône de votre choix, puis ajoutez la capacité Bot.",
+          "descriptionAfter": ", créez une application d’entreprise et sélectionnez le type Agent. Choisissez le nom et l’icône souhaités ; le modèle Agent inclut la fonctionnalité Bot.",
           "descriptionBefore": "Dans le",
           "downloadIcon": "Téléchargez l'icône {{brandName}} facultative",
           "iconAlt": "Icône facultative de l'application {{brandName}}",
           "iconHint": ", ou utilisez toute icône de votre choix.",
           "iconTitle": "Icône facultative de l'application {{brandName}}",
           "imageAlt": "Formulaire de création de l'application Feishu avec le nom de l'application, l'icône et le bouton Créer mis en évidence",
-          "title": "Créer une application personnalisée d'entreprise"
+          "title": "Créer une application de type Agent"
         },
         "credentials": {
           "appId": "ID de l'application",
@@ -3689,6 +3771,9 @@
         "faq": {
           "approvalAnswer": "Si la disponibilité est définie sur Tous les membres, un administrateur Feishu doit approuver la publication. Feishu envoie la demande d'approbation à un administrateur via un message direct, et l'application reste en attente jusqu'à ce qu'un administrateur termine la vérification.",
           "approvalQuestion": "Pourquoi la publication de l'application attend-elle l'approbation ?",
+          "botFeatureAnswer": "Ouvrez Features → Add Features dans la console développeur Feishu. Sous By Feature, ajoutez la fonctionnalité Bot, puis poursuivez ce guide et publiez l’application. Les applications de type Agent incluent la fonctionnalité Bot par défaut.",
+          "botFeatureImageAlt": "Console développeur Lark affichant la fonctionnalité Bot sous Add Features",
+          "botFeatureQuestion": "Que faire si j’ai choisi Custom App au lieu d’Agent ?",
           "challengeAnswer": "Cela signifie généralement que la clé de chiffrement ou le jeton de vérification enregistré lors de l'étape des jetons est incorrect. Retournez à l'étape des jetons, entrez à nouveau les deux valeurs provenant de Configuration de l'événement → Stratégie de chiffrement, enregistrez-les, puis réessayez l'URL de demande.",
           "challengeQuestion": "Pourquoi Feishu affiche-t-il \"Le code de défi n'a pas reçu de réponse\" ?",
           "title": "FAQ de configuration"
@@ -3699,14 +3784,14 @@
         "moreOptions": "Plus d'options pour {{bot}}",
         "pageDescription": "Gérer le routage du bot pour cet espace de travail",
         "permissions": {
-          "description": "Dans la console développeur Feishu, ouvrez Autorisations et portées, choisissez Importation/exportation par lots > Importer, puis collez le JSON ci-dessous. Toutes les portées du connecteur géré sont importées sous l'identité Utilisateur. Il s’agit des autorisations minimales requises pour que l’intégration fonctionne.",
-          "hint": "Conservez toutes les autorisations importées de l'identité Utilisateur, puis créez et publiez une nouvelle version de l'application afin que l'écran de consentement OAuth puisse les accorder. Si vous en retirez une, l’intégration ne fonctionnera plus et l’approbation d’un administrateur Feishu peut être requise.",
-          "label": "JSON des portées du jeton utilisateur",
+          "description": "Dans la console développeur Feishu, ouvrez Permissions & Scopes, choisissez Batch Import/Export > Import et collez le JSON ci-dessous. Il contient les autorisations d’identité d’application pour le bot et d’identité utilisateur pour votre compte connecté.",
+          "hint": "Conservez toutes les autorisations importées pour les deux identités, puis créez et publiez une nouvelle version de l’application. L’approbation d’un administrateur Feishu peut être nécessaire.",
+          "label": "JSON des portées d’application et d’utilisateur",
           "menuAlt": "Page Autorisations et portées de Feishu avec le menu d’importation/exportation par lots des portées mis en évidence",
           "menuLabel": "Ouvrir l’importation/exportation par lots des portées",
           "reviewAlt": "Boîte de dialogue d’importation/exportation par lots des portées de Feishu avec le JSON importé et le bouton de vérification mis en évidence",
           "reviewLabel": "Coller le JSON et vérifier les nouvelles portées",
-          "title": "Importer les portées du jeton utilisateur"
+          "title": "Importer les portées d’application et d’utilisateur"
         },
         "publish": {
           "allMembersAlt": "Paramètres de disponibilité de Feishu avec Tous les membres sélectionnés",
@@ -3768,7 +3853,7 @@
       },
       "lark": {
         "addBot": "Ajouter un bot",
-        "addDialogDescription": "Créez une application personnalisée d'entreprise, activez son bot et complétez ces étapes dans la console développeur Lark.",
+        "addDialogDescription": "Créez une application d’entreprise de type Agent, puis suivez ces étapes dans la console développeur Lark.",
         "addDialogTitle": "Ajouter un bot Lark",
         "agentDescription": "Choisissez l'agent qui devrait gérer les messages envoyés à ce bot.",
         "backToIntegrations": "Retour aux intégrations",
@@ -3781,14 +3866,14 @@
         "copied": "{{label}} copié",
         "copy": "Copier",
         "create": {
-          "descriptionAfter": ", créez une application personnalisée d'entreprise avec le nom et l'icône de votre choix, puis ajoutez la capacité Bot.",
+          "descriptionAfter": ", créez une application d’entreprise et sélectionnez le type Agent. Choisissez le nom et l’icône souhaités ; le modèle Agent inclut la fonctionnalité Bot.",
           "descriptionBefore": "Dans le",
           "downloadIcon": "Téléchargez l'icône {{brandName}} facultative",
           "iconAlt": "Icône facultative de l'application {{brandName}}",
           "iconHint": ", ou utilisez toute icône de votre choix.",
           "iconTitle": "Icône facultative de l'application {{brandName}}",
           "imageAlt": "Formulaire de création de l'application Feishu avec le nom de l'application, l'icône et le bouton Créer mis en évidence",
-          "title": "Créer une application personnalisée d'entreprise"
+          "title": "Créer une application de type Agent"
         },
         "credentials": {
           "appId": "ID de l'application",
@@ -3818,6 +3903,9 @@
         "faq": {
           "approvalAnswer": "Si la disponibilité est définie sur Tous les membres, un administrateur Lark doit approuver la publication. Lark envoie la demande d'approbation à un administrateur via un message direct, et l'application reste en attente jusqu'à ce qu'un administrateur termine la vérification.",
           "approvalQuestion": "Pourquoi la publication de l'application attend-elle l'approbation ?",
+          "botFeatureAnswer": "Ouvrez Features → Add Features dans la console développeur Lark. Sous By Feature, ajoutez la fonctionnalité Bot, puis poursuivez ce guide et publiez l’application. Les applications de type Agent incluent la fonctionnalité Bot par défaut.",
+          "botFeatureImageAlt": "Console développeur Lark affichant la fonctionnalité Bot sous Add Features",
+          "botFeatureQuestion": "Que faire si j’ai choisi Custom App au lieu d’Agent ?",
           "challengeAnswer": "Cela signifie généralement que la clé de chiffrement ou le jeton de vérification enregistré lors de l'étape des jetons est incorrect. Retournez à l'étape des jetons, entrez à nouveau les deux valeurs provenant de Configuration de l'événement → Stratégie de chiffrement, enregistrez-les, puis réessayez l'URL de demande.",
           "challengeQuestion": "Pourquoi Lark affiche-t-il \"Le code de défi n'a pas reçu de réponse\" ?",
           "title": "FAQ de configuration"
@@ -3829,14 +3917,14 @@
         "moreOptions": "Plus d'options pour {{bot}}",
         "pageDescription": "Gérer le routage du bot pour cet espace de travail",
         "permissions": {
-          "description": "Dans la console développeur Lark, ouvrez Autorisations et portées, choisissez Importation/exportation par lots > Importer, puis collez le JSON ci-dessous. Toutes les portées du connecteur géré sont importées sous l'identité Utilisateur. Il s’agit des autorisations minimales requises pour que l’intégration fonctionne.",
-          "hint": "Conservez toutes les autorisations importées de l'identité Utilisateur, puis créez et publiez une nouvelle version de l'application afin que l'écran de consentement OAuth puisse les accorder. Si vous en retirez une, l’intégration ne fonctionnera plus et l’approbation d’un administrateur Lark peut être requise.",
-          "label": "JSON des portées du jeton utilisateur",
+          "description": "Dans la console développeur Lark, ouvrez Permissions & Scopes, choisissez Batch Import/Export > Import et collez le JSON ci-dessous. Il contient les autorisations d’identité d’application pour le bot et d’identité utilisateur pour votre compte connecté.",
+          "hint": "Conservez toutes les autorisations importées pour les deux identités, puis créez et publiez une nouvelle version de l’application. L’approbation d’un administrateur Lark peut être nécessaire.",
+          "label": "JSON des portées d’application et d’utilisateur",
           "menuAlt": "Page Autorisations et portées de Feishu avec le menu d’importation/exportation par lots des portées mis en évidence",
           "menuLabel": "Ouvrir l’importation/exportation par lots des portées",
           "reviewAlt": "Boîte de dialogue d’importation/exportation par lots des portées de Feishu avec le JSON importé et le bouton de vérification mis en évidence",
           "reviewLabel": "Coller le JSON et vérifier les nouvelles portées",
-          "title": "Importer les portées du jeton utilisateur"
+          "title": "Importer les portées d’application et d’utilisateur"
         },
         "publish": {
           "allMembersAlt": "Paramètres de disponibilité de Feishu avec Tous les membres sélectionnés",
@@ -5416,6 +5504,31 @@
       "teamDescription": "Développez votre équipe avec 10 exécutions parallèles et plus de crédits."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Ajouter des crédits",
+      "openModelProviders": "Ouvrir les fournisseurs de modèles",
+      "reconnectClaude": "Reconnecter Claude Code",
+      "shareWithAdmin": "Partager avec un administrateur"
+    },
+    "anthropicKeyAdmin": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Mettez à jour ou remplacez la clé API dans les fournisseurs de modèles, puis réessayez.",
+    "anthropicKeyMember": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Demandez à un administrateur de l’espace de travail de mettre à jour ou de remplacer la clé API.",
+    "askAdmin": "Demandez à un administrateur de l’espace de travail d’ajouter des crédits ou de passer à une offre supérieure.",
+    "claudeReconnect": "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans les fournisseurs de modèles, puis réessayez.",
+    "claudeTerms": "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour. Connectez-vous à https://claude.ai avec le compte Claude associé dans les fournisseurs de modèles, acceptez les nouvelles conditions et la politique, puis réessayez.",
+    "codexOverloaded": "Le modèle sélectionné est saturé. Veuillez essayer un autre modèle.",
+    "codexReconnect": "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans les fournisseurs de modèles, puis réessayez.",
+    "contentPolicyRejected": "Le fournisseur de modèle a refusé cette demande en raison de sa politique de sécurité du contenu. Réessayer avec la même saisie échouera à nouveau. Reformulez la demande, commencez une nouvelle conversation ou choisissez un autre modèle.",
+    "executionTimeout": "Cette exécution a atteint sa limite de temps.",
+    "failed": "Échec de l’exécution",
+    "modelRoutesUnavailable": "Toutes les routes intégrées de ce modèle sont temporairement indisponibles. Veuillez réessayer plus tard.",
+    "modelTemporarilyUnavailable": "Modèle temporairement indisponible",
+    "modelUnavailable": "Le modèle actuel est indisponible.",
+    "overloaded": "{{model}} est surchargé. Patientez quelques minutes avant de réessayer, ou choisissez un autre modèle.",
+    "providerBalance": "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
+    "transient": "Une erreur s’est produite. Veuillez réessayer plus tard.",
+    "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou configurez votre propre clé API pour continuer."
+  },
   "serviceStatus": {
     "dismiss": "Masquer la mise à jour du service",
     "label": "Mises à jour de l’état du service",
@@ -5984,7 +6097,6 @@
         "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
-        "multipleInstallations": "Plusieurs installations de Morning Brief existent. Résolvez le conflit avant de modifier cette préférence.",
         "nextBrief": "Prochaine synthèse {{date}} ({{timezone}})",
         "paused": "En pause",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
@@ -6223,6 +6335,44 @@
     "cancel": "Annuler",
     "chooseFile": "Choisir un fichier",
     "choosePrivateKeyFile": "Choisir un fichier de clé privée",
+    "cloudflare": {
+      "add": "Ajouter une configuration Access",
+      "back": "Retour à l’hôte",
+      "changed": "Cette configuration Access a changé pendant la modification. Vérifiez les derniers paramètres avant d’enregistrer.",
+      "clientId": "ID client du Service Token",
+      "clientSecret": "Secret client du Service Token",
+      "configuration": "Configuration Access",
+      "createNew": "Créer une configuration Access",
+      "delete": "Supprimer la configuration",
+      "deleteHelp": "Supprimer cette configuration Access inutilisée ? Le Service Token enregistré ne pourra pas être récupéré.",
+      "direct": "Directe",
+      "empty": "Aucune configuration Access. Ajoutez un Service Token pour vous connecter aux hôtes SSH protégés par Cloudflare Access.",
+      "gatewayHelp": "Connexion via WebSocket chiffré sur le port 443. Configurez l’adresse et le port SSH privés dans Cloudflare.",
+      "inUse": "Un hôte utilise cette configuration Access. Vérifiez les hôtes concernés et changez leur configuration ou supprimez-les d’abord.",
+      "inUseHelp": "Sélectionnez une autre configuration Access pour ces hôtes, passez-les explicitement en connexion directe ou supprimez-les avant de supprimer cette configuration.",
+      "keepChanges": "Appliquer mes modifications à cette version",
+      "latest": "Derniers paramètres enregistrés",
+      "loadFailed": "Impossible de charger les configurations Access. Réessayez.",
+      "loading": "Chargement des configurations Access…",
+      "missing": "Cette configuration Access n’est plus disponible. Sélectionnez-en une autre ou créez-en une.",
+      "mode": "Connexion",
+      "name": "Nom de la configuration",
+      "protectedHost": "Cloudflare Access · {{name}}",
+      "publishedHost": "Nom d’hôte publié",
+      "rename": "Renommer la configuration",
+      "replace": "Remplacer le Service Token",
+      "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
+      "select": "Sélectionner une configuration",
+      "summary_one": "{{count}} configuration Access",
+      "summary_many": "{{count}} configurations Access",
+      "summary_other": "{{count}} configurations Access",
+      "title": "Cloudflare Access",
+      "tokenHelp": "Utilisez un Service Token autorisé par la politique Service Auth de votre application SSH. Il est indépendant de votre connexion SSH.",
+      "unavailable": "Cloudflare Access n’est pas disponible pour ce compte.",
+      "usedBy_one": "Utilisée par {{count}} hôte :",
+      "usedBy_many": "Utilisée par {{count}} hôtes :",
+      "usedBy_other": "Utilisée par {{count}} hôtes :"
+    },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access n’a pas établi de tunnel SSH. Vérifiez le nom d’hôte publié et le routage du Tunnel.",
       "accessRejected": "Cloudflare Access a refusé la connexion. Vérifiez le jeton de service et la politique Service Auth de l’application.",
@@ -6272,7 +6422,7 @@
     "description": "Configurez des hôtes SSH pour que vos agents exécutent des commandes à distance.",
     "displayName": "Nom affiché",
     "edit": "Modifier l’hôte",
-    "editHelp": "Changer d’identifiants ne modifie que cet hôte. Changer l’adresse ou le port efface sa clé d’hôte mémorisée.",
+    "editHelp": "Changer les identifiants ne modifie que cet hôte. Modifier une destination directe efface sa clé d’hôte enregistrée ; les changements impliquant Cloudflare Access la conservent.",
     "empty": "Aucun hôte SSH configuré. Ajoutez un hôte pour le rendre disponible aux Agents disposant d’un accès SSH.",
     "errors": {
       "agentUnavailable": "Cet agent n’est plus disponible. Choisissez un autre agent.",

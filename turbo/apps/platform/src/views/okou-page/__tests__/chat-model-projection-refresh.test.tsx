@@ -99,7 +99,7 @@ async function openChat(
 async function personalOption(): Promise<HTMLElement> {
   return await waitFor(() => {
     const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
-    expect(within(option).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+    expect(within(option).getByText("BYOK")).toBeInTheDocument();
     return option;
   });
 }
@@ -130,9 +130,7 @@ test("Refresh member source after personal, organization, billing and reconnect 
   await openChat("message-port");
   click(await findButton("GPT 5.6 Sol"));
   const initial = await screen.findByRole("option", { name: /GPT 5\.6 Sol/u });
-  expect(
-    within(initial).queryByText("ChatGPT (Codex)"),
-  ).not.toBeInTheDocument();
+  expect(within(initial).queryByText("BYOK")).not.toBeInTheDocument();
 
   personal = true;
   notice("user");
@@ -142,9 +140,7 @@ test("Refresh member source after personal, organization, billing and reconnect 
   notice("org");
   await waitFor(() => {
     const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
-    expect(
-      within(option).queryByText("ChatGPT (Codex)"),
-    ).not.toBeInTheDocument();
+    expect(within(option).queryByText("BYOK")).not.toBeInTheDocument();
   });
 
   personal = true;
@@ -163,7 +159,7 @@ test("Refresh member source after personal, organization, billing and reconnect 
   });
   await waitFor(() => {
     const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
-    expect(within(option).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+    expect(within(option).getByText("BYOK")).toBeInTheDocument();
     expect(within(option).getByText("Pro")).toBeInTheDocument();
   });
 
@@ -289,9 +285,7 @@ test("A local active-account change refreshes the member projection", async () =
   await openChat();
   click(await findButton("GPT 5.6 Sol"));
   const initial = await screen.findByRole("option", { name: /GPT 5\.6 Sol/u });
-  expect(
-    within(initial).queryByText("ChatGPT (Codex)"),
-  ).not.toBeInTheDocument();
+  expect(within(initial).queryByText("BYOK")).not.toBeInTheDocument();
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Escape}");
   const rail = screen.queryByTestId("labeled-nav-rail");

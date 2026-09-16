@@ -19,7 +19,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
   parseChatClipboardPayload,
   readClipboardItemText,
@@ -59,6 +59,16 @@ function installRecoverySource(source: NonNullable<GetRunResponse["source"]>) {
       source,
     });
   });
+}
+
+async function openRecoveryDetails(): Promise<HTMLElement> {
+  const card = await screen.findByTestId("assistant-error-recovery");
+  const trigger = queryButton("View details", card);
+  if (!trigger) {
+    throw new Error("Recovery details are unavailable");
+  }
+  click(trigger);
+  return screen.findByRole("dialog");
 }
 
 function configureModelPolicies(
@@ -456,7 +466,7 @@ test("A Codex capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -490,11 +500,257 @@ test("A structured capacity failure offers recovery despite generic provider tex
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(queryButton("Try again", recovery)).toBeVisible();
   expect(recovery).not.toHaveTextContent(providerError);
 });
+
+test.each([
+  [
+    "BYOK",
+    "provider_insufficient_credits",
+    "Your connected model provider account has insufficient balance.",
+  ],
+  ["built-in", undefined, "The current model is unavailable."],
+] as const)(
+  "A balance failure (%s) displays its message without a recovery action",
+  async (_owner, failureReason, message) => {
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(message, "gpt-5.6-sol", failureReason),
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(queryButton("Try again")).not.toBeInTheDocument();
+    expect(queryButton("Reset and try again")).not.toBeInTheDocument();
+    expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  [
+    "provider_insufficient_credits",
+    "Your connected model provider account has insufficient balance.",
+    "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
+  ],
+  [
+    undefined,
+    "The current model is unavailable.",
+    "Le modèle actuel est indisponible.",
+  ],
+  [
+    undefined,
+    "Oops, something went wrong. Please try again later.",
+    "Une erreur s’est produite. Veuillez réessayer plus tard.",
+  ],
+  [
+    "reconnect_required",
+    "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+    "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans les fournisseurs de modèles, puis réessayez.",
+  ],
+  [
+    "safety_policy_refusal",
+    "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
+    "Le fournisseur de modèle a refusé cette demande en raison de sa politique de sécurité du contenu.",
+  ],
+  [
+    undefined,
+    "Every built-in model route for this model is temporarily unavailable",
+    "Toutes les routes intégrées de ce modèle sont temporairement indisponibles. Veuillez réessayer plus tard.",
+  ],
+  [
+    undefined,
+    "The model provider is temporarily unavailable. Please try again later.",
+    "Le fournisseur de modèle est temporairement indisponible. Veuillez réessayer plus tard.",
+  ],
+] as const)(
+  "Localize known run failures in French: %s / %s",
+  async (failureReason, message, expected) => {
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(message, "gpt-5.6-sol", failureReason),
+    });
+
+    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
+
+    const card = await screen.findByRole("status");
+    expect(card).toHaveTextContent("Cette exécution n’a pas pu se terminer");
+    expect(card).toHaveTextContent(expected);
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
+    expect(
+      queryButton("Réinitialiser et réessayer", details),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  [
+    "Reconnecter Claude Code:",
+    "invalid_credentials",
+    "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
+    "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans les fournisseurs de modèles, puis réessayez.",
+    "https://app.example.test/?settings=model",
+  ],
+  [
+    "Ouvrir les fournisseurs de modèles:",
+    "invalid_credentials",
+    "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.example.test/?settings=model",
+    "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Mettez à jour ou remplacez la clé API dans les fournisseurs de modèles, puis réessayez.",
+    "https://app.example.test/?settings=model",
+  ],
+  [
+    "Partager avec un administrateur:",
+    "invalid_credentials",
+    "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.\n\nShare with an admin: https://app.example.test/?settings=model",
+    "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Demandez à un administrateur de l’espace de travail de mettre à jour ou de remplacer la clé API.",
+    "https://app.example.test/?settings=model",
+  ],
+  [
+    "Connectez-vous à",
+    "terms_acceptance_required",
+    "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
+    "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour.",
+    "https://claude.ai",
+  ],
+] as const)(
+  "Localize credential guidance and links in French: %s",
+  async (action, reason, message, expected, url) => {
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(message, "gpt-5.6-sol", reason),
+    });
+    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
+    const card = await screen.findByRole("status");
+    expect(card).toHaveTextContent(expected);
+    expect(card).toHaveTextContent(action);
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    const link = await waitFor(() => {
+      const candidate = queryAllByRoleFast("link", details).find((element) => {
+        return element.textContent === url;
+      });
+      if (!candidate) {
+        throw new Error("Localized guidance link is unavailable");
+      }
+      return candidate;
+    });
+    expect(link).toHaveAttribute("href", url);
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
+    expect(
+      queryButton("Réinitialiser et réessayer", details),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test.each([
+  ["The current model is unavailable.", "Le modèle actuel est indisponible."],
+  [
+    "Your connected model provider account has insufficient balance.",
+    "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
+  ],
+])(
+  "Localize a balance error before the run completes: %s",
+  async (error, expected) => {
+    installRunChat({
+      chatEvents: [
+        promptEvent({
+          id: "stream-prompt",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Hello",
+        }),
+        {
+          ...assistantEvent({
+            id: "stream-error",
+            runId: RUN_A,
+            seqId: 2,
+            text: error,
+          }),
+          eventType: "output.error",
+          content: null,
+          error,
+        },
+      ],
+    });
+    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
+    const card = await screen.findByRole("status");
+    expect(card).toHaveTextContent(expected);
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
+    expect(
+      queryButton("Réinitialiser et réessayer", details),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test("A Japanese chat keeps ordinary assistant output unchanged", async () => {
+  const message = "The current model is unavailable.";
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "quote-prompt",
+        runId: RUN_A,
+        seqId: 1,
+        text: "Quote this sentence",
+      }),
+      assistantEvent({
+        id: "quote-answer",
+        runId: RUN_A,
+        seqId: 2,
+        text: message,
+      }),
+      completedEvent({ id: "quote-completed", runId: RUN_A, seqId: 3 }),
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH, locale: "ja-JP" });
+  await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByText("現在のモデルは利用できません。"),
+  ).not.toBeInTheDocument();
+});
+
+test.each([
+  [
+    "usage_limit",
+    "You've hit your usage limit. Try again tomorrow.",
+    "Limite Codex atteinte",
+    "Vous pourrez continuer lorsque votre limite d'utilisation sera réinitialisée, ou changer de modèle maintenant.",
+  ],
+  [
+    "provider_overloaded",
+    "Selected model is at capacity. Please try a different model.",
+    "Ce modèle est saturé pour le moment",
+    "Réessayez dans quelques instants ou changez de modèle.",
+  ],
+] as const)(
+  "Keep existing recovery localized for %s",
+  async (reason, message, title, description) => {
+    configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(message, "gpt-5.6-sol", reason),
+    });
+    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
+    await expect(screen.findByText(title)).resolves.toBeInTheDocument();
+    const card = screen.getByRole("status");
+    expect(card).toHaveTextContent(title);
+    expect(card).toHaveTextContent(description);
+    click(await findButton("Voir les détails"));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).toBeInTheDocument();
+    expect(within(details).getByRole("combobox")).toBeInTheDocument();
+  },
+);
 
 test("An unknown structured failure does not infer recovery from provider text", async () => {
   const providerError =
@@ -537,7 +793,7 @@ test("A Claude Code capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -600,7 +856,7 @@ test("Recover from a personal model account limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Codex limit reached");
   expect(recovery).toHaveTextContent(/resets/iu);
   expect(within(recovery).getByRole("combobox")).toBeVisible();
@@ -631,7 +887,7 @@ test("Recover when a model is at capacity", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   await expect(
@@ -730,6 +986,7 @@ test.each([false, true])(
       },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         "This run used your personal subscription: original-a@example.com.",
@@ -795,6 +1052,7 @@ test.each(["unknown", "unavailable"] as const)(
       featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
     });
     await readyChat();
+    await openRecoveryDetails();
     await expect(
       screen.findByText(
         status === "unknown"
@@ -874,12 +1132,14 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
   });
   await readyChat();
+  await openRecoveryDetails();
   click(await findButton("Reset and try again"));
   await expect(
     screen.findByText("This recovery endpoint is unavailable."),
   ).resolves.toBeInTheDocument();
   expect(settingsResets).toStrictEqual([]);
   expect(sent).toStrictEqual([]);
+  click(await findButton("Close"));
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
 });
 
@@ -931,12 +1191,17 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   await waitFor(() => {
     expect(reads).toStrictEqual([RUN_A]);
   });
+  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
   detailGate.resolve();
   await expect(
     screen.findByText("Codex limit reached"),
   ).resolves.toBeInTheDocument();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(reads).toStrictEqual([RUN_A]);
+  await openRecoveryDetails();
+  expect(
+    queryButton("Try again", await screen.findByRole("dialog")),
+  ).toBeEnabled();
 });
 
 test("Continue a run that reached its execution time limit", async () => {
@@ -961,7 +1226,7 @@ test("Continue a run that reached its execution time limit", async () => {
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1003,7 +1268,7 @@ test("Continue a run classified by a structured execution timeout reason", async
   });
 
   await readyChat();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1070,7 +1335,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   ).resolves.toBeVisible();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(queryButton("Continue")).toBeNull();
-  const recovery = await screen.findByTestId("assistant-error-recovery");
+  const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   expect(
@@ -1084,6 +1349,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);
   expect(sentModels).toHaveLength(0);
 
+  click(await findButton("Close"));
   await sendText("Try a new instruction with Luna");
 
   await expect(

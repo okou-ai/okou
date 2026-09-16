@@ -6,7 +6,8 @@ import {
   setLegacyGoalRunOriginFixture,
 } from "../../../test-fixtures/goal-queue";
 
-import { HttpResponse } from "msw";
+import { http, HttpResponse } from "msw";
+import { createStore } from "ccstate";
 import {
   resolveChatEventRecommendedFollowups,
   type ChatEvent,
@@ -27,6 +28,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { server } from "../../../mocks/server";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
@@ -50,10 +52,17 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
+import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
+import {
+  registerBuiltInCandidateCooldownCleanup,
+  resolveBuiltInModelRouteFixture,
+  seedBuiltInModelCandidateKeys,
+  seedBuiltInModelKey,
+} from "./helpers/runtime-state";
 
 /**
  * CHAT-02 / HOOK-01: signed chat run callbacks through real dispatch.
@@ -3881,6 +3890,537 @@ describe("CHAT-02: drain-time admission failure", () => {
 });
 
 describe("CHAT-02: failed chat callbacks", () => {
+  it.each([
+    {
+      name: "BYOK balance",
+      builtIn: false,
+      reason: "provider_insufficient_credits",
+      error: "Credit balance is too low",
+      expected:
+        "Your connected model provider account has insufficient balance.",
+      publicReason: "provider_insufficient_credits",
+    },
+    {
+      name: "vm0 credits during BYOK",
+      builtIn: false,
+      reason: "insufficient_credits",
+      error:
+        "Insufficient credits. Add credits or configure your own API key to continue.",
+      expected: "insufficient_credits",
+      publicReason: "insufficient_credits",
+    },
+    {
+      name: "built-in balance",
+      builtIn: true,
+      reason: "provider_insufficient_credits",
+      error: "Credit balance is too low",
+      expected: "The current model is unavailable.",
+      publicReason: undefined,
+    },
+    {
+      name: "vm0 credits during built-in run",
+      builtIn: true,
+      reason: "insufficient_credits",
+      error:
+        "Insufficient credits. Add credits or configure your own API key to continue.",
+      expected: "insufficient_credits",
+      publicReason: "insufficient_credits",
+    },
+  ] as const)(
+    "presents $name using persisted ownership across chat and detail reads",
+    async (scenario) => {
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
+      await seedBuiltInModelKey(context, "gpt-5.6-sol");
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-sonnet-5",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+        {
+          model: "gpt-5.6-sol",
+          isDefault: false,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt: scenario.name,
+        selectedModel: scenario.builtIn ? "gpt-5.6-sol" : "claude-sonnet-5",
+      });
+      const callbackUrl = "https://callback.example/balance-outcome";
+      const deliveries: unknown[] = [];
+      server.use(
+        http.post(callbackUrl, async ({ request }) => {
+          deliveries.push(await request.json());
+          return HttpResponse.json({ ok: true });
+        }),
+      );
+      await createStore().set(
+        seedAgentRunCallback$,
+        {
+          runId: run.runId,
+          url: callbackUrl,
+          payload: {},
+        },
+        context.signal,
+      );
+      const headers = await claimChatRun(runnerGroup, run.runId);
+      // Changing the current default cannot change the owner of this failed run.
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-sonnet-5",
+          isDefault: scenario.builtIn,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+        {
+          model: "gpt-5.6-sol",
+          isDefault: !scenario.builtIn,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+      await failChatRun(run.runId, headers, scenario.error, scenario.reason);
+      await flushWaitUntilForTest();
+      const messages = await chat.listThreadEvents(actor, run.threadId);
+      expect(
+        lifecycleMarkers(messages.events, run.runId, "failed"),
+      ).toMatchObject([
+        {
+          content: scenario.expected,
+          error: scenario.expected,
+          ...(scenario.publicReason
+            ? { failureReason: scenario.publicReason }
+            : {}),
+        },
+      ]);
+      expect(
+        lifecycleMarkers(messages.events, run.runId, "failed")[0]
+          ?.failureReason,
+      ).toBe(scenario.publicReason);
+      const detailError =
+        scenario.expected === "insufficient_credits"
+          ? scenario.error
+          : scenario.expected;
+      expect(deliveries).toContainEqual(
+        expect.objectContaining({
+          runId: run.runId,
+          status: "failed",
+          error: detailError,
+        }),
+      );
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "failed",
+        error: detailError,
+      });
+      const detail = await createRunReadsApi(context).requestReadLogById(
+        actor,
+        run.runId,
+        [200],
+      );
+      expect(detail.body).toMatchObject({
+        status: "failed",
+        error: detailError,
+      });
+      expect(
+        userMessages(messages.events).filter((event) => {
+          return event.runId !== undefined;
+        }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    "protects built-in=%s multi-block=%s billing events and network exports while preserving ordinary output",
+    async (builtIn, multipleBlocks) => {
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
+      await seedBuiltInModelKey(context, "claude-sonnet-5");
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-sonnet-5",
+          isDefault: true,
+          defaultProviderType: builtIn ? "built-in" : "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: builtIn ? null : providerId,
+        },
+      ]);
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt: "export balance failure evidence",
+      });
+      const headers = await claimChatRun(runnerGroup, run.runId);
+      const raw = "Credit balance is too low";
+      const visible = builtIn ? "The current model is unavailable." : raw;
+      const text = { content: [{ type: "text", text: raw }] };
+      const providerFailureContent = [
+        ...text.content,
+        ...(multipleBlocks
+          ? [{ type: "text", text: "Please check the provider account." }]
+          : []),
+      ];
+      const events = [
+        { type: "result", sequenceNumber: 0, is_error: true, result: raw },
+        { type: "result", sequenceNumber: 1, is_error: false, result: raw },
+        {
+          type: "assistant",
+          sequenceNumber: 2,
+          message: { ...text, id: "ordinary-output" },
+        },
+        { type: "user", sequenceNumber: 3, message: text },
+        { type: "tool_result", sequenceNumber: 4, content: raw },
+        {
+          type: "assistant",
+          sequenceNumber: 5,
+          // Captured from the pinned Claude Code 2.1.270 stream-json output.
+          is_api_error_message: true,
+          error: "billing_error",
+          message: {
+            content: providerFailureContent,
+            id: "provider-failure",
+            role: "assistant",
+          },
+        },
+        {
+          type: "response.failed",
+          sequenceNumber: 6,
+          response: { error: { code: "insufficient_quota", message: raw } },
+        },
+        {
+          type: "error",
+          sequenceNumber: 7,
+          code: "insufficient_quota",
+          message: raw,
+        },
+        {
+          type: "result",
+          sequenceNumber: 8,
+          eventData: { is_error: true, result: raw },
+        },
+        {
+          type: "result",
+          sequenceNumber: 9,
+          eventData: { is_error: false, result: raw },
+        },
+        {
+          type: "result",
+          sequenceNumber: 10,
+          is_error: true,
+          result: "You have hit your ChatGPT usage limit.",
+          failureReason: "provider_insufficient_credits",
+        },
+        {
+          type: "result",
+          sequenceNumber: 11,
+          eventData: {
+            is_error: true,
+            result: "You have hit your ChatGPT usage limit.",
+            failureReason: "provider_insufficient_credits",
+          },
+        },
+        {
+          type: "result",
+          sequenceNumber: 12,
+          is_error: true,
+          result: "Insufficient vm0 credits",
+          failureReason: "insufficient_credits",
+        },
+      ];
+      await webhooks.requestAgentEvents(
+        { runId: run.runId, events },
+        headers,
+        [200],
+      );
+      // Provider errors use the localizable error surface before completion.
+      await flushWaitUntilForTest();
+      const messages = await chat.listThreadEvents(actor, run.threadId);
+      const output = assistantMessages(messages.events).filter((event) => {
+        return event.eventType === "output.message";
+      });
+      expect(
+        output.map((event) => {
+          return event.content;
+        }),
+      ).toStrictEqual([raw]);
+      expect(
+        messages.events.filter((event) => {
+          return event.eventType === "output.error";
+        }),
+      ).toMatchObject([
+        {
+          error: builtIn
+            ? "The current model is unavailable."
+            : "Your connected model provider account has insufficient balance.",
+        },
+      ]);
+      await failChatRun(
+        run.runId,
+        headers,
+        raw,
+        "provider_insufficient_credits",
+      );
+      await flushWaitUntilForTest();
+
+      const providerBody = JSON.stringify({
+        type: "error",
+        error: {
+          type: "invalid_request_error",
+          message:
+            "Your credit balance is too low to access the Anthropic API. Please purchase credits.",
+        },
+      });
+      const upstream = {
+        _time: new Date(now()).toISOString(),
+        action: "ALLOW",
+        firewall_billable: true,
+        firewall_name: "model-provider:anthropic-api-key",
+        status: 400,
+        response_body: providerBody,
+      };
+      const network = [
+        upstream,
+        {
+          ...upstream,
+          status: 200,
+          response_body: `event: error\ndata: ${providerBody}\n\n`,
+        },
+        {
+          ...upstream,
+          response_body_encoding: "base64",
+          response_body: Buffer.from(providerBody).toString("base64"),
+        },
+        {
+          ...upstream,
+          status: 200,
+          response_body: `event: response.failed\ndata: ${JSON.stringify(events[6])}\n\n`,
+        },
+        {
+          ...upstream,
+          status: 200,
+          response_body: `event: error\ndata: ${JSON.stringify(events[7])}\n\n`,
+        },
+        {
+          ...upstream,
+          status: 402,
+          response_body: "truncated upstream billing response",
+        },
+        {
+          ...upstream,
+          action: "BLOCK",
+          status: 402,
+          response_body: '{"error":"insufficient_credits"}',
+        },
+        { ...upstream, firewall_billable: false },
+        { ...upstream, firewall_name: "connector:example" },
+      ];
+      context.mocks.axiom.query.mockImplementation((apl: unknown) => {
+        const query = typeof apl === "string" ? apl : "";
+        if (query.includes("agent-run-events")) {
+          return Promise.resolve(
+            events.map((event) => {
+              return {
+                runId: run.runId,
+                _time: new Date(now()).toISOString(),
+                sequenceNumber: event.sequenceNumber,
+                eventType: event.type,
+                eventData: event,
+              };
+            }),
+          );
+        }
+        return Promise.resolve(
+          query.includes("sandbox-telemetry-network") ? network : [],
+        );
+      });
+      const reads = createRunReadsApi(context);
+      const page = await reads.requestAgentRunAgentEvents(
+        actor,
+        run.runId,
+        { limit: 100, order: "asc" },
+        [200],
+      );
+      expect(
+        page.body.events.map((event) => {
+          return event.eventData;
+        }),
+      ).toStrictEqual([
+        { ...events[0], result: visible },
+        events[1],
+        events[2],
+        events[3],
+        events[4],
+        {
+          ...events[5],
+          error: builtIn ? "model_unavailable" : "billing_error",
+          message: {
+            id: "provider-failure",
+            role: "assistant",
+            content: builtIn
+              ? [{ type: "text", text: visible }]
+              : providerFailureContent,
+          },
+        },
+        builtIn
+          ? {
+              ...events[6],
+              error: { type: "model_unavailable", message: visible },
+              response: {
+                error: { type: "model_unavailable", message: visible },
+              },
+            }
+          : events[6],
+        builtIn
+          ? {
+              ...events[7],
+              code: "model_unavailable",
+              message: visible,
+              error: { type: "model_unavailable", message: visible },
+            }
+          : events[7],
+        { ...events[8], eventData: { is_error: true, result: visible } },
+        events[9],
+        builtIn
+          ? {
+              type: "result",
+              sequenceNumber: 10,
+              is_error: true,
+              result: visible,
+            }
+          : events[10],
+        builtIn
+          ? {
+              ...events[11],
+              eventData: { is_error: true, result: visible },
+            }
+          : events[11],
+        events[12],
+      ]);
+      const exported = await reads.requestAgentRunNetworkLogs(
+        actor,
+        run.runId,
+        { limit: 100, order: "asc" },
+        [200],
+      );
+      expect(
+        exported.body.networkLogs.map((entry) => {
+          return entry.response_body;
+        }),
+      ).toStrictEqual([
+        builtIn ? visible : providerBody,
+        builtIn ? visible : `event: error\ndata: ${providerBody}\n\n`,
+        builtIn ? visible : Buffer.from(providerBody).toString("base64"),
+        builtIn
+          ? visible
+          : `event: response.failed\ndata: ${JSON.stringify(events[6])}\n\n`,
+        builtIn
+          ? visible
+          : `event: error\ndata: ${JSON.stringify(events[7])}\n\n`,
+        builtIn ? visible : "truncated upstream billing response",
+        '{"error":"insufficient_credits"}',
+        providerBody,
+        providerBody,
+      ]);
+      expect(
+        exported.body.networkLogs.map((entry) => {
+          return entry.status;
+        }),
+      ).toStrictEqual(
+        builtIn
+          ? [
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              undefined,
+              402,
+              400,
+              400,
+            ]
+          : [400, 200, 400, 200, 200, 402, 402, 400, 400],
+      );
+    },
+  );
+
+  it("retains built-in billing reports and route cooldown after a public unavailable failure", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const selectedModel = "gpt-5.6-sol";
+    await seedBuiltInModelCandidateKeys(context, selectedModel);
+    const cleanupRoute = await resolveBuiltInModelRouteFixture(
+      context,
+      selectedModel,
+    );
+    if (!cleanupRoute) {
+      throw new Error("Expected a seeded built-in route for cleanup");
+    }
+    registerBuiltInCandidateCooldownCleanup(
+      context,
+      selectedModel,
+      cleanupRoute,
+    );
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: selectedModel,
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
+    const first = await startChatRun(actor, {
+      agentId,
+      prompt: "first built-in run",
+      selectedModel,
+    });
+    const headers = await claimChatRun(runnerGroup, first.runId);
+    const reads = createRunReadsApi(context);
+    const before = await reads.requestReadLogById(actor, first.runId, [200]);
+    await failChatRun(
+      first.runId,
+      headers,
+      "Credit balance is too low",
+      "provider_insufficient_credits",
+    );
+    await flushWaitUntilForTest();
+    await expect(
+      api.reportRunnerModelProviderFailure(first.runId, {
+        failureKind: "billing",
+      }),
+    ).resolves.toStrictEqual({ outcome: "recorded" });
+    await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
+      status: "failed",
+      error: "The current model is unavailable.",
+    });
+
+    const second = await startChatRun(actor, {
+      agentId,
+      prompt: "another built-in run",
+      selectedModel,
+    });
+    await claimChatRun(runnerGroup, second.runId);
+    const after = await reads.requestReadLogById(actor, second.runId, [200]);
+    expect([
+      after.body.modelRuntimeProvider,
+      after.body.modelRuntimeModel,
+    ]).not.toStrictEqual([
+      before.body.modelRuntimeProvider,
+      before.body.modelRuntimeModel,
+    ]);
+  });
+
   it("formats failed-run errors and notifies, without auto-sending", async () => {
     const { actor, agentId, runnerGroup, providerId } =
       await entitledChatActor();

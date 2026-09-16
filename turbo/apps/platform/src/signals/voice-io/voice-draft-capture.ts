@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { now } from "../../lib/time.ts";
-import { createChildAbortController, settle, withCleanup } from "../utils.ts";
+import { resetSignal, settle, withCleanup } from "../utils.ts";
 import {
   openMedia,
   startAudioActivityMonitor,
@@ -18,29 +18,39 @@ export interface VoiceLevelSample {
 }
 
 const VOICE_LEVEL_SAMPLE_COUNT = 40;
+const INITIAL_VOICE_LEVEL_SAMPLES: readonly VoiceLevelSample[] = Array.from(
+  { length: VOICE_LEVEL_SAMPLE_COUNT },
+  (_, id) => {
+    return { id, level: 0 };
+  },
+);
 
 interface VoiceDraftCapture {
   readonly pcm: Awaited<ReturnType<typeof startVoiceDraftPcmCapture>>;
   readonly monitor: Awaited<ReturnType<typeof startAudioActivityMonitor>>;
-  readonly controller: AbortController;
   readonly startedAt: number;
 }
 
+interface VoiceDraftAcquisition {
+  readonly signal: AbortSignal;
+  readonly capture: VoiceDraftCapture | null;
+}
+
 export function createVoiceDraftCaptureSignals() {
-  const resource$ = state<VoiceDraftCapture | null>(null);
   const samples$ = state<readonly VoiceLevelSample[]>([]);
-  const acquisition$ = state<AbortController | null>(null);
+  const acquisition$ = state<VoiceDraftAcquisition | null>(null);
+  const resetAcquisition$ = resetSignal();
+  const resetStartupWait$ = resetSignal();
   const capture$ = computed((get) => {
-    return get(resource$);
+    return get(acquisition$)?.capture ?? null;
   });
   const voiceLevelSamples$ = computed((get) => {
     return get(samples$);
   });
 
-  const cancel$ = command(({ get, set }) => {
-    get(acquisition$)?.abort();
+  const cancel$ = command(({ set }) => {
+    set(resetAcquisition$);
     set(acquisition$, null);
-    set(resource$, null);
   });
 
   const start$ = command(
@@ -49,25 +59,18 @@ export function createVoiceDraftCaptureSignals() {
       persistence: VoiceDraftPcmPersistence,
       parentSignal: AbortSignal,
     ): Promise<boolean> => {
+      parentSignal.throwIfAborted();
       if (get(acquisition$)) {
         return false;
       }
-      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-      const controller = createChildAbortController(parentSignal);
-      const signal = controller.signal;
-      set(acquisition$, controller);
-      set(
-        samples$,
-        Array.from({ length: VOICE_LEVEL_SAMPLE_COUNT }, (_, id) => {
-          return { id, level: 0 };
-        }),
-      );
+      const signal = set(resetAcquisition$, parentSignal);
+      set(acquisition$, { signal, capture: null });
+      set(samples$, INITIAL_VOICE_LEVEL_SAMPLES);
       signal.addEventListener(
         "abort",
         () => {
-          if (get(acquisition$) === controller) {
+          if (get(acquisition$)?.signal === signal) {
             set(acquisition$, null);
-            set(resource$, null);
           }
         },
         { once: true },
@@ -81,10 +84,19 @@ export function createVoiceDraftCaptureSignals() {
           if (!stream) {
             return null;
           }
-          const pcm = await startVoiceDraftPcmCapture(
-            stream,
-            persistence,
-            signal,
+          const startupSignal = set(resetStartupWait$, signal);
+          const pcm = await withCleanup(
+            startVoiceDraftPcmCapture(
+              stream,
+              persistence,
+              startupSignal,
+              signal,
+            ),
+            () => {
+              if (get(acquisition$)?.signal === signal) {
+                set(resetStartupWait$);
+              }
+            },
           );
           signal.throwIfAborted();
           const startedAt = now();
@@ -107,33 +119,36 @@ export function createVoiceDraftCaptureSignals() {
           return {
             pcm,
             monitor: monitored.ok ? monitored.value : null,
-            controller,
             startedAt,
           };
         })(),
         signal,
       );
       if (!started.ok || !started.value) {
-        controller.abort();
+        if (get(acquisition$)?.signal === signal) {
+          set(resetAcquisition$);
+        }
         parentSignal.throwIfAborted();
         if (!started.ok) {
           throw started.error;
         }
         return false;
       }
-      set(resource$, started.value);
+      signal.throwIfAborted();
+      set(acquisition$, { signal, capture: started.value });
       return true;
     },
   );
 
   const finish$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const capture = get(resource$);
-    if (!capture) {
+    const acquisition = get(acquisition$);
+    if (!acquisition?.capture) {
       return false;
     }
+    const capture = acquisition.capture;
     // Taking the resource makes repeated Stop events harmless, without another
     // boolean or Promise atom mirroring the command's execution.
-    set(resource$, null);
+    set(acquisition$, { ...acquisition, capture: null });
     await withCleanup(
       (async () => {
         if (capture.monitor) {
@@ -144,7 +159,9 @@ export function createVoiceDraftCaptureSignals() {
         signal.throwIfAborted();
       })(),
       () => {
-        return capture.controller.abort();
+        if (get(acquisition$)?.signal === acquisition.signal) {
+          set(resetAcquisition$);
+        }
       },
     );
     signal.throwIfAborted();

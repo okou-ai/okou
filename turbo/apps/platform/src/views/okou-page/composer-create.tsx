@@ -1,4 +1,5 @@
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
+import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -79,53 +80,67 @@ export function ComposerSelectedTask({
     },
     { returnObjects: true },
   );
-  if (!task) {
-    return withChatScrollLayout(null);
-  }
-  const Icon = TASK_ICONS[task];
+  const Icon = task ? TASK_ICONS[task] : null;
+  /*
+    The presentation options sit on this line, beside the chip they describe.
+    In the action row below they were 260px right and 112px down from it, among
+    controls that act on the message rather than on the artifact.
+
+    Video is the exception, and it is not the same case: its spec has to be read
+    against the model that accepts it, and that model's picker lives in the
+    action row, so the spec is back there next to the connectors rather than two
+    rows above the value it depends on.
+
+    The row is not the chip's: the chip is gated by a switch the options are
+    not, so it also has to stand on its own. `empty:hidden` keeps it from
+    claiming space when neither is showing.
+  */
   return withChatScrollLayout(
-    <div className="flex min-w-0 px-4 pt-4">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-4 pt-4 empty:hidden">
       {/*
         One control, not a label plus a button. The chip is the exit: its
         leading type icon becomes the cross on hover, so nothing operable is
         visible while the selection is just a state, and the hit area is the
         whole chip rather than a 28px square.
       */}
-      <Button
-        type="button"
-        variant="neutral"
-        className={cn(
-          "group h-8 max-w-full gap-2 px-2.5 text-[13px] font-normal",
-          CREATE_CONTROL_FOCUS,
-        )}
-        aria-label={t(
-          ($) => {
-            return $.chat.taskChips.removeTask;
-          },
-          { task: labels[task] },
-        )}
-        onClick={() => {
-          selectTask(null);
-        }}
-      >
-        {/*
+      {task && Icon ? (
+        <Button
+          type="button"
+          variant="neutral"
+          className={cn(
+            "group h-8 max-w-full gap-2 px-2.5 text-[13px] font-normal",
+            CREATE_CONTROL_FOCUS,
+          )}
+          aria-label={t(
+            ($) => {
+              return $.chat.taskChips.removeTask;
+            },
+            { task: labels[task] },
+          )}
+          onClick={() => {
+            selectTask(null);
+          }}
+        >
+          {/*
           Both glyphs share one box and cross-fade, so the chip's width does
           not change between rest and hover.
         */}
-        <span className="relative inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground">
-          <Icon
-            size={16}
-            className="transition-opacity group-hover:opacity-0"
-            aria-hidden
-          />
-          <X
-            size={16}
-            className="absolute opacity-0 transition-opacity group-hover:opacity-100"
-            aria-hidden
-          />
-        </span>
-        <span className="truncate">{labels[task]}</span>
-      </Button>
+          <span className="relative inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+            <Icon
+              size={16}
+              className="transition-opacity group-hover:opacity-0"
+              aria-hidden
+            />
+            <X
+              size={16}
+              className="absolute opacity-0 transition-opacity group-hover:opacity-100"
+              aria-hidden
+            />
+          </span>
+          <span className="truncate">{labels[task]}</span>
+        </Button>
+      ) : null}
+      <ComposerPresentationOptions signals={signals} />
     </div>,
   );
 }

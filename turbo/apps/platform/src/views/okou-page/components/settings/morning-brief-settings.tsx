@@ -94,14 +94,9 @@ function MorningBriefStatus({
       return $.settings.preferences.morningBrief.retryMessage;
     });
   } else if (state?.kind === "error") {
-    status =
-      state.code === "MORNING_BRIEF_MULTIPLE_INSTALLATIONS"
-        ? t(($) => {
-            return $.settings.preferences.morningBrief.multipleInstallations;
-          })
-        : t(($) => {
-            return $.settings.preferences.morningBrief.conflict;
-          });
+    status = t(($) => {
+      return $.settings.preferences.morningBrief.conflict;
+    });
   } else if (unavailable === "missing-timezone") {
     status = t(($) => {
       return $.settings.preferences.morningBrief.missingTimezone;

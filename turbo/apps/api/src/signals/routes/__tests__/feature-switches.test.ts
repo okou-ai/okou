@@ -17,7 +17,7 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
-  it("keeps subscription priority off for staff and applies overrides consistently across an organization", async () => {
+  it("defaults subscription priority on for staff and applies overrides consistently across an organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
@@ -27,7 +27,7 @@ describe("/api/feature-switches", () => {
       staff.body.effectiveSwitches[
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
-    ).toBeFalsy();
+    ).toBeTruthy();
     const orgId = `org_${randomUUID()}`;
     clerk.session(userId, orgId, "org:member");
     const ordinary = await accept(client().get({ headers }), [200]);
@@ -52,6 +52,22 @@ describe("/api/feature-switches", () => {
         FeatureSwitchKey.PersonalSubscriptionPriority
       ],
     ).toBeTruthy();
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
+        },
+      }),
+      [200],
+    );
+    clerk.session(userId, orgId, "org:member");
+    const disabled = await accept(client().get({ headers }), [200]);
+    expect(
+      disabled.body.effectiveSwitches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeFalsy();
     clerk.session(userId, `org_${randomUUID()}`, "org:member");
     const elsewhere = await accept(client().get({ headers }), [200]);
     expect(

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import type { ObservedAcquisitionEvent } from "@okouai/api-contracts/contracts/impact-marketing";
+import type { ObservedAcquisitionEvent } from "@okouai/api-contracts/contracts/marketing-acquisition";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { now } from "../../lib/time.ts";
 
@@ -10,10 +10,13 @@ interface PendingEvent {
 }
 // Business observations only. No URL attribution, cookies, or provider SDKs.
 const internalPendingMarketingEvents$ = state<readonly PendingEvent[]>([]);
-// Unknown buffers only business observations in memory until the trusted iframe
+// Unknown buffers only business observations in memory until the Marketing config endpoint
 // supplies Marketing's runtime setting. A known disabled state discards them.
 const internalMarketingShadowEnabled$ = state<boolean | undefined>(undefined);
 const internalMarketingShadowEpoch$ = state(0);
+export const marketingShadowEpoch$ = computed((get) => {
+  return get(internalMarketingShadowEpoch$);
+});
 export const marketingShadowEnabled$ = computed((get) => {
   return get(internalMarketingShadowEnabled$);
 });
@@ -51,12 +54,12 @@ export const enqueueMarketingEvent$ = command(
       return undefined;
     }
     const at = now();
-    const epoch = get(internalMarketingShadowEpoch$);
+    const epoch = get(marketingShadowEpoch$);
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
     if (
       get(marketingShadowEnabled$) === false ||
-      get(internalMarketingShadowEpoch$) !== epoch
+      get(marketingShadowEpoch$) !== epoch
     ) {
       return undefined;
     }

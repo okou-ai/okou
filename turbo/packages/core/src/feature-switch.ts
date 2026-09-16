@@ -45,12 +45,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SessionOutputStreaming]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Subscribe to transient session text output while a run is active",
-    enabled: false,
-  },
   [FeatureSwitchKey.SocialStatus]: {
     maintainer: "liangyou@okou.ai",
     description: "On-demand public Social service health",
@@ -313,7 +307,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",
     description:
-      "Run owned chat threads with the official Pi runtime, native session persistence, and shared memory learning across interactive and automation turns.",
+      "Run owned chat threads with the official Pi runtime, streamed session output, native session persistence, and shared memory learning across interactive and automation turns.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -406,6 +400,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
@@ -422,8 +417,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.TelegramDmSessions]: {
     maintainer: "linghan@okou.ai",
     description:
-      "Use agent/model-scoped Telegram DM sessions and separate reply chains. Enable after compatible callback readers are deployed.",
-    enabled: false,
+      "Use agent/model-scoped Telegram DM sessions and separate reply chains.",
+    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -441,14 +436,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.SshAccess]: {
     maintainer: "liangyou@okou.ai",
-    description: "Enable standalone Runner-mediated SSH configuration",
+    description:
+      "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.CloudflareAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable user-owned Cloudflare Access for saved SSH hosts",
-    enabled: false,
   },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
@@ -471,10 +462,24 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.GetStartedQuests]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Show the home corner's Get started quest list. Progress is placeholder data; no credits are awarded yet.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ComposerTemplateChipCover]: {
     maintainer: "tongx@okou.ai",
     description:
       "Show the chosen template's cover image on the composer's inline template chip instead of a generic glyph.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ComposerAddMenu]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Collapse the composer toolbar's attach, template and create workflow buttons into a single plus menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

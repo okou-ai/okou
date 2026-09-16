@@ -106,7 +106,6 @@ async fn authorized_provider_exec_idle_session_rejection_and_cleanup() {
     h.shutdown().await;
     Arc::get_mut(&mut h.runtime).unwrap().network = network.clone();
     h.restart(h.run).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(authority()).await;
 
     for _ in 0..2 {

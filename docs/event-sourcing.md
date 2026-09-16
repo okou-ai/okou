@@ -48,12 +48,12 @@ reloads the authoritative persistent state, restoring eventual consistency.
 
 API-first Pi turns can publish sanitized text deltas on a separate
 `run-output:<userId>:<orgId>:<runId>` Ably channel. Thinking and private memory
-citation markup are excluded. The `sessionOutputStreaming` feature switch,
-disabled by default, controls only the frontend subscription. A visible chat
-panel subscribes while it has a pending or running run; queued runs do not
-subscribe. Run changes, page cancellation, and switch changes reset that
-subscription. The SharedWorker shares the transport across tabs and releases
-the channel attachment when its final subscriber leaves.
+citation markup are excluded. The `piLoop` feature switch controls both Pi
+runtime admission and the frontend subscription. A visible chat panel subscribes
+while it has a pending or running run; queued runs do not subscribe. Run changes,
+page cancellation, and switch changes reset that subscription. The SharedWorker
+shares the transport across tabs and releases the channel attachment when its
+final subscriber leaves.
 
 Each API attempt assigns `api-first:<attemptId>:<nativeContentIndex>` as the
 text block's `runEventId`. Streaming and final event insertion derive the same

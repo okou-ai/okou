@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -39,8 +40,8 @@ import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-r
 import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
 import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-model-cooldown-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
-import { validatePermanentMarketingPrivacyState } from "./test-marketing-privacy-permanent";
 import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
+import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -1271,13 +1272,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
-      "CREATE TRIGGER marketing_privacy_withdrawal BEFORE UPDATE ON public.privacy_choices FOR EACH ROW EXECUTE FUNCTION invalidate_marketing_privacy_epochs()",
-    schemaName: "public",
-    tableName: "privacy_choices",
-    triggerName: "marketing_privacy_withdrawal",
-  },
-  {
-    definition:
       "CREATE TRIGGER chat_events_reject_update BEFORE UPDATE ON public.chat_events FOR EACH ROW EXECUTE FUNCTION reject_chat_event_source_update()",
     schemaName: "public",
     tableName: "chat_events",
@@ -1386,7 +1380,7 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "7fa1f4813c3bcfb4d16269639d9640a3",
+    bodyHash: "b002912b7bba9df6783801b84490bada",
     functionName: "capture_usage_billing_attribution",
     identityArguments: "",
     kind: "f",
@@ -1411,13 +1405,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     functionName: "purge_quiescent_provisional_billing_attribution",
     identityArguments:
       "billed_org text, billed_user text, quiescent_run_ids uuid[]",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "7c040af77f50f9b85eb592fc30da7fcb",
-    functionName: "invalidate_marketing_privacy_epochs",
-    identityArguments: "",
     kind: "f",
     schemaName: "public",
   },
@@ -3353,13 +3340,14 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
-    await validatePermanentMarketingPrivacyState(dbUrl1);
+    await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentArtifactTriggerBehavior(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
     await validatePermanentSlackPublicBrandState(dbUrl1);
+    await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateOfficialAutomationResultEmailSchema(dbUrl1);
@@ -3384,6 +3372,7 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelCooldownState(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentSlackPublicBrandState(dbUrl2);
+    await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateOfficialAutomationResultEmailSchema(dbUrl2);

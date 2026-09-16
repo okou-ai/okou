@@ -85,7 +85,6 @@ import {
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
-import { cleanupRetainedMarketingPrivacy } from "./marketing-privacy-cleanup.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -116,7 +115,11 @@ async function cancelOrgRuns(
 ): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
-      values: { status: "cancelled", completedAt: nowDate() },
+      values: {
+        status: "cancelled",
+        completedAt: nowDate(),
+        runnerCancellationMode: "hard",
+      },
       conditions: [
         cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, {
@@ -187,7 +190,11 @@ async function cancelUserRuns(
 ): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
-      values: { status: "cancelled", completedAt: nowDate() },
+      values: {
+        status: "cancelled",
+        completedAt: nowDate(),
+        runnerCancellationMode: "hard",
+      },
       conditions: [
         cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })
@@ -922,7 +929,6 @@ async function deleteUserData(
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.userId, userId));
   await db.delete(userCache).where(eq(userCache.userId, userId));
-  await cleanupRetainedMarketingPrivacy(db, userId, signal);
   signal.throwIfAborted();
   await db.transaction(async (tx) => {
     await tx.execute(

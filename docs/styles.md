@@ -45,6 +45,8 @@ Color-theme presets in the App stylesheet share their anchor and companion color
 
 When `GradientColorThemes` is enabled on the document, each preset's HSL primary value supplies both its anchor color and the shared `--primary` token. Primary actions, including portaled dialog buttons, immediately use that fill and the preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and pressed fills blend the anchor toward its companion using the existing filled-state alpha tokens. Disabled buttons retain the shared opacity treatment. Removing the document's color-theme attributes restores the shared Amber primary tokens.
 
+The preset also supplies `--primary-400`, because one filled control reads that ramp stop rather than `--primary`. The checked `Switch` track takes 400 so it sits one step darker than the brand stop, which is what keeps a 44x24 fill reading as a fill on a near-white card; `Checkbox` and `Radio` are small enough to take `--primary` directly. A preset has a single anchor and no ramp, so pointing the stop at that anchor puts the checked toggle on the same fill as every other filled control instead of leaving it Amber under all eight palettes. This is the same move the presets already make on the gray ramp, and it is confined to the one stop with a consumer: `--brand-subtle`, `--brand-text`, and `--brand-text-hover` keep reading the Amber ramp, because the brand mark is not palette-driven.
+
 Auxiliary controls and previews revealed by hover or keyboard focus change
 opacity immediately. Do not add opacity transitions to message actions,
 sidebar controls, card overlays, or similar contextual affordances; temporary
@@ -408,8 +410,8 @@ compound selector and dropped the rail tint under every gradient palette.
 Three of the five declarations were inert. `.okou-nav` re-declared
 `--color-sidebar-border` as `hsl(var(--gray-200))`, which is already the App
 `@theme` default, and the gradient and dark rules re-declared `--color-sidebar`
-as `hsl(var(--sidebar))`, which both `:root` and `.okou-app` already set to the
-same substituted value. `--sidebar` and `--gray-200` are only ever assigned at
+as `hsl(var(--sidebar))`, which document scope already set to the same
+substituted value. `--sidebar` and `--gray-200` are only ever assigned at
 document scope, so re-anchoring them on a descendant could not change what the
 nav resolved. Removing all three is measured below as zero change, including
 for descendants that read the inherited tokens.
@@ -581,8 +583,8 @@ does not record it.
 
 A page does not restate the shell it renders inside. This one is mounted with
 the `standalone` layout, so `StandaloneLayout` is its ancestor and already
-carries `okou-app` along with the theme attributes; the page's own copy of that
-class was redundant and is gone. `position: fixed` changes where a box is laid
+carried the shell class along with the theme attributes; the page's own copy of
+that class was redundant and went first, and the class itself is gone now. `position: fixed` changes where a box is laid
 out, not where it sits in the DOM, so the shell's custom properties still
 inherit into the cover.
 
@@ -597,8 +599,8 @@ as `box-border` for the same reason the sibling page roots spell it — the base
 layer's universal rule already sets it, but the shell owns its own box model
 rather than depending on that.
 
-Visual evidence for this batch is not captured yet; it is recorded `implemented`
-rather than `verified` in `turbo/style-migration-manifest.json`.
+Pixel evidence for this batch was never captured; the equivalence argument
+above is the whole of it.
 
 ### Top-edge clearance
 
@@ -790,6 +792,105 @@ dropping the blockquote reset changes one observed margin per capture at zero
 pixels, and dropping `border-current` changes three observed border colours per
 capture at zero pixels.
 
+### Card geometry at the document root
+
+`--okou-card-radius`, `--okou-chat-card-radius`, `--okou-card-shadow` and
+`--okou-chat-card-shadow` are owned at `:root`, not inside the `.okou-app`
+scope, for the reason `--okou-composer-focus-veil` already records: a portaled
+surface is not a descendant of the app shell, so a scoped declaration never
+reaches it. The palette override follows them, keyed on the
+`data-gradient-color-themes` attribute `signals/theme.ts` writes onto the
+document element.
+
+That scope was carrying a defect. The queue drawer renders through
+`SheetContent`, which Base UI wraps in `SheetPortal`, so its plan, upgrade and
+concurrency cards and its two loading skeletons sit outside the shell. All five
+ask for the card radius in their markup, `var(--okou-card-radius)` resolved to
+nothing there, and `border-radius` fell back to its initial `0`: square corners
+on surfaces whose own code requests 1.25rem, beside in-shell cards that are
+rounded. Document scope gives them the radius they already ask for. Measured,
+that is the whole change — the five in-shell consumers and a `bg-sidebar` fill
+outside the shell report identical radius, shadow and background in Light and
+Dark, with and without a gradient palette, while the three portaled surfaces
+move from `0px` to `20px`.
+
+A second `.okou-app` block declared `--color-sidebar` and `--color-sidebar-rail`
+with values byte-identical to the `@theme` entries in
+`@okouai/ui/styles/globals.css`. It overrode the shared tokens with themselves,
+so it is deleted rather than promoted; the outside-the-shell `bg-sidebar` probe
+above is what shows it carried nothing.
+
+### The workspace canvas
+
+The `okou-workspace-bg` selector and its consumers have been removed. It was a
+`::before` paint layer behind the workspace pane, and it had four variants —
+default and gradient palette, each in Light and Dark — that differed only in a
+fill colour and a gradient. Those are two runtime values, so they are now keyed
+at `:root` and reached through one `bg-workspace-canvas` and one
+`bg-workspace-canvas-image`, registered as `@theme inline` entries over
+`--okou-workspace-canvas-fill` and `--okou-workspace-canvas-image`. `inline`
+keeps the reference, so the theme and palette attributes still decide at use
+time.
+
+Keying at `:root` is what removes the selectors, and it widens their scope on
+purpose rather than restating the same condition. `signals/theme.ts` writes
+`data-theme` and `data-gradient-color-themes` onto the document element, while
+the retired gradient rules reached the canvas through a _descendant_
+`.okou-app` that carried the palette attribute itself. Only the sidebar and
+standalone shells carry it, so `workspace-inset.tsx` is the one consumer those
+rules ever matched. `export-page.tsx`, `connect-page-shell.tsx` and
+`shared-thread-page.tsx` carry `okou-app` on the canvas element itself and
+never carry the attribute, so they always painted the default canvas, and they
+still do — but because of a routing invariant, not because of the selector.
+Their routes register with the `"none"` layout, so `LayoutHost` mounts neither
+shell, `applyColorThemeDocumentAttributes` never runs, and
+`:root[data-gradient-color-themes]` is never set while they are on screen.
+Forced onto `:root` against a same-element fixture, the two sides do differ in
+both gradient states. The canvas is therefore now available to any
+`:root`-attributed context, which is the contract a future consumer inherits.
+Each theme test wraps in `:where()` so it stays at the specificity of the rule
+it refines and source order decides between them.
+
+The retired dark rule matched `.dark .okou-workspace-bg::before` as well as the
+attribute form. `applyTheme` always sets both, so the attribute alone is
+equivalent, and dropping the class is required rather than optional: a class in
+the selector registers a first-party class-selector declaration against the
+shrink-only baseline, which is the same reason the composer veil records.
+
+The gradient palette is measured through the computed-style harness rather
+than by screenshot, because a route and a viewport do not pin a palette.
+
+`before:bg-[length:100%_100%]` is retained although no measurement can move it.
+`background-size: 100% 100%` and the initial `auto auto` size a gradient to the
+same box, so dropping it changes zero pixels; it is kept because the retired
+rule declared it and the computed value is part of what this drain preserves.
+
+### The app shell class — drained
+
+`okou-app` was the last first-party class in the platform-shell family, and by
+the time it was removed it painted nothing. The card tokens moved to `:root`,
+the dead `[data-desktop-shell]` selection rules were deleted, and the workspace
+canvas collapsed onto registered utilities, which between them retired every
+rule that named the class. What remained was the string itself on twenty
+elements and a scope that selected nothing.
+
+Deleting it is therefore not a visual change and there is nothing to measure:
+after those three drains no stylesheet in the App or in `@okouai/ui` contains a
+`.okou-app` selector, so no declaration reaches an element through it and no
+computed value can depend on it. Two dialogs kept the class only to re-enter a
+scope that no longer exists — `unsaved-bar.tsx`, whose comment said so
+explicitly, and `instatus-status-notice.tsx` — and both now sit in the same
+place with the same tokens, because those tokens are resolved at the document
+root.
+
+`sidebar-account-menu.test.tsx` used `document.querySelector(".okou-app")` to
+decide whether the app shell was still mounted during an account switch. It now
+queries `[data-slot="app-shell"]` on the same element, which is the one
+`shellDocumentAttributesRef$` attaches to — so the probe reads the element that
+actually owns mount state rather than one that happened to carry a styling
+class. Only `SidebarLayout` declares the slot, because only that layout is
+mounted on the route the test renders.
+
 ### Desktop titlebar drag region — drained
 
 The `okou-desktop-no-drag` selector and its consumer were removed first. The
@@ -806,18 +907,39 @@ That left one `@media (min-width: 768px)` block behind
 `--okou-desktop-titlebar-height` variable its only reader used, the
 `okou-sidebar-header` class on the drawer header, and both `aria-hidden` drag
 region divs. `okou-desktop-titlebar-drag-region` and `okou-sidebar-header` are
-retired; `okou-workspace-bg` keeps the fifteen declarations that are unrelated
-to the desktop shell.
+retired; `okou-workspace-bg` kept the fifteen declarations unrelated to the
+desktop shell, and "The workspace canvas" above drains those.
 
 **Nothing in the repository ever set that attribute.** It occurred only in the
-App stylesheet, in the baseline derived from it, in the migration ledger, and in
-this document; there is no DOM write anywhere in the App, the UI package, the
+App stylesheet, in the baseline derived from it, and in this document; there is
+no DOM write anywhere in the App, the UI package, the
 Desktop app, the Worker HTML, or a test. So the block never matched an element,
 both drag regions were always `display: none`, and the header always kept its
 6px inset. The header's `padding-top: 0` override was dead twice over, because
 its only consumer sits inside the mobile drawer `aside`, which is `md:hidden`.
 `.okou-workspace-bg`'s `position: relative` was dead three times over: the
 unconditional `.okou-workspace-bg` rule already declares it.
+
+The two unlayered `.okou-app[data-desktop-shell]` selection rules outside that
+media block are now deleted as well, on the same evidence: one set
+`user-select: none` on app chrome and one restored `user-select: text` inside
+inputs, editors and the two chat bubbles. Measured on a reconstructed shell,
+with the attribute absent — which is every shipped build — `user-select`
+computes to `auto` on chrome, input and contenteditable both before and after.
+Forcing the attribute on separates the two sides: before gives `none` on chrome
+and `text` on the input, after gives `auto` for both. So the rules were real
+rather than no-ops, and the only thing that ever kept them inert was an
+attribute nothing writes.
+
+That deletion also retires the last references to `.okou-chat-bubble-user` and
+`.okou-chat-bubble-assistant`. The chat-bubble batch removed those class names
+from every element and recorded that they survived only inside this selection
+exception; with the exception gone, neither name appears anywhere in the
+repository but this guide. With the card tokens promoted to
+`:root` and the workspace canvas drained above, `.okou-app` no longer appears in
+the stylesheet at all — it neither carries a declaration nor scopes one. The
+class survives only on the elements that still spell it, which is what the
+final call-site removal clears.
 
 Deleting rather than porting is the right move because there is nothing to
 port. A replacement could only be a condition no element satisfies, and
@@ -1052,8 +1174,8 @@ They now win because they are unlayered and `my-1.5` sits in `@layer utilities`.
 A card anywhere else matched only the retired rule and now matches only the
 utility. All three positions therefore keep the margins they had.
 
-Visual evidence for this batch is not captured yet; it is recorded `implemented`
-rather than `verified` in `turbo/style-migration-manifest.json`.
+Pixel evidence for this batch was never captured; the equivalence argument
+above is the whole of it.
 
 ### Chat transcript cards
 
@@ -1061,8 +1183,8 @@ rather than `verified` in `turbo/style-migration-manifest.json`.
 owns the surface shared by transcript notice cards, action cards and media
 frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
 element with `render` and gets no wrapper. It is App-owned rather than shared, because its radius and
-shadow read the App-only `--okou-chat-card-*` variables declared on
-`.okou-app`.
+shadow read the App-only `--okou-chat-card-*` variables, which the App
+stylesheet declares at `:root`.
 
 The border is deliberately `border-[1px] border-gray-400` rather than the shared
 `border` hairline and a semantic border token. The retired rule pinned a whole
@@ -1104,11 +1226,12 @@ the rule painted nothing there. Measured on the rendered page before the change,
 all five report `closest(".okou-app") === null` while a transcript card reports
 `true`. Their class names were therefore deleted rather than replaced: the
 container keeps the treatment-free appearance it actually had. Giving the
-artifact preview a card surface is a separate visual decision, and it is not a
-one-line one — those two custom properties are scoped to `.okou-app`, so a
-`ChatCard` rendered in the portal resolves to a square, shadowless border
-instead. Measured on the portaled surface, adopting the shared base there would
-change 734,605 pixels.
+artifact preview a card surface remains a separate visual decision: measured on
+the portaled surface, adopting the shared base there would change 734,605
+pixels. It is no longer blocked by scope. Those two custom properties were
+declared on `.okou-app` at the time, so a `ChatCard` rendered in the portal
+resolved to a square, shadowless border; they now sit at `:root` and a portaled
+card would resolve both.
 
 `okou-chat-frame` had exactly one consumer, that dialog's video stage, so it
 carried no live declaration anywhere.
@@ -1224,20 +1347,34 @@ channels separately — dropping the migrated bottom extension moves the scrim a
 backdrop boxes without changing a pixel, while dropping their background fills
 changes millions of pixels.
 
-`okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` remain legacy selectors.
-They sit together on the mobile drawer `aside`, and spelling them as utilities
-takes that element from 288 to 499 characters of class list and from two to six
-bracketed arbitrary values. Whether a six-declaration `::before` paint layer and
-a four-value safe-area padding belong inline there, behind a shared safe-area
-decision, or inside a drawer-surface component is a token-layer design call, so
-the batch is recorded `blocked` rather than resolved. The mechanics are
-otherwise clear: both rules are unlayered but nothing else on the element sets
-`isolation`, `::before`, padding or `box-sizing`, so no important marker would be
-needed. One difference would not be exact — Tailwind's `max-md` emits
-`@media (width < 48rem)` while the retired rule stopped at `max-width: 767px`,
-so between 767px and 768px the padding would newly apply. The element already
-gates its whole fixed-drawer geometry on `max-md`, so the two spellings disagree
-there today.
+The `okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` selectors and their
+consumers have been removed. They sat together on the mobile drawer `aside` and
+are now utilities on it, which is the same answer the drawer's own scrim already
+carries: `sidebar-layout.tsx` spells
+`[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]` inline, and so
+does the lightbox overlay. The batch had been recorded `blocked` on a choice
+between inlining, a shared safe-area decision and a drawer-surface component;
+inlining is what the sibling element next to it was already doing.
+
+The `::before` layer exists for exactly one case. The `aside` already carries
+`bg-sidebar`, so that fill is invisible wherever the element's own box is: its
+only visible work is the standalone-PWA extension below, which paints the
+sidebar colour into the home-indicator area while the drawer's content keeps its
+safe-area padding. `isolate` is what keeps the `-z-1` layer inside this element
+instead of letting it fall behind the page.
+
+The four-value padding is `max-md:p-safe`, the utility the browser-session cover
+registered, rather than the four-value bracketed arbitrary value this note
+previously estimated; that is what holds the class list to 458 characters
+instead of 499. Two bracketed values remain, both on the `::before`.
+
+`max-md` is still not an exact restatement of the retired condition. Tailwind
+emits `@media (width < 48rem)` while the rule stopped at `max-width: 767px`, so
+a fractional viewport width strictly between 767px and 768px newly takes the
+padding. Every integer width agrees, measured at 767 and 768; the element
+already gates its whole fixed-drawer geometry on `max-md`, so that width is
+where the two spellings disagree today and aligning them is the smaller
+surprise.
 
 ### The onboarding workflow diagram canvas
 

@@ -2185,6 +2185,146 @@ describe("managed SocialKit route", () => {
 
   it.each([
     {
+      path: "/linkedin/profile",
+      url: "https://www.linkedin.com/in/example/",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/twitter/tweets",
+      url: "https://x.com/example",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/facebook/channel-stats",
+      url: "https://www.facebook.com/example/",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/twitter/profile",
+      url: "https://x.com/example",
+      providerStatus: 503,
+      status: 502,
+      code: "SOCIALKIT_UPSTREAM_ERROR",
+      reason: "upstream_failure",
+      retryable: true,
+    },
+    {
+      path: "/tiktok/comments",
+      url: "https://www.tiktok.com/@example/video/123",
+      providerStatus: 404,
+      status: 404,
+      code: "SOCIALKIT_CONTENT_UNAVAILABLE",
+      reason: "content_unavailable",
+      retryable: false,
+    },
+    {
+      path: "/tiktok/transcript",
+      url: "https://www.tiktok.com/@example/video/123",
+      providerStatus: 404,
+      status: 404,
+      code: "SOCIALKIT_TRANSCRIPT_AVAILABILITY_UNKNOWN",
+      reason: "availability_unknown",
+      retryable: false,
+    },
+  ])(
+    "preserves non-input provider failures for $path / $providerStatus without billing",
+    async (testCase) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      let providerRequests = 0;
+      server.use(
+        providerHandler("GET", testCase.path, () => {
+          providerRequests += 1;
+          return HttpResponse.json(
+            {
+              message: `Provider failed for ${testCase.url} with test-socialkit-key`,
+            },
+            { status: testCase.providerStatus },
+          );
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(socialContract).request({
+          headers: authenticate(actor),
+          body: requestForPath(testCase.path, { url: testCase.url }),
+        }),
+        [404, 502],
+      );
+
+      expect(response.status).toBe(testCase.status);
+      expect(response.body).toMatchObject({
+        error: {
+          code: testCase.code,
+          reason: testCase.reason,
+          retryable: testCase.retryable,
+        },
+      });
+      expect(JSON.stringify(response.body)).not.toContain(testCase.url);
+      expect(JSON.stringify(response.body)).not.toContain("test-socialkit-key");
+      expect(providerRequests).toBe(1);
+      await expect(credits(actor)).resolves.toBe(beforeCredits);
+    },
+  );
+
+  it.each([
+    {
+      providerStatus: 400,
+      errorCode: undefined,
+      retryable: undefined,
+      reason: "invalid_input",
+      status: 400,
+      expectedRetryable: false,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "future_code",
+      retryable: undefined,
+      reason: "invalid_input",
+      status: 400,
+      expectedRetryable: false,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "content_unavailable",
+      retryable: false,
+      reason: "content_unavailable",
+      status: 404,
+      expectedRetryable: false,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "upstream_timeout",
+      retryable: true,
+      reason: "upstream_failure",
+      status: 502,
+      expectedRetryable: true,
+    },
+    {
+      providerStatus: 400,
+      errorCode: "content_unavailable",
+      code: "insufficient_credits",
+      retryable: false,
+      reason: "provider_quota_exhausted",
+      status: 503,
+      expectedRetryable: false,
+    },
+    {
       providerStatus: 422,
       errorCode: "content_restricted",
       retryable: false,
@@ -2934,8 +3074,16 @@ describe("managed SocialKit route", () => {
         quality: "720p",
         format: "mp4",
       });
-      expect(created.body.status).toBe("processing");
-      expect(processing.body.status).toBe("processing");
+      expect(created.body).toMatchObject({
+        status: "processing",
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+      });
+      expect(processing.body).toMatchObject({
+        status: "processing",
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+      });
       expect(completed.body).toMatchObject({
         status: "completed",
         quality: "720p",

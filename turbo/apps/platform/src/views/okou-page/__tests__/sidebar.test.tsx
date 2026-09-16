@@ -36,6 +36,7 @@ import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-pr
 import {
   click,
   setupPage,
+  startPage,
   fill,
   holdElementAnimations,
   queryAllByRoleFast,
@@ -835,7 +836,7 @@ test("Refresh a long sidebar after deleting an offscreen chat", async () => {
   const cachedChatThreadEvents = mockLongSidebarHistory(remote.promise);
   mockSidebarViewport(200, 1000);
 
-  await setupSidebarPage({
+  const page = await startPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     cachedChatThreadEvents,
@@ -844,6 +845,7 @@ test("Refresh a long sidebar after deleting an offscreen chat", async () => {
   // The existing-list scene must be usable before remote synchronization.
   const scrollArea = await scrollToArchivedContext();
   remote.resolve();
+  await page.ready;
   openThreadMenu("Archived context");
   click(menuItemByText("Delete chat"));
   const dialog = await screen.findByRole("dialog", {
@@ -1330,7 +1332,7 @@ test("Keep pin management usable with many pinned agents", async () => {
     });
   });
 
-  await setupSidebarPage({
+  const page = await startPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
@@ -1343,6 +1345,7 @@ test("Keep pin management usable with many pinned agents", async () => {
   expect(within(grid).queryByLabelText("Pin an agent")).toBeNull();
 
   preferencesGate.resolve();
+  await page.ready;
 
   await waitFor(() => {
     expect(within(grid).queryByTestId("pinned-agent-skeleton")).toBeNull();
@@ -1621,7 +1624,7 @@ test("Show mark all read in the mobile chat-list menu before conversations load"
     return [AGENT_ID];
   });
 
-  await setupSidebarPage({
+  const page = await startPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
@@ -1641,6 +1644,7 @@ test("Show mark all read in the mobile chat-list menu before conversations load"
     within(list).queryByText("Unread conversation"),
   ).not.toBeInTheDocument();
   remote.resolve();
+  await page.ready;
 });
 
 test("Mark all of an agent’s chats read", async () => {

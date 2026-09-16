@@ -8,7 +8,7 @@ import { IN_VITEST } from "../../env.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-import { setLoop } from "../utils.ts";
+import { waitLoopUntil } from "../utils.ts";
 import {
   fireGoogleAdsConversion,
   GOOGLE_ADS_ADSMARCH_PAID_AFTER_ONBOARDING_SEND_TO,
@@ -72,7 +72,7 @@ export const completeGoogleAdsPaidCheckout$ = command(
   ): Promise<void> => {
     const client = get(apiClient$)(billingCheckoutContract);
     let attempts = 0;
-    await setLoop(
+    await waitLoopUntil(
       async (loopSignal) => {
         attempts += 1;
         const result = await accept(

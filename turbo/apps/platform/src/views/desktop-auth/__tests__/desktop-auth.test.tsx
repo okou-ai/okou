@@ -381,6 +381,12 @@ test("ordinary Web organization switching still refreshes and navigates home", a
   const clerk = context.mocks.clerk();
   const freshToken = context.mocks.deferred<string>();
   const requested = context.mocks.deferred<void>();
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/agents",
+  });
+  await screen.findByRole("heading", { name: "Agents" });
   mockedClerk.sessionGetToken.mockImplementation((options) => {
     if (options?.skipCache) {
       requested.resolve();
@@ -388,12 +394,6 @@ test("ordinary Web organization switching still refreshes and navigates home", a
     }
     return Promise.resolve("current-web-token");
   });
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/agents",
-  });
-  await screen.findByRole("heading", { name: "Agents" });
   clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
   clerk.stateChanged();
   await requested.promise;

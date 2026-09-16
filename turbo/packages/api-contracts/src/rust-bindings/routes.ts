@@ -2,6 +2,7 @@ import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import {
   runnersActiveInputsContract,
+  runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
@@ -15,6 +16,7 @@ import {
   webhookCompleteContract,
   webhookEventsContract,
   webhookHeartbeatContract,
+  webhookSessionOutputContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
@@ -33,6 +35,11 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
+  {
+    route: runnersCancellationContract.get,
+    rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],
+    rustConstName: "GET",
+  },
   {
     route: runnerSshContract.observe,
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "observations"],
@@ -116,6 +123,11 @@ export const rustRouteBindings = [
   {
     route: webhookEventsContract.send,
     rustModulePath: ["webhooks", "agent", "events"],
+    rustConstName: "SEND",
+  },
+  {
+    route: webhookSessionOutputContract.send,
+    rustModulePath: ["webhooks", "agent", "session_output"],
     rustConstName: "SEND",
   },
   {

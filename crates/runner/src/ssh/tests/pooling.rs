@@ -20,7 +20,6 @@ fn command(text: &str) -> Value {
 #[tokio::test]
 async fn sequential_exec_reuses_authentication_with_independent_cwd_environment_and_stdin() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     let first = h
         .request(command("cd /; export POOL_TEST_STATE=first; printf first"))
@@ -47,7 +46,6 @@ async fn sequential_exec_reuses_authentication_with_independent_cwd_environment_
 #[tokio::test]
 async fn completed_shell_and_pty_reuse_transport_without_inheriting_channel_state() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"shell"}), false).await;
     state(&h, &id, "running").await;
@@ -75,7 +73,6 @@ async fn completed_shell_and_pty_reuse_transport_without_inheriting_channel_stat
 #[tokio::test]
 async fn idle_transport_occupies_neither_guest_park_nor_short_request_capacity() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     for _ in 0..12 {
         assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
@@ -101,7 +98,6 @@ async fn idle_transport_occupies_neither_guest_park_nor_short_request_capacity()
 #[tokio::test]
 async fn cancelling_one_active_session_preserves_the_other_and_its_reusable_connection() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let first = start(&h, json!({"type":"shell"}), false).await;
     state(&h, &first, "running").await;
@@ -130,7 +126,6 @@ async fn cancelling_one_active_session_preserves_the_other_and_its_reusable_conn
 #[tokio::test]
 async fn a_stalled_guest_output_consumer_does_not_block_another_process() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let mut stalled = h.open().await;
     let request = json!({"version":1,"method":"ssh.exec","remaining_ms":60000,
@@ -157,7 +152,6 @@ async fn a_stalled_guest_output_consumer_does_not_block_another_process() {
 #[tokio::test]
 async fn invalidation_retires_active_and_idle_connections_before_fresh_work() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let old = h.resolve(h.credential(true)).await;
     let active = start(&h, json!({"type":"shell"}), false).await;
     state(&h, &active, "running").await;
@@ -193,7 +187,6 @@ async fn invalidation_retires_active_and_idle_connections_before_fresh_work() {
 #[tokio::test]
 async fn idle_expiry_closes_the_socket_without_waiting_for_another_request() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     rpc(&h, "list", json!({})).await;
     // Offset idle expiry from the dispatcher's periodic cleanup ticks.
@@ -220,7 +213,6 @@ async fn idle_expiry_closes_the_socket_without_waiting_for_another_request() {
 #[tokio::test]
 async fn reuse_renews_idle_expiry_and_active_work_survives_earlier_idle_deadlines() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     assert_eq!(
         terminal(&h.request(command("true")).await)["type"],
@@ -266,7 +258,6 @@ async fn reuse_renews_idle_expiry_and_active_work_survives_earlier_idle_deadline
 #[tokio::test]
 async fn idle_cache_evicts_the_oldest_connection_and_never_matches_only_an_endpoint() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let _resolve = h
         .api
         .mock_async(|when, then| {
@@ -309,7 +300,6 @@ async fn idle_cache_evicts_the_oldest_connection_and_never_matches_only_an_endpo
 #[tokio::test]
 async fn run_replacement_cannot_reuse_an_earlier_registration_transport() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let old = h.resolve(h.credential(true)).await;
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     old.delete_async().await;
@@ -325,7 +315,6 @@ async fn run_replacement_cannot_reuse_an_earlier_registration_transport() {
 #[tokio::test]
 async fn refused_reused_channel_fails_without_replay_and_a_later_request_connects_fresh() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     h.observed
         .reject_reused_channels
         .store(true, Ordering::SeqCst);
@@ -358,7 +347,6 @@ async fn rejected_disconnected_and_missing_exit_channels_are_never_reused_or_rep
         },
     ] {
         let mut h = Harness::new(reply).await;
-        h.runtime.ably_connected(true);
         let _resolve = h.resolve(h.credential(true)).await;
         for _ in 0..2 {
             assert_eq!(terminal(&h.request(params()).await)["type"], "failed");
@@ -372,7 +360,6 @@ async fn rejected_disconnected_and_missing_exit_channels_are_never_reused_or_rep
 #[tokio::test]
 async fn eight_idle_transports_do_not_reduce_active_session_or_exec_admission() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h
         .api
         .mock_async(|when, then| {
@@ -425,7 +412,6 @@ async fn eight_idle_transports_do_not_reduce_active_session_or_exec_admission() 
 #[ignore = "manual real-peer cold/warm measurement; no timing threshold"]
 async fn measure_cold_and_warm_repeated_exec() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     assert_eq!(
         terminal(&h.request(command("true")).await)["exit"]["code"],

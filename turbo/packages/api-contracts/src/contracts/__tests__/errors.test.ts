@@ -14,6 +14,79 @@ import {
 } from "../errors";
 
 describe("formatRunErrorForExternalSurface", () => {
+  it.each(["anthropic-api-key", "built-in"] as const)(
+    "keeps platform credit rejection actionable when the run uses %s",
+    (modelProviderType) => {
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: "Insufficient vm0 credits",
+          failureReason: "insufficient_credits",
+          modelProviderType,
+        }),
+      ).toBe("insufficient_credits");
+    },
+  );
+
+  it.each([
+    [
+      "anthropic-api-key",
+      "Your connected model provider account has insufficient balance.",
+    ],
+    ["built-in", "The current model is unavailable."],
+    [null, "The current model is unavailable."],
+  ] as const)(
+    "presents upstream balance according to persisted provider %s",
+    (modelProviderType, expected) => {
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: "Credit balance is too low",
+          failureReason: "provider_insufficient_credits",
+          modelProviderType,
+          framework: "claude-code",
+        }),
+      ).toBe(expected);
+    },
+  );
+
+  it("presents built-in balance as unavailable while retaining the provider failure reason", () => {
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message: "private platform billing detail",
+        failureReason: "provider_insufficient_credits",
+        modelProviderType: "built-in",
+      }),
+    ).toBe("The current model is unavailable.");
+  });
+
+  it.each([
+    "The tool said Credit balance is too low",
+    "Credit balance is too low for this example",
+    "API Error: 402 Payment required",
+  ])("does not turn ambiguous text into a balance decision: %s", (message) => {
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message,
+        modelProviderType: "anthropic-api-key",
+        framework: "claude-code",
+      }),
+    ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+  });
+
+  it("preserves unknown reason precedence over untrusted balance words", () => {
+    expect(
+      formatRunErrorForExternalSurface({
+        code: "UNKNOWN",
+        message: "Credit balance is too low",
+        failureReason: "future_reason",
+        framework: "claude-code",
+        modelProviderType: "anthropic-api-key",
+      }),
+    ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+  });
   it("preserves allowlisted run errors like Web chat", () => {
     expect(
       formatRunErrorForExternalSurface({

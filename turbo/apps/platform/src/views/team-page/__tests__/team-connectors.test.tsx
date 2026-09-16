@@ -55,6 +55,7 @@ interface ConnectorSurfaceOptions {
     readonly grants: readonly AgentCustomConnectorGrant[];
     readonly operation: "add" | "remove" | "replace" | undefined;
   }) => void;
+  readonly onCustomRead?: () => void | Promise<void>;
 }
 
 function applyStringOperation(
@@ -174,7 +175,8 @@ function mockConnectorSurface(
   );
   testContextValue.mocks.api(
     agentCustomConnectorsContract.get,
-    ({ params, respond }) => {
+    async ({ params, respond }) => {
+      await options.onCustomRead?.();
       return respond(200, {
         grants: [...(customByAgent.get(params.id) ?? [])],
       });
@@ -289,6 +291,33 @@ test("Cancelled custom connector permission edits do not appear on another agent
   expect(customSaves).toStrictEqual([]);
 });
 
+test("Browser navigation discards an unfinished custom connector permission draft", async () => {
+  const { customSaves } = await openAgentConnectorIsolationStory();
+  click(linkContaining("Agents"));
+  await screen.findByRole("heading", { name: "Agents" });
+  click(linkContaining("Research Agent"));
+  await screen.findByRole("heading", { name: "Research Agent" });
+  await screen.findByText("Acme Search");
+  click(connectorAccessSwitch("Grant Acme Search access"));
+  await screen.findByText("search:run");
+  click(exactButton("Allow"));
+  expect(exactButton("Allow")).toHaveAttribute("aria-pressed", "true");
+
+  window.history.back();
+  await screen.findByRole("heading", { name: "Agents" });
+  click(linkContaining("Research Agent"));
+  await screen.findByRole("heading", { name: "Research Agent" });
+  await screen.findByText("Acme Search");
+  expect(
+    screen.queryByRole("heading", { name: /Acme Search permissions/i }),
+  ).not.toBeInTheDocument();
+
+  click(connectorAccessSwitch("Grant Acme Search access"));
+  await screen.findByText("search:run");
+  expect(exactButton("Deny")).toHaveAttribute("aria-pressed", "true");
+  expect(customSaves).toStrictEqual([]);
+});
+
 test("A failed built-in connector grant does not appear on another agent", async () => {
   await openAgentConnectorIsolationStory();
   await screen.findByText("GitHub");
@@ -374,8 +403,20 @@ test("An agent with no connected services guides the user to Connectors", async 
 });
 
 test("A user can authorize a connected MCP custom connector for an agent", async () => {
+  const refreshed = context.mocks.deferred<void>();
+  const refreshStarted = context.mocks.deferred<void>();
+  let saved = false;
   mockConnectorSurface(context, {
-    customConnectors: [deepWikiConnectorFixture()],
+    customConnectors: [deepWikiConnectorFixture(), acmeConnectorFixture()],
+    onCustomSave: () => {
+      saved = true;
+    },
+    onCustomRead: async () => {
+      if (saved) {
+        refreshStarted.resolve();
+        await refreshed.promise;
+      }
+    },
   });
   await setupTeamPage({
     context,
@@ -392,8 +433,23 @@ test("A user can authorize a connected MCP custom connector for an agent", async
   ).not.toBeInTheDocument();
 
   click(connectorAccessSwitch("Grant DeepWiki access"));
+  await refreshStarted.promise;
   await waitFor(() => {
-    expect(connectorAccessSwitch("Revoke DeepWiki access")).toBeVisible();
+    expect(connectorAccessSwitch("Grant DeepWiki access")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  expect(connectorAccessSwitch("Grant Acme Search access")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  refreshed.resolve();
+  await waitFor(() => {
+    expect(connectorAccessSwitch("Revoke DeepWiki access")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(screen.getByText("Custom connectors saved")).toBeVisible();
   });
 });

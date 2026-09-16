@@ -10,7 +10,7 @@ import { expect, test, vi } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
 import {
   context,
@@ -34,8 +34,11 @@ test.each([
 ])(
   "Finish voice independently of a failed text draft save at $path after $recovery",
   async ({ path, recovery }) => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const initialPage = createChildAbortController(context.signal);
+    const resetInitialPage$ = resetSignal();
+    const initialPageSignal = context.store.set(
+      resetInitialPage$,
+      context.signal,
+    );
     context.mocks.browser.voiceInput({ rms: 0.12 });
     installRunChat();
     context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
@@ -95,7 +98,7 @@ test.each([
     });
     await setupPage({
       locale: "en-US",
-      context: { ...context, signal: initialPage.signal },
+      context: { ...context, signal: initialPageSignal },
       path,
     });
     click(await findEnabledButton("Voice input"));
@@ -120,9 +123,7 @@ test.each([
       await findEnabledButton("Voice input");
     }
     if (recovery === "reload") {
-      const error = new Error("Page reloaded");
-      error.name = "AbortError";
-      initialPage.abort(error);
+      context.store.set(resetInitialPage$);
       cleanup();
       // Replace setupPage's history wrappers with the fresh browser runtime.
       vi.mocked(window.history.pushState).mockRestore();

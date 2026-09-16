@@ -758,11 +758,12 @@ export async function removeFeishuMessageReaction(
   }
 }
 
-export async function listFeishuChatMessages(
+export async function listFeishuMessages(
   args: {
     readonly db: Db;
     readonly installationId: string;
-    readonly chatId: string;
+    readonly containerType: "chat" | "thread";
+    readonly containerId: string;
     readonly pageSize?: number;
   },
   signal: AbortSignal,
@@ -772,8 +773,8 @@ export async function listFeishuChatMessages(
     signal,
   );
   const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
-  url.searchParams.set("container_id_type", "chat");
-  url.searchParams.set("container_id", args.chatId);
+  url.searchParams.set("container_id_type", args.containerType);
+  url.searchParams.set("container_id", args.containerId);
   url.searchParams.set("sort_type", "ByCreateTimeDesc");
   url.searchParams.set("page_size", String(args.pageSize ?? 50));
   url.searchParams.set("with_sender_name", "true");

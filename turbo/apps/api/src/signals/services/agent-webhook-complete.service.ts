@@ -180,6 +180,7 @@ function logGptApiKeyPiSandboxOutcome(
 ): boolean {
   if (
     input.executionOwner === "api-first" ||
+    commit.transitionFailureReason === "provider_insufficient_credits" ||
     commit.run.launchSnapshot?.framework !== "pi" ||
     !isGptApiKeyPiProviderType(commit.run.modelProvider)
   ) {
@@ -209,38 +210,47 @@ function logGptApiKeyPiSandboxOutcome(
   return true;
 }
 
+const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
+  // Input and execution limits need no operator action for either key owner.
+  safety_policy_refusal: "suppress",
+  input_too_large: "suppress",
+  execution_timeout: "suppress",
+  insufficient_credits: "suppress-byok",
+  provider_insufficient_credits: "suppress-byok",
+  invalid_api_key: "suppress-byok",
+  invalid_credentials: "suppress-byok",
+  terms_acceptance_required: "suppress-byok",
+  context_window_exceeded: "suppress-byok",
+  output_token_limit: "suppress-byok",
+  provider_rate_limited: "suppress-byok",
+  provider_overloaded: "suppress-byok",
+  provider_stream_timeout: "suppress-byok",
+  provider_server_error: "suppress-byok",
+  response_connection_lost: "suppress-byok",
+  reconnect_required: "suppress-byok",
+  usage_limit: "suppress-byok",
+  session_history_limit: "retain",
+  unsupported_model: "retain",
+} satisfies Record<
+  KnownRunFailureReason,
+  "suppress" | "suppress-byok" | "retain"
+>);
+
 function shouldSuppressKnownFailureLog(
   run: RunRecord,
   failureReason: KnownRunFailureReason,
 ): boolean {
-  switch (failureReason) {
-    // A content-safety rejection is decided by the submitted input, so it needs
-    // no operator action even when the built-in provider owns the credential.
-    case "safety_policy_refusal":
-    case "input_too_large":
-    case "execution_timeout": {
+  switch (KNOWN_FAILURE_LOG_POLICY[failureReason]) {
+    case "suppress": {
       return true;
     }
-    case "insufficient_credits":
-    case "invalid_api_key":
-    case "invalid_credentials":
-    case "terms_acceptance_required":
-    case "context_window_exceeded":
-    case "output_token_limit":
-    case "provider_rate_limited":
-    case "provider_overloaded":
-    case "provider_stream_timeout":
-    case "provider_server_error":
-    case "response_connection_lost":
-    case "reconnect_required":
-    case "usage_limit": {
+    case "suppress-byok": {
       const providerType = modelProviderTypeSchema.safeParse(run.modelProvider);
       return (
         providerType.success && !isBuiltInModelProviderType(providerType.data)
       );
     }
-    case "session_history_limit":
-    case "unsupported_model": {
+    case "retain": {
       return false;
     }
   }
@@ -421,9 +431,11 @@ async function prepareCompletion(
   signal: AbortSignal,
 ): Promise<PreparedCompletion> {
   if (input.body.exitCode !== 0) {
+    const error =
+      input.body.error?.trim() || "Run failed without error message";
     return {
       status: "failed",
-      error: input.body.error?.trim() || "Run failed without error message",
+      error,
       failureReason: input.body.failureReason,
       failureKind: "reported",
     };
@@ -564,6 +576,9 @@ async function applyTerminalCompletion(
     values: {
       status: prepared.status,
       completedAt,
+      ...(input.executionOwner === "api-first"
+        ? { runnerCancellationMode: "hard" as const }
+        : {}),
       ...(prepared.error !== undefined ? { error: prepared.error } : {}),
       failureReason: prepared.failureReason ?? null,
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),

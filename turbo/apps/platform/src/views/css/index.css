@@ -138,6 +138,20 @@
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
 
+  /* The composer's second level. The panel settles once when a type is picked,
+     then each row's items resolve left to right, which is the order they are
+     read in. Opacity has exactly one owner - the items - so the two do not
+     multiply into a wash. Consumers reach both through `motion-safe:animate-*`,
+     so reduced motion drops the class entirely and the content is simply
+     present. The item entry is `backwards` so a staggered item does not paint
+     at full opacity while it waits; the row sets each item's delay inline,
+     because `animate-*` compiles to the `animation` shorthand and a shorthand
+     resets any separate `animation-delay` rule back to zero. Keyframes stay
+     below. */
+  --animate-composer-panel-in: okou-composer-panel-in 220ms ease-out;
+  --animate-composer-rail-item-in: okou-composer-rail-item-in 260ms ease-out
+    backwards;
+
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
@@ -174,6 +188,14 @@
      It is not `h-dvh`: the standalone block below moves it to `100lvh`. Inline
      keeps the reference, so the media query still decides at use time. */
   --height-viewport: var(--okou-viewport-height);
+
+  /* The workspace canvas, so the pane reaches its fill and gradient through
+     `bg-workspace-canvas` / `bg-workspace-canvas-image` instead of four
+     selectors. The runtime values are keyed at `:root` further down; inline
+     keeps the reference, so the theme and palette attributes still decide at
+     use time. */
+  --color-workspace-canvas: var(--okou-workspace-canvas-fill);
+  --background-image-workspace-canvas-image: var(--okou-workspace-canvas-image);
 
   /* The thinking label's shimmer. Six stops, so the sweep reads as a band with
      a flat core rather than a point: the two inner stops hold the bright
@@ -219,6 +241,13 @@
    through a 1px inset of the inner one. Both are fixed to the handle's
    18x36 / 16x34 geometry. */
 :root {
+  /* The dots drawn on the texture the top step reveals. That texture's colours
+     are fixed rather than theme-paired, so a mark on it cannot take a grey ramp
+     stop: the ramp inverts in dark and the dots would turn light against a
+     light ground. It is much fainter than the dots on the plain track, because
+     the texture is busy where they sit: the weight that reads as a scale on
+     flat grey reads as specks on the aurora. */
+  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.18);
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
     0.04px 5.55px,
@@ -393,35 +422,6 @@ body {
   }
 }
 
-@media (max-width: 767px) {
-  /* Fixed mobile surfaces escape the page shell, so their interactive content
-     owns an immutable safe-area boundary. */
-  .okou-mobile-fixed-safe-area {
-    box-sizing: border-box;
-    padding: var(--sat) var(--sar) var(--sab) var(--sal);
-  }
-}
-
-.okou-mobile-sidebar {
-  isolation: isolate;
-}
-
-.okou-mobile-sidebar::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  background-color: hsl(var(--sidebar));
-  content: "";
-  pointer-events: none;
-}
-
-@media (display-mode: standalone) {
-  /* Paint may extend below the viewport without moving drawer content. */
-  .okou-mobile-sidebar::before {
-    bottom: calc(-1 * var(--sab));
-  }
-}
-
 /* Shimmer text effect for active/thinking states. Reached through
    `--animate-shimmer` and `--background-image-shimmer-text` above; the rest of
    the treatment is utilities on `ShimmerText`.
@@ -445,6 +445,29 @@ body {
   from {
     opacity: 0;
     transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Transform only. The items inside own the fade, and two nested opacity
+   animations multiply: at 100ms a cover was rendering at 34% with both
+   running, which read as washed out rather than as arriving. */
+@keyframes okou-composer-panel-in {
+  from {
+    transform: translateY(0.375rem);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes okou-composer-rail-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
   }
   to {
     opacity: 1;
@@ -554,8 +577,15 @@ body {
   --okou-color-theme-ring: 74.2 53.8% 41.6%;
 }
 
-/* Okou app: inherits global neutral tokens; only card-specific tokens defined here */
-.okou-app {
+/* Card geometry and elevation. These are document-level runtime theme values, so
+   they are owned at `:root` rather than inside the `.okou-app` scope, for the
+   reason `--okou-composer-focus-veil` already records: a portaled surface is not
+   a descendant of the app shell, so a scoped declaration never reaches it. The
+   queue drawer is that case — `SheetContent` renders inside `SheetPortal`, so its
+   plan, upgrade and concurrency cards resolved `--okou-card-radius` to nothing
+   and painted square corners despite asking for the card radius. Document scope
+   gives them the radius their markup already requests. */
+:root {
   --okou-card-radius: 1.25rem;
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
@@ -565,6 +595,16 @@ body {
   /* A card inside a message is not elevated off the page the way a page-level
      card is, so it gets contact rather than lift: a 2px blur instead of 12px. */
   --okou-chat-card-shadow: 0 1px 2px hsl(30 6% 45% / 0.05);
+}
+
+/* A gradient palette tints the elevation with the palette's own state layer.
+   `signals/theme.ts` writes this attribute onto the document element, so the
+   override sits at `:root` beside the values it refines. */
+:root[data-gradient-color-themes] {
+  --okou-card-shadow:
+    0 2px 12px hsl(var(--state-layer) / 0.035),
+    0 0 0 0.5px hsl(var(--state-layer) / 0.018);
+  --okou-chat-card-shadow: 0 1px 2px hsl(var(--state-layer) / 0.035);
 }
 
 /* Static focus veil for the composer. Fading this layer through opacity lets
@@ -602,33 +642,6 @@ body {
   --okou-composer-focus-veil: none;
 }
 
-.okou-app[data-gradient-color-themes] {
-  --okou-card-shadow:
-    0 2px 12px hsl(var(--state-layer) / 0.035),
-    0 0 0 0.5px hsl(var(--state-layer) / 0.018);
-  --okou-chat-card-shadow: 0 1px 2px hsl(var(--state-layer) / 0.035);
-}
-
-/* Desktop shell: avoid accidental selection on app chrome while preserving content/editors. */
-.okou-app[data-desktop-shell] {
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.okou-app[data-desktop-shell]
-  :where(
-    input,
-    textarea,
-    select,
-    [contenteditable]:not([contenteditable="false"]),
-    [role="textbox"],
-    .okou-chat-bubble-user,
-    .okou-chat-bubble-assistant
-  ) {
-  -webkit-user-select: text;
-  user-select: text;
-}
-
 /* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }}
 
    Do not delete this rule yet, and do not trust the tooling about it. Its last
@@ -655,12 +668,6 @@ body {
    a picture stays readable without the stroke reading as a frame. */
 .okou-thumb-border {
   border: 0.5px solid hsl(var(--gray-400));
-}
-
-/* The sidebars take the site's own two greys. */
-.okou-app {
-  --color-sidebar: hsl(var(--sidebar));
-  --color-sidebar-rail: hsl(var(--sidebar-rail));
 }
 
 /* The travel a sidebar thread title is scrolled by while its row is hovered or
@@ -1097,38 +1104,42 @@ details > summary {
 
 /* Okou workspace: soft texture + gentle gradient — documents, records, thinking, meeting notes.
    Grid is on ::before with z-index: -1; container has z-index: 0 so the texture stays behind content only. */
-.okou-workspace-bg {
-  position: relative;
-  z-index: 0;
-}
-
-.okou-workspace-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-color: hsl(var(--background));
-  background-image: radial-gradient(
+/* The workspace canvas. Four variants — default and gradient palette, each in
+   Light and Dark — differ only in the fill and the gradient, so they are two
+   runtime values keyed at `:root` rather than four selectors. `signals/theme.ts`
+   writes `data-theme` and `data-gradient-color-themes` onto the document
+   element, which is what lets these key off `:root` alone. The retired gradient
+   rules reached the canvas through a descendant `.okou-app` carrying the
+   palette attribute, which only the sidebar and standalone shells do, so
+   `workspace-inset.tsx` is the one consumer they matched; the three consumers
+   that carry `okou-app` on the canvas element itself keep the default canvas
+   because their routes mount neither shell. Keying at `:root` widens that scope
+   on purpose — see "The workspace canvas" in docs/styles.md.
+   Each theme test is wrapped in `:where()` so it stays at the specificity of
+   the rule it refines and source order decides between them. The retired dark
+   rule also matched the paired `.dark` class; `applyTheme` always sets both,
+   and a class in the selector would register a first-party class-selector
+   declaration against the shrink-only baseline. */
+:root {
+  --okou-workspace-canvas-fill: hsl(var(--background));
+  --okou-workspace-canvas-image: radial-gradient(
     ellipse 120% 80% at 50% -20%,
     hsl(var(--background-50) / 0.5),
     transparent 50%
   );
-  background-size: 100% 100%;
 }
 
-.dark .okou-workspace-bg::before,
-[data-theme="dark"] .okou-workspace-bg::before {
-  background-image: radial-gradient(
+:root:where([data-theme="dark"]) {
+  --okou-workspace-canvas-image: radial-gradient(
     ellipse 100% 70% at 50% 0%,
     hsl(var(--background-50) / 0.4),
     transparent 48%
   );
-  background-size: 100% 100%;
 }
 
-.okou-app[data-gradient-color-themes] .okou-workspace-bg::before {
-  background-color: hsl(var(--card));
-  background-image:
+:root[data-gradient-color-themes] {
+  --okou-workspace-canvas-fill: hsl(var(--card));
+  --okou-workspace-canvas-image:
     radial-gradient(
       ellipse 58% 64% at 0% 0%,
       color-mix(in srgb, hsl(var(--card)) 88%, var(--okou-color-theme-anchor))
@@ -1147,11 +1158,9 @@ details > summary {
     );
 }
 
-:where([data-theme="dark"])
-  .okou-app[data-gradient-color-themes]
-  .okou-workspace-bg::before {
-  background-color: hsl(var(--card));
-  background-image:
+:root:where([data-theme="dark"])[data-gradient-color-themes] {
+  --okou-workspace-canvas-fill: hsl(var(--card));
+  --okou-workspace-canvas-image:
     radial-gradient(
       ellipse 58% 64% at 0% 0%,
       color-mix(in srgb, hsl(var(--card)) 92%, var(--okou-color-theme-anchor))
@@ -1268,6 +1277,17 @@ details > summary {
     var(--okou-color-theme-anchor),
     var(--okou-color-theme-companion) var(--state-on-filled-pressed-alpha)
   );
+
+  /* The checked switch track is the one filled control that reads a raw stop
+     of the Amber ramp instead of `--primary`: 400 sits one step darker than
+     the brand stop, and a 44x24 track needs that step to read as a fill on a
+     near-white card. A preset supplies a single anchor rather than a ramp, so
+     the stop resolves to that anchor while the preset is active and the track
+     lands on the same fill the checkbox, the radio and every filled button
+     already take from `--primary`. Without this the toggle stayed Amber under
+     all eight palettes. The `--brand-*` stops deliberately keep reading the
+     Amber ramp: the brand mark is not palette-driven. */
+  --primary-400: var(--okou-color-theme-primary);
 
   --gray-0: var(--okou-color-theme-hue) 24% 98.3%;
   --gray-50: var(--okou-color-theme-hue) 22% 97.7%;

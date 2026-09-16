@@ -1,69 +1,21 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
 
 const c = initContract();
-export const observedAcquisitionEventSchema = z
-  .object({
-    id: z.uuid(),
-    name: z.enum([
-      "StepViewed",
-      "CheckoutCreated",
-      "RoleConfirmed",
-      "RedirectToStripe",
-      "AppHandoff",
-    ]),
-    at: z.number().int().positive(),
-    properties: z
-      .object({
-        step_key: z.string().max(120).optional(),
-        step_index: z.number().int().optional(),
-        step_count: z.number().int().optional(),
-        checkout_source: z.string().max(120).optional(),
-        role: z.string().max(120).optional(),
-        destination: z.literal("app").optional(),
-        prompt_present: z.boolean().optional(),
-        prompt_length: z.number().int().nonnegative().optional(),
-        route_path: z
-          .string()
-          .max(120)
-          .regex(/^\/[^?#]*$/)
-          .optional(),
-      })
-      .strict(),
-  })
-  .strict();
-export type ObservedAcquisitionEvent = z.infer<
-  typeof observedAcquisitionEventSchema
->;
-export const impactMarketingContract = c.router({
-  handoff: {
+
+/** Marketing verifies the App bearer token and reads its own attribution cookies. */
+export const impactOnboardingContract = c.router({
+  record: {
     method: "POST",
-    path: "/api/attribution/impact/handoff",
+    path: "/api/marketing/impact/onboarding",
     headers: authHeadersSchema,
-    body: z
-      .object({
-        acquisition: z
-          .object({
-            version: z.literal(2),
-            checkSignup: z.boolean(),
-            events: z.array(observedAcquisitionEventSchema).max(2),
-          })
-          .strict()
-          .optional(),
-      })
-      .strict(),
+    body: c.noBody(),
     responses: {
-      200: z.object({
-        handoff: z
-          .object({ token: z.string(), nonce: z.string(), iframeUrl: z.url() })
-          .nullable(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      500: apiErrorSchema,
+      204: c.noBody(),
+      401: z.object({ error: z.string() }),
+      403: z.object({ error: z.string() }),
+      503: z.object({ error: z.string() }),
     },
-    summary:
-      "Issue a short-lived identity and observed-event proof for the Marketing iframe",
+    summary: "Associate existing Marketing attribution during onboarding",
   },
 });

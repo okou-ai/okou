@@ -411,6 +411,7 @@ async function commitStaleRunTimeout(
         const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
           values: {
             status: "timeout",
+            runnerCancellationMode: "hard",
             completedAt: nowDate(),
             error: timeoutReason,
           },

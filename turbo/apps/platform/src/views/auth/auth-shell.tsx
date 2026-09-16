@@ -20,7 +20,7 @@ export function AuthShell({ authBrand, children }: AuthShellProps) {
 
   return (
     <div
-      className="okou-app relative flex h-full min-h-0 overflow-x-hidden overflow-y-auto bg-background p-6 pb-[max(1.5rem,var(--sab))]"
+      className="relative flex h-full min-h-0 overflow-x-hidden overflow-y-auto bg-background p-6 pb-[max(1.5rem,var(--sab))]"
       data-testid="app-auth-layout"
     >
       <div

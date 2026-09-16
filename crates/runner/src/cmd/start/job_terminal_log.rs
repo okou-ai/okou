@@ -97,6 +97,24 @@ fn log_job_execution_failed(
                     .map(|request| request.retry_attempts),
                 model_retry_limit = diagnostic.and_then(|diagnostic| diagnostic.model_request)
                     .and_then(|request| request.retry_limit),
+                model_transport_failure_phase = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.transport_failure)
+                    .and_then(|failure| failure.phase.as_str()),
+                model_transport_signal_aborted = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.transport_failure)
+                    .map(|failure| failure.signal_aborted),
+                model_transport_error_name = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.transport_failure)
+                    .and_then(|failure| failure.error_name)
+                    .and_then(|name| name.as_str()),
+                model_transport_error_code = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.transport_failure)
+                    .and_then(|failure| failure.error_code)
+                    .and_then(|code| code.as_str()),
+                model_transport_cause_code = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.transport_failure)
+                    .and_then(|failure| failure.cause_code)
+                    .and_then(|code| code.as_str()),
                 cli_termination_initiator = cli_termination_fields.initiator,
                 cli_termination_reason = cli_termination_fields.reason,
                 cli_termination_signal_sent = cli_termination_fields.signal_sent,
@@ -473,6 +491,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
             diagnostic.failure_reason,
             Some(
                 FailureReason::InsufficientCredits
+                    | FailureReason::ProviderInsufficientCredits
                     | FailureReason::InvalidApiKey
                     | FailureReason::InvalidCredentials
                     | FailureReason::TermsAcceptanceRequired
@@ -679,6 +698,7 @@ mod tests {
     fn expected_cli_failure_reasons_log_job_execution_failed_at_info() {
         for reason in [
             FailureReason::InsufficientCredits,
+            FailureReason::ProviderInsufficientCredits,
             FailureReason::InvalidApiKey,
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,
@@ -843,6 +863,7 @@ mod tests {
             transport_attempts: 1,
             retry_attempts: 3,
             retry_limit: Some(3),
+            transport_failure: None,
         });
         let failure = executor::ExecutionFailure::new(
             1,
@@ -857,6 +878,35 @@ mod tests {
         assert_field_eq(&event, "model_transport_attempts", "1");
         assert_field_eq(&event, "model_retry_attempts", "3");
         assert_field_eq(&event, "model_retry_limit", "3");
+    }
+
+    #[test]
+    fn pi_disconnection_keeps_causal_evidence_in_the_existing_log_contract() {
+        let message: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-stream-terminated.json"
+        )).unwrap();
+        let mut diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::Pi,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_failure_reason(FailureReason::ResponseConnectionLost)
+        .with_failure_detail_source(FailureDetailSource::PiResult);
+        diagnostic.model_request =
+            Some(serde_json::from_value(message["diagnostics"][0]["details"].clone()).unwrap());
+        let failure = executor::ExecutionFailure::new(1, "terminated", Some(diagnostic));
+        let event = capture_job_failure_log(&failure);
+        assert_eq!(event.level, Level::INFO);
+        assert_field_eq(&event, "model_http_status", "200");
+        assert_field_eq(&event, "model_transport_failure_phase", "response_body");
+        assert_field_eq(&event, "model_transport_signal_aborted", "false");
+        assert_field_eq(&event, "model_transport_error_name", "TypeError");
+        assert_field_eq(
+            &event,
+            "model_transport_cause_code",
+            "UND_ERR_RES_CONTENT_LENGTH_MISMATCH",
+        );
+        assert!(!event.fields.contains_key("model_transport_error_code"));
     }
 
     #[test]

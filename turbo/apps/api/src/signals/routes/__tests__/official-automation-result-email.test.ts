@@ -787,7 +787,7 @@ describe("Official Automation result email callbacks", () => {
     );
   });
 
-  it("delivers cancellation and terminal-failure callbacks without an outbox retry loop and honors account unsubscribe", async () => {
+  it("delivers cancellation callbacks without an outbox retry loop", async () => {
     const cancelledScenario = await setupScenario();
 
     const cancelledRunId = await startRun(cancelledScenario);
@@ -835,7 +835,9 @@ describe("Official Automation result email callbacks", () => {
         sourceWorkflowAutomationId: cancelledScenario.automationId,
       }),
     ).resolves.toStrictEqual({ items: [], claim: null });
+  });
 
+  it("delivers terminal-failure callbacks without an outbox retry loop", async () => {
     const failedScenario = await setupScenario();
     const failedRunId = await startRun(failedScenario);
     await seedResultCallback({
@@ -853,7 +855,9 @@ describe("Official Automation result email callbacks", () => {
         sourceWorkflowAutomationId: failedScenario.automationId,
       }),
     ).resolves.toStrictEqual({ items: [], claim: null });
+  });
 
+  it("honors account unsubscribe for successful result callbacks", async () => {
     const unsubscribedScenario = await setupScenario();
     const unsubscribedRunId = await startRun(unsubscribedScenario);
     await seedResultCallback({

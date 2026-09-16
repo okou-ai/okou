@@ -2638,6 +2638,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         {
             info!(run_id = %context.run_id, operation_id = %evidence.operation_id,
                 evidence_kind = ResourceFailureKind::GuestMemoryOomKilled.as_str(),
+                oom_classification = if evidence.proves_contained_tool_oom() { "contained_tool_oom" } else { "unproven_containment" },
                 "preserved operation-scoped guest kernel oom evidence");
         }
         agent_domain_oom_kill = guest_kernel_oom_killed_agent_domain(&evidence);
@@ -2952,6 +2953,7 @@ mod tests {
             guest_boot_id: None,
             started_boottime_us: TEST_OPERATION_STARTED_US,
             sampled_at: "2026-09-09T10:34:57.253Z".to_string(),
+            runtime_progress_at: None,
             kernel_cursor: None,
             kernel_status,
             groups: test_memory_groups(),

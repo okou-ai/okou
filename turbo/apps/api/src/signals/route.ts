@@ -40,10 +40,12 @@ import { buildInfoRoutes } from "./routes/build-info";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runnersRoutes } from "./routes/runners";
+import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { userExportRoutes } from "./routes/user-export";
 import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
+import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-session-output";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
 import { webhooksAgentLangfuseRoutes } from "./routes/webhooks-agent-langfuse";
@@ -63,7 +65,6 @@ import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
-import { impactMarketingRoutes } from "./routes/impact-marketing";
 import { acquisitionAttributionRoutes } from "./routes/acquisition-attribution";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
@@ -233,6 +234,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksAgentCheckpointsRoutes,
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentEventsRoutes,
+  ...webhooksAgentSessionOutputRoutes,
   ...webhooksAgentFirewallAuthRoutes,
   ...webhooksAgentStorageRoutes,
   ...connectorsSlugCallbackRoutes,
@@ -271,7 +273,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentsRoutes,
   ...artifactCatalogRoutes,
   ...acquisitionAttributionRoutes,
-  ...impactMarketingRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
   ...billingConcurrencyCheckoutRoutes,
@@ -417,4 +418,5 @@ export const ROUTES: readonly RouteEntry[] = [
   ...usageMembersRoutes,
   ...usageRecordRoutes,
   ...runnersRoutes,
+  ...runnerCancellationRoutes,
 ];

@@ -83,7 +83,6 @@ export type ArtifactRef = {
 
 export type ArtifactFileRef = {
   readonly file: File;
-  readonly url: string;
   readonly shareAvailable?: boolean;
 };
 
@@ -108,10 +107,7 @@ function artifactRefFromUrl(url: string): ArtifactRef {
   };
 }
 
-function withTextPreview(
-  ref: ArtifactRef,
-  ownerSignal: AbortSignal,
-): ArtifactRef {
+function withTextPreview(ref: ArtifactRef): ArtifactRef {
   if (!isTextPreviewKind(ref.kind)) {
     return ref;
   }
@@ -121,54 +117,48 @@ function withTextPreview(
     ...ref,
     text$,
     ...(ref.kind === "markdown"
-      ? { markdownTree$: createMarkdownPreviewTree(text$, ownerSignal) }
+      ? { markdownTree$: createMarkdownPreviewTree(text$) }
       : {}),
   };
 }
 
 function materializeArtifactRef(
   input: ArtifactRefInput,
-  ownerSignal: AbortSignal,
+  signal: AbortSignal,
 ): ArtifactRef {
   if (typeof input === "string") {
-    return withTextPreview(artifactRefFromUrl(input), ownerSignal);
+    return withTextPreview(artifactRefFromUrl(input));
   }
   if (!("file" in input)) {
-    return withTextPreview(
-      {
-        url: input.url,
-        ...(input.preview ?? createAttachmentPreviewSignals(input.url)),
-        kind: classifyChatAttachment({
-          contentType: input.contentType,
-          filename: input.filename,
-          url: input.url,
-        }),
-        filename: input.filename,
-        ...(input.text$ === undefined ? {} : { text$: input.text$ }),
-        ...(input.shareAvailable === undefined
-          ? {}
-          : { shareAvailable: input.shareAvailable }),
-      },
-      ownerSignal,
-    );
-  }
-  const resource = createObjectUrlResource(input.file, ownerSignal);
-  return withTextPreview(
-    {
-      url: resource.url,
-      ...createAttachmentPreviewSignals(resource.url),
+    return withTextPreview({
+      url: input.url,
+      ...(input.preview ?? createAttachmentPreviewSignals(input.url)),
       kind: classifyChatAttachment({
-        contentType: input.file.type,
-        filename: input.file.name,
-        url: resource.url,
+        contentType: input.contentType,
+        filename: input.filename,
+        url: input.url,
       }),
-      filename: input.file.name,
+      filename: input.filename,
+      ...(input.text$ === undefined ? {} : { text$: input.text$ }),
       ...(input.shareAvailable === undefined
         ? {}
         : { shareAvailable: input.shareAvailable }),
-    },
-    ownerSignal,
-  );
+    });
+  }
+  const resource = createObjectUrlResource(input.file, signal);
+  return withTextPreview({
+    url: resource.url,
+    ...createAttachmentPreviewSignals(resource.url),
+    kind: classifyChatAttachment({
+      contentType: input.file.type,
+      filename: input.file.name,
+      url: resource.url,
+    }),
+    filename: input.file.name,
+    ...(input.shareAvailable === undefined
+      ? {}
+      : { shareAvailable: input.shareAvailable }),
+  });
 }
 
 export type ThreadSidebarArtifactSource =
@@ -234,7 +224,6 @@ export interface ThreadSidebarSignals {
 function createCatalogArtifactPreviewSignals(
   artifactCatalog: ArtifactCatalogSignals,
   internalArtifactPreviewVersion$: State<number>,
-  internalArtifactPreviewSignal$: State<AbortSignal>,
 ) {
   const selectedArtifactPreview$ = computed(async (get) => {
     get(internalArtifactPreviewVersion$);
@@ -270,7 +259,6 @@ function createCatalogArtifactPreviewSignals(
   });
   const selectedArtifactMarkdownTree$ = createMarkdownPreviewTree(
     selectedArtifactText$,
-    internalArtifactPreviewSignal$,
   );
 
   return {
@@ -292,9 +280,6 @@ export function createThreadSidebarSignals(
   const internalClaimedAutoOpenCandidateKey$ = state<string | null>(null);
   const resetSidebarSessionSignal$ = resetSignal();
   const internalArtifactPreviewVersion$ = state(0);
-  // No sidebar session exists until `open$` starts one under its caller's
-  // lifetime, and there is nothing to release before then.
-  const internalSidebarSessionSignal$ = state(AbortSignal.any([]));
   const imageCanvas = createZoomableImageCanvasSignals();
   const artifactCatalog = createArtifactCatalogSignals({
     chatThreadId: threadId,
@@ -302,20 +287,16 @@ export function createThreadSidebarSignals(
   const preview = createCatalogArtifactPreviewSignals(
     artifactCatalog,
     internalArtifactPreviewVersion$,
-    internalSidebarSessionSignal$,
   );
 
-  const startSession$ = command(
-    ({ set }, ownerSignal: AbortSignal): AbortSignal => {
-      ownerSignal.throwIfAborted();
-      const sessionSignal = set(resetSidebarSessionSignal$, ownerSignal);
-      set(internalSidebarSessionSignal$, sessionSignal);
-      set(internalArtifactPreviewVersion$, (version) => {
-        return version + 1;
-      });
-      return sessionSignal;
-    },
-  );
+  const startSession$ = command(({ set }, signal: AbortSignal): AbortSignal => {
+    signal.throwIfAborted();
+    const sessionSignal = set(resetSidebarSessionSignal$, signal);
+    set(internalArtifactPreviewVersion$, (version) => {
+      return version + 1;
+    });
+    return sessionSignal;
+  });
 
   const publishTarget$ = command(
     ({ get, set }, target: ThreadSidebarTarget): void => {
@@ -335,19 +316,15 @@ export function createThreadSidebarSignals(
   );
 
   const open$ = command(
-    (
-      { set },
-      target: ThreadSidebarOpenTarget,
-      ownerSignal: AbortSignal,
-    ): void => {
-      set(startSession$, ownerSignal);
+    ({ set }, target: ThreadSidebarOpenTarget, signal: AbortSignal): void => {
+      set(startSession$, signal);
       set(publishTarget$, target);
     },
   );
 
   const openAttachment$ = command(
-    ({ set }, input: ArtifactRefInput, ownerSignal: AbortSignal): void => {
-      const sessionSignal = set(startSession$, ownerSignal);
+    ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
+      const sessionSignal = set(startSession$, signal);
       set(publishTarget$, {
         type: "artifact",
         source: {

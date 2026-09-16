@@ -64,7 +64,8 @@ class ModelJsonResponseInspection:
             extraction does not complete, ``usage_error`` contains the parser diagnostic.
         usage_error: The usage parser diagnostic when extraction did not complete. This is
             ``None`` when usage inspection is disabled, no usage is present in complete JSON, or
-            usage was extracted successfully.
+            usage was extracted successfully. With usage disabled, ``None`` does not imply that
+            failure inspection completed; check ``failure.is_valid`` independently.
         failure: Bounded :class:`ModelHttpFailureEvidence` for the same JSON document. When
             failure inspection is disabled, this is the default, intentionally invalid evidence.
             When it is enabled, callers must check ``failure.is_valid`` before interpreting the
@@ -83,8 +84,12 @@ class ModelJsonResponseInspector:
     One bounded :class:`JsonSelectiveExtractor` is shared by the active usage and failure
     consumers. It selects the union of their fields and is limited to 65,536 work units. When
     both consumers are enabled, failure-only strings may be discarded at their bound so that
-    usage extraction can remain available; the resulting failure evidence is then invalid and
-    must not be classified without checking ``is_valid``.
+    usage extraction can remain available. Discarding a failure-sensitive string invalidates
+    failure evidence; discarding the optional 512-byte ``error.message`` alone does not, provided
+    extraction otherwise completes within the failure-sensitive bounds. With failure inspection
+    alone, message overflow stops extraction and produces invalid evidence with no failure codes.
+    Always check ``failure.is_valid``; ``usage_error`` is ``None`` whenever usage is disabled,
+    including after a failure-only parse error.
 
     Feed chunks from one response with :meth:`feed`, use :meth:`accepts_more_input` to determine
     whether the parser can accept another chunk, and call :meth:`finish` exactly once after all
@@ -142,12 +147,14 @@ class ModelJsonResponseInspector:
 
         Call once after all response chunks have been fed. The returned ``usage`` and
         ``usage_error`` follow the selected protocol's usage contract. If usage inspection is
-        disabled, both usage fields are ``None``. If failure inspection is disabled, ``failure``
-        is a default :class:`ModelHttpFailureEvidence` with ``is_valid=False``. When failure
-        inspection is enabled, callers must check ``failure.is_valid`` before using it; incomplete
-        parsing or failure-sensitive overflow produces invalid evidence. With both consumers
-        enabled, failure-only overflow can invalidate ``failure`` without discarding available
-        usage data.
+        disabled, both usage fields are ``None`` even if failure inspection is invalid. If failure
+        inspection is disabled, ``failure`` is a default :class:`ModelHttpFailureEvidence` with
+        ``is_valid=False``. When failure inspection is enabled, callers must check
+        ``failure.is_valid`` before using it; incomplete parsing or failure-sensitive overflow
+        produces invalid evidence. With both consumers enabled, failure-only strings can be
+        discarded without losing available usage data;
+        discarding only the optional ``error.message`` does not itself invalidate failure evidence.
+        With failure inspection alone, optional-message overflow instead stops parsing.
         """
         result = self._extractor.finish()
         usage, usage_error = (
@@ -183,8 +190,11 @@ def create_model_json_response_inspector(
         with ``feed()``, consult ``accepts_more_input()`` before supplying another chunk, and
         call ``finish()`` exactly once after the response is complete. Usage and failure are
         collected by one selective parser, bounded to 65,536 work units. If both consumers are
-        enabled, failure-only string overflow can invalidate the failure projection while
-        preserving usage extraction; check ``failure.is_valid`` before interpreting it.
+        enabled, failure-sensitive string overflow can invalidate the failure projection while
+        preserving usage extraction. Optional ``error.message`` overflow alone does not invalidate
+        otherwise valid evidence in this mode, but stops extraction in failure-only mode. Check
+        ``failure.is_valid`` before interpreting it, even when ``usage_error`` is ``None`` because
+        usage inspection is disabled.
     """
     return ModelJsonResponseInspector(
         protocol,

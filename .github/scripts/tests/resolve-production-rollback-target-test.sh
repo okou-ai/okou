@@ -31,7 +31,7 @@ case "${1:-}" in
         [ "${MOCK_BLANK_TARGET_FLOOR_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "6d391117e4fead19e2105136fb2792a6e77801d8" ]; then
-      # The retained Runner predates S1 even when the API target contains it.
+      # Goal guards apply only to the API; Runner floors are checked separately.
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         exit 1
       fi
@@ -46,16 +46,27 @@ case "${1:-}" in
       [ "${MOCK_CLIENT_PRODUCT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eb2f211a9af41450d0d5dad10c0c8ad12fac0a24" ]; then
       [ "${MOCK_PREPARED_DOMAIN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "dddddddddddddddddddddddddddddddddddddddd" ]; then
+      [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "8a5e1299b4d26bd114ccec017b84b7a83fb4a164" ]; then
       [ "${MOCK_PERSONAL_SUBSCRIPTION_PRIORITY_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6" ]; then
+      if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_BALANCE_RUNNER_FLOOR_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_BALANCE_TARGET_FLOOR_VALID:-1}" = "1" ]
+      fi
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
     ;;
   tag)
     printf 'vm0-v1.2.3\n'
+    ;;
+  log)
+    printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
     ;;
   show)
     printf '[package]\nversion = "1.2.3"\n'
@@ -142,7 +153,7 @@ assert_failure() {
   grep -q "$expected_message" "${tmp_dir}/failure.err" || fail "missing failure message: ${expected_message}"
 }
 
-# A combined-S4-compatible API target must still resolve its valid pre-S1 Runner.
+# A compatible API target must resolve its independently compatible Runner tag.
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
@@ -153,6 +164,22 @@ grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version o
 grep -qx "runner_tag=runner-rs-v1.2.3" "$output_file" || fail "missing retained Runner tag output"
 runner_matrix=$(sed -n 's/^runner_matrix=//p' "$output_file")
 jq -e 'length == 2 and .[0].id == "arm64" and .[1].id == "x86_64"' >/dev/null <<<"$runner_matrix" || fail "unexpected Runner matrix"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates owner-aware provider balance failures" \
+  run_resolver "${tmp_dir}/balance-target.output" MOCK_BALANCE_TARGET_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/balance-target.output" ] || fail "incompatible API target must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates structured provider balance failures" \
+  run_resolver "${tmp_dir}/balance-runner.output" MOCK_BALANCE_RUNNER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/balance-runner.output" ] || fail "incompatible retained Runner must not publish outputs"
+if grep -Eq '^ssh |api.github.com/repos/.*/releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "incompatible retained Runner must fail before Runner artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "found 0" run_resolver "${tmp_dir}/zero.output" MOCK_VERCEL_MATCH_COUNT=0
@@ -551,6 +578,57 @@ assert_failure "first supported release is eb2f211a9af41450d0d5dad10c0c8ad12fac0
 if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "prepared writer floor must be checked before artifact resolution"
 fi
+
+for reader_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged marketing privacy cleanup preparation" \
+    run_resolver "${tmp_dir}/privacy-history.output" "MOCK_PRIVACY_READER_COMMIT=${reader_commit}"
+  [ ! -s "${tmp_dir}/privacy-history.output" ] || fail "missing privacy history must not publish outputs"
+  if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "missing privacy history must fail before artifact resolution"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates marketing privacy storage cleanup preparation" \
+  run_resolver "${tmp_dir}/privacy-floor.output" MOCK_PRIVACY_CLEANUP_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/privacy-floor.output" ] || fail "old privacy cleanup must not publish outputs"
+if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "privacy floor must be checked before artifact resolution"
+fi
+
+# Verify the real Git history boundary, including the cleanup file's later
+# deletion. The canonical introduction on main, rather than a PR branch SHA,
+# is the boundary that a retained release must contain.
+history_dir="${tmp_dir}/privacy-history"
+reader_path=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
+git init --initial-branch=main -q "$history_dir"
+git -C "$history_dir" config user.name "Rollback test"
+git -C "$history_dir" config user.email "rollback-test@example.invalid"
+git -C "$history_dir" -c commit.gpgsign=false commit --allow-empty -qm initial
+old_reader=$(git -C "$history_dir" rev-parse HEAD)
+git -C "$history_dir" update-ref refs/remotes/origin/main HEAD
+missing_reader=$(git -C "$history_dir" log --reverse --first-parent --diff-filter=A --format=%H origin/main -- "$reader_path" | sed -n '1p')
+[ -z "$missing_reader" ] || fail "unprepared main must not invent a privacy reader"
+git -C "$history_dir" checkout -qb privacy-preparation
+mkdir -p "${history_dir}/$(dirname "$reader_path")"
+printf 'prepared cleanup fixture\n' >"${history_dir}/${reader_path}"
+git -C "$history_dir" add "$reader_path"
+git -C "$history_dir" -c commit.gpgsign=false commit -qm preparation
+branch_reader=$(git -C "$history_dir" rev-parse HEAD)
+git -C "$history_dir" checkout -q main
+git -C "$history_dir" -c commit.gpgsign=false merge --no-ff -qm preparation-merge privacy-preparation
+prepared_reader=$(git -C "$history_dir" rev-parse HEAD)
+[ "$prepared_reader" != "$branch_reader" ] || fail "history fixture must distinguish branch and main introduction"
+git -C "$history_dir" rm -q "$reader_path"
+git -C "$history_dir" -c commit.gpgsign=false commit -qm contraction
+git -C "$history_dir" update-ref refs/remotes/origin/main HEAD
+resolved_reader=$(git -C "$history_dir" log --reverse --first-parent --diff-filter=A --format=%H origin/main -- "$reader_path" | sed -n '1p')
+[ "$resolved_reader" = "$prepared_reader" ] || fail "file deletion must preserve the original prepared reader boundary"
+if git -C "$history_dir" merge-base --is-ancestor "$resolved_reader" "$old_reader"; then
+  fail "unprepared release must remain outside the privacy rollback boundary"
+fi
+git -C "$history_dir" merge-base --is-ancestor "$resolved_reader" "$prepared_reader" || fail "prepared release must remain supported"
+git -C "$history_dir" merge-base --is-ancestor "$resolved_reader" HEAD || fail "contracted release must remain supported"
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Target commit predates personal subscription priority" \

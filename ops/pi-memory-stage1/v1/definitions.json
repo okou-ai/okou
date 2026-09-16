@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "status": "unactivated",
+  "requiredConfiguration": [
+    "reviewed production notifierIds",
+    "post-deployment APL revalidation at activation",
+    "group transition and bounded delivery verification"
+  ],
+  "monitors": [
+    {
+      "queryFile": "cost.apl",
+      "definition": {
+        "name": "pi memory stage 1 daily gross credit value v1",
+        "description": "20 gross credit-value USD per UTC day, including bounded previous-day reconciliation; this is not an invoice or net credits.",
+        "type": "Threshold",
+        "disabled": true,
+        "intervalMinutes": 5,
+        "rangeMinutes": 4320,
+        "operator": "AboveOrEqual",
+        "threshold": 20,
+        "columnName": "grossCreditValueUsd",
+        "notifyByGroup": true,
+        "notifyEveryRun": false,
+        "alertOnNoData": false,
+        "resolvable": false
+      },
+      "groupField": "accountingDay"
+    },
+    {
+      "queryFile": "health.apl",
+      "definition": {
+        "name": "pi memory stage 1 cost coverage v1",
+        "description": "Unknown usage/pricing, malformed or inconsistent observations, and replays without the original observation. No-data is not healthy coverage.",
+        "type": "Threshold",
+        "disabled": true,
+        "intervalMinutes": 5,
+        "rangeMinutes": 4320,
+        "operator": "AboveOrEqual",
+        "threshold": 1,
+        "columnName": "healthProblemCount",
+        "notifyByGroup": true,
+        "notifyEveryRun": false,
+        "alertOnNoData": false,
+        "resolvable": false
+      },
+      "groupField": "incidentDay"
+    }
+  ],
+  "queryRevision": 2
+}

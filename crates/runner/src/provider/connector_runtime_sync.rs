@@ -20,6 +20,14 @@
 //! cancellation token so work from a replaced registration cannot affect its
 //! successor when generations reset.
 //!
+//! A validated unresolved result is a normal domain observation: both its first
+//! occurrence and retries log at INFO, preserving the target and unavailable
+//! reason locally without entering the WARN+ Axiom transport. Request, response
+//! validation, and publication faults retain their separate warning boundaries.
+//! Unavailability does not change the pinned account or count as a successful
+//! sync. Older draining runners may still warn; missing warnings alone do not
+//! prove recovery. Confirm recovery through a later successful publication.
+//!
 //! A typed terminal-run response removes the entire run from tracking, cancels
 //! scheduled work, and fail-closes every still-matching target. Registry writes
 //! always re-check source IP and run id so stale work cannot patch a later run
@@ -56,7 +64,7 @@ use super::api::{ApiClient, ConnectorRuntimeSyncOutcome};
 use crate::error::RunnerError;
 use crate::ids::RunId;
 use crate::proxy::{
-    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimeRegistryUpdate,
+    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistryUpdate,
     CustomConnectorRuntimeRegistryState, ProxyRegistryHandle,
 };
 use crate::types::{
@@ -944,7 +952,7 @@ impl ConnectorRuntimeSyncCore {
                     retry_targets.push(target.clone());
                     continue;
                 }
-                warn!(
+                info!(
                     run_id = %run_id,
                     target = %target.target.log_identity(),
                     reason = ?reason,
@@ -1135,7 +1143,13 @@ impl ConnectorRuntimeSyncCore {
                     if prepared_publications.is_empty() {
                         drop(active_runs);
                         drop(transaction);
-                        (prepared_publications, Ok(Some(Vec::new())))
+                        (
+                            prepared_publications,
+                            Ok(Some(ConnectorRuntimePublication {
+                                outcomes: Vec::new(),
+                                publication: None,
+                            })),
+                        )
                     } else {
                         let updates = prepared_publications
                             .iter()
@@ -1155,8 +1169,13 @@ impl ConnectorRuntimeSyncCore {
                 Err(error) => (prepared_publications, Err(error)),
             };
             match publication {
-                Ok(Some(outcomes)) => {
-                    for (prepared, published) in prepared_publications.into_iter().zip(outcomes) {
+                Ok(Some(result)) => {
+                    if let Some(receipt) = result.publication {
+                        receipt.observe().await;
+                    }
+                    for (prepared, published) in
+                        prepared_publications.into_iter().zip(result.outcomes)
+                    {
                         if !published {
                             warn!(
                                 run_id = %run_id,
@@ -1266,8 +1285,11 @@ impl ConnectorRuntimeSyncCore {
             Err(error) => Err(error),
         };
         match publication {
-            Ok(Some(outcomes)) => {
-                for (target, outcome) in targets.iter().zip(outcomes) {
+            Ok(Some(result)) => {
+                if let Some(receipt) = result.publication {
+                    receipt.observe().await;
+                }
+                for (target, outcome) in targets.iter().zip(result.outcomes) {
                     if let ConnectorRuntimeFailCloseOutcome::Failed(error) = outcome {
                         warn!(
                             run_id = %run_id,
@@ -3179,6 +3201,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stalled_application_reply_releases_locks_and_preserves_replacement() {
+        use std::os::unix::fs::PermissionsExt;
+
+        for terminal in [false, true] {
+            let server = MockServer::start();
+            let run_id = RunId::nil();
+            let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
+            let (_dir, registry, registry_path, lock_path) =
+                registered_slack_registry(run_id).await;
+            let control_dir = tempfile::Builder::new()
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir()
+                .unwrap();
+            let listener =
+                tokio::net::UnixListener::bind(control_dir.path().join("control.sock")).unwrap();
+            registry.set_control_target_for_test(
+                control_dir.path().to_path_buf(),
+                "generation-1".into(),
+            );
+            handle
+                .register_run(ConnectorRuntimeSyncRegistration {
+                    run_id,
+                    source_ip: "10.200.0.2",
+                    registry: registry.clone(),
+                    targets: &[builtin_runtime_target_registration("slack")],
+                    refreshes: None,
+                })
+                .await;
+            mock_publication_response(&server, run_id, terminal);
+            let core = handle.core.clone();
+            let sync = tokio::spawn(async move {
+                core.sync_builtin_connector_runtime_now(run_id, vec!["slack".to_string()])
+                    .await;
+            });
+            let (mut peer, _) =
+                tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, listener.accept())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let size = peer.read_u32().await.unwrap();
+            let mut bytes = vec![0; size as usize];
+            peer.read_exact(&mut bytes).await.unwrap();
+            let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(request["method"], "registry.apply");
+            let committed = tokio::fs::read(&registry_path).await.unwrap();
+            let lock = crate::lock::try_acquire_or_busy(lock_path).await.unwrap();
+            assert!(
+                matches!(lock, crate::lock::TryLock::Acquired(_)),
+                "receipt wait must release publication ownership"
+            );
+            drop(lock);
+
+            // Re-registration must finish while the old addon reply is withheld.
+            let (_replacement_dir, replacement_path) = tokio::time::timeout(
+                SYNC_PUBLICATION_TEST_TIMEOUT,
+                register_slack_run(&handle, run_id),
+            )
+            .await
+            .expect("receipt wait must release active-run state");
+            let replacement_before = tokio::fs::read(&replacement_path).await.unwrap();
+            drop(peer); // Ambiguous result: do not replay publication or retry sync.
+            tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, sync)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(tokio::fs::read(registry_path).await.unwrap(), committed);
+            assert_eq!(
+                tokio::fs::read(replacement_path).await.unwrap(),
+                replacement_before
+            );
+            let active_runs = handle.core.inner.active_runs.lock().await;
+            let replacement = &active_runs[&run_id];
+            assert!(!replacement.cancel.is_cancelled());
+            assert!(replacement.sync_tasks.is_empty());
+            assert_eq!(
+                replacement.connectors[&builtin_target("slack")].consecutive_failures,
+                0
+            );
+            drop(active_runs);
+            handle.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
     async fn shutdown_cancels_publications_waiting_for_registry_lock() {
         for terminal in [false, true] {
             let server = MockServer::start();
@@ -3910,24 +4016,47 @@ mod tests {
 
         core.notify_connector_runtime_sync(run_id, target.clone())
             .await;
-        let request = recv_sync_request(&mut requests).await;
-        assert!(
-            core.sync_connector_runtime_batch_now(run_id, &request.targets)
+        for attempt in 1..=2 {
+            // The second request must come from the scheduled retry, without a wakeup.
+            let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
                 .await
-        );
+                .expect("unresolved target should retry before timeout")
+                .expect("runtime sync queue should stay open");
+            let (keep_run, events) = capture_sync_events(
+                core.sync_connector_runtime_batch_now(run_id, &request.targets),
+            )
+            .await;
+            assert!(keep_run);
+            assert!(
+                events.iter().all(|event| {
+                    event.level != tracing::Level::WARN && event.level != tracing::Level::ERROR
+                }),
+                "valid unavailability should not warn on attempt {attempt}: {events:#?}"
+            );
+            let unresolved = captured_event(
+                &events,
+                "connector runtime sync is unresolved; retaining last-known-good state",
+            );
+            assert_eq!(unresolved.level, tracing::Level::INFO);
+            assert_connector_field(unresolved, "target", "builtin:slack");
+            assert_connector_field(unresolved, "reason", "Connector");
 
-        unresolved_sync.assert_calls(1);
-        assert_eq!(
-            tokio::fs::read(&registry_path).await.unwrap(),
-            registry_before
-        );
-        let active_runs = core.inner.active_runs.lock().await;
-        assert_eq!(
-            active_runs[&run_id].connectors[&target].consecutive_failures,
-            1
-        );
-        assert!(active_runs[&run_id].sync_tasks.contains_key(&target));
-        drop(active_runs);
+            unresolved_sync.assert_calls(attempt);
+            assert_eq!(
+                tokio::fs::read(&registry_path).await.unwrap(),
+                registry_before
+            );
+            let active_runs = core.inner.active_runs.lock().await;
+            assert_eq!(
+                active_runs[&run_id].connectors[&target].consecutive_failures,
+                attempt as u32
+            );
+            assert_eq!(
+                active_runs[&run_id].connectors[&target].registration,
+                registration
+            );
+            assert!(active_runs[&run_id].sync_tasks.contains_key(&target));
+        }
 
         unresolved_sync.delete_async().await;
         let available_sync = server.mock(|when, then| {
@@ -3950,13 +4079,17 @@ mod tests {
                     }],
                 }));
         });
-        core.notify_connector_runtime_sync(run_id, target.clone())
-            .await;
-        let request = recv_sync_request(&mut requests).await;
-        assert!(
-            core.sync_connector_runtime_batch_now(run_id, &request.targets)
-                .await
-        );
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .expect("unresolved target should retry before timeout")
+            .expect("runtime sync queue should stay open");
+        let (keep_run, events) =
+            capture_sync_events(core.sync_connector_runtime_batch_now(run_id, &request.targets))
+                .await;
+        assert!(keep_run);
+        let recovery = captured_event(&events, "recovered connector runtime target");
+        assert_eq!(recovery.level, tracing::Level::INFO);
+        assert_connector_field(recovery, "recovered_after_failures", "2");
 
         available_sync.assert_calls(1);
         let registry_json: serde_json::Value = serde_json::from_str(
@@ -4415,10 +4548,16 @@ mod tests {
         .await;
         let request = recv_sync_request(&mut requests).await;
 
-        assert!(
-            core.sync_connector_runtime_batch_now(run_id, &request.targets)
-                .await
+        let (keep_run, events) =
+            capture_sync_events(core.sync_connector_runtime_batch_now(run_id, &request.targets))
+                .await;
+        assert!(keep_run);
+        let invalid = captured_event(
+            &events,
+            "invalid connector runtime sync result; retaining last-known-good state",
         );
+        assert_eq!(invalid.level, tracing::Level::WARN);
+        assert_eq!(warning_count(&events), 1);
 
         runtime_sync.assert_calls(1);
         assert_eq!(
@@ -4519,46 +4658,76 @@ mod tests {
         );
 
         available_sync.delete_async().await;
-        let unresolved_sync = server.mock(|when, then| {
-            when.method(POST)
-                .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"))
-                .json_body(json!({
-                    "targets": [{
-                        "kind": "custom",
-                        "customConnectorId": custom_connector_id,
-                        "baseUrlVars": base_url_vars,
-                        "sourceId": source_id,
-                    }],
-                }));
-            then.status(200)
-                .header("content-type", "application/json")
-                .json_body(json!({
-                    "results": [{
-                        "target": target.clone(),
-                        "state": "unresolved",
-                        "reason": "runtime-configuration-unavailable",
-                    }],
-                }));
-        });
         core.notify_connector_runtime_sync(run_id, target.clone())
             .await;
         let request = recv_sync_request(&mut requests).await;
-        assert!(
-            core.sync_connector_runtime_batch_now(run_id, &request.targets)
-                .await
-        );
+        for (index, (reason, diagnostic_reason)) in [
+            ("runtime-configuration-unavailable", "RuntimeConfiguration"),
+            ("permission-bundle-unavailable", "PermissionBundle"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let unresolved_sync = server.mock(|when, then| {
+                when.method(POST)
+                    .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"))
+                    .json_body(json!({
+                        "targets": [{
+                            "kind": "custom",
+                            "customConnectorId": custom_connector_id,
+                            "baseUrlVars": base_url_vars,
+                            "sourceId": source_id,
+                        }],
+                    }));
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .json_body(json!({
+                        "results": [{
+                            "target": target.clone(),
+                            "state": "unresolved",
+                            "reason": reason,
+                        }],
+                    }));
+            });
+            let (keep_run, events) = capture_sync_events(
+                core.sync_connector_runtime_batch_now(run_id, &request.targets),
+            )
+            .await;
+            assert!(keep_run);
+            assert!(
+                events.iter().all(|event| {
+                    event.level != tracing::Level::WARN && event.level != tracing::Level::ERROR
+                }),
+                "valid custom unavailability should not warn: {events:#?}"
+            );
+            let unresolved = captured_event(
+                &events,
+                "connector runtime sync is unresolved; retaining last-known-good state",
+            );
+            assert_eq!(unresolved.level, tracing::Level::INFO);
+            assert_connector_field(
+                unresolved,
+                "target",
+                &format!("custom:{custom_connector_id}"),
+            );
+            assert_connector_field(unresolved, "reason", diagnostic_reason);
 
-        unresolved_sync.assert_calls(1);
-        assert_eq!(
-            tokio::fs::read(&registry_path).await.unwrap(),
-            registry_after_available
-        );
-        let active_runs = core.inner.active_runs.lock().await;
-        let active = &active_runs[&run_id];
-        assert_eq!(active.connectors[&target].registration, registration);
-        assert_eq!(active.connectors[&target].consecutive_failures, 1);
-        assert!(active.sync_tasks.contains_key(&target));
-        drop(active_runs);
+            unresolved_sync.assert_calls(1);
+            assert_eq!(
+                tokio::fs::read(&registry_path).await.unwrap(),
+                registry_after_available
+            );
+            let active_runs = core.inner.active_runs.lock().await;
+            let active = &active_runs[&run_id];
+            assert_eq!(active.connectors[&target].registration, registration);
+            assert_eq!(
+                active.connectors[&target].consecutive_failures,
+                (index + 1) as u32
+            );
+            assert!(active.sync_tasks.contains_key(&target));
+            drop(active_runs);
+            unresolved_sync.delete_async().await;
+        }
         core.unregister_run(run_id).await;
     }
 

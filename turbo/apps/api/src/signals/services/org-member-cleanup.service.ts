@@ -107,7 +107,11 @@ async function revokeOrgMemberRunAuthority(
   // best-effort runner notification or the remaining member resource cleanup.
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
-      values: { status: "cancelled", completedAt: nowDate() },
+      values: {
+        status: "cancelled",
+        completedAt: nowDate(),
+        runnerCancellationMode: "hard",
+      },
       conditions: [
         eq(agentRuns.orgId, args.orgId),
         eq(agentRuns.userId, args.userId),

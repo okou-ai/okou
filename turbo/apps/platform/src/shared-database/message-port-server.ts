@@ -3,11 +3,8 @@ import type { Store } from "ccstate";
 import { captureSentryLogError } from "../lib/sentry-config.ts";
 import { logger } from "../signals/log.ts";
 import {
-  createChildAbortController,
   createDeferredPromise,
-  detach,
   onDomEventFn,
-  Reason,
   settle,
 } from "../signals/utils.ts";
 import type {
@@ -23,6 +20,8 @@ import {
   type SharedDatabaseWorkerMessage,
 } from "./protocol.ts";
 import {
+  closeConnection$,
+  openConnection$,
   recordConnectionHeartbeat$,
   registerConnection$,
 } from "./worker-context.ts";
@@ -63,7 +62,6 @@ const BridgeL = logger("SharedWorkerBridge");
 
 export class SharedDatabaseMessagePortServer {
   private readonly connectionId = crypto.randomUUID();
-  private readonly connectionController: AbortController;
   private readonly connectionSignal: AbortSignal;
   private readonly pendingTokenRequests = new Map<
     string,
@@ -78,9 +76,11 @@ export class SharedDatabaseMessagePortServer {
     workerSignal: AbortSignal,
   ) {
     workerSignal.throwIfAborted();
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    this.connectionController = createChildAbortController(workerSignal);
-    this.connectionSignal = this.connectionController.signal;
+    this.connectionSignal = store.set(
+      openConnection$,
+      this.connectionId,
+      workerSignal,
+    );
     L.debug("connection.connect", { connectionId: this.connectionId });
     port.addEventListener("message", this.handleMessage);
     port.start();
@@ -187,7 +187,6 @@ export class SharedDatabaseMessagePortServer {
     const signal = this.store.set(
       registerConnection$,
       this.connectionId,
-      this.connectionController,
       { getToken: this.requestToken, port: this.port },
       this.connectionSignal,
     );
@@ -249,15 +248,12 @@ export class SharedDatabaseMessagePortServer {
     message: RealtimeSubscribeMessage,
     signal: AbortSignal,
   ): void {
-    const daemon = this.store.set(
+    this.store.set(
       startWorkerRealtimeSubscription$,
       this.connectionId,
       message,
       signal,
     );
-    if (daemon) {
-      detach(daemon, Reason.Daemon, "shared database realtime subscription");
-    }
   }
 
   private stopRealtimeSubscription(message: RealtimeUnsubscribeMessage): void {
@@ -286,18 +282,16 @@ export class SharedDatabaseMessagePortServer {
       "abort",
       this.handleRegisteredConnectionAbort,
     );
-    this.connectionController.abort(
-      new DOMException(
-        "Shared database MessagePort disconnected",
-        "AbortError",
-      ),
-    );
+    this.store.set(closeConnection$, this.connectionId);
     this.registeredSignal = null;
     this.port.close();
   }
 
   private readonly handleMessage = onDomEventFn(
     async (event: MessageEvent<unknown>): Promise<void> => {
+      if (this.disconnected) {
+        return;
+      }
       const parsed = sharedDatabaseClientMessageSchema.safeParse(event.data);
       if (!parsed.success) {
         this.disconnect("invalid-message");
@@ -343,10 +337,7 @@ export class SharedDatabaseMessagePortServer {
         this.store.set(recordConnectionHeartbeat$, this.connectionId);
         // Token routing only considers tabs that have sent a heartbeat, so the
         // first heartbeat must be visible before realtime setup requests one.
-        const daemon = this.store.set(startSharedDatabaseWorkerDaemons$);
-        if (daemon) {
-          detach(daemon, Reason.Daemon, "shared database Worker daemons");
-        }
+        this.store.set(startSharedDatabaseWorkerDaemons$);
         return;
       }
       if (message.type === "realtime-subscribe") {

@@ -1,5 +1,5 @@
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import type { Root } from "hast";
 
 import { parseMarkdownTree } from "../../lib/markdown/pipeline.ts";
@@ -8,13 +8,12 @@ import {
   embedImageLoadSignals,
 } from "../image-load.ts";
 import {
-  createMermaidDiagramSignals,
+  createMermaidDiagramRegistry,
   embedMermaidSignals,
 } from "../mermaid-diagram.ts";
 
 export interface SharedThreadRichContentSignals {
   readonly trees$: Computed<Promise<ReadonlyMap<number, Root>>>;
-  readonly retry$: Command<void, []>;
 }
 
 function createScopedResolver<Key, Value>(
@@ -32,44 +31,29 @@ function createScopedResolver<Key, Value>(
   };
 }
 
-/**
- * Derives the rich bodies of one immutable shared thread when the view consumes
- * `trees$`. Its resource resolvers are bounded by those message bodies and keep
- * diagram and image signal identities stable if the user retries preparation.
- */
+/** Derive the rich bodies and resource graphs of one immutable shared thread. */
 export function createSharedThreadRichContentSignals(
   messages: readonly SharedMessage[],
-  ownerSignal: AbortSignal,
 ): SharedThreadRichContentSignals {
-  const resolveMermaidDiagram = createScopedResolver((code: string) => {
-    return createMermaidDiagramSignals(code, ownerSignal);
-  });
-  const resolveImageLoad = createScopedResolver(() => {
-    return createImageLoadSignals();
-  });
-  const internalRevision$ = state(0);
-  const trees$ = computed(async (get) => {
-    get(internalRevision$);
+  const trees$ = computed(async (): Promise<ReadonlyMap<number, Root>> => {
     // Let the page shell and plain bodies render before rich parsing begins.
     await Promise.resolve();
+    const diagrams = createMermaidDiagramRegistry();
+    const resolveImageLoad = createScopedResolver(() => {
+      return createImageLoadSignals();
+    });
     const trees = new Map<number, Root>();
     for (const message of messages) {
       const tree = parseMarkdownTree(message.content, {
         math: true,
         mermaid: true,
       });
-      embedMermaidSignals(tree, resolveMermaidDiagram);
+      embedMermaidSignals(tree, diagrams.register);
       embedImageLoadSignals(tree, resolveImageLoad);
       trees.set(message.messageIndex, tree);
     }
     return trees;
   });
 
-  const retry$ = command(({ set }) => {
-    set(internalRevision$, (revision) => {
-      return revision + 1;
-    });
-  });
-
-  return { retry$, trees$ };
+  return { trees$ };
 }

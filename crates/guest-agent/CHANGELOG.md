@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.91.2](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.1...guest-agent-v0.91.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* align provider failure classification across pi, codex, and claude code ([#34396](https://github.com/vm0-ai/okou/issues/34396)) ([ff4f23f](https://github.com/vm0-ai/okou/commit/ff4f23fa72b471204d0a27bcbc5466679ab16042))
+
+## [0.91.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.91.0...guest-agent-v0.91.1) (2026-09-15)
+
+## [0.91.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.5...guest-agent-v0.91.0) (2026-09-15)
+
+
+### Features
+
+* stream Pi sandbox assistant output ([#34299](https://github.com/vm0-ai/vm0/issues/34299)) ([2c12008](https://github.com/vm0-ai/vm0/commit/2c12008061eaf9d1fc8e0d2c1240697433182c8d))
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.90.5](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.4...guest-agent-v0.90.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+## [0.90.4](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.3...guest-agent-v0.90.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* **guest-agent:** clean up quiet descendants of test commands ([#34350](https://github.com/vm0-ai/vm0/issues/34350)) ([6641b4a](https://github.com/vm0-ai/vm0/commit/6641b4a9dc7835eb918c7435c1d8e1c1d102d3db))
+
 ## [0.90.3](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.2...guest-agent-v0.90.3) (2026-09-15)
 
 

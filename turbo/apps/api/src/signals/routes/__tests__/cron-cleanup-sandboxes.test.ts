@@ -11,6 +11,7 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type AgentRunConnectorDiagnosticRegistrationPayload,
   runnersConnectorRuntimeSyncContract,
+  runnersCancellationContract,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   testCronCleanupSandboxesStateContract,
@@ -49,6 +50,7 @@ import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandbo
 import { createFixtureTracker } from "./helpers/route-test";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { runnersRoutes } from "../runners";
+import { runnerCancellationRoutes } from "../runner-cancellation";
 
 const context = testContext();
 const webhooks = createWebhookCallbackApi(context);
@@ -76,6 +78,26 @@ interface RunFixture {
   readonly composeId: string;
   readonly orgId: string;
   readonly userId: string;
+}
+
+async function readCancellation(fixture: RunFixture) {
+  const response = await accept(
+    setupApp({ context, routes: runnerCancellationRoutes })(
+      runnersCancellationContract,
+    ).get({
+      params: { runId: fixture.runId },
+      headers: {
+        authorization: `Bearer ${generateSandboxToken(fixture.userId, fixture.runId, fixture.orgId)}`,
+      },
+      query: {
+        runnerGroup: "vm0/test",
+        runnerId: randomUUID(),
+        heartbeatGeneration: 1,
+      },
+    }),
+    [200],
+  );
+  return response.body;
 }
 
 interface ExportJobFixture {
@@ -844,6 +866,7 @@ describe("sandbox cleanup", () => {
         createdAt: new Date(THREADLESS_TEST_NOW_MS - 60_000),
         lastHeartbeatAt: new Date(THREADLESS_TEST_NOW_MS - 60_000),
         threadless: true,
+        runnerGroup: "vm0/test",
       }),
     );
 
@@ -852,6 +875,10 @@ describe("sandbox cleanup", () => {
     expect(cancelledResponse.body.threadlessRuns.cancelled).toBe(1);
     await expect(findRun(fixture.runId)).resolves.toMatchObject({
       status: "cancelled",
+    });
+    await expect(readCancellation(fixture)).resolves.toMatchObject({
+      state: "present",
+      mode: "hard",
     });
 
     mockNow(THREADLESS_TEST_NOW_MS + CANCELLATION_RECOVERY_STALE_AFTER_MS);
@@ -1363,6 +1390,10 @@ describe("sandbox cleanup", () => {
     await expect(findRun(fixture.runId)).resolves.toMatchObject({
       status: "timeout",
       error: "Run timed out (no heartbeat)",
+    });
+    await expect(readCancellation(fixture)).resolves.toMatchObject({
+      state: "present",
+      mode: "hard",
     });
     expect(
       context.mocks.ably.publish.mock.calls.filter(([channel]) => {

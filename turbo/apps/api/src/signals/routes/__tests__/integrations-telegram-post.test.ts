@@ -1723,8 +1723,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it.each([
     { ownerKind: "custom", enabled: true, scenario: "models" },
     { ownerKind: "official", enabled: true, scenario: "models" },
-    { ownerKind: "custom", enabled: true, scenario: "replies" },
-    { ownerKind: "official", enabled: true, scenario: "replies" },
+    { ownerKind: "custom", enabled: true, scenario: "reply-anchors" },
+    { ownerKind: "official", enabled: true, scenario: "reply-anchors" },
+    { ownerKind: "custom", enabled: true, scenario: "pinned-replies" },
+    { ownerKind: "official", enabled: true, scenario: "pinned-replies" },
     { ownerKind: "custom", enabled: false, scenario: "models" },
     { ownerKind: "official", enabled: false, scenario: "models" },
   ] as const)(
@@ -1910,7 +1912,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
       const main = await completeDm("start the main DM", 3501);
       expect(main.claim.resumeSession).toBeNull();
-      if (scenario === "replies") {
+      if (scenario !== "models") {
         const branch = await completeDm(
           "start a reply chain",
           3503,
@@ -1927,14 +1929,17 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
           branch.sessionId,
         );
-        const earlierReply = await completeDm(
-          "reply to the earlier user message",
-          3505,
-          3503,
-        );
-        expect(earlierReply.claim.resumeSession?.sessionId).toBe(
-          branchFollowUp.sessionId,
-        );
+        if (scenario === "reply-anchors") {
+          const earlierReply = await completeDm(
+            "reply to the earlier user message",
+            3505,
+            3503,
+          );
+          expect(earlierReply.claim.resumeSession?.sessionId).toBe(
+            branchFollowUp.sessionId,
+          );
+          return;
+        }
         await sendDm("/model claude-opus-4-8", 3506);
         const pinnedReply = await completeDm(
           "keep the reply chain model",
@@ -1943,7 +1948,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         );
         expect(pinnedReply.claim.modelUsageProvider).toBe("claude-sonnet-5");
         expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
-          earlierReply.sessionId,
+          branchFollowUp.sessionId,
         );
         return;
       }

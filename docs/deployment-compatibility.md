@@ -393,15 +393,17 @@ cost or the prior one-credit-per-minute cost from the authenticated ready job.
 It does not assume the production account's transition date or bill the
 preflight maximum. Remove the legacy allowance only after verifying the managed
 account's transition and that no recoverable historical jobs need the old rate.
-Follow-up [#34056](https://github.com/vm0-ai/vm0/issues/34056) owns these gates
-and the old-API normalization cleanup described below.
+Parent [#34056](https://github.com/vm0-ai/vm0/issues/34056) retains these
+unverified provider-account and historical-job gates. Its response-only child
+[#34320](https://github.com/vm0-ai/vm0/issues/34320) removes the separately
+drained old-API normalization described below; it does not remove legacy rates.
 An explicitly unbilled ready response is rejected. Polling headers may report
 zero new usage on a paid-link refresh; the original job cost remains authoritative.
 
-The additive response fields distinguish media intent from delivery evidence:
+The response fields distinguish media intent from delivery evidence:
 
 - `quality` and `format` remain request aliases for older CLI artifacts;
-  `requested` explicitly contains those same values.
+  the required `requested` block explicitly contains those same values.
 - `provider.quality` and `provider.format` preserve the accepted ready metadata.
   Provider-reported resolution accepts renditions such as `576p`, independently
   of the finite request-quality choices. It is not a byte-level resolution
@@ -410,8 +412,9 @@ The additive response fields distinguish media intent from delivery evidence:
   unrecognized. `delivered.format` uses only that evidence. Existing filenames
   and content types may be request-derived and are not used to infer it.
 - `delivered.quality` uses stored provider reporting and is null for audio.
-  Missing historical delivery metadata remains null. New artifact recovery can
-  establish a sniffed format without fabricating missing original quality.
+  The `delivered` block is required, but both members remain nullable. Missing
+  historical delivery metadata remains null. New artifact recovery can establish
+  a sniffed format without fabricating missing original quality.
 
 No relational migration or stored-job rewrite is required. Old JSONB writers
 legitimately omit the new optional media fields; new readers keep their original
@@ -419,12 +422,33 @@ usage and return unknown delivery metadata. Interrupted settlement and paid-link
 refresh keep the same job and usage idempotency key. Refresh metadata must match
 the original accepted duration and cost, rather than reprice a paid download.
 
-| Pairing            | Supported behavior                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Old CLI, new API   | Existing request aliases and response fields remain valid; additional fields can be ignored.                                                                                                    |
-| New CLI, old API   | Optional response fields allow parsing; output adds explicit requested values and null delivered values. Remove this normalization only when old API targets leave the rollout/rollback window. |
-| Old API, new JSONB | Additive keys do not change existing required values; rollback retains the old API's pre-existing HD validation limitation.                                                                     |
-| New API, old JSONB | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields.                                                                      |
+The response-envelope retirement was verified on **2026-09-15**:
+
+- [#34070](https://github.com/vm0-ai/vm0/pull/34070), merge
+  `9c55bc983c52f37369576d36eb32fbb0aec94994`, first shipped the unconditional
+  create/get/list writer in API **1.598.0**.
+- The [API production promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+  checked out and built `05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`, API
+  **1.603.2**, and published `api.vm0.ai` at **07:24:43 UTC**. This is the
+  build's release SHA, not the moving GitHub deployment metadata SHA.
+- The [rollback resolver](../.github/scripts/resolve-production-rollback-target.sh)
+  already enforces `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, API **1.600.1**,
+  which contains that writer. The [rollback workflow](../.github/workflows/rollback-production.yml)
+  loads the resolver from `main`, so a historical target cannot replace the guard.
+  No additional rollback floor is introduced.
+
+APIs without these blocks are therefore outside supported canonical serving and
+rollback targets. The CLI passes through the API's redacted response without
+synthesizing missing blocks. This receipt retires only absent response blocks:
+it proves neither a provider-rate transition nor an old-CLI drain, and does not
+replace the independent MP3 compatibility requirements below.
+
+| Pairing                      | Supported behavior                                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API             | Existing request aliases remain valid for mutually supported formats; additional blocks can be ignored.                    |
+| New CLI, supported old API   | Writer-capable APIs already emit both blocks, including explicit nulls. No CLI normalization is needed.                    |
+| Supported old API, new JSONB | Additive media keys preserve existing required values for mutually supported formats.                                      |
+| New API, old JSONB           | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields. |
 
 #### Explicit MP3 social downloads
 
@@ -877,6 +901,35 @@ production rollback resolver rejects targets that do not contain the reader
 commit. The reason is stored outside strict payload JSON so old API instances
 remain compatible during the additive database migration and traffic overlap.
 
+Balance failures keep `insufficient_credits` for vm0 credit admission and add
+`provider_insufficient_credits` for upstream model-account balance. Completion
+stores that real failure reason for both BYOK and built-in runs. Public presentation
+uses persisted run ownership to display a platform-owned balance failure as
+"The current model is unavailable." and omit its billing reason from public chat
+metadata. Model unavailability is presentation, not a completion failure reason.
+The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
+use generic failure copy for an unknown token instead of rejecting the run or
+showing the vm0 recharge card. The token addition required no schema migration.
+
+The #34219 cleanup follows the reader/writer rollout in #34251. The production
+read on 2026-09-16 found API `1.607.0`, App `0.902.2`, and all three running
+Runners on `0.194.6`, containing the owner-aware reader and structured writer
+commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`.
+
+Historical errors remain as stored, including missing or misclassified failure
+reasons. No data migration or repair is required. The user accepted that those
+records may display raw errors or the old incorrect credit classification after
+terminal text inference is removed. Terminal readers use the persisted cause.
+Current failed provider-event detection and network-export redaction remain.
+The production rollback resolver enforces the commit above for both the API
+target and its independently resolved Runner tag, preventing an older writer or
+public reader from returning for new runs.
+
+This change does not certify alert delivery. #34219 remains open for actual
+built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+verification. Runner INFO events are below the Axiom upload threshold, and the
+investigation token could not read monitor configuration.
+
 Avoid one-shot protocol flips:
 
 - Do not require a new request field from frontend or runner in the same PR that
@@ -1105,14 +1158,43 @@ Free-member support. Existing route coverage checks all-Free configuration
 without a query parameter; invitation admission continues to use normalized
 status and administrator authorization, and package controls use `showUsagePack`.
 
-Keep `test-member-invitation-retirement.ts`, its frozen outgoing API fixture,
-the private retained-schema controls, and the new column transition validator
-until **1137 itself is deployed**, its production journal is verified, and the
-surviving invariants have permanent coverage. Free invitations, suspended
-direct/paid rejection, admin authorization, reactivation, historical backfill,
-and explicit `showUsagePack: false` remain covered. Issue #32575 stays open for
-that release verification and validator retirement; this PR performs no
-production migration or release.
+The final #32575 cleanup follows production release [#34303](https://github.com/vm0-ai/vm0/pull/34303),
+which promoted API 1.604.0 and App 0.900.0 from
+`8a391b88833ae0b075c4df194010641955d4f936`. That actual artifact contains
+#34317. The release PR's earlier branch head does not contain #34317 and is
+not the production artifact used for this verification.
+
+The [API production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104345191059)
+checked out that exact artifact and completed **Run Production Migrations** at
+**2026-09-15 10:31:12.0275988 UTC**. This is the real production completion,
+separate from the preceding smoke clone's 10:31:09.4559442 UTC completion. The
+artifact's final journal entry is 1137, `when=1789460587817`. Its 1137 SQL,
+migration runner and entry point are byte-identical to #34317: the runner awaits
+both column drops and the journal insertion in one transaction before the entry
+point prints `Migrations complete`. That acknowledged execution establishes the
+committed frontier and column contraction; no direct production journal or
+catalog SELECT is claimed.
+
+Fresh serving-alias reads resolve both `api.vm0.ai` and `api.okou.ai` to READY
+production deployment `dpl_AFZ3enCuHEt768R3HaqanNg8ZxtH` at that same artifact.
+The [App production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104346013714)
+verified the immutable App artifact and assets, then completed promotion at
+10:33:12 UTC. The serving `https://app.okou.ai/` HTML reports that exact SHA and
+version 0.900.0. Current main still loads the rollback resolver from main and
+enforces API 1.600.1 at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24` as the
+prepared-writer floor. Both that floor and the serving API use the canonical
+entitlement mapping and return migration state without a query opt-in. The
+serving/rollback compatibility cycle covered by the invitation validators is
+complete.
+
+The cleanup removes both invitation transition validators, the frozen outgoing
+API projection, and the retained/trigger-free private-schema variants. Permanent
+schema validation exercises the canonical projection on both replayed and freshly
+generated schemas. Historical `showUsagePack` backfill checks remain. Current API
+coverage retains infrastructure failure/transaction cases and verifies
+persisted status normalization through the billing endpoint; existing invitation
+and page suites retain Free, suspended, administrator, reactivation and explicit
+`showUsagePack: false` behavior. Close #32575 after the final cleanup merges.
 
 ### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
 
@@ -1140,6 +1222,29 @@ The invitation status-mirror trigger is included; its obsolete physical columns
 and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
 the withdrawn feature remains withdrawn. See the
 [writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1132).
+
+### Withdrawn marketing privacy storage contraction (2026-09-15)
+
+Migration 1139 drops the three withdrawn privacy tables and their trigger/function
+under #33747. The old `user.deleted` cleanup still unconditionally names
+`privacy_choices`, so preparation #34296 must be released and its old writers
+drained before contraction can merge/release. The prepared cleanup handles all
+three relations present or absent under the shared advisory lock also taken
+exclusively by the migration. Current contraction code removes that temporary
+helper and schema dependency entirely.
+
+The rollback resolver derives the preparation's actual introduction from main's
+first-parent history of `marketing-privacy-cleanup.service.ts`, preserving that
+boundary after the file is deleted and across a squash merge. It rejects absent
+history and targets predating preparation before looking up artifacts. The retained
+target must also be a released READY artifact. The canonical preparation
+introduction is `e98391290d01e88ece8bf1acfcfc258b3f1e3c13`. Record the immutable
+production artifact and old-invocation drain on
+[contraction #34305](https://github.com/vm0-ai/vm0/pull/34305) before it becomes
+ready; this source guard alone does not prove serving or drain. See the
+[explicit release and rollback gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
+API rollback cannot recreate the retired rows. The withdrawn feature stays
+withdrawn, and #33275 owns any replacement privacy design.
 
 ### Workflow automation connector-account projections
 
@@ -1351,28 +1456,41 @@ triggers, and views after that release drains.
 The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
-`sshAccess` is staff-only, and `cloudflareAccess` stays disabled, including for staff.
+Direct and Cloudflare Access now share the existing staff-only `sshAccess` switch;
+there is no independent Access switch. The SSH cohort and Agent grants are unchanged.
 Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
 Before the first protected configuration or binding is written in a deployed
 environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
-#34081 owns Access management UI and full real-Run acceptance before activation.
+#34081 owns Access management UI; #34370 records integrated real-Run acceptance
+and the owner-approved evidence boundaries at closure.
 Management stays inside `/connectors/ssh`. Access is a reusable host connection
 setting under the existing SSH Agent grant, not a separately authorized service.
-The Access feature switch controls rollout; it does not add an Agent permission.
+The SSH feature switch controls rollout for both transports; it does not replace
+the existing Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-| State                                                                 | Required behavior                                                                                      |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
-| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
-| Current API and S2 Runner with authorized protected handoff           | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
-| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                                     |
-| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                                             |
-| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                                              |
+The management UI uses the existing canonical Access endpoints; it adds no
+schema or private Runner contract. With SSH enabled, Access management and
+protected host creation are available without an additional opt-in. With SSH off,
+both transports' management, guest inventory and fresh authority are unavailable.
+Already-bound hosts are never silently converted to Direct. Removing a binding
+requires SSH eligibility and an explicit Direct selection. Losing SSH eligibility or changing
+owner clears open secret forms and cancels their pending UI work. API authorization
+and same-owner foreign keys remain authoritative; frontend visibility is not an
+access check.
+
+| State                                                              | Required behavior                                                                                      |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
+| Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
+| Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
+| Current API with an unauthorized host or SSH feature off           | Private authority and guest inventory remain unavailable under the SSH gate and Agent grant.           |
+| Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
+| Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
 
 Feature disable does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
@@ -1381,12 +1499,27 @@ or conversion is part of deployment.
 #34080 changes the Runner transport without changing guest CLI terminal enums or
 the S1 private API contract. Existing Direct requests keep their behavior. A
 missing/incompatible authority response fails closed; no pre-GA dual decoder is
-introduced. The feature remains default-off after the carrier code lands, pending
-authorized real-provider evidence and #34081's integrated acceptance.
+introduced. The separate switch removal changes API eligibility and Platform
+visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
+Old pre-removal APIs may still enforce their Access switch, and old App bundles
+may hide Access until refreshed. Both remain pre-GA under `sshAccess`; deploy the
+current API/App and refresh staff clients rather than adding a compatibility alias
+or second decoder. Retired switch overrides are ignored by the existing registered-key
+filter; no database migration or destructive cleanup is required.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
 may leave cached authority usable for the remainder of an active Run if a notice
 is missed. End those Runs when immediate revocation is required.
+
+#34353 changes only Runner-local authority ownership, not the API, guest RPC or
+persisted data contracts. New Runners preserve SSH authority and healthy work
+across Ably connection loss, recovery and initial subscription unavailability;
+draining old Runners retain their previous disconnect-eviction behavior. First
+use/cache misses still authorize through the same API. Delivered invalidation,
+failure eviction and Run/sandbox teardown remain effective. The accepted
+Run-lifetime missed-notification window includes observed outages; this introduces
+no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
+API rollout or migration is required for this Runner change.
 
 ## Integration input attachments
 
@@ -1597,3 +1730,23 @@ consumer/recovery, cancellation, capacity counting, credential retention and era
 A v1–v3-only application is below the rollback floor while v4 records remain.
 Do not shrink the CHECK or cascade away releasing leases. See the linked contract
 for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
+
+## DeepSeek V4.1 Flash Pi coverage
+
+The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
+requires the API's matching commit-addressed CLI for new admission and preserves
+old captured contexts. Existing Responses schemas and Runner claims are unchanged.
+Retain the V4.1 reader and API billing writer in serving/recovery and rollback
+targets while admitted V4.1 Pi work remains.
+
+## Durable Run stop intent (#34383)
+
+The [Run cancellation reconciliation contract](run-cancellation-reconciliation.md)
+adds nullable `agent_runs.runner_cancellation_mode` and an authenticated v1 read
+endpoint. Apply migration 1143 before promoting API code. Its CHECK remains
+`NOT VALID` because all existing rows receive NULL; new writes are constrained
+without a historical scan. Old writers remain valid with NULL. Rollback retains
+the additive column.
+Deploy the API across the serving fleet before enabling the Runner consumer in
+#34384. Unsupported endpoints and other inconclusive reads must not become
+disappearance decisions. This API slice alone adds no new stop-delay bound.

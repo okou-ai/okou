@@ -29,7 +29,7 @@ import {
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
   addFeishuMessageReaction,
-  listFeishuChatMessages,
+  listFeishuMessages,
   replyWithFeishuMessage,
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
@@ -488,8 +488,15 @@ function formatFeishuContext(
 function formatConversationHistory(
   history: readonly FeishuHistoryMessage[],
   current: FeishuInboundMessage,
+  threadHistory: readonly FeishuHistoryMessage[],
 ): FeishuPromptContext {
-  const messages = [...history]
+  const messages = [
+    ...new Map(
+      [...history, ...threadHistory].map((message) => {
+        return [message.message_id, message];
+      }),
+    ).values(),
+  ]
     .filter((message) => {
       return !message.deleted && message.message_id !== current.messageId;
     })
@@ -517,7 +524,15 @@ function formatConversationHistory(
       return Boolean(value);
     }),
   );
+  const fetchedThreadIds = new Set(
+    threadHistory.map((message) => {
+      return message.message_id;
+    }),
+  );
   const threadMessages = messages.filter((message) => {
+    if (fetchedThreadIds.has(message.message_id)) {
+      return true;
+    }
     return [
       message.thread_id,
       message.root_id,
@@ -557,6 +572,27 @@ function formatConversationHistory(
   };
 }
 
+async function loadFeishuHistory(
+  args: {
+    readonly db: Db;
+    readonly installationId: string;
+    readonly containerType: "chat" | "thread";
+    readonly containerId: string;
+  },
+  signal: AbortSignal,
+): Promise<readonly FeishuHistoryMessage[]> {
+  const history = await tapError(listFeishuMessages(args, signal), (error) => {
+    L.warn("Failed to load Feishu conversation history", {
+      error,
+      installationId: args.installationId,
+      containerType: args.containerType,
+      containerId: args.containerId,
+    });
+  });
+  signal.throwIfAborted();
+  return history ?? [];
+}
+
 export async function loadFeishuConversationHistory(
   args: {
     readonly db: Db;
@@ -564,27 +600,31 @@ export async function loadFeishuConversationHistory(
   },
   signal: AbortSignal,
 ): Promise<FeishuPromptContext> {
-  const history = await tapError(
-    listFeishuChatMessages(
+  const { message } = args;
+  const [history, threadHistory] = await Promise.all([
+    loadFeishuHistory(
       {
         db: args.db,
-        installationId: args.message.installationId,
-        chatId: args.message.chatId,
+        installationId: message.installationId,
+        containerType: "chat",
+        containerId: message.chatId,
       },
       signal,
     ),
-    (error) => {
-      L.warn("Failed to load Feishu conversation history", {
-        error,
-        installationId: args.message.installationId,
-        chatId: args.message.chatId,
-      });
-    },
-  );
+    message.chatType !== "p2p" && message.threadId
+      ? loadFeishuHistory(
+          {
+            db: args.db,
+            installationId: message.installationId,
+            containerType: "thread",
+            containerId: message.threadId,
+          },
+          signal,
+        )
+      : Promise.resolve([]),
+  ]);
   signal.throwIfAborted();
-  return history
-    ? formatConversationHistory(history, args.message)
-    : { text: "", files: [] };
+  return formatConversationHistory(history, message, threadHistory);
 }
 
 export function buildFeishuSystemPrompt(args: {

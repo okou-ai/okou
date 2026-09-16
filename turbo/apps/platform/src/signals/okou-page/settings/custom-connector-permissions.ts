@@ -7,16 +7,14 @@ import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/a
 
 import { apiClient$ } from "../../api-client.ts";
 import { accept } from "../../../lib/accept.ts";
-import { withCleanup } from "../../utils.ts";
-import { reloadCustomConnectorAuthorizedAgents$ } from "./custom-connectors.ts";
+import { resetSignal, withCleanup } from "../../utils.ts";
+import {
+  customConnectorAgentAuthorizations$,
+  reloadCustomConnectorAuthorizedAgents$,
+} from "./custom-connectors.ts";
+import { agentCustomConnectorGrants$ } from "../job-detail/custom-connectors.ts";
 
 type CustomConnectorPermissionSurface = "agent-detail" | "access-management";
-
-interface CustomConnectorPermissionTarget {
-  readonly surface: CustomConnectorPermissionSurface;
-  readonly agentId: string;
-  readonly connectorId: string;
-}
 
 export interface CustomConnectorPermissionDraft {
   readonly surface: CustomConnectorPermissionSurface;
@@ -27,15 +25,18 @@ export interface CustomConnectorPermissionDraft {
   readonly permissionNames: readonly string[];
 }
 
-const internalPermissionTarget$ = state<CustomConnectorPermissionTarget | null>(
-  null,
-);
 const internalPermissionDraft$ = state<CustomConnectorPermissionDraft | null>(
   null,
 );
+const resetPermissionSignal$ = resetSignal();
+const resetPermissionSaveSignal$ = resetSignal();
 
 export const customConnectorPermissionDraft$ = computed((get) => {
   return get(internalPermissionDraft$);
+});
+
+const permissionConnectorId$ = computed((get) => {
+  return get(internalPermissionDraft$)?.connectorId ?? null;
 });
 
 export const openCustomConnectorPermissions$ = command(
@@ -48,12 +49,18 @@ export const openCustomConnectorPermissions$ = command(
       readonly initiallyAuthorized: boolean;
       readonly permissionNames: readonly string[];
     },
+    signal: AbortSignal,
   ): void => {
-    set(internalPermissionTarget$, {
-      surface: args.surface,
-      agentId: args.agentId,
-      connectorId: args.connectorId,
-    });
+    signal.throwIfAborted();
+    const sessionSignal = set(resetPermissionSignal$, signal);
+    sessionSignal.addEventListener(
+      "abort",
+      () => {
+        set(resetPermissionSaveSignal$);
+        set(internalPermissionDraft$, null);
+      },
+      { once: true },
+    );
     set(internalPermissionDraft$, {
       surface: args.surface,
       agentId: args.agentId,
@@ -65,31 +72,9 @@ export const openCustomConnectorPermissions$ = command(
   },
 );
 
-export const closeCustomConnectorPermissions$ = command(
-  (
-    { set },
-    args: {
-      readonly surface: CustomConnectorPermissionSurface;
-      readonly agentId: string;
-      readonly connectorId: string;
-    },
-  ): void => {
-    set(internalPermissionTarget$, (current) => {
-      return current?.surface === args.surface &&
-        current.agentId === args.agentId &&
-        current.connectorId === args.connectorId
-        ? null
-        : current;
-    });
-    set(internalPermissionDraft$, (current) => {
-      return current?.surface === args.surface &&
-        current.agentId === args.agentId &&
-        current.connectorId === args.connectorId
-        ? null
-        : current;
-    });
-  },
-);
+export const closeCustomConnectorPermissions$ = command(({ set }): void => {
+  set(resetPermissionSignal$);
+});
 
 export const setCustomConnectorPermissionDraftValue$ = command(
   (
@@ -121,13 +106,13 @@ export const setCustomConnectorPermissionDraftValue$ = command(
 
 export const customConnectorPermissionBundle$ = computed(
   async (get): Promise<CustomConnectorPermissionBundleResponse | null> => {
-    const target = get(internalPermissionTarget$);
-    if (!target) {
+    const connectorId = get(permissionConnectorId$);
+    if (!connectorId) {
       return null;
     }
     const client = get(apiClient$)(customConnectorByIdContract);
     const result = await accept(
-      client.permissions({ params: { id: target.connectorId } }),
+      client.permissions({ params: { id: connectorId } }),
       [200, 404],
     );
     return result.status === 200 ? result.body : null;
@@ -138,12 +123,15 @@ export const saveCustomConnectorPermissions$ = command(
   async (
     { get, set },
     args: {
+      readonly surface: CustomConnectorPermissionSurface;
       readonly agentId: string;
       readonly connectorId: string;
       readonly permissionNames: readonly string[];
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    signal.throwIfAborted();
+    const sessionSignal = set(resetPermissionSaveSignal$, signal);
     const client = get(apiClient$)(agentCustomConnectorsContract);
     await withCleanup(
       accept(
@@ -158,7 +146,7 @@ export const saveCustomConnectorPermissions$ = command(
             ],
             operation: "add",
           },
-          fetchOptions: { signal },
+          fetchOptions: { signal: sessionSignal },
         }),
         [200],
       ),
@@ -167,5 +155,11 @@ export const saveCustomConnectorPermissions$ = command(
       },
     );
     signal.throwIfAborted();
+    sessionSignal.throwIfAborted();
+    await (args.surface === "agent-detail"
+      ? get(agentCustomConnectorGrants$)
+      : get(customConnectorAgentAuthorizations$));
+    signal.throwIfAborted();
+    sessionSignal.throwIfAborted();
   },
 );
