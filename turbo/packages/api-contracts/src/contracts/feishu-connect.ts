@@ -33,6 +33,8 @@ export const FEISHU_TENANT_SCOPES = [
   "im:chat:update",
   "im:message.group_at_msg.include_bot:readonly",
   "im:message.group_at_msg:readonly",
+  // Required alongside im:message:readonly to read group chat history.
+  "im:message.group_msg",
   "im:message.p2p_msg:readonly",
   "im:message.pins:read",
   "im:message.pins:write_only",
