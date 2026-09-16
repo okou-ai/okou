@@ -77,6 +77,16 @@ describe("agent-facing operational CLI help", () => {
     expect(read).toContain("Follow next_command and next_cursor");
     expect(read).toContain("exact base64 chunks");
 
+    const write = await helpFor(sshCommand, ["session", "write"]);
+    expect(write).toContain("actual newline");
+    expect(write).toContain("okou ssh session list --json");
+    expect(write).toContain("Never automatically replay the input");
+
+    const signal = await helpFor(sshCommand, ["session", "signal"]);
+    expect(signal).toContain("does not confirm remote handling or effects");
+    expect(signal).toContain("okou ssh session status <session-id> --json");
+    expect(signal).toContain("Never automatically replay the signal");
+
     const upload = await helpFor(sshCommand, ["upload"]);
     expect(upload).toContain("1 GiB (1,073,741,824 bytes)");
     expect(upload).toContain("shared by uploads and downloads");
@@ -169,9 +179,30 @@ describe("agent-facing operational CLI help", () => {
   it("routes generation, artifact delivery, template preparation, and mail review", async () => {
     const generate = await helpFor(generateCommand);
     expect(generate).toContain("attached generation template");
+    expect(generate).toContain(
+      'run "okou generate <type> --help" directly before execution',
+    );
+    expect(generate).toContain(
+      "reuse help already read for the same CLI version and context",
+    );
+    expect(generate).toContain(
+      "only when provider or registry discovery is needed",
+    );
+    expect(generate).toContain(
+      "use --provider <name> directly when the type supports it",
+    );
+    expect(generate).not.toContain("list every available provider");
     expect(generate).toContain("avatar-video uses --script or --audio-url");
     expect(generate).toContain(
       "wait for it to finish and use the returned artifact",
+    );
+
+    const connectorGeneration = await helpFor(generateCommand, ["text"]);
+    expect(connectorGeneration).toContain(
+      "Use --provider <connector-name> to get skill-invocation guidance",
+    );
+    expect(connectorGeneration).toContain(
+      "run with no flags to see every available provider",
     );
 
     const upload = await helpFor(webCommand, ["upload-file"]);
