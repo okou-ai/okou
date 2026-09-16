@@ -143,6 +143,7 @@ const resolvePaneThread$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const { thread, initialEventId } = args;
+    set(thread.composer.voice.setup$, signal);
 
     L.debug("resolvePaneThread$ Promise.all start", {
       threadId: thread.threadId,
