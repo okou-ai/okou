@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.13](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.12...guest-control-server-v0.21.13) (2026-09-15)
+
+## [0.21.12](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.11...guest-control-server-v0.21.12) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.21.11](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.10...guest-control-server-v0.21.11) (2026-09-15)
+
 ## [0.21.10](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.9...guest-control-server-v0.21.10) (2026-09-15)
 
 

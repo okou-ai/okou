@@ -22,6 +22,8 @@ surface; the index does not replace their detailed rules.
   requirements for independently deployed components and persisted state.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and activation gates.
+- [Subscription decryption experiment](./subscription-decryption-experiment.md):
+  bounded KMS concurrency, provider-lock measurements and failure trade-offs.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.
@@ -51,7 +53,7 @@ surface; the index does not replace their detailed rules.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
-  behavior, retained database state, and rollout boundaries.
+  behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
   identities, API configuration, Oregon-first model routing, and rollout gates.
 - [Google Ads browser routing](./google-ads-browser-routing.md): verified account
@@ -83,6 +85,8 @@ surface; the index does not replace their detailed rules.
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
+- [Guest memory policy](./runner-memory-policy.md): shared workload capacity,
+  control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,

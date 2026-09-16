@@ -2,7 +2,7 @@
 
 The managed launch directory owns the socket until Runner reaps the process tree.
 Never unlink an existing endpoint here, including after a failed bind or shutdown.
-Only status is migrated; registry, JSONL and delivery keep their existing owners.
+Status and log flush share transport; the JSONL writer owns pending prefixes.
 """
 
 import asyncio
@@ -13,15 +13,19 @@ import socket
 import struct
 import threading
 from concurrent.futures import Future
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from uuid import UUID
 
 import addon_process_logging
+import jsonl_writer
 
 MAX_FRAME_BYTES = 64 * 1024
 MAX_CONNECTIONS = 16
 CONNECTION_TIMEOUT_SECONDS = 5.0
 LIFECYCLE_TIMEOUT_SECONDS = 5.0
 SOCKET_NAME = "control.sock"
+LOG_FLUSH_TIMEOUT_SECONDS = 4.0
+LOG_FLUSH_POLL_SECONDS = 0.05
 
 
 def _identifier(value: object) -> str:
@@ -150,7 +154,7 @@ class ControlServer:
                 size = struct.unpack("!I", await _read_exact(connection, 4))[0]
                 if not 0 < size <= MAX_FRAME_BYTES:
                     return
-                response = self._reply(await _read_exact(connection, size))
+                response = await self._reply(await _read_exact(connection, size))
                 payload = json.dumps(response, separators=(",", ":"), allow_nan=False).encode()
                 if len(payload) > MAX_FRAME_BYTES:
                     raise ValueError("control response exceeds frame limit")
@@ -159,13 +163,13 @@ class ControlServer:
                 )
         except (TimeoutError, OSError, EOFError):
             # A disconnected/slow peer has no outcome to acknowledge. This
-            # connection owns no mutations and must not affect other clients.
+            # writer retains any pending flush ticket independently of this peer.
             pass
         finally:
             connection.close()
             self._connections.discard(connection)
 
-    def _reply(self, payload: bytes) -> dict[str, object]:
+    async def _reply(self, payload: bytes) -> dict[str, object]:
         request_id: str | None = None
         try:
             request: object = json.loads(
@@ -184,6 +188,8 @@ class ControlServer:
                 return self._error(request_id, "invalid_request")
             if generation != self._generation:
                 return self._error(request_id, "stale_generation")
+            if method == "logs.flush":
+                return await self._flush_logs(request_id, request["params"])
             if method != "proxy.status":
                 return self._error(request_id, "unknown_method")
             if request["params"]:
@@ -195,6 +201,47 @@ class ControlServer:
             "generation": self._generation,
             "type": "result",
             "data": {"state": "running"},
+        }
+
+    async def _flush_logs(self, request_id: str, params: dict[str, object]) -> dict[str, object]:
+        if set(params) != {"runId", "path"}:
+            return self._error(request_id, "invalid_request")
+        run_id = params["runId"]
+        path = params["path"]
+        if not isinstance(run_id, str) or str(UUID(run_id)) != run_id:
+            return self._error(request_id, "invalid_request")
+        if not isinstance(path, str) or "\x00" in path:
+            return self._error(request_id, "invalid_request")
+        log_path = PurePosixPath(path)
+        if (
+            not log_path.is_absolute()
+            or str(log_path) != path
+            or ".." in log_path.parts
+            or log_path.name != f"network-{run_id}.jsonl"
+        ):
+            return self._error(request_id, "invalid_request")
+        # This host-only request observes an exact writer key. It neither opens
+        # a supplied path nor resolves a now-unregistered run through a reused IP.
+        boundary = jsonl_writer.capture_flush_boundary(path)
+        if boundary is None:
+            return self._error(request_id, "busy")
+        deadline = asyncio.get_running_loop().time() + LOG_FLUSH_TIMEOUT_SECONDS
+        while pending := boundary.pending_count():
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(LOG_FLUSH_POLL_SECONDS, remaining))
+        return {
+            "requestId": request_id,
+            "generation": self._generation,
+            "type": "result",
+            "data": {
+                "runId": run_id,
+                "path": path,
+                "boundary": boundary.sequence,
+                "pending": pending,
+                "state": "deadline" if pending else "processed",
+            },
         }
 
     def _error(self, request_id: str | None, code: str) -> dict[str, object]:

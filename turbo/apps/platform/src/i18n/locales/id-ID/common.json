@@ -1513,6 +1513,51 @@
       "title": "Tindakan tidak tersedia"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "Sekali sehari, setiap hari",
+          "name": "Check in setiap hari",
+          "unit": "per hari"
+        },
+        "connector": {
+          "description": "Gmail, Notion, dan 100+ lainnya",
+          "name": "Hubungkan konektor",
+          "unit": "per konektor"
+        },
+        "inReview": "Sedang ditinjau",
+        "inReviewDescription": "Terkirim, menunggu ditinjau",
+        "invite": {
+          "description": "Setiap orang yang kamu tambahkan dihitung",
+          "name": "Undang tim kamu",
+          "unit": "per anggota"
+        },
+        "personalBalanceNote": "Kredit masuk ke saldo pribadi kamu.",
+        "progressLabel": "Progres memulai",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "Posting, lalu tempel tautannya",
+          "name": "Bagikan {{assistantName}} di X"
+        },
+        "shareDialog": {
+          "description": "Posting sesuatu yang kamu buat, lalu tempel tautannya. Kamu dapat satu kali kirim.",
+          "helper": "Postingan harus publik dan menyebut {{assistantName}}.",
+          "inputLabel": "Tautan postingan",
+          "placeholder": "https://x.com/...",
+          "submit": "Kirim",
+          "title": "Bagikan {{assistantName}} di X"
+        },
+        "slack": {
+          "description": "Tempat tim kamu sudah bekerja",
+          "name": "Tambahkan {{assistantName}} ke Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "Selesaikan satu langkah, kreditnya jadi milikmu.",
+        "title": "Mulai",
+        "workflow": {
+          "description": "Ubah tugas berulang jadi otomatisasi",
+          "name": "Buat workflow"
+        }
+      },
       "growth": {
         "addInSlack": "Tambahkan {{assistantName}} di Slack",
         "connect": "Hubungkan",
@@ -2264,6 +2309,40 @@
             "prompt": "Buat gambar untuk situs saya"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Menulis proposal untuk klien",
+            "prompt": "Buat dek proposal klien. Tanyakan tentang kliennya, pekerjaan yang saya usulkan, jadwal, dan harganya."
+          },
+          "companyOverview": {
+            "label": "Menjelaskan apa yang dikerjakan perusahaan saya",
+            "prompt": "Buat dek profil perusahaan. Tanyakan apa yang kami kerjakan, siapa yang kami layani, dan apa yang harus diingat audiens."
+          },
+          "eventTalk": {
+            "label": "Menyiapkan materi bicara untuk acara",
+            "prompt": "Buat dek untuk sesi bicara saya. Tanyakan tentang acaranya, audiensnya, dan satu gagasan yang ingin saya sampaikan."
+          },
+          "pitchDeck": {
+            "label": "Mempresentasikan bisnis ke investor",
+            "prompt": "Buat pitch deck investor untuk bisnis saya. Tanyakan masalahnya, produknya, traksi sejauh ini, dan berapa yang ingin saya galang."
+          },
+          "productIntro": {
+            "label": "Memperkenalkan produk baru",
+            "prompt": "Buat dek yang memperkenalkan produk baru. Tanyakan apa fungsinya, untuk siapa, dan apa yang membuatnya berbeda."
+          },
+          "resultsReadout": {
+            "label": "Mempresentasikan hasil saya",
+            "prompt": "Ubah hasil saya menjadi dek laporan. Tanyakan angkanya, periode yang dicakup, dan keputusan yang didukungnya."
+          },
+          "teamUpdate": {
+            "label": "Menyusun update untuk tim",
+            "prompt": "Buat dek untuk update tim saya. Tanyakan apa yang terjadi periode ini, apa berikutnya, dan siapa audiensnya."
+          },
+          "training": {
+            "label": "Mengajari tim saya sesuatu",
+            "prompt": "Buat dek pelatihan tentang topik yang saya pilih. Tanyakan siapa yang dilatih dan apa yang harus mereka kuasai setelahnya."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Ubah foto menjadi video",
@@ -2469,7 +2548,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -5347,6 +5425,31 @@
       "teamDescription": "Kembangkan tim Anda dengan 10 eksekusi paralel dan lebih banyak kredit."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Tambah kredit",
+      "openModelProviders": "Buka Penyedia Model",
+      "reconnectClaude": "Hubungkan kembali Claude Code",
+      "shareWithAdmin": "Bagikan kepada admin"
+    },
+    "anthropicKeyAdmin": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Perbarui atau ganti kunci API di Penyedia Model, lalu coba lagi.",
+    "anthropicKeyMember": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Minta admin ruang kerja untuk memperbarui atau mengganti kunci API.",
+    "askAdmin": "Minta admin ruang kerja untuk menambah kredit atau meningkatkan paket ruang kerja.",
+    "claudeReconnect": "Autentikasi langganan Claude Code gagal. Hubungkan kembali Claude Code di Penyedia Model, lalu coba lagi.",
+    "claudeTerms": "Claude Code memerlukan persetujuan atas Ketentuan Penggunaan dan Kebijakan Privasi yang diperbarui. Masuk ke https://claude.ai dengan akun Claude yang terhubung di Penyedia Model, setujui pembaruan tersebut, lalu coba lagi.",
+    "codexOverloaded": "Model yang dipilih sedang mencapai kapasitas maksimum. Silakan coba model lain.",
+    "codexReconnect": "Sesi ChatGPT perlu dihubungkan kembali. Hubungkan kembali ChatGPT (Codex) di Penyedia Model, lalu coba lagi.",
+    "contentPolicyRejected": "Penyedia model menolak permintaan ini berdasarkan kebijakan keamanan kontennya. Mencoba lagi dengan masukan yang sama akan tetap gagal. Ubah kalimat permintaan, mulai percakapan baru, atau beralih ke model lain.",
+    "executionTimeout": "Proses ini mencapai batas waktu eksekusi.",
+    "failed": "Eksekusi gagal",
+    "modelRoutesUnavailable": "Semua rute bawaan untuk model ini sementara tidak tersedia. Silakan coba lagi nanti.",
+    "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
+    "modelUnavailable": "Model saat ini tidak tersedia.",
+    "overloaded": "{{model}} sedang kelebihan beban. Tunggu beberapa menit dan coba lagi, atau beralih ke model lain.",
+    "providerBalance": "Saldo akun penyedia model yang terhubung tidak mencukupi.",
+    "transient": "Terjadi kesalahan. Silakan coba lagi nanti.",
+    "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau konfigurasikan kunci API Anda sendiri untuk melanjutkan."
+  },
   "serviceStatus": {
     "dismiss": "Tutup pembaruan layanan",
     "label": "Pembaruan status layanan",
@@ -5910,7 +6013,6 @@
         "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "multipleInstallations": "Ada beberapa instalasi Morning Brief. Selesaikan konflik sebelum mengubah preferensi ini.",
         "nextBrief": "Ringkasan berikutnya {{date}} ({{timezone}})",
         "paused": "Dijeda",
         "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
@@ -6149,6 +6251,40 @@
     "cancel": "Batal",
     "chooseFile": "Pilih file",
     "choosePrivateKeyFile": "Pilih file kunci privat",
+    "cloudflare": {
+      "add": "Tambah konfigurasi Access",
+      "back": "Kembali ke host",
+      "changed": "Konfigurasi Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
+      "clientId": "ID klien Service Token",
+      "clientSecret": "Rahasia klien Service Token",
+      "configuration": "Konfigurasi Access",
+      "createNew": "Buat konfigurasi Access",
+      "delete": "Hapus konfigurasi",
+      "deleteHelp": "Hapus konfigurasi Access yang tidak digunakan ini? Service Token yang tersimpan tidak dapat dipulihkan.",
+      "direct": "Langsung",
+      "empty": "Belum ada konfigurasi Access. Tambahkan Service Token untuk menghubungkan host SSH yang dilindungi Cloudflare Access.",
+      "gatewayHelp": "Terhubung melalui WebSocket terenkripsi di port 443. Atur alamat dan port SSH privat di Cloudflare.",
+      "inUse": "Konfigurasi Access ini digunakan oleh host. Tinjau host terkait dan ubah konfigurasinya atau hapus terlebih dahulu.",
+      "inUseHelp": "Pilih konfigurasi Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus konfigurasi ini.",
+      "keepChanges": "Terapkan perubahan saya ke versi ini",
+      "latest": "Pengaturan terakhir yang disimpan",
+      "loadFailed": "Tidak dapat memuat konfigurasi Access. Coba lagi.",
+      "loading": "Memuat konfigurasi Access…",
+      "missing": "Konfigurasi Access ini tidak tersedia lagi. Pilih konfigurasi lain atau buat yang baru.",
+      "mode": "Koneksi",
+      "name": "Nama konfigurasi",
+      "protectedHost": "Cloudflare Access · {{name}}",
+      "publishedHost": "Nama host yang dipublikasikan",
+      "rename": "Ganti nama konfigurasi",
+      "replace": "Ganti Service Token",
+      "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
+      "select": "Pilih konfigurasi",
+      "summary_other": "{{count}} konfigurasi Access",
+      "title": "Cloudflare Access",
+      "tokenHelp": "Gunakan Service Token yang diizinkan kebijakan Service Auth aplikasi SSH Anda. Ini terpisah dari login SSH.",
+      "unavailable": "Cloudflare Access tidak tersedia untuk akun ini. Host yang dilindungi tidak dapat terhubung; host langsung tidak terpengaruh.",
+      "usedBy_other": "Digunakan oleh {{count}} host:"
+    },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access tidak berhasil membuat terowongan SSH. Periksa nama host yang dipublikasikan dan perutean Tunnel.",
       "accessRejected": "Cloudflare Access menolak koneksi. Periksa token layanan dan kebijakan Service Auth aplikasi.",
@@ -6192,7 +6328,7 @@
     "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
     "displayName": "Nama tampilan",
     "edit": "Edit host",
-    "editHelp": "Memilih kredensial lain hanya mengubah host ini. Mengubah alamat atau port akan menghapus kunci host yang dipelajari.",
+    "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host agar tersedia bagi Agent dengan akses SSH.",
     "errors": {
       "agentUnavailable": "Agen ini tidak lagi tersedia. Pilih Agen lain.",

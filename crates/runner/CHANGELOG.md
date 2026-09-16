@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.194.6](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.5...runner-rs-v0.194.6) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** admit decoded skills beside staged instructions ([#34425](https://github.com/vm0-ai/vm0/issues/34425)) ([a889f9e](https://github.com/vm0-ai/vm0/commit/a889f9e9156c7c3f073e1cdedf313bb37bc1d7e3))
+* **runner:** bound access websocket messages for origin reads ([#34424](https://github.com/vm0-ai/vm0/issues/34424)) ([d7d62c1](https://github.com/vm0-ai/vm0/commit/d7d62c188bbea55a3a14b68c331f6a656f582bd8))
+
+## [0.194.5](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.4...runner-rs-v0.194.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.194.4](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.3...runner-rs-v0.194.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+## [0.194.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.2...runner-rs-v0.194.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** prevent addon stderr backpressure from blocking proxy hooks ([#34351](https://github.com/vm0-ai/vm0/issues/34351)) ([2119c7c](https://github.com/vm0-ai/vm0/commit/2119c7c6d465c35c1dd2b283931c298505d441fb))
+
 ## [0.194.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.1...runner-rs-v0.194.2) (2026-09-15)
 
 

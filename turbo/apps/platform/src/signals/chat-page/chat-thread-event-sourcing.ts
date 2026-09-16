@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import {
   chatThreadMetadataContract,
   type ChatThreadEvent,
@@ -19,7 +19,8 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { pathParams$ } from "../route.ts";
 import {
-  createChildAbortController,
+  resetSignal,
+  waitForOperation,
   createDeferredPromise,
   settle,
   withCleanup,
@@ -73,22 +74,29 @@ interface BootstrapThreadMetaEntry {
   readonly owner: object;
 }
 
-type ColdThreadMetaResolution =
+type CacheMissThreadMetaResolution =
   | { readonly source: "event-stream"; readonly meta: ThreadMeta | null }
   | { readonly source: "metadata"; readonly meta: ThreadMeta };
 
-type RemoteThreadMetaAttempt =
-  | Extract<ColdThreadMetaResolution, { readonly source: "metadata" }>
+type ThreadMetadataShortcutAttempt =
+  | Extract<CacheMissThreadMetaResolution, { readonly source: "metadata" }>
   | { readonly source: "metadata-unavailable" };
 
-interface ResolvedThreadMeta {
-  readonly localDurationMs?: number;
+type ThreadMetaResolutionPath =
+  | "after-cache-hydration"
+  | "canonical-event-stream"
+  | "canonical-not-found"
+  | "current-projection"
+  | "metadata-shortcut";
+
+interface ThreadMetaLookupResult {
+  readonly cacheHydrationWaitMs?: number;
+  readonly cacheMissResolutionMs?: number;
   readonly meta: ThreadMeta | null;
-  readonly remoteDurationMs?: number;
-  readonly source: "local" | "memory" | "not_found" | "remote";
+  readonly resolutionPath: ThreadMetaResolutionPath;
 }
 
-interface RemoteThreadMetaResponse {
+interface ThreadMetadataShortcutResponse {
   readonly meta: ThreadMeta | null;
   readonly outcome: Exclude<
     ChatThreadMetadataShortcutOutcome,
@@ -148,17 +156,17 @@ const registerBootstrapThreadMeta$ = command(
 );
 
 // eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
-const initialLocalChatThreadEventsLoadedDeferred$ = computed((get) => {
+const initialChatThreadEventCacheHydrationDeferred$ = computed((get) => {
   return createDeferredPromise<void>(get(rootSignal$));
 });
 
 // eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
-const initialRemoteChatThreadEventsSyncedDeferred$ = computed((get) => {
+const initialChatThreadEventCanonicalReadyDeferred$ = computed((get) => {
   return createDeferredPromise<void>(get(rootSignal$));
 });
 
-const initialLocalChatThreadEventsLoaded$ = computed((get) => {
-  return get(initialLocalChatThreadEventsLoadedDeferred$).promise;
+const initialChatThreadEventCacheHydrated$ = computed((get) => {
+  return get(initialChatThreadEventCacheHydrationDeferred$).promise;
 });
 
 const optimisticChatThreadCreateIds$ = computed((get): ReadonlySet<string> => {
@@ -190,13 +198,8 @@ const sharedChatThreadEventDataKey$ = computed((): ChatThreadEventDataKey => {
   return { kind: "chat-thread-event" };
 });
 
-const applySharedChatThreadEventResult$ = command(
-  (
-    { get, set },
-    result: ChatThreadEventQueryResult,
-    phase: "local" | "remote",
-    signal: AbortSignal,
-  ): void => {
+const applyPersistedChatThreadEventResult$ = command(
+  ({ set }, result: ChatThreadEventQueryResult, signal: AbortSignal): void => {
     const lastEvent = result.events.at(-1);
     const state: ChatThreadEventState = {
       snapshot:
@@ -217,17 +220,23 @@ const applySharedChatThreadEventResult$ = command(
       events: state.events,
     });
     set(syncCurrentChatThreadDocumentTitle$, signal);
-    if (phase === "local") {
-      const loaded = get(initialLocalChatThreadEventsLoadedDeferred$);
-      if (!loaded.settled()) {
-        loaded.resolve();
-      }
-      return;
-    }
-    set(clearBootstrapThreadMeta$);
-    const synced = get(initialRemoteChatThreadEventsSyncedDeferred$);
-    if (!synced.settled()) {
-      synced.resolve();
+  },
+);
+
+const hydrateSharedChatThreadEventCache$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const dataKey = await get(sharedChatThreadEventDataKey$);
+    signal.throwIfAborted();
+    const cached = await set(
+      queryChatThreadEventSharedDatabase$,
+      { dataKey, afterSeqId: null, consistency: "cache-only" },
+      signal,
+    );
+    signal.throwIfAborted();
+    set(applyPersistedChatThreadEventResult$, cached, signal);
+    const hydration = get(initialChatThreadEventCacheHydrationDeferred$);
+    if (!hydration.settled()) {
+      hydration.resolve();
     }
   },
 );
@@ -235,7 +244,7 @@ const applySharedChatThreadEventResult$ = command(
 // Each caller runs its own catch-up: a mutation can commit after an older sync
 // has already read its result, so sharing one in-flight refresh would serve a
 // stale answer. Failure remains a rejection, never authoritative not-found.
-const syncSharedEventDrivenChatThreads$ = command(
+const catchUpSharedChatThreadEventSource$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const dataKey = await get(sharedChatThreadEventDataKey$);
     signal.throwIfAborted();
@@ -266,29 +275,27 @@ const syncSharedEventDrivenChatThreads$ = command(
             signal,
           );
     signal.throwIfAborted();
-    set(applySharedChatThreadEventResult$, result, "remote", signal);
+    set(applyPersistedChatThreadEventResult$, result, signal);
+    set(clearBootstrapThreadMeta$);
+    const canonicalReady = get(initialChatThreadEventCanonicalReadyDeferred$);
+    if (!canonicalReady.settled()) {
+      canonicalReady.resolve();
+    }
   },
 );
 
-const subscribeSharedEventDrivenChatThreads$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const dataKey = await get(sharedChatThreadEventDataKey$);
-    signal.throwIfAborted();
-    const cached = await set(
-      queryChatThreadEventSharedDatabase$,
-      { dataKey, afterSeqId: null, consistency: "cache-only" },
-      signal,
-    );
-    signal.throwIfAborted();
-    set(applySharedChatThreadEventResult$, cached, "local", signal);
-    await set(syncSharedEventDrivenChatThreads$, signal);
+const initializeSharedChatThreadEventSource$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    await set(hydrateSharedChatThreadEventCache$, signal);
+    await set(catchUpSharedChatThreadEventSource$, signal);
   },
 );
 
-export const syncEventDrivenChatThreads$ = syncSharedEventDrivenChatThreads$;
+export const catchUpChatThreadEventSource$ =
+  catchUpSharedChatThreadEventSource$;
 
-export const subscribeEventDrivenChatThreads$ =
-  subscribeSharedEventDrivenChatThreads$;
+export const initializeChatThreadEventSource$ =
+  initializeSharedChatThreadEventSource$;
 
 const chatThreadsSnapshot$ = computed((get) => {
   return get(chatThreadEventState$).snapshot?.chatThreads ?? [];
@@ -358,7 +365,7 @@ export function threadMeta(threadId: string) {
   });
 }
 
-function remoteThreadMeta(metadata: ChatThreadMetadata): ThreadMeta {
+function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
   return {
     id: metadata.id,
     agentId: metadata.agentId,
@@ -374,12 +381,12 @@ function remoteThreadMeta(metadata: ChatThreadMetadata): ThreadMeta {
   };
 }
 
-const fetchRemoteThreadMeta$ = command(
+const fetchThreadMetadataShortcut$ = command(
   async (
     { get },
     threadId: string,
     signal: AbortSignal,
-  ): Promise<RemoteThreadMetaResponse> => {
+  ): Promise<ThreadMetadataShortcutResponse> => {
     const client = get(apiClient$)(chatThreadMetadataContract);
     const result = await accept(
       client.get({
@@ -393,46 +400,35 @@ const fetchRemoteThreadMeta$ = command(
     if (result.status === 404) {
       return { meta: null, outcome: "not-found" };
     }
-    return { meta: remoteThreadMeta(result.body), outcome: "hit" };
+    return { meta: threadMetaFromMetadata(result.body), outcome: "hit" };
   },
 );
-
-function waitForSharedWork<T>(
-  work: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  signal.throwIfAborted();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const waitController = createChildAbortController(signal);
-  const aborted = createDeferredPromise<never>(waitController.signal);
-  return withCleanup(Promise.race([work, aborted.promise]), () => {
-    waitController.abort(
-      new DOMException("Thread metadata wait completed", "AbortError"),
-    );
-  });
-}
 
 const lookupEventStreamThreadMeta$ = command(
   async (
     { get },
-    meta$: Computed<ThreadMeta | null>,
-    sync: Promise<void>,
+    threadId: string,
+    eventStreamReady: Promise<void>,
     signal: AbortSignal,
-  ): Promise<ColdThreadMetaResolution> => {
-    await waitForSharedWork(sync, signal);
+  ): Promise<CacheMissThreadMetaResolution> => {
     signal.throwIfAborted();
-    return { source: "event-stream", meta: get(meta$) };
+    await waitForOperation(eventStreamReady, signal);
+    signal.throwIfAborted();
+    return {
+      source: "event-stream",
+      meta: get(chatThreadMetaMap$).get(threadId) ?? null,
+    };
   },
 );
 
-const attemptRemoteThreadMeta$ = command(
+const attemptThreadMetadataShortcut$ = command(
   async (
     { set },
     threadId: string,
     signal: AbortSignal,
-  ): Promise<RemoteThreadMetaAttempt> => {
+  ): Promise<ThreadMetadataShortcutAttempt> => {
     const result = await settle(
-      set(fetchRemoteThreadMeta$, threadId, signal),
+      set(fetchThreadMetadataShortcut$, threadId, signal),
       signal,
     );
     if (!result.ok) {
@@ -447,105 +443,140 @@ const attemptRemoteThreadMeta$ = command(
   },
 );
 
-async function resolveThreadMetaAttempts(
-  metadata: Promise<RemoteThreadMetaAttempt>,
-  eventStream: Promise<ColdThreadMetaResolution>,
-): Promise<ColdThreadMetaResolution> {
+async function resolveCacheMissThreadMetaAttempts(
+  metadata: Promise<ThreadMetadataShortcutAttempt>,
+  eventStream: Promise<CacheMissThreadMetaResolution>,
+): Promise<CacheMissThreadMetaResolution> {
   const first = await Promise.race([metadata, eventStream]);
   return first.source === "metadata-unavailable" ? eventStream : first;
 }
 
-const resolveColdThreadMeta$ = command(
-  async (
-    { set },
-    threadId: string,
-    meta$: Computed<ThreadMeta | null>,
-    canonicalSync: Promise<void>,
-    signal: AbortSignal,
-  ): Promise<ColdThreadMetaResolution> => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const controller = createChildAbortController(signal);
-    const metadata = set(attemptRemoteThreadMeta$, threadId, controller.signal);
-    const eventStream = set(
-      lookupEventStreamThreadMeta$,
-      meta$,
-      canonicalSync,
-      controller.signal,
-    );
-    return await withCleanup(
-      resolveThreadMetaAttempts(metadata, eventStream),
-      () => {
-        controller.abort(
-          new DOMException("Thread metadata resolved", "AbortError"),
-        );
-      },
-    );
-  },
-);
+function cacheMissResolutionPath(
+  resolution: CacheMissThreadMetaResolution,
+): ThreadMetaResolutionPath {
+  if (resolution.meta === null) {
+    return "canonical-not-found";
+  }
+  return resolution.source === "metadata"
+    ? "metadata-shortcut"
+    : "canonical-event-stream";
+}
 
-export const resolveThreadMeta$ = command(
-  async (
-    { get, set },
-    threadId: string,
-    signal: AbortSignal,
-  ): Promise<ResolvedThreadMeta> => {
-    const meta$ = threadMeta(threadId);
-    let meta = get(meta$);
-    if (meta) {
-      return { meta, source: "memory" };
-    }
-
-    const localStartedAt = performance.now();
-    await waitForSharedWork(get(initialLocalChatThreadEventsLoaded$), signal);
-    signal.throwIfAborted();
-    const localDurationMs = Math.round(performance.now() - localStartedAt);
-    meta = get(meta$);
-    if (meta) {
-      return { localDurationMs, meta, source: "local" };
-    }
-
-    const remoteStartedAt = performance.now();
-    const initialRemoteSync = get(initialRemoteChatThreadEventsSyncedDeferred$);
-    // Refresh missing threads against current server state after initial sync.
-    // This reader owns its own refresh, so another caller's cancellation can
-    // never finish it.
-    const canonicalSync = initialRemoteSync.settled()
-      ? set(syncSharedEventDrivenChatThreads$, get(rootSignal$))
-      : initialRemoteSync.promise;
-    const syncVersion = get(chatThreadEventSyncVersion$);
-    const resolution = await set(
-      resolveColdThreadMeta$,
-      threadId,
-      meta$,
-      canonicalSync,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (resolution.meta && resolution.source === "metadata") {
-      const registered = set(
-        registerBootstrapThreadMeta$,
-        resolution.meta,
-        syncVersion,
-        signal,
+/** Construct one lookup graph for each requesting surface, including same-thread readers. */
+export function createThreadMetaLookup(): Command<
+  Promise<ThreadMetaLookupResult>,
+  [string, AbortSignal]
+> {
+  const resetRace$ = resetSignal();
+  const resolveCacheMissThreadMeta$ = command(
+    async (
+      { set },
+      threadId: string,
+      canonicalEventStreamReady: Promise<void>,
+      signal: AbortSignal,
+    ): Promise<CacheMissThreadMetaResolution> => {
+      signal.throwIfAborted();
+      const raceSignal = set(resetRace$, signal);
+      const metadataShortcut = set(
+        attemptThreadMetadataShortcut$,
+        threadId,
+        raceSignal,
       );
-      if (!registered) {
-        meta = get(canonicalThreadMetaMap$).get(threadId) ?? null;
+      const eventStream = set(
+        lookupEventStreamThreadMeta$,
+        threadId,
+        canonicalEventStreamReady,
+        raceSignal,
+      );
+      return await withCleanup(
+        resolveCacheMissThreadMetaAttempts(metadataShortcut, eventStream),
+        () => {
+          // A replaced or cancelled lookup must not reset a newer race.
+          if (!raceSignal.aborted) {
+            set(resetRace$);
+          }
+        },
+      );
+    },
+  );
+
+  return command(
+    async (
+      { get, set },
+      threadId: string,
+      signal: AbortSignal,
+    ): Promise<ThreadMetaLookupResult> => {
+      signal.throwIfAborted();
+      let meta = get(chatThreadMetaMap$).get(threadId) ?? null;
+      if (meta) {
+        return { meta, resolutionPath: "current-projection" };
+      }
+
+      const cacheHydrationStartedAt = performance.now();
+      await waitForOperation(get(initialChatThreadEventCacheHydrated$), signal);
+      signal.throwIfAborted();
+      const cacheHydrationWaitMs = Math.round(
+        performance.now() - cacheHydrationStartedAt,
+      );
+      meta = get(chatThreadMetaMap$).get(threadId) ?? null;
+      if (meta) {
         return {
-          localDurationMs,
+          cacheHydrationWaitMs,
           meta,
-          remoteDurationMs: Math.round(performance.now() - remoteStartedAt),
-          source: meta ? "remote" : "not_found",
+          resolutionPath: "after-cache-hydration",
         };
       }
-    }
-    return {
-      localDurationMs,
-      meta: resolution.meta,
-      remoteDurationMs: Math.round(performance.now() - remoteStartedAt),
-      source: resolution.meta ? "remote" : "not_found",
-    };
-  },
-);
+
+      const cacheMissResolutionStartedAt = performance.now();
+      const initialCanonicalReady = get(
+        initialChatThreadEventCanonicalReadyDeferred$,
+      );
+      // Refresh missing threads against the current canonical event source
+      // after initial readiness. This reader owns its own refresh, so another
+      // caller's cancellation can never finish it.
+      const canonicalEventStreamReady = initialCanonicalReady.settled()
+        ? set(catchUpSharedChatThreadEventSource$, get(rootSignal$))
+        : initialCanonicalReady.promise;
+      const syncVersion = get(chatThreadEventSyncVersion$);
+      const resolution = await set(
+        resolveCacheMissThreadMeta$,
+        threadId,
+        canonicalEventStreamReady,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (resolution.meta && resolution.source === "metadata") {
+        const registered = set(
+          registerBootstrapThreadMeta$,
+          resolution.meta,
+          syncVersion,
+          signal,
+        );
+        if (!registered) {
+          meta = get(canonicalThreadMetaMap$).get(threadId) ?? null;
+          return {
+            cacheHydrationWaitMs,
+            cacheMissResolutionMs: Math.round(
+              performance.now() - cacheMissResolutionStartedAt,
+            ),
+            meta,
+            resolutionPath: meta
+              ? "canonical-event-stream"
+              : "canonical-not-found",
+          };
+        }
+      }
+      return {
+        cacheHydrationWaitMs,
+        cacheMissResolutionMs: Math.round(
+          performance.now() - cacheMissResolutionStartedAt,
+        ),
+        meta: resolution.meta,
+        resolutionPath: cacheMissResolutionPath(resolution),
+      };
+    },
+  );
+}
 
 /** Synchronize the active primary chat tab title after committed thread data changes. */
 const syncCurrentChatThreadDocumentTitle$ = command(

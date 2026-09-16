@@ -26,11 +26,13 @@ test.each(["direct", "message-port"] as const)(
         { status: 426 },
       );
     });
-    await setupPage({
-      context,
-      path: RUN_PATH,
-      sharedWorkerTestTransport: transport,
-    });
+    await expect(
+      setupPage({
+        context,
+        path: RUN_PATH,
+        sharedWorkerTestTransport: transport,
+      }),
+    ).rejects.toMatchObject({ status: 426 });
     await expect(
       screen.findByRole("dialog", { name: "Update required" }),
     ).resolves.toBeVisible();

@@ -90,6 +90,7 @@ export const usageEvent = pgTable(
         sql`(
         (${table.billingContext} = 'run' AND ${table.billingRunId} IS NOT NULL AND ${table.billingAnchorAt} IS NOT NULL)
         OR (${table.billingContext} = 'runless' AND ${table.billingRunId} IS NULL AND ${table.billingAnchorAt} IS NOT NULL)
+        OR (${table.billingContext} = 'pi_memory_stage1' AND ${table.billingRunId} IS NULL AND ${table.runId} IS NULL AND ${table.billingAnchorAt} IS NOT NULL AND ${table.kind} = 'model' AND ${table.billingAnchorAt} = ${table.createdAt})
         OR (${table.billingContext} = 'missing_run' AND ${table.billingRunId} IS NOT NULL AND ${table.billingAnchorAt} IS NULL)
         OR (${table.billingContext} = 'legacy_unknown' AND ${table.billingRunId} IS NULL AND ${table.billingAnchorAt} IS NULL)
       )`,

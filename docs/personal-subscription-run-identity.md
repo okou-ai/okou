@@ -225,27 +225,77 @@ The operation-local proof contains the fixed source ID and exact serialized
 encrypted snapshot; it is never written to run metadata or queue payloads.
 This also accepts independent KMS re-encryption of equivalent complete bundles.
 
-The final transaction retains the organization and A1 lifecycle fences, locks
-the same provider and bounded credential rows, compares the exact snapshot, and
-rechecks the connected account with its fixed org/user/type before inserting
-the run. It cannot call general reconciliation, KMS or a profile endpoint.
+The final transaction retains the organization and A1 lifecycle fences, takes
+the provider advisory lock once, locks the same provider and bounded credential
+rows, and compares the exact snapshot. It checks the captured account's fixed
+ID/org/user/type and connected state from that locked inventory before inserting
+the run; a connected inactive source remains valid. No second account SELECT is
+needed: the validated snapshot account also supplies the existing failed-run
+recovery identity digest. It cannot call general reconciliation, KMS or a profile
+endpoint.
 Changes to row IDs, account identity/selection, state or any ciphertext reject
 the original capture with existing guidance. Even equivalent re-encryption
 after the proof invalidates it; a fresh request can prove the new snapshot.
 The same proof is retained across the queue-payload encryption retry outside
 the final transaction. There is no sibling/account/model/payment reselection.
+Dispatch timings separate `api_dispatch_subscription_prepare_snapshot` (the
+short encrypted-state transaction), `api_dispatch_subscription_prepare_bundle_proof`
+(outside-lock equivalence, including KMS when ciphertext differs), and
+`api_dispatch_subscription_validate_admission` (the final locked check).
+Each carries only the bounded `subscription_provider_type` classification in
+addition to the collector's standard request metadata. These are nested spans;
+their percentiles must not be added to parent phase percentiles.
 Rotating refresh retains its existing single transaction/provider owner and
 checks the locked current bundle before spending the refresh token.
+
+Complete bundle materialization decrypts at most two stored fields concurrently
+under the same provider/credential owner. Each batch is joined before returning
+or propagating its first input-order failure; later batches do not start after
+failure. This adds no plaintext cache, early lock release, retry or transport
+cancellation. A slow sibling can extend error-return/lock-held time. Independent
+providers multiply this per-bundle fan-out; it is not a fleet-wide limit. See the
+[controlled experiment and limitations](subscription-decryption-experiment.md).
+Normal ciphertext equality and the exceptional serial equivalence proof remain
+unchanged, as do lazy environment preparation and database-only final admission.
 
 | Consumer                                                 | Coordination and observable boundary                                                                                                                                                                                                                                |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Settings list / lazy seed                                | Coordinates before returning accounts. An unresolved active Claude identity reports existing reconnect guidance and does not fetch usage with stale credentials.                                                                                                    |
-| Logical capture and internal direct account-ID capture   | Coordinates before selecting/returning the fixed account; re-reads the same ID. Missing/retired IDs cannot select a sibling. Public model-first requests do not accept arbitrary account IDs.                                                                       |
+| Logical capture and internal direct account-ID capture   | Selects from the completed coordination inventory. Logical capture may initialize its exact parent; concrete capture never initializes or substitutes a sibling. Missing/retired IDs fail closed. Public model-first requests do not accept arbitrary account IDs.  |
 | Environment preparation and final admission              | Exact account environment resolution coordinates; final lifecycle transaction rechecks the captured ID under the locked bundle. A late different identity fails admission, without reselection.                                                                     |
 | Existing exact-source firewall auth                      | Re-reads shared account credentials, including contexts created before this repair. Complete runtime bundles are materialized after any refresh so Authorization and account-ID headers cannot come from separate snapshots.                                        |
 | Runtime refresh state/input and mirror-capable mutations | Locked coordination precedes rotating input consumption. Inactive/retained exact IDs bypass active-mirror import; explicit connection/selection can commit its supplied account.                                                                                    |
 | Usage, reset and reconnect-state observation             | Reads the complete current account bundle. Retired management IDs remain unavailable. Codex import invalidates singleton/account reset-credit expiry epochs before/after mutation; current connection, activation, deletion and reset invalidation remain in place. |
 | Pi initial Codex credentials                             | Uses one shared bundle after refresh. Final validation carries the captured run ID and rejects every reconnect-required state before provider execution; see A3 below.                                                                                              |
+
+### Initialization and capture query ownership (#34374)
+
+Logical capture retains its scoped provider lookup, then uses the complete
+locked account inventory to decide whether initialization is needed. It does
+not issue a separate account-existence probe or read active selection again
+after coordination. The locked provider must still be the previously selected
+parent; deleting and recreating the same provider type cannot transfer authority.
+Retained-only inventories are not empty and never seed disconnected credentials.
+
+The actual historical singleton seed and Codex identity hydration remain. A
+successful seed obtains a fresh snapshot inside the same transaction. Coherent
+reconciliation returns the existing locked accounts; a metadata update returns
+the actual updated row, and identity import reads completed account state before
+commit. Claude profile proof remains outside locks and its second transaction
+still fences the complete original snapshot. Exact connected inactive accounts
+remain valid; an exact account retired by import cannot become its replacement.
+Connection preparation retains seed-only behavior so new authenticated credentials
+can repair an unavailable old bundle without first requiring successful import.
+
+For an initialized coherent provider, null-ID logical capture uses six SQL
+statements: provider lookup, provider advisory lock, locked provider, ordered
+accounts, ordered singleton secrets and ordered account secrets. BEGIN/COMMIT
+are additional transaction-control statements. Explicit logical IDs add the
+initial exact-ID probe; exact concrete capture uses that probe plus the five
+snapshot statements. Real initialization/import paths include their necessary
+writes and post-write reads and must be measured separately. These counts are
+not a production latency claim. Environment resolution and the fresh final
+admission proof retain their independent validation boundaries.
 
 ### Management import boundaries (#34142)
 

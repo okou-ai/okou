@@ -37,8 +37,8 @@ const reloadUserExportStatus$ = command(({ set }) => {
 });
 
 const watchUserExportStatus$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    await setLoop(
+  ({ get, set }, signal: AbortSignal): void => {
+    setLoop(
       async (loopSignal) => {
         set(reloadUserExportStatus$);
         const status = await get(userExportStatus$);
@@ -81,7 +81,7 @@ export const startUserExport$ = command(
 );
 
 export const userExportStatusPollingRef$ = onRef(
-  command(async ({ set }, _el: HTMLElement, signal: AbortSignal) => {
-    await set(watchUserExportStatus$, signal);
+  command(({ set }, _el: HTMLElement, signal: AbortSignal) => {
+    set(watchUserExportStatus$, signal);
   }),
 );

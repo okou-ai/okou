@@ -401,25 +401,31 @@ impl StoragePlan {
         {
             return None;
         }
-        for other in self
-            .storages
-            .iter()
-            .map(|s| &s.mount_path)
-            .chain(self.artifacts.iter().map(|a| &a.mount_path))
-        {
-            if other == &entry.mount_path {
+        for (index, other) in self.storages.iter().enumerate() {
+            if index == handle.index {
                 continue;
             }
-            let other = PathBuf::from(other);
-            if other.components().any(|part| {
-                !matches!(
-                    part,
-                    std::path::Component::RootDir | std::path::Component::Normal(_)
-                )
-            }) {
+            if guest_contracts::storage_files::decoded_mount_conflicts(
+                &target,
+                std::path::Path::new(&other.mount_path),
+                other.instructions_target_filename.as_deref(),
+                other.extract_path.as_deref().map(std::path::Path::new),
+                matches!(
+                    other.action,
+                    StorageAction::Download { .. } | StorageAction::DownloadAndNormalize { .. }
+                ),
+            ) {
                 return None;
             }
-            if target.starts_with(&other) || other.starts_with(&target) {
+        }
+        for other in &self.artifacts {
+            if guest_contracts::storage_files::decoded_mount_conflicts(
+                &target,
+                std::path::Path::new(&other.mount_path),
+                None,
+                None,
+                true,
+            ) {
                 return None;
             }
         }

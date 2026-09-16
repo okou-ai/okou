@@ -1441,32 +1441,42 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     },
   );
 
+  const orderStatusHallucination =
+    "Hello, I am calling to inquire about the status of my recent order, number 45678. Could you please provide an update on when I might expect delivery?";
+
   it.each([
     {
       label: "keeps output below the conservative evidence floor",
-      transcript: "x".repeat(199),
-      polishedText: "x".repeat(199),
+      transcript: "x".repeat(99),
+      polishedText: "x".repeat(99),
       durationSeconds: 1,
       status: 200,
     },
     {
       label: "keeps output at the maximum plausible speech rate",
-      transcript: "x".repeat(200),
-      polishedText: "x".repeat(200),
-      durationSeconds: 8,
+      transcript: "x".repeat(100),
+      polishedText: "x".repeat(100),
+      durationSeconds: 4,
       status: 200,
     },
     {
       label: "drops an implausibly long segment transcript",
-      transcript: "x".repeat(200),
-      polishedText: "x".repeat(200),
+      transcript: "x".repeat(100),
+      polishedText: "x".repeat(100),
       durationSeconds: 1,
+      status: 204,
+    },
+    {
+      label: "drops an order-status hallucination from near-zero audio",
+      transcript: orderStatusHallucination,
+      polishedText: orderStatusHallucination,
+      durationSeconds: 0.1,
       status: 204,
     },
     {
       label: "rejects implausible polish while preserving a short transcript",
       transcript: "Recorded speech.",
-      polishedText: "x".repeat(200),
+      polishedText: "x".repeat(100),
       durationSeconds: 1,
       status: 502,
     },

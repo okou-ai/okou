@@ -21,7 +21,7 @@ import { createRouteMocks } from "./route-test";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 
 export const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-export const routes = Object.freeze([
+const routes = Object.freeze([
   ...meModelProvidersListRoutes,
   ...meModelProvidersUpsertRoutes,
 ]);

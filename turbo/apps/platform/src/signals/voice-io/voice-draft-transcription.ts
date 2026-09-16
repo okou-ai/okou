@@ -4,11 +4,7 @@ import {
   readVoiceDraftRecording,
   type VoiceDraftSegment,
 } from "../external/voice-draft-store.ts";
-import {
-  createChildAbortController,
-  createDeferredPromise,
-  setLoop,
-} from "../utils.ts";
+import { resetSignal, createDeferredPromise, setLoop } from "../utils.ts";
 import { nextVoiceDraftSegment } from "./voice-draft-audio.ts";
 import { VOICE_DRAFT_PCM_SAMPLE_RATE } from "./voice-draft-pcm.ts";
 import { createVoiceDraftSegmentResult } from "./voice-draft-transcription-segment.ts";
@@ -22,11 +18,15 @@ interface VoiceDraftTranscriptionOptions {
   readonly readContext$: Command<VoiceIoTranscribeContext, []>;
 }
 
-interface VoiceDraftTranscriptionSession {
+interface VoiceDraftTranscriptionRecording {
   readonly key: string;
   readonly recordingId: string;
   readonly context?: VoiceIoTranscribeContext;
-  readonly controller: AbortController;
+}
+
+interface VoiceDraftTranscriptionSession {
+  readonly recording: VoiceDraftTranscriptionRecording;
+  readonly signal: AbortSignal;
 }
 
 interface VoiceDraftTranscriptionSegment {
@@ -36,12 +36,13 @@ interface VoiceDraftTranscriptionSegment {
 }
 
 function createSegment(
-  session: VoiceDraftTranscriptionSession,
+  recording: VoiceDraftTranscriptionRecording,
   segment: VoiceDraftSegment | undefined,
   previous: VoiceDraftTranscriptionSegment | undefined,
   totalDurationSeconds: number,
+  signal: AbortSignal,
 ): VoiceDraftTranscriptionSegment {
-  if (!session.context) {
+  if (!recording.context) {
     throw new Error("Voice transcription context has not been captured");
   }
   return {
@@ -49,9 +50,9 @@ function createSegment(
     totalDurationSeconds,
     result$: createVoiceDraftSegmentResult(
       {
-        key: session.key,
-        recordingId: session.recordingId,
-        context: session.context,
+        key: recording.key,
+        recordingId: recording.recordingId,
+        context: recording.context,
         segment,
         previous$: previous?.result$,
         overlapDurationSeconds: segment
@@ -62,7 +63,7 @@ function createSegment(
           : 0,
         totalDurationSeconds,
       },
-      session.controller.signal,
+      signal,
     ),
   };
 }
@@ -74,6 +75,7 @@ function isFinalSegment(
 }
 
 function createTranscriptionState() {
+  const resetSession$ = resetSignal();
   const session$ = state<VoiceDraftTranscriptionSession | null>(null);
   const segments$ = state<readonly VoiceDraftTranscriptionSegment[]>([]);
   const result$ = computed(async (get) => {
@@ -90,7 +92,7 @@ function createTranscriptionState() {
     }
   });
 
-  return { session$, segments$, result$, wake$, notify$ };
+  return { session$, segments$, result$, wake$, notify$, resetSession$ };
 }
 
 type TranscriptionState = ReturnType<typeof createTranscriptionState>;
@@ -99,7 +101,7 @@ function createInitialization(
   options: VoiceDraftTranscriptionOptions,
   state: TranscriptionState,
 ) {
-  const { session$, segments$, result$ } = state;
+  const { session$, segments$, result$, resetSession$ } = state;
   const initialize$ = command(async ({ get, set }, signal: AbortSignal) => {
     const key = await get(options.storageKey$);
     signal.throwIfAborted();
@@ -110,32 +112,34 @@ function createInitialization(
     }
     const current = get(session$);
     if (
-      current?.recordingId === recording.id &&
-      !current.controller.signal.aborted
+      current?.recording.recordingId === recording.id &&
+      !current.signal.aborted
     ) {
       return;
     }
-    current?.controller.abort();
+    set(resetSession$);
     await Promise.allSettled([get(result$)]);
     signal.throwIfAborted();
     if (get(session$) !== current) {
       return;
     }
     const session = {
-      key,
-      recordingId: recording.id,
-      context: recording.progress?.context,
-      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-      controller: createChildAbortController(signal),
+      recording: {
+        key,
+        recordingId: recording.id,
+        context: recording.progress?.context,
+      },
+      signal: set(resetSession$, signal),
     };
     const restored: VoiceDraftTranscriptionSegment[] = [];
     for (const segment of recording.progress?.segments ?? []) {
       restored.push(
         createSegment(
-          session,
+          session.recording,
           segment,
           restored.at(-1),
           recording.sampleCount / VOICE_DRAFT_PCM_SAMPLE_RATE,
+          session.signal,
         ),
       );
     }
@@ -147,10 +151,11 @@ function createInitialization(
 }
 
 function prepareSegments(
-  session: VoiceDraftTranscriptionSession,
+  recording: VoiceDraftTranscriptionRecording,
   existing: readonly VoiceDraftTranscriptionSegment[],
   sampleCount: number,
   finished: boolean,
+  signal: AbortSignal,
 ): readonly VoiceDraftTranscriptionSegment[] {
   const entries = [...existing];
   let previousEndSample = entries.at(-1)?.segment?.endSample ?? 0;
@@ -165,13 +170,25 @@ function prepareSegments(
       break;
     }
     entries.push(
-      createSegment(session, segment, entries.at(-1), totalDurationSeconds),
+      createSegment(
+        recording,
+        segment,
+        entries.at(-1),
+        totalDurationSeconds,
+        signal,
+      ),
     );
     previousEndSample = segment.endSample;
   }
   if (finished && !isFinalSegment(entries.at(-1))) {
     entries.push(
-      createSegment(session, undefined, entries.at(-1), totalDurationSeconds),
+      createSegment(
+        recording,
+        undefined,
+        entries.at(-1),
+        totalDurationSeconds,
+        signal,
+      ),
     );
   }
   return entries;
@@ -195,9 +212,9 @@ function createSegmentPreparation(
       if (isFinalSegment(last)) {
         return;
       }
-      const recording = await readVoiceDraftRecording(session.key);
+      const recording = await readVoiceDraftRecording(session.recording.key);
       signal.throwIfAborted();
-      if (recording?.id !== session.recordingId) {
+      if (recording?.id !== session.recording.recordingId) {
         throw new Error("Voice recording changed during transcription");
       }
       const startSample = last?.segment?.endSample ?? 0;
@@ -207,18 +224,25 @@ function createSegmentPreparation(
       ) {
         return;
       }
-      if (!session.context) {
-        session = { ...session, context: set(options.readContext$) };
+      if (!session.recording.context) {
+        session = {
+          ...session,
+          recording: {
+            ...session.recording,
+            context: set(options.readContext$),
+          },
+        };
         set(session$, session);
       }
       if (get(segments$) !== existing) {
         return;
       }
       const segments = prepareSegments(
-        session,
+        session.recording,
         existing,
         recording.sampleCount,
         finished,
+        session.signal,
       );
       set(segments$, segments);
       set(notify$);
@@ -239,9 +263,9 @@ function createCheckpointRetry(state: TranscriptionState) {
     if (entries.length === 0) {
       return;
     }
-    const recording = await readVoiceDraftRecording(session.key);
+    const recording = await readVoiceDraftRecording(session.recording.key);
     signal.throwIfAborted();
-    if (recording?.id !== session.recordingId) {
+    if (recording?.id !== session.recording.recordingId) {
       throw new Error("Voice recording changed during transcription");
     }
     if (get(segments$) !== entries || recording.progress?.text !== undefined) {
@@ -260,10 +284,11 @@ function createCheckpointRetry(state: TranscriptionState) {
     for (const entry of entries.slice(completed)) {
       retried.push(
         createSegment(
-          session,
+          session.recording,
           entry.segment,
           retried.at(-1),
           entry.totalDurationSeconds,
+          session.signal,
         ),
       );
     }
@@ -278,14 +303,14 @@ export function createVoiceDraftTranscriptionSignals(
   options: VoiceDraftTranscriptionOptions,
 ) {
   const state = createTranscriptionState();
-  const { session$, segments$, result$, wake$ } = state;
+  const { session$, segments$, result$, wake$, resetSession$ } = state;
   const initialize$ = createInitialization(options, state);
   const append$ = createSegmentPreparation(options, state);
   const retry$ = createCheckpointRetry(state);
   const transcribe$ = command(async ({ get, set }, signal: AbortSignal) => {
     const current = get(session$);
     const previous =
-      current && !current.controller.signal.aborted && get(segments$).length > 0
+      current && !current.signal.aborted && get(segments$).length > 0
         ? Promise.allSettled([get(result$)])
         : undefined;
     await set(initialize$, signal);
@@ -320,7 +345,7 @@ export function createVoiceDraftTranscriptionSignals(
 
   const cancel$ = command(async ({ get, set }, signal: AbortSignal) => {
     const session = get(session$);
-    session?.controller.abort();
+    set(resetSession$);
     await Promise.allSettled([get(result$)]);
     signal.throwIfAborted();
     if (get(session$) === session) {
@@ -331,10 +356,10 @@ export function createVoiceDraftTranscriptionSignals(
 
   // This observer starts newly appended computeds and owns their background
   // lifetime. Request ordering is entirely expressed by predecessor dependencies.
-  const watch$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const watch$ = command(({ get, set }, signal: AbortSignal) => {
     let wake = createDeferredPromise<void>(signal);
     set(wake$, wake);
-    await setLoop(
+    setLoop(
       async (loopSignal) => {
         const notified = Promise.allSettled([wake.promise]);
         if (get(segments$).length > 0) {

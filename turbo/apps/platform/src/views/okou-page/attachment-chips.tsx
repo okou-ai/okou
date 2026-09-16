@@ -49,7 +49,6 @@ import {
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
-import { retryRichMarkdown$ } from "../../signals/rich-markdown-retry.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
 import {
   attachmentSidebarRef,
@@ -412,13 +411,7 @@ function ArtifactDialogLoadingBody() {
   );
 }
 
-function ArtifactDialogUnavailableBody({
-  label,
-  onRetry,
-}: {
-  label: string;
-  onRetry?: () => void;
-}) {
+function ArtifactDialogUnavailableBody({ label }: { label: string }) {
   const { t } = useTranslation();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
@@ -430,13 +423,6 @@ function ArtifactDialogUnavailableBody({
           { kind: label },
         )}
       </span>
-      {onRetry !== undefined && (
-        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-          {t(($) => {
-            return $.chat.errors.recovery.tryAgain;
-          })}
-        </Button>
-      )}
     </div>
   );
 }
@@ -499,7 +485,6 @@ function ArtifactDialogMarkdownBody({
   tree$: MarkdownPreviewTreeComputed;
 }) {
   const { t } = useTranslation();
-  const retry = useSet(retryRichMarkdown$);
   const loadable = useLoadable(tree$);
   if (loadable.state === "loading") {
     return (
@@ -518,7 +503,6 @@ function ArtifactDialogMarkdownBody({
             label={t(($) => {
               return $.artifacts.kinds.markdown;
             })}
-            onRetry={retry}
           />
         </ArtifactDialogCard>
       </ArtifactDialogStage>

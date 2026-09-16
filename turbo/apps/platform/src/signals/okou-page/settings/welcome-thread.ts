@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { syncEventDrivenChatThreads$ } from "../../chat-page/chat-thread-event-sourcing.ts";
+import { catchUpChatThreadEventSource$ } from "../../chat-page/chat-thread-event-sourcing.ts";
 import { navigateToChat$ } from "../nav.ts";
 import { closeSettingsModal$ } from "./settings-dialog.ts";
 
@@ -22,7 +22,7 @@ export const createWelcomeThread$ = command(
       signal,
     );
     // Recover the ordinary list even when the creation notification was lost.
-    await set(syncEventDrivenChatThreads$, signal);
+    await set(catchUpChatThreadEventSource$, signal);
     signal.throwIfAborted();
     set(closeSettingsModal$);
     set(navigateToChat$, result.body.id);

@@ -1,7 +1,4 @@
-import {
-  marketingImpactEnabled,
-  retireImpactMetadata,
-} from "../../lib/impact-marketing";
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { normalizeGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { command } from "ccstate";
 import {
@@ -12,11 +9,6 @@ import {
   acquisitionAttributionContract,
   type AdAttributionMetadata,
 } from "@okouai/api-contracts/contracts/acquisition-attribution";
-
-import {
-  IMPACT_ATTRIBUTION_METADATA_KEY,
-  parseImpactAttribution,
-} from "@okouai/api-contracts/contracts/impact-attribution";
 
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -30,7 +22,6 @@ import {
   persistOrgAcquisitionAttribution$,
 } from "../services/acquisition-attribution.service";
 import { googleAdsConversionMilestonesForUser$ } from "../services/google-ads-conversion-milestones.service";
-import { syncImpactStripeCustomer$ } from "../services/impact-attribution.service";
 import type { RouteEntry } from "../route-entry";
 
 const SIGNUP_ATTRIBUTION_KEY = "signup_attribution";
@@ -120,40 +111,6 @@ const recordSignupInner$ = command(
     const privateMetadata = isRecord(user.privateMetadata)
       ? user.privateMetadata
       : {};
-    if (!marketingImpactEnabled()) {
-      const impact = parseImpactAttribution(
-        bodyResult.data.impactAttribution,
-        nowDate().getTime(),
-      );
-      const previousImpact = parseImpactAttribution(
-        privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY],
-        nowDate().getTime(),
-      );
-      if (
-        impact &&
-        (!previousImpact || impact.capturedAt > previousImpact.capturedAt)
-      ) {
-        await clerk.users.updateUserMetadata(auth.userId, {
-          privateMetadata: { [IMPACT_ATTRIBUTION_METADATA_KEY]: impact },
-        });
-        signal.throwIfAborted();
-        privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY] = impact;
-      }
-      const currentImpact = parseImpactAttribution(
-        privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY],
-        nowDate().getTime(),
-      );
-      if (impact && currentImpact) {
-        await set(
-          syncImpactStripeCustomer$,
-          {
-            impact_click_id: currentImpact.clickId,
-            impact_click_at: currentImpact.capturedAt,
-          },
-          signal,
-        );
-      }
-    }
     const existingAttribution = parseStoredSignupAttribution(
       privateMetadata[SIGNUP_ATTRIBUTION_KEY],
     );

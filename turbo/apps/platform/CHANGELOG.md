@@ -11,6 +11,95 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.902.2](https://github.com/vm0-ai/vm0/compare/app-v0.902.1...app-v0.902.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **app:** clear replaced replies from share selection ([#34406](https://github.com/vm0-ai/vm0/issues/34406)) ([cd3f756](https://github.com/vm0-ai/vm0/commit/cd3f756a99b03ce5f5ba88629e52b321fb7353d7))
+* keep mermaid diagrams white across app themes ([#34410](https://github.com/vm0-ai/vm0/issues/34410)) ([0d60752](https://github.com/vm0-ai/vm0/commit/0d6075230195f1e52804f6eaed37ecfd01552a81))
+
+
+### Refactoring
+
+* **app:** delete the dead desktop shell selection rules ([#34388](https://github.com/vm0-ai/vm0/issues/34388)) ([3f72de6](https://github.com/vm0-ai/vm0/commit/3f72de62f13ed4cdfb259502a97a787bcbdae5ef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.667.0
+
+## [0.902.1](https://github.com/vm0-ai/vm0/compare/app-v0.902.0...app-v0.902.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **platform:** give the effort scale's dots enough weight to read ([#34341](https://github.com/vm0-ai/vm0/issues/34341)) ([5204958](https://github.com/vm0-ai/vm0/commit/52049588ce58cf9b7f7635e34e5268be1aa0422a))
+
+
+### Refactoring
+
+* **platform:** finish child abort ownership migration ([#34402](https://github.com/vm0-ai/vm0/issues/34402)) ([f4d8819](https://github.com/vm0-ai/vm0/commit/f4d8819d452ae325cbf76a2da318db84a4a5172f)), closes [#33860](https://github.com/vm0-ai/vm0/issues/33860)
+* **platform:** own card tokens at the document root ([#34400](https://github.com/vm0-ai/vm0/issues/34400)) ([c96243b](https://github.com/vm0-ai/vm0/commit/c96243bd807481295e95824d4e9b0fdd9d8d8e65))
+* **platform:** simplify dialog loading state ([#34408](https://github.com/vm0-ai/vm0/issues/34408)) ([7a4f632](https://github.com/vm0-ai/vm0/commit/7a4f632a353ceb22ee739dace2f0952920eeb7a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.0
+    * @okouai/core bumped to 8.666.7
+
+## [0.902.0](https://github.com/vm0-ai/vm0/compare/app-v0.901.0...app-v0.902.0) (2026-09-15)
+
+
+### Features
+
+* **platform:** manage cloudflare access in ssh ([#34337](https://github.com/vm0-ai/vm0/issues/34337)) ([ba33b36](https://github.com/vm0-ai/vm0/commit/ba33b361378a00a815a6629fed67cd24dc20d646))
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+
+### Refactoring
+
+* **app:** migrate chat and calendar cancellation ownership ([#34369](https://github.com/vm0-ai/vm0/issues/34369)) ([ef4e6fe](https://github.com/vm0-ai/vm0/commit/ef4e6fe9f70d124d941dff55c2a6d841e487eefc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.1
+    * @okouai/core bumped to 8.666.6
+    * @okouai/ui bumped to 1.9.2
+
+## [0.901.0](https://github.com/vm0-ai/vm0/compare/app-v0.900.0...app-v0.901.0) (2026-09-15)
+
+
+### Features
+
+* complete personal subscription launch support ([#34263](https://github.com/vm0-ai/vm0/issues/34263)) ([f2731f5](https://github.com/vm0-ai/vm0/commit/f2731f57b6d9ff924ae87f7c5222aa78e5f1cce4))
+* offer only intro video voices that can be auditioned ([#34331](https://github.com/vm0-ai/vm0/issues/34331)) ([3396db8](https://github.com/vm0-ai/vm0/commit/3396db842be8b37d4f21772baecd56d328830532))
+
+
+### Bug Fixes
+
+* **platform:** clear the connectors toolbar from the scroll edge ([#34349](https://github.com/vm0-ai/vm0/issues/34349)) ([ef5f750](https://github.com/vm0-ai/vm0/commit/ef5f750b8af6905d2ad4ada04563125f5c942d44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.0
+    * @okouai/core bumped to 8.666.5
+
 ## [0.900.0](https://github.com/vm0-ai/vm0/compare/app-v0.899.2...app-v0.900.0) (2026-09-15)
 
 

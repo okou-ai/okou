@@ -1,3 +1,4 @@
+import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -174,6 +175,7 @@ import {
   type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
+import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
@@ -247,6 +249,7 @@ import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-s
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
+import { localizedRunError } from "../../lib/run-error.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -2920,13 +2923,18 @@ function ThreadAutomationsSidebarSlot({
   return <HeaderAutomationSidebar thread={thread} onClose={close} />;
 }
 
-export function ChatThreadPage() {
+export function ChatThreadPage({
+  layout,
+}: {
+  readonly layout: ChatLayoutSignals;
+}) {
   const activeThreadSidebar = useGet(activeThreadSidebar$);
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
   return withChatScrollLayout(
     <>
       <ChatThreadSidebarShell
+        layout={layout}
         animateEntry={activeThreadSidebar?.animateEntry ?? true}
         open={activeThreadSidebar !== null}
         sidebar={
@@ -5376,7 +5384,7 @@ function AssistantErrorFallback({ error }: { error: string }) {
       description={
         <Markdown
           className="!text-muted-foreground"
-          source={error}
+          source={localizedRunError(error)}
           style={{ fontSize: "inherit", lineHeight: "inherit" }}
         />
       }
@@ -5521,17 +5529,7 @@ function SelectablePagedGroupRow({
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const toggle = useSet(thread.sharing.toggle$);
   const sharing = phase !== "idle";
-  const displayGroup =
-    sharing && group.role === "assistant"
-      ? {
-          ...group,
-          events: group.events
-            .filter((event) => {
-              return event.eventType === "output.message";
-            })
-            .slice(-1),
-        }
-      : group;
+  const displayGroup = sharing ? chatGroupForSharing(group) : group;
   const content = (
     <PagedGroupRow
       group={displayGroup}

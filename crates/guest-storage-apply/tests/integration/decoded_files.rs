@@ -166,7 +166,11 @@ fn overlapping_mount_is_rejected_before_stale_cleanup() {
     let target = root.path().join("mount");
     fs::create_dir(&target).unwrap();
     fs::write(target.join("stale"), b"keep").unwrap();
-    for other in [target.join("nested"), target.join("child/../nested")] {
+    for other in [
+        target.clone(),
+        target.join("nested"),
+        target.join("child/../nested"),
+    ] {
         let manifest = serde_json::to_vec(&json!({"storageMounts":[
             {"mountPath":target,"archiveUrl":"file:///not-staged"},
             {"mountPath":other,"archiveUrl":"file:///other"}
@@ -176,6 +180,153 @@ fn overlapping_mount_is_rejected_before_stale_cleanup() {
             .unwrap();
         assert!(!guest_storage_apply::run_storage_files_bytes(&data));
         assert_eq!(fs::read(target.join("stale")).unwrap(), b"keep");
+    }
+}
+
+#[test]
+fn decoded_skills_reject_actual_instruction_writes_before_cleanup() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join(".claude");
+    let skill = home.join("skills/workflow");
+    let stage = root.path().join("runtime/storage-instructions/0");
+    for (target, mount, staging, filename) in [
+        (skill.clone(), home.clone(), None, "CLAUDE.md"),
+        (skill.clone(), home.clone(), Some(home.clone()), "CLAUDE.md"),
+        (
+            skill.clone(),
+            home.clone(),
+            Some(skill.clone()),
+            "CLAUDE.md",
+        ),
+        (
+            skill.clone(),
+            home.clone(),
+            Some(skill.join("nested")),
+            "CLAUDE.md",
+        ),
+        (
+            skill.clone(),
+            home.clone(),
+            Some(home.join("other/../skills")),
+            "CLAUDE.md",
+        ),
+        (
+            skill.clone(),
+            root.path().join("unrelated"),
+            Some(skill.clone()),
+            "CLAUDE.md",
+        ),
+        (
+            home.join("CLAUDE.md"),
+            home.clone(),
+            Some(stage.clone()),
+            "CLAUDE.md",
+        ),
+        (
+            home.join("AGENTS.md/nested"),
+            home.clone(),
+            Some(stage.clone()),
+            "CLAUDE.md",
+        ),
+        (
+            home.join(".AGENTS.md.vm0-copy-1-0.tmp"),
+            home.clone(),
+            Some(stage.clone()),
+            "AGENTS.md",
+        ),
+        (home.clone(), home.clone(), Some(stage.clone()), "CLAUDE.md"),
+        (
+            skill.clone(),
+            home.clone(),
+            Some(stage.clone()),
+            "../invalid",
+        ),
+    ] {
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("stale"), b"keep").unwrap();
+        let manifest = serde_json::to_vec(&json!({"storageMounts":[
+            {"mountPath": target, "archiveUrl": "file:///not-staged"},
+            {"mountPath": mount, "extractPath": staging,
+             "instructionsTargetFilename": filename, "archiveUrl": "file:///instructions"}
+        ], "cleanupPaths": [target]}))
+        .unwrap();
+        let data = storage_files::encode_input(&manifest, &[(target.to_str().unwrap(), &files())])
+            .unwrap();
+        assert!(
+            !guest_storage_apply::run_storage_files_bytes(&data),
+            "{target:?} {staging:?}"
+        );
+        assert_eq!(fs::read(target.join("stale")).unwrap(), b"keep");
+    }
+}
+
+#[test]
+fn decoded_skills_coexist_with_staged_and_cached_framework_instructions() {
+    for (home_name, filename, alternate) in [
+        (".claude", "CLAUDE.md", "AGENTS.md"),
+        (".codex", "AGENTS.md", "CLAUDE.md"),
+        (".pi/agent", "AGENTS.md", "CLAUDE.md"),
+    ] {
+        for cached in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let home = root.path().join(home_name);
+            let skill = home.join("skills/workflow");
+            let sibling = home.join("skills/retained/SKILL.md");
+            let staging = root.path().join("runtime/storage-instructions/0");
+            fs::create_dir_all(&skill).unwrap();
+            fs::create_dir_all(sibling.parent().unwrap()).unwrap();
+            fs::write(&sibling, b"retained skill").unwrap();
+            if !cached {
+                fs::write(skill.join("stale"), b"obsolete").unwrap();
+            }
+            fs::write(home.join(alternate), b"runtime instructions").unwrap();
+            let archive = root.path().join("instructions.tar.gz");
+            fs::write(
+                &archive,
+                super::support::create_tar_gz(&[
+                    (filename, b"runtime instructions"),
+                    ("skills/unwanted/SKILL.md", b"not promoted"),
+                ])
+                .unwrap(),
+            )
+            .unwrap();
+            let manifest = serde_json::to_vec(&json!({
+                "storageMounts": [
+                    {"mountPath": home, "extractPath": staging, "cached": cached,
+                     "archiveUrl": (!cached).then(|| format!("file://{}", archive.display())),
+                     "instructionsTargetFilename": filename},
+                    {"mountPath": skill, "archiveUrl": "file:///not-staged-skill.tar.gz"}
+                ],
+                "cleanupPaths": if cached { vec![] } else { vec![&skill] },
+                "instructionCleanups": if cached { vec![] } else {
+                    vec![json!({"mountPath": home, "targetFilename": filename})]
+                }
+            }))
+            .unwrap();
+            let data =
+                storage_files::encode_input(&manifest, &[(skill.to_str().unwrap(), &files())])
+                    .unwrap();
+            assert!(
+                guest_storage_apply::run_storage_files_bytes(&data),
+                "{home_name} cached={cached}"
+            );
+            assert_eq!(
+                fs::read(home.join(filename)).unwrap(),
+                b"runtime instructions"
+            );
+            assert!(!home.join(alternate).exists());
+            assert!(!staging.exists());
+            assert!(!home.join("skills/unwanted").exists());
+            assert!(!skill.join("stale").exists());
+            assert_eq!(fs::read(&sibling).unwrap(), b"retained skill");
+            assert_eq!(
+                fs::read(skill.join("nested/tool")).unwrap(),
+                b"final-content"
+            );
+            let metadata = fs::metadata(skill.join("nested/tool")).unwrap();
+            assert_eq!(metadata.mode() & 0o7777, 0o751);
+            assert_eq!(metadata.mtime(), 1234567890);
+        }
     }
 }
 

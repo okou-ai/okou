@@ -28,7 +28,9 @@ use super::{FailureReason, io::SshSocket, observation::Attempt};
 
 const HANDSHAKE_BYTES: u64 = 32 * 1024;
 const MESSAGE_BYTES: usize = 1024 * 1024;
-const WRITE_BYTES: usize = 32 * 1024;
+// cloudflared's origin reader can discard bytes beyond its 16 KiB buffer.
+// Split SSH writes into separate messages; see runner-ssh-execution.md.
+const WRITE_BYTES: usize = 16 * 1024;
 
 pub(super) trait SshStream: AsyncRead + AsyncWrite + Send + Unpin {}
 impl<T: AsyncRead + AsyncWrite + Send + Unpin> SshStream for T {}

@@ -19,6 +19,7 @@ import {
   webhookCheckpointsContract,
   webhookCompleteContract,
   webhookEventsContract,
+  webhookSessionOutputContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
@@ -26,6 +27,39 @@ import {
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
+
+describe("Sandbox transient session output", () => {
+  const body = {
+    runId: "00000000-0000-4000-8000-000000000001",
+    threadId: "00000000-0000-4000-8000-000000000002",
+    runEventId: "sandbox:00000000-0000-4000-8000-000000000003:0",
+    chunkIndex: 0,
+    delta: "hello",
+  };
+
+  it("accepts one bounded text delta", () => {
+    expect(webhookSessionOutputContract.send.body.safeParse(body).success).toBe(
+      true,
+    );
+  });
+
+  it("rejects channel authority, empty text, and oversized fields", () => {
+    for (const invalid of [
+      { ...body, userId: "another-user" },
+      { ...body, orgId: "another-org" },
+      { ...body, channel: "run-output:another" },
+      { ...body, delta: "" },
+      { ...body, delta: "x".repeat(4097) },
+      { ...body, runEventId: "x".repeat(513) },
+      { ...body, chunkIndex: -1 },
+      { ...body, chunkIndex: 2 ** 32 },
+    ]) {
+      expect(
+        webhookSessionOutputContract.send.body.safeParse(invalid).success,
+      ).toBe(false);
+    }
+  });
+});
 
 describe("workspace history restore telemetry", () => {
   const operation = {
@@ -448,6 +482,7 @@ describe("agent completion failure reasons", () => {
       "session_history_limit",
       "execution_timeout",
       "insufficient_credits",
+      "provider_insufficient_credits",
       "invalid_api_key",
       "invalid_credentials",
       "terms_acceptance_required",

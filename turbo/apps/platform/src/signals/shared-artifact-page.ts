@@ -25,7 +25,6 @@ export function createSharedArtifactPreview(
     readonly expiresAt: string;
   },
   referenceUrl: string,
-  signal: AbortSignal,
 ): SharedArtifactPreview {
   const kind = classifyChatAttachment(artifact);
   const contentUrl = new URL(artifact.url);
@@ -51,7 +50,7 @@ export function createSharedArtifactPreview(
             ...base,
             kind,
             text$,
-            markdownTree$: createMarkdownPreviewTree(text$, signal),
+            markdownTree$: createMarkdownPreviewTree(text$),
           }
         : { ...base, kind, text$ };
   } else {

@@ -31,7 +31,7 @@ or inventing a request ID. Malformed or pipelined peers can observe a reset.
 
 Requests have exactly `requestId`, `generation`, `method`, and `params`. Identifiers
 match `[A-Za-z0-9_.-]{1,64}`; duplicate keys, non-JSON constants, and unknown fields
-are rejected. The only method is `proxy.status`, with empty object parameters:
+are rejected. `proxy.status` takes empty object parameters:
 
 ```json
 {
@@ -44,21 +44,37 @@ are rejected. The only method is `proxy.status`, with empty object parameters:
 
 A successful reply contains those identities, `"type": "result"`, and
 `"data": {"state": "running"}`. An error instead contains `"type": "error"` and
-`"code": "invalid_request"`, `"stale_generation"`, or `"unknown_method"`;
+`"code": "invalid_request"`, `"stale_generation"`, `"unknown_method"`, or `"busy"`;
 `requestId` is null when no valid correlation can be recovered. Error generation
 always identifies the serving addon. Rust rejects mismatched identities, unknown
 response fields/states, extra response bytes, and missing terminal EOF.
 
-The JSONL watcher starts before control admission. Shutdown stops control
-admission, closes every accepted socket (including tasks not yet started), and
-joins the I/O thread before existing blocking drains. This is a readiness
-snapshot, not an ongoing health guarantee or business-state acknowledgement.
-A lost reply after transmission means an unknown outcome; the transport does
-not automatically replay future mutations or move business state onto its thread.
+`logs.flush` takes exactly `runId` (a canonical UUID) and `path` (an absolute,
+normalized path ending in `network-{runId}.jsonl`). Runner freezes the original
+run, path, endpoint, and generation before execution; deferred upload never
+looks up a current IP registration or follows a replacement addon. The handler
+only observes the writer's path key and does not open the supplied path.
+Its result echoes `runId` and `path`, the captured `boundary` sequence, `pending`
+write count, and `state: processed|deadline`. Up to eight pending prefix tickets
+are admitted; exhaustion returns `busy`. Each request observes the prefix every
+50 ms for at most four seconds within the connection deadline. Later writes
+cannot extend the captured boundary.
+
+Shutdown stops control admission, closes every accepted socket (including tasks
+not yet started), and joins the I/O thread before existing blocking drains. The
+`logs.flush` method observes a writer-owned, accepted JSONL prefix: it captures
+the requested run/path boundary, waits for that prefix to be processed (including
+failed append attempts), and returns either `processed` or `deadline`. A
+`processed` result is not an fsync or durability acknowledgement. Cancellation
+does not release an admitted writer ticket, and a lost reply after transmission
+means an unknown outcome; the transport does not automatically replay future
+mutations or move business state onto its thread.
 
 JSONL flush, registry/catalog consumption, SIGUSR1 delivery drain, and API/billing
-contracts remain unchanged. Old Runner instances retain their embedded addon;
-no API-first deployment or mixed Runner/addon protocol fallback is needed. This
+contracts remain unchanged. The old JSONL marker request/state files and watcher
+are removed; Runner and the embedded addon use the private control socket for
+flush coordination. Old Runner instances retain their embedded addon; no
+API-first deployment or mixed Runner/addon protocol fallback is needed. This
 stage does not implement token accounting or guest RPC, and unit/packaged runtime
 tests do not claim production soak or a measured latency improvement.
 

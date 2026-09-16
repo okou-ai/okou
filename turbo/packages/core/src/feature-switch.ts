@@ -45,12 +45,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SessionOutputStreaming]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Subscribe to transient session text output while a run is active",
-    enabled: false,
-  },
   [FeatureSwitchKey.SocialStatus]: {
     maintainer: "liangyou@okou.ai",
     description: "On-demand public Social service health",
@@ -313,7 +307,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",
     description:
-      "Run owned chat threads with the official Pi runtime, native session persistence, and shared memory learning across interactive and automation turns.",
+      "Run owned chat threads with the official Pi runtime, streamed session output, native session persistence, and shared memory learning across interactive and automation turns.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -422,8 +416,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.TelegramDmSessions]: {
     maintainer: "linghan@okou.ai",
     description:
-      "Use agent/model-scoped Telegram DM sessions and separate reply chains. Enable after compatible callback readers are deployed.",
-    enabled: false,
+      "Use agent/model-scoped Telegram DM sessions and separate reply chains.",
+    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -468,6 +462,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     description:
       "Replace the composer's flat slash menu with a two-pane panel that previews each template type's covers.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.GetStartedQuests]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Show the home corner's Get started quest list. Progress is placeholder data; no credits are awarded yet.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

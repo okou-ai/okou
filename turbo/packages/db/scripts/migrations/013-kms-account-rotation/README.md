@@ -179,7 +179,10 @@ The isolated snapshot verifier additionally passes `--recovery-schema` with
 current SSH tables must exist. When both exist, both are scanned; any present
 table must have all declared columns and its exact primary key. A missing table
 does not permit a missing column in its replacement. Unknown encrypted columns
-still fail verification.
+still fail verification. The recovery inventory also includes
+`cloudflare_access_configs.encrypted_client_id` and `encrypted_client_secret`
+under primary key `id`. This table may be absent in snapshots from before its
+rollout; if present, both fields and the primary key are required and verified.
 
 Recovery reports explicitly identify this schema and use a distinct manifest
 digest, so their cursors and reports cannot substitute for the original migration

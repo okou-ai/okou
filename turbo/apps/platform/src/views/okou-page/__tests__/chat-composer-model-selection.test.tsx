@@ -330,7 +330,11 @@ test("Localize fractional Fast speed guidance on hover", async () => {
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
-  await expect(screen.findByRole("textbox")).resolves.toBeVisible();
+  await expect(
+    screen.findByLabelText("Nachricht", {
+      selector: '[contenteditable="true"]',
+    }),
+  ).resolves.toBeVisible();
   await user.click(await modelPicker("GPT 5.6 Luna"));
   await user.hover(
     await screen.findByRole("option", { name: "GPT 5.6 Luna Schnell" }),

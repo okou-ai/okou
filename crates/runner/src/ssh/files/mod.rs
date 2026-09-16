@@ -75,7 +75,7 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
         if request.size.is_some_and(|size| size > MAX_STREAM_BYTES) {
             return Err(FileFailure::FileTooLarge.into());
         }
-        let access = sessions.registration.session_access(request.connection)?;
+        let access = sessions.registration.lookup(request.connection)?;
         let invalidated = access.cancelled();
         let operation = async {
             let credential = setup
@@ -97,7 +97,6 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
                         credential: Arc::clone(&credential),
                         access: access.clone(),
                         operation: Arc::clone(&lease),
-                        retained: true,
                     },
                     &setup,
                     &mut observation,

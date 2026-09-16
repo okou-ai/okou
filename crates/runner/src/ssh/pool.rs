@@ -45,7 +45,6 @@ struct Transport {
     connected: engine::Connected,
     scope: Scope,
     host_lease: Arc<HostLease>,
-    retained: bool,
     idle_deadline: watch::Sender<Option<Instant>>,
 }
 
@@ -76,7 +75,6 @@ pub(super) struct Request {
     pub(super) credential: Arc<PreparedCredential>,
     pub(super) access: Access,
     pub(super) operation: Arc<OwnedSemaphorePermit>,
-    pub(super) retained: bool,
 }
 
 /// Dropping an uncertain execution retires only its exclusive physical socket.
@@ -94,10 +92,7 @@ impl Lease {
     /// Only callers that observed channel close and actual exit may return it.
     pub(super) fn reuse(mut self) {
         let transport = &self.transport;
-        if !transport.retained
-            || transport.current().is_err()
-            || transport.connected.prepare_reuse().is_err()
-        {
+        if transport.current().is_err() || transport.connected.prepare_reuse().is_err() {
             transport.retire();
             return;
         }
@@ -169,39 +164,37 @@ impl Pool {
         scope.check()?;
         request.access.check()?;
         self.prune();
-        if request.retained {
-            let generation = generation(&request.credential)?;
-            let found = {
-                let mut idle = self.idle.lock().unwrap_or_else(|p| p.into_inner());
-                // A fresh authoritative generation cannot reuse an older idle snapshot.
-                idle.retain(|entry| {
-                    entry.transport.connection != request.connection
-                        || (generation_matches(&entry.transport.credential, generation)
-                            && entry
-                                .transport
-                                .credential
-                                .transport
-                                .same_authority(&request.credential.transport))
-                });
-                idle.iter()
-                    .position(|entry| entry.transport.connection == request.connection)
-                    .and_then(|index| idle.remove(index))
+        let generation = generation(&request.credential)?;
+        let found = {
+            let mut idle = self.idle.lock().unwrap_or_else(|p| p.into_inner());
+            // A fresh authoritative generation cannot reuse an older idle snapshot.
+            idle.retain(|entry| {
+                entry.transport.connection != request.connection
+                    || (generation_matches(&entry.transport.credential, generation)
+                        && entry
+                            .transport
+                            .credential
+                            .transport
+                            .same_authority(&request.credential.transport))
+            });
+            idle.iter()
+                .position(|entry| entry.transport.connection == request.connection)
+                .and_then(|index| idle.remove(index))
+        };
+        if let Some(idle) = found {
+            let lease = Lease {
+                pool: Arc::clone(self),
+                transport: idle.transport,
+                retire_on_drop: true,
             };
-            if let Some(idle) = found {
-                let lease = Lease {
-                    pool: Arc::clone(self),
-                    transport: idle.transport,
-                    retire_on_drop: true,
-                };
-                let transport = &lease.transport;
-                transport.current()?;
-                transport.host_lease.activate(request.operation)?;
-                transport.idle_deadline.send_replace(None);
-                scope.check()?;
-                request.access.check()?;
-                observation.connecting = false;
-                return Ok(lease);
-            }
+            let transport = &lease.transport;
+            transport.current()?;
+            transport.host_lease.activate(request.operation)?;
+            transport.idle_deadline.send_replace(None);
+            scope.check()?;
+            request.access.check()?;
+            observation.connecting = false;
+            return Ok(lease);
         }
 
         let physical = scope
@@ -243,7 +236,10 @@ impl Pool {
             .await
         };
         let connected = tokio::select! { biased;
-            () = access_cancelled.cancelled(), if request.retained => Err(FailureReason::ConfigurationChanged),
+            () = access_cancelled.cancelled() => {
+                scope.check()?;
+                Err(FailureReason::ConfigurationChanged)
+            },
             result = connect => result,
         }?;
         let (idle_deadline, _) = watch::channel(None);
@@ -254,7 +250,6 @@ impl Pool {
             connected,
             scope: transport_scope,
             host_lease,
-            retained: request.retained,
             idle_deadline,
         });
         let lease = Lease {
@@ -273,7 +268,6 @@ impl Pool {
         let weak = Arc::downgrade(transport);
         let scope = transport.scope.clone();
         let cancelled = transport.access.cancelled();
-        let retained = transport.retained;
         let mut idle = transport.idle_deadline.subscribe();
         self.tasks.spawn(async move {
             let mut idle_deadline = *idle.borrow_and_update();
@@ -282,7 +276,7 @@ impl Pool {
                 tokio::select! { biased;
                     () = scope.cancelled.cancelled() => break,
                     () = scope.sandbox_cancelled.cancelled() => break,
-                    () = cancelled.cancelled(), if retained => break,
+                    () = cancelled.cancelled() => break,
                     changed = idle.changed() => {
                         if changed.is_err() { break; }
                         idle_deadline = *idle.borrow_and_update();

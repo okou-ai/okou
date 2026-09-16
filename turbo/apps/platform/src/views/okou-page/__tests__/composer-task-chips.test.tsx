@@ -60,15 +60,10 @@ function selectedTask(editor: HTMLElement, task: string): HTMLElement {
   return button(`Remove ${task}`, card);
 }
 
-/** Off-screen pages are `inert`, so the reachable page is what a user sees. */
-function onCurrentPage(group: HTMLElement): HTMLElement[] {
-  return queryAllByRoleFast("button", group).filter((item) => {
-    return item.closest("[inert]") === null;
-  });
+function isPager(item: HTMLElement): boolean {
+  const label = item.getAttribute("aria-label") ?? "";
+  return label === "Next page" || label === "Previous page";
 }
-
-/** Mirrors the row's own page size; a page shows at most this many ideas. */
-const IDEAS_PER_PAGE = 3;
 
 function hasPager(group: HTMLElement, label: string): boolean {
   return queryAllByRoleFast("button", group).some((item) => {
@@ -77,16 +72,62 @@ function hasPager(group: HTMLElement, label: string): boolean {
 }
 
 function currentLabels(group: HTMLElement): string[] {
-  return onCurrentPage(group).map((item) => {
+  return queryAllByRoleFast("button", group).map((item) => {
     return item.textContent?.trim() ?? "";
   });
 }
 
 function ideaButtons(ideas: HTMLElement): HTMLElement[] {
-  return onCurrentPage(ideas).filter((item) => {
-    const label = item.getAttribute("aria-label") ?? "";
-    return label !== "Next page" && label !== "Previous page";
+  return queryAllByRoleFast("button", ideas).filter((item) => {
+    return !isPager(item);
   });
+}
+
+/**
+ * A rail only knows it overruns the column once the browser has laid it out,
+ * and the test DOM lays nothing out. Giving the rail a width narrower than its
+ * content is the measurement the pagers read, so it is what has to be staged.
+ */
+function stageRailOverflow(
+  group: HTMLElement,
+  { clientWidth, scrollWidth }: { clientWidth: number; scrollWidth: number },
+): HTMLElement {
+  const rail = group.querySelector<HTMLElement>("[data-rail]");
+  if (!rail) {
+    throw new Error("Expected a rail inside the group");
+  }
+  let scrollLeft = 0;
+  Object.defineProperties(rail, {
+    clientWidth: {
+      configurable: true,
+      get: () => {
+        return clientWidth;
+      },
+    },
+    scrollWidth: {
+      configurable: true,
+      get: () => {
+        return scrollWidth;
+      },
+    },
+    scrollLeft: {
+      configurable: true,
+      get: () => {
+        return scrollLeft;
+      },
+      set: (next: number) => {
+        scrollLeft = Math.min(Math.max(next, 0), scrollWidth - clientWidth);
+      },
+    },
+  });
+  // Both `scrollBy` overloads take the horizontal delta first.
+  rail.scrollBy = (options?: ScrollToOptions | number) => {
+    rail.scrollLeft +=
+      typeof options === "number" ? options : (options?.left ?? 0);
+    rail.dispatchEvent(new Event("scroll", { bubbles: false }));
+  };
+  rail.dispatchEvent(new Event("scroll", { bubbles: false }));
+  return rail;
 }
 
 function templateShelf(name: string): HTMLElement {
@@ -98,7 +139,7 @@ function browseLabel(task: string): string {
 }
 
 function coverButtons(shelf: HTMLElement): HTMLElement[] {
-  return onCurrentPage(shelf).filter((item) => {
+  return queryAllByRoleFast("button", shelf).filter((item) => {
     return (
       item.getAttribute("aria-label")?.startsWith("Use template ") === true
     );
@@ -490,6 +531,12 @@ test.each([
     next: "Put my café menu online",
     prompt: "Build a website that explains my business",
   },
+  {
+    task: "Presentation",
+    first: "Pitch my business to investors",
+    next: "Present my results",
+    prompt: "Create an investor pitch deck for my business",
+  },
 ])(
   "$task ideas rotate without changing the draft and keep what was typed",
   async ({ task, first, next, prompt }) => {
@@ -500,7 +547,9 @@ test.each([
     const ideas = await screen.findByRole("group", {
       name: "Ideas to get started",
     });
-    expect(ideaButtons(ideas)).toHaveLength(IDEAS_PER_PAGE);
+    // The rail carries the whole catalog; what fits on a page is a layout
+    // outcome, so the row is not asserted to hold a fixed count.
+    expect(ideaButtons(ideas).length).toBeGreaterThan(3);
     await fill(editor, "Keep this context");
     click(button(first, ideas));
     await waitFor(() => {
@@ -509,27 +558,8 @@ test.each([
     const draft = editor.textContent;
     click(button(first, ideas));
     expect(editor.textContent).toBe(draft);
-    click(button("Next page", ideas));
-    await waitFor(() => {
-      expect(currentLabels(ideas)).toContain(next);
-    });
-    expect(currentLabels(ideas)).not.toContain(first);
+    expect(currentLabels(ideas)).toContain(next);
     expect(editor.textContent).toBe(draft);
-    // Walk to the end. The pager stops there rather than wrapping, so the
-    // last page is the one without a `Next page`.
-    while (hasPager(ideas, "Next page")) {
-      click(button("Next page", ideas));
-      await waitFor(() => {
-        expect(ideaButtons(ideas).length).toBeGreaterThan(0);
-      });
-      expect(ideaButtons(ideas).length).toBeLessThanOrEqual(IDEAS_PER_PAGE);
-      expect(editor.textContent).toBe(draft);
-    }
-    expect(hasPager(ideas, "Next page")).toBeFalsy();
-    click(button("Previous page", ideas));
-    await waitFor(() => {
-      expect(hasPager(ideas, "Next page")).toBeTruthy();
-    });
     expect(editor).toHaveTextContent("Keep this context");
     expect(capture.sentMessages).toHaveLength(0);
   },
@@ -562,6 +592,15 @@ test.each([
       "Build a website that explains my business, services, and how to contact me. Start with my business details and audience.",
     secondPrompt:
       "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details.",
+  },
+  {
+    task: "Presentation",
+    first: "Pitch my business to investors",
+    second: "Put together a team update",
+    firstPrompt:
+      "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising.",
+    secondPrompt:
+      "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room.",
   },
 ])(
   "A second $task idea rewrites the first prompt instead of stacking one after it",
@@ -623,17 +662,10 @@ test("A presentation suggestion inserts a canonical template and preserves the p
   expect(
     within(templates).getByLabelText("Import your own deck"),
   ).toHaveAttribute("accept", ".pptx,.ppt,.pdf");
-  for (const item of PRESENTATION_TEMPLATE_PICKER_ITEMS.slice(0, 3)) {
+  // The rail carries the whole catalog, so the row is no longer a top-three cut.
+  for (const item of PRESENTATION_TEMPLATE_PICKER_ITEMS) {
     expect(button(item.title, templates)).toBeInTheDocument();
   }
-  expect(
-    queryAllByRoleFast("button", templates).some((item) => {
-      return (
-        item.textContent?.trim() ===
-        PRESENTATION_TEMPLATE_PICKER_ITEMS[3]!.title
-      );
-    }),
-  ).toBeFalsy();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
   click(button(template.title, templates));
   await waitFor(() => {
@@ -693,11 +725,12 @@ test("Uploaded presentation suggestions use the existing template reference", as
     name: "Presentation templates",
   });
   await within(templates).findByText("My brand deck");
+  // Every uploaded deck reaches the rail, ahead of the built-in catalog.
   expect(
     queryAllByRoleFast("button", templates).filter((item) => {
       return item.textContent?.trim().startsWith("My brand deck");
     }),
-  ).toHaveLength(3);
+  ).toHaveLength(4);
   click(button("My brand deck", templates));
   await waitFor(() => {
     expect(editor).toHaveTextContent("My brand deck");
@@ -786,7 +819,7 @@ test.each([
   { task: "Image", shelf: "Image styles", browse: "Browse all styles" },
   { task: "Video", shelf: "Video templates", browse: "Browse all templates" },
 ])(
-  "$task shows a cover shelf that pages through its catalog and attaches a template",
+  "$task shows a cover shelf carrying its whole catalog and attaches a template",
   async ({ task, shelf, browse }) => {
     mockTemplateChat();
     const editor = await setupChips();
@@ -794,27 +827,54 @@ test.each([
     click(button(task, screen.getByRole("group", { name: "Choose a task" })));
     const covers = templateShelf(shelf);
     expect(button(browse, covers)).toBeVisible();
-    const first = coverButtons(covers);
-    expect(first.length).toBeGreaterThan(0);
-    expect(first.length).toBeLessThanOrEqual(5);
-    const firstLabels = first.map((item) => {
-      return item.getAttribute("aria-label");
-    });
-    click(button("Next page", covers));
-    await waitFor(() => {
-      expect(
-        coverButtons(templateShelf(shelf)).map((item) => {
-          return item.getAttribute("aria-label");
-        }),
-      ).not.toStrictEqual(firstLabels);
-    });
-    click(coverButtons(templateShelf(shelf))[0]!);
+    // The rail carries every cover rather than one page of them, so reaching
+    // the rest is scrolling rather than a re-render.
+    expect(coverButtons(covers).length).toBeGreaterThan(5);
+    click(coverButtons(covers)[0]!);
     await waitFor(() => {
       expect(composerInlineTemplates()).toHaveLength(1);
     });
     expect(editor).toHaveTextContent("Keep my draft");
   },
 );
+
+test("A row offers a pager only while it has somewhere to go", async () => {
+  mockTemplateChat();
+  const editor = await setupChips();
+  click(
+    button("Website", screen.getByRole("group", { name: "Choose a task" })),
+  );
+  const ideas = await screen.findByRole("group", {
+    name: "Ideas to get started",
+  });
+  expect(hasPager(ideas, "Next page")).toBeFalsy();
+  expect(hasPager(ideas, "Previous page")).toBeFalsy();
+  const rail = stageRailOverflow(ideas, {
+    clientWidth: 900,
+    scrollWidth: 2400,
+  });
+  await waitFor(() => {
+    expect(hasPager(ideas, "Next page")).toBeTruthy();
+  });
+  // Nothing behind the start, so only one pager is offered there.
+  expect(hasPager(ideas, "Previous page")).toBeFalsy();
+  click(button("Next page", ideas));
+  await waitFor(() => {
+    expect(hasPager(ideas, "Previous page")).toBeTruthy();
+  });
+  expect(rail.scrollLeft).toBe(836);
+  // Paging does not wrap: at the end the forward pager is gone for good.
+  click(button("Next page", ideas));
+  await waitFor(() => {
+    expect(hasPager(ideas, "Next page")).toBeFalsy();
+  });
+  expect(rail.scrollLeft).toBe(1500);
+  click(button("Previous page", ideas));
+  await waitFor(() => {
+    expect(hasPager(ideas, "Next page")).toBeTruthy();
+  });
+  expect(editor).toBeVisible();
+});
 
 test("Task chips do not replace the composer in an existing conversation", async () => {
   mockTemplateChat();

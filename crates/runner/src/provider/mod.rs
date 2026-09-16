@@ -16,6 +16,8 @@ pub mod mock;
 
 pub(crate) use api::ApiClient;
 pub use api::{ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths};
+#[cfg(test)]
+pub(crate) use api_ably_supervisor::testing::AblyTestEvents;
 pub(crate) use connector_runtime_sync::{
     ConnectorRuntimeSyncHandle, ConnectorRuntimeSyncRegistration,
 };

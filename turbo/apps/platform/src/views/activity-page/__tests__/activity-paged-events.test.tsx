@@ -7,6 +7,7 @@ import { expect, test } from "vitest";
 import {
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type {
@@ -85,7 +86,7 @@ test("A completed activity appears only after its full event history is ready", 
     },
   );
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: "/activities/a0000000-0000-4000-a000-000000000099",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
@@ -98,6 +99,7 @@ test("A completed activity appears only after its full event history is ready", 
   expect(screen.queryByText("Page one content")).not.toBeInTheDocument();
 
   releaseSecondPage.resolve();
+  await page.ready;
 
   await expect(
     screen.findByText("Page two content"),
@@ -245,11 +247,13 @@ test("Activity metadata remains usable when its timeline cannot load", async () 
     });
   });
 
-  await setupPage({
-    context,
-    path: "/activities/a0000000-0000-4000-a000-000000000099",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
+  await expect(
+    setupPage({
+      context,
+      path: "/activities/a0000000-0000-4000-a000-000000000099",
+      featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+    }),
+  ).rejects.toThrow("Event storage unavailable");
 
   await expect(
     screen.findByRole("heading", { name: "Test Agent" }),

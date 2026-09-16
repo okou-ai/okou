@@ -116,8 +116,8 @@ const runImpactHandoff$ = command(
 );
 
 export const setImpactMarketingFrame$ = onRef(
-  command(async ({ set }, frame: HTMLIFrameElement, signal: AbortSignal) => {
-    await setLoop(
+  command(({ set }, frame: HTMLIFrameElement, signal: AbortSignal) => {
+    setLoop(
       async (loopSignal) => {
         const result = await settle(
           set(runImpactHandoff$, frame, loopSignal),

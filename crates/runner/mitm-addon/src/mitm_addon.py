@@ -273,7 +273,6 @@ def running() -> None:
     control_dir = ctx.options.okou_control_socket_dir
     usage_state_id = ctx.options.okou_usage_state_id
     if control_dir and usage_state_id:
-        runner_flush_lifecycle.start_runner_jsonl_flush_worker()
         control = runner_control.ControlServer(Path(control_dir), usage_state_id)
         control.start()
         _runner_control = control
@@ -2012,8 +2011,8 @@ def done():
     The runner flush lifecycle waits for any active SIGUSR1 delivery worker,
     retries buffered usage and retained diagnostic reports, drains accepted
     requests, and closes admission before this hook shuts down the usage
-    executor. It also performs a final JSONL marker observation and joins the
-    marker watcher before the JSONL writer stops. Any retryable usage outcome
+    executor. Control admission is already closed; pending log prefixes remain
+    owned by the JSONL writer. Any retryable usage outcome
     retained by completed workers is then retried synchronously.
     Auth.base forwarding does not need to finish running work during shutdown.
     Its `wait=False` worker shutdown closes admission, wakes or terminates
