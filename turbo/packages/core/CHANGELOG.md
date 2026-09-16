@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.670.0](https://github.com/vm0-ai/okou/compare/core-v8.669.0...core-v8.670.0) (2026-09-16)
+
+
+### Features
+
+* **core:** enable private artifacts for staff ([#34542](https://github.com/vm0-ai/okou/issues/34542)) ([ecaccf2](https://github.com/vm0-ai/okou/commit/ecaccf2069c3f800daec4519000b86c83bedfe48))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.448.0
+
 ## [8.669.0](https://github.com/vm0-ai/okou/compare/core-v8.668.2...core-v8.669.0) (2026-09-16)
 
 

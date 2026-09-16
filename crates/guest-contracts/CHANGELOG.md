@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.13](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.12...guest-contracts-v0.14.13) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** stop retries after provider queue expiry ([#34531](https://github.com/vm0-ai/okou/issues/34531)) ([38285ac](https://github.com/vm0-ai/okou/commit/38285acb5a5aa77c2e31c81ef37235dfedc6e2b5))
+
 ## [0.14.12](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.11...guest-contracts-v0.14.12) (2026-09-16)
 
 

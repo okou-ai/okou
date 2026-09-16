@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.10](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.9...runner-rs-v0.194.10) (2026-09-16)
+
+
+### Documentation
+
+* correct connector diagnostic metadata lifecycle ([#34533](https://github.com/vm0-ai/okou/issues/34533)) ([82c8379](https://github.com/vm0-ai/okou/commit/82c83791c62380f25d2179a985805dee7c3c46d4))
+
 ## [0.194.9](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.8...runner-rs-v0.194.9) (2026-09-16)
 
 
