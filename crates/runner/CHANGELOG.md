@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.196.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.196.0...runner-rs-v0.196.1) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** overlap bounded archive classification with sandbox startup ([#34608](https://github.com/vm0-ai/okou/issues/34608)) ([aa488bf](https://github.com/vm0-ai/okou/commit/aa488bfdd3c783483ef43ae9b09db4e05c33e2be))
+
 ## [0.196.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.3...runner-rs-v0.196.0) (2026-09-16)
 
 

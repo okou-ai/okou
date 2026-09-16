@@ -8,6 +8,27 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.614.1](https://github.com/vm0-ai/okou/compare/api-v1.614.0...api-v1.614.1) (2026-09-16)
+
+
+### Performance Improvements
+
+* **api:** consolidate new-run erasure ownership observations ([#34737](https://github.com/vm0-ai/okou/issues/34737)) ([c26f7d9](https://github.com/vm0-ai/okou/commit/c26f7d9d9096c7a94ec6b3afb25229febb36915d))
+* **api:** overlap paired subscription equivalence decryption ([#34742](https://github.com/vm0-ai/okou/issues/34742)) ([edd596e](https://github.com/vm0-ai/okou/commit/edd596e23fd0e590dd7beaaccdd14bf1090e0208))
+* **api:** persist validated subscription identity in the run insert ([#34738](https://github.com/vm0-ai/okou/issues/34738)) ([6e7c782](https://github.com/vm0-ai/okou/commit/6e7c7827ba4c6b31696ac3f70c38eb5bee3ecc88))
+* **api:** reduce erasure queries and workflow publication contention ([#34709](https://github.com/vm0-ai/okou/issues/34709)) ([bf0ddb9](https://github.com/vm0-ai/okou/commit/bf0ddb9d966b3f274bec43c6c1ec9e6048115b37))
+* **api:** reuse locked session observations during run admission ([#34735](https://github.com/vm0-ai/okou/issues/34735)) ([e802cd2](https://github.com/vm0-ai/okou/commit/e802cd29bee44dc65f9ff60cf79937c9e7ac86e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.1
+    * @okouai/core bumped to 8.673.1
+    * @okouai/db bumped to 1.269.1
+    * @okouai/pi-agent-runtime bumped to 1.32.5
+
 ## [1.614.0](https://github.com/vm0-ai/okou/compare/api-v1.613.0...api-v1.614.0) (2026-09-16)
 
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.337.2](https://github.com/vm0-ai/okou/compare/cli-v9.337.1...cli-v9.337.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **cli:** include the app origin in private artifact urls ([#34743](https://github.com/vm0-ai/okou/issues/34743)) ([fc49a4c](https://github.com/vm0-ai/okou/commit/fc49a4cbaec88437e82fe3caec5e56670b4e1cf7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.452.1
+    * @okouai/core bumped to 8.673.1
+    * @okouai/pi-agent-runtime bumped to 1.32.5
+
 ## [9.337.1](https://github.com/vm0-ai/okou/compare/cli-v9.337.0...cli-v9.337.1) (2026-09-16)
 
 
