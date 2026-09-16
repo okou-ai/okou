@@ -16,7 +16,7 @@ import {
 } from "./composer-create.tsx";
 import {
   ComposerAddMenu,
-  type ComposerAddMenuItem,
+  type ComposerAddMenuGroup,
 } from "./composer-add-menu.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
@@ -9124,7 +9124,7 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
  */
 function useComposerAddMenuGroups(
   signals: ComposerSignals,
-): readonly (readonly ComposerAddMenuItem[])[] {
+): readonly ComposerAddMenuGroup[] {
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
   const template = useTemplatePickerTrigger(signals);
@@ -9162,14 +9162,22 @@ function useComposerAddMenuGroups(
   ];
 }
 
+/**
+ * Split from the switch below so the paperclip path never subscribes to the
+ * template picker's signals just to build rows it will not render.
+ */
+function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
+  return <ComposerAddMenu groups={useComposerAddMenuGroups(signals)} />;
+}
+
 function ComposerAddSlot({ signals }: { signals: ComposerSignals }) {
   const addMenuEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
-  const groups = useComposerAddMenuGroups(signals);
-  if (!addMenuEnabled) {
-    return <ComposerAttachButton signals={signals} />;
-  }
-  return <ComposerAddMenu groups={groups} />;
+  return addMenuEnabled ? (
+    <ComposerAddMenuSlot signals={signals} />
+  ) : (
+    <ComposerAttachButton signals={signals} />
+  );
 }
 
 function toRestorableAttachments(

@@ -1,5 +1,7 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse } from "msw";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { uploadsContract } from "@okouai/api-contracts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 
@@ -15,10 +17,26 @@ import {
   findComposerEditor,
 } from "./chat-composer-test-helpers.ts";
 
+const UPLOAD_URL = "https://uploads.test.okou.ai/composer-add-menu";
+
 async function setupComposer(
   featureSwitches: Partial<Record<FeatureSwitchKey, boolean>>,
 ): Promise<HTMLElement> {
   mockTemplateChat();
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    return respond(200, {
+      id: "f1000000-0000-4000-a000-000000000201",
+      filename: body.filename,
+      contentType: body.contentType,
+      size: body.size,
+      url: `${UPLOAD_URL}/${body.filename}`,
+      uploadUrl: UPLOAD_URL,
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(UPLOAD_URL, () => {
+    return new HttpResponse(null, { status: 200 });
+  });
   await setupPage({ context, path: `/chats/${THREAD_ID}`, featureSwitches });
   return await findComposerEditor();
 }
@@ -123,22 +141,35 @@ test("still reaches the template picker with its toolbar button gone", async () 
   ).resolves.toBeVisible();
 });
 
-test("opens the file picker from the attach row", async () => {
+// The operating system's file dialog is not reachable from jsdom, so the row
+// stands in for the user opening it and the assertion stays on what the page
+// shows afterwards: the chosen file attached to the message.
+test("attaches the chosen file from the attach row", async () => {
   const editor = await setupComposer({
     [FeatureSwitchKey.ComposerAddMenu]: true,
   });
-  const fileInput = document.querySelector('input[type="file"]');
-  if (!(fileInput instanceof HTMLInputElement)) {
+  const menu = await openAddMenu(editor);
+  const input = document.querySelector('input[type="file"]');
+  if (!(input instanceof HTMLInputElement)) {
     throw new Error("Expected the composer file input");
   }
-  let clicks = 0;
-  fileInput.addEventListener("click", (event) => {
+  let opened = false;
+  input.addEventListener("click", (event) => {
     event.preventDefault();
-    clicks += 1;
+    opened = true;
   });
 
-  const menu = await openAddMenu(editor);
   click(menuItem(menu, "Attach"));
+  expect(opened).toBeTruthy();
 
-  expect(clicks).toBe(1);
+  fireEvent.change(input, {
+    target: {
+      files: [new File(["launch brief"], "brief.txt", { type: "text/plain" })],
+    },
+  });
+
+  await expect(screen.findByText("brief.txt")).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByLabelText("Remove brief.txt"),
+  ).resolves.toBeInTheDocument();
 });

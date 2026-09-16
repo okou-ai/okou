@@ -1,12 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { Plus, type LucideIcon } from "lucide-react";
-import { Button } from "@okouai/ui/components/ui/button";
 import {
-  Popover,
-  PopoverClose,
-  PopoverContent,
-  PopoverTrigger,
-} from "@okouai/ui/components/ui/popover";
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@okouai/ui";
 
 /** One row of the composer's add menu. */
 export interface ComposerAddMenuItem {
@@ -23,6 +24,16 @@ export interface ComposerAddMenuItem {
 }
 
 /**
+ * A group always carries at least one row. Saying so in the type is what lets
+ * the group key read `group[0].id` directly instead of inventing a key for an
+ * empty group the caller cannot build.
+ */
+export type ComposerAddMenuGroup = readonly [
+  ComposerAddMenuItem,
+  ...ComposerAddMenuItem[],
+];
+
+/**
  * The composer toolbar's `+`: one entry point for what a message can gain,
  * rather than a button per capability. Attach, template and create workflow
  * each answered the same question from their own icon, and the toolbar had no
@@ -35,15 +46,15 @@ export function ComposerAddMenu({
   groups,
 }: {
   /** Rendered in order, separated by a rule. */
-  readonly groups: readonly (readonly ComposerAddMenuItem[])[];
+  readonly groups: readonly ComposerAddMenuGroup[];
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
     return $.chat.composer.add;
   });
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <Button
           type="button"
           variant="quiet"
@@ -54,45 +65,44 @@ export function ComposerAddMenu({
         >
           <Plus size={18} aria-hidden="true" />
         </Button>
-      </PopoverTrigger>
-      <PopoverContent
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
         align="start"
         side="top"
         sideOffset={8}
-        className="w-56 p-1.5"
+        aria-label={label}
+        className="w-56"
       >
-        <div role="menu" aria-label={label}>
-          {groups.map((group, index) => {
-            return (
-              <div key={group[0]?.id ?? index}>
-                {index > 0 && <div className="my-1.5 h-px bg-divider" />}
-                {group.map((item) => {
-                  return (
-                    <PopoverClose asChild key={item.id}>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-foreground transition-colors hover:bg-state-hover"
-                        onPointerEnter={item.onPrewarm}
-                        onFocus={item.onPrewarm}
-                        onPointerDown={item.onPrewarm}
-                        onClick={item.onSelect}
-                      >
-                        <item.Icon
-                          size={16}
-                          className="shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                        <span className="min-w-0 truncate">{item.label}</span>
-                      </button>
-                    </PopoverClose>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      </PopoverContent>
-    </Popover>
+        {/* Flat on purpose: Base UI reads its items from the popup's own
+            children, so a wrapper element per group would sit between them and
+            break the menu's keyboard navigation. */}
+        {groups.flatMap((group, index) => {
+          const separator =
+            index > 0
+              ? [<DropdownMenuSeparator key={`separator-${group[0].id}`} />]
+              : [];
+          return [
+            ...separator,
+            ...group.map((item) => {
+              return (
+                <DropdownMenuItem
+                  key={item.id}
+                  onPointerEnter={item.onPrewarm}
+                  onFocus={item.onPrewarm}
+                  onPointerDown={item.onPrewarm}
+                  onClick={item.onSelect}
+                >
+                  <item.Icon
+                    className="shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 truncate">{item.label}</span>
+                </DropdownMenuItem>
+              );
+            }),
+          ];
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
