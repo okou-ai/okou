@@ -41,6 +41,24 @@ import {
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
+/**
+ * Both chip rows -- the task types and the ideas inside a type -- are the same
+ * object, so they carry one definition of how that object is drawn.
+ *
+ * `neutral` at its default size is a form button: `px-4` against a fixed `h-9`
+ * leaves 17.25px of ink inset on the sides and 11.5px above and below, a
+ * 1.5 : 1 frame that reads as a submit control rather than a chip. `px-3`
+ * brings the sides to 13.25px, or 1.15 : 1 -- close to even, with the slight
+ * horizontal margin a label needs to not touch its own edge. The height is
+ * deliberately left alone: `h-9` is what sets this row's rhythm under the
+ * composer, and the complaint was the frame, not the size.
+ *
+ * `border-border` is the same hairline the rest of the product draws. A chip is
+ * one line of a row rather than a standalone control, and `control-border` sits
+ * a stop darker than `--border` precisely to carry a control that stands by
+ * itself; a row of twelve of them turns that stop into a grid.
+ */
+const TASK_CHIP = "px-3 border-border";
 const TASK_ICONS = {
   workflow: Route,
   presentation: Presentation,
@@ -340,7 +358,7 @@ function ComposerTaskIdeas({
             key={idea.label}
             type="button"
             variant="neutral"
-            className="shrink-0"
+            className={cn("shrink-0", TASK_CHIP)}
             onClick={() => {
               insertPrompt(idea.prompt);
               detach(saveDraft(pageSignal), Reason.DomCallback);
@@ -412,6 +430,7 @@ export function ComposerTaskChips({
                   key={task}
                   type="button"
                   variant="neutral"
+                  className={TASK_CHIP}
                   onClick={() => {
                     selectTask(task);
                   }}
