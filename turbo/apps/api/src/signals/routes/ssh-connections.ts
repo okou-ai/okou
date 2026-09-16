@@ -148,7 +148,9 @@ const createSshConnectionInner$ = command(
     if (!result.ok) {
       return mapSshFailure(result);
     }
-    return { status: 201 as const, body: result.value };
+    return result.value === undefined
+      ? { status: 204 as const, body: undefined }
+      : { status: 201 as const, body: result.value };
   },
 );
 
@@ -307,10 +309,16 @@ const createSshCredentialInner$ = command(
       db: set(writeDb$),
       owner,
       body: body.data,
+      id: body.data.id,
       featureContext,
     });
     signal.throwIfAborted();
-    return { status: 201 as const, body: credential };
+    if (!credential.ok) {
+      return mapSshFailure(credential);
+    }
+    return credential.value === undefined
+      ? { status: 204 as const, body: undefined }
+      : { status: 201 as const, body: credential.value };
   },
 );
 const updateSshCredentialInner$ = command(

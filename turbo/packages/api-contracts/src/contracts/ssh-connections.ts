@@ -41,6 +41,7 @@ const transportSchema = z.union([
 ]);
 export const createSshConnectionRequestSchema = z
   .object({
+    id: z.uuid(),
     displayName: displayNameSchema,
     host: hostSchema,
     port: portSchema.default(22),
@@ -170,10 +171,12 @@ export const sshConnectionsContract = c.router({
     body: createSshConnectionRequestSchema,
     responses: {
       201: sshConnectionResponseSchema,
+      204: c.noBody(),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Create an SSH connection",

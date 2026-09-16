@@ -119,8 +119,11 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
     <DropdownMenu>
       <div
         // 12px, not the Button default 8px: the split control and the menu it
-        // opens read as one object when their outer radii agree.
-        className="inline-flex h-8 items-stretch rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-[var(--okou-card-shadow)]"
+        // opens read as one object when their outer radii agree. The surface
+        // tokens name that radius, hairline and elevation, which is how the
+        // Get started entry beside it in the corner spells the same three
+        // decisions, so the two controls cannot drift apart.
+        className="inline-flex h-8 items-stretch rounded-surface-compact border border-surface-border bg-card shadow-surface"
       >
         <Button
           type="button"

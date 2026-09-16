@@ -85,6 +85,7 @@ export default defineConfig({
       name: "features",
       testMatch: [
         "agents.spec.ts",
+        "artifact-access.spec.ts",
         "chat.spec.ts",
         "create-agent.spec.ts",
         "workflows.spec.ts",

@@ -1,6 +1,9 @@
 //! [`JobProvider`] backed by an Ably control plane + HTTP polling + REST API.
 
-use super::{DeferredSandboxFence, deferred_release::DeferredReleaseOutbox};
+use super::{
+    DeferredSandboxFence,
+    deferred_release::{DeferredReleaseOutbox, ReleaseOutcome},
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -28,6 +31,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use super::api_ably_supervisor::{
     AblySupervisor, AblySupervisorConfig, PollDue, PollOutcome, PollReason, PollWakeups,
 };
+use super::api_cancellation_reconciliation::CancellationReconciliation;
 use super::api_claim_cooldowns::{ClaimCooldownRecord, ClaimCooldowns};
 use super::api_direct_candidates::{
     DIRECT_CANDIDATE_STALE_AFTER, DirectCandidateInbox, DirectCandidatePruneSnapshot,
@@ -346,6 +350,7 @@ pub struct ApiProvider {
     /// Background Ably control-plane task.
     ably_supervisor: Mutex<Option<AblySupervisor>>,
     cancel_tokens: RunCancellationRegistry,
+    cancellation_reconciliation: CancellationReconciliation,
     connector_runtime_sync: ConnectorRuntimeSyncHandle,
     ssh: Option<Arc<crate::ssh::SshRuntime>>,
     builtin_firewall_catalog_refresh: BuiltinFirewallCatalogRefreshController,
@@ -390,6 +395,8 @@ impl ApiProvider {
         } = config;
         let deferred_release_outbox =
             DeferredReleaseOutbox::new_shared(deferred_release_root, &runner_identity);
+        let cancellation_reconciliation =
+            CancellationReconciliation::new(http.clone(), group.clone(), runner_identity);
         let api = ApiClient::new(http, token);
         let connector_runtime_sync = ConnectorRuntimeSyncHandle::new(api.clone());
         let builtin_firewall_catalog_refresh = BuiltinFirewallCatalogRefreshController::new(
@@ -416,6 +423,7 @@ impl ApiProvider {
             claim_cooldowns: ClaimCooldowns::new(CLAIM_COOLDOWN_CAPACITY),
             ably_supervisor: Mutex::new(None),
             cancel_tokens,
+            cancellation_reconciliation,
             connector_runtime_sync,
             ssh,
             builtin_firewall_catalog_refresh,
@@ -807,6 +815,7 @@ impl JobProvider for ApiProvider {
 
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
         let run_id = candidate.run_id();
+        let cancellation = self.cancel_tokens.handle(run_id).await;
         // Only an HTTP poll can opt this candidate into the v4 claim protocol.
         // Legacy/notification candidates omit the claim capability, so even a
         // stale hint cannot claim a v4 Run without the durable barrier.
@@ -916,6 +925,13 @@ impl JobProvider for ApiProvider {
                         return None;
                     }
                 };
+                if let Some(handle) = cancellation {
+                    self.cancellation_reconciliation.observe(
+                        run_id,
+                        handle,
+                        claimed.context().sandbox_token.clone(),
+                    );
+                }
                 self.claim_cooldowns.remove(run_id).await;
                 info!(
                     run_id = %run_id,
@@ -989,6 +1005,7 @@ impl JobProvider for ApiProvider {
     }
 
     async fn shutdown(&self) {
+        self.cancellation_reconciliation.shutdown().await;
         let ably_supervisor = self.ably_supervisor.lock().await.take();
         if let Some(ably_supervisor) = ably_supervisor {
             ably_supervisor.shutdown().await;
@@ -1500,7 +1517,7 @@ impl ApiClient {
         &self,
         run_id: RunId,
         body: &serde_json::Value,
-    ) -> RunnerResult<bool> {
+    ) -> RunnerResult<ReleaseOutcome> {
         let id = run_id.to_string();
         let response = send_api(
             self.http
@@ -1518,12 +1535,22 @@ impl ApiClient {
         #[derive(Deserialize)]
         struct ReleaseReceipt {
             released: bool,
+            /// Absent on an API that predates the explicit outcome, and unknown
+            /// values stay unknown: both fall back to the legacy boolean.
+            #[serde(default)]
+            outcome: Option<String>,
         }
         let receipt: ReleaseReceipt = response
             .json()
             .await
             .map_err(|error| RunnerError::Api(format!("decode deferred release: {error}")))?;
-        Ok(receipt.released)
+        Ok(match receipt.outcome.as_deref() {
+            Some("released") => ReleaseOutcome::Released,
+            Some("stale") => ReleaseOutcome::Stale,
+            Some("inconclusive") => ReleaseOutcome::Inconclusive,
+            _ if receipt.released => ReleaseOutcome::Released,
+            _ => ReleaseOutcome::Stale,
+        })
     }
 
     async fn poll(
@@ -2546,6 +2573,11 @@ mod tests {
             ssh: None,
             deferred_release_outbox: DeferredReleaseOutbox::new(
                 std::env::temp_dir().join(format!("pi-release-test-{}", Uuid::new_v4())),
+            ),
+            cancellation_reconciliation: CancellationReconciliation::new(
+                api.http.clone(),
+                "default".to_string(),
+                test_runner_identity(),
             ),
             connector_runtime_sync: ConnectorRuntimeSyncHandle::new(api.clone()),
             builtin_firewall_catalog_refresh: BuiltinFirewallCatalogRefreshController::disabled(),
@@ -5756,6 +5788,163 @@ mod tests {
 
         assert!(claimed.context().local_secret_env_keys.is_none());
         claim_mock.assert_calls_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_reconciliation_starts_only_after_valid_claim_without_active_input() {
+        for ably_connected in [false, true] {
+            let run_id = RunId::new_v4();
+            let claim = serde_json::json!({
+                "runId": run_id,
+                "prompt": "hello",
+                "sandboxToken": "claim-sandbox-token",
+                "cliAgentType": "claude_code",
+                "platformEnvironment": {},
+                "connectorRuntimeTargets": [],
+            });
+            let (release, wait) = tokio::sync::oneshot::channel();
+            let mut server = RawHttpTestServer::spawn(vec![
+                RawHttpAction::WaitThenRespond {
+                    release: wait,
+                    response: json_response("200 OK", &claim.to_string()),
+                },
+                RawHttpAction::Respond(json_response(
+                    "200 OK",
+                    &serde_json::json!({
+                        "protocolVersion": 1, "runId": run_id, "state": "gone",
+                    })
+                    .to_string(),
+                )),
+            ])
+            .await;
+            let provider = api_provider_for_test(
+                server.url(),
+                CancellationToken::new(),
+                Arc::new(PollWakeups::new(ably_connected)),
+            );
+            let registration = provider.cancel_tokens.register(run_id).await.unwrap();
+            let claiming = provider.clone();
+            let claim_task = tokio::spawn(async move {
+                claiming
+                    .claim(JobCandidate::new(
+                        run_id,
+                        crate::profile::DEFAULT_PROFILE.into(),
+                    ))
+                    .await
+            });
+            let request = server.next_request("claim before eligibility").await;
+            assert!(request.starts_with(&format!("POST /api/runners/jobs/{run_id}/claim ")));
+            assert!(!registration.is_cancelled());
+            release.send(()).unwrap();
+            let claimed = claim_task.await.unwrap().unwrap();
+            assert!(claimed.active_input_source().is_none());
+            let request = server.next_request("claim-scoped cancellation read").await;
+            assert!(request.starts_with(&format!("GET /api/runners/runs/{run_id}/cancellation?")));
+            assert!(request.contains("authorization: Bearer claim-sandbox-token"));
+            assert!(request.contains("runnerGroup=default"));
+            assert!(request.contains(&format!("runnerId={TEST_RUNNER_ID}")));
+            assert!(request.contains(&format!("heartbeatGeneration={TEST_HEARTBEAT_GENERATION}")));
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                registration.handle().signals().hard().cancelled(),
+            )
+            .await
+            .unwrap();
+            registration.unregister().await;
+            provider.shutdown().await;
+            server.assert_finished().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_reconciliation_never_attaches_to_a_replacement_after_claim() {
+        let run_id = RunId::new_v4();
+        let (release, wait) = tokio::sync::oneshot::channel();
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+            release: wait,
+            response: json_response("200 OK", &serde_json::json!({
+                "runId": run_id, "prompt": "hello", "sandboxToken": "claim-sandbox-token",
+                "cliAgentType": "claude_code", "platformEnvironment": {}, "connectorRuntimeTargets": [],
+            }).to_string()),
+        }]).await;
+        let provider = api_provider_for_test(
+            server.url(),
+            CancellationToken::new(),
+            Arc::new(PollWakeups::new(false)),
+        );
+        let original = provider.cancel_tokens.register(run_id).await.unwrap();
+        let claiming = provider.clone();
+        let claim_task = tokio::spawn(async move {
+            claiming
+                .claim(JobCandidate::new(
+                    run_id,
+                    crate::profile::DEFAULT_PROFILE.into(),
+                ))
+                .await
+        });
+        server.next_request("pending claim").await;
+        original.unregister().await;
+        let successor = provider.cancel_tokens.register(run_id).await.unwrap();
+        release.send(()).unwrap();
+        assert!(claim_task.await.unwrap().is_some());
+        provider.shutdown().await;
+        assert!(!successor.is_cancelled());
+        assert!(successor.unregister().await);
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn cancellation_reconciliation_rejects_failed_unavailable_and_invalid_claims() {
+        let server = MockServer::start_async().await;
+        let run_id = RunId::new_v4();
+        let cancellation = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path(format!("/api/runners/runs/{run_id}/cancellation"));
+                then.status(200).json_body(
+                    serde_json::json!({"protocolVersion":1,"runId":run_id,"state":"gone"}),
+                );
+            })
+            .await;
+        let cases = [
+            (409, "unavailable".to_string()),
+            (401, "unauthorized".to_string()),
+            (500, "service unavailable".to_string()),
+            (200, "malformed".to_string()),
+            (200, serde_json::json!({
+                "runId":RunId::new_v4(),"prompt":"hello","sandboxToken":"test-token",
+                "cliAgentType":"claude_code","platformEnvironment":{},"connectorRuntimeTargets":[],
+            }).to_string()),
+        ];
+        for (status, body) in cases {
+            let claim = server
+                .mock_async(|when, then| {
+                    when.method(POST)
+                        .path(format!("/api/runners/jobs/{run_id}/claim"));
+                    then.status(status).body(body);
+                })
+                .await;
+            let provider = api_provider_for_test(
+                server.base_url(),
+                CancellationToken::new(),
+                Arc::new(PollWakeups::new(false)),
+            );
+            let registration = provider.cancel_tokens.register(run_id).await.unwrap();
+            assert!(
+                provider
+                    .claim(JobCandidate::new(
+                        run_id,
+                        crate::profile::DEFAULT_PROFILE.into()
+                    ))
+                    .await
+                    .is_none()
+            );
+            provider.shutdown().await;
+            assert!(!registration.is_cancelled());
+            registration.unregister().await;
+            claim.delete_async().await;
+        }
+        cancellation.assert_calls_async(0).await;
     }
 
     #[tokio::test]

@@ -580,6 +580,11 @@ fn initial_connector_routing_variables(
 }
 
 impl ProxyRegistryHandle {
+    /// Observe a published registration without delaying sandbox preparation.
+    pub(crate) fn observe_registration(&self, publication: RegistryPublication) {
+        self.control.observe_registry(publication);
+    }
+
     #[cfg(test)]
     pub(crate) fn set_control_target_for_test(&self, directory: PathBuf, generation: String) {
         self.control.set_target(Some(super::control::ControlTarget {

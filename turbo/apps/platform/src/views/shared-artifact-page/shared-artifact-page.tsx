@@ -1,7 +1,16 @@
-import { Button } from "@okouai/ui";
-import { useGet, useSet } from "ccstate-react";
-import { ArrowUpRight, Share2 } from "lucide-react";
+import { Button, Card } from "@okouai/ui";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
+import {
+  ArrowLeft,
+  ArrowRightLeft,
+  ArrowUpRight,
+  LockKeyhole,
+  Share2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { currentUserInfo$ } from "../../signals/auth.ts";
+import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
@@ -86,6 +95,87 @@ function ArtifactViewerActions({
   );
 }
 
+function ArtifactAccessPage() {
+  const { t } = useTranslation();
+  const user = useLastResolved(currentUserInfo$);
+  const email = user?.primaryEmailAddress?.emailAddress;
+  const pageSignal = useGet(pageSignal$);
+  const [switchLoadable, switchAccount] = useLoadableSet(openClerkAddAccount$);
+  return (
+    <div className="flex min-h-full items-center justify-center bg-gray-50 px-5 py-10 sm:px-8">
+      <Card className="w-full max-w-[480px] rounded-3xl">
+        <div className="px-6 pb-8 pt-9 text-center sm:px-9 sm:pt-10">
+          <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-gray-50 text-muted-foreground">
+            <LockKeyhole size={24} strokeWidth={1.5} aria-hidden />
+          </div>
+          <h2 className="mt-6 text-2xl font-semibold leading-8 tracking-tight text-foreground">
+            {t(($) => {
+              return $.artifacts.access.title;
+            })}
+          </h2>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.access.description;
+            })}
+            <br />
+            {t(($) => {
+              return $.artifacts.access.help;
+            })}
+          </p>
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
+            <Button
+              type="button"
+              disabled={switchLoadable.state === "loading"}
+              aria-busy={switchLoadable.state === "loading"}
+              onClick={() => {
+                detach(
+                  switchAccount(window.location.href, pageSignal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              <ArrowRightLeft aria-hidden />
+              {t(($) => {
+                return $.artifacts.access.switchAccount;
+              })}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                window.location.reload();
+              }}
+            >
+              {t(($) => {
+                return $.artifacts.access.tryAgain;
+              })}
+            </Button>
+          </div>
+          {switchLoadable.state === "hasError" && (
+            <p role="alert" className="mt-4 text-sm text-destructive">
+              {t(($) => {
+                return $.artifacts.access.switchAccountFailed;
+              })}
+            </p>
+          )}
+        </div>
+        {email && (
+          <div className="border-t border-border/70 px-6 py-4 text-center text-xs leading-5 text-muted-foreground">
+            <p className="break-words">
+              {t(
+                ($) => {
+                  return $.artifacts.access.signedInAs;
+                },
+                { email },
+              )}
+            </p>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 export function SharedArtifactPage({
   artifact,
   viewer,
@@ -126,9 +216,25 @@ export function SharedArtifactPage({
             </p>
           )}
         </div>
-        {artifact !== null && <ArtifactViewerActions artifact={artifact} />}
+        {artifact !== null ? (
+          <ArtifactViewerActions artifact={artifact} />
+        ) : (
+          <Button asChild variant="quiet" size="sm">
+            <a href="/">
+              <ArrowLeft aria-hidden />
+              {t(
+                ($) => {
+                  return $.artifacts.access.backToBrand;
+                },
+                { brandName: BRAND_NAME },
+              )}
+            </a>
+          </Button>
+        )}
       </header>
-      <main className="relative min-h-0 flex-1 overflow-hidden bg-muted/30">
+      <main
+        className={`relative min-h-0 flex-1 bg-muted/30 ${artifact === null ? "overflow-y-auto" : "overflow-hidden"}`}
+      >
         {artifact !== null ? (
           <ArtifactPreviewBody
             artifact={undefined}
@@ -137,13 +243,7 @@ export function SharedArtifactPage({
             preview={artifact.preview}
           />
         ) : (
-          <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-            <p>
-              {t(($) => {
-                return $.artifacts.sharing.unavailable;
-              })}
-            </p>
-          </div>
+          <ArtifactAccessPage />
         )}
       </main>
     </div>

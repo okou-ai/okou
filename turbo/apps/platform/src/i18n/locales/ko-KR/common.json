@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "{{brandName}}(으)로 돌아가기",
+      "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
+      "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
+      "signedInAs": "{{email}} 계정으로 로그인됨",
+      "switchAccount": "계정 전환",
+      "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
+      "title": "이 아티팩트를 볼 수 없습니다",
+      "tryAgain": "다시 시도"
+    },
     "actions": {
       "backToAll": "모든 아티팩트로 돌아가기",
       "backToArtifacts": "아티팩트로 돌아가기",
@@ -580,8 +590,7 @@
     },
     "sharing": {
       "shareOrganization": "조직에 공유",
-      "sharePublic": "공개적으로 공유",
-      "unavailable": "이 아티팩트를 사용할 수 없거나 액세스 권한이 없습니다."
+      "sharePublic": "공개적으로 공유"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -1515,19 +1524,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "매일 앱을 여세요. 00:00 UTC에 초기화돼요.",
+          "description": "하루에 한 번, 매일",
           "name": "매일 출석하기",
           "unit": "하루당"
         },
         "connector": {
-          "description": "OAuth로 연결하세요. 커넥터별로 한 번 받을 수 있어요.",
+          "action": "연결",
+          "description": "Gmail, Notion 등 100개 이상",
           "name": "커넥터 연결하기",
           "unit": "커넥터당"
         },
         "inReview": "검토 중",
         "inReviewDescription": "제출됨, 검토 대기 중",
         "invite": {
-          "description": "초대가 수락되면 지급돼요. 최대 15명까지 가능해요.",
+          "action": "초대",
+          "description": "추가하는 사람마다 적립됩니다",
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
@@ -1538,6 +1549,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "보상을 받은 커넥터: {{amount}}",
         "share": {
+          "action": "공유",
           "description": "게시한 뒤 링크를 붙여넣기",
           "name": "X에 {{assistantName}} 공유하기"
         },
@@ -1550,14 +1562,16 @@
           "title": "X에 {{assistantName}} 공유하기"
         },
         "slack": {
-          "description": "조직 및 워크스페이스당 한 번, 조직 크레딧 2,000을 받으세요.",
+          "action": "추가",
+          "description": "팀이 이미 일하고 있는 곳으로",
           "name": "Slack에 {{assistantName}} 추가하기"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "작업을 시도하고 크레딧을 받으세요.",
         "title": "시작하기",
         "workflow": {
-          "description": "직접 만든 워크플로를 성공적으로 실행하세요.",
+          "action": "만들기",
+          "description": "반복 작업을 재사용 가능한 스킬로 만들기",
           "name": "워크플로 만들기"
         }
       },
@@ -5877,8 +5891,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "기본",
+            "goldenHour": "Golden hour"
           },
           "title": "컬러 테마"
         },
@@ -6371,6 +6385,10 @@
     "resetHelp": "새 서버의 신원을 독립적으로 확인한 후에만 재설정하세요. 다음 연결에서는 새 호스트 키를 신뢰하고 저장합니다.",
     "retry": "다시 시도",
     "save": "저장",
+    "saveRecovery": {
+      "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
+      "uncertain": "변경 사항이 저장되었는지 확인하지 못했습니다. 같은 내용으로 저장을 다시 시도하거나, 닫고 목록을 확인한 후 다시 추가하세요."
+    },
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
     "title": "SSH 호스트",

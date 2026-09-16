@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.195.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.0...runner-rs-v0.195.1) (2026-09-16)
+
+
+### Refactoring
+
+* **runner:** separate guest rpc ownership from ssh dispatch ([#34589](https://github.com/vm0-ai/okou/issues/34589)) ([1d4d031](https://github.com/vm0-ai/okou/commit/1d4d0319b66dcb0dab55180a618ad301a10fa0ea))
+
 ## [0.195.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.10...runner-rs-v0.195.0) (2026-09-16)
 
 

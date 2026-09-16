@@ -139,7 +139,18 @@ acknowledgement after releasing registry and active-run locks. Their success and
 retry policies still describe publication: an unconfirmed acknowledgement never
 rolls back or automatically republishes configuration.
 Initial registration establishes local network-log attribution and runtime-sync
-tracking before waiting, including for already-unparked reused sandboxes.
+tracking before nonblocking observation admission, including for already-unparked
+reused sandboxes. Registration does not wait for a receipt. Each proxy control
+generation owns at most one background exchange and one queued publication;
+queue saturation records an unconfirmed outcome without waiting or retrying.
+Restart, stop, kill and proxy Drop cancel the old generation's queued/in-flight
+local observations, even when registry handles survive. Cancellation is an
+unconfirmed observation, not rollback of the published registry. Frozen targets
+never follow a replacement generation. Unregistration and connector synchronization
+retain their synchronous observation waits.
+
+Moving the receipt wait off startup does not remove addon loading work or certify
+first-request latency. Current-file enforcement remains on the request path.
 
 `registry.apply` takes exactly `{"digest":"<64 lowercase hex characters>"}`.
 It reads only the configured registry/catalog paths; neither policies nor caller
