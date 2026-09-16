@@ -730,6 +730,11 @@
           "shortDescription": "Bandingkan belanja iklan dan ROAS dengan bulan lalu.",
           "title": "Bandingkan Google Ads vs bulan lalu"
         },
+        "creator-shortlist-to-sheets": {
+          "description": "Nilai kreator yang Anda pertimbangkan dari jangkauan dan engagement, diurutkan dalam satu sheet.",
+          "shortDescription": "Urutkan kreator berdasarkan jangkauan dan engagement.",
+          "title": "Susun daftar pendek kreator di Google Sheets"
+        },
         "daily-standup-report": {
           "description": "Kumpulkan sinyal produk dan engineering tiap pagi, buat laporan singkat, lalu posting ke Slack.",
           "shortDescription": "Posting ringkasan produk dan engineering tiap pagi.",
@@ -785,6 +790,11 @@
           "shortDescription": "Angkat email yang butuh perhatian Anda.",
           "title": "Sorot email penting di Gmail"
         },
+        "keyword-ranks-to-sheets": {
+          "description": "Periksa peringkat halaman Anda untuk kata kunci yang penting dan catat perubahannya.",
+          "shortDescription": "Catat perubahan peringkat setiap minggu.",
+          "title": "Lacak peringkat kata kunci di Google Sheets"
+        },
         "morning-brief": {
           "description": "Ubah update Gmail, Calendar, dan Notion jadi rencana harian singkat di Slack.",
           "shortDescription": "Ubah email dan rapat jadi rencana harian singkat.",
@@ -825,6 +835,11 @@
           "shortDescription": "Kirim ringkasan harian isu Sentry yang kritis.",
           "title": "Ringkasan isu Sentry"
         },
+        "social-posts-to-sheets": {
+          "description": "Kumpulkan posting publik dan engagement dari akun yang Anda pantau dalam satu sheet.",
+          "shortDescription": "Kumpulkan posting publik dalam satu sheet.",
+          "title": "Kumpulkan posting media sosial ke Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Sortir inbox Anda dan buat draf balasan untuk email yang membutuhkannya.",
           "shortDescription": "Sortir inbox dan susun balasan yang perlu.",
@@ -859,6 +874,11 @@
           "description": "Pantau deploy Vercel, hubungkan dengan commit GitHub, dan beri tahu Slack saat gagal.",
           "shortDescription": "Beri tahu Slack saat deploy Vercel gagal.",
           "title": "Ringkasan deploy Vercel"
+        },
+        "web-data-to-sheets": {
+          "description": "Ambil kolom yang sama dari daftar halaman secara berkala dan simpan riwayatnya dalam satu sheet.",
+          "shortDescription": "Ambil kolom dari daftar halaman ke satu sheet.",
+          "title": "Kumpulkan data halaman web ke spreadsheet"
         },
         "x-brand-monitor": {
           "description": "Lacak sebutan brand di X, simpan post yang relevan di Notion, dan beri tahu Slack untuk sebutan penting.",

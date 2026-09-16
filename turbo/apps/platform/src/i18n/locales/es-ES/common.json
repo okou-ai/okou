@@ -750,6 +750,11 @@
           "shortDescription": "Compara inversión y ROAS con el mes pasado.",
           "title": "Comparar Google Ads con el mes anterior"
         },
+        "creator-shortlist-to-sheets": {
+          "description": "Puntúa a los creadores que estás valorando por alcance e interacción, ordenados en una hoja.",
+          "shortDescription": "Ordena creadores por alcance e interacción.",
+          "title": "Crear una lista de creadores en Google Sheets"
+        },
         "daily-standup-report": {
           "description": "Reúne cada mañana las señales de producto e ingeniería, crea un informe breve y publícalo en Slack.",
           "shortDescription": "Publica cada mañana el resumen de producto e ingeniería.",
@@ -805,6 +810,11 @@
           "shortDescription": "Muestra los correos que necesitan tu atención.",
           "title": "Resalta los correos clave en Gmail"
         },
+        "keyword-ranks-to-sheets": {
+          "description": "Comprueba en qué posición aparecen tus páginas para tus palabras clave y registra los cambios.",
+          "shortDescription": "Registra cada semana los cambios de posición.",
+          "title": "Seguir posiciones de palabras clave en Google Sheets"
+        },
         "morning-brief": {
           "description": "Convierte las novedades de Gmail, Calendar y Notion en un plan diario breve en Slack.",
           "shortDescription": "Convierte correo y reuniones en un plan diario.",
@@ -845,6 +855,11 @@
           "shortDescription": "Envía un resumen diario de las incidencias críticas.",
           "title": "Resumen de incidencias de Sentry"
         },
+        "social-posts-to-sheets": {
+          "description": "Reúne las publicaciones públicas y la interacción de las cuentas que sigues en una hoja.",
+          "shortDescription": "Reúne publicaciones públicas en una sola hoja.",
+          "title": "Reunir publicaciones sociales en Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Ordena tu bandeja de entrada y redacta las respuestas a los correos que las necesiten.",
           "shortDescription": "Ordena la bandeja y redacta las respuestas.",
@@ -879,6 +894,11 @@
           "description": "Vigila los despliegues de Vercel, enlázalos con los commits de GitHub y avisa en Slack de los fallos.",
           "shortDescription": "Avisa en Slack si falla un despliegue de Vercel.",
           "title": "Resumen de despliegues de Vercel"
+        },
+        "web-data-to-sheets": {
+          "description": "Extrae los mismos campos de una lista de páginas de forma periódica y guarda el histórico en una hoja.",
+          "shortDescription": "Extrae campos de una lista de páginas a una hoja.",
+          "title": "Reunir datos de páginas web en una hoja de cálculo"
         },
         "x-brand-monitor": {
           "description": "Sigue las menciones de marca en X, guarda las publicaciones relevantes en Notion y avisa en Slack de las importantes.",

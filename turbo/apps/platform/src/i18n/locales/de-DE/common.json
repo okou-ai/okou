@@ -731,6 +731,11 @@
           "shortDescription": "Werbeausgaben und ROAS mit dem Vormonat vergleichen.",
           "title": "Vergleichen Sie Google Ads mit dem letzten Monat"
         },
+        "creator-shortlist-to-sheets": {
+          "description": "Bewerten Sie infrage kommende Creator nach Reichweite und Interaktion, sortiert in einem Sheet.",
+          "shortDescription": "Creator nach Reichweite und Interaktion sortieren.",
+          "title": "Creator-Shortlist in Google Sheets aufbauen"
+        },
         "daily-standup-report": {
           "description": "Sammeln Sie jeden Morgen Produkt- und Engineering-Signale, erstellen Sie einen kurzen Bericht und posten Sie ihn in Slack.",
           "shortDescription": "Morgens ein Produkt- und Engineering-Briefing posten.",
@@ -786,6 +791,11 @@
           "shortDescription": "Die E-Mails zeigen, die Sie jetzt brauchen.",
           "title": "Markieren Sie wichtige E-Mails in Gmail"
         },
+        "keyword-ranks-to-sheets": {
+          "description": "Prüfen Sie, wo Ihre Seiten für wichtige Keywords ranken, und halten Sie Veränderungen fest.",
+          "shortDescription": "Wöchentliche Rankingänderungen im Sheet festhalten.",
+          "title": "Keyword-Rankings in Google Sheets verfolgen"
+        },
         "morning-brief": {
           "description": "Machen Sie aus Gmail-, Kalender- und Notion-Updates einen kurzen Tagesplan in Slack.",
           "shortDescription": "Aus Mails und Terminen einen kurzen Tagesplan machen.",
@@ -826,6 +836,11 @@
           "shortDescription": "Täglich die kritischen Sentry-Issues senden.",
           "title": "Sentry-Issue-Überblick"
         },
+        "social-posts-to-sheets": {
+          "description": "Sammeln Sie öffentliche Beiträge und Interaktionen der beobachteten Accounts in einem Sheet.",
+          "shortDescription": "Öffentliche Social-Beiträge in einem Sheet sammeln.",
+          "title": "Social-Beiträge in Google Sheets sammeln"
+        },
         "sort-gmail-draft-replies": {
           "description": "Sortieren Sie Ihren Posteingang und entwerfen Sie Antworten auf die E-Mails, die sie benötigen.",
           "shortDescription": "Posteingang sortieren und Antworten entwerfen.",
@@ -860,6 +875,11 @@
           "description": "Überwachen Sie Vercel-Deployments, verknüpfen Sie sie mit GitHub-Commits und melden Sie Fehlschläge in Slack.",
           "shortDescription": "Slack melden, wenn ein Vercel-Deploy fehlschlägt.",
           "title": "Vercel-Deploy-Überblick"
+        },
+        "web-data-to-sheets": {
+          "description": "Holen Sie dieselben Felder regelmäßig aus einer Seitenliste und behalten Sie den Verlauf in einem Sheet.",
+          "shortDescription": "Felder aus einer Seitenliste in einem Sheet sammeln.",
+          "title": "Daten von Webseiten in einer Tabelle sammeln"
         },
         "x-brand-monitor": {
           "description": "Verfolgen Sie Markenerwähnungen auf X, sichern Sie relevante Beiträge in Notion und melden Sie wichtige Erwähnungen in Slack.",

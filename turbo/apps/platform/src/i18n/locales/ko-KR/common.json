@@ -730,6 +730,11 @@
           "shortDescription": "광고비와 ROAS를 지난달과 비교합니다.",
           "title": "Google Ads와 지난달 비교"
         },
+        "creator-shortlist-to-sheets": {
+          "description": "검토 중인 크리에이터를 도달과 engagement로 평가해 시트 하나에 순위대로 정리합니다.",
+          "shortDescription": "도달과 engagement로 크리에이터 순위를 매깁니다.",
+          "title": "Google 스프레드시트로 크리에이터 후보 목록 만들기"
+        },
         "daily-standup-report": {
           "description": "매일 아침 제품과 엔지니어링 지표를 모아 짧은 리포트를 만들고 Slack에 게시합니다.",
           "shortDescription": "아침마다 제품·엔지니어링 브리핑을 게시합니다.",
@@ -785,6 +790,11 @@
           "shortDescription": "지금 확인해야 할 메일을 골라줍니다.",
           "title": "Gmail에서 주요 이메일 강조하기"
         },
+        "keyword-ranks-to-sheets": {
+          "description": "중요한 키워드에서 페이지가 몇 위인지 확인하고 변동을 기록합니다.",
+          "shortDescription": "주간 키워드 순위 변동을 시트에 기록합니다.",
+          "title": "Google 스프레드시트에서 키워드 순위 추적"
+        },
         "morning-brief": {
           "description": "Gmail, 캘린더, Notion 업데이트를 짧은 하루 계획으로 만들어 Slack에 보냅니다.",
           "shortDescription": "메일과 일정을 짧은 하루 계획으로 만듭니다.",
@@ -825,6 +835,11 @@
           "shortDescription": "심각한 Sentry 이슈를 매일 정리해 보냅니다.",
           "title": "Sentry 이슈 다이제스트"
         },
+        "social-posts-to-sheets": {
+          "description": "추적 중인 계정의 공개 게시물과 engagement를 시트 하나에 모읍니다.",
+          "shortDescription": "공개 소셜 게시물을 시트 하나에 모읍니다.",
+          "title": "소셜 게시물을 Google 스프레드시트에 모으기"
+        },
         "sort-gmail-draft-replies": {
           "description": "받은편지함을 정리하고 답장이 필요한 이메일에 답장 초안을 작성합니다.",
           "shortDescription": "받은편지함을 정리하고 답장 초안을 씁니다.",
@@ -859,6 +874,11 @@
           "description": "Vercel 배포를 모니터링해 GitHub 커밋과 연결하고 실패하면 Slack에 알립니다.",
           "shortDescription": "Vercel 배포가 실패하면 Slack에 알립니다.",
           "title": "Vercel 배포 다이제스트"
+        },
+        "web-data-to-sheets": {
+          "description": "지정한 페이지 목록에서 같은 항목을 주기적으로 수집하고 기록을 시트 하나에 남깁니다.",
+          "shortDescription": "페이지 목록에서 항목을 시트 하나로 모읍니다.",
+          "title": "웹 페이지 데이터를 스프레드시트에 모으기"
         },
         "x-brand-monitor": {
           "description": "X에서 브랜드 언급을 추적해 관련 게시물을 Notion에 저장하고 중요한 언급은 Slack에 알립니다.",

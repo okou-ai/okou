@@ -731,6 +731,11 @@
           "shortDescription": "Compare ad spend and ROAS to last month.",
           "title": "Compare Google Ads vs last month"
         },
+        "creator-shortlist-to-sheets": {
+          "description": "Score the creators you are considering on reach and engagement, ranked in one sheet.",
+          "shortDescription": "Rank creators by reach and engagement in a sheet.",
+          "title": "Build a creator shortlist in Google Sheets"
+        },
         "daily-standup-report": {
           "description": "Pull product and engineering signals each morning, create a short report, and post it to Slack.",
           "shortDescription": "Post a morning product and engineering brief.",
@@ -786,6 +791,11 @@
           "shortDescription": "Surface the emails that need your attention.",
           "title": "Highlight key emails in Gmail"
         },
+        "keyword-ranks-to-sheets": {
+          "description": "Check where your pages rank for the keywords you care about and log the movers.",
+          "shortDescription": "Log weekly keyword rank movement to a sheet.",
+          "title": "Track keyword rankings in Google Sheets"
+        },
         "morning-brief": {
           "description": "Turn Gmail, Calendar, and Notion updates into a short daily plan in Slack.",
           "shortDescription": "Turn mail and meetings into a short daily plan.",
@@ -826,6 +836,11 @@
           "shortDescription": "Send a daily digest of critical Sentry issues.",
           "title": "Sentry issue digest"
         },
+        "social-posts-to-sheets": {
+          "description": "Gather public posts and engagement from the accounts you track into one sheet.",
+          "shortDescription": "Gather public social posts into one sheet.",
+          "title": "Collect social posts into Google Sheets"
+        },
         "sort-gmail-draft-replies": {
           "description": "Sort your inbox and draft replies to the emails that need them.",
           "shortDescription": "Sort your inbox and draft the replies needed.",
@@ -860,6 +875,11 @@
           "description": "Monitor Vercel deployments, link them to GitHub commits, and alert Slack on failures.",
           "shortDescription": "Alert Slack when a Vercel deploy fails.",
           "title": "Vercel deploy digest"
+        },
+        "web-data-to-sheets": {
+          "description": "Pull the same fields from a list of pages on a schedule and keep the history in one sheet.",
+          "shortDescription": "Pull fields from a page list into one sheet.",
+          "title": "Collect web page data into a spreadsheet"
         },
         "x-brand-monitor": {
           "description": "Track brand mentions on X, save relevant posts in Notion, and alert Slack on high-signal mentions.",

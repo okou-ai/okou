@@ -730,6 +730,11 @@
           "shortDescription": "広告費と ROAS を先月と比べます。",
           "title": "Google 広告と先月の比較"
         },
+        "creator-shortlist-to-sheets": {
+          "description": "検討中のクリエイターをリーチとエンゲージメントで評価し、1 つのシートに順位付けして並べます。",
+          "shortDescription": "リーチとエンゲージメントで候補を順位付けします。",
+          "title": "クリエイター候補リストを Google スプレッドシートで作る"
+        },
         "daily-standup-report": {
           "description": "毎朝プロダクトとエンジニアリングの指標を集めて短いレポートを作成し、Slack に投稿します。",
           "shortDescription": "毎朝プロダクトと開発の要点を投稿します。",
@@ -785,6 +790,11 @@
           "shortDescription": "対応が必要なメールを拾い上げます。",
           "title": "Gmail で重要なメールを強調表示する"
         },
+        "keyword-ranks-to-sheets": {
+          "description": "重要なキーワードでの掲載順位を確認し、変動をシートに記録します。",
+          "shortDescription": "毎週の順位変動をシートに記録します。",
+          "title": "キーワード順位を Google スプレッドシートで追跡する"
+        },
         "morning-brief": {
           "description": "Gmail、カレンダー、Notion の更新を短い一日の計画にして Slack に送ります。",
           "shortDescription": "メールと予定を短い一日の計画にします。",
@@ -825,6 +835,11 @@
           "shortDescription": "重大な Sentry の課題を毎日まとめて送ります。",
           "title": "Sentry 課題ダイジェスト"
         },
+        "social-posts-to-sheets": {
+          "description": "追跡しているアカウントの公開投稿とエンゲージメントを 1 つのシートに集めます。",
+          "shortDescription": "公開されている投稿を 1 つのシートにまとめます。",
+          "title": "ソーシャル投稿を Google スプレッドシートに集める"
+        },
         "sort-gmail-draft-replies": {
           "description": "受信トレイを分類し、必要なメールへの返信の下書きを作成します。",
           "shortDescription": "受信トレイを整理して返信を下書きします。",
@@ -859,6 +874,11 @@
           "description": "Vercel のデプロイを監視して GitHub のコミットと紐づけ、失敗したら Slack に通知します。",
           "shortDescription": "Vercel のデプロイ失敗を Slack に通知します。",
           "title": "Vercel デプロイダイジェスト"
+        },
+        "web-data-to-sheets": {
+          "description": "指定したページ一覧から同じ項目を定期的に取得し、履歴を 1 つのシートに残します。",
+          "shortDescription": "ページ一覧から項目を 1 つのシートに集めます。",
+          "title": "Web ページのデータをスプレッドシートに集める"
         },
         "x-brand-monitor": {
           "description": "X でのブランド言及を追跡し、関連する投稿を Notion に保存して重要な言及を Slack に通知します。",

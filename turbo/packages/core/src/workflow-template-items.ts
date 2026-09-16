@@ -308,6 +308,54 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: posthog required; slack optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
+    id: "workflow-template:social-posts-to-sheets",
+    category: "Data",
+    title: "Collect social posts into Google Sheets",
+    description:
+      "Gather public posts and engagement from the accounts you track into one sheet.",
+    shortDescription: "Gather public social posts into one sheet.",
+    connectorSlugs: ["google-sheets", "slack"],
+    behavior: [
+      "Read the public accounts you name",
+      "Posts and engagement collected",
+      "One row per post in Google Sheets",
+    ],
+    missingInfo:
+      "Connectors: google-sheets required; slack optional.\nRead the accounts with the built-in social capabilities, which cover public LinkedIn, X, Facebook, Instagram, TikTok, and YouTube content. Do not request a social connector.\nSuggested trigger: Add a schedule trigger (e.g. daily or weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the accounts or handles, the columns to keep, the spreadsheet destination, and the schedule.",
+  }),
+  defineWorkflowTemplate({
+    id: "workflow-template:keyword-ranks-to-sheets",
+    category: "Data",
+    title: "Track keyword rankings in Google Sheets",
+    description:
+      "Check where your pages rank for the keywords you care about and log the movers.",
+    shortDescription: "Log weekly keyword rank movement to a sheet.",
+    connectorSlugs: ["google-sheets", "slack"],
+    behavior: [
+      "Check live search results for your keywords",
+      "Positions compared with the previous run",
+      "Movers written to Google Sheets",
+    ],
+    missingInfo:
+      "Connectors: google-sheets required; slack optional.\nRead search results with the built-in SEO capabilities, which cover live SERP positions, keyword ideas, ranked keywords, and backlinks. Do not request an SEO connector.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the domain, the keyword list, the search location and language, the spreadsheet destination, and the schedule.",
+  }),
+  defineWorkflowTemplate({
+    id: "workflow-template:web-data-to-sheets",
+    category: "Data",
+    title: "Collect web page data into a spreadsheet",
+    description:
+      "Pull the same fields from a list of pages on a schedule and keep the history in one sheet.",
+    shortDescription: "Pull fields from a page list into one sheet.",
+    connectorSlugs: ["google-sheets"],
+    behavior: [
+      "Read the pages you list",
+      "The fields you name extracted from each one",
+      "Appended to Google Sheets with the run date",
+    ],
+    missingInfo:
+      "Connectors: google-sheets required.\nRead the pages with the built-in web capabilities. Do not request a scraping connector.\nSuggested trigger: Add a schedule trigger (e.g. daily or weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the page list, the fields to extract, the spreadsheet destination, whether to append or overwrite, and the schedule.",
+  }),
+  defineWorkflowTemplate({
     id: "workflow-template:x-brand-monitor",
     category: "Marketing",
     title: "X brand monitor",
@@ -323,6 +371,22 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: x, notion required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the keywords or accounts, cadence, Notion database, Slack channel, and alert thresholds.",
+  }),
+  defineWorkflowTemplate({
+    id: "workflow-template:creator-shortlist-to-sheets",
+    category: "Marketing",
+    title: "Build a creator shortlist in Google Sheets",
+    description:
+      "Score the creators you are considering on reach and engagement, ranked in one sheet.",
+    shortDescription: "Rank creators by reach and engagement in a sheet.",
+    connectorSlugs: ["google-sheets", "gmail"],
+    behavior: [
+      "Read each creator's public profile and recent posts",
+      "Follower count and engagement rate calculated per creator",
+      "Ranked shortlist in Google Sheets, with optional outreach drafts",
+    ],
+    missingInfo:
+      "Connectors: google-sheets required; gmail optional for outreach drafts.\nRead the creators with the built-in social capabilities. Do not request a creator-database connector. Never send an outreach email without the user's confirmation.\nSuggested trigger: Add a schedule trigger (e.g. weekly), or run it on demand for a new shortlist.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the creator list or search criteria, the platforms, how many recent posts to score, the spreadsheet destination, and whether to draft outreach.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:draft-newsletter-mailchimp",
