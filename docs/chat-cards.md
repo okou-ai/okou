@@ -100,8 +100,11 @@ full document or interacting with a page happens in the existing viewer.
 
 `ChatCardDetails` provides the shared dialog for recovery diagnostics, banking
 account selection and confirmation, permission explanations, and credit
-checkout options. Recovery keeps the original account and current-settings
-notice beside the reset/retry controls in that dialog. Banking keeps its
+checkout options. Recovery states the original account inside its one-line
+summary and keeps the current-settings notice beside the reset/retry controls
+in that dialog. A summary must not repeat what the title or a control already
+says, and an action that spends a limited resource states that cost in its own
+label rather than leading the control row. Banking keeps its
 connection polling owned by the card even when the dialog is closed. Preserve
 those action and lifecycle owners when adding another state.
 

@@ -527,7 +527,7 @@ test.each([
     await readyChat();
     expect(screen.getByText(message)).toBeInTheDocument();
     expect(queryButton("Try again")).not.toBeInTheDocument();
-    expect(queryButton("Reset and try again")).not.toBeInTheDocument();
+    expect(queryButton("Reset usage · 1 left")).not.toBeInTheDocument();
     expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
   },
 );
@@ -724,7 +724,7 @@ test.each([
     "usage_limit",
     "You've hit your usage limit. Try again tomorrow.",
     "Limite Codex atteinte",
-    "Vous pourrez continuer lorsque votre limite d'utilisation sera réinitialisée, ou changer de modèle maintenant.",
+    "Changez de modèle ou continuez après la réinitialisation.",
   ],
   [
     "provider_overloaded",
@@ -861,7 +861,7 @@ test("Recover from a personal model account limit", async () => {
   expect(recovery).toHaveTextContent(/resets/iu);
   expect(within(recovery).getByRole("combobox")).toBeVisible();
 
-  click(await findButton("Reset and try again"));
+  click(await findButton("Reset usage · 1 left"));
 
   await expect(screen.findByText("continue")).resolves.toBeVisible();
   await expect(findButton("Stop")).resolves.toBeVisible();
@@ -986,15 +986,15 @@ test.each([false, true])(
       },
     });
     await readyChat();
-    await openRecoveryDetails();
+    const recovery = await openRecoveryDetails();
     await expect(
-      screen.findByText(
-        "This run used your personal subscription: original-a@example.com.",
+      within(recovery).findByText(
+        /Personal subscription original-a@example\.com/u,
       ),
     ).resolves.toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Continuing starts a new run using your current settings.",
+      within(recovery).getByText(
+        "Continuing starts a new run with your current settings.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -1002,7 +1002,7 @@ test.each([false, true])(
     ).not.toBeInTheDocument();
     expect(sent).toStrictEqual([]);
     expect(resets).toStrictEqual([]);
-    click(await findButton("Reset and try again"));
+    click(await findButton("Reset usage · 1 left"));
     await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
     expect(resets).toStrictEqual([{ id: PROVIDER_ID, runId: RUN_A }]);
     expect(wrongResets).toStrictEqual([]);
@@ -1052,15 +1052,15 @@ test.each(["unknown", "unavailable"] as const)(
       featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
     });
     await readyChat();
-    await openRecoveryDetails();
+    const recovery = await openRecoveryDetails();
     await expect(
-      screen.findByText(
+      within(recovery).findByText(
         status === "unknown"
-          ? "This run used a personal subscription. Its original account could not be verified."
-          : "This run used a personal subscription. Its original account is no longer connected.",
+          ? "Personal subscription (original account unverified)"
+          : "Personal subscription (original account disconnected)",
       ),
     ).resolves.toBeInTheDocument();
-    expect(queryButton("Reset and try again")).toBeNull();
+    expect(queryButton("Reset usage · 1 left")).toBeNull();
     expect(accountReads).toStrictEqual([]);
     await expect(findButton("Try again")).resolves.toBeEnabled();
   },
@@ -1133,7 +1133,7 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
   });
   await readyChat();
   await openRecoveryDetails();
-  click(await findButton("Reset and try again"));
+  click(await findButton("Reset usage · 1 left"));
   await expect(
     screen.findByText("This recovery endpoint is unavailable."),
   ).resolves.toBeInTheDocument();
@@ -1196,7 +1196,7 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   await expect(
     screen.findByText("Codex limit reached"),
   ).resolves.toBeInTheDocument();
-  expect(queryButton("Reset and try again")).toBeNull();
+  expect(queryButton("Reset usage · 1 left")).toBeNull();
   expect(reads).toStrictEqual([RUN_A]);
   await openRecoveryDetails();
   expect(
@@ -1228,11 +1228,9 @@ test("Continue a run that reached its execution time limit", async () => {
   await readyChat();
   const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
-  expect(recovery).toHaveTextContent(
-    "This run reached its time limit. Continue to keep working.",
-  );
+  expect(recovery).toHaveTextContent("Continue to keep working.");
   expect(within(recovery).queryByRole("combobox")).toBeNull();
-  expect(queryButton("Reset and try again", recovery)).toBeNull();
+  expect(queryButton("Reset usage · 1 left", recovery)).toBeNull();
 
   const continueButton = queryButton("Continue", recovery);
   if (!continueButton) {
@@ -1270,9 +1268,7 @@ test("Continue a run classified by a structured execution timeout reason", async
   await readyChat();
   const recovery = await openRecoveryDetails();
   expect(recovery).toHaveTextContent("Time limit reached");
-  expect(recovery).toHaveTextContent(
-    "This run reached its time limit. Continue to keep working.",
-  );
+  expect(recovery).toHaveTextContent("Continue to keep working.");
   expect(within(recovery).queryByRole("combobox")).toBeNull();
   expect(queryButton("Continue", recovery)).toBeVisible();
 });
@@ -1333,7 +1329,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   await expect(
     screen.findByText("Selected model isn't available"),
   ).resolves.toBeVisible();
-  expect(queryButton("Reset and try again")).toBeNull();
+  expect(queryButton("Reset usage · 1 left")).toBeNull();
   expect(queryButton("Continue")).toBeNull();
   const recovery = await openRecoveryDetails();
   const picker = within(recovery).getByRole("combobox");

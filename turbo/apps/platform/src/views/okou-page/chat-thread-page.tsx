@@ -20,7 +20,11 @@ import {
 import type { TFunction } from "i18next";
 import { equalArrays } from "../../lib/equality.ts";
 import { useTranslation } from "react-i18next";
-import { formatAppNumber, formatChatTimestamp } from "../../i18n/format.ts";
+import {
+  formatAppNumber,
+  formatChatTimestamp,
+  formatLocalizedNumber,
+} from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts";
 import {
@@ -5036,7 +5040,7 @@ function AssistantRecoveryActions({
   );
   const retrying = retryLoadable.state === "loading";
   const resetting = resetLoadable.state === "loading";
-  const hasResetAction = recovery.actions.resetAndTryAgain !== null;
+  const resetAction = recovery.actions.resetAndTryAgain;
   const hasRetryAction = recovery.actions.tryAgain !== null;
   const hasModelSelectionAction = recovery.kind !== "execution-timeout";
   // `excludedModel` drops the failed model from the menu, so showing it as the
@@ -5057,22 +5061,6 @@ function AssistantRecoveryActions({
 
   return (
     <div className="flex max-w-full flex-wrap items-center gap-2">
-      {hasResetAction && (
-        <Button
-          type="button"
-          size="sm"
-          variant="neutral"
-          disabled={retrying || resetting}
-          onClick={() => {
-            detach(resetAndRetry(pageSignal), Reason.DomCallback);
-          }}
-        >
-          <AssistantRecoveryActionSpinner loading={resetting} />
-          {t(($) => {
-            return $.chat.errors.recovery.resetAndTryAgain;
-          })}
-        </Button>
-      )}
       {hasModelSelectionAction && (
         <ModelProviderPicker
           value={pickerValue}
@@ -5091,9 +5079,7 @@ function AssistantRecoveryActions({
         <Button
           type="button"
           size="sm"
-          // Filled neutral leads; the plain outline reads as the secondary
-          // action when reset is also offered.
-          variant={hasResetAction ? "outline" : "neutral"}
+          variant="neutral"
           disabled={retrying || resetting}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
@@ -5108,6 +5094,27 @@ function AssistantRecoveryActions({
             : t(($) => {
                 return $.chat.errors.recovery.tryAgain;
               })}
+        </Button>
+      )}
+      {resetAction && (
+        // Resetting spends one of a limited number of Codex resets, so the free
+        // retry leads and the label states what the reset costs.
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={retrying || resetting}
+          onClick={() => {
+            detach(resetAndRetry(pageSignal), Reason.DomCallback);
+          }}
+        >
+          <AssistantRecoveryActionSpinner loading={resetting} />
+          {t(
+            ($) => {
+              return $.chat.errors.recovery.resetUsageRemaining;
+            },
+            { value: formatLocalizedNumber(resetAction.resetsRemaining) },
+          )}
         </Button>
       )}
     </div>
@@ -5240,6 +5247,19 @@ function AssistantErrorRecoveryCard({
             )
           : null
     : null;
+  // The title already names a usage limit, so its summary leads with the facts
+  // the title and buttons cannot carry: which subscription ran out, and when it
+  // comes back. One line replaces three stacked sentences.
+  const leadDescription =
+    recovery.kind === "usage-limit" &&
+    (sourceDescription !== null || resetText !== null)
+      ? null
+      : description;
+  const summary = [leadDescription, sourceDescription, resetText]
+    .filter((part): part is string => {
+      return part !== null && part !== "";
+    })
+    .join(" · ");
 
   return (
     <AssistantErrorCard
@@ -5249,11 +5269,10 @@ function AssistantErrorRecoveryCard({
           : Coffee
       }
       title={title}
-      description={`${description}${resetText ? ` ${resetText}` : ""}`}
+      description={summary}
       details={
         <>
-          {`${description}${resetText ? ` ${resetText}` : ""}`}
-          {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
+          {summary}
           {personalSource && (
             <p className="mt-1">
               {t(($) => {
