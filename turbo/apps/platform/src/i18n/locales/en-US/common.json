@@ -1525,7 +1525,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Once a day, every day",
+          "action": "Check in",
+          "description": "Check in once a day. Resets at 00:00 UTC.",
           "name": "Check in daily",
           "unit": "a day"
         },

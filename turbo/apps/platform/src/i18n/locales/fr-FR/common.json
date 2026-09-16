@@ -1549,7 +1549,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Une fois par jour, chaque jour",
+          "action": "Valider ma présence",
+          "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
           "name": "Se connecter chaque jour",
           "unit": "par jour"
         },

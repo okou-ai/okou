@@ -1524,7 +1524,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Sekali sehari, setiap hari",
+          "action": "Check in",
+          "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
           "unit": "per hari"
         },

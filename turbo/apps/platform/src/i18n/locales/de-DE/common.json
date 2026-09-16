@@ -1525,7 +1525,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Einmal am Tag, jeden Tag",
+          "action": "Einchecken",
+          "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
           "name": "Täglich einchecken",
           "unit": "pro Tag"
         },

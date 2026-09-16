@@ -1524,7 +1524,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "하루에 한 번, 매일",
+          "action": "출석하기",
+          "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
           "name": "매일 출석하기",
           "unit": "하루당"
         },

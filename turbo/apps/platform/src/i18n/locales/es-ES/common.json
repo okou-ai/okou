@@ -1549,7 +1549,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Una vez al día, todos los días",
+          "action": "Registrar visita",
+          "description": "Registra tu visita una vez al día. Se reinicia a las 00:00 UTC.",
           "name": "Entrar cada día",
           "unit": "al día"
         },

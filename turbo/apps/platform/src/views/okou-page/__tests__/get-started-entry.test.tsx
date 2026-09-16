@@ -20,6 +20,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   testContext,
   type TestContext,
@@ -65,6 +66,7 @@ function slackInstalled(): SlackOrgStatus {
 function configureQuestPage(
   context: TestContext,
   role: "admin" | "member",
+  { claimedToday = true }: { claimedToday?: boolean } = {},
 ): GetStartedStatus {
   context.mocks.data.org({
     id: "org_default",
@@ -102,11 +104,15 @@ function configureQuestPage(
   const data: GetStartedStatus = {
     serverNow: "2026-09-15T12:00:00.000Z",
     nextResetAt: "2026-09-16T00:00:00.000Z",
-    claimedToday: true,
+    claimedToday,
     quests: keys.map((key) => {
       const reward = GET_STARTED_REWARDS[key];
       const claimedCount =
-        key === "connector" ? 3 : key === "slack" || key === "checkin" ? 1 : 0;
+        key === "connector"
+          ? 3
+          : key === "slack" || (key === "checkin" && claimedToday)
+            ? 1
+            : 0;
       return {
         key,
         claimedCount,
@@ -115,7 +121,7 @@ function configureQuestPage(
         limit: reward.limit,
         earnedCredits: claimedCount * reward.amount,
         pendingCount: 0,
-        canEarnMore: key !== "slack" && key !== "checkin",
+        canEarnMore: key !== "slack" && (key !== "checkin" || !claimedToday),
       };
     }),
     shareClaim: null,
@@ -332,7 +338,7 @@ test("Sharing on X restores pending state and an Ably review notification update
 });
 
 test("Reward notifications refresh quests without disconnecting shared chat history", async () => {
-  const data = configureQuestPage(context, "member");
+  const data = configureQuestPage(context, "member", { claimedToday: false });
   context.mocks.browser.matchMedia((query) => {
     return query === "(min-width: 640px)";
   });
@@ -407,6 +413,12 @@ test("Reward notifications refresh quests without disconnecting shared chat hist
       "This post is not eligible. Submit another public post mentioning Okou.",
     );
   });
+  expect(within(panel).getByText("300")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("get-started-quest-checkin")).getByText(
+      "Check in",
+    ),
+  ).toBeInTheDocument();
 });
 
 test("The entry stays hidden while the switch is off", async () => {
@@ -533,19 +545,77 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
   ).resolves.toBeInTheDocument();
 });
 
-test("Opening the app checks in and focus refresh uses the server UTC day", async () => {
-  const data = configureQuestPage(context, "member");
+test("Daily rewards are claimed by selecting check in and menu reopening refreshes the UTC day", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  const panel = await openQuestPanel();
+  await expect(within(panel).findByText("300")).resolves.toBeInTheDocument();
+  const checkinRow = screen.getByTestId("get-started-quest-checkin");
+  expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
+  expect(normalizedText(checkinRow)).toContain(
+    "Check in once a day. Resets at 00:00 UTC.",
+  );
+
+  click(checkinRow);
+  await expect(within(panel).findByText("400")).resolves.toBeInTheDocument();
+  expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
+    "role",
+    "menuitem",
+  );
+  expect(within(panel).queryByText("Check in")).not.toBeInTheDocument();
+
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  const sameDayPanel = await openQuestPanel();
+  expect(within(sameDayPanel).getByText("400")).toBeInTheDocument();
+  expect(within(sameDayPanel).queryByText("Check in")).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  data.serverNow = "2026-09-16T00:00:00.000Z";
+  data.nextResetAt = "2026-09-17T00:00:00.000Z";
   data.claimedToday = false;
-  const checkin = data.quests.find((q) => {
-    return q.key === "checkin";
+  const checkin = data.quests.find((quest) => {
+    return quest.key === "checkin";
   });
   if (!checkin) {
-    throw new Error("Missing checkin fixture");
+    throw new Error("Missing check-in fixture");
   }
-  Object.assign(checkin, {
-    claimedCount: 0,
-    earnedCredits: 0,
-    canEarnMore: true,
+  checkin.canEarnMore = true;
+  const nextDayPanel = await openQuestPanel();
+  await expect(
+    within(nextDayPanel).findByText("Check in"),
+  ).resolves.toBeInTheDocument();
+  expect(within(nextDayPanel).getByText("400")).toBeInTheDocument();
+
+  const nextDayCheckin = screen.getByTestId("get-started-quest-checkin");
+  nextDayCheckin.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    within(nextDayPanel).findByText("500"),
+  ).resolves.toBeInTheDocument();
+  expect(within(nextDayPanel).queryByText("Check in")).not.toBeInTheDocument();
+});
+
+test("A pending check-in disables the action and a failed request leaves it available", async () => {
+  configureQuestPage(context, "member", { claimedToday: false });
+  const responseReady = createDeferredPromise<void>(context.signal);
+  context.mocks.api(getStartedContract.checkin, async ({ respond }) => {
+    await responseReady.promise;
+    return respond(403, {
+      error: {
+        code: "FORBIDDEN",
+        message: "Check-in is temporarily unavailable",
+      },
+    });
   });
   await setupPage({
     context,
@@ -553,16 +623,21 @@ test("Opening the app checks in and focus refresh uses the server UTC day", asyn
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
   const panel = await openQuestPanel();
-  await expect(within(panel).findByText("400")).resolves.toBeInTheDocument();
-  // Opening the app is the check-in, so the claimed row carries its title and
-  // description and nothing else: no reward left to earn, nothing to press.
+  await expect(within(panel).findByText("300")).resolves.toBeInTheDocument();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
-  expect(normalizedText(checkinRow)).toBe(
-    "Check in dailyOnce a day, every day",
-  );
-  data.serverNow = "2026-09-16T00:00:00.000Z";
-  data.nextResetAt = "2026-09-17T00:00:00.000Z";
-  data.claimedToday = false;
-  fireEvent.focus(window);
-  await expect(within(panel).findByText("500")).resolves.toBeInTheDocument();
+
+  click(checkinRow);
+  await waitFor(() => {
+    expect(checkinRow).toHaveAttribute("aria-disabled", "true");
+    expect(checkinRow).toHaveAttribute("aria-busy", "true");
+  });
+  responseReady.resolve();
+  await expect(
+    screen.findByText("Check-in is temporarily unavailable"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(checkinRow).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
+  expect(within(panel).getByText("300")).toBeInTheDocument();
 });

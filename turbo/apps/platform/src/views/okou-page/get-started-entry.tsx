@@ -1,6 +1,7 @@
 import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   CalendarCheck,
@@ -31,6 +32,7 @@ import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
+  checkInGetStarted$,
   getStartedQuests$,
   getStartedSummary$,
   setShareDialogOpen$,
@@ -196,8 +198,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       unit: t(($) => {
         return $.chat.agentPage.getStarted.checkin.unit;
       }),
-      // Opening the app is the check-in, so the row has nothing to press.
-      action: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.checkin.action;
+      }),
     },
   };
 }
@@ -362,10 +365,12 @@ function QuestRow({
   quest,
   copy,
   onSelect,
+  pending = false,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
   onSelect: (() => void) | null;
+  pending?: boolean;
 }) {
   const body = (
     <QuestRowBody quest={quest} copy={copy} actionable={onSelect !== null} />
@@ -402,6 +407,9 @@ function QuestRow({
     <DropdownMenuItem
       className={QUEST_ROW_CLASS}
       onClick={onSelect}
+      closeOnClick={quest.key !== "checkin"}
+      disabled={pending}
+      aria-busy={pending}
       data-testid={testId}
     >
       {body}
@@ -491,7 +499,9 @@ function ShareOnXDialog() {
   );
 }
 
-function useQuestActions(): Record<GetStartedQuestKey, (() => void) | null> {
+function useQuestActions(
+  checkIn: (signal: AbortSignal) => Promise<void>,
+): Record<GetStartedQuestKey, () => void> {
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const navigate = useSet(detachedNavigateTo$);
@@ -512,8 +522,9 @@ function useQuestActions(): Record<GetStartedQuestKey, (() => void) | null> {
     share: () => {
       setShareDialogOpen(true);
     },
-    // Opening the app is the check-in, so there is nothing to navigate to.
-    checkin: null,
+    checkin: () => {
+      detach(checkIn(pageSignal), Reason.DomCallback);
+    },
   };
 }
 
@@ -526,9 +537,10 @@ function GetStartedPanel({
 }) {
   const { t } = useTranslation();
   const copy = useQuestCopy();
-  const actions = useQuestActions();
+  const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
+  const actions = useQuestActions(checkIn);
   const percent = (summary.completed / summary.total) * 100;
-  // Daily check-in is automatic, so separate it from tasks with a user action.
+  // Keep the daily reward separate from the other quests.
   const setupQuests = quests.filter((quest) => {
     return quest.key !== "checkin";
   });
@@ -603,6 +615,7 @@ function GetStartedPanel({
             quest={quest}
             copy={copy[quest.key]}
             onSelect={selectHandler(quest)}
+            pending={checkinLoadable.state === "loading"}
           />
         );
       })}

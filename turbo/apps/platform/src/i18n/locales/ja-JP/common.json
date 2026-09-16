@@ -1524,7 +1524,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "1日1回、毎日",
+          "action": "チェックイン",
+          "description": "1日1回チェックイン。UTC 00:00にリセットされます。",
           "name": "毎日チェックイン",
           "unit": "1日あたり"
         },

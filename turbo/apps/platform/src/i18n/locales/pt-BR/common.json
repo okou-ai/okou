@@ -1549,7 +1549,8 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Uma vez por dia, todo dia",
+          "action": "Fazer check-in",
+          "description": "Faça check-in uma vez por dia. Reinicia às 00:00 UTC.",
           "name": "Entrar todo dia",
           "unit": "por dia"
         },
