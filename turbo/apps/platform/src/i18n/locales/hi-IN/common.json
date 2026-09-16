@@ -1521,13 +1521,15 @@
           "unit": "प्रति दिन"
         },
         "connector": {
-          "description": "OAuth से कनेक्ट करें। हर कनेक्टर पर एक बार इनाम पाएँ।",
+          "action": "कनेक्ट करें",
+          "description": "OAuth से कनेक्ट करें।",
           "name": "कनेक्टर जोड़ें",
           "unit": "प्रति कनेक्टर"
         },
         "inReview": "समीक्षा में",
         "inReviewDescription": "भेजा गया, समीक्षा बाकी है",
         "invite": {
+          "action": "बुलाएँ",
           "description": "निमंत्रण स्वीकार होने पर इनाम पाएँ, अधिकतम 15 सदस्यों के लिए।",
           "name": "अपनी टीम को बुलाएँ",
           "unit": "प्रति सदस्य"
@@ -1539,6 +1541,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "पुरस्कृत कनेक्टर: {{amount}}",
         "share": {
+          "action": "शेयर करें",
           "description": "पोस्ट करें, फिर लिंक यहाँ चिपकाएँ",
           "name": "{{assistantName}} को X पर शेयर करें"
         },
@@ -1551,13 +1554,15 @@
           "title": "{{assistantName}} को X पर शेयर करें"
         },
         "slack": {
-          "description": "हर संगठन और वर्कस्पेस के लिए एक बार 2,000 संगठन क्रेडिट पाएँ।",
+          "action": "जोड़ें",
+          "description": "हर संगठन और वर्कस्पेस के लिए एक बार।",
           "name": "{{assistantName}} को Slack में जोड़ें"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "कोई काम आज़माएँ और क्रेडिट पाएँ।",
         "title": "शुरू करें",
         "workflow": {
+          "action": "बनाएँ",
           "description": "अपने बनाए वर्कफ़्लो को सफलतापूर्वक चलाएँ।",
           "name": "वर्कफ़्लो बनाएँ"
         }

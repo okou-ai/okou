@@ -1520,13 +1520,15 @@
           "unit": "하루당"
         },
         "connector": {
-          "description": "OAuth로 연결하세요. 커넥터별로 한 번 받을 수 있어요.",
+          "action": "연결",
+          "description": "OAuth로 연결하세요.",
           "name": "커넥터 연결하기",
           "unit": "커넥터당"
         },
         "inReview": "검토 중",
         "inReviewDescription": "제출됨, 검토 대기 중",
         "invite": {
+          "action": "초대",
           "description": "초대가 수락되면 지급돼요. 최대 15명까지 가능해요.",
           "name": "팀 초대하기",
           "unit": "멤버당"
@@ -1538,6 +1540,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "보상을 받은 커넥터: {{amount}}",
         "share": {
+          "action": "공유",
           "description": "게시한 뒤 링크를 붙여넣기",
           "name": "X에 {{assistantName}} 공유하기"
         },
@@ -1550,13 +1553,15 @@
           "title": "X에 {{assistantName}} 공유하기"
         },
         "slack": {
-          "description": "조직 및 워크스페이스당 한 번, 조직 크레딧 2,000을 받으세요.",
+          "action": "추가",
+          "description": "조직 및 워크스페이스당 한 번이에요.",
           "name": "Slack에 {{assistantName}} 추가하기"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "작업을 시도하고 크레딧을 받으세요.",
         "title": "시작하기",
         "workflow": {
+          "action": "만들기",
           "description": "직접 만든 워크플로를 성공적으로 실행하세요.",
           "name": "워크플로 만들기"
         }

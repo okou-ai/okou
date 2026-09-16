@@ -1545,13 +1545,15 @@
           "unit": "par jour"
         },
         "connector": {
-          "description": "Connectez-vous avec OAuth. Une récompense par connecteur.",
+          "action": "Connecter",
+          "description": "Connectez-vous avec OAuth.",
           "name": "Connecter un connecteur",
           "unit": "par connecteur"
         },
         "inReview": "En cours d'examen",
         "inReviewDescription": "Envoyé, en attente d'examen",
         "invite": {
+          "action": "Inviter",
           "description": "Gagnez quand une invitation est acceptée, jusqu’à 15 membres.",
           "name": "Invitez votre équipe",
           "unit": "par membre"
@@ -1563,6 +1565,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Connecteurs récompensés : {{amount}}",
         "share": {
+          "action": "Partager",
           "description": "Publiez, puis collez le lien",
           "name": "Partager {{assistantName}} sur X"
         },
@@ -1575,13 +1578,15 @@
           "title": "Partager {{assistantName}} sur X"
         },
         "slack": {
-          "description": "Gagnez 2 000 crédits d’organisation, une fois par organisation et espace de travail.",
+          "action": "Ajouter",
+          "description": "Une fois par organisation et espace de travail.",
           "name": "Ajouter {{assistantName}} à Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Essayez une tâche et gagnez des crédits.",
         "title": "Démarrer",
         "workflow": {
+          "action": "Créer",
           "description": "Exécutez avec succès un workflow que vous avez créé.",
           "name": "Créer un workflow"
         }

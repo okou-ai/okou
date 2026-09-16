@@ -1520,13 +1520,15 @@
           "unit": "1日あたり"
         },
         "connector": {
-          "description": "OAuth で接続。各コネクタにつき1回獲得できます。",
+          "action": "接続",
+          "description": "OAuth で接続。",
           "name": "コネクタを接続",
           "unit": "コネクタごと"
         },
         "inReview": "確認中",
         "inReviewDescription": "送信済み、確認待ち",
         "invite": {
+          "action": "招待",
           "description": "招待が承諾されると獲得。最大15人まで。",
           "name": "チームを招待",
           "unit": "メンバーごと"
@@ -1538,6 +1540,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "報酬獲得済みコネクタ: {{amount}}",
         "share": {
+          "action": "シェア",
           "description": "投稿して、リンクを貼り付け",
           "name": "{{assistantName}} を X でシェア"
         },
@@ -1550,13 +1553,15 @@
           "title": "{{assistantName}} を X でシェア"
         },
         "slack": {
-          "description": "組織とワークスペースごとに1回、組織用クレジットを2,000獲得。",
+          "action": "追加",
+          "description": "組織とワークスペースごとに1回。",
           "name": "{{assistantName}} を Slack に追加"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "タスクを試してクレジットを獲得。",
         "title": "はじめる",
         "workflow": {
+          "action": "作成",
           "description": "自分で作成したワークフローを正常に実行。",
           "name": "ワークフローを作る"
         }

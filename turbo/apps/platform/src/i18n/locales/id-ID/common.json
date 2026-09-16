@@ -1520,13 +1520,15 @@
           "unit": "per hari"
         },
         "connector": {
-          "description": "Hubungkan melalui OAuth. Satu hadiah per konektor.",
+          "action": "Hubungkan",
+          "description": "Hubungkan melalui OAuth.",
           "name": "Hubungkan konektor",
           "unit": "per konektor"
         },
         "inReview": "Sedang ditinjau",
         "inReviewDescription": "Terkirim, menunggu ditinjau",
         "invite": {
+          "action": "Undang",
           "description": "Dapatkan hadiah saat undangan diterima, hingga 15 anggota.",
           "name": "Undang tim kamu",
           "unit": "per anggota"
@@ -1538,6 +1540,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Konektor yang diberi hadiah: {{amount}}",
         "share": {
+          "action": "Bagikan",
           "description": "Posting, lalu tempel tautannya",
           "name": "Bagikan {{assistantName}} di X"
         },
@@ -1550,13 +1553,15 @@
           "title": "Bagikan {{assistantName}} di X"
         },
         "slack": {
-          "description": "Dapatkan 2.000 kredit organisasi, sekali per organisasi dan ruang kerja.",
+          "action": "Tambahkan",
+          "description": "Sekali per organisasi dan ruang kerja.",
           "name": "Tambahkan {{assistantName}} ke Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Coba tugas dan dapatkan kredit.",
         "title": "Mulai",
         "workflow": {
+          "action": "Buat",
           "description": "Jalankan workflow buatan Anda hingga berhasil.",
           "name": "Buat workflow"
         }

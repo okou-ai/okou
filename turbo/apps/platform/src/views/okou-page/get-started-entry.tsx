@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  buttonVariants,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -107,6 +108,8 @@ interface QuestCopy {
   readonly description: string;
   /** The trailing unit on a reward that is paid more than once, if any. */
   readonly unit: string | null;
+  /** The verb on the row's affordance, or null when the quest opens nothing. */
+  readonly action: string | null;
 }
 
 function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
@@ -123,6 +126,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       unit: t(($) => {
         return $.chat.agentPage.getStarted.connector.unit;
       }),
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.connector.action;
+      }),
     },
     slack: {
       name: t(
@@ -135,6 +141,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
         return $.chat.agentPage.getStarted.slack.description;
       }),
       unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.slack.action;
+      }),
     },
     workflow: {
       name: t(($) => {
@@ -144,6 +153,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
         return $.chat.agentPage.getStarted.workflow.description;
       }),
       unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.workflow.action;
+      }),
     },
     invite: {
       name: t(($) => {
@@ -154,6 +166,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       }),
       unit: t(($) => {
         return $.chat.agentPage.getStarted.invite.unit;
+      }),
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.invite.action;
       }),
     },
     share: {
@@ -167,6 +182,9 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
         return $.chat.agentPage.getStarted.share.description;
       }),
       unit: null,
+      action: t(($) => {
+        return $.chat.agentPage.getStarted.share.action;
+      }),
     },
     checkin: {
       name: t(($) => {
@@ -178,10 +196,21 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
       unit: t(($) => {
         return $.chat.agentPage.getStarted.checkin.unit;
       }),
+      // Opening the app is the check-in, so the row has nothing to press.
+      action: null,
     },
   };
 }
 
+/**
+ * What the quest pays, shown at the head of the row's second line.
+ *
+ * It led the trailing edge until the rows gained an affordance, and only one
+ * of the two can sit there: a row that states its price where its button
+ * belongs reads as a label rather than something to press. The amount keeps
+ * the brand foreground so it still carries the row, and the unit stays muted
+ * so the eye lands on the number.
+ */
 function QuestReward({
   amount,
   unit,
@@ -191,7 +220,7 @@ function QuestReward({
 }) {
   const { t } = useTranslation();
   return (
-    <span className="shrink-0 text-xs font-semibold tabular-nums text-brand-text">
+    <span className="font-semibold tabular-nums text-brand-text">
       {t(
         ($) => {
           return $.chat.agentPage.getStarted.reward;
@@ -201,6 +230,31 @@ function QuestReward({
       {unit !== null && (
         <span className="font-normal text-muted-foreground"> {unit}</span>
       )}
+    </span>
+  );
+}
+
+/**
+ * The row's press affordance.
+ *
+ * The row itself is the menu item, so this is a span: a control nested inside
+ * an option is invalid for the menu's roles, and the row already owns the
+ * click, the hover state and the keyboard focus. It borrows `buttonVariants`
+ * rather than restating a button's geometry, so the two cannot drift, and it
+ * is hidden from assistive technology because the row's own name already says
+ * what activating it does.
+ */
+function QuestAction({ label }: { label: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={buttonVariants({
+        variant: "neutral",
+        size: "xs",
+        className: "pointer-events-none shrink-0",
+      })}
+    >
+      {label}
     </span>
   );
 }
@@ -217,12 +271,16 @@ const QUEST_ROW_CLASS =
 function QuestRowBody({
   quest,
   copy,
+  actionable,
 }: {
   quest: GetStartedQuest;
   copy: QuestCopy;
+  /** Whether the row opens something, so it earns a press affordance. */
+  actionable: boolean;
 }) {
   const { t } = useTranslation();
   const done = quest.status === "done" && !quest.canEarnMore;
+  const earning = quest.canEarnMore && quest.status !== "inReview";
   const description =
     quest.status === "inReview"
       ? t(($) => {
@@ -243,6 +301,12 @@ function QuestRowBody({
           {copy.name}
         </span>
         <span className="block text-xs text-muted-foreground">
+          {earning && (
+            <>
+              <QuestReward amount={quest.rewardAmount} unit={copy.unit} />
+              {" · "}
+            </>
+          )}
           {description}
         </span>
         {quest.key === "invite" && quest.limit !== null && (
@@ -278,6 +342,7 @@ function QuestRowBody({
           </span>
         )}
       </span>
+      {/* One trailing slot, one meaning: finished, waiting, or pressable. */}
       {done && <Check className="shrink-0 text-[#2EB67D]" />}
       {quest.status === "inReview" && (
         <span className="shrink-0 rounded-full bg-gray-50 px-2 py-0.5 text-xs text-muted-foreground">
@@ -286,8 +351,8 @@ function QuestRowBody({
           })}
         </span>
       )}
-      {quest.canEarnMore && quest.status !== "inReview" && (
-        <QuestReward amount={quest.rewardAmount} unit={copy.unit} />
+      {actionable && copy.action !== null && (
+        <QuestAction label={copy.action} />
       )}
     </>
   );
@@ -302,13 +367,22 @@ function QuestRow({
   copy: QuestCopy;
   onSelect: (() => void) | null;
 }) {
-  const body = <QuestRowBody quest={quest} copy={copy} />;
+  const body = (
+    <QuestRowBody quest={quest} copy={copy} actionable={onSelect !== null} />
+  );
   const testId = `get-started-quest-${quest.key}`;
 
   // A quest with nothing left to open is a status line, not a control, so it
   // renders without a hover state rather than as a menu item that does nothing.
   if (onSelect === null) {
-    return <div className={`flex items-center ${QUEST_ROW_CLASS}`}>{body}</div>;
+    return (
+      <div
+        className={`flex items-center ${QUEST_ROW_CLASS}`}
+        data-testid={testId}
+      >
+        {body}
+      </div>
+    );
   }
 
   // Keep the share dialog on the shared modal-item composition path.
@@ -467,8 +541,10 @@ function GetStartedPanel({
       : null;
   };
 
+  // 400px, not 356: the rows gave their trailing edge to an affordance, so the
+  // text column buys that width back rather than wrapping to pay for it.
   return (
-    <DropdownMenuContent align="end" className="w-[356px]">
+    <DropdownMenuContent align="end" className="w-[400px]">
       <div className="flex items-start gap-2.5 px-3 pb-2 pt-2.5">
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-semibold">

@@ -1521,13 +1521,15 @@
           "unit": "a day"
         },
         "connector": {
-          "description": "Connect with OAuth. Earn once per connector.",
+          "action": "Connect",
+          "description": "Connect with OAuth.",
           "name": "Connect a connector",
           "unit": "per connector"
         },
         "inReview": "In review",
         "inReviewDescription": "Submitted, waiting on review",
         "invite": {
+          "action": "Invite",
           "description": "Earn when an invite is accepted, up to 15 members.",
           "name": "Invite your team",
           "unit": "per member"
@@ -1539,6 +1541,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Rewarded connectors: {{amount}}",
         "share": {
+          "action": "Share",
           "description": "Post it, then paste the link",
           "name": "Share {{assistantName}} on X"
         },
@@ -1551,13 +1554,15 @@
           "title": "Share {{assistantName}} on X"
         },
         "slack": {
-          "description": "Earn 2,000 organization credits, once per organization and workspace.",
+          "action": "Add",
+          "description": "Once per organization and workspace.",
           "name": "Add {{assistantName}} to Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Try a task, earn credits.",
         "title": "Get started",
         "workflow": {
+          "action": "Build",
           "description": "Successfully run a workflow you created.",
           "name": "Build a workflow"
         }
