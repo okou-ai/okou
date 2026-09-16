@@ -1540,31 +1540,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Une fois par jour, chaque jour",
+          "description": "Ouvrez l’app chaque jour. Réinitialisation à 00:00 UTC.",
           "name": "Se connecter chaque jour",
           "unit": "par jour"
         },
         "connector": {
-          "description": "Gmail, Notion et plus de 100 autres",
+          "description": "Connectez-vous avec OAuth. Une récompense par connecteur.",
           "name": "Connecter un connecteur",
           "unit": "par connecteur"
         },
         "inReview": "En cours d'examen",
         "inReviewDescription": "Envoyé, en attente d'examen",
         "invite": {
-          "description": "Chaque personne ajoutée compte",
+          "description": "Gagnez quand une invitation est acceptée, jusqu’à 15 membres.",
           "name": "Invitez votre équipe",
           "unit": "par membre"
         },
-        "personalBalanceNote": "Les crédits vont sur votre solde personnel.",
+        "pendingInvitations": "Invitations en attente : {{amount}}",
+        "personalBalanceNote": "Les récompenses expirent 7 jours après leur attribution. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
         "progressLabel": "Progression du démarrage",
+        "rejectedDescription": "Cette publication n’est pas éligible. Envoyez une autre publication publique mentionnant Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Connecteurs récompensés : {{amount}}",
         "share": {
           "description": "Publiez, puis collez le lien",
           "name": "Partager {{assistantName}} sur X"
         },
         "shareDialog": {
-          "description": "Publiez ce que vous avez créé, puis collez le lien. Vous avez un seul envoi.",
+          "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
           "helper": "La publication doit être publique et mentionner {{assistantName}}.",
           "inputLabel": "Lien de la publication",
           "placeholder": "https://x.com/...",
@@ -1572,14 +1575,14 @@
           "title": "Partager {{assistantName}} sur X"
         },
         "slack": {
-          "description": "Là où votre équipe travaille déjà",
+          "description": "Gagnez 2 000 crédits d’organisation, une fois par organisation et espace de travail.",
           "name": "Ajouter {{assistantName}} à Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Terminez une étape, les crédits sont à vous.",
+        "subtitle": "Essayez une tâche et gagnez des crédits.",
         "title": "Démarrer",
         "workflow": {
-          "description": "Transformez une tâche répétitive en automatisation",
+          "description": "Exécutez avec succès un workflow que vous avez créé.",
           "name": "Créer un workflow"
         }
       },

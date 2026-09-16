@@ -1516,31 +1516,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Einmal am Tag, jeden Tag",
+          "description": "App täglich öffnen. Zurücksetzung um 00:00 UTC.",
           "name": "Täglich einchecken",
           "unit": "pro Tag"
         },
         "connector": {
-          "description": "Gmail, Notion und 100+ weitere",
+          "description": "Per OAuth verbinden. Eine Prämie pro Connector.",
           "name": "Connector verbinden",
           "unit": "pro Connector"
         },
         "inReview": "In Prüfung",
         "inReviewDescription": "Eingereicht, wartet auf Prüfung",
         "invite": {
-          "description": "Jede Person, die du hinzufügst, zählt",
+          "description": "Prämie bei angenommener Einladung, bis zu 15 Mitglieder.",
           "name": "Team einladen",
           "unit": "pro Mitglied"
         },
-        "personalBalanceNote": "Credits gehen auf dein persönliches Guthaben.",
+        "pendingInvitations": "Ausstehende Einladungen: {{amount}}",
+        "personalBalanceNote": "Prämien verfallen 7 Tage nach der Gutschrift. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "progressLabel": "Fortschritt beim Einstieg",
+        "rejectedDescription": "Dieser Beitrag ist nicht berechtigt. Reiche einen anderen öffentlichen Beitrag mit Erwähnung von Okou ein.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Belohnte Connectors: {{amount}}",
         "share": {
           "description": "Poste es und füge den Link hier ein",
           "name": "{{assistantName}} auf X teilen"
         },
         "shareDialog": {
-          "description": "Poste etwas, das du gebaut hast, und füge den Link ein. Du hast eine Einreichung.",
+          "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
           "helper": "Der Post muss öffentlich sein und {{assistantName}} erwähnen.",
           "inputLabel": "Post-Link",
           "placeholder": "https://x.com/...",
@@ -1548,14 +1551,14 @@
           "title": "{{assistantName}} auf X teilen"
         },
         "slack": {
-          "description": "Da, wo dein Team schon arbeitet",
+          "description": "Erhalte 2.000 Organisations-Credits, einmal pro Organisation und Workspace.",
           "name": "{{assistantName}} zu Slack hinzufügen"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Schließe einen Schritt ab, die Credits bleiben dir.",
+        "subtitle": "Aufgabe ausprobieren und Credits verdienen.",
         "title": "Einstieg",
         "workflow": {
-          "description": "Mach aus einer wiederkehrenden Aufgabe eine Automatisierung",
+          "description": "Einen selbst erstellten Workflow erfolgreich ausführen.",
           "name": "Workflow bauen"
         }
       },

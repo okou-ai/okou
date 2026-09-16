@@ -459,7 +459,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.GetStartedQuests]: {
     maintainer: "ming@okou.ai",
     description:
-      "Show the home corner's Get started quest list. Progress is placeholder data; no credits are awarded yet.",
+      "Enable Get started quests, reward progress, and credit rewards.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

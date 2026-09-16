@@ -1515,31 +1515,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Sekali sehari, setiap hari",
+          "description": "Buka aplikasi setiap hari. Reset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
           "unit": "per hari"
         },
         "connector": {
-          "description": "Gmail, Notion, dan 100+ lainnya",
+          "description": "Hubungkan melalui OAuth. Satu hadiah per konektor.",
           "name": "Hubungkan konektor",
           "unit": "per konektor"
         },
         "inReview": "Sedang ditinjau",
         "inReviewDescription": "Terkirim, menunggu ditinjau",
         "invite": {
-          "description": "Setiap orang yang kamu tambahkan dihitung",
+          "description": "Dapatkan hadiah saat undangan diterima, hingga 15 anggota.",
           "name": "Undang tim kamu",
           "unit": "per anggota"
         },
-        "personalBalanceNote": "Kredit masuk ke saldo pribadi kamu.",
+        "pendingInvitations": "Undangan tertunda: {{amount}}",
+        "personalBalanceNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
         "progressLabel": "Progres memulai",
+        "rejectedDescription": "Postingan ini tidak memenuhi syarat. Kirim postingan publik lain yang menyebut Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Konektor yang diberi hadiah: {{amount}}",
         "share": {
           "description": "Posting, lalu tempel tautannya",
           "name": "Bagikan {{assistantName}} di X"
         },
         "shareDialog": {
-          "description": "Posting sesuatu yang kamu buat, lalu tempel tautannya. Kamu dapat satu kali kirim.",
+          "description": "Kirim postingan publik untuk ditinjau. Satu hadiah yang disetujui per orang.",
           "helper": "Postingan harus publik dan menyebut {{assistantName}}.",
           "inputLabel": "Tautan postingan",
           "placeholder": "https://x.com/...",
@@ -1547,14 +1550,14 @@
           "title": "Bagikan {{assistantName}} di X"
         },
         "slack": {
-          "description": "Tempat tim kamu sudah bekerja",
+          "description": "Dapatkan 2.000 kredit organisasi, sekali per organisasi dan ruang kerja.",
           "name": "Tambahkan {{assistantName}} ke Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Selesaikan satu langkah, kreditnya jadi milikmu.",
+        "subtitle": "Coba tugas dan dapatkan kredit.",
         "title": "Mulai",
         "workflow": {
-          "description": "Ubah tugas berulang jadi otomatisasi",
+          "description": "Jalankan workflow buatan Anda hingga berhasil.",
           "name": "Buat workflow"
         }
       },

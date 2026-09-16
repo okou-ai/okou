@@ -1515,31 +1515,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "하루에 한 번, 매일",
+          "description": "매일 앱을 여세요. 00:00 UTC에 초기화돼요.",
           "name": "매일 출석하기",
           "unit": "하루당"
         },
         "connector": {
-          "description": "Gmail, Notion 등 100개 이상",
+          "description": "OAuth로 연결하세요. 커넥터별로 한 번 받을 수 있어요.",
           "name": "커넥터 연결하기",
           "unit": "커넥터당"
         },
         "inReview": "검토 중",
         "inReviewDescription": "제출됨, 검토 대기 중",
         "invite": {
-          "description": "추가하는 사람마다 적립됩니다",
+          "description": "초대가 수락되면 지급돼요. 최대 15명까지 가능해요.",
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
-        "personalBalanceNote": "크레딧은 개인 잔액으로 들어갑니다.",
+        "pendingInvitations": "대기 중인 초대: {{amount}}",
+        "personalBalanceNote": "보상은 지급 후 7일이 지나면 만료돼요. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
         "progressLabel": "시작하기 진행 상황",
+        "rejectedDescription": "이 게시물은 조건에 맞지 않아요. Okou를 언급한 다른 공개 게시물을 제출하세요.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "보상을 받은 커넥터: {{amount}}",
         "share": {
           "description": "게시한 뒤 링크를 붙여넣기",
           "name": "X에 {{assistantName}} 공유하기"
         },
         "shareDialog": {
-          "description": "만든 것을 게시하고 링크를 붙여넣으세요. 제출은 한 번만 가능합니다.",
+          "description": "공개 게시물을 제출하면 검토해요. 1인당 한 번 보상을 받을 수 있어요.",
           "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
           "inputLabel": "게시물 링크",
           "placeholder": "https://x.com/...",
@@ -1547,14 +1550,14 @@
           "title": "X에 {{assistantName}} 공유하기"
         },
         "slack": {
-          "description": "팀이 이미 일하고 있는 곳으로",
+          "description": "조직 및 워크스페이스당 한 번, 조직 크레딧 2,000을 받으세요.",
           "name": "Slack에 {{assistantName}} 추가하기"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "한 단계를 끝내면 크레딧은 그대로 내 것.",
+        "subtitle": "작업을 시도하고 크레딧을 받으세요.",
         "title": "시작하기",
         "workflow": {
-          "description": "반복 작업을 자동화로 바꾸기",
+          "description": "직접 만든 워크플로를 성공적으로 실행하세요.",
           "name": "워크플로 만들기"
         }
       },

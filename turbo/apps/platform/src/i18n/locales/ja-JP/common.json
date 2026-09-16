@@ -1515,31 +1515,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "1日1回、毎日",
+          "description": "毎日アプリを開くと獲得。00:00 UTC にリセット。",
           "name": "毎日チェックイン",
           "unit": "1日あたり"
         },
         "connector": {
-          "description": "Gmail、Notion など100以上",
+          "description": "OAuth で接続。各コネクタにつき1回獲得できます。",
           "name": "コネクタを接続",
           "unit": "コネクタごと"
         },
         "inReview": "確認中",
         "inReviewDescription": "送信済み、確認待ち",
         "invite": {
-          "description": "追加した人数だけ加算されます",
+          "description": "招待が承諾されると獲得。最大15人まで。",
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
-        "personalBalanceNote": "クレジットはあなた個人の残高に入ります。",
+        "pendingInvitations": "承諾待ちの招待: {{amount}}",
+        "personalBalanceNote": "報酬は付与から7日後に失効します。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "progressLabel": "セットアップの進捗",
+        "rejectedDescription": "この投稿は対象外です。Okou に言及した別の公開投稿を送信してください。",
         "reward": "+{{amount}}",
+        "rewardedConnections": "報酬獲得済みコネクタ: {{amount}}",
         "share": {
           "description": "投稿して、リンクを貼り付け",
           "name": "{{assistantName}} を X でシェア"
         },
         "shareDialog": {
-          "description": "作ったものについて投稿し、リンクを貼り付けてください。提出は1回だけです。",
+          "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
           "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
           "inputLabel": "投稿のリンク",
           "placeholder": "https://x.com/...",
@@ -1547,14 +1550,14 @@
           "title": "{{assistantName}} を X でシェア"
         },
         "slack": {
-          "description": "チームがすでに使っている場所へ",
+          "description": "組織とワークスペースごとに1回、組織用クレジットを2,000獲得。",
           "name": "{{assistantName}} を Slack に追加"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "ステップを終えると、クレジットがもらえます。",
+        "subtitle": "タスクを試してクレジットを獲得。",
         "title": "はじめる",
         "workflow": {
-          "description": "繰り返しの作業を自動化に変える",
+          "description": "自分で作成したワークフローを正常に実行。",
           "name": "ワークフローを作る"
         }
       },
