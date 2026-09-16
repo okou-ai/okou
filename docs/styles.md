@@ -110,11 +110,10 @@ One hairline serves the whole product. `--default-border-width` in the shared
 `@theme` is 0.5px, and Tailwind's bare `border`, `border-t`, `border-x`,
 `divide-y`, and their siblings all read it, so a component asks for "a border"
 and the system decides how thick it is. Components must not hand-write a width:
-an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style`
-prop, is a second registry for a decision this token already owns, and the two
-diverge wherever the device scale is odd: at scale 3 a hand-written `0.7px`
-paints two device pixels where the token paints one. `border-0` and the
-deliberate emphasis widths such as `border-2` stay available, because they
+an arbitrary bracketed width, or a literal width inside a `style` prop, is a
+second registry for a decision this token already owns, and the two round to
+different device-pixel counts wherever the device scale is odd. `border-0` and
+the deliberate emphasis widths such as `border-2` stay available, because they
 express a different decision rather than a competing value for the same one.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
