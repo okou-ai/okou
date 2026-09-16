@@ -3631,7 +3631,11 @@ function RunWorkSectionRow({
           })}
           onClick={onToggle}
           data-chat-run-work-range
-          className={cn(className, "h-auto p-0 pr-1")}
+          // The hover surface needs an inset on the side its glyph starts on,
+          // otherwise the hourglass sits flush against the left edge while the
+          // chevron keeps `pr-1`. The negative margin spends that inset on the
+          // overhang, so the glyph still starts on the response column.
+          className={cn(className, "h-auto p-0 pl-1.5 pr-1 -ml-1.5")}
         >
           {content}
         </Button>
