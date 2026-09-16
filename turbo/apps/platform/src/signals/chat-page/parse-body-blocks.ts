@@ -1,3 +1,4 @@
+import { getDefaults, Lexer, type Token, type Tokens } from "marked";
 import { resolveApiBase } from "../api-base.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -637,40 +638,8 @@ function hasUrlTokenBoundary(value: string, index: number): boolean {
   return URL_TOKEN_OPENING_PREFIX_PATTERN.test(tokenPrefix);
 }
 
-function extractUrlTokens(value: string): string[] {
-  return Array.from(
-    value.matchAll(new RegExp(URL_TOKEN_PATTERN, "g")),
-    (match) => {
-      return match.index !== undefined &&
-        hasUrlTokenBoundary(value, match.index)
-        ? trimPreviewUrl(match[0])
-        : "";
-    },
-  ).filter((url, index, list) => {
-    return url.length > 0 && list.indexOf(url) === index;
-  });
-}
-
-function extractActionUrlFromLine(line: string): string | null {
-  const candidate = stripMarkdownLineDecorations(line);
-  const markdownLinkMatch = candidate.match(
-    new RegExp(String.raw`^\[([^\]]+)\]\((${URL_TOKEN_PATTERN})\)$`),
-  );
-  const bareUrlMatch = candidate.match(new RegExp(`^(${URL_TOKEN_PATTERN})$`));
-  if (markdownLinkMatch?.[2]) {
-    return trimPreviewUrl(markdownLinkMatch[2]);
-  }
-  if (bareUrlMatch?.[1]) {
-    return trimPreviewUrl(bareUrlMatch[1]);
-  }
-
-  const urls = extractUrlTokens(candidate);
-
-  return urls.length === 1 ? urls[0]! : null;
-}
-
-function createActionBlockFromLine(
-  line: string,
+function createActionBlockFromUrl(
+  url: string,
   chatActionContext: ChatActionContext | undefined,
 ): Extract<
   ParsedBodyBlock,
@@ -687,11 +656,6 @@ function createActionBlockFromLine(
       | "browser-session";
   }
 > | null {
-  const url = extractActionUrlFromLine(line);
-  if (!url) {
-    return null;
-  }
-
   const connectorAction = parseConnectorAuthorizeUrl(url, chatActionContext);
   if (connectorAction.status === "valid") {
     return {
@@ -803,27 +767,149 @@ function createActionBlockFromLine(
   return null;
 }
 
+interface ActionLinkMatch {
+  readonly start: number;
+  readonly end: number;
+  readonly label: string;
+  readonly block: CardDescriptorBlock;
+}
+
+function isLinkToken(token: Token): token is Tokens.Link {
+  return token.type === "link";
+}
+
+function isEmphasisToken(
+  token: Token,
+): token is Tokens.Strong | Tokens.Em | Tokens.Del {
+  return token.type === "strong" || token.type === "em" || token.type === "del";
+}
+
+function retainedActionLabel(tokens: readonly Token[]): string {
+  return tokens
+    .map((token) => {
+      if (isEmphasisToken(token)) {
+        const start = token.raw.indexOf(token.text);
+        return (
+          token.raw.slice(0, start) +
+          retainedActionLabel(token.tokens) +
+          token.raw.slice(start + token.text.length)
+        );
+      }
+      // A URL used as a link label must remain text after removing its link,
+      // especially when the action was rejected for another agent or thread.
+      return token.type === "text"
+        ? token.raw.replace(/(https?):\/\//giu, String.raw`$1\://`)
+        : token.raw;
+    })
+    .join("");
+}
+
+function actionLinksFromTokens(
+  source: string,
+  tokens: readonly Token[],
+  start: number,
+  chatActionContext: ChatActionContext | undefined,
+): ActionLinkMatch[] {
+  const matches: ActionLinkMatch[] = [];
+  let offset = start;
+  for (const token of tokens) {
+    if (
+      isLinkToken(token) &&
+      (token.raw.startsWith("[") ||
+        hasUrlTokenBoundary(
+          source,
+          offset - start + (token.raw.startsWith("<") ? 1 : 0),
+        ))
+    ) {
+      const url = trimPreviewUrl(token.href);
+      const block = createActionBlockFromUrl(url, chatActionContext);
+      if (block) {
+        const trailing = token.href.slice(url.length);
+        matches.push({
+          start: offset,
+          end:
+            offset +
+            token.raw.length -
+            (token.raw.endsWith(trailing) ? trailing.length : 0),
+          label: token.raw.startsWith("[")
+            ? retainedActionLabel(token.tokens)
+            : "",
+          block,
+        });
+      }
+    } else if (isEmphasisToken(token)) {
+      matches.push(
+        ...actionLinksFromTokens(
+          token.text,
+          token.tokens,
+          offset + token.raw.indexOf(token.text),
+          chatActionContext,
+        ),
+      );
+    } else if (token.type === "text") {
+      // Bare relative platform paths are text to Markdown, but remain valid
+      // action candidates. Never scan code spans, images, or ordinary links.
+      for (const match of token.raw.matchAll(
+        new RegExp(URL_TOKEN_PATTERN, "g"),
+      )) {
+        if (!hasUrlTokenBoundary(source, offset - start + match.index)) {
+          continue;
+        }
+        const url = trimPreviewUrl(match[0]);
+        const block = createActionBlockFromUrl(url, chatActionContext);
+        if (block) {
+          matches.push({
+            start: offset + match.index,
+            end: offset + match.index + url.length,
+            label: "",
+            block,
+          });
+        }
+      }
+    }
+    offset += token.raw.length;
+  }
+  return matches;
+}
+
+function actionLinksFromLine(
+  line: string,
+  chatActionContext: ChatActionContext | undefined,
+): ActionLinkMatch[] {
+  if (/^(?: {4}|\t)/u.test(line) || !new RegExp(URL_TOKEN_PATTERN).test(line)) {
+    return [];
+  }
+  // Use original defaults: Tiptap adds editor tokenizers to global Marked.
+  return actionLinksFromTokens(
+    line,
+    Lexer.lexInline(line, getDefaults()),
+    0,
+    chatActionContext,
+  );
+}
+
 function retainedActionMarkdown(
   line: string,
-  originalUrl: string,
+  matches: readonly ActionLinkMatch[],
 ): string | null {
-  const candidate = stripMarkdownLineDecorations(line);
-  const standaloneMarkdownLink = candidate.match(
-    new RegExp(String.raw`^\[([^\]]+)\]\((${URL_TOKEN_PATTERN})\)$`),
-  );
-  const standaloneBareUrl = candidate.match(
-    new RegExp(`^(${URL_TOKEN_PATTERN})$`),
-  );
-  if (standaloneMarkdownLink || standaloneBareUrl) {
+  const first = matches[0];
+  if (
+    matches.length === 1 &&
+    first &&
+    stripMarkdownLineDecorations(line) ===
+      stripMarkdownLineDecorations(line.slice(first.start, first.end))
+  ) {
     return null;
   }
 
-  return line.replace(
-    new RegExp(String.raw`\[([^\]]+)\]\((${URL_TOKEN_PATTERN})\)`),
-    (match: string, label: string, url: string) => {
-      return trimPreviewUrl(url) === originalUrl ? label : match;
-    },
-  );
+  const parts: string[] = [];
+  let offset = 0;
+  for (const match of matches) {
+    parts.push(line.slice(offset, match.start), match.label);
+    offset = match.end;
+  }
+  parts.push(line.slice(offset));
+  return parts.join("");
 }
 
 function splitMarkdownTableRow(line: string): string[] | null {
@@ -962,21 +1048,20 @@ function parseBodyBlocks(
       continue;
     }
 
-    const actionBlock = previews
-      ? createActionBlockFromLine(line, options.chatActionContext)
-      : null;
-    if (actionBlock) {
-      if (actionBlock.type === "connector-action") {
-        const retainedMarkdown = retainedActionMarkdown(
-          line,
-          actionBlock.descriptor.originalUrl,
-        );
-        if (retainedMarkdown) {
-          pushMarkdownLines([retainedMarkdown]);
-        }
+    const actionLinks = previews
+      ? actionLinksFromLine(line, options.chatActionContext)
+      : [];
+    if (actionLinks.length > 0) {
+      const retainedMarkdown = retainedActionMarkdown(line, actionLinks);
+      if (retainedMarkdown) {
+        pushMarkdownLines([retainedMarkdown]);
       }
       flushMarkdownBuffer();
-      blocks.push(actionBlock);
+      blocks.push(
+        ...actionLinks.map((match) => {
+          return match.block;
+        }),
+      );
       continue;
     }
 

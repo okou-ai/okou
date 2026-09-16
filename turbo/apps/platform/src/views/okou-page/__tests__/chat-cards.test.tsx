@@ -14,6 +14,7 @@ const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
 const CONNECTOR_URL = `https://app.okou.ai/connectors/github/authorize?agentId=${AGENT_ID}`;
+const PERMISSION_URL = `https://app.okou.ai/agents/${AGENT_ID}/permissions?connectorSlug=slack&permission=files:read`;
 
 function assistantMessage(id: string, content: string) {
   return {
@@ -71,6 +72,56 @@ test("A connector link becomes an action without losing surrounding prose", asyn
   expectNodeBefore(sentence, cards[1]!);
 });
 
+test("A permission request beside an ordinary link keeps its explanation", async () => {
+  const referenceUrl = "https://example.com/reference?topic=access";
+  await setupChat(
+    `Read the [reference](${referenceUrl}), then [allow file reads](${PERMISSION_URL}) so I can continue.`,
+  );
+
+  const card = await screen.findByTestId("permission-action-card");
+  const reference = queryAllByRoleFast("link").find((link) => {
+    return link.textContent === "reference";
+  });
+  expect(reference).toHaveAttribute("href", referenceUrl);
+  const sentence = reference?.closest("p");
+  expect(sentence).toHaveTextContent(
+    "Read the reference, then allow file reads so I can continue.",
+  );
+  expectNodeBefore(sentence!, card);
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button", card).find((button) => {
+        return button.textContent?.trim() === "Confirm";
+      }),
+    ).toBeEnabled();
+  });
+  expect(
+    queryAllByRoleFast("link").some((link) => {
+      return link.getAttribute("href") === PERMISSION_URL;
+    }),
+  ).toBeFalsy();
+});
+
+test("Multiple actions on one line keep their order and formatted prose", async () => {
+  await setupChat(
+    `Please **[connect GitHub](${CONNECTOR_URL}) and [allow file reads](${PERMISSION_URL})**, then review [GitHub again](${CONNECTOR_URL}).`,
+  );
+
+  const permission = await screen.findByTestId("permission-action-card");
+  await waitFor(() => {
+    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(2);
+  });
+  const connectors = screen.getAllByTestId("connector-action-card");
+  const emphasis = screen.getByText("connect GitHub and allow file reads");
+  expect(emphasis.tagName).toBe("STRONG");
+  expect(emphasis.closest("p")).toHaveTextContent(
+    "Please connect GitHub and allow file reads, then review GitHub again.",
+  );
+  expectNodeBefore(emphasis, connectors[0]!);
+  expectNodeBefore(connectors[0]!, permission);
+  expectNodeBefore(permission, connectors[1]!);
+});
+
 test("Incomplete action links are shown as unavailable", async () => {
   const connectorWithoutAgent =
     "https://app.okou.ai/connectors/github/authorize";
@@ -105,6 +156,99 @@ test("Incomplete action links are shown as unavailable", async () => {
       );
     }),
   ).toBeFalsy();
+});
+
+test("Invalid actions remain unavailable beside valid and external links", async () => {
+  const wrongAgentUrl = CONNECTOR_URL.replace(
+    AGENT_ID,
+    "c0000000-0000-4000-a000-000000000099",
+  );
+  const wrongThreadUrl = `${PERMISSION_URL}&threadId=b0000000-0000-4000-a000-000000000099&callbackPrompt=Continue`;
+  const externalUrl = CONNECTOR_URL.replace(
+    "app.okou.ai",
+    "app.okou.ai.evil.test",
+  );
+  await setupChat(
+    `Review [another agent (${wrongAgentUrl})](${wrongAgentUrl}), ${wrongThreadUrl}, [this agent](${CONNECTOR_URL}) and the [external reference](${externalUrl}).`,
+  );
+
+  await screen.findByTestId("connector-action-card");
+  await waitFor(() => {
+    expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
+  });
+  const links = queryAllByRoleFast("link");
+  const external = links.find((link) => {
+    return link.textContent === "external reference";
+  });
+  expect(external).toHaveAttribute("href", externalUrl);
+  expect(external?.closest("p")).toHaveTextContent(
+    `Review another agent (${wrongAgentUrl}), , this agent and the external reference.`,
+  );
+  expect(
+    links.some((link) => {
+      return [wrongAgentUrl, wrongThreadUrl, CONNECTOR_URL].includes(
+        link.getAttribute("href") ?? "",
+      );
+    }),
+  ).toBeFalsy();
+});
+
+test("A bare relative permission beside another link keeps punctuation and prose", async () => {
+  const relativeUrl =
+    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
+  await setupChat(
+    `Please authorize ${relativeUrl}。 Then read [the reference](https://example.com).`,
+  );
+
+  const card = await screen.findByTestId("permission-action-card");
+  const reference = queryAllByRoleFast("link").find((link) => {
+    return link.textContent === "the reference";
+  });
+  expect(reference).toHaveAttribute("href", "https://example.com");
+  expect(reference?.closest("p")).toHaveTextContent(
+    "Please authorize 。 Then read the reference.",
+  );
+  expectNodeBefore(reference!, card);
+});
+
+test("Code, images and table links stay content beside real actions", async () => {
+  await setupChat(
+    [
+      "Action examples",
+      "",
+      "```text",
+      `${CONNECTOR_URL} ${PERMISSION_URL}`,
+      "```",
+      "",
+      `Keep \`[code link](${PERMISSION_URL})\` and [connect GitHub](${CONNECTOR_URL}).`,
+      "",
+      `Embedded token: prefix${PERMISSION_URL}`,
+      "",
+      `    ${PERMISSION_URL}`,
+      "",
+      `![Example image](${PERMISSION_URL})`,
+      "",
+      "| Connector | Permission |",
+      "| --- | --- |",
+      `| [Table connector](${CONNECTOR_URL}) | [Table permission](${PERMISSION_URL}) |`,
+    ].join("\n"),
+  );
+
+  await screen.findByTestId("connector-action-card");
+  const code = screen.getByText(`[code link](${PERMISSION_URL})`);
+  expect(code.closest("code")).not.toBeNull();
+  expect(code.closest("p")).toHaveTextContent("and connect GitHub.");
+  const tablePermission = queryAllByRoleFast("link").find((link) => {
+    return link.textContent === "Table permission";
+  });
+  expect(tablePermission).toHaveAttribute("href", PERMISSION_URL);
+  expect(tablePermission?.closest("table")).not.toBeNull();
+  expect(screen.getByAltText("Example image")).toHaveAttribute(
+    "src",
+    PERMISSION_URL,
+  );
+  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
+  expect(screen.queryByTestId("permission-action-card")).toBeNull();
 });
 
 test("Keep the connector slot when delayed metadata is unavailable", async () => {
