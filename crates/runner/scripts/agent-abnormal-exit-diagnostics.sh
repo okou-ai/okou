@@ -55,39 +55,8 @@ else
 fi
 
 section rootfs-usage
-du_summary() {
-  target_path="$1"
-  if [ ! -e "$target_path" ]; then
-    echo "$target_path: missing"
-    return
-  fi
-  output=""
-  if command -v timeout >/dev/null 2>&1; then
-    output=$(timeout 1s du -sxh -- "$target_path" 2>/dev/null) || {
-      echo "$target_path: du timed out or failed"
-      return
-    }
-  else
-    output=$(du -sxh -- "$target_path" 2>/dev/null) || {
-      echo "$target_path: du failed"
-      return
-    }
-  fi
-  printf '%s\n' "$output"
-}
-
-for path in \
-  /home/user/.codex \
-  /home/user/.claude \
-  /home/user/.cache \
-  /home/user/.npm \
-  /home/user/.vm0 \
-  /tmp \
-  /var/tmp \
-  /var/log \
-  /home/user; do
-  du_summary "$path"
-done
+# Defined by the Runner alongside this script; no guest file is materialized.
+rootfs_usage 2>/dev/null || echo "sampler_failed_or_timed_out"
 
 section processes
 if command -v ps >/dev/null 2>&1; then
