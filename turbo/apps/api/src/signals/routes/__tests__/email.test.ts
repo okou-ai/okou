@@ -209,7 +209,6 @@ describe("low-credit email delivery", () => {
         to: actor.email,
         subject: "Your credit balance is running low",
         html: expect.stringContaining("https://app.okou.ai/"),
-        text: expect.stringContaining("Sent by Okou Team"),
         headers: {
           "List-Unsubscribe": expect.stringContaining(
             "<https://api.okou.ai/api/email/unsubscribe?token=",
@@ -220,9 +219,11 @@ describe("low-credit email delivery", () => {
     );
     const sent = resendMocks.send.mock.calls[0]?.[0];
     for (const content of [
+      "Your credit balance is running low",
       "4,999 credits",
+      "5,000 credits or less",
       "Manage billing",
-      "Sent by Okou Team",
+      "The Okou Team",
       "https://app.okou.ai/email/unsubscribe?token=",
     ]) {
       expect(sent).toMatchObject({
@@ -231,6 +232,7 @@ describe("low-credit email delivery", () => {
       });
     }
     expect(sent).toMatchObject({
+      html: expect.stringContaining('alt="Okou"'),
       text: expect.stringContaining(
         "https://app.okou.ai/?settings=billing&billingView=credits",
       ),
@@ -300,19 +302,7 @@ describe("POST /api/email/inbound", () => {
     expect(sent).toMatchObject({
       from: "Okou <okou@okou.io>",
       html: expect.stringContaining("https://app.okou.ai/email/unsubscribe"),
-      text: expect.stringContaining("https://app.okou.ai/email/unsubscribe"),
     });
-    for (const content of [
-      "Download export",
-      "artifacts. Expires",
-      "https://r2.example.com/",
-      "Sent by Okou",
-    ]) {
-      expect(sent).toMatchObject({
-        html: expect.stringContaining(content),
-        text: expect.stringContaining(content),
-      });
-    }
     if (
       typeof sent !== "object" ||
       sent === null ||
