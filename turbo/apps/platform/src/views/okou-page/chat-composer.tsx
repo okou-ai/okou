@@ -9307,9 +9307,13 @@ function useComposerPrimaryAction(
   actions: ComposerActions,
 ): ComposerPrimaryAction {
   const action = useResolved(signals.submission.primaryAction$) ?? "disabled";
+  const oauthAvailability = useLastLoadable(
+    signals.model.selectedModelOauthAvailable$,
+  );
   const selectedModelOauthAvailable =
-    useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
-  return selectedModelOauthAvailable &&
+    oauthAvailability.state === "loading" ||
+    (oauthAvailability.state === "hasData" && oauthAvailability.data);
+  return (action === "stop" || selectedModelOauthAvailable) &&
     (!actions.submitting || action === "stop") &&
     actions.voiceAction === null
     ? action
@@ -10000,8 +10004,12 @@ function ComposerModelPickerSlotBase({
 }) {
   const codexFastModeEnabled = useGet(codexFastModeEnabled$);
   const modelSelection = useLastLoadable(signals.model.modelSelection$);
+  const oauthAvailability = useLastLoadable(
+    signals.model.selectedModelOauthAvailable$,
+  );
   const selectedModelOauthAvailable =
-    useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
+    oauthAvailability.state === "loading" ||
+    (oauthAvailability.state === "hasData" && oauthAvailability.data);
   const setModelSelection = useSet(signals.model.setModelSelection$);
   const pageSignal = useGet(pageSignal$);
   const value = modelSelection.state === "hasData" ? modelSelection.data : null;

@@ -29,6 +29,7 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { fillComposer } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
@@ -1311,5 +1312,183 @@ test.each([null, "en-US"] as const)(
     await expect(
       screen.findByRole("dialog", { name: "Settings" }),
     ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each(["en-US", null] as const)(
+  "Keep the account menu usable after an unauthorized refresh with locale %s",
+  async (locale) => {
+    mockAdminAccountSidebar();
+    context.mocks.data.userPreferences({ locale });
+    const refresh = context.mocks.deferred<void>();
+    let holdRefresh = false;
+
+    context.mocks.api(
+      personalModelProvidersMainContract.list,
+      async ({ respond, withSignal }) => {
+        if (holdRefresh) {
+          await withSignal(refresh.promise);
+        }
+        return respond(401, {
+          error: {
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+          },
+        });
+      },
+    );
+
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      auth: {
+        user: {
+          id: "test-user-123",
+          fullName: "Alex Rivera",
+          email: "alex.rivera@example.test",
+        },
+      },
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+
+    const chatList = await screen.findByTestId("chat-list-column");
+    holdRefresh = true;
+    const menu = await openAccountMenu();
+    const loadingPanel = await within(menu).findByTestId(
+      "account-menu-subscriptions",
+    );
+    refresh.resolve();
+    await waitForElementToBeRemoved(loadingPanel);
+    await expect(
+      within(menu).findByText("12,500 credits"),
+    ).resolves.toBeInTheDocument();
+    expect(chatList).toBeInTheDocument();
+    expect(mockedClerk.redirectToSignIn).not.toHaveBeenCalled();
+    expect(mockedClerk.signOut).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unauthorized")).not.toBeInTheDocument();
+    click(within(menu).getByText("Settings"));
+    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+  },
+);
+
+test.each(["legacy personal", "workspace", "member-effective"] as const)(
+  "Honor %s model availability across a failed provider refresh and recovery",
+  async (route) => {
+    const openedAt = new Date("2030-01-01T00:48:00.000Z").getTime();
+    mockNow(openedAt, context.signal);
+    mockAdminAccountSidebar();
+    context.mocks.data.userPreferences({ locale: "en-US" });
+    context.mocks.data.userModelPreference({
+      selectedModel: "gpt-5.6-sol",
+      serviceTier: null,
+      modelSettings: {},
+      selectedVideoModel: null,
+      selectedImageModel: null,
+      updatedAt: null,
+    });
+    context.mocks.data.orgModelPolicies([
+      {
+        id: "34650000-0000-4000-a000-000000000001",
+        model: "gpt-5.6-sol",
+        modelLabel: "GPT 5.6 Sol",
+        isDefault: true,
+        defaultProviderType:
+          route === "workspace" ? "built-in" : "codex-oauth-token",
+        runtimeProviderType:
+          route === "workspace" ? "openai-api-key" : "codex-oauth-token",
+        credentialScope: route === "workspace" ? "org" : "member",
+        modelProviderId: null,
+        routeStatus: "valid",
+        routeStatusReason: null,
+        memberEffective:
+          route === "member-effective"
+            ? {
+                providerType: "codex-oauth-token",
+                runtimeProviderType: "codex-oauth-token",
+                credentialScope: "member",
+                availability: "available",
+                accountSelection: "capture_required",
+              }
+            : undefined,
+        createdAt: "2026-09-16T00:00:00.000Z",
+        updatedAt: "2026-09-16T00:00:00.000Z",
+      },
+    ]);
+    const refresh = context.mocks.deferred<void>();
+    let failRefresh = false;
+    context.mocks.api(
+      personalModelProvidersMainContract.list,
+      async ({ respond, withSignal }) => {
+        if (failRefresh) {
+          await withSignal(refresh.promise);
+          return respond(401, {
+            error: { code: "UNAUTHORIZED", message: "Unauthorized" },
+          });
+        }
+        return respond(200, {
+          modelProviders: [connectedPersonalCodexProvider()],
+        });
+      },
+    );
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      auth: {
+        user: {
+          id: "test-user-123",
+          fullName: "Alex Rivera",
+          email: "alex.rivera@example.test",
+        },
+      },
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    await fillComposer(
+      composer,
+      "Keep this draft until the subscription recovers",
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Send")).toBeEnabled();
+    });
+
+    failRefresh = true;
+    const menu = await openAccountMenu();
+    const loadingPanel = await within(menu).findByTestId(
+      "account-menu-subscriptions",
+    );
+    refresh.resolve();
+    await waitForElementToBeRemoved(loadingPanel);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => {
+      expect(menu).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Send")).toHaveProperty(
+        "disabled",
+        route === "legacy personal",
+      );
+    });
+    expect(composer).toHaveTextContent(
+      "Keep this draft until the subscription recovers",
+    );
+
+    failRefresh = false;
+    mockNow(openedAt + 60_000, context.signal);
+    const recoveredMenu = await openAccountMenu();
+    await expect(
+      within(recoveredMenu).findByText("82%"),
+    ).resolves.toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => {
+      expect(recoveredMenu).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Send")).toBeEnabled();
+    });
+    expect(composer).toHaveTextContent(
+      "Keep this draft until the subscription recovers",
+    );
+    expect(mockedClerk.signOut).not.toHaveBeenCalled();
+    expect(mockedClerk.redirectToSignIn).not.toHaveBeenCalled();
   },
 );

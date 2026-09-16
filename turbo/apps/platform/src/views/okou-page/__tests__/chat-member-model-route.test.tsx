@@ -14,10 +14,46 @@ import {
   findButton,
   installRunChat,
   NEW_CHAT_PATH,
+  promptEvent,
   queryButton,
+  RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
 const ACCOUNT_ID = "34240000-0000-4000-a000-000000000002";
+
+test("Keep Stop available when a personal credential read fails", async () => {
+  const runId = "34650000-0000-4000-a000-000000000002";
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    activeRunIds: [runId],
+    chatEvents: [
+      promptEvent({
+        id: "running-personal-task",
+        runId,
+        seqId: 1,
+        text: "Continue the running task",
+      }),
+    ],
+  });
+  context.mocks.data.orgModelPolicies([
+    {
+      ...policy("available"),
+      defaultProviderType: "codex-oauth-token",
+      runtimeProviderType: "codex-oauth-token",
+      credentialScope: "member",
+      memberEffective: undefined,
+    },
+  ]);
+  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Unauthorized" },
+    });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await expect(findButton("Configure model")).resolves.toBeInTheDocument();
+  await expect(findButton("Stop")).resolves.toBeEnabled();
+  expect(screen.getByText("Continue the running task")).toBeInTheDocument();
+});
 
 function policy(
   availability: NonNullable<OrgModelPolicy["memberEffective"]>["availability"],

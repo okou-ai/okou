@@ -2,7 +2,7 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyAvailable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
-import { command, computed, state } from "ccstate";
+import { command } from "ccstate";
 import type {
   ModelProviderResponse,
   ModelProviderType,
@@ -40,29 +40,23 @@ type PersonalModelProviderStatus =
       credentialId: string;
     };
 
-type PersonalModelProviderStatusByModel = Readonly<
-  Record<string, PersonalModelProviderStatus>
->;
-
-const internalReloadPersonalModelProvider$ = state(0);
-
 export const reloadPersonalModelProvider$ = command(({ set }) => {
   set(reloadPersonalModelProviders$);
-  set(internalReloadPersonalModelProvider$, (value) => {
-    return value + 1;
-  });
 });
 
-function isPersonalOauthProviderType(
+export function isPersonalOauthProviderType(
   type: ModelProviderType,
 ): type is PersonalOauthProviderType {
   return type === "claude-code-oauth-token" || type === "codex-oauth-token";
 }
 
-function personalStatusForPolicy(
-  policy: OrgModelPoliciesResponse["policies"][number],
+export function personalStatusForPolicy(
+  policy: OrgModelPoliciesResponse["policies"][number] | undefined,
   personalProviders: readonly ModelProviderResponse[],
 ): PersonalModelProviderStatus | null {
+  if (policy === undefined) {
+    return null;
+  }
   const route = getMemberModelPolicyRoute(policy);
   if (
     route.availability === "plan_restricted" ||
@@ -94,25 +88,6 @@ function personalStatusForPolicy(
   return { ...providerDetails, status: "connected" };
 }
 
-export const personalModelProvider$ = computed(
-  async (get): Promise<PersonalModelProviderStatusByModel> => {
-    get(internalReloadPersonalModelProvider$);
-    const [policies, personal] = await Promise.all([
-      get(orgModelPolicies$),
-      get(personalModelProviders$),
-    ]);
-
-    const statuses: Record<string, PersonalModelProviderStatus> = {};
-    for (const policy of policies.policies) {
-      const status = personalStatusForPolicy(policy, personal.modelProviders);
-      if (status) {
-        statuses[policy.model] = status;
-      }
-    }
-    return statuses;
-  },
-);
-
 export const selectedModelAvailable$ = command(
   async (
     { get },
@@ -142,8 +117,9 @@ export const selectedModelAvailable$ = command(
     ) {
       return true;
     }
-    const status = (await get(personalModelProvider$))[selectedModel];
+    const { modelProviders } = await get(personalModelProviders$);
     signal.throwIfAborted();
+    const status = personalStatusForPolicy(policy, modelProviders);
     return status?.status === "connected";
   },
 );
