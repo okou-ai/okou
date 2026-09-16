@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.668.0](https://github.com/vm0-ai/okou/compare/core-v8.667.1...core-v8.668.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** collapse the composer toolbar into one add menu ([#34394](https://github.com/vm0-ai/okou/issues/34394)) ([a54f703](https://github.com/vm0-ai/okou/commit/a54f703655d94b3552f856783294efbe97484a6b))
+
 ## [8.667.1](https://github.com/vm0-ai/okou/compare/core-v8.667.0...core-v8.667.1) (2026-09-16)
 
 
