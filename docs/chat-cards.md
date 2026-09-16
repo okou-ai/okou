@@ -35,6 +35,17 @@ and resource-preview cards. Different card types may use different dimensions,
 and responsive breakpoints may select a different fixed height. Asynchronous
 data and status changes must not select the card's height.
 
+A terminal notice is the one exception: a card that states a finished outcome in
+text, subscribes to nothing, offers no control, and cannot be replaced by
+another presentation may size to its own content. The requirement this rule
+exists for is that a card's height is settled before a reader can be moved by
+it; such a notice settles its height at first render and never changes it. The
+exception is decided synchronously, from data the transcript already holds, and
+it does not extend to a card whose content or actions are still being resolved.
+`RunCancelledNotice` in `chat-thread-page.tsx` is the reference: cancelling a
+run says one sentence, and `latestAssistantErrorCandidate` never treats a
+`run.cancelled` event as a recovery candidate, so no taller card can succeed it.
+
 ### Keep the frame mounted
 
 Choose the geometry before the first asynchronous read completes and keep one
@@ -108,7 +119,9 @@ those action and lifecycle owners when adding another state.
 Current frame owners are `AssistantErrorContent` (including billing),
 `ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,
 `MailDraftCard`, and `BrowserSessionCard`. Their asynchronous subscriptions live
-inside the sized parent. Browser cards reserve both the 40px header and 16:10
+inside the sized parent. `AssistantErrorContent` reserves that frame for every
+error presentation except the cancelled notice, which it returns before the
+frame under the terminal-notice exception above. Browser cards reserve both the 40px header and 16:10
 preview in the parent, independently of the replaceable preview content.
 
 ### No content-size observation or compensating scroll

@@ -5315,18 +5315,6 @@ function AssistantErrorFallback({ error }: { error: string }) {
     return <InsufficientCreditsCard />;
   }
 
-  if (error.trim().toLowerCase() === "run cancelled") {
-    return (
-      <AssistantErrorCard
-        icon={Hand}
-        title={t(($) => {
-          return $.chat.errors.runCancelled;
-        })}
-        description=""
-      />
-    );
-  }
-
   const noProviderGuidance = RUN_ERROR_GUIDANCE.NO_MODEL_PROVIDER;
   const isNoModelProvider =
     noProviderGuidance !== undefined &&
@@ -5427,6 +5415,33 @@ function AssistantErrorFallback({ error }: { error: string }) {
   );
 }
 
+function isRunCancelledNotice(error: string): boolean {
+  return error.trim().toLowerCase() === "run cancelled";
+}
+
+/**
+ * Cancelling a run says one sentence and offers nothing to act on: no
+ * asynchronous read, no status that resolves later, no control. So it is sized
+ * by that sentence instead of taking the reserved error frame, where a single
+ * line left most of a full-width 88px card empty.
+ */
+function RunCancelledNotice() {
+  const { t } = useTranslation();
+  return (
+    <ChatCard
+      data-testid="assistant-run-cancelled-notice"
+      className="inline-flex w-fit max-w-full items-center gap-2 px-3 py-1.5 text-[0.9375rem] text-muted-foreground"
+    >
+      <Hand size={16} className="shrink-0" />
+      <span className="min-w-0">
+        {t(($) => {
+          return $.chat.errors.runCancelled;
+        })}
+      </span>
+    </ChatCard>
+  );
+}
+
 function AssistantErrorContent({
   error,
   eventId,
@@ -5436,6 +5451,20 @@ function AssistantErrorContent({
   eventId: string;
   thread: ChatPanelSignals;
 }) {
+  /*
+    The cancelled notice is the one error presentation whose geometry is final
+    at first render. `docs/chat-cards.md` reserves a fixed frame because an
+    asynchronous recovery classification can replace a short fallback with a
+    taller recovery card and move the transcript under a reader; a cancelled run
+    has no such successor. `latestAssistantErrorCandidate` only considers
+    `output.error` and `run.failed` events, so a `run.cancelled` event never
+    becomes a recovery candidate, and the literal text classifies to no recovery
+    kind either way. Everything else keeps the reserved frame below.
+  */
+  if (isRunCancelledNotice(error)) {
+    return <RunCancelledNotice />;
+  }
+
   return (
     <ChatCard
       data-testid="assistant-error-card-shell"

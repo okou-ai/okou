@@ -381,6 +381,9 @@ test("Show a cancelled run as paused", async () => {
     screen.getByText("Paused mid-thought — pick it back up whenever."),
   ).toBeVisible();
   expect(queryButton("Stop")).toBeNull();
+  // The notice states a finished outcome and offers nothing to act on, so it
+  // is sized by its sentence instead of taking the reserved error frame.
+  expect(screen.queryByTestId("assistant-error-card-shell")).toBeNull();
 });
 
 test("Show thinking while a newly accepted prompt starts", async () => {
