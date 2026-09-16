@@ -217,9 +217,18 @@ test("An admin sees every step and what each one pays", async () => {
   expect(invite.getByText("Invite your team")).toBeInTheDocument();
   expect(invite.getByText("per member")).toBeInTheDocument();
 
+  // A finished quest keeps the completion check and offers nothing to press.
+  const slackRow = screen.getByTestId("get-started-quest-slack");
+  expect(within(slackRow).queryByText("Add")).not.toBeInTheDocument();
+
+  // Done but still earning: the connector keeps both its reward and its
+  // affordance instead of collapsing to the completion check.
+  const connectorRow = screen.getByTestId("get-started-quest-connector");
+  expect(normalizedText(connectorRow)).toContain("+100 per connector");
+  expect(within(connectorRow).getByText("Connect")).toBeInTheDocument();
+
   // Personal earnings exclude Slack; another OAuth connector can still earn a reward.
   expect(within(panel).getByText("400")).toBeInTheDocument();
-  expect(screen.getByTestId("get-started-quest-connector")).toBeInTheDocument();
 });
 
 test("A member is only offered the steps they can finish themselves", async () => {
@@ -545,10 +554,12 @@ test("Opening the app checks in and focus refresh uses the server UTC day", asyn
   });
   const panel = await openQuestPanel();
   await expect(within(panel).findByText("400")).resolves.toBeInTheDocument();
+  // Opening the app is the check-in, so the claimed row carries its title and
+  // description and nothing else: no reward left to earn, nothing to press.
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
-  expect(normalizedText(checkinRow)).toContain("Once a day, every day");
-  // Opening the app is the check-in, so this row offers nothing to press.
-  expect(within(checkinRow).queryByText("Check in")).not.toBeInTheDocument();
+  expect(normalizedText(checkinRow)).toBe(
+    "Check in dailyOnce a day, every day",
+  );
   data.serverNow = "2026-09-16T00:00:00.000Z";
   data.nextResetAt = "2026-09-17T00:00:00.000Z";
   data.claimedToday = false;
