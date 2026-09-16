@@ -14,7 +14,7 @@ import {
   CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 import { z } from "zod";
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   artifactSharePolicySchema,
   artifactSharesContract,
@@ -207,6 +207,23 @@ async function fixture() {
   session();
   await flag(true);
   return { owner, org, organization, members, objects, session };
+}
+
+async function hostedFixture() {
+  const sharing = await fixture();
+  const organizationMemberships =
+    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
+  const actor = createBddApi(context).user({
+    userId: sharing.owner,
+    orgId: sharing.org,
+  });
+  await createRunsApi(context).grantProEntitlement(actor);
+  // Entitlement setup installs its own Clerk fixture. Restore the sharing
+  // directory before any share request needs organization names or members.
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    organizationMemberships,
+  );
+  return { ...sharing, actor };
 }
 
 test.each(["private", "organization", "public"] as const)(
@@ -911,7 +928,7 @@ test("a deleted original organization makes an existing share unavailable", asyn
   );
 });
 
-test.each([
+describe.each([
   ["provider outage", new ClerkApiResponseTestError(503)],
   ["rate limit", new ClerkApiResponseTestError(429)],
   [
@@ -920,38 +937,55 @@ test.each([
   ],
 ])(
   "a membership %s remains an error rather than a missing organization",
-  async (_name, error) => {
-    await fixture();
-    const target = await file();
-    const shared = await accept(
-      api()(artifactSharesContract).update({
-        headers,
-        body: { target, audience: "organization" },
-      }),
-      [200],
-    );
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      error,
-    );
-    const response = await accept(
-      api()(artifactSharesContract).resolve({
-        headers,
-        params: { id: shared.body.shareId! },
-      }),
-      [500],
-    );
-    expect(response.body).not.toHaveProperty("url");
-    await accept(
-      api()(artifactSharesContract).status({ headers, body: target }),
-      [500],
-    );
-    await accept(
-      api()(artifactSharesContract).update({
-        headers,
-        body: { target, audience: "public" },
-      }),
-      [500],
-    );
+  (_name, error) => {
+    async function unavailableMembershipFixture() {
+      await fixture();
+      const target = await file();
+      const shared = await accept(
+        api()(artifactSharesContract).update({
+          headers,
+          body: { target, audience: "organization" },
+        }),
+        [200],
+      );
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
+        error,
+      );
+      return { target, shareId: shared.body.shareId! };
+    }
+
+    it("resolve returns an error without a delivery URL", async () => {
+      const { shareId } = await unavailableMembershipFixture();
+      const response = await accept(
+        api()(artifactSharesContract).resolve({
+          headers,
+          params: { id: shareId },
+        }),
+        [500],
+      );
+      expect(response.body).not.toHaveProperty("url");
+    });
+
+    it("status returns an error without a delivery URL", async () => {
+      const { target } = await unavailableMembershipFixture();
+      const response = await accept(
+        api()(artifactSharesContract).status({ headers, body: target }),
+        [500],
+      );
+      expect(response.body).not.toHaveProperty("url");
+    });
+
+    it("update returns an error without a delivery URL", async () => {
+      const { target } = await unavailableMembershipFixture();
+      const response = await accept(
+        api()(artifactSharesContract).update({
+          headers,
+          body: { target, audience: "public" },
+        }),
+        [500],
+      );
+      expect(response.body).not.toHaveProperty("url");
+    });
   },
 );
 
@@ -1023,11 +1057,7 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
 });
 
 test("html sharing pins the selected version until an explicit update and resolves to isolated content", async () => {
-  const { owner, org, objects, members, session } = await fixture();
-  const organizationMemberships =
-    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
-  const actor = createBddApi(context).user({ userId: owner, orgId: org });
-  await createRunsApi(context).grantProEntitlement(actor);
+  const { actor, objects, members, session } = await hostedFixture();
   const host = createHostMapsBddApi(context);
   const body = {
     site: `sharing-${randomUUID().slice(0, 8)}`,
@@ -1088,9 +1118,6 @@ test("html sharing pins the selected version until an explicit update and resolv
   });
   expect(share.body.shortUrl).toBe(`https://app.okou.ai${first.url}`);
   expect(share.body.url).toBe(share.body.shortUrl);
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
-    organizationMemberships,
-  );
   const recipient = `user_${randomUUID()}`;
   members.add(recipient);
   session(recipient);
@@ -1152,9 +1179,7 @@ test("html sharing pins the selected version until an explicit update and resolv
 });
 
 test("public site names stay on the selected version and rotate after revocation", async () => {
-  const { owner, org } = await fixture();
-  const actor = createBddApi(context).user({ userId: owner, orgId: org });
-  await createRunsApi(context).grantProEntitlement(actor);
+  const { actor } = await hostedFixture();
   const host = createHostMapsBddApi(context);
   const body = {
     site: `named-${randomUUID().slice(0, 8)}`,
@@ -1217,9 +1242,7 @@ test("public site names stay on the selected version and rotate after revocation
 test.each([false, true])(
   "historical public HTML policies name the site only on explicit sharing (alias retained=%s)",
   async (retainAlias) => {
-    const { owner, org, objects } = await fixture();
-    const actor = createBddApi(context).user({ userId: owner, orgId: org });
-    await createRunsApi(context).grantProEntitlement(actor);
+    const { actor, objects } = await hostedFixture();
     const host = createHostMapsBddApi(context);
     const prepared = await host.prepareHostedSite(actor, {
       site: `historical-${randomUUID().slice(0, 8)}`,
@@ -1271,9 +1294,7 @@ test.each([false, true])(
 );
 
 test("a historical public site name receives a short collision suffix without overwriting its alias", async () => {
-  const { owner, org, objects } = await fixture();
-  const actor = createBddApi(context).user({ userId: owner, orgId: org });
-  await createRunsApi(context).grantProEntitlement(actor);
+  const { actor, objects } = await hostedFixture();
   const host = createHostMapsBddApi(context);
   const prepared = await host.prepareHostedSite(actor, {
     site: `occupied-${randomUUID().slice(0, 8)}`,
