@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.196.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.3...runner-rs-v0.196.0) (2026-09-16)
+
+
+### Features
+
+* **runner:** expose cumulative mitm token usage per run ([#34687](https://github.com/vm0-ai/okou/issues/34687)) ([3cbba0e](https://github.com/vm0-ai/okou/commit/3cbba0e6a5bb70fac04130bf26a64fdd168a9e1d))
+
+
+### Bug Fixes
+
+* block direct gmail sends and guide agents to draft review ([#34684](https://github.com/vm0-ai/okou/issues/34684)) ([dbe9107](https://github.com/vm0-ai/okou/commit/dbe9107196583b25d63db499290e02951dff09a5))
+* **runner:** fairly drain deferred releases ([#34705](https://github.com/vm0-ai/okou/issues/34705)) ([cfb147f](https://github.com/vm0-ai/okou/commit/cfb147f636c01278232aeebe50f8aa98f2402794))
+
 ## [0.195.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.2...runner-rs-v0.195.3) (2026-09-16)
 
 

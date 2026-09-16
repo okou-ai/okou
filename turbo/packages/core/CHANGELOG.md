@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.673.0](https://github.com/vm0-ai/okou/compare/core-v8.672.0...core-v8.673.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** add a custom category to the template picker ([#34617](https://github.com/vm0-ai/okou/issues/34617)) ([a6d695b](https://github.com/vm0-ai/okou/commit/a6d695ba91197f5f2bd9483977506458fe423792))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.0
+
 ## [8.672.0](https://github.com/vm0-ai/okou/compare/core-v8.671.0...core-v8.672.0) (2026-09-16)
 
 

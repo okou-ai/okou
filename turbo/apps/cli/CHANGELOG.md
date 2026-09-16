@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.337.1](https://github.com/vm0-ai/okou/compare/cli-v9.337.0...cli-v9.337.1) (2026-09-16)
+
+
+### Refactoring
+
+* move detailed social prompt guidance into cli help ([#34694](https://github.com/vm0-ai/okou/issues/34694)) ([165a4a5](https://github.com/vm0-ai/okou/commit/165a4a536779b39d2fd1b09cceaebd9b2a354455))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.452.0
+    * @okouai/core bumped to 8.673.0
+    * @okouai/pi-agent-runtime bumped to 1.32.4
+
 ## [9.337.0](https://github.com/vm0-ai/okou/compare/cli-v9.336.2...cli-v9.337.0) (2026-09-16)
 
 

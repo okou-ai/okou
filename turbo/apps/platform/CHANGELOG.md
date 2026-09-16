@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.907.0](https://github.com/vm0-ai/okou/compare/app-v0.906.1...app-v0.907.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** add a custom category to the template picker ([#34617](https://github.com/vm0-ai/okou/issues/34617)) ([a6d695b](https://github.com/vm0-ai/okou/commit/a6d695ba91197f5f2bd9483977506458fe423792))
+
+
+### Bug Fixes
+
+* **app:** size chat notice cards from their own rows ([#34685](https://github.com/vm0-ai/okou/issues/34685)) ([6e07fe4](https://github.com/vm0-ai/okou/commit/6e07fe4b421b57bd49caaf3282d3c53645eaeb06))
+* **ui:** draw every menu and select row at 36px ([#34699](https://github.com/vm0-ai/okou/issues/34699)) ([34309b1](https://github.com/vm0-ai/okou/commit/34309b1610f5e2c0c8871e78ed259718b161bbdd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.0
+    * @okouai/core bumped to 8.673.0
+    * @okouai/ui bumped to 1.9.3
+
 ## [0.906.1](https://github.com/vm0-ai/okou/compare/app-v0.906.0...app-v0.906.1) (2026-09-16)
 
 

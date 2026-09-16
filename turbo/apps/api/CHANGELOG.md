@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.614.0](https://github.com/vm0-ai/okou/compare/api-v1.613.0...api-v1.614.0) (2026-09-16)
+
+
+### Features
+
+* **api:** prepare native morning brief preferences in settings ([#34702](https://github.com/vm0-ai/okou/issues/34702)) ([ab9ffb7](https://github.com/vm0-ai/okou/commit/ab9ffb7dbb0f93721ef0593be0685d7df220e071))
+
+
+### Bug Fixes
+
+* **api:** fence chat search projection during account erasure ([#34706](https://github.com/vm0-ai/okou/issues/34706)) ([7f76194](https://github.com/vm0-ai/okou/commit/7f7619425f364191dd34affccc9a6fc6800b1776))
+* **api:** recheck email outbox expiry at the provider boundary ([#34704](https://github.com/vm0-ai/okou/issues/34704)) ([6852583](https://github.com/vm0-ai/okou/commit/685258305465a8f44e293cb15c0692fe33958911)), closes [#34695](https://github.com/vm0-ai/okou/issues/34695)
+* **runner:** fairly drain deferred releases ([#34705](https://github.com/vm0-ai/okou/issues/34705)) ([cfb147f](https://github.com/vm0-ai/okou/commit/cfb147f636c01278232aeebe50f8aa98f2402794))
+
+
+### Refactoring
+
+* move detailed social prompt guidance into cli help ([#34694](https://github.com/vm0-ai/okou/issues/34694)) ([165a4a5](https://github.com/vm0-ai/okou/commit/165a4a536779b39d2fd1b09cceaebd9b2a354455))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.452.0
+    * @okouai/core bumped to 8.673.0
+    * @okouai/db bumped to 1.269.0
+    * @okouai/pi-agent-runtime bumped to 1.32.4
+
 ## [1.613.0](https://github.com/vm0-ai/okou/compare/api-v1.612.0...api-v1.613.0) (2026-09-16)
 
 
