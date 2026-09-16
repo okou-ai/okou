@@ -156,6 +156,18 @@
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
 
+  /* Avatar maker. The option grid staggers its tiles, the dice spins once when
+     a random face is rolled, and each firework particle travels to its own
+     offset. Registered here on the same contract as the entries above; the row
+     sets each tile's delay inline, because `animate-*` compiles to the
+     `animation` shorthand and a shorthand resets a separate `animation-delay`
+     back to zero. The particle's `--fx` / `--fy` stay per-instance runtime data
+     that the component sets. Keyframes stay below. */
+  --animate-avatar-option-appear: avatar-option-appear 0.2s ease-out both;
+  --animate-avatar-option-appear-fast: avatar-option-appear 0.15s ease-out;
+  --animate-avatar-dice-spin: avatar-dice-spin 0.6s ease-out;
+  --animate-avatar-firework: avatar-firework 0.6s ease-out forwards;
+
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
      and its shared hairline rather than a competing value for it: an
@@ -464,6 +476,44 @@ body {
   }
 }
 
+@keyframes avatar-option-appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes avatar-dice-spin {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  30% {
+    transform: rotate(180deg) scale(1.3);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+@keyframes avatar-firework {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  70% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--fx)), calc(-50% + var(--fy)))
+      scale(0.3);
+  }
+}
+
 @keyframes okou-composer-rail-item-in {
   from {
     opacity: 0;
@@ -669,34 +719,6 @@ body {
   --okou-composer-focus-veil: none;
 }
 
-/* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }}
-
-   Do not delete this rule yet, and do not trust the tooling about it. Its last
-   consumer is `tileBorderClass()` in `buy-credits-section.tsx`, which returns
-   the class from a function instead of spelling it in a `className` attribute.
-   Neither guard can see that: the legacy baseline resolves attributes and
-   constants, and `no-unknown-classes` is scoped to `class` / `className` /
-   `contentClassName`. So the baseline records no consumers, and removing this
-   rule and running the `pnpm lint:style:prune` that the resulting failure tells
-   you to run leaves a fully green tree while those preset tiles silently lose
-   their border.
-
-   That consumer is also not mechanically replaceable. This rule is unlayered,
-   so its `border` shorthand outranks every Tailwind utility regardless of
-   specificity — including the `hover:border-muted-foreground/30` beside it,
-   which therefore has never painted. Swapping the class in activates that
-   hover, so retiring it is a visual decision rather than an equivalence. See
-   "The all-round hairline" in docs/styles.md. */
-.okou-border {
-  border: 0.7px solid hsl(var(--gray-400));
-}
-
-/* Avatar / logo thumbnails: a hairline lighter than okou-border, so the edge of
-   a picture stays readable without the stroke reading as a frame. */
-.okou-thumb-border {
-  border: 0.5px solid hsl(var(--gray-400));
-}
-
 /* The travel a sidebar thread title is scrolled by while its row is hovered or
    focused. `ChatThreadItemTitle` composes the mask and the travel as Tailwind
    utilities and reads this property from both; it is registered here because a
@@ -709,8 +731,6 @@ body {
   inherits: true;
   initial-value: 0px;
 }
-
-/* Morandi outline buttons */
 
 @layer base {
   *,
@@ -1036,7 +1056,7 @@ body {
   width: 100%;
   display: table;
   overflow: hidden;
-  border: 0.7px solid hsl(var(--gray-400));
+  border: var(--default-border-width) solid hsl(var(--gray-400));
   border-radius: 8px;
 }
 
@@ -1088,7 +1108,7 @@ body {
   max-width: 100%;
   width: 100%;
   box-sizing: border-box;
-  border: 0.7px solid hsl(var(--gray-400));
+  border: var(--default-border-width) solid hsl(var(--gray-400));
   border-radius: 8px;
 }
 

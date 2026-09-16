@@ -110,11 +110,11 @@ One hairline serves the whole product. `--default-border-width` in the shared
 `@theme` is 0.5px, and Tailwind's bare `border`, `border-t`, `border-x`,
 `divide-y`, and their siblings all read it, so a component asks for "a border"
 and the system decides how thick it is. Components must not hand-write a width:
-an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style`
-prop, is a second registry for a decision this token already owns. `border-0`
-and the deliberate emphasis widths such as `border-2` stay available, because
-they express a different decision rather than a competing value for the same
-one.
+an arbitrary bracketed width, or a literal width inside a `style` prop, is a
+second registry for a decision this token already owns, and the two round to
+different device-pixel counts wherever the device scale is odd. `border-0` and
+the deliberate emphasis widths such as `border-2` stay available, because they
+express a different decision rather than a competing value for the same one.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
 device pixel where 1px paints two, so every bare border carries half the ink it
@@ -546,21 +546,6 @@ for this decision — the page-surface and badge tables above point at it — so
 these consumers take it rather than the raw `border-gray-400` ramp stop the
 horizontal rules kept. `border-border` would be wrong here: `--border` is
 `--gray-300`, one stop lighter.
-
-`okou-border` and `okou-thumb-border` are the two first-party class selectors
-still in the App stylesheet, and they are the last entries in the legacy
-baseline's CSS atoms. `okou-thumb-border` is a 0.5px hairline one step lighter
-than `okou-border`, so the edge of a thumbnail stays readable without the stroke
-reading as a frame.
-
-Draining `okou-border` is a visual decision rather than an equivalence.
-`buy-credits-section.tsx` reaches for it from a function that returns a class
-string rather than from a `className` attribute, so neither the legacy baseline
-nor `no-unknown-classes` counts that consumer. The selector is unlayered, so its
-`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on
-the same element and that hover color never paints; replacing the class
-activates it. Deciding between keeping a hover the tile has never had and
-deleting a utility the consumer spells is reviewed separately.
 
 ### Top-edge clearance
 
