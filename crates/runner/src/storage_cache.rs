@@ -183,7 +183,6 @@ struct FreshDeliveryScanSummary {
     unknown_size_count: usize,
     per_run: bool,
     runner_wide: bool,
-    scan_limit: bool,
 }
 
 impl FreshDeliveryScanSummary {
@@ -209,7 +208,6 @@ impl FreshDeliveryScanSummary {
             unknown_size_count,
             per_run: false,
             runner_wide: false,
-            scan_limit: false,
         }
     }
 
@@ -242,11 +240,7 @@ impl FreshDeliveryScanSummary {
         }
 
         let mut recorded_stop = false;
-        for (observed, outcome) in [
-            (self.per_run, "per_run"),
-            (self.runner_wide, "runner_wide"),
-            (self.scan_limit, "scan_limit"),
-        ] {
+        for (observed, outcome) in [(self.per_run, "per_run"), (self.runner_wide, "runner_wide")] {
             if observed {
                 telemetry.record_bounded_outcome(
                     STORAGE_CACHE_FRESH_DELIVERY_SCAN_STOP,
@@ -6368,11 +6362,6 @@ mod tests {
             "none",
             None,
         );
-        assert!(!outcome_ops.iter().any(|(action, _, outcome, _)| {
-            action == STORAGE_CACHE_FRESH_DELIVERY_SCAN_STOP
-                && outcome.as_deref() == Some("scan_limit")
-        }));
-
         first.cancel_and_drain(&mut telemetry).await;
         second.cancel_and_drain(&mut telemetry).await;
         third.cancel_and_drain(&mut telemetry).await;
