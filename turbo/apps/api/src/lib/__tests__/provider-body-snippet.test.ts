@@ -15,9 +15,9 @@ describe("providerBodySnippet", () => {
   it("bounds a long body instead of carrying the whole document", () => {
     const snippet = providerBodySnippet("upstream connect error. ".repeat(50));
 
+    // The retained slice plus its truncation mark, never the whole document.
     expect(snippet).toHaveLength(201);
-    expect(snippet?.endsWith("…")).toBe(true);
-    expect(snippet?.startsWith("upstream connect error.")).toBe(true);
+    expect(snippet).toMatch(/^upstream connect error\..*…$/su);
   });
 
   it("redacts a presigned URL the provider echoed back", () => {
