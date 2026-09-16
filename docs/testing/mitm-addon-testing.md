@@ -87,6 +87,14 @@ generation changes. `test_addon_configuration.py` verifies JSONL initialization
 precedes control readiness. Rust's `proxy::control` and `proxy::process` tests
 cover bounded clients plus startup/restart/cleanup with the embedded Python server.
 
+`test_registry_control.py` verifies actual registry/catalog identities, partial
+rejection and omission summaries, owner-loop application, cached status, and
+independent log/status progress while a registry read is blocked. Deadline or
+disconnect does not release application admission. The auth-revalidation suite
+also applies changes through control while old credential resolution is pending.
+Rust's `proxy::registry_application` tests exercise strict receipts and a real
+Python registry owner from the locked addon environment.
+
 Run the standalone-artifact suite from the repository root:
 
 ```bash
@@ -103,6 +111,9 @@ a fresh generation without contacting platform or model APIs. It also generates
 a network record through a real firewall-denied HTTP request, unregisters the
 sandbox, and verifies `logs.flush` and the original log bytes. CI runs it on both
 x86_64 and aarch64 and includes it in the Crates gate.
+The suite also applies a builtin registry/catalog, verifies their returned
+identities and the subsequent HTTP denial, then verifies unavailable-registry
+enforcement after a rejected application.
 
 ### Flow metadata key contract check
 

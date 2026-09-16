@@ -126,15 +126,13 @@ test("Keep a generic assistant failure readable", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  const heading = await screen.findByRole("heading", {
+  click(await findButton("View details"));
+  const errorMessage = await screen.findByRole("dialog");
+  const heading = await within(errorMessage).findByRole("heading", {
     level: 2,
     name: "Release failed",
   });
   expect(heading).toBeVisible();
-  const errorMessage = heading.closest("[data-chat-scroll-anchor-event-id]");
-  if (!(errorMessage instanceof HTMLElement)) {
-    throw new Error("Rendered assistant failure was not available");
-  }
   expect(within(errorMessage).getByText("review these steps").tagName).toBe(
     "STRONG",
   );
@@ -146,7 +144,9 @@ test("Keep a generic assistant failure readable", async () => {
     "href",
     "https://status.okou.ai/incidents/release",
   );
-  expect(screen.queryByText(/## Release failed/u)).not.toBeInTheDocument();
+  expect(
+    within(errorMessage).queryByText(/## Release failed/u),
+  ).not.toBeInTheDocument();
 });
 
 test("Hide rejected system-generated goal and workflow continuations", async () => {

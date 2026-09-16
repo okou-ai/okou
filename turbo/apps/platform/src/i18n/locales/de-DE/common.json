@@ -1759,7 +1759,11 @@
       "upgradeToRun": "Auf Pro upgraden, um {{assistantName}} auszuführen",
       "upgradeWorkspace": "Arbeitsbereich upgraden"
     },
+    "cards": {
+      "viewDetails": "Details ansehen"
+    },
     "composer": {
+      "add": "Hinzufügen",
       "agentSuggestions": "Agenten",
       "configureModel": "Modell konfigurieren",
       "create": {
@@ -6026,7 +6030,6 @@
         "loading": "Morning-Brief-Einstellungen werden geladen...",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
-        "multipleInstallations": "Es sind mehrere Morning-Brief-Installationen vorhanden. Beheben Sie den Konflikt, bevor Sie diese Einstellung ändern.",
         "nextBrief": "Nächstes Briefing {{date}} ({{timezone}})",
         "paused": "Pausiert",
         "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",
@@ -6297,7 +6300,7 @@
       "summary_other": "{{count}} Access-Konfigurationen",
       "title": "Cloudflare Access",
       "tokenHelp": "Verwenden Sie ein Service-Token, das die Service-Auth-Richtlinie Ihrer SSH-Anwendung zulässt. Es ist unabhängig von Ihrer SSH-Anmeldung.",
-      "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar. Geschützte Hosts können keine Verbindung herstellen; direkte Hosts sind nicht betroffen.",
+      "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar.",
       "usedBy_one": "Von {{count}} Host verwendet:",
       "usedBy_other": "Von {{count}} Hosts verwendet:"
     },

@@ -4,6 +4,7 @@ import { HttpResponse, http } from "msw";
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
   type BillingStatusResponse,
+  type UsagePackCreditsResponse,
   USAGE_PACKS_USD,
   billingCheckoutContract,
   billingUsagePackCatalogContract,
@@ -16069,6 +16070,29 @@ describe("usage pack allocation management", () => {
 });
 
 describe("POST /api/billing/checkout/complete", () => {
+  function normalizeCreditGrants(
+    credits: UsagePackCreditsResponse,
+  ): UsagePackCreditsResponse {
+    return {
+      ...credits,
+      creditGrants: [...credits.creditGrants].sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      }),
+      ...(credits.memberCredits === undefined
+        ? {}
+        : {
+            memberCredits: credits.memberCredits.map((member) => {
+              return {
+                ...member,
+                creditGrants: [...member.creditGrants].sort((a, b) => {
+                  return a.id.localeCompare(b.id);
+                }),
+              };
+            }),
+          }),
+    };
+  }
+
   beforeEach(() => {
     setTierPrices();
   });
@@ -16290,8 +16314,9 @@ describe("POST /api/billing/checkout/complete", () => {
       await expect(readBillingStatus(fixture)).resolves.toStrictEqual(
         statusBeforeWebhook,
       );
-      expect((await readCredits()).body).toStrictEqual(
-        creditsBeforeWebhook.body,
+      // Equal creation timestamps do not define a stable grant order.
+      expect(normalizeCreditGrants((await readCredits()).body)).toStrictEqual(
+        normalizeCreditGrants(creditsBeforeWebhook.body),
       );
     },
   );

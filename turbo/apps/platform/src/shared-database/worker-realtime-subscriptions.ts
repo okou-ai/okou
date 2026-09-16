@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 
 import { setAblyPayloadLoop$ } from "../signals/realtime.ts";
-import { resetSignal, settle } from "../signals/utils.ts";
+import { resetSignal } from "../signals/utils.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
 import {
   serializeSharedDatabaseError,
@@ -206,31 +206,28 @@ function createWorkerRealtimeSubscriptionGraph({
   const forward$ = command(({ set }, payload: unknown, signal: AbortSignal) => {
     return set(forwardWorkerRealtimeSubscriptionMessage$, key, payload, signal);
   });
-  const run$ = command(async ({ set }, signal: AbortSignal): Promise<void> => {
-    const result = await settle(
-      set(
-        setAblyPayloadLoop$,
-        {
-          scope,
-          topic,
-          loopCommand$: forward$,
-          includeMessage: true,
-          options: {
-            onSubscribed: () => {
-              set(markWorkerRealtimeSubscriptionReady$, key, signal);
-            },
-            onResync: () => {
-              set(forwardWorkerRealtimeResync$, key, signal);
-            },
+  const run$ = command(({ set }, signal: AbortSignal): void => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        scope,
+        topic,
+        loopCommand$: forward$,
+        includeMessage: true,
+        options: {
+          onSubscribed: () => {
+            set(markWorkerRealtimeSubscriptionReady$, key, signal);
+          },
+          onResync: () => {
+            set(forwardWorkerRealtimeResync$, key, signal);
+          },
+          onError: (error) => {
+            set(failWorkerRealtimeSubscription$, key, error, signal);
           },
         },
-        signal,
-      ),
+      },
       signal,
     );
-    if (!result.ok && !signal.aborted) {
-      set(failWorkerRealtimeSubscription$, key, result.error, signal);
-    }
   });
   return { resetSubscription$, run$ };
 }
@@ -273,7 +270,7 @@ export const startWorkerRealtimeSubscription$ = command(
     connectionId: ConnectionId,
     message: RealtimeSubscribeMessage,
     signal: AbortSignal,
-  ): Promise<void> | null => {
+  ): void => {
     set(requireConnectionSignal$, connectionId, signal);
     const key = workerRealtimeSubscriptionKey(message.scope, message.topic);
     const subscriberKey = realtimeSubscriberKey(
@@ -312,7 +309,7 @@ export const startWorkerRealtimeSubscription$ = command(
       if (updated.ready) {
         set(sendRealtimeSubscribed$, subscriber);
       }
-      return null;
+      return;
     }
 
     const parentSignal = get(rootSignal$);
@@ -339,6 +336,6 @@ export const startWorkerRealtimeSubscription$ = command(
       return replaceWorkerRealtimeSubscription(state, key, subscription);
     });
     signal.addEventListener("abort", subscriber.onAbort, { once: true });
-    return set(graph.run$, subscriptionSignal);
+    set(graph.run$, subscriptionSignal);
   },
 );

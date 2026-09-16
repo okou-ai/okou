@@ -47,6 +47,7 @@ type TerminalRunValues = Readonly<
     Pick<
       AgentRunWrite,
       | "creditAdmitted"
+      | "runnerCancellationMode"
       | "error"
       | "failureReason"
       | "result"

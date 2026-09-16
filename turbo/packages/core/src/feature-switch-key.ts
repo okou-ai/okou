@@ -7,7 +7,6 @@ export enum FeatureSwitchKey {
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
-  SessionOutputStreaming = "sessionOutputStreaming",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
@@ -59,7 +58,6 @@ export enum FeatureSwitchKey {
   TelegramDmSessions = "_telegramDmSessions",
   CustomConnectorMcp = "customConnectorMcp",
   SshAccess = "sshAccess",
-  CloudflareAccess = "cloudflareAccess",
   PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
@@ -78,4 +76,5 @@ export enum FeatureSwitchKey {
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   GetStartedQuests = "getStartedQuests",
+  ComposerAddMenu = "composerAddMenu",
 }

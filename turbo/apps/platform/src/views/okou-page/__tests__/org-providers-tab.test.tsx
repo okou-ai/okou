@@ -1,9 +1,10 @@
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import type {
-  OrgModelPoliciesResponse,
-  UpdateOrgModelPoliciesRequest,
-  ModelProviderResponse,
-  OrgModelPolicy,
+import {
+  getCanonicalModelDisplayName,
+  type OrgModelPoliciesResponse,
+  type UpdateOrgModelPoliciesRequest,
+  type ModelProviderResponse,
+  type OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
@@ -202,7 +203,6 @@ function billingStatus(
   modelCapabilities?: {
     readonly supportByok?: boolean;
     readonly restrictedBuiltInModels?: boolean;
-    readonly restrictedVm0Models?: boolean;
   },
 ): BillingStatusResponse {
   return {
@@ -232,16 +232,6 @@ function billingStatus(
 function mockBillingCapabilities(modelCapabilities: {
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-}): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus("pro", modelCapabilities));
-  });
-}
-
-/** Billing status as an API from before #33658 step 1 returns it. */
-function mockLegacyBillingCapabilities(modelCapabilities: {
-  readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
 }): void {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, billingStatus("pro", modelCapabilities));
@@ -1118,39 +1108,6 @@ test("Offer an upgrade for restricted Pro models", async () => {
   });
 });
 
-test("Offer an upgrade for restricted Pro models from an API before the rename", async () => {
-  mockAdminOrg();
-  mockLegacyBillingCapabilities({
-    supportByok: false,
-    restrictedVm0Models: true,
-  });
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000221",
-      "claude-fable-5-1",
-      "Claude Fable 5.1",
-      false,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000222",
-      "gpt-5.6-luna",
-      "GPT 5.6 Luna",
-      true,
-    ),
-  ]);
-  await openModelSettings();
-
-  const defaultRow = screen.getByTestId("default-model-row");
-  click(within(defaultRow).getByRole("combobox"));
-
-  // The restriction can only come from the retired alias, so seeing the Pro
-  // affordance proves the page honored it.
-  await expect(
-    screen.findByRole("option", { name: /Claude Fable 5.*Pro/u }),
-  ).resolves.toBeInTheDocument();
-});
-
 test("Offer a plan change when bring-your-own-key is unavailable", async () => {
   mockAdminOrg();
   mockBillingCapabilities({
@@ -1457,7 +1414,7 @@ function enabledPolicySnapshot(): OrgModelPoliciesResponse {
   };
 }
 
-test("Enabled priority keeps legacy subscription rows truthful and submits their original administrative revision", async () => {
+function mockPriorityPolicyWrites() {
   mockAdminOrg();
   let snapshot = enabledPolicySnapshot();
   let submitted: UpdateOrgModelPoliciesRequest | undefined;
@@ -1466,17 +1423,40 @@ test("Enabled priority keeps legacy subscription rows truthful and submits their
   });
   context.mocks.api(modelPoliciesMainContract.update, ({ body, respond }) => {
     submitted = body;
+    expect(body.revision).toBe(snapshot.revision);
+    const policies = body.policies.map((policy) => {
+      const previous = snapshot.policies.find((existing) => {
+        return existing.model === policy.model;
+      });
+      return {
+        ...builtInPolicy(
+          previous?.id ?? crypto.randomUUID(),
+          policy.model,
+          getCanonicalModelDisplayName(policy.model),
+          policy.isDefault,
+        ),
+        ...policy,
+      };
+    });
+    const defaultPolicy = policies.find((policy) => {
+      return policy.isDefault;
+    });
     snapshot = {
-      ...snapshot,
-      revision: "administrative-snapshot-two",
-      workspaceDefaultModel: "gpt-6-astra",
-      workspaceDefaultPolicyId: "00000000-0000-4000-a000-000000000212",
-      policies: snapshot.policies.map((policy) => {
-        return { ...policy, isDefault: policy.model === "gpt-6-astra" };
-      }),
+      revision: crypto.randomUUID(),
+      writePreconditionRequired: true,
+      workspaceDefaultModel: defaultPolicy?.model ?? null,
+      workspaceDefaultPolicyId: defaultPolicy?.id ?? null,
+      policies,
     };
     return respond(200, snapshot);
   });
+  return () => {
+    return submitted;
+  };
+}
+
+test("Enabled priority adds a subscription while preserving the displayed defaults and revision", async () => {
+  const submitted = mockPriorityPolicyWrites();
   await openProvidersTab();
   const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
   expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
@@ -1485,7 +1465,7 @@ test("Enabled priority keeps legacy subscription rows truthful and submits their
   await expect(
     screen.findByText("Model provider settings updated"),
   ).resolves.toBeInTheDocument();
-  expect(submitted).toMatchObject({
+  expect(submitted()).toMatchObject({
     revision: "administrative-snapshot-one",
     policies: [
       {
@@ -1507,11 +1487,75 @@ test("Enabled priority keeps legacy subscription rows truthful and submits their
   await selectDialogModel("Claude Opus 4.8");
   const dialog = screen.getByRole("dialog", { name: "Add model" });
   expect(radioByName(/Built-in/u, dialog)).toBeInTheDocument();
+  expect(radioByName(/Claude subscription/u, dialog)).toBeEnabled();
+  click(radioByName(/Claude subscription/u, dialog));
+  click(buttonByText("Add model", dialog));
+  const added = await screen.findByTestId(
+    "org-model-policy-row-claude-opus-4-8",
+  );
   expect(
-    queryAllByRoleFast("radio", dialog).some((radio) => {
-      return radio.textContent?.includes("subscription");
+    within(added).getByText("Claude Code (OAuth token)"),
+  ).toBeInTheDocument();
+  expect(submitted()?.policies).toContainEqual(
+    expect.objectContaining({
+      model: "claude-opus-4-8",
+      defaultProviderType: "claude-code-oauth-token",
+      credentialScope: "member",
+      isDefault: false,
     }),
-  ).toBeFalsy();
+  );
+
+  expect(
+    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
+  ).toHaveTextContent("GPT 6 Astra");
+});
+
+test("Enabled priority changes an API route to Subscription and keeps that choice editable", async () => {
+  const submitted = mockPriorityPolicyWrites();
+  await openProvidersTab();
+  await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
+  const luna = screen.getByTestId("org-model-policy-row-gpt-5.6-luna");
+  click(within(luna).getByLabelText("Actions for GPT 5.6 Luna"));
+  click(menuItemByText("Edit model"));
+  const edit = await screen.findByRole("dialog", { name: "Edit model" });
+  expect(radioByName(/Codex subscription/u, edit)).toBeEnabled();
+  click(radioByName(/Codex subscription/u, edit));
+  click(buttonByText("Save changes", edit));
+  await expect(
+    within(luna).findByText("ChatGPT (Codex)"),
+  ).resolves.toBeInTheDocument();
+  expect(submitted()?.policies).toContainEqual(
+    expect.objectContaining({
+      model: "gpt-5.6-luna",
+      defaultProviderType: "codex-oauth-token",
+      credentialScope: "member",
+      isDefault: true,
+    }),
+  );
+
+  click(within(luna).getByLabelText("Actions for GPT 5.6 Luna"));
+  click(menuItemByText("Edit model"));
+  const subscriptionEdit = await screen.findByRole("dialog", {
+    name: "Edit model",
+  });
+  expect(radioByName(/Codex subscription/u, subscriptionEdit)).toBeEnabled();
+  expect(radioByName(/Codex subscription/u, subscriptionEdit)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  // An administrator can change their choice and return to Subscription before saving.
+  click(radioByName(/Built-in/u, subscriptionEdit));
+  click(radioByName(/Codex subscription/u, subscriptionEdit));
+  click(buttonByText("Save changes", subscriptionEdit));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Edit model" }),
+    ).not.toBeInTheDocument();
+    expect(within(luna).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  });
+  expect(
+    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
+  ).toHaveTextContent("GPT 5.6 Luna");
 });
 
 test("A stale settings save displays refresh guidance and leaves the displayed legacy route intact", async () => {

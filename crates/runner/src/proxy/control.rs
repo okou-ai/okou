@@ -7,7 +7,8 @@
 use std::io;
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -17,6 +18,34 @@ use uuid::Uuid;
 
 const MAX_FRAME_BYTES: usize = 64 * 1024;
 pub(super) const SOCKET_NAME: &str = "control.sock";
+
+#[derive(Clone, Debug)]
+pub(super) struct ControlTarget {
+    pub directory: PathBuf,
+    pub generation: String,
+}
+
+/// Short launch lookup only; no I/O or operation waits hold this lock.
+#[derive(Clone, Default)]
+pub(super) struct ControlHandle {
+    target: Arc<Mutex<Option<ControlTarget>>>,
+}
+
+impl ControlHandle {
+    pub fn set_target(&self, target: Option<ControlTarget>) {
+        *self
+            .target
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = target;
+    }
+
+    pub fn target(&self) -> Option<ControlTarget> {
+        self.target
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +83,9 @@ enum ErrorCode {
     StaleGeneration,
     UnknownMethod,
     Busy,
+    NotReady,
+    Deadline,
+    InternalError,
 }
 
 #[derive(Deserialize)]

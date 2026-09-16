@@ -56,7 +56,7 @@ use super::api::{ApiClient, ConnectorRuntimeSyncOutcome};
 use crate::error::RunnerError;
 use crate::ids::RunId;
 use crate::proxy::{
-    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimeRegistryUpdate,
+    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistryUpdate,
     CustomConnectorRuntimeRegistryState, ProxyRegistryHandle,
 };
 use crate::types::{
@@ -1135,7 +1135,13 @@ impl ConnectorRuntimeSyncCore {
                     if prepared_publications.is_empty() {
                         drop(active_runs);
                         drop(transaction);
-                        (prepared_publications, Ok(Some(Vec::new())))
+                        (
+                            prepared_publications,
+                            Ok(Some(ConnectorRuntimePublication {
+                                outcomes: Vec::new(),
+                                publication: None,
+                            })),
+                        )
                     } else {
                         let updates = prepared_publications
                             .iter()
@@ -1155,8 +1161,13 @@ impl ConnectorRuntimeSyncCore {
                 Err(error) => (prepared_publications, Err(error)),
             };
             match publication {
-                Ok(Some(outcomes)) => {
-                    for (prepared, published) in prepared_publications.into_iter().zip(outcomes) {
+                Ok(Some(result)) => {
+                    if let Some(receipt) = result.publication {
+                        receipt.observe().await;
+                    }
+                    for (prepared, published) in
+                        prepared_publications.into_iter().zip(result.outcomes)
+                    {
                         if !published {
                             warn!(
                                 run_id = %run_id,
@@ -1266,8 +1277,11 @@ impl ConnectorRuntimeSyncCore {
             Err(error) => Err(error),
         };
         match publication {
-            Ok(Some(outcomes)) => {
-                for (target, outcome) in targets.iter().zip(outcomes) {
+            Ok(Some(result)) => {
+                if let Some(receipt) = result.publication {
+                    receipt.observe().await;
+                }
+                for (target, outcome) in targets.iter().zip(result.outcomes) {
                     if let ConnectorRuntimeFailCloseOutcome::Failed(error) = outcome {
                         warn!(
                             run_id = %run_id,
@@ -3175,6 +3189,90 @@ mod tests {
     async fn cancelled_sync_caller_retains_in_flight_registry_publications() {
         for terminal in [false, true] {
             assert_cancelled_publication_preserves_unregister(terminal, true).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn stalled_application_reply_releases_locks_and_preserves_replacement() {
+        use std::os::unix::fs::PermissionsExt;
+
+        for terminal in [false, true] {
+            let server = MockServer::start();
+            let run_id = RunId::nil();
+            let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
+            let (_dir, registry, registry_path, lock_path) =
+                registered_slack_registry(run_id).await;
+            let control_dir = tempfile::Builder::new()
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir()
+                .unwrap();
+            let listener =
+                tokio::net::UnixListener::bind(control_dir.path().join("control.sock")).unwrap();
+            registry.set_control_target_for_test(
+                control_dir.path().to_path_buf(),
+                "generation-1".into(),
+            );
+            handle
+                .register_run(ConnectorRuntimeSyncRegistration {
+                    run_id,
+                    source_ip: "10.200.0.2",
+                    registry: registry.clone(),
+                    targets: &[builtin_runtime_target_registration("slack")],
+                    refreshes: None,
+                })
+                .await;
+            mock_publication_response(&server, run_id, terminal);
+            let core = handle.core.clone();
+            let sync = tokio::spawn(async move {
+                core.sync_builtin_connector_runtime_now(run_id, vec!["slack".to_string()])
+                    .await;
+            });
+            let (mut peer, _) =
+                tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, listener.accept())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let size = peer.read_u32().await.unwrap();
+            let mut bytes = vec![0; size as usize];
+            peer.read_exact(&mut bytes).await.unwrap();
+            let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(request["method"], "registry.apply");
+            let committed = tokio::fs::read(&registry_path).await.unwrap();
+            let lock = crate::lock::try_acquire_or_busy(lock_path).await.unwrap();
+            assert!(
+                matches!(lock, crate::lock::TryLock::Acquired(_)),
+                "receipt wait must release publication ownership"
+            );
+            drop(lock);
+
+            // Re-registration must finish while the old addon reply is withheld.
+            let (_replacement_dir, replacement_path) = tokio::time::timeout(
+                SYNC_PUBLICATION_TEST_TIMEOUT,
+                register_slack_run(&handle, run_id),
+            )
+            .await
+            .expect("receipt wait must release active-run state");
+            let replacement_before = tokio::fs::read(&replacement_path).await.unwrap();
+            drop(peer); // Ambiguous result: do not replay publication or retry sync.
+            tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, sync)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(tokio::fs::read(registry_path).await.unwrap(), committed);
+            assert_eq!(
+                tokio::fs::read(replacement_path).await.unwrap(),
+                replacement_before
+            );
+            let active_runs = handle.core.inner.active_runs.lock().await;
+            let replacement = &active_runs[&run_id];
+            assert!(!replacement.cancel.is_cancelled());
+            assert!(replacement.sync_tasks.is_empty());
+            assert_eq!(
+                replacement.connectors[&builtin_target("slack")].consecutive_failures,
+                0
+            );
+            drop(active_runs);
+            handle.shutdown().await;
         }
     }
 

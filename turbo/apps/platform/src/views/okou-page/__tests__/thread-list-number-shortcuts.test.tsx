@@ -6,6 +6,7 @@ import {
   click,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -96,7 +97,8 @@ async function openNumberShortcutPage(
     threads,
     chatListRemoteGate: remoteChatList.promise,
   });
-  await setupPage({
+  // Exercise cached shortcuts while canonical synchronization is pending.
+  await startPage({
     context,
     path:
       initialChat === "ninth"

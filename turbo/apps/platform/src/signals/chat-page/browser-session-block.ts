@@ -47,7 +47,7 @@ export interface BrowserSessionSignals extends BrowserSessionDescriptor {
   readonly close$: Command<Promise<void>, [AbortSignal]>;
   readonly fitViewport$: Command<Promise<void>, [AbortSignal]>;
   readonly syncFitActionVisibility$: Command<void, []>;
-  readonly subscribe$: Command<Promise<void>, [AbortSignal]>;
+  readonly subscribe$: Command<void, [AbortSignal]>;
   readonly fitViewportRef$: Command<
     (() => void) | undefined,
     [HTMLDivElement | null]
@@ -404,19 +404,17 @@ function createBrowserSessionSubscriptionSignals(
       return false;
     },
   );
-  const subscribe$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      await set(
-        setAblyPayloadLoop$,
-        {
-          topic: "browserSessionChanged",
-          loopCommand$: onBrowserSessionChanged$,
-          initializeCommand$: reloadBrowserSession$,
-        },
-        signal,
-      );
-    },
-  );
+  const subscribe$ = command(({ set }, signal: AbortSignal): void => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "browserSessionChanged",
+        loopCommand$: onBrowserSessionChanged$,
+        initializeCommand$: reloadBrowserSession$,
+      },
+      signal,
+    );
+  });
   return { subscribe$ };
 }
 
@@ -467,44 +465,42 @@ export function createBrowserSessionSignals(
   );
 
   const keepAliveRef$ = onRef(
-    command(
-      async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-        await setLoop(
-          async () => {
-            const response = await accept(
-              get(apiClient$)(browserContract).leaseByThread({
-                params: { threadId: descriptor.threadId },
-                body: {},
-                fetchOptions: { signal },
-              }),
-              [200, 404, 409],
+    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+      setLoop(
+        async () => {
+          const response = await accept(
+            get(apiClient$)(browserContract).leaseByThread({
+              params: { threadId: descriptor.threadId },
+              body: {},
+              fetchOptions: { signal },
+            }),
+            [200, 404, 409],
+          );
+          if (response.status === 200) {
+            const currentSession = await get(session$);
+            signal.throwIfAborted();
+            set(
+              sessionOverride$,
+              currentSession
+                ? {
+                    ...response.body.browser,
+                    // Lease responses intentionally omit the provider live
+                    // URL, so retain the one loaded by the viewer endpoint.
+                    liveUrl: currentSession.liveUrl,
+                  }
+                : response.body.browser,
             );
-            if (response.status === 200) {
-              const currentSession = await get(session$);
-              signal.throwIfAborted();
-              set(
-                sessionOverride$,
-                currentSession
-                  ? {
-                      ...response.body.browser,
-                      // Lease responses intentionally omit the provider live
-                      // URL, so retain the one loaded by the viewer endpoint.
-                      liveUrl: currentSession.liveUrl,
-                    }
-                  : response.body.browser,
-              );
-              return false;
-            }
-            // The browser was reclaimed. Stop the heartbeat and let the panel
-            // offer a resume instead.
-            set(reload$);
-            return true;
-          },
-          LEASE_HEARTBEAT_INTERVAL_MS,
-          signal,
-        );
-      },
-    ),
+            return false;
+          }
+          // The browser was reclaimed. Stop the heartbeat and let the panel
+          // offer a resume instead.
+          set(reload$);
+          return true;
+        },
+        LEASE_HEARTBEAT_INTERVAL_MS,
+        signal,
+      );
+    }),
   );
 
   return {

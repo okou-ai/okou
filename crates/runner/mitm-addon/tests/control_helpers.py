@@ -74,3 +74,11 @@ def log_flush_request(
         "method": "logs.flush",
         "params": {"runId": run_id, "path": str(path)},
     }
+
+
+def registry_apply_request(digest: str, generation: str = "generation-1") -> dict[str, object]:
+    return status_request(generation) | {"method": "registry.apply", "params": {"digest": digest}}
+
+
+def registry_status_request(generation: str = "generation-1") -> dict[str, object]:
+    return status_request(generation) | {"method": "registry.status"}

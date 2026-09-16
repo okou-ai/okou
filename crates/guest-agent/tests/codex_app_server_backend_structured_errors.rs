@@ -40,7 +40,7 @@ async fn codex_app_server_classifies_supported_structured_errors()
         },
         StructuredErrorCase {
             scenario: "runtime-turn-failed-internal-server-error",
-            expected_reason: None,
+            expected_reason: Some(FailureReason::ProviderServerError),
         },
         StructuredErrorCase {
             scenario: "runtime-turn-failed-response-too-many-failed-attempts",
@@ -48,7 +48,7 @@ async fn codex_app_server_classifies_supported_structured_errors()
         },
         StructuredErrorCase {
             scenario: "runtime-turn-failed-unauthorized",
-            expected_reason: None,
+            expected_reason: Some(FailureReason::InvalidCredentials),
         },
         StructuredErrorCase {
             scenario: "runtime-turn-failed-unknown",

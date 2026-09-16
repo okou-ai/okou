@@ -7,6 +7,23 @@ import {
 import { projectPiApiAssistantMessage } from "./api-turn";
 
 describe("Pi API model failure diagnostics", () => {
+  it("classifies a truncated final answer but never successful or aborted answer text", () => {
+    const message = fauxAssistantMessage("Partial answer");
+    expect(
+      projectPiApiAssistantMessage({ ...message, stopReason: "length" })
+        .failureReason,
+    ).toBe("output_token_limit");
+    for (const stopReason of ["stop", "aborted"] as const) {
+      expect(
+        projectPiApiAssistantMessage({
+          ...message,
+          stopReason,
+          errorMessage:
+            "Our servers are currently overloaded. Please try again later.",
+        }).failureReason,
+      ).toBeUndefined();
+    }
+  });
   it.each([522, 525, 401, 403])(
     "retains observed HTTP %s without provider content",
     (status) => {
@@ -70,7 +87,9 @@ describe("Pi API model failure diagnostics", () => {
 
   it("keeps known product failures on the thrown request boundary", () => {
     const error = new PiApiModelRequestError(
-      new Error("usage_limit private sentinel"),
+      new Error(
+        '{"error":{"code":"usage_limit_reached","message":"private sentinel"}}',
+      ),
       "openai-codex",
       429,
     );

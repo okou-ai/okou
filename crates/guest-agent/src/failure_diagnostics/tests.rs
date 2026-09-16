@@ -1,6 +1,92 @@
 use super::*;
 use guest_contracts::diagnostics::{CliTerminationReason, CliTerminationSignal};
 
+#[test]
+fn provider_failure_contract_is_consistent_across_terminal_frameworks() {
+    #[derive(serde::Deserialize)]
+    struct Case {
+        message: String,
+        reason: Option<FailureReason>,
+    }
+    let cases: Vec<Case> = serde_json::from_str(include_str!(
+        "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/provider-failures.json"
+    ))
+    .unwrap();
+    for case in cases {
+        for (framework, source) in [
+            (AgentFramework::Pi, FailureDetailSource::PiResult),
+            (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+            (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+            ),
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, source, &case.message),
+                case.reason,
+                "framework={framework:?}, message={}",
+                case.message
+            );
+        }
+    }
+}
+
+#[test]
+fn new_provider_classification_does_not_match_unowned_output() {
+    for framework in [
+        AgentFramework::Pi,
+        AgentFramework::Codex,
+        AgentFramework::ClaudeCode,
+    ] {
+        for message in [
+            "Our servers are currently overloaded. Please try again later.",
+            r#"{"error":{"code":"rate_limit_exceeded"}}"#,
+            "API Error: 503 Service unavailable",
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, FailureDetailSource::Stderr, message),
+                None
+            );
+        }
+    }
+}
+
+#[test]
+fn terminal_provider_status_preserves_quota_precedence() {
+    for (framework, source) in [
+        (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+        ),
+    ] {
+        for (message, reason) in [
+            (
+                "API Error: 429 Too many requests",
+                FailureReason::ProviderRateLimited,
+            ),
+            (
+                "API Error: 529 Service unavailable",
+                FailureReason::ProviderOverloaded,
+            ),
+            (
+                "unexpected status 503 Service unavailable",
+                FailureReason::ProviderServerError,
+            ),
+            (
+                r#"API Error: 429 {"error":{"code":"insufficient_quota"}}"#,
+                FailureReason::ProviderInsufficientCredits,
+            ),
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, source, message),
+                Some(reason),
+                "{framework:?}: {message}"
+            );
+        }
+    }
+}
+
 struct SystemLogOverrideGuard;
 
 impl SystemLogOverrideGuard {
@@ -1804,6 +1890,29 @@ fn cli_failure_reason_prefers_message_classification_over_carried_reason() {
     let diagnostic = with_cli_failure_reason(diagnostic, &failure_message);
 
     assert_eq!(diagnostic.failure_reason, Some(FailureReason::UsageLimit));
+}
+
+#[test]
+fn selected_terminal_evidence_overrides_rewritten_quota_text() {
+    for (framework, source) in [
+        (AgentFramework::Pi, FailureDetailSource::PiResult),
+        (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+    ] {
+        let diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            framework,
+            PromptMetadata::from_prompt("hello"),
+        );
+        let failure_message = selected_failure_message(
+            "You have hit your ChatGPT usage limit.",
+            source,
+            Some(FailureReason::ProviderRateLimited),
+        );
+        assert_eq!(
+            with_cli_failure_reason(diagnostic, &failure_message).failure_reason,
+            Some(FailureReason::ProviderRateLimited)
+        );
+    }
 }
 
 #[test]

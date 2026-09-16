@@ -281,3 +281,21 @@ was sent. The necessary one-line correction uses quoted `$GITHUB_WORKSPACE`, as
 the repository's other container jobs already do. This scope deviation was
 documented in the PR before the edit. Gates, permissions, timeouts and runtime
 behavior are unchanged; the new HEAD requires new review and CI receipts.
+
+After explicit workflow approval, Turbo attempt 2 created jobs normally. Security
+[Workflow Lint job 104486454881](https://github.com/vm0-ai/okou/actions/runs/35000202935/job/104486454881)
+on `99bfddadf09769b45bcfba39a41233b3ed86534e` had independently failed with
+`FAIL: expected artifact lookup by exact name`. The runner-image test supplied
+`REPO=vm0-ai/vm0`, but the script correctly preferred the workflow's inherited
+`GITHUB_REPOSITORY=vm0-ai/okou`. Canonical main
+`d66a54b58030fac34ab25ad0f1035464edcca519` already contained the fixture isolation
+fix from #33878 and the checkout-path correction. This main was merged to resolve
+the evidenced CI failure, without changing the production script or weakening an
+assertion. The final PR diff contains only `ops/pi-memory-stage1` files.
+
+The first local targeted attempt was blocked by this sandbox's missing `/dev/fd`,
+before reaching the affected assertion. After restoring the standard local
+`/dev/fd` link, the old HEAD's exact test reproduced the same assertion failure
+and the canonical-main test passed with `GITHUB_REPOSITORY=vm0-ai/okou`. This local
+setup repair does not change repository files or production. New current-HEAD
+review and both layers of required CI remain separate evidence.

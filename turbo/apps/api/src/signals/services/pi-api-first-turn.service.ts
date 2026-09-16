@@ -1241,6 +1241,8 @@ function validateApiModelTurnOutcome(turn: PiApiFirstTurnResult): void {
     throw piApiFirstTurnError(
       "PI_API_MODEL_OUTPUT_INCOMPLETE",
       "Pi API first-turn model output is incomplete",
+      undefined,
+      "output_token_limit",
     );
   }
   if (

@@ -257,6 +257,7 @@ test("Leaving the page releases the active Mermaid artifact split view blob", as
 });
 
 test("Completed Mermaid diagrams remain accessible and inspectable", async () => {
+  const browser = context.mocks.browser.blobDownload();
   const chat = createMarkdownChatFixture(context);
   const renderGate = context.mocks.deferred<void>();
   const renderDiagram = mermaid.render.bind(mermaid);
@@ -274,7 +275,7 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
     diagramSource,
     "```",
   ].join("\n");
-  const rows = completedMessageRows(chat, source);
+  const rows = [chat.outputMessage("Preparing diagrams.", { seqId: 1 })];
   chat.install({
     rows: () => {
       return rows;
@@ -286,6 +287,13 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
     path: chat.path,
     host: "app.okou.ai",
   });
+  await expect(screen.findByText("Preparing diagrams.")).resolves.toBeVisible();
+
+  rows.push(
+    chat.outputMessage(source, { seqId: 2 }),
+    chat.runCompleted({ seqId: 3 }),
+  );
+  context.mocks.ably.trigger(chat.realtimeTopic);
 
   const pendingActions = await waitFor(() => {
     const actions = diagramButtons();
@@ -319,6 +327,17 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
       }),
     ).toBeTruthy();
   });
+  const urls = screen.getAllByRole("img", { name: "Diagram" }).map((image) => {
+    return image.getAttribute("src");
+  });
+  expect(new Set(urls).size).toBe(2);
+  for (const url of urls) {
+    if (!url) {
+      throw new Error("Expected an independently owned diagram image URL");
+    }
+    expect(browser.blobForUrl(url)?.type).toBe("image/svg+xml");
+    expect(browser.revokedUrls).not.toContain(url);
+  }
 });
 
 test("A streaming Mermaid diagram stays readable until complete", async () => {

@@ -1788,7 +1788,11 @@
       "upgradeToRun": "Passez à Pro pour exécuter {{assistantName}}",
       "upgradeWorkspace": "Mettez à niveau votre espace de travail"
     },
+    "cards": {
+      "viewDetails": "Voir les détails"
+    },
     "composer": {
+      "add": "Ajouter",
       "agentSuggestions": "Agents",
       "configureModel": "Configurer le modèle",
       "create": {
@@ -6087,7 +6091,6 @@
         "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
-        "multipleInstallations": "Plusieurs installations de Morning Brief existent. Résolvez le conflit avant de modifier cette préférence.",
         "nextBrief": "Prochaine synthèse {{date}} ({{timezone}})",
         "paused": "En pause",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
@@ -6359,7 +6362,7 @@
       "summary_other": "{{count}} configurations Access",
       "title": "Cloudflare Access",
       "tokenHelp": "Utilisez un Service Token autorisé par la politique Service Auth de votre application SSH. Il est indépendant de votre connexion SSH.",
-      "unavailable": "Cloudflare Access n’est pas disponible pour ce compte. Les hôtes protégés ne peuvent pas se connecter ; les hôtes directs ne sont pas affectés.",
+      "unavailable": "Cloudflare Access n’est pas disponible pour ce compte.",
       "usedBy_one": "Utilisée par {{count}} hôte :",
       "usedBy_many": "Utilisée par {{count}} hôtes :",
       "usedBy_other": "Utilisée par {{count}} hôtes :"

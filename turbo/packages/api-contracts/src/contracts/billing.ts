@@ -91,10 +91,10 @@ const billingStatusResponseSchema = z.object({
   showUsagePack: z.boolean(),
   autoRechargeAllowed: z.boolean(),
   supportByok: z.boolean(),
-  restrictedBuiltInModels: z.boolean().optional(),
-  // Retired brand alias of restrictedBuiltInModels, sent with an identical
-  // value from the same source while Apps older than this release are still
-  // installed. Remove once they are below the rollback floor: #33658 step 2.
+  restrictedBuiltInModels: z.boolean(),
+  // Retired brand alias of restrictedBuiltInModels, still emitted for Apps
+  // below 0.891.0 that read only this name. Drop it from the API and this
+  // schema once the App client-version floor reaches 0.891.0: #33658 step 2.
   restrictedVm0Models: z.boolean().optional(),
   videoGenerationAllowed: z.boolean(),
   workflowWebhookAutomationAllowed: z.boolean(),

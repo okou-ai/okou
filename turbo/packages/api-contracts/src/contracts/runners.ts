@@ -1581,6 +1581,57 @@ export const runnersJobClaimContract = c.router({
   },
 });
 
+export const runnerCancellationModeSchema = z.enum(["cooperative", "hard"]);
+export type RunnerCancellationMode = z.infer<
+  typeof runnerCancellationModeSchema
+>;
+
+const runCancellationIdentitySchema = z.object({
+  protocolVersion: z.literal(1),
+  runId: z.uuid(),
+});
+
+export const runnerCancellationResponseSchema = z.discriminatedUnion("state", [
+  runCancellationIdentitySchema
+    .extend({
+      state: z.literal("present"),
+      mode: runnerCancellationModeSchema.nullable(),
+    })
+    .strict(),
+  runCancellationIdentitySchema.extend({ state: z.literal("gone") }).strict(),
+  runCancellationIdentitySchema
+    .extend({ state: z.literal("unavailable") })
+    .strict(),
+]);
+export type RunnerCancellationResponse = z.infer<
+  typeof runnerCancellationResponseSchema
+>;
+
+export const runnersCancellationContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/runners/runs/:runId/cancellation",
+    headers: authHeadersSchema,
+    pathParams: z.object({ runId: z.uuid() }),
+    query: z
+      .object({
+        runnerGroup: runnerGroupSchema,
+        runnerId: z.uuid(),
+        heartbeatGeneration: z.coerce
+          .number()
+          .pipe(runnerHeartbeatGenerationSchema),
+      })
+      .strict(),
+    responses: {
+      200: runnerCancellationResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Read the stop intent or confirmed absence of a claimed Run",
+  },
+});
+
 export const runnersModelProviderFailuresContract = c.router({
   report: {
     method: "POST",

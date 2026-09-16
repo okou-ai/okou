@@ -6,7 +6,10 @@ import {
   type SessionOutputDelta,
   type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
-import type { RunnerPreference } from "@okouai/api-contracts/contracts/runners";
+import type {
+  RunnerPreference,
+  RunnerCancellationMode,
+} from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
 
 import { env } from "../../lib/env";
@@ -389,8 +392,6 @@ export async function publishOrgSignal(
   await channel.publish(topic, payload);
   L.debug(`Published "${topic}" to org:${orgId}`);
 }
-
-export type RunnerCancellationMode = "cooperative" | "hard";
 
 /**
  * Notify a runner-group channel that a run should halt. The runner subscribes

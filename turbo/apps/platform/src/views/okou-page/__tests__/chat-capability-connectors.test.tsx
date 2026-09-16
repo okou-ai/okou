@@ -277,8 +277,13 @@ test("Connect banking, grant access, continue, and revoke it", async () => {
   await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
 
   await readyChat();
-  const card = await screen.findByTestId("banking-action-card");
-  expect(within(card).getByText(purpose)).toBeVisible();
+  const summary = await screen.findByTestId("banking-action-card");
+  expect(within(summary).getByText(purpose)).toBeInTheDocument();
+  click(getButton("View details", summary));
+  const card = await screen.findByRole("dialog", {
+    name: "Banking access request",
+  });
+  expect(within(card).getByText(purpose)).toBeInTheDocument();
   click(getButton("Connect a bank", card));
 
   expect(popup.calls).toStrictEqual([

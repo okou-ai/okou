@@ -1759,7 +1759,11 @@
       "upgradeToRun": "{{assistantName}} रन करने के लिए प्रो में अपग्रेड करें",
       "upgradeWorkspace": "अपने वर्कस्पेस को अपग्रेड करें"
     },
+    "cards": {
+      "viewDetails": "विवरण देखें"
+    },
     "composer": {
+      "add": "जोड़ें",
       "agentSuggestions": "एजेंट",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
       "create": {
@@ -6026,7 +6030,6 @@
         "loading": "Morning Brief सेटिंग लोड हो रही हैं...",
         "missingDefaultAgent": "Morning Brief चालू करने से पहले उपयोग योग्य डिफ़ॉल्ट Agent चुनें।",
         "missingTimezone": "Morning Brief चालू करने से पहले एक मान्य समय क्षेत्र सेट करें।",
-        "multipleInstallations": "Morning Brief के कई इंस्टॉलेशन मौजूद हैं। इस प्राथमिकता को बदलने से पहले विरोध हल करें।",
         "nextBrief": "अगला ब्रीफ़ {{date}} ({{timezone}})",
         "paused": "रुका हुआ",
         "preparationFailed": "सेटअप अपने आप फिर से आज़माया जाएगा। आप अभी भी दोबारा कोशिश कर सकते हैं।",
@@ -6297,7 +6300,7 @@
       "summary_other": "{{count}} Access कॉन्फ़िगरेशन",
       "title": "Cloudflare Access",
       "tokenHelp": "अपनी SSH ऐप की Service Auth नीति द्वारा अनुमत Service Token का उपयोग करें। यह आपके SSH लॉगिन से अलग है।",
-      "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है। सुरक्षित होस्ट कनेक्ट नहीं हो सकते; सीधे होस्ट प्रभावित नहीं हैं।",
+      "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।",
       "usedBy_one": "{{count}} होस्ट द्वारा उपयोग:",
       "usedBy_other": "{{count}} होस्ट द्वारा उपयोग:"
     },

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.194.7](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.6...runner-rs-v0.194.7) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** clean skills beneath cached instruction homes ([#34429](https://github.com/vm0-ai/okou/issues/34429)) ([24f4fea](https://github.com/vm0-ai/okou/commit/24f4fea3f60e92686b1771ba9a77ae0100d8d7af))
+
+
+### Refactoring
+
+* **runner:** acknowledge addon registry and catalog application ([#34422](https://github.com/vm0-ai/okou/issues/34422)) ([15d3e39](https://github.com/vm0-ai/okou/commit/15d3e393884256ff8f80cbbe5692b7dee51a8b32))
+
 ## [0.194.6](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.5...runner-rs-v0.194.6) (2026-09-15)
 
 

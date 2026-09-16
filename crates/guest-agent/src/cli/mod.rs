@@ -1625,7 +1625,10 @@ async fn execute_cli_inner(
                                     let candidate = CliFailureDiagnostic {
                                         message: diagnostic.message,
                                         source,
-                                        failure_reason: None,
+                                        failure_reason: (source == FailureDetailSource::PiResult)
+                                            .then(|| event.get("failureReason"))
+                                            .flatten()
+                                            .and_then(|reason| serde_json::from_value(reason.clone()).ok()),
                                     };
                                     log_warn!(
                                         LOG_TAG,

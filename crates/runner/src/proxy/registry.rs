@@ -8,6 +8,9 @@ use nix::fcntl::Flock;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use super::control::ControlHandle;
+use super::registry_application::{RegistryDigest, RegistryPublication};
+
 use crate::error::{RunnerError, RunnerResult};
 use crate::lock;
 use crate::state_file::PROXY_REGISTRY_MAX_BYTES;
@@ -90,7 +93,10 @@ async fn read_registry(path: &std::path::Path) -> RunnerResult<ProxyRegistry> {
 ///
 /// On supported Unix runner hosts, this ensures the Python mitm-addon never
 /// reads a partially-written file.
-async fn write_registry(path: &std::path::Path, value: &ProxyRegistry) -> RunnerResult<()> {
+async fn write_registry(
+    path: &std::path::Path,
+    value: &ProxyRegistry,
+) -> RunnerResult<RegistryDigest> {
     let fail_closed_reserve = fail_closed_capacity_bytes(value)?;
     write_registry_with_reserve(path, value, fail_closed_reserve).await
 }
@@ -98,7 +104,7 @@ async fn write_registry(path: &std::path::Path, value: &ProxyRegistry) -> Runner
 async fn write_registry_consuming_fail_closed_capacity(
     path: &Path,
     value: &ProxyRegistry,
-) -> RunnerResult<()> {
+) -> RunnerResult<RegistryDigest> {
     write_registry_with_reserve(path, value, 0).await
 }
 
@@ -106,7 +112,7 @@ async fn write_registry_with_reserve(
     path: &Path,
     value: &ProxyRegistry,
     fail_closed_reserve: u64,
-) -> RunnerResult<()> {
+) -> RunnerResult<RegistryDigest> {
     let content = serde_json::to_vec(value)
         .map_err(|e| RunnerError::Internal(format!("serialize registry: {e}")))?;
     let content_bytes = content.len() as u64;
@@ -121,7 +127,9 @@ async fn write_registry_with_reserve(
             path.display()
         )));
     }
-    crate::state_file::write_private_atomic(path, &content).await
+    let digest = RegistryDigest::of(&content);
+    crate::state_file::write_private_atomic(path, &content).await?;
+    Ok(digest)
 }
 
 fn fail_closed_capacity_bytes(value: &ProxyRegistry) -> RunnerResult<u64> {
@@ -158,13 +166,20 @@ fn fail_closed_capacity_bytes(value: &ProxyRegistry) -> RunnerResult<u64> {
 pub struct ProxyRegistryHandle {
     pub(super) registry_path: PathBuf,
     pub(super) lock_path: PathBuf,
+    pub(super) control: ControlHandle,
     #[cfg(test)]
     pub(super) connector_runtime_update_attempt_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
 }
 
 pub(crate) struct ConnectorRuntimeRegistryTransaction<'a> {
     registry_path: &'a Path,
+    control: &'a ControlHandle,
     _guard: Flock<File>,
+}
+
+pub(crate) struct ConnectorRuntimePublication<T> {
+    pub outcomes: Vec<T>,
+    pub publication: Option<RegistryPublication>,
 }
 
 #[derive(Clone)]
@@ -565,12 +580,21 @@ fn initial_connector_routing_variables(
 }
 
 impl ProxyRegistryHandle {
+    #[cfg(test)]
+    pub(crate) fn set_control_target_for_test(&self, directory: PathBuf, generation: String) {
+        self.control.set_target(Some(super::control::ControlTarget {
+            directory,
+            generation,
+        }));
+    }
+
     /// Create a handle from explicit paths (for testing).
     #[cfg(test)]
     pub fn new(registry_path: PathBuf, lock_path: PathBuf) -> Self {
         Self {
             registry_path,
             lock_path,
+            control: ControlHandle::default(),
             connector_runtime_update_attempt_tx: None,
         }
     }
@@ -589,7 +613,7 @@ impl ProxyRegistryHandle {
         &self,
         source_ip: &str,
         registration: &SandboxRegistration<'_>,
-    ) -> RunnerResult<()> {
+    ) -> RunnerResult<RegistryPublication> {
         validate_custom_connector_resource_ownership(registration.firewalls.unwrap_or_default())?;
         let connector_routing_variables = initial_connector_routing_variables(registration)?;
         let _guard = lock::acquire(self.lock_path.clone()).await?;
@@ -629,25 +653,31 @@ impl ProxyRegistryHandle {
             },
         );
         registry.updated_at = now;
-        write_registry(&self.registry_path, &registry).await?;
+        let digest = write_registry(&self.registry_path, &registry).await?;
         info!(
             source_ip,
             run_id = registration.run_id,
             "registered sandbox in proxy registry"
         );
-        Ok(())
+        Ok(RegistryPublication {
+            digest,
+            target: self.control.target(),
+        })
     }
 
     /// Unregister a sandbox from the proxy registry.
-    pub async fn unregister_sandbox(&self, source_ip: &str) -> RunnerResult<()> {
+    pub async fn unregister_sandbox(&self, source_ip: &str) -> RunnerResult<RegistryPublication> {
         let _guard = lock::acquire(self.lock_path.clone()).await?;
 
         let mut registry = read_registry(&self.registry_path).await?;
         registry.sandboxes.remove(source_ip);
         registry.updated_at = chrono::Utc::now().timestamp_millis();
-        write_registry(&self.registry_path, &registry).await?;
+        let digest = write_registry(&self.registry_path, &registry).await?;
         info!(source_ip, "unregistered sandbox from proxy registry");
-        Ok(())
+        Ok(RegistryPublication {
+            digest,
+            target: self.control.target(),
+        })
     }
 
     /// Publish validated Builtin and Custom candidate updates in one registry
@@ -666,6 +696,7 @@ impl ProxyRegistryHandle {
             .await?
             .apply_updates_if_run_matches(source_ip, run_id, updates)
             .await
+            .map(|result| result.map(|result| result.outcomes))
     }
 
     pub(crate) async fn connector_runtime_registry_transaction(
@@ -679,6 +710,7 @@ impl ProxyRegistryHandle {
         let guard = lock::acquire(self.lock_path.clone()).await?;
         Ok(ConnectorRuntimeRegistryTransaction {
             registry_path: &self.registry_path,
+            control: &self.control,
             _guard: guard,
         })
     }
@@ -739,6 +771,7 @@ impl ProxyRegistryHandle {
             .await?
             .fail_closed_targets_if_run_matches(source_ip, run_id, targets)
             .await
+            .map(|result| result.map(|result| result.outcomes))
     }
 }
 
@@ -748,7 +781,7 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
         source_ip: &str,
         run_id: &str,
         targets: &[ConnectorRuntimeTarget],
-    ) -> RunnerResult<Option<Vec<ConnectorRuntimeFailCloseOutcome>>> {
+    ) -> RunnerResult<Option<ConnectorRuntimePublication<ConnectorRuntimeFailCloseOutcome>>> {
         let mut registry = read_registry(self.registry_path).await?;
         let Some(sandbox) = registry.sandboxes.get_mut(source_ip) else {
             return Ok(None);
@@ -780,11 +813,15 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
             .filter(|outcome| matches!(outcome, ConnectorRuntimeFailCloseOutcome::Applied))
             .count();
         if applied_count == 0 {
-            return Ok(Some(outcomes));
+            return Ok(Some(ConnectorRuntimePublication {
+                outcomes,
+                publication: None,
+            }));
         }
 
         registry.updated_at = chrono::Utc::now().timestamp_millis();
-        write_registry_consuming_fail_closed_capacity(self.registry_path, &registry).await?;
+        let digest =
+            write_registry_consuming_fail_closed_capacity(self.registry_path, &registry).await?;
         info!(
             source_ip,
             run_id,
@@ -796,7 +833,13 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
                 .count(),
             "failed closed connector runtime targets in proxy registry"
         );
-        Ok(Some(outcomes))
+        Ok(Some(ConnectorRuntimePublication {
+            outcomes,
+            publication: Some(RegistryPublication {
+                digest,
+                target: self.control.target(),
+            }),
+        }))
     }
 
     pub(crate) async fn apply_updates_if_run_matches(
@@ -804,7 +847,7 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
         source_ip: &str,
         run_id: &str,
         updates: &[ConnectorRuntimeRegistryUpdate],
-    ) -> RunnerResult<Option<Vec<bool>>> {
+    ) -> RunnerResult<Option<ConnectorRuntimePublication<bool>>> {
         let mut registry = read_registry(self.registry_path).await?;
         let Some(sandbox) = registry.sandboxes.get_mut(source_ip) else {
             return Ok(None);
@@ -824,7 +867,10 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
             .map(|update| apply_connector_runtime_update(sandbox, update))
             .collect::<RunnerResult<Vec<_>>>()?;
         if !accepted.iter().any(|accepted| *accepted) {
-            return Ok(Some(accepted));
+            return Ok(Some(ConnectorRuntimePublication {
+                outcomes: accepted,
+                publication: None,
+            }));
         }
 
         validate_custom_connector_resource_ownership(
@@ -835,17 +881,26 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
             && previous_omitted_custom_connector_ids == sandbox.omitted_custom_connector_ids
             && previous_connector_routing_variables == sandbox.connector_routing_variables
         {
-            return Ok(Some(accepted));
+            return Ok(Some(ConnectorRuntimePublication {
+                outcomes: accepted,
+                publication: None,
+            }));
         }
         registry.updated_at = chrono::Utc::now().timestamp_millis();
-        write_registry(self.registry_path, &registry).await?;
+        let digest = write_registry(self.registry_path, &registry).await?;
         info!(
             source_ip,
             run_id,
             update_count = updates.len(),
             "applied connector runtime updates to proxy registry"
         );
-        Ok(Some(accepted))
+        Ok(Some(ConnectorRuntimePublication {
+            outcomes: accepted,
+            publication: Some(RegistryPublication {
+                digest,
+                target: self.control.target(),
+            }),
+        }))
     }
 }
 
@@ -938,7 +993,7 @@ pub(super) async fn write_empty_registry(path: &Path) -> RunnerResult<()> {
         sandboxes: HashMap::new(),
         updated_at: 0,
     };
-    write_registry(path, &empty_registry).await
+    write_registry(path, &empty_registry).await.map(|_| ())
 }
 
 #[cfg(test)]

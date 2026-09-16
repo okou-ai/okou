@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  assertErasureSubjectWritable,
   projectErasureDecision,
   type ErasureDecision,
 } from "@okouai/db/operations/account-erasure";
@@ -247,10 +248,8 @@ describe("actual compute transactions versus the B1 projector", () => {
   ) {
     const entered = createDeferredPromise<number>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
-    let released = false;
     const releaseOnce = () => {
-      if (!released && !context.signal.aborted) {
-        released = true;
+      if (!release.settled()) {
         release.resolve();
       }
     };
@@ -1119,6 +1118,56 @@ describe("actual compute transactions versus the B1 projector", () => {
         [200],
       );
     }
+
+    it("completes an independent chat run while another member retains normal admission", async () => {
+      const holder = await outputFixture();
+      const f = await outputFixture(holder.orgId);
+      mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+      const claimed = await api.claimRunnerJob(f.runId);
+      await sendOutput(f);
+      await flushWaitUntilForTest();
+      // Infrastructure-only exception: no public API can pause a transaction
+      // after admission. All run setup, completion and assertions use real APIs.
+      const held = await holdBusinessRow(async (tx) => {
+        await assertErasureSubjectWritable(tx, [
+          { subjectKind: "user", subjectId: holder.userId },
+          { subjectKind: "organization", subjectId: holder.orgId },
+        ]);
+      });
+      const completed = await webhooks.requestAgentComplete(
+        {
+          runId: f.runId,
+          exitCode: 0,
+          lastEventSequence: 3,
+          checkpoint: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: `synthetic-${f.runId}`,
+            cliAgentSessionHistoryHash: createHash("sha256")
+              .update(`bdd session history ${f.runId}`)
+              .digest("hex"),
+          },
+        },
+        { authorization: `Bearer ${claimed.sandboxToken}` },
+        [200],
+      );
+      expect(completed.body).toMatchObject({ status: "completed" });
+      await flushWaitUntilForTest();
+      const result = await chat.listThreadEvents(f.actor, f.threadId);
+      expect(
+        result.events.filter((event) => {
+          return event.runId === f.runId && event.eventType === "run.completed";
+        }),
+      ).toHaveLength(1);
+      expect(result.events).toContainEqual(
+        expect.objectContaining({
+          runId: f.runId,
+          eventType: "output.message",
+          content: "answer 1",
+        }),
+      );
+      await held.release();
+    });
+
     function assistantInput(f: OutputFixture, sequence = 1) {
       return {
         runId: f.runId,
@@ -1747,8 +1796,8 @@ describe("actual compute transactions versus the B1 projector", () => {
     describe("terminal callback content admission", () => {
       type TerminalKind = "completed" | "failed" | "cancelled";
 
-      async function terminalFixture(kind: TerminalKind) {
-        const f = await outputFixture();
+      async function terminalFixture(kind: TerminalKind, orgId?: string) {
+        const f = await outputFixture(orgId);
         mockOptionalEnv("OPENROUTER_API_KEY", undefined);
         // The dormant B1 projector and a pause between terminal settlement and
         // callback projection have no public test control. Creation is real.
@@ -1829,7 +1878,7 @@ describe("actual compute transactions versus the B1 projector", () => {
         };
       }
 
-      async function invokeTerminal(
+      async function startTerminal(
         f: OutputFixture,
         kind: TerminalKind,
         options: {
@@ -1867,6 +1916,10 @@ describe("actual compute transactions versus the B1 projector", () => {
                 context.signal,
               );
         expect(result).toStrictEqual({ success: true });
+      }
+
+      async function invokeTerminal(...args: Parameters<typeof startTerminal>) {
+        await startTerminal(...args);
         await flushWaitUntilForTest();
       }
 
@@ -2804,35 +2857,52 @@ describe("actual compute transactions versus the B1 projector", () => {
         await expect(terminalState(f)).resolves.toStrictEqual(before);
       });
 
-      it("same subjects serialize terminal writers while unrelated subjects can commit", async () => {
+      it("serializes the same run while an independent terminal writer in the organization commits", async () => {
         const first = await terminalFixture("failed");
-        const same = await outputFixture(first.orgId);
-        const independent = await terminalFixture("failed");
-        const held = await holdResource(first.agentId);
-        const writingFirst = invokeTerminal(first, "failed");
-        const firstPid = await waitForBlockedBy(held.pid);
-        const writingSame = invokeTerminal(same, "failed");
-        await waitForBlockedBy(firstPid);
-        await invokeTerminal(independent, "failed");
+        const independent = await terminalFixture("failed", first.orgId);
+        // The API cannot pause a writer at its run-specific projection lock.
+        const held = await holdBusinessRow(async (tx) => {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${first.runId}`}, 0))`,
+          );
+        });
+        await startTerminal(first, "failed");
+        await startTerminal(first, "failed");
+        await waitForBlockedBy(held.pid);
+        await startTerminal(independent, "failed");
+        // Do not drain all background work while intentionally holding one
+        // writer. Observe the independent run through its production API.
+        await expect
+          .poll(async () => {
+            const result = await chat.listThreadEvents(
+              independent.actor,
+              independent.threadId,
+            );
+            return result.events.filter((event) => {
+              return event.eventType === "run.failed";
+            }).length;
+          })
+          .toBe(1);
+        const pending = await chat.listThreadEvents(
+          first.actor,
+          first.threadId,
+        );
         expect(
-          (await terminalState(independent)).events.filter((event) => {
-            return event.eventType === "run.failed";
-          }),
-        ).toHaveLength(1);
-        expect(
-          (await terminalState(same)).events.filter((event) => {
+          pending.events.filter((event) => {
             return event.eventType === "run.failed";
           }),
         ).toHaveLength(0);
         await held.release();
-        await Promise.all([writingFirst, writingSame]);
-        for (const f of [first, same]) {
-          expect(
-            (await terminalState(f)).events.filter((event) => {
-              return event.eventType === "run.failed";
-            }),
-          ).toHaveLength(1);
-        }
+        await flushWaitUntilForTest();
+        const completed = await chat.listThreadEvents(
+          first.actor,
+          first.threadId,
+        );
+        expect(
+          completed.events.filter((event) => {
+            return event.eventType === "run.failed";
+          }),
+        ).toHaveLength(1);
       });
 
       it("lock timeout rolls back rather than becoming closure denial, allowing an open retry", async () => {

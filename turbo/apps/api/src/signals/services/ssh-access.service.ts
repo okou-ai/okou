@@ -182,15 +182,6 @@ export async function listRunSshHosts(
   if (rows.length === 0) {
     return null;
   }
-  const hasProtectedHosts = rows.some((row) => {
-    return row.accessId !== null;
-  });
-  const accessEnabled =
-    hasProtectedHosts &&
-    isFeatureEnabled(
-      FeatureSwitchKey.CloudflareAccess,
-      await loadUserFeatureSwitchContext(db, owner.orgId, owner.userId),
-    );
   signal.throwIfAborted();
   return {
     hosts: rows.flatMap((row) => {
@@ -200,9 +191,6 @@ export async function listRunSshHosts(
       if (row.accessId !== null) {
         if (row.accessConfigId === null) {
           throw new Error("SSH Cloudflare Access configuration is missing");
-        }
-        if (!accessEnabled) {
-          return [];
         }
       }
       return [

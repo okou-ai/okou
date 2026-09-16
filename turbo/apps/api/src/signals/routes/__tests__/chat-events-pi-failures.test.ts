@@ -546,6 +546,17 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       expect(requests).toHaveLength(1);
       expect(
+        (await chat.listThreadEvents(actor, run.threadId)).events.filter(
+          (event) => {
+            return (
+              event.runId === run.runId && event.eventType === "run.failed"
+            );
+          },
+        ),
+      ).toStrictEqual([
+        expect.objectContaining({ failureReason: "output_token_limit" }),
+      ]);
+      expect(
         consumedAgentEvents.filter((event) => {
           return event.runId === run.runId;
         }),

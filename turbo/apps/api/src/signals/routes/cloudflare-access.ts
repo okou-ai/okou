@@ -1,5 +1,7 @@
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { sshErrorResponse } from "../../lib/ssh-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -11,7 +13,6 @@ import type { RouteEntry } from "../route-entry";
 import {
   createCloudflareAccessConfig,
   deleteCloudflareAccessConfig,
-  isCloudflareAccessEnabled,
   listCloudflareAccessConfigs,
   updateCloudflareAccessConfig,
 } from "../services/cloudflare-access.service";
@@ -36,7 +37,7 @@ const featureContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(owner.orgId, owner.userId),
   );
   signal.throwIfAborted();
-  return isCloudflareAccessEnabled(context) ? context : null;
+  return isFeatureEnabled(FeatureSwitchKey.SshAccess, context) ? context : null;
 });
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await set(featureContext$, signal))) {

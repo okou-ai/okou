@@ -455,6 +455,15 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+
+      - name: Sync locked addon for Rust/Python control integration
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+
       - name: Run tests with coverage
         run: |
           cd crates

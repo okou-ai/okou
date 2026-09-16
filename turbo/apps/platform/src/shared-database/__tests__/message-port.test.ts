@@ -10,7 +10,7 @@ import {
   chatEventRowsResponse,
   testContext,
 } from "../../signals/__tests__/test-helpers.ts";
-import { resetSignal, createDeferredPromise } from "../../signals/utils.ts";
+import { resetSignal } from "../../signals/utils.ts";
 import { mockNow } from "../../lib/time.ts";
 import { ApiError } from "../../lib/api-error.ts";
 import { SharedDatabaseHttpError } from "../http-error.ts";
@@ -148,12 +148,12 @@ function bridgeEvents(): SharedDatabaseBridgeEvents {
   };
 }
 
-const holdHeartbeatLoop: SharedDatabaseHeartbeatLoop = async (
+const holdHeartbeatLoop: SharedDatabaseHeartbeatLoop = (
   heartbeat,
   signal,
-): Promise<void> => {
+): void => {
+  signal.throwIfAborted();
   heartbeat();
-  await createDeferredPromise<void>(signal).promise;
 };
 
 function initializeWorker(

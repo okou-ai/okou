@@ -265,6 +265,72 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
 -> Result<(), Box<dyn std::error::Error>> {
     let base_path = std::env::var_os("PATH").unwrap_or_default();
     let original_directory = std::env::current_dir()?;
+    for (run_id, message, result, reason, assistant_text) in [
+        (
+            "00000000-0000-4000-8000-000000000140",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "content": [],
+                "errorMessage": "Codex error: Our servers are currently overloaded. Please try again later."
+            }),
+            "Codex error: Our servers are currently overloaded. Please try again later.",
+            FailureReason::ProviderOverloaded,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000141",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "length",
+                "content": [{"type": "text", "text": "Partial answer"}]
+            }),
+            "Pi model response exceeded the output token limit.",
+            FailureReason::OutputTokenLimit,
+            Some("Partial answer"),
+        ),
+        (
+            "00000000-0000-4000-8000-000000000142",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses", "content": [],
+                "errorMessage": "You have hit your ChatGPT usage limit.",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1, "failureReason": "provider_rate_limited"}}]
+            }),
+            "You have hit your ChatGPT usage limit.",
+            FailureReason::ProviderRateLimited,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000143",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-responses", "content": [],
+                "errorMessage": "Service unavailable",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 503, "transportAttempts": 1}}]
+            }),
+            "Service unavailable",
+            FailureReason::ProviderServerError,
+            None,
+        ),
+        (
+            "00000000-0000-4000-8000-000000000144",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses", "content": [],
+                "errorMessage": "You have hit your ChatGPT usage limit.",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1, "failureReason": "provider_insufficient_credits"}}]
+            }),
+            "You have hit your ChatGPT usage limit.",
+            FailureReason::ProviderInsufficientCredits,
+            None,
+        ),
+    ] {
+        run_settlement_case(
+            run_id,
+            &[message],
+            ExpectedTerminalResult::Exact(result),
+            Some(reason),
+            assistant_text,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
     // Shared with the real TypeScript provider-boundary regression. No status
     // is inferred from the detail text by this guest entry point.
     let rate_limit: Value = serde_json::from_str(include_str!(

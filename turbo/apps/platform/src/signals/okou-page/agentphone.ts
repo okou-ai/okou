@@ -94,7 +94,7 @@ export const watchAgentPhoneConnection$ = command(
     const current = await get(agentPhoneLinkStatus$);
     signal.throwIfAborted();
     set(internalAgentPhoneStatus$, current);
-    await set(
+    set(
       setAblyLoop$,
       {
         topic: "agentphone:changed",

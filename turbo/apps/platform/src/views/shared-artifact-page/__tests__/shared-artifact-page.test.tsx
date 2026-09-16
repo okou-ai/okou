@@ -12,9 +12,14 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  testContext,
+  warmMermaidParser,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+
+warmMermaidParser();
 const artifactId = "00000000-0000-4000-8000-000000000010";
 const imagePath = artifactReferencePath(artifactId, "launch.png");
 const imageUrl = "https://artifacts.example.com/launch.png?signature=private";
@@ -281,3 +286,28 @@ test.each([400, 403, 404] as const)(
     expect(queryAllByRoleFast("button")).toHaveLength(0);
   },
 );
+
+test("A shared Markdown artifact displays its diagram", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  const url = "https://artifacts.example.com/plan.md";
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text(
+      "# Shared plan\n\n```mermaid\nflowchart LR\n  Shared --> Preview\n```",
+    );
+  });
+  await openViewer({
+    path: artifactReferencePath(artifactId, "plan.md"),
+    filename: "plan.md",
+    contentType: "text/markdown",
+    url,
+  });
+
+  await expect(screen.findByText("Shared plan")).resolves.toBeInTheDocument();
+  const image = await screen.findByRole("img", { name: "Diagram" });
+  const imageUrl = image.getAttribute("src");
+  if (!imageUrl) {
+    throw new Error("Expected the shared diagram image URL");
+  }
+  expect(browser.blobForUrl(imageUrl)?.type).toBe("image/svg+xml");
+  expect(action("button", "Expand diagram")).toBeEnabled();
+});
