@@ -240,22 +240,41 @@ describe("provider-declared queue expiry", () => {
     ]);
   });
 
-  it("retains transport recovery for a specific rate-limit code with contradictory text", async () => {
-    let requests = 0;
-    server.use(
-      http.post(endpoint, () => {
-        return ++requests === 1
-          ? HttpResponse.json(
-              { error: { code: "rate_limit_exceeded", message: queueTimeout } },
-              { status: 429, headers: { "retry-after-ms": "1" } },
-            )
-          : completedResponse();
-      }),
-    );
-    const result = await stream().result();
-    expect(requests).toBe(2);
-    expect(result.stopReason).toBe("stop");
-  });
+  it.each([
+    {
+      label: "rate-limit code",
+      error: { code: "rate_limit_exceeded" },
+      status: 429,
+    },
+    {
+      label: "uppercase billing code",
+      error: { code: "BILLING_ERROR" },
+      status: 503,
+    },
+    {
+      label: "billing type with a generic code",
+      error: { code: "server_error", type: "billing_error" },
+      status: 503,
+    },
+  ])(
+    "retains transport recovery for a specific $label with contradictory text",
+    async ({ error, status }) => {
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          return ++requests === 1
+            ? HttpResponse.json(
+                { error: { ...error, message: queueTimeout } },
+                { status, headers: { "retry-after-ms": "1" } },
+              )
+            : completedResponse();
+        }),
+      );
+      const result = await stream().result();
+      expect(requests).toBe(2);
+      expect(result.stopReason).toBe("stop");
+    },
+  );
 
   it.each([false, true])(
     "stops native session retries, including after a prior transient (prior=%s)",

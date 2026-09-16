@@ -119,10 +119,10 @@ index 0000000000000000000000000000000000000000..af6bdff0e88e49509f6c57fbc9814408
 +export declare function isProviderQueueTimeout(error: unknown): boolean;
 diff --git a/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
 new file mode 100644
-index 0000000000000000000000000000000000000000..dfdea7210e7a055b2f6b25acf61775649deb7ddf
+index 0000000000000000000000000000000000000000..564f0827716f5295088c8fb69663eaa0fd96fba0
 --- /dev/null
 +++ b/dist/utils/provider-queue-timeout.js
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,33 @@
 +import { normalizeProviderError } from "./error-body.js";
 +
 +/** Only call for a failed provider request or assistant result. */
@@ -140,7 +140,9 @@ index 0000000000000000000000000000000000000000..dfdea7210e7a055b2f6b25acf6177564
 +            // Specific provider failures keep their native policy even when
 +            // accompanied by contradictory generic queue text.
 +            if (detail.error === "insufficient_credits" || detail.code === 402 ||
-+                (typeof code === "string" && /^(?:invalid_api_key|authentication_error|context_length_exceeded|context_window_exceeded|prompt_too_long|rate_limit_exceeded|rate_limit_error|usage_limit_reached|usage_not_included|content_policy_violation|model_not_found|unsupported_model|TOKEN_REFRESH_FAILED|billing|billing_error|insufficient_quota|payment_required|billing_hard_limit_reached|insufficient_credits)$/.test(code)))
++                [detail.code, detail.type].some((token) => typeof token === "string" &&
++                    /^(?:billing|billing_error|insufficient_quota|payment_required|billing_hard_limit_reached|insufficient_credits)$/i.test(token)) ||
++                (typeof code === "string" && /^(?:invalid_api_key|authentication_error|context_length_exceeded|context_window_exceeded|prompt_too_long|rate_limit_exceeded|rate_limit_error|usage_limit_reached|usage_not_included|content_policy_violation|model_not_found|unsupported_model|TOKEN_REFRESH_FAILED)$/.test(code)))
 +                return false;
 +            message = detail.message;
 +        }
