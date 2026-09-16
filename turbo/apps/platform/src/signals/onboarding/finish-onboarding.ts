@@ -1,5 +1,5 @@
 import { command, state } from "ccstate";
-import { impactOnboardingContract } from "@okouai/api-contracts/contracts/impact-marketing";
+import { marketingOnboardingContract } from "@okouai/api-contracts/contracts/marketing-onboarding";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { resolveApiBaseForTarget } from "../api-base.ts";
 import { apiClientRuntime$ } from "../api-client-runtime.ts";
@@ -17,9 +17,9 @@ interface OnboardingIdentity {
 }
 
 const entry$ = state<DeferredPromise<OnboardingIdentity> | null>(null);
-const attempts = localStorageSignals("impact_onboarding_attempts");
+const attempts = localStorageSignals("marketing_onboarding_attempts");
 
-export const enterImpactOnboarding$ = command(
+export const enterFinishOnboarding$ = command(
   ({ get }, identity: OnboardingIdentity) => {
     const entry = get(entry$);
     if (entry && !entry.settled()) {
@@ -28,7 +28,7 @@ export const enterImpactOnboarding$ = command(
   },
 );
 
-const sendOnboardingImpact$ = command(
+const sendFinishOnboarding$ = command(
   async ({ get, set }, identity: OnboardingIdentity, signal: AbortSignal) => {
     signal.throwIfAborted();
     const key = `${identity.userId}:${identity.orgId}`;
@@ -46,7 +46,7 @@ const sendOnboardingImpact$ = command(
     if (!token) {
       return;
     }
-    const client = initClient(impactOnboardingContract, {
+    const client = initClient(marketingOnboardingContract, {
       baseUrl: resolveApiBaseForTarget("www"),
     });
     await client.record({
@@ -61,7 +61,7 @@ const sendOnboardingImpact$ = command(
 );
 
 /** The root owns the request so onboarding navigation never waits for it. */
-export const setupOnboardingImpact$ = command(
+export const setupFinishOnboarding$ = command(
   ({ set }, signal: AbortSignal): void => {
     const entry = createDeferredPromise<OnboardingIdentity>(signal);
     set(entry$, entry);
@@ -73,7 +73,7 @@ export const setupOnboardingImpact$ = command(
         AbortSignal.timeout(10_000),
       ]);
       await bestEffort(
-        set(sendOnboardingImpact$, identity, requestSignal),
+        set(sendFinishOnboarding$, identity, requestSignal),
         ownerSignal,
       );
     }, signal);

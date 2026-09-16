@@ -45,12 +45,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.MarketingAcquisitionShadow]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Bind Marketing acquisition once during onboarding for comparison",
-    enabled: false,
-  },
   [FeatureSwitchKey.SocialStatus]: {
     maintainer: "liangyou@okou.ai",
     description: "On-demand public Social service health",

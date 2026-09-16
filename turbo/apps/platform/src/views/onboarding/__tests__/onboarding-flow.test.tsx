@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import {
   agentsByIdContract,
@@ -1431,9 +1430,9 @@ test.each([
 ])(
   "Onboarding and checkout route only to $accountId",
   async ({ accountId, onboarding, checkout }) => {
-    const marketing = "https://www.okou.ai/api/marketing/acquisition";
+    const marketing = "https://www.okou.ai/api/marketing";
     const requests: Request[] = [];
-    context.mocks.http.post(`${marketing}/onboarding`, ({ request }) => {
+    context.mocks.http.post(`${marketing}/finish-onboarding`, ({ request }) => {
       requests.push(request);
       return new Response(null, { status: 204 });
     });
@@ -1457,7 +1456,6 @@ test.each([
       context,
       path: "/onboarding/video-template?choice=video",
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.MarketingAcquisitionShadow]: true },
     });
 
     await expect(

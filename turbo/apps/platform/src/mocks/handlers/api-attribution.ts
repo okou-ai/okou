@@ -1,13 +1,9 @@
-import { marketingAcquisitionContract } from "@okouai/api-contracts/contracts/marketing-acquisition";
-import { impactOnboardingContract } from "@okouai/api-contracts/contracts/impact-marketing";
+import { marketingOnboardingContract } from "@okouai/api-contracts/contracts/marketing-onboarding";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import { mockApi } from "../msw-contract.ts";
 
 export const apiAttributionHandlers = [
-  mockApi(marketingAcquisitionContract.record, ({ respond }) => {
-    return respond(204);
-  }),
-  mockApi(impactOnboardingContract.record, ({ respond }) => {
+  mockApi(marketingOnboardingContract.record, ({ respond }) => {
     return respond(204);
   }),
   mockApi(

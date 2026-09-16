@@ -1,7 +1,4 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import userEvent from "@testing-library/user-event";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   click,
@@ -12,8 +9,9 @@ import { localStorageSignals } from "../../../signals/external/local-storage.ts"
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const ENDPOINT = "https://www.okou.ai/api/marketing/acquisition/onboarding";
-const previousAttempts = localStorageSignals("acquisition_onboarding_attempts");
+const ENDPOINT = "https://www.okou.ai/api/marketing/finish-onboarding";
+const previousAttempts = localStorageSignals("marketing_onboarding_attempts");
+const legacyImpactAttempts = localStorageSignals("impact_onboarding_attempts");
 
 function goBack() {
   const button = queryAllByRoleFast("button").find((candidate) => {
@@ -42,16 +40,8 @@ function onboardingNeeded() {
   });
 }
 
-async function openOnboarding(enabled: boolean | undefined = true) {
-  await setupPage({
-    context,
-    path: "/onboarding",
-    host: "app.okou.ai",
-    featureSwitches:
-      enabled === undefined
-        ? {}
-        : { [FeatureSwitchKey.MarketingAcquisitionShadow]: enabled },
-  });
+async function openOnboarding() {
+  await setupPage({ context, path: "/onboarding", host: "app.okou.ai" });
   await expect(
     screen.findByRole("heading", {
       name: "What do you want to make first",
@@ -61,6 +51,16 @@ async function openOnboarding(enabled: boolean | undefined = true) {
 
 test("Onboarding sends one bearer-authenticated request while steps remain usable without an iframe", async () => {
   onboardingNeeded();
+  let legacyRequests = 0;
+  for (const endpoint of ["impact/onboarding", "acquisition/onboarding"]) {
+    context.mocks.http.post(
+      `https://www.okou.ai/api/marketing/${endpoint}`,
+      () => {
+        legacyRequests++;
+        return new Response(null, { status: 204 });
+      },
+    );
+  }
   const received = context.mocks.deferred<Request>();
   const complete = context.mocks.deferred<void>();
   const requests: Request[] = [];
@@ -92,6 +92,7 @@ test("Onboarding sends one bearer-authenticated request while steps remain usabl
     }),
   ).resolves.toBeInTheDocument();
   expect(requests).toHaveLength(1);
+  expect(legacyRequests).toBe(0);
   expect(context.store.get(previousAttempts.get$)).toBe(
     "test-user-123:org_default",
   );
@@ -143,7 +144,6 @@ test("A missing session token skips attribution while onboarding remains usable"
     context,
     path: "/onboarding",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarketingAcquisitionShadow]: true },
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       session: { token: "" },
@@ -165,12 +165,7 @@ test("An already onboarded user sends no attribution request", async () => {
     requests++;
     return new Response(null, { status: 204 });
   });
-  await setupPage({
-    context,
-    path: "/onboarding",
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarketingAcquisitionShadow]: true },
-  });
+  await setupPage({ context, path: "/onboarding", host: "app.okou.ai" });
   await expect(
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
@@ -208,81 +203,17 @@ test("A different user's previous attempt does not suppress onboarding attributi
   expect(document.querySelector("iframe")).toBeNull();
 });
 
-test.each(["default", "disabled"])(
-  "The %s App switch skips acquisition while Impact and onboarding remain usable",
-  async (mode) => {
-    onboardingNeeded();
-    const requests: Request[] = [];
-    let impactRequests = 0;
-    context.mocks.http.post(ENDPOINT, ({ request }) => {
-      requests.push(request);
-      return new Response(null, { status: 204 });
-    });
-    context.mocks.http.post(
-      "https://www.okou.ai/api/marketing/impact/onboarding",
-      () => {
-        impactRequests++;
-        return new Response(null, { status: 204 });
-      },
-    );
-    await setupPage({
-      context,
-      path: "/onboarding",
-      host: "app.okou.ai",
-      featureSwitches:
-        mode === "default"
-          ? {}
-          : { [FeatureSwitchKey.MarketingAcquisitionShadow]: false },
-    });
-    await screen.findByRole("heading", {
-      name: "What do you want to make first",
-    });
-    window.dispatchEvent(new Event("focus"));
-    window.dispatchEvent(new Event("online"));
-    selectWorkflowAutomation();
-    await screen.findByRole("heading", { name: "What do you work on?" });
-    expect(requests).toStrictEqual([]);
-    expect(context.store.get(previousAttempts.get$)).toBeNull();
-    expect(impactRequests).toBe(1);
-  },
-);
-
-test("Toggling the Lab switch outside onboarding does not trigger acquisition", async () => {
-  let requests = 0;
+test("A legacy Impact attempt does not suppress the combined attribution request", async () => {
+  onboardingNeeded();
+  context.store.set(legacyImpactAttempts.set$, "test-user-123:org_default");
+  const received = context.mocks.deferred<void>();
   context.mocks.http.post(ENDPOINT, () => {
-    requests++;
+    received.resolve();
     return new Response(null, { status: 204 });
   });
-  let switches: Record<string, boolean> = {
-    [FeatureSwitchKey.Lab]: true,
-    [FeatureSwitchKey.MarketingAcquisitionShadow]: false,
-  };
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    switches = { ...switches, ...body.switches };
-    return respond(200, { switches, effectiveSwitches: switches });
-  });
-  await setupPage({ context, path: "/_/lab", host: "app.okou.ai" });
-  await screen.findByRole("heading", { name: "Lab" });
-  const row = screen
-    .getByText(FeatureSwitchKey.MarketingAcquisitionShadow)
-    .closest("li");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Expected Marketing acquisition feature row");
-  }
-  const control = within(row).getByRole("switch");
-  expect(control).not.toBeChecked();
-  const user = userEvent.setup();
-  await user.click(control);
-  await waitFor(() => {
-    expect(control).toBeChecked();
-  });
-  await user.click(control);
-  await waitFor(() => {
-    expect(control).not.toBeChecked();
-  });
-  expect(requests).toBe(0);
-  expect(context.store.get(previousAttempts.get$)).toBeNull();
+  await openOnboarding();
+  await received.promise;
+  expect(context.store.get(previousAttempts.get$)).toBe(
+    "test-user-123:org_default",
+  );
 });
