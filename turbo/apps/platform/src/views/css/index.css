@@ -244,10 +244,10 @@
   /* The dots drawn on the texture the top step reveals. That texture's colours
      are fixed rather than theme-paired, so a mark on it cannot take a grey ramp
      stop: the ramp inverts in dark and the dots would turn light against a
-     light ground. This is the light ramp's `gray-700` at the alpha the dots
-     reach on the plain track, which is what keeps the scale at one weight
-     either side of the reveal. */
-  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.45);
+     light ground. It is much fainter than the dots on the plain track, because
+     the texture is busy where they sit: the weight that reads as a scale on
+     flat grey reads as specks on the aurora. */
+  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.18);
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
     0.04px 5.55px,
