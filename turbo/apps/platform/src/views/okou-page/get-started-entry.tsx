@@ -1,5 +1,6 @@
+import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
 import type { ReactNode } from "react";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   CalendarCheck,
@@ -36,24 +37,15 @@ import {
   shareDialogOpen$,
   sharePostDraft$,
   submitSharePost$,
+  shareSubmission$,
+  setGetStartedMenuOpen$,
   type GetStartedQuest,
-  type GetStartedQuestKey,
   type GetStartedSummary,
 } from "../../signals/okou-page/get-started.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
 import { SlackMark } from "./components/slack-mark.tsx";
-
-/** What each quest pays. Rewards are per person, not per org. */
-const QUEST_REWARDS = {
-  connector: 100,
-  slack: 2000,
-  workflow: 1000,
-  invite: 100,
-  share: 2000,
-  checkin: 100,
-} as const satisfies Record<GetStartedQuestKey, number>;
 
 // The ring is drawn at 16px so it agrees with the `[&_svg]:size-4` that Button
 // enforces on its descendants, and its geometry is fixed at that size.
@@ -191,10 +183,10 @@ function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
 }
 
 function QuestReward({
-  questKey,
+  amount,
   unit,
 }: {
-  questKey: GetStartedQuestKey;
+  amount: number;
   unit: string | null;
 }) {
   const { t } = useTranslation();
@@ -204,7 +196,7 @@ function QuestReward({
         ($) => {
           return $.chat.agentPage.getStarted.reward;
         },
-        { amount: formatLocalizedNumber(QUEST_REWARDS[questKey]) },
+        { amount: formatLocalizedNumber(amount) },
       )}
       {unit !== null && (
         <span className="font-normal text-muted-foreground"> {unit}</span>
@@ -223,13 +215,17 @@ function QuestRowBody({
   copy: QuestCopy;
 }) {
   const { t } = useTranslation();
-  const done = quest.status === "done";
+  const done = quest.status === "done" && !quest.canEarnMore;
   const description =
     quest.status === "inReview"
       ? t(($) => {
           return $.chat.agentPage.getStarted.inReviewDescription;
         })
-      : copy.description;
+      : quest.status === "rejected"
+        ? t(($) => {
+            return $.chat.agentPage.getStarted.rejectedDescription;
+          })
+        : copy.description;
   return (
     <>
       {QUEST_ICONS[quest.key]}
@@ -239,9 +235,41 @@ function QuestRowBody({
         >
           {copy.name}
         </span>
-        <span className="block truncate text-xs text-muted-foreground">
+        <span className="block text-xs text-muted-foreground">
           {description}
         </span>
+        {quest.key === "invite" && quest.limit !== null && (
+          <span className="block text-xs text-muted-foreground">
+            {formatLocalizedNumber(quest.claimedCount)}/
+            {formatLocalizedNumber(quest.limit)}
+            {quest.pendingCount > 0 && (
+              <>
+                {" "}
+                ·{" "}
+                {t(
+                  ($) => {
+                    return $.chat.agentPage.getStarted.pendingInvitations;
+                  },
+                  {
+                    amount: formatLocalizedNumber(quest.pendingCount),
+                  },
+                )}
+              </>
+            )}
+          </span>
+        )}
+        {quest.key === "connector" && quest.claimedCount > 0 && (
+          <span className="block text-xs text-muted-foreground">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.rewardedConnections;
+              },
+              {
+                amount: formatLocalizedNumber(quest.claimedCount),
+              },
+            )}
+          </span>
+        )}
       </span>
       {done && <Check className="shrink-0 text-[#2EB67D]" />}
       {quest.status === "inReview" && (
@@ -251,8 +279,8 @@ function QuestRowBody({
           })}
         </span>
       )}
-      {quest.status === "todo" && (
-        <QuestReward questKey={quest.key} unit={copy.unit} />
+      {quest.canEarnMore && quest.status !== "inReview" && (
+        <QuestReward amount={quest.rewardAmount} unit={copy.unit} />
       )}
     </>
   );
@@ -308,6 +336,9 @@ function ShareOnXDialog() {
   const setOpen = useSet(setShareDialogOpen$);
   const setDraft = useSet(setSharePostDraft$);
   const submitShare = useSet(submitSharePost$);
+  const pageSignal = useGet(pageSignal$);
+  const submission = useLoadable(shareSubmission$);
+  const submitting = submission.state === "loading";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -364,9 +395,9 @@ function ShareOnXDialog() {
           </Button>
           <Button
             type="button"
-            disabled={postUrl.trim() === ""}
+            disabled={postUrl.trim() === "" || submitting}
             onClick={() => {
-              submitShare();
+              detach(submitShare(pageSignal), Reason.DomCallback);
             }}
           >
             {t(($) => {
@@ -416,16 +447,17 @@ function GetStartedPanel({
   const copy = useQuestCopy();
   const actions = useQuestActions();
   const percent = (summary.completed / summary.total) * 100;
-  // Checking in is the one quest that never finishes, so it sits below a
-  // divider instead of competing with the steps that can be completed.
-  const oneTimeQuests = quests.filter((quest) => {
+  // Daily check-in is automatic, so separate it from tasks with a user action.
+  const setupQuests = quests.filter((quest) => {
     return quest.key !== "checkin";
   });
-  const recurringQuests = quests.filter((quest) => {
+  const dailyQuests = quests.filter((quest) => {
     return quest.key === "checkin";
   });
   const selectHandler = (quest: GetStartedQuest): (() => void) | null => {
-    return quest.status === "todo" ? actions[quest.key] : null;
+    return quest.canEarnMore && quest.status !== "inReview"
+      ? actions[quest.key]
+      : null;
   };
 
   return (
@@ -466,7 +498,7 @@ function GetStartedPanel({
         </span>
       </div>
       <DropdownMenuSeparator />
-      {oneTimeQuests.map((quest) => {
+      {setupQuests.map((quest) => {
         return (
           <QuestRow
             key={quest.key}
@@ -476,8 +508,8 @@ function GetStartedPanel({
           />
         );
       })}
-      {recurringQuests.length > 0 && <DropdownMenuSeparator />}
-      {recurringQuests.map((quest) => {
+      {dailyQuests.length > 0 && <DropdownMenuSeparator />}
+      {dailyQuests.map((quest) => {
         return (
           <QuestRow
             key={quest.key}
@@ -508,6 +540,7 @@ export function GetStartedEntry() {
   const { t } = useTranslation();
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
+  const setMenuOpen = useSet(setGetStartedMenuOpen$);
 
   if (
     questsLoadable.state !== "hasData" ||
@@ -516,10 +549,13 @@ export function GetStartedEntry() {
     return null;
   }
   const summary = summaryLoadable.data;
+  if (summary.total === 0) {
+    return null;
+  }
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"

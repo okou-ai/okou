@@ -17,16 +17,41 @@ historical billing data.
 Marketing captures `im_ref` only after initialized Termly advertising consent.
 The host-only `__Host-okou_impact_v2` cookie carries the click ID, capture time and
 consent epoch. Marketing-to-App links no longer carry Impact query parameters.
-The App mounts `https://www.okou.ai/finish-onboarding` for authenticated users,
-including onboarding and returning subscribers.
+The App sends one empty `POST https://www.okou.ai/api/marketing/impact/onboarding`
+when an authenticated user enters onboarding. It uses the same session-token
+provider as calls to `api.okou.ai` and sends `Authorization: Bearer <token>`.
+The browser also includes Marketing cookies for consent and click attribution;
+there is no iframe, `postMessage`, identity-proof fetch, or Termly initialization
+in this flow. The root owns the bounded request independently of route readiness,
+so changing onboarding steps does not cancel it or wait for its response.
 
-The session-only `/api/attribution/impact/handoff` endpoint signs a 120-second
-identity proof containing authenticated user/org, admin authority, exact origins,
-a nonce and expiry. The App passes it with `postMessage`; Marketing reads its
-own cookies and associates them with that identity. The App receives only an
-acknowledgment. There is no attribution lookup or billing-attribution sync API.
-Both windows check the exact origin/source and nonce. The iframe lifetime ends
-on unmount/account change, and retries do not block navigation or checkout.
+The App records an attempt in browser local storage per user/organization before
+sending. Reloads and later visits in that browser do not retry it, including
+network/HTTP failures. Other browsers or cleared storage can submit again; the
+Marketing write is idempotent. Already-onboarded users do not submit, and missing
+or invalid attribution/consent is skipped rather than waiting for new consent.
+
+Marketing verifies the Clerk bearer token, including signature, expiry,
+App authorized party, user identity and active admin organization. It reads its
+own host-only click and consent cookies and retains server-side withdrawal and
+account-binding checks. The endpoint accepts only the configured App Origin,
+allows the browser's Authorization preflight, uses credentialed CORS and
+`Cache-Control: no-store`, and returns an empty `204`
+for completed or skipped captures. GET does not write. No attribution data is
+returned to the App or its API.
+
+### Deployment boundary
+
+Deploy the Marketing bearer-authenticated endpoint before the App change. This cutover retires
+`/finish-onboarding`, `/api/marketing/impact/config`, both signed handoff APIs,
+and their iframe, identity-proof and nonce machinery. Old iframe clients and
+pre-cutover rollback artifacts are outside the supported boundary; they must
+refresh onto the bearer-request App to record attribution. No client-version
+floor or compatibility bridge is introduced.
+
+Marketing migration `0002_drop_impact_handoffs.sql` drops the obsolete replay
+nonce table. Existing consented captures, order decisions and refund receipts
+continue to serve the current cookie-based flow.
 
 ## Payment correlation
 
@@ -46,11 +71,11 @@ its creation time; renewals use their own invoice creation time.
 This timestamp contains no referral information.
 
 Marketing immediately freezes and submits an eligible consented capture available
-at the first payment webhook. Orders awaiting an eligible iframe association get
+at the first payment webhook. Orders awaiting an eligible identity association get
 a 10-minute window and return `503 pending_identity` with `Retry-After: 600`.
 Stripe owns redelivery; a retry can submit as soon as eligible attribution arrives.
 The user's payment never waits. After the window expires, Marketing freezes an
-unattributed result if no qualifying capture exists. Later clicks, handoffs,
+unattributed result if no qualifying capture exists. Later clicks, associations,
 Customer changes and retries cannot change a frozen attribution decision.
 
 Marketing rechecks consent and order eligibility before each new Impact submission.
@@ -62,15 +87,11 @@ Refunds may correct known submissions after withdrawal, but never create a sale.
 
 ## Configuration
 
-The hidden bridge loads for every authenticated user with an organization.
-Marketing attribution is permanent behavior, with no App or server rollout switch.
-The API requires:
-
-- `MARKETING_ATTRIBUTION_SECRET`: the same random secret of at least 32 bytes in
-  the Marketing Worker, used only to sign/verify identity proofs.
-- `MARKETING_ATTRIBUTION_ORIGIN`: defaults to `https://www.okou.ai`.
-- `IMPACT_APP_ORIGIN`: defaults to `https://app.okou.ai`, independently of the
-  older generic `APP_URL`/Clerk auth domain.
+The onboarding request has no rollout switch. Marketing uses its existing
+`CLERK_SECRET_KEY`, attribution database and `IMPACT_APP_ORIGIN` configuration.
+Authentication does not depend on a session cookie reaching the Marketing domain.
+The App API no longer signs attribution proofs or needs
+`MARKETING_ATTRIBUTION_SECRET` / `MARKETING_ATTRIBUTION_ORIGIN`.
 
 Follow the Marketing runbook for its dedicated Neon database, credentials and
 explicit Stripe live/test mode. Cached App signup requests may contain an old
@@ -80,7 +101,7 @@ active attribution readers or writers. No historical consent is reconstructed.
 
 ## Verification and completion
 
-Focused tests cover signed identity, retired metadata filtering, original purchase
+Focused tests cover bearer identity, credentialed CORS, metadata filtering, original purchase
 times, delayed and out-of-order webhooks, immutable attribution, consent withdrawal,
 duplicate submissions and refunds. Marketing tests exercise the Neon HTTP driver
 against isolated real PostgreSQL schemas. No destructive App migration is needed.

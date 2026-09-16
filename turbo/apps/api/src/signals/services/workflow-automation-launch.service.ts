@@ -1,3 +1,4 @@
+import { recordGetStartedWorkflow } from "./get-started-workflow.service";
 import { randomBytes } from "node:crypto";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
@@ -607,6 +608,21 @@ function workflowAutomationAgentRunAuth(automation: {
   };
 }
 
+function recordQueuedWorkflowReward(
+  db: Db,
+  automation: AutomationRow,
+  sourceEventId: string,
+): Promise<void> {
+  return db.transaction((tx) => {
+    return recordGetStartedWorkflow(tx, {
+      orgId: automation.orgId,
+      userId: automation.ownerUserId,
+      workflowId: automation.workflowId,
+      sourceEventId,
+    });
+  });
+}
+
 export const launchQueuedWorkflowAutomation$ = command(
   async (
     { set },
@@ -665,6 +681,8 @@ export const launchQueuedWorkflowAutomation$ = command(
       "nested",
       now(),
     );
+    await recordQueuedWorkflowReward(db, automation, args.queueEventId);
+    signal.throwIfAborted();
     const result = await set(
       createQueueFirstAgentRun$,
       {

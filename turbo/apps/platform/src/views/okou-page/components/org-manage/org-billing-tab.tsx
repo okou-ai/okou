@@ -1947,7 +1947,7 @@ function StandaloneBillingPricingDialog({
         aria-describedby={undefined}
         maxWidth={860}
         height={688}
-        contentClassName="okou-app flex flex-col gap-0 overflow-hidden p-0"
+        contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
         <DialogTitle className="sr-only">
           {i18n.t(($) => {

@@ -11,7 +11,10 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it, onTestFinished, test } from "vitest";
-import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
+import {
+  countBlockedPersonalSubscriptionMutationsFixture,
+  countWaitingPersonalSubscriptionMutationsFixture,
+} from "../../../test-fixtures/personal-subscription";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import {
@@ -2454,16 +2457,184 @@ describe("historical writer consumer fences", () => {
 });
 
 describe("historical exact selection and retained-only parent", () => {
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "rejects an exact %s capture replaced during legacy coordination",
-    async (type) => {
+  it.each([
+    ["claude-code-oauth-token", "identity-a"],
+    ["claude-code-oauth-token", "identity-b"],
+    ["codex-oauth-token", "identity-a"],
+    ["codex-oauth-token", "identity-b"],
+  ] as const)(
+    "resolves a legacy %s %s write between capture and environment preparation",
+    async (type, identity) => {
       const f = await fixture(type);
+      await reencryptSubscriptionStoresFixture(f.actor, f.type);
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<Uint8Array>(context.signal);
+      let holdCaptureProof = true;
+      useSecretKmsProbe(undefined, () => {
+        if (holdCaptureProof) {
+          holdCaptureProof = false;
+          entered.resolve();
+          return release.promise;
+        }
+        return undefined;
+      });
+      // This captured-ID fixture has no queued-input decryption. Its first
+      // KMS read proves the independently reencrypted capture bundle while
+      // owning the provider/credential locks. Queue the real old writer there
+      // so environment preparation, not capture, must import its new bundle.
+      const admitting = createHistoricalPinnedSubscriptionRunFixture(
+        {
+          owner: f.actor,
+          agentId: f.agentId,
+          accountId: f.connected.id,
+          type: f.type,
+          model: f.model,
+        },
+        context.signal,
+      );
+      const admissionSettled = Promise.allSettled([admitting]);
+      onTestFinished(async () => {
+        if (!release.settled()) {
+          release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+        }
+        const [result] = await admissionSettled;
+        if (result?.status === "fulfilled" && result.value.status === 201) {
+          await runs.requestCancelRun(f.actor, result.value.body.runId, [200]);
+        }
+      });
+      await expect(
+        Promise.race([
+          entered.promise.then(() => {
+            return "capture";
+          }),
+          admitting.then(() => {
+            return "settled";
+          }),
+        ]),
+      ).resolves.toBe("capture");
+      historicalClaudeProfiles();
+      const claudeToken = `sk-ant-oat-${identity}-v2`;
+      // Keep Claude's second autocommit pending until preparation finishes.
+      // This exercises its actual secret-first writer without adding an
+      // advisory lock or racing a later metadata write against admission.
+      const writing =
+        type === "claude-code-oauth-token"
+          ? historicalClaudeSecretFirstFixture(f.actor, {
+              accessToken: claudeToken,
+              workspaceName: identity,
+            })
+          : writeHistoricalSubscription(f.actor, type, identity, 2);
+      const writerSettled = Promise.allSettled([writing]);
+      onTestFinished(async () => {
+        if (!release.settled()) {
+          release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+        }
+        await writerSettled;
+      });
+      if (!f.actor.orgId) {
+        throw new Error("Expected an owned organization");
+      }
+      const orgId = f.actor.orgId;
+      await expect
+        .poll(() => {
+          return countBlockedPersonalSubscriptionMutationsFixture({
+            orgId,
+            userId: f.actor.userId,
+            type: f.type,
+          });
+        })
+        .toBe(1);
+      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+      const updated = await writing;
+      const result = await admitting;
+      if ("completeProviderWrite" in updated) {
+        await updated.completeProviderWrite();
+      }
+      if (identity === "identity-b") {
+        expect(result.status).toBe(503);
+        expect(result.body).toMatchObject({
+          error: { code: "PROVIDER_UNAVAILABLE" },
+        });
+        expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
+        return;
+      }
+      if (result.status !== 201) {
+        throw new Error("Expected same-identity environment preparation");
+      }
+      const claim = await f.claim(result.body.runId);
+      expect(accountId(claim, f.type)).toBe(f.connected.id);
+      const modelEnv =
+        type === "claude-code-oauth-token" ? "ANTHROPIC_MODEL" : "OPENAI_MODEL";
+      expect(claim.environment?.[modelEnv]).toBe(f.model);
+      await expect(resolve(claim, f.type)).resolves.toMatchObject({
+        Authorization: `Bearer ${"token" in updated ? updated.token : claudeToken}`,
+        ...(type === "codex-oauth-token"
+          ? { "ChatGPT-Account-ID": "identity-a" }
+          : {}),
+      });
+    },
+  );
+
+  it.each([
+    ["claude-code-oauth-token", "claude-opus-5", "ANTHROPIC_MODEL"],
+    ["codex-oauth-token", "gpt-5.6-sol", "OPENAI_MODEL"],
+  ] as const)(
+    "preserves the requested model and lazy exact %s authentication",
+    async (type, model, modelEnv) => {
+      const f = await fixture(type);
+      await runs.updateOrgModelPolicies(f.actor, [
+        {
+          model,
+          isDefault: true,
+          defaultProviderType: "built-in",
+          credentialScope: "org",
+          modelProviderId: null,
+        },
+      ]);
+      const sent = await createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        { agentId: f.agentId, model, prompt: "use the requested model" },
+        [201],
+      );
+      if (sent.status !== 201 || sent.body.runId === null) {
+        throw new Error("Expected an admitted subscription run");
+      }
+      const runId = sent.body.runId;
+      onTestFinished(async () => {
+        await runs.requestCancelRun(f.actor, runId, [200]);
+      });
+      const claim = await f.claim(runId);
+      expect(claim.environment?.[modelEnv]).toBe(model);
+      expect(Object.values(claim.environment ?? {})).not.toContain(
+        f.connected.token,
+      );
+      expect(accountId(claim, type)).toBe(f.connected.id);
+      await expect(resolve(claim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+        ...(type === "codex-oauth-token"
+          ? { "ChatGPT-Account-ID": "identity-a" }
+          : {}),
+      });
+    },
+  );
+
+  it.each([
+    ["claude-code-oauth-token", false],
+    ["claude-code-oauth-token", true],
+    ["codex-oauth-token", false],
+    ["codex-oauth-token", true],
+  ] as const)(
+    "rejects a captured %s source replaced by an old writer, priority=%s",
+    async (type, priority) => {
+      const f = await fixture(type, true, priority);
       const replacement = await writeHistoricalSubscription(
         f.actor,
         type,
         "identity-b",
         2,
       );
+      // Only the historical adapter can submit a concrete captured ID; public
+      // model-first requests would deliberately capture the current account.
       const rejected = await createHistoricalPinnedSubscriptionRunFixture(
         {
           owner: f.actor,
@@ -2475,7 +2646,11 @@ describe("historical exact selection and retained-only parent", () => {
         context.signal,
       );
       expect(rejected.status).toBe(409);
+      expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
       const next = await f.start();
+      onTestFinished(async () => {
+        await runs.requestCancelRun(f.actor, next, [200]);
+      });
       const claim = await f.claim(next);
       expect(accountId(claim, type)).not.toBe(f.connected.id);
       await expect(resolve(claim, type)).resolves.toMatchObject({
@@ -2484,7 +2659,6 @@ describe("historical exact selection and retained-only parent", () => {
           ? { "ChatGPT-Account-ID": "identity-b" }
           : {}),
       });
-      await runs.requestCancelRun(f.actor, next, [200]);
     },
   );
 
@@ -3163,30 +3337,38 @@ describe("member-effective model policy contract", () => {
     await runs.requestCancelRun(f.actor, sent.body.runId, [200]);
   });
 
-  it("does not manufacture an organization API for an unconverted member policy", async () => {
-    const f = await fixture("claude-code-oauth-token");
-    await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-    const sent = await createChatFilesBddApi(context).requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        model: f.model,
-        prompt: "legacy policy requires my subscription",
-      },
-      [409],
-    );
-    expect(sent.status).toBe(409);
-    expect(sent.body).toMatchObject({
-      error: { message: expect.stringContaining("subscription") },
-    });
-    const policies = await createMiscRoutesApi(context).listModelPolicies(
-      f.actor,
-    );
-    expect(policies.policies[0]).toMatchObject({
-      defaultProviderType: f.type,
-      credentialScope: "member",
-    });
-  });
+  it.each([
+    ["claude-code-oauth-token", true],
+    ["claude-code-oauth-token", false],
+    ["codex-oauth-token", true],
+    ["codex-oauth-token", false],
+  ] as const)(
+    "requires the configured %s subscription with priority %s",
+    async (type, priority) => {
+      const f = await fixture(type, false, priority);
+      await support.deletePersonalModelProvider(f.actor, f.type, [204]);
+      const sent = await createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          model: f.model,
+          prompt: "organization policy requires my subscription",
+        },
+        [409],
+      );
+      expect(sent.status).toBe(409);
+      expect(sent.body).toMatchObject({
+        error: { message: expect.stringContaining("subscription") },
+      });
+      const policies = await createMiscRoutesApi(context).listModelPolicies(
+        f.actor,
+      );
+      expect(policies.policies[0]).toMatchObject({
+        defaultProviderType: f.type,
+        credentialScope: "member",
+      });
+    },
+  );
 });
 
 describe("personal effective provider entitlement", () => {

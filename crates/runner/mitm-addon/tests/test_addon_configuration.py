@@ -76,6 +76,7 @@ class _Options:
         self.okou_client_session_id = client_session_id
         self.okou_client_version = client_version
         self.okou_api_url = api_url
+        self.okou_proxy_registry_path = "/unused-registry.json"
 
 
 def _addon_file_path(tmp_path: Path) -> str:
@@ -172,7 +173,7 @@ class TestAddonConfiguration:
         state = assert_pending(pending_path, flows=0, buffered=0, reports=0)
         assert state["usageStateId"] == "runner-usage-state-id"
 
-    def test_running_serves_status_and_log_flush(self, tmp_path, addon_control_cleanup):
+    async def test_running_serves_status_and_log_flush(self, tmp_path, addon_control_cleanup):
         run_id = str(uuid.uuid4())
         log_path = tmp_path / f"network-{run_id}.jsonl"
         with (
@@ -195,7 +196,9 @@ class TestAddonConfiguration:
         assert result["data"]["state"] == "processed"
         assert json.loads(log_path.read_text())["message"] == "queued before flush"
 
-    def test_running_can_retry_control_thread_start_failure(self, tmp_path, addon_control_cleanup):
+    async def test_running_can_retry_control_thread_start_failure(
+        self, tmp_path, addon_control_cleanup
+    ):
         with (
             patch.object(
                 mitm_addon.ctx,

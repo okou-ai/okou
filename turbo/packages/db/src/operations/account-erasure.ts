@@ -220,13 +220,10 @@ function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-/** Lock order: sorted subject advisory locks, job, then work rows by id.
- * Take these locks BEFORE business-row locks; keep them through the caller's
- * commit. Advisory locks also serialize first closure when no job exists.
- */
-export async function lockErasureSubjects(
+async function acquireErasureSubjectLocks(
   tx: Tx,
   subjects: readonly ErasureSubject[],
+  mode: "shared" | "exclusive",
 ): Promise<void> {
   const [isolation] = await tx
     .select({
@@ -241,17 +238,36 @@ export async function lockErasureSubjects(
     "subject_limit",
   );
   for (const key of [...new Set(subjects.map(subjectKey))].sort()) {
+    const lockKey = `account-erasure:${key}`;
     await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`account-erasure:${key}`}, 0))`,
+      mode === "shared"
+        ? sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${lockKey}, 0))`
+        : sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
     );
   }
 }
 
+/** Lock order: sorted subject advisory locks, job, then work rows by id.
+ * Erasure mutations require exclusive locks, including first closure when no
+ * job exists. Take them BEFORE business-row locks and retain them through COMMIT.
+ */
+export async function lockErasureSubjects(
+  tx: Tx,
+  subjects: readonly ErasureSubject[],
+): Promise<void> {
+  await acquireErasureSubjectLocks(tx, subjects, "exclusive");
+}
+
+/** Ordinary writers share admission, not business-row ownership. Closure still
+ * waits for every admitted transaction to finish; post-closure writers observe
+ * the job under READ COMMITTED. Do not upgrade admission to an erasure mutation.
+ * The unchanged keys also conflict safely with older exclusive admissions.
+ */
 export async function assertErasureSubjectWritable(
   tx: Tx,
   subjects: readonly ErasureSubject[],
 ): Promise<void> {
-  await lockErasureSubjects(tx, subjects);
+  await acquireErasureSubjectLocks(tx, subjects, "shared");
   for (const subject of subjects) {
     const [closed] = await tx
       .select({ id: jobs.id })

@@ -9,7 +9,7 @@ use super::super::support::{
     assert_connection_accepts_exec_operation, operation_count, send_exec_result,
     send_raw_exec_result, setup_host_and_guest,
 };
-use super::support::{ExecStartFrame, expect_exec_start};
+use super::support::{ExecStartFrame, HostTempDir, expect_exec_start};
 use crate::{GuestControlClient, exec_operation};
 
 struct ReadFileFixture {
@@ -28,12 +28,13 @@ impl ReadFileFixture {
 
     fn spawn_read(
         &self,
-        path: &'static str,
+        path: impl Into<String>,
         max_bytes: u64,
         timeout_ms: u32,
     ) -> JoinHandle<io::Result<Option<Vec<u8>>>> {
         let host = Arc::clone(&self.host);
-        tokio::spawn(async move { host.read_file(path, max_bytes, timeout_ms).await })
+        let path = path.into();
+        tokio::spawn(async move { host.read_file(&path, max_bytes, timeout_ms).await })
     }
 
     async fn expect_read_start(&mut self, max_bytes: u32) -> ExecStartFrame {
@@ -107,11 +108,6 @@ async fn read_file_returns_content_and_missing() {
     let read_task = fixture.spawn_read("/tmp/session.txt", 1024, 5000);
 
     let start = fixture.expect_read_start(1024).await;
-    assert!(
-        start
-            .command
-            .contains("cat 2>/dev/null < '/tmp/session.txt'")
-    );
     fixture
         .send_result(
             start.seq(),
@@ -453,23 +449,128 @@ async fn read_file_rejects_invalid_inputs_without_sending_frame() {
 
 #[tokio::test]
 async fn read_file_quotes_guest_path_with_single_quote() {
+    let dir = HostTempDir::new("guest-control-client-read-quoted");
+    let path = dir.join("session'one $(false);.txt");
+    std::fs::write(&path, b"ok").unwrap();
     let mut fixture = ReadFileFixture::new().await;
-    let read_task = fixture.spawn_read("/tmp/session'one.txt", 1024, 5000);
+    let read_task = fixture.spawn_read(path.to_str().unwrap(), 1024, 5000);
 
     let start = fixture.expect_read_start(1024).await;
-    assert_eq!(
-        start.command,
-        "if test -f '/tmp/session'\\''one.txt'; then cat 2>/dev/null < '/tmp/session'\\''one.txt' || { test -f '/tmp/session'\\''one.txt' || exit 66; printf '%s\\n' 'failed to read file' >&2; exit 1; }; else exit 66; fi"
-    );
+    let output = std::process::Command::new("sh")
+        .args(["-c", &start.command])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"ok");
+    assert!(output.stderr.is_empty());
     fixture
         .send_result(
             start.seq(),
             ExecTermination::Exited { exit_code: 0 },
-            b"ok",
-            b"",
+            &output.stdout,
+            &output.stderr,
         )
         .await;
 
     let content = read_task.await.unwrap().unwrap();
     assert_eq!(content.as_deref(), Some(&b"ok"[..]));
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn read_file_bounds_source_io_independently_of_file_size() {
+    const LIMIT: u32 = 65_536;
+    // /proc reports logical reads by this shell and its waited-for children,
+    // including executable loading and reading the accounting file itself.
+    // Allow fixed overhead, independent of the source file's size.
+    const PROCESS_READ_OVERHEAD: u64 = 65_536;
+    let dir = HostTempDir::new("guest-control-client-read-bounded");
+    let path = dir.join("source");
+    let mut fixture = ReadFileFixture::new().await;
+
+    for size in [
+        0,
+        1,
+        u64::from(LIMIT),
+        u64::from(LIMIT) + 1,
+        8 << 20,
+        16 << 20,
+    ] {
+        std::fs::File::create(&path).unwrap().set_len(size).unwrap();
+        let read_task = fixture.spawn_read(path.to_str().unwrap(), u64::from(LIMIT), 5000);
+        let start = fixture.expect_read_start(LIMIT).await;
+        let measured_command = format!(
+            "while read -r key value; do if [ \"$key\" = rchar: ]; then before=$value; fi; done < /proc/$$/io\n{}\nstatus=$?\nwhile read -r key value; do if [ \"$key\" = rchar: ]; then after=$value; fi; done < /proc/$$/io\nprintf '%s\\n' \"$((after-before))\" >&2\nexit \"$status\"",
+            start.command
+        );
+        let output = std::process::Command::new("sh")
+            .args(["-c", &measured_command])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let read_bytes: u64 = std::str::from_utf8(&output.stderr)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            read_bytes <= u64::from(LIMIT) + 1 + PROCESS_READ_OVERHEAD,
+            "source size {size}: helper read {read_bytes} bytes"
+        );
+        assert_eq!(output.stdout.len() as u64, size.min(u64::from(LIMIT) + 1));
+
+        let payload = guest_control_proto::encode_exec_result(
+            ExecTermination::Exited { exit_code: 0 },
+            0,
+            ExecCapturedOutput::Captured {
+                bytes: &output.stdout[..output.stdout.len().min(LIMIT as usize)],
+                truncated: output.stdout.len() > LIMIT as usize,
+            },
+            ExecCapturedOutput::Captured {
+                bytes: b"",
+                truncated: false,
+            },
+            "",
+        )
+        .unwrap();
+        fixture.send_raw_result(start.seq(), payload).await;
+        let result = read_task.await.unwrap();
+        if size <= u64::from(LIMIT) {
+            assert_eq!(result.unwrap(), Some(vec![0; size as usize]));
+        } else {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("exceeded 65536 bytes")
+            );
+        }
+        assert_eq!(operation_count(&fixture.host), 0);
+    }
+}
+
+#[tokio::test]
+async fn read_file_accepts_maximum_capture_budget_without_probe_overflow() {
+    let dir = HostTempDir::new("guest-control-client-read-max-budget");
+    let path = dir.join("source");
+    std::fs::write(&path, b"content").unwrap();
+    let mut fixture = ReadFileFixture::new().await;
+    let read_task = fixture.spawn_read(path.to_str().unwrap(), u64::from(u32::MAX), 5000);
+    let start = fixture.expect_read_start(u32::MAX).await;
+    let output = std::process::Command::new("sh")
+        .args(["-c", &start.command])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"content");
+    assert!(output.stderr.is_empty());
+    fixture
+        .send_result(
+            start.seq(),
+            ExecTermination::Exited { exit_code: 0 },
+            &output.stdout,
+            &output.stderr,
+        )
+        .await;
+    assert_eq!(read_task.await.unwrap().unwrap(), Some(b"content".to_vec()));
 }

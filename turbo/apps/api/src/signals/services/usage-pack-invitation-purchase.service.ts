@@ -1,3 +1,8 @@
+import {
+  prepareGetStartedInvitation,
+  linkGetStartedInvitation,
+  acceptGetStartedInvitation,
+} from "./get-started-invitation.service";
 import type {
   OrgInvitationPurchasePreviewResponse,
   OrgRole,
@@ -1074,6 +1079,12 @@ async function ensurePaidInvitationCreated(
     }
     return;
   }
+  const rewardClaim = await prepareGetStartedInvitation(db, {
+    orgId: purchase.orgId,
+    userId: purchase.inviterUserId,
+    purchaseId: purchase.id,
+  });
+  signal.throwIfAborted();
   const invitation =
     existing ??
     (await clerk.organizations.createOrganizationInvitation({
@@ -1091,9 +1102,13 @@ async function ensurePaidInvitationCreated(
       ),
       privateMetadata: {
         [PURCHASE_ID_METADATA_KEY]: purchase.id,
+        ...(rewardClaim ? { getStartedClaimId: rewardClaim.id } : {}),
       },
     }));
   await persistInvitation(db, purchase, invitation.id);
+  if (rewardClaim) {
+    await linkGetStartedInvitation(db, rewardClaim.id, invitation.id);
+  }
 }
 
 async function finalizeRefund(
@@ -2185,6 +2200,11 @@ export async function handleUsagePackInvitationAccepted(
   if (!candidate) {
     return false;
   }
+  // Exact membership recovery has the same invitation evidence as the webhook.
+  await acceptGetStartedInvitation(db, {
+    ...args,
+    purchaseId: candidate.id,
+  });
   if (IGNORED_ACCEPTANCE_STATUSES.has(candidate.status)) {
     return true;
   }

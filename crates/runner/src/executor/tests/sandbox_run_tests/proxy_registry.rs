@@ -147,6 +147,65 @@ async fn proxy_registration_accepts_canonical_targets() {
 }
 
 #[tokio::test]
+async fn proxy_registration_attributes_network_logs_before_waiting_for_application() {
+    use std::os::unix::fs::PermissionsExt;
+    use tokio::io::AsyncReadExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let config = Arc::new(test_executor_config(dir.path()).await);
+    let context = minimal_context();
+    let run_id = context.run_id;
+    let log_path = config.log_paths.network_log(run_id);
+    let control_dir = tempfile::Builder::new()
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()
+        .unwrap();
+    let listener = tokio::net::UnixListener::bind(control_dir.path().join("control.sock")).unwrap();
+    config
+        .registry
+        .set_control_target_for_test(control_dir.path().to_path_buf(), "generation-1".into());
+    let source_ip = "10.200.0.3";
+    let registration_config = Arc::clone(&config);
+    let registration =
+        tokio::spawn(
+            async move { register_proxy(&registration_config, &context, source_ip).await },
+        );
+    let (mut peer, _) = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    let size = peer.read_u32().await.unwrap();
+    let mut bytes = vec![0; size as usize];
+    peer.read_exact(&mut bytes).await.unwrap();
+    let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(request["method"], "registry.apply");
+
+    // Reused sandboxes are already unparked. DNS/kernel producers must retain
+    // their real per-run file attribution while this control reply is withheld.
+    let row = serde_json::json!({"type": "dns", "host": "during-apply.example", "port": 53});
+    let accepted = config
+        .network_log_manager
+        .append_for_ip(source_ip, row.clone())
+        .await;
+    drop(peer);
+    let session = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, registration)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    session
+        .close_for_upload(run_id, &config.network_log_drain)
+        .await;
+    assert!(
+        accepted,
+        "receipt wait must not delay network-log attribution"
+    );
+    let recorded: serde_json::Value =
+        serde_json::from_slice(&tokio::fs::read(log_path).await.unwrap()).unwrap();
+    assert_eq!(recorded, row);
+}
+
+#[tokio::test]
 async fn execute_job_proxy_register_failure_destroys_fresh_sandbox_before_agent_start() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;

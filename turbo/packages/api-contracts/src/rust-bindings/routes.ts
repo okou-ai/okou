@@ -2,6 +2,7 @@ import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import {
   runnersActiveInputsContract,
+  runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
@@ -34,6 +35,11 @@ export interface RustRouteBinding {
 }
 
 export const rustRouteBindings = [
+  {
+    route: runnersCancellationContract.get,
+    rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],
+    rustConstName: "GET",
+  },
   {
     route: runnerSshContract.observe,
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "observations"],

@@ -8,6 +8,70 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.608.1](https://github.com/vm0-ai/okou/compare/api-v1.608.0...api-v1.608.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** retry status-less clerk transport reads ([#34501](https://github.com/vm0-ai/okou/issues/34501)) ([57abf1d](https://github.com/vm0-ai/okou/commit/57abf1dad7892ee5bdfdd4acad309038c1e2c8bb))
+* complete lark and feishu setup permissions ([#34491](https://github.com/vm0-ai/okou/issues/34491)) ([13b706d](https://github.com/vm0-ai/okou/commit/13b706d293f61d6bd6f71b039baac2f54f19fdc7))
+* **pi:** preserve causal transport failure diagnostics ([#34505](https://github.com/vm0-ai/okou/issues/34505)) ([9ae5a27](https://github.com/vm0-ai/okou/commit/9ae5a2748353914dce8bcf983dac554f7ae5a4af))
+* **social:** restore input-only provider warnings ([#34487](https://github.com/vm0-ai/okou/issues/34487)) ([c449d35](https://github.com/vm0-ai/okou/commit/c449d35755c9ba37b4876191d5f824fc885900ca))
+
+
+### Refactoring
+
+* **app:** replace impact iframe with one onboarding request ([#34403](https://github.com/vm0-ai/okou/issues/34403)) ([4f33be6](https://github.com/vm0-ai/okou/commit/4f33be6e54d54757a49c796e5bacd87d75d2b274))
+* retire legacy balance failure presentation ([#34507](https://github.com/vm0-ai/okou/issues/34507)) ([4d05427](https://github.com/vm0-ai/okou/commit/4d0542785362ce2d040d2f3f2cddaff1ef495ffe))
+* **ssh:** share rollout gating with cloudflare access ([#34489](https://github.com/vm0-ai/okou/issues/34489)) ([84a84fb](https://github.com/vm0-ai/okou/commit/84a84fba45ee6b5273b0ee5c6ade5a60a10b22c9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.1
+    * @okouai/core bumped to 8.668.2
+    * @okouai/db bumped to 1.264.1
+    * @okouai/pi-agent-runtime bumped to 1.31.3
+
+## [1.608.0](https://github.com/vm0-ai/okou/compare/api-v1.607.2...api-v1.608.0) (2026-09-16)
+
+
+### Features
+
+* **api:** persist run stop intent for runner reconciliation ([#34393](https://github.com/vm0-ai/okou/issues/34393)) ([85d8092](https://github.com/vm0-ai/okou/commit/85d8092bfa38f6f2fa56afe046b847dcbe8de723))
+
+
+### Bug Fixes
+
+* align provider failure classification across pi, codex, and claude code ([#34396](https://github.com/vm0-ai/okou/issues/34396)) ([ff4f23f](https://github.com/vm0-ai/okou/commit/ff4f23fa72b471204d0a27bcbc5466679ab16042))
+
+
+### Performance Improvements
+
+* **api:** reuse coordinated subscription environment data ([#34417](https://github.com/vm0-ai/okou/issues/34417)) ([a0e2fe5](https://github.com/vm0-ai/okou/commit/a0e2fe56d5ada8141ad2b85230e3abd8bde0c13e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.0
+    * @okouai/core bumped to 8.668.1
+    * @okouai/db bumped to 1.264.0
+    * @okouai/pi-agent-runtime bumped to 1.31.2
+
+## [1.607.2](https://github.com/vm0-ai/okou/compare/api-v1.607.1...api-v1.607.2) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.668.0
+    * @okouai/db bumped to 1.263.2
+
 ## [1.607.1](https://github.com/vm0-ai/okou/compare/api-v1.607.0...api-v1.607.1) (2026-09-16)
 
 

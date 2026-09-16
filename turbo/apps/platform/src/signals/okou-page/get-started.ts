@@ -1,86 +1,103 @@
 import { command, computed, state } from "ccstate";
-import { isOrgAdmin$ } from "../org.ts";
+import {
+  GET_STARTED_REWARDS_CHANGED_EVENT,
+  getStartedContract,
+  type GetStartedQuestKey,
+  type GetStartedStatus,
+} from "@okouai/api-contracts/contracts/get-started";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { apiClient$ } from "../api-client.ts";
+import { featureSwitches$ } from "../external/feature-switch.ts";
+import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
+import { accept } from "../../lib/accept.ts";
+import {
+  createDeferredPromise,
+  resetSignal,
+  setDaemon,
+  settle,
+  waitForOperation,
+  withCleanup,
+} from "../utils.ts";
+import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 
-/** The onboarding quests, named the way the panel lists them. */
-export type GetStartedQuestKey =
-  | "connector"
-  | "slack"
-  | "workflow"
-  | "invite"
-  | "share"
-  | "checkin";
-
-/**
- * `inReview` belongs to the X post alone: it is the only quest a person claims
- * by submitting something, so it has a state between untouched and earned.
- */
-export type GetStartedQuestStatus = "todo" | "inReview" | "done";
-
+export type GetStartedQuestStatus = "todo" | "inReview" | "done" | "rejected";
 export interface GetStartedQuest {
   readonly key: GetStartedQuestKey;
   readonly status: GetStartedQuestStatus;
-  /** Credits this person has already earned from this quest. */
   readonly earnedCredits: number;
+  readonly claimedCount: number;
+  readonly pendingCount: number;
+  readonly limit: number | null;
+  readonly canEarnMore: boolean;
+  readonly rewardAmount: number;
+  readonly rewardTarget: "user" | "org";
 }
 
-/**
- * Installing Slack and inviting members are org-level actions, so a member is
- * offered only the quests they can finish on their own. Both the count and the
- * ring are computed from whichever set applies, never from the admin set, so a
- * member is never shown a step they cannot take or a total they cannot reach.
- */
-const ADMIN_QUEST_KEYS = [
-  "connector",
-  "slack",
-  "workflow",
-  "invite",
-  "share",
-  "checkin",
-] as const satisfies readonly GetStartedQuestKey[];
-
-const MEMBER_QUEST_KEYS = [
-  "connector",
-  "workflow",
-  "share",
-  "checkin",
-] as const satisfies readonly GetStartedQuestKey[];
-
-/**
- * Placeholder progress.
- *
- * Credits are earned per person rather than per org, so this stands in for a
- * per-user endpoint that does not exist yet. Nothing here reads or writes a
- * real balance, which is why the whole entry stays behind its feature switch.
- */
-const mockQuestProgress$ = state<
-  Readonly<Record<GetStartedQuestKey, GetStartedQuest>>
->({
-  connector: { key: "connector", status: "done", earnedCredits: 300 },
-  slack: { key: "slack", status: "done", earnedCredits: 2000 },
-  workflow: { key: "workflow", status: "todo", earnedCredits: 0 },
-  invite: { key: "invite", status: "todo", earnedCredits: 0 },
-  share: { key: "share", status: "todo", earnedCredits: 0 },
-  checkin: { key: "checkin", status: "todo", earnedCredits: 0 },
+const reloadVersion$ = state(0);
+const getStartedStatus$ = computed(
+  async (get): Promise<GetStartedStatus | null> => {
+    get(reloadVersion$);
+    const switches = await get(featureSwitches$);
+    if (!switches[FeatureSwitchKey.GetStartedQuests]) {
+      return null;
+    }
+    await get(runtimeAuthenticatedIdentity$);
+    const response = await accept(
+      get(apiClient$)(getStartedContract).status(),
+      [200, 403],
+      undefined,
+      { showErrorToast: false },
+    );
+    return response.status === 200 ? response.body : null;
+  },
+);
+const reloadGetStarted$ = command(({ set }) => {
+  set(reloadVersion$, (value) => {
+    return value + 1;
+  });
+});
+export const setGetStartedMenuOpen$ = command(({ set }, open: boolean) => {
+  if (open) {
+    set(reloadGetStarted$);
+  }
 });
 
 export const getStartedQuests$ = computed(
   async (get): Promise<readonly GetStartedQuest[]> => {
-    const isAdmin = await get(isOrgAdmin$);
-    const progress = get(mockQuestProgress$);
-    const keys = isAdmin ? ADMIN_QUEST_KEYS : MEMBER_QUEST_KEYS;
-    return keys.map((key) => {
-      return progress[key];
+    const data = await get(getStartedStatus$);
+    if (!data) {
+      return [];
+    }
+    return data.quests.map((quest) => {
+      let status: GetStartedQuestStatus = (
+        quest.key === "checkin" ? data.claimedToday : quest.claimedCount > 0
+      )
+        ? "done"
+        : "todo";
+      if (quest.key === "share" && status !== "done") {
+        if (
+          data.shareClaim?.status === "pending" ||
+          data.shareClaim?.status === "reviewing"
+        ) {
+          status = "inReview";
+        }
+        if (
+          data.shareClaim?.status === "rejected" ||
+          data.shareClaim?.status === "ineligible"
+        ) {
+          status = "rejected";
+        }
+      }
+      return { ...quest, status };
     });
   },
 );
-
 export interface GetStartedSummary {
   readonly completed: number;
   readonly total: number;
-  /** Credits this person has earned, not the org balance. */
   readonly earnedCredits: number;
 }
-
 export const getStartedSummary$ = computed(
   async (get): Promise<GetStartedSummary> => {
     const quests = await get(getStartedQuests$);
@@ -89,48 +106,190 @@ export const getStartedSummary$ = computed(
         return quest.status === "done";
       }).length,
       total: quests.length,
-      earnedCredits: quests.reduce((sum, quest) => {
-        return sum + quest.earnedCredits;
-      }, 0),
+      earnedCredits: quests
+        .filter((quest) => {
+          return quest.rewardTarget === "user";
+        })
+        .reduce((sum, quest) => {
+          return sum + quest.earnedCredits;
+        }, 0),
     };
   },
 );
 
 const internalShareDialogOpen$ = state(false);
 const internalSharePostDraft$ = state("");
-
+const internalShareSubmission$ = state<Promise<void> | null>(null);
+const resetShareSubmission$ = resetSignal();
 export const shareDialogOpen$ = computed((get) => {
   return get(internalShareDialogOpen$);
 });
-
 export const sharePostDraft$ = computed((get) => {
   return get(internalSharePostDraft$);
 });
-
-/** Closing always clears the field, so reopening never shows a stale link. */
+export const shareSubmission$ = computed((get) => {
+  return get(internalShareSubmission$);
+});
 export const setShareDialogOpen$ = command(({ set }, open: boolean) => {
   set(internalShareDialogOpen$, open);
   if (!open) {
+    set(resetShareSubmission$);
     set(internalSharePostDraft$, "");
+    set(internalShareSubmission$, null);
   }
 });
-
 export const setSharePostDraft$ = command(({ set }, draft: string) => {
   set(internalSharePostDraft$, draft);
 });
+const submitShareRequest$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    await accept(
+      get(apiClient$)(getStartedContract).submitShare({
+        body: { url: get(internalSharePostDraft$).trim() },
+        fetchOptions: { signal },
+      }),
+      [202],
+      signal,
+    );
+    signal.throwIfAborted();
+    set(reloadGetStarted$);
+    set(internalShareDialogOpen$, false);
+    set(internalSharePostDraft$, "");
+  },
+);
+export const submitSharePost$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    const requestSignal = set(resetShareSubmission$, signal);
+    const pending = set(submitShareRequest$, requestSignal);
+    set(internalShareSubmission$, pending);
+    await pending;
+    signal.throwIfAborted();
+  },
+);
 
-/**
- * Spend the single X submission.
- *
- * The post URL is deliberately not carried anywhere yet: no endpoint accepts
- * it, and keeping it in the client would only pretend it had been stored. The
- * real command takes the URL and returns the review outcome.
- */
-export const submitSharePost$ = command(({ set }) => {
-  set(mockQuestProgress$, (progress) => {
-    const share: GetStartedQuest = { ...progress.share, status: "inReview" };
-    return { ...progress, share };
+/** Each wait owns its timer and focus listeners, all released on root cancellation. */
+async function waitForRewardRefresh(
+  milliseconds: number | null,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const next = createDeferredPromise<void>(signal);
+  const wake = () => {
+    if (!next.settled()) {
+      next.resolve();
+    }
+  };
+  const visible = () => {
+    if (document.visibilityState === "visible") {
+      wake();
+    }
+  };
+  const timer =
+    milliseconds === null ? null : window.setTimeout(wake, milliseconds);
+  window.addEventListener("focus", wake);
+  document.addEventListener("visibilitychange", visible);
+  await withCleanup(next.promise, () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+    }
+    window.removeEventListener("focus", wake);
+    document.removeEventListener("visibilitychange", visible);
   });
-  set(internalShareDialogOpen$, false);
-  set(internalSharePostDraft$, "");
-});
+}
+
+const refreshAndCheckin$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(reloadGetStarted$);
+    let data = await waitForOperation(get(getStartedStatus$), signal);
+    signal.throwIfAborted();
+    if (!data) {
+      return null;
+    }
+    if (!data.claimedToday) {
+      const result = await accept(
+        get(apiClient$)(getStartedContract).checkin({
+          fetchOptions: { signal },
+        }),
+        [200, 403],
+        signal,
+        { showErrorToast: false },
+      );
+      signal.throwIfAborted();
+      if (result.status === 403) {
+        return null;
+      }
+      set(reloadGetStarted$);
+      data = await waitForOperation(get(getStartedStatus$), signal);
+      signal.throwIfAborted();
+    }
+    return data;
+  },
+);
+
+const refreshGetStartedFromRealtime$ = command(
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const data = await set(refreshAndCheckin$, signal);
+    signal.throwIfAborted();
+    if (!data) {
+      return true;
+    }
+    await set(reloadAccountMenuCreditBalances$, signal);
+    signal.throwIfAborted();
+    return false;
+  },
+);
+
+/** Focus and the next UTC boundary are explicit refresh triggers, not polling. */
+const refreshGetStartedOnFocusAndUtcDay$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    let previousEarnings: number | null = null;
+    while (!signal.aborted) {
+      const result = await settle(set(refreshAndCheckin$, signal), signal);
+      signal.throwIfAborted();
+      let nextReset: number | null = null;
+      if (result.ok) {
+        const data = result.value;
+        if (!data) {
+          return;
+        }
+        const earnings = data.quests.reduce((sum, quest) => {
+          return sum + quest.earnedCredits;
+        }, 0);
+        if (earnings !== previousEarnings) {
+          await settle(set(reloadAccountMenuCreditBalances$, signal), signal);
+          signal.throwIfAborted();
+        }
+        previousEarnings = earnings;
+        nextReset = Math.max(
+          250,
+          Date.parse(data.nextResetAt) - Date.parse(data.serverNow),
+        );
+      }
+      await waitForRewardRefresh(nextReset, signal);
+      signal.throwIfAborted();
+    }
+  },
+);
+
+/** An authenticated app daemon; reward availability never delays route readiness. */
+export const setupGetStartedRewards$ = command(
+  ({ get, set }, signal: AbortSignal): void => {
+    setDaemon(async (ownerSignal) => {
+      const switches = await get(featureSwitches$);
+      ownerSignal.throwIfAborted();
+      if (!switches[FeatureSwitchKey.GetStartedQuests]) {
+        return;
+      }
+      set(
+        setAblyLoop$,
+        {
+          topic: GET_STARTED_REWARDS_CHANGED_EVENT,
+          loopCommand$: refreshGetStartedFromRealtime$,
+          options: { runOnSubscribe: true },
+        },
+        ownerSignal,
+      );
+      await set(refreshGetStartedOnFocusAndUtcDay$, ownerSignal);
+    }, signal);
+  },
+);

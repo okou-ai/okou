@@ -1986,17 +1986,23 @@ async function importLegacySubscriptionBundle(
 async function reconcileLockedSubscriptionSnapshot(
   args: SubscriptionCredentialOwner,
   snapshot: SubscriptionCredentialSnapshot,
-): Promise<readonly AccountRow[] | null> {
+  readCompletedSnapshot = false,
+) {
   if (!snapshotNeedsCoordination(snapshot, args.sourceId)) {
-    return snapshot.accounts;
+    return { accounts: snapshot.accounts, snapshot };
   }
   if (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext)) {
     const updated = await reconcileCodexRefreshMetadata(args.db, snapshot);
-    return updated
-      ? snapshot.accounts.map((account) => {
-          return account.id === updated.id ? updated : account;
-        })
-      : snapshot.accounts;
+    const completed = updated
+      ? {
+          ...snapshot,
+          active: updated,
+          accounts: snapshot.accounts.map((account) => {
+            return account.id === updated.id ? updated : account;
+          }),
+        }
+      : snapshot;
+    return { accounts: completed.accounts, snapshot: completed };
   }
   if (args.type !== CODEX_TYPE) {
     return null;
@@ -2038,11 +2044,34 @@ async function reconcileLockedSubscriptionSnapshot(
       : undefined,
   );
   return imported
-    ? await args.db
-        .select()
-        .from(modelProviderAccounts)
-        .where(eq(modelProviderAccounts.modelProviderId, snapshot.provider.id))
+    ? await readImportedSubscriptionState(
+        args,
+        snapshot.provider.id,
+        readCompletedSnapshot,
+      )
     : null;
+}
+
+/** Import callers already own the provider and credential locks. Capture and
+ * readiness retain their account-only reread; environment preparation needs
+ * the complete post-import inventory instead, never the observed old secrets. */
+async function readImportedSubscriptionState(
+  args: SubscriptionCredentialOwner,
+  providerId: string,
+  readCompletedSnapshot: boolean,
+) {
+  if (readCompletedSnapshot) {
+    const snapshot = await lockSubscriptionCredentialSnapshot(args);
+    if (!snapshot) {
+      throw new Error("Expected imported personal model provider snapshot");
+    }
+    return { accounts: snapshot.accounts, snapshot };
+  }
+  const accounts = await args.db
+    .select()
+    .from(modelProviderAccounts)
+    .where(eq(modelProviderAccounts.modelProviderId, providerId));
+  return { accounts, snapshot: null };
 }
 
 /** Refresh and settings mutations own their provider transaction. This helper
@@ -2187,8 +2216,50 @@ async function coordinatePersonalSubscriptionAccounts(
   args: SubscriptionCredentialOwner & {
     readonly initializeProviderId?: string;
   },
-  signal: AbortSignal = AbortSignal.timeout(10_000),
+  signal?: AbortSignal,
 ): Promise<readonly AccountRow[] | null> {
+  const completed = await coordinateSubscriptionSnapshot(args, false, signal);
+  return completed?.accounts ?? null;
+}
+
+/** Environment preparation may reuse the completed encrypted observation, but
+ * it is never an admission proof or a runtime credential cache. */
+export async function readCoordinatedPersonalSubscriptionAccount(
+  args: SubscriptionCredentialOwner & { readonly sourceId: string },
+  signal?: AbortSignal,
+) {
+  const completed = await coordinateSubscriptionSnapshot(args, true, signal);
+  const snapshot = completed?.snapshot;
+  if (!snapshot) {
+    return null;
+  }
+  const account = snapshot.accounts.find((candidate) => {
+    return (
+      candidate.id === args.sourceId &&
+      candidate.orgId === args.orgId &&
+      candidate.userId === args.userId &&
+      candidate.type === args.type &&
+      candidate.disconnectedAt === null
+    );
+  });
+  return account
+    ? {
+        account,
+        selectedModel: snapshot.provider.selectedModel,
+        secrets: snapshot.accountSecrets.filter((secret) => {
+          return secret.modelProviderAccountId === account.id;
+        }),
+      }
+    : null;
+}
+
+async function coordinateSubscriptionSnapshot(
+  args: SubscriptionCredentialOwner & {
+    readonly initializeProviderId?: string;
+  },
+  readCompletedSnapshot: boolean,
+  signal: AbortSignal = AbortSignal.timeout(10_000),
+) {
   const observed = await args.db.transaction(async (tx) => {
     let snapshot = await lockSubscriptionCredentialSnapshot({
       ...args,
@@ -2199,7 +2270,7 @@ async function coordinatePersonalSubscriptionAccounts(
       (args.initializeProviderId !== undefined &&
         snapshot.provider.id !== args.initializeProviderId)
     ) {
-      return { accounts: null, snapshot: null };
+      return { completed: null, snapshot: null };
     }
     // Keep the actual historical singleton seed until #34010 closes its writer,
     // persisted-context and rollback gates. Retained-only parents are not empty.
@@ -2221,19 +2292,20 @@ async function coordinatePersonalSubscriptionAccounts(
         }
       }
     }
-    const accounts = await reconcileLockedSubscriptionSnapshot(
+    const completed = await reconcileLockedSubscriptionSnapshot(
       { ...args, db: tx },
       snapshot,
+      readCompletedSnapshot,
     );
-    return { accounts, snapshot };
+    return { completed, snapshot };
   });
   signal.throwIfAborted();
   if (
-    observed.accounts !== null ||
+    observed.completed !== null ||
     !observed.snapshot ||
     args.type !== CLAUDE_CODE_TYPE
   ) {
-    return observed.accounts;
+    return observed.completed;
   }
   const snapshot = observed.snapshot;
   const active = snapshot.active;
@@ -2291,12 +2363,11 @@ async function coordinatePersonalSubscriptionAccounts(
       oldProof.value,
     );
     return imported
-      ? await tx
-          .select()
-          .from(modelProviderAccounts)
-          .where(
-            eq(modelProviderAccounts.modelProviderId, snapshot.provider.id),
-          )
+      ? await readImportedSubscriptionState(
+          { ...args, db: tx },
+          snapshot.provider.id,
+          readCompletedSnapshot,
+        )
       : null;
   });
 }

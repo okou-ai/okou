@@ -34,7 +34,7 @@ pub struct FailureDiagnostic {
     pub failure_detail_source: Option<FailureDetailSource>,
     /// Parsed detailed failure reason, when available.
     pub failure_reason: Option<FailureReason>,
-    /// Observed model-request status and completed retry evidence, when available.
+    /// Observed model-request, causal transport and completed retry evidence, when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_request: Option<ModelRequestDiagnostic>,
     /// Conservative session-history target status recorded during failure handling.
@@ -71,6 +71,9 @@ pub struct ModelRequestDiagnostic {
     /// Session retry maximum observed from an SDK retry event, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_limit: Option<u32>,
+    /// Original transport exception reduced to fixed values before SDK normalization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_failure: Option<crate::model_transport::ModelTransportFailure>,
 }
 
 impl FailureDiagnostic {

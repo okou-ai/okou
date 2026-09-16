@@ -335,6 +335,13 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await waitForRunStatus(actor, first.runId, "completed", 10_000);
     await flushWaitUntilForTest();
+    await expect(
+      api.readRunnerCancellation(
+        api.sandboxTokenForRun(actor, first.runId),
+        first.runId,
+        runnerGroup,
+      ),
+    ).resolves.toMatchObject({ state: "present", mode: "hard" });
     expect(modelCalls).toBe(1);
     await expect(
       readPiMemoryStage1CandidateFixture({

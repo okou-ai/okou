@@ -190,16 +190,17 @@ are unchanged.
 
 ### Cloudflare Access authority preparation
 
-#34077 prepares the backend of #31996. It does not provide the native carrier or
-Access management UI. `cloudflareAccess` is default-off, including for staff, and
-requires `sshAccess`. Each protected host binds one same-owner `(orgId, userId)`
+#34077 prepares the backend of #31996; #34080 and #34081 provide the native
+carrier and management UI. Direct and Cloudflare Access share the staff-only
+`sshAccess` switch, with no separate Access rollout switch.
+Each protected host binds one same-owner `(orgId, userId)`
 Access configuration. The saved DNS hostname is the exact approved token recipient;
 its port is 443, while the origin SSH port is configured in Cloudflare. No guest
 URL, wildcard, alternate recipient list or Direct fallback exists.
 
 SSH has one canonical contract, without a version/profile selector or duplicate
-legacy DTO. Protected authority requires the existing SSH checks plus the current
-Access feature and bound same-owner configuration. The existing SSH grant is
+legacy DTO. Protected authority requires the existing SSH checks, including
+`sshAccess`, plus a bound same-owner configuration. The existing SSH grant is
 the only Agent permission for either transport; configuration creation or edits
 never grant SSH. Direct handoffs retain their actual key/password variants.
 

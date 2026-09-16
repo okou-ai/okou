@@ -1,5 +1,5 @@
 {
-  "id": "4a0c0133-1f86-4fc3-a9f6-dad487983fe6",
+  "id": "311c2caa-d7c7-49a1-bc54-d7091d1358eb",
   "prevId": "b03a973a-18d1-48e2-951a-f78eaba80a04",
   "version": "7",
   "dialect": "postgresql",
@@ -1811,37 +1811,9 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
-        },
-        "terminal_effects_pending_at": {
-          "name": "terminal_effects_pending_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "agent_run_sandbox_intent_terminal_idx": {
-          "name": "agent_run_sandbox_intent_terminal_idx",
-          "columns": [
-            {
-              "expression": "terminal_effects_pending_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"agent_run_sandbox_intent\".\"terminal_effects_pending_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "agent_run_sandbox_intent_queue_idx": {
           "name": "agent_run_sandbox_intent_queue_idx",
           "columns": [
@@ -1989,18 +1961,6 @@
         "runner_id": {
           "name": "runner_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_owner_epoch": {
-          "name": "claimed_owner_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_generation": {
-          "name": "claimed_generation",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -2230,6 +2190,12 @@
           "type": "varchar(20)",
           "primaryKey": false,
           "notNull": true
+        },
+        "runner_cancellation_mode": {
+          "name": "runner_cancellation_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "prompt": {
           "name": "prompt",
@@ -2721,6 +2687,10 @@
         "agent_runs_autonomy_budget_check": {
           "name": "agent_runs_autonomy_budget_check",
           "value": "\"agent_runs\".\"autonomy_budget\" >= 0 AND \"agent_runs\".\"autonomy_budget\" <= 10"
+        },
+        "agent_runs_runner_cancellation_mode_check": {
+          "name": "agent_runs_runner_cancellation_mode_check",
+          "value": "\"agent_runs\".\"runner_cancellation_mode\" IN ('cooperative', 'hard')"
         },
         "agent_runs_metadata_presence_check": {
           "name": "agent_runs_metadata_presence_check",
@@ -21464,174 +21434,6 @@
         "chk_usage_allowance_allocations_units": {
           "name": "chk_usage_allowance_allocations_units",
           "value": "\"usage_allowance_allocations\".\"units_applied\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.agent_run_inference_objects": {
-      "name": "agent_run_inference_objects",
-      "schema": "",
-      "columns": {
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "agent_run_inference_object_hash_idx": {
-          "name": "agent_run_inference_object_hash_idx",
-          "columns": [
-            {
-              "expression": "hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_run_inference_objects_run_id_agent_run_inference_run_id_fk": {
-          "name": "agent_run_inference_objects_run_id_agent_run_inference_run_id_fk",
-          "tableFrom": "agent_run_inference_objects",
-          "tableTo": "agent_run_inference",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "run_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_run_inference_objects_hash_pi_inference_objects_hash_fk": {
-          "name": "agent_run_inference_objects_hash_pi_inference_objects_hash_fk",
-          "tableFrom": "agent_run_inference_objects",
-          "tableTo": "pi_inference_objects",
-          "columnsFrom": [
-            "hash"
-          ],
-          "columnsTo": [
-            "hash"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "agent_run_inference_objects_run_id_kind_hash_pk": {
-          "name": "agent_run_inference_objects_run_id_kind_hash_pk",
-          "columns": [
-            "run_id",
-            "kind",
-            "hash"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.pi_inference_objects": {
-      "name": "pi_inference_objects",
-      "schema": "",
-      "columns": {
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "pi_inference_object_gc_idx": {
-          "name": "pi_inference_object_gc_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pi_inference_object_hash_check": {
-          "name": "pi_inference_object_hash_check",
-          "value": "\"pi_inference_objects\".\"hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "pi_inference_object_kind_check": {
-          "name": "pi_inference_object_kind_check",
-          "value": "\"pi_inference_objects\".\"kind\" IN ('configuration', 'context', 'h1', 'secrets')"
-        },
-        "pi_inference_object_size_check": {
-          "name": "pi_inference_object_size_check",
-          "value": "octet_length(\"pi_inference_objects\".\"content\") <= 33554432"
         }
       },
       "isRLSEnabled": false

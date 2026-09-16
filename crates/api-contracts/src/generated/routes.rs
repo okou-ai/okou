@@ -208,6 +208,39 @@ pub mod runners {
                 }
             }
 
+            /// Generated route bindings under `runners::runs::by_run_id::cancellation`.
+            pub mod cancellation {
+                /// Read the stop intent or confirmed absence of a claimed Run.
+                /// Route contract: `GET /api/runners/runs/:runId/cancellation`.
+                pub const GET: crate::RouteTemplate = crate::RouteTemplate {
+                    method: crate::Method::Get,
+                    path: "/api/runners/runs/:runId/cancellation",
+                };
+
+                /// Path parameters for `GET /api/runners/runs/:runId/cancellation`.
+                #[derive(Debug, Clone, Copy)]
+                pub struct Params<'a> {
+                    /// Value for the `:runId` path parameter.
+                    pub run_id: &'a str,
+                }
+
+                /// Build the concrete path for `GET /api/runners/runs/:runId/cancellation`.
+                /// Percent-encodes each path parameter as a URL path segment.
+                #[must_use]
+                pub fn path(params: Params<'_>) -> String {
+                    format!(
+                        "/api/runners/runs/{}/cancellation",
+                        crate::route::encode_path_segment(params.run_id),
+                    )
+                }
+
+                /// Build a resolved route for `GET /api/runners/runs/:runId/cancellation`.
+                #[must_use]
+                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                    crate::ResolvedRoute::new(GET.method, path(params))
+                }
+            }
+
             /// Generated route bindings under `runners::runs::by_run_id::connector_runtime`.
             pub mod connector_runtime {
                 /// Generated route bindings under `runners::runs::by_run_id::connector_runtime::sync`.

@@ -304,7 +304,7 @@ import {
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
-  coordinatePersonalSubscriptionCredentials,
+  readCoordinatedPersonalSubscriptionAccount,
   preparePersonalSubscriptionAdmission,
   validatePersonalSubscriptionAdmission,
   type PreparedPersonalSubscriptionAdmission,
@@ -2451,6 +2451,11 @@ function resolveMultiAuthRuntimeModel(
   return runtimeModel;
 }
 
+interface ModelProviderEnvironmentSecret {
+  readonly name: string;
+  readonly encryptedValue: string | null;
+}
+
 async function multiAuthModelProviderEnvironment(
   db: Db,
   args: {
@@ -2464,6 +2469,7 @@ async function multiAuthModelProviderEnvironment(
     readonly piExecution?: boolean;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly accountId?: string;
+    readonly secretRows?: readonly ModelProviderEnvironmentSecret[];
   },
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (!args.authMethod) {
@@ -2476,36 +2482,38 @@ async function multiAuthModelProviderEnvironment(
 
   const firewall = getModelProviderFirewall(args.type);
   const hasFirewallAuth = firewall !== undefined;
-  const secretRows = args.accountId
-    ? await db
-        .select({
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: hasFirewallAuth
-            ? sql`NULL`.mapWith(pgNullDecoder)
-            : modelProviderAccountSecrets.encryptedValue,
-        })
-        .from(modelProviderAccountSecrets)
-        .where(
-          eq(
-            modelProviderAccountSecrets.modelProviderAccountId,
-            args.accountId,
-          ),
-        )
-    : await db
-        .select({
-          name: secretsTable.name,
-          encryptedValue: hasFirewallAuth
-            ? sql`NULL`.mapWith(pgNullDecoder)
-            : secretsTable.encryptedValue,
-        })
-        .from(secretsTable)
-        .where(
-          and(
-            eq(secretsTable.orgId, args.orgId),
-            eq(secretsTable.userId, args.userId),
-            eq(secretsTable.type, "model-provider"),
-          ),
-        );
+  const secretRows =
+    args.secretRows ??
+    (args.accountId
+      ? await db
+          .select({
+            name: modelProviderAccountSecrets.name,
+            encryptedValue: hasFirewallAuth
+              ? sql`NULL`.mapWith(pgNullDecoder)
+              : modelProviderAccountSecrets.encryptedValue,
+          })
+          .from(modelProviderAccountSecrets)
+          .where(
+            eq(
+              modelProviderAccountSecrets.modelProviderAccountId,
+              args.accountId,
+            ),
+          )
+      : await db
+          .select({
+            name: secretsTable.name,
+            encryptedValue: hasFirewallAuth
+              ? sql`NULL`.mapWith(pgNullDecoder)
+              : secretsTable.encryptedValue,
+          })
+          .from(secretsTable)
+          .where(
+            and(
+              eq(secretsTable.orgId, args.orgId),
+              eq(secretsTable.userId, args.userId),
+              eq(secretsTable.type, "model-provider"),
+            ),
+          ));
   const storedSecrets: Record<string, string> = {};
   if (hasFirewallAuth) {
     for (const row of secretRows) {
@@ -2814,6 +2822,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
   args: ResolveModelProviderEnvironmentArgs,
   account: PersonalModelProviderAccountRow,
   selectedModel: string | null,
+  secretRows?: readonly ModelProviderEnvironmentSecret[],
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (
     !isPersonalSubscriptionProviderType(account.type) ||
@@ -2834,6 +2843,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
       selectedModel: args.selectedModelOverride ?? selectedModel,
       featureSwitchContext: args.featureSwitchContext,
       accountId: account.id,
+      secretRows,
     });
   }
 
@@ -2841,17 +2851,28 @@ async function resolvePersonalModelProviderAccountEnvironment(
   if (!isSingleSecretModelProviderConfig(config)) {
     return null;
   }
-  const [secret] = await db
-    .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
-    .from(modelProviderAccountSecrets)
-    .where(
-      and(
-        eq(modelProviderAccountSecrets.modelProviderAccountId, account.id),
-        eq(modelProviderAccountSecrets.name, config.secretName),
-      ),
-    )
-    .limit(1);
-  if (!secret) {
+  const secret = secretRows
+    ? secretRows.find((row) => {
+        return row.name === config.secretName;
+      })
+    : (
+        await db
+          .select({
+            encryptedValue: modelProviderAccountSecrets.encryptedValue,
+          })
+          .from(modelProviderAccountSecrets)
+          .where(
+            and(
+              eq(
+                modelProviderAccountSecrets.modelProviderAccountId,
+                account.id,
+              ),
+              eq(modelProviderAccountSecrets.name, config.secretName),
+            ),
+          )
+          .limit(1)
+      )[0];
+  if (!secret || secret.encryptedValue === null) {
     return null;
   }
 
@@ -2893,45 +2914,45 @@ async function resolveExactPersonalModelProviderAccount(
     userId: args.userId,
     runId: args.retainedRunId,
   });
-  if (
-    !account ||
-    !isPersonalSubscriptionProviderType(account.type) ||
-    (!args.retainedRunId &&
-      !(await coordinatePersonalSubscriptionCredentials({
-        db,
-        orgId: args.orgId,
-        userId: args.userId,
-        runId: args.retainedRunId,
-        type: account.type,
-        sourceId: account.id,
-        featureSwitchContext: args.featureSwitchContext,
-      })))
-  ) {
+  if (!account || !isPersonalSubscriptionProviderType(account.type)) {
     return null;
   }
-  const currentAccount = await personalModelProviderAccountById({
+  // A deferred Run keeps the account its original request authorized. Snapshot
+  // coordination is a request-scoped migration bridge that reconciles the
+  // owner's live credentials and skips accounts they have since disconnected,
+  // so it can neither authorize nor observe a retained continuation.
+  if (args.retainedRunId) {
+    const [provider] = await db
+      .select({ selectedModel: modelProviders.selectedModel })
+      .from(modelProviders)
+      .where(eq(modelProviders.id, account.modelProviderId))
+      .limit(1);
+    return provider
+      ? await resolvePersonalModelProviderAccountEnvironment(
+          db,
+          args,
+          account,
+          provider.selectedModel,
+        )
+      : null;
+  }
+  const coordinated = await readCoordinatedPersonalSubscriptionAccount({
     db,
-    id: account.id,
     orgId: args.orgId,
     userId: args.userId,
-    runId: args.retainedRunId,
+    type: account.type,
+    sourceId: account.id,
+    featureSwitchContext: args.featureSwitchContext,
   });
-  if (!currentAccount) {
-    return null;
-  }
-  const [provider] = await db
-    .select({ selectedModel: modelProviders.selectedModel })
-    .from(modelProviders)
-    .where(eq(modelProviders.id, currentAccount.modelProviderId))
-    .limit(1);
-  if (!provider) {
+  if (!coordinated) {
     return null;
   }
   return await resolvePersonalModelProviderAccountEnvironment(
     db,
     args,
-    currentAccount,
-    provider.selectedModel,
+    coordinated.account,
+    coordinated.selectedModel,
+    coordinated.secrets,
   );
 }
 

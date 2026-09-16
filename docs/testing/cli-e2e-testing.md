@@ -106,17 +106,26 @@ Name runner BATS files `run-tNN-<behavior>.bats`, using the next unused `NN`.
 The number is a stable file identifier, not an execution order. Test titles
 should describe behavior without repeating the file identifier.
 
-The workflow also prepares dedicated real-Codex and real-Claude identities.
-Use the Codex identity for built-in model billing coverage and the Claude
-identity for BYOK coverage so provider policy and usage assertions remain
-isolated. The shared mock-runner identity starts with `UTC` as its timezone.
+The workflow prepares separate real Codex BYOK, real Codex built-in, and
+real Claude/Pi identities. Luna billing and fallback use the built-in Codex
+identity, whose bootstrap disables Pi so those tests retain Codex execution.
+The BYOK steering and Claude/Pi accounts keep their existing configurations.
+The shared mock-runner identity starts with `UTC` as its timezone.
 Runner BATS must not mutate shared account-level preferences from parallel
 shards. Coverage that needs mutable account-level state requires a dedicated
 identity or a serialized lane.
 
+Real GPT model calls in `e2e/tests` must use `gpt-5.6-luna`;
+`e2e/scripts/model-policy.test.ts` enforces this cost boundary in CI before
+runner account preparation. Run it locally with
+`cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts`, independently of
+the Playwright fixture suite. Claude, DeepSeek, and mock-runtime coverage is
+unchanged.
+
 The default runner and feature-test accounts use limited-free onboarding. The
-dedicated Codex, Claude, and mock-Claude accounts still require Pro for their
-paid-model and BYOK policies. Runner preparation completes onboarding through
+dedicated Codex BYOK, Codex built-in, Claude, and mock-Claude accounts use Pro
+to preserve their existing billing and provider test prerequisites.
+Runner preparation completes onboarding through
 the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.
 Only the dedicated paid-onboarding spec exercises the video onboarding UI.

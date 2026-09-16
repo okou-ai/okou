@@ -1540,31 +1540,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Una vez al día, todos los días",
+          "description": "Abre la app a diario. Se reinicia a las 00:00 UTC.",
           "name": "Entrar cada día",
           "unit": "al día"
         },
         "connector": {
-          "description": "Gmail, Notion y más de 100",
+          "description": "Conecta con OAuth. Una recompensa por conector.",
           "name": "Conectar un conector",
           "unit": "por conector"
         },
         "inReview": "En revisión",
         "inReviewDescription": "Enviado, pendiente de revisión",
         "invite": {
-          "description": "Cada persona que añadas cuenta",
+          "description": "Gana cuando acepten la invitación, hasta 15 miembros.",
           "name": "Invita a tu equipo",
           "unit": "por miembro"
         },
-        "personalBalanceNote": "Los créditos van a tu saldo personal.",
+        "pendingInvitations": "Invitaciones pendientes: {{amount}}",
+        "personalBalanceNote": "Las recompensas caducan 7 días después de recibirlas. Las de Slack van a la organización; las demás, a tu saldo personal.",
         "progressLabel": "Progreso de los primeros pasos",
+        "rejectedDescription": "Esta publicación no cumple los requisitos. Envía otra publicación pública que mencione a Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Conectores recompensados: {{amount}}",
         "share": {
           "description": "Publícalo y pega el enlace",
           "name": "Comparte {{assistantName}} en X"
         },
         "shareDialog": {
-          "description": "Publica algo que hayas creado y pega el enlace. Tienes un solo envío.",
+          "description": "Envía una publicación pública para revisión. Una recompensa aprobada por persona.",
           "helper": "La publicación tiene que ser pública y mencionar a {{assistantName}}.",
           "inputLabel": "Enlace de la publicación",
           "placeholder": "https://x.com/...",
@@ -1572,14 +1575,14 @@
           "title": "Comparte {{assistantName}} en X"
         },
         "slack": {
-          "description": "Donde tu equipo ya trabaja",
+          "description": "Gana 2.000 créditos de organización, una vez por organización y espacio de trabajo.",
           "name": "Añadir {{assistantName}} a Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Completa un paso y quédate con los créditos.",
+        "subtitle": "Prueba una tarea y gana créditos.",
         "title": "Primeros pasos",
         "workflow": {
-          "description": "Convierte una tarea repetida en una automatización",
+          "description": "Ejecuta con éxito un flujo de trabajo que hayas creado.",
           "name": "Crea un workflow"
         }
       },
@@ -1800,7 +1803,6 @@
         "addTemplate": "Añadir plantilla",
         "chooseScene": "Elige qué crear",
         "chooseType": "Elige un tipo",
-        "description": "Presentaciones, vídeos e imágenes",
         "exit": "Salir del modo de creación",
         "image": "Crear imagen",
         "imageDescription": "Convierte una idea en una imagen",
@@ -3721,7 +3723,7 @@
       },
       "feishu": {
         "addBot": "Añadir bot",
-        "addDialogDescription": "Crea una aplicación personalizada para empresas, activa su bot y completa estos pasos en la consola de desarrolladores Feishu.",
+        "addDialogDescription": "Crea una aplicación empresarial de tipo Agent y completa estos pasos en la consola de desarrolladores de Feishu.",
         "addDialogTitle": "Añadir un bot de Feishu",
         "agentDescription": "Elige el agente que debe gestionar los mensajes enviados a este bot.",
         "backToIntegrations": "Volver a las integraciones",
@@ -3734,14 +3736,14 @@
         "copied": "{{label}} copiado",
         "copy": "Copiar",
         "create": {
-          "descriptionAfter": ", crea una aplicación personalizada empresarial con el nombre y el icono que prefieras y luego añade la capacidad de Bot.",
+          "descriptionAfter": ", crea una aplicación empresarial y selecciona el tipo Agent. Elige el nombre y el icono que prefieras; la plantilla Agent incluye la capacidad Bot.",
           "descriptionBefore": "En el",
           "downloadIcon": "Descarga el icono opcional de {{brandName}}",
           "iconAlt": "Icono opcional de la aplicación {{brandName}}",
           "iconHint": ", o usa cualquier icono que prefieras.",
           "iconTitle": "Icono opcional de la aplicación {{brandName}}",
           "imageAlt": "Formulario de creación de aplicaciones de Feishu con el nombre, el icono y el botón Crear resaltados",
-          "title": "Crea una aplicación personalizada para empresas"
+          "title": "Crear una aplicación de tipo Agent"
         },
         "credentials": {
           "appId": "ID de la aplicación",
@@ -3771,6 +3773,9 @@
         "faq": {
           "approvalAnswer": "Si la disponibilidad está configurada como Todos los miembros, un administrador Feishu debe aprobar la liberación. Feishu envía la solicitud de aprobación a un administrador en un mensaje directo, y la aplicación permanece pendiente hasta que un administrador complete la revisión.",
           "approvalQuestion": "¿Por qué está la publicación de la app esperando aprobación?",
+          "botFeatureAnswer": "Abre Features → Add Features en la consola de desarrolladores de Feishu. En By Feature, añade la capacidad Bot y luego continúa esta guía y publica la aplicación. Las aplicaciones de tipo Agent incluyen la capacidad Bot de forma predeterminada.",
+          "botFeatureImageAlt": "Consola de desarrolladores de Lark con la capacidad Bot en Add Features",
+          "botFeatureQuestion": "¿Qué hago si elegí Custom App en lugar de Agent?",
           "challengeAnswer": "Esto suele significar que la clave de cifrado o el token de verificación guardados durante el paso Tokens son incorrectos. Vuelve a ese paso, introduce ambos valores de Configuración de eventos → Estrategia de cifrado, guárdalos y vuelve a probar la URL de solicitud.",
           "challengeQuestion": "¿Por qué Feishu muestra \"El código de desafío no recibió respuesta\"?",
           "title": "Preguntas frecuentes sobre la configuración"
@@ -3781,14 +3786,14 @@
         "moreOptions": "Más opciones para {{bot}}",
         "pageDescription": "Gestiona el enrutamiento de bots para este espacio de trabajo",
         "permissions": {
-          "description": "En la consola de desarrolladores de Feishu, abre Permisos y ámbitos, elige Importación/exportación por lotes > Importar y pega el JSON siguiente. Esto importa todos los ámbitos del conector administrado bajo la identidad de usuario. Estos son los permisos mínimos necesarios para que la integración funcione.",
-          "hint": "Conserva todos los permisos importados de la identidad de usuario y, después, crea y publica una nueva versión de la aplicación para que la pantalla de consentimiento de OAuth pueda concederlos. Si eliminas algún permiso, la integración dejará de funcionar y es posible que se requiera la aprobación de un administrador de Feishu.",
-          "label": "JSON de ámbitos del token de usuario",
+          "description": "En la consola de desarrolladores de Feishu, abre Permissions & Scopes, selecciona Batch Import/Export > Import y pega el JSON de abajo. Incluye permisos de identidad de aplicación para el bot y de identidad de usuario para tu cuenta conectada.",
+          "hint": "Conserva todos los permisos importados de ambas identidades y luego crea y publica una nueva versión de la aplicación. Puede ser necesaria la aprobación de un administrador de Feishu.",
+          "label": "JSON de ámbitos de aplicación y usuario",
           "menuAlt": "Página Permisos y ámbitos de Feishu con el menú de importación/exportación por lotes de ámbitos resaltado",
           "menuLabel": "Abrir la importación/exportación por lotes de ámbitos",
           "reviewAlt": "Cuadro de importación/exportación por lotes de ámbitos de Feishu con el JSON importado y el botón de revisión resaltado",
           "reviewLabel": "Pegar el JSON y revisar los nuevos ámbitos",
-          "title": "Importar ámbitos del token de usuario"
+          "title": "Importar ámbitos de aplicación y usuario"
         },
         "publish": {
           "allMembersAlt": "Ajustes de disponibilidad de Feishu con la opción Todos los miembros seleccionada",
@@ -3850,7 +3855,7 @@
       },
       "lark": {
         "addBot": "Añadir bot",
-        "addDialogDescription": "Crea una aplicación personalizada para empresas, activa su bot y completa estos pasos en la consola de desarrolladores Lark.",
+        "addDialogDescription": "Crea una aplicación empresarial de tipo Agent y completa estos pasos en la consola de desarrolladores de Lark.",
         "addDialogTitle": "Añadir un bot de Lark",
         "agentDescription": "Elige el agente que debe gestionar los mensajes enviados a este bot.",
         "backToIntegrations": "Volver a las integraciones",
@@ -3863,14 +3868,14 @@
         "copied": "{{label}} copiado",
         "copy": "Copiar",
         "create": {
-          "descriptionAfter": ", crea una aplicación personalizada empresarial con el nombre y el icono que prefieras y luego añade la capacidad de Bot.",
+          "descriptionAfter": ", crea una aplicación empresarial y selecciona el tipo Agent. Elige el nombre y el icono que prefieras; la plantilla Agent incluye la capacidad Bot.",
           "descriptionBefore": "En el",
           "downloadIcon": "Descarga el icono opcional de {{brandName}}",
           "iconAlt": "Icono opcional de la aplicación {{brandName}}",
           "iconHint": ", o usa cualquier icono que prefieras.",
           "iconTitle": "Icono opcional de la aplicación {{brandName}}",
           "imageAlt": "Formulario de creación de aplicaciones de Feishu con el nombre, el icono y el botón Crear resaltados",
-          "title": "Crea una aplicación personalizada para empresas"
+          "title": "Crear una aplicación de tipo Agent"
         },
         "credentials": {
           "appId": "ID de la aplicación",
@@ -3900,6 +3905,9 @@
         "faq": {
           "approvalAnswer": "Si la disponibilidad está configurada como Todos los miembros, un administrador Lark debe aprobar la liberación. Lark envía la solicitud de aprobación a un administrador en un mensaje directo, y la aplicación permanece pendiente hasta que un administrador complete la revisión.",
           "approvalQuestion": "¿Por qué está la publicación de la app esperando aprobación?",
+          "botFeatureAnswer": "Abre Features → Add Features en la consola de desarrolladores de Lark. En By Feature, añade la capacidad Bot y luego continúa esta guía y publica la aplicación. Las aplicaciones de tipo Agent incluyen la capacidad Bot de forma predeterminada.",
+          "botFeatureImageAlt": "Consola de desarrolladores de Lark con la capacidad Bot en Add Features",
+          "botFeatureQuestion": "¿Qué hago si elegí Custom App en lugar de Agent?",
           "challengeAnswer": "Esto suele significar que la clave de cifrado o el token de verificación guardados durante el paso Tokens son incorrectos. Vuelve a ese paso, introduce ambos valores de Configuración de eventos → Estrategia de cifrado, guárdalos y vuelve a probar la URL de solicitud.",
           "challengeQuestion": "¿Por qué Lark muestra \"El código de desafío no recibió respuesta\"?",
           "title": "Preguntas frecuentes sobre la configuración"
@@ -3911,14 +3919,14 @@
         "moreOptions": "Más opciones para {{bot}}",
         "pageDescription": "Gestiona el enrutamiento de bots para este espacio de trabajo",
         "permissions": {
-          "description": "En la consola de desarrolladores de Lark, abre Permisos y ámbitos, elige Importación/exportación por lotes > Importar y pega el JSON siguiente. Esto importa todos los ámbitos del conector administrado bajo la identidad de usuario. Estos son los permisos mínimos necesarios para que la integración funcione.",
-          "hint": "Conserva todos los permisos importados de la identidad de usuario y, después, crea y publica una nueva versión de la aplicación para que la pantalla de consentimiento de OAuth pueda concederlos. Si eliminas algún permiso, la integración dejará de funcionar y es posible que se requiera la aprobación de un administrador de Lark.",
-          "label": "JSON de ámbitos del token de usuario",
+          "description": "En la consola de desarrolladores de Lark, abre Permissions & Scopes, selecciona Batch Import/Export > Import y pega el JSON de abajo. Incluye permisos de identidad de aplicación para el bot y de identidad de usuario para tu cuenta conectada.",
+          "hint": "Conserva todos los permisos importados de ambas identidades y luego crea y publica una nueva versión de la aplicación. Puede ser necesaria la aprobación de un administrador de Lark.",
+          "label": "JSON de ámbitos de aplicación y usuario",
           "menuAlt": "Página Permisos y ámbitos de Feishu con el menú de importación/exportación por lotes de ámbitos resaltado",
           "menuLabel": "Abrir la importación/exportación por lotes de ámbitos",
           "reviewAlt": "Cuadro de importación/exportación por lotes de ámbitos de Feishu con el JSON importado y el botón de revisión resaltado",
           "reviewLabel": "Pegar el JSON y revisar los nuevos ámbitos",
-          "title": "Importar ámbitos del token de usuario"
+          "title": "Importar ámbitos de aplicación y usuario"
         },
         "publish": {
           "allMembersAlt": "Ajustes de disponibilidad de Feishu con la opción Todos los miembros seleccionada",
@@ -6362,7 +6370,7 @@
       "summary_other": "{{count}} configuraciones de Access",
       "title": "Cloudflare Access",
       "tokenHelp": "Usa un Service Token permitido por la política Service Auth de tu aplicación SSH. Es independiente de tus credenciales SSH.",
-      "unavailable": "Cloudflare Access no está disponible para esta cuenta. Los hosts protegidos no pueden conectarse; los directos no se ven afectados.",
+      "unavailable": "Cloudflare Access no está disponible para esta cuenta.",
       "usedBy_one": "Usada por {{count}} host:",
       "usedBy_many": "Usada por {{count}} hosts:",
       "usedBy_other": "Usada por {{count}} hosts:"

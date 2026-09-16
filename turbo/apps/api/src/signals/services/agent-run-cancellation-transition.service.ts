@@ -1,4 +1,5 @@
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
+import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { eq } from "drizzle-orm";
@@ -13,6 +14,7 @@ export async function cancelLockedRun(
     readonly runId: string;
     readonly status: "queued" | "pending" | "running";
     readonly completedAt: Date;
+    readonly runnerCancellationMode: RunnerCancellationMode;
     readonly error?: string;
   },
 ): Promise<void> {
@@ -20,6 +22,7 @@ export async function cancelLockedRun(
     values: {
       status: "cancelled",
       completedAt: args.completedAt,
+      runnerCancellationMode: args.runnerCancellationMode,
       ...(args.error === undefined ? {} : { error: args.error }),
     },
     conditions: [

@@ -3,7 +3,7 @@
   "status": "unactivated",
   "requiredConfiguration": [
     "reviewed production notifierIds",
-    "live APL validation",
+    "post-deployment APL revalidation at activation",
     "group transition and bounded delivery verification"
   ],
   "monitors": [
@@ -23,7 +23,8 @@
         "notifyEveryRun": false,
         "alertOnNoData": false,
         "resolvable": false
-      }
+      },
+      "groupField": "accountingDay"
     },
     {
       "queryFile": "health.apl",
@@ -41,7 +42,9 @@
         "notifyEveryRun": false,
         "alertOnNoData": false,
         "resolvable": false
-      }
+      },
+      "groupField": "incidentDay"
     }
-  ]
+  ],
+  "queryRevision": 2
 }

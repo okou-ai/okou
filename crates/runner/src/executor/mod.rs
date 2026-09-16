@@ -146,8 +146,13 @@ const BOOTSTRAP_SENSITIVE_ENV_KEYS: &[&str] = &[
     "LD_AUDIT",
     "NODE_OPTIONS",
 ];
-const AGENT_ABNORMAL_EXIT_DIAGNOSTIC_SCRIPT: &str =
-    include_str!("../../scripts/agent-abnormal-exit-diagnostics.sh");
+const AGENT_ABNORMAL_EXIT_DIAGNOSTIC_SCRIPT: &str = concat!(
+    "rootfs_usage() {\n",
+    "timeout -k 0.2s 3s python3 -I -B -u - <<'VM0_ROOTFS_USAGE_PY'\n",
+    include_str!("../../scripts/rootfs-usage.py"),
+    "\nVM0_ROOTFS_USAGE_PY\n}\n",
+    include_str!("../../scripts/agent-abnormal-exit-diagnostics.sh"),
+);
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::http::HttpClient;

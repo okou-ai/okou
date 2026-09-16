@@ -508,7 +508,7 @@ impl GuestControlClient {
             missing_ok,
             write_observer,
         } = request;
-        let command = read_regular_file_command(path, MISSING_FILE_EXIT_CODE);
+        let command = read_regular_file_command(path, MISSING_FILE_EXIT_CODE, None);
         let expected_exit_codes: &[i32] = if missing_ok {
             &[MISSING_FILE_EXIT_CODE]
         } else {

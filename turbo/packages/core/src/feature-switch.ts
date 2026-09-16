@@ -70,12 +70,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerCreateCommands]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Create commands and mode-specific composer controls",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",
@@ -400,6 +394,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
@@ -435,14 +430,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.SshAccess]: {
     maintainer: "liangyou@okou.ai",
-    description: "Enable standalone Runner-mediated SSH configuration",
+    description:
+      "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.CloudflareAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description: "Enable user-owned Cloudflare Access for saved SSH hosts",
-    enabled: false,
   },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
@@ -468,7 +459,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.GetStartedQuests]: {
     maintainer: "ming@okou.ai",
     description:
-      "Show the home corner's Get started quest list. Progress is placeholder data; no credits are awarded yet.",
+      "Enable Get started quests, reward progress, and credit rewards.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

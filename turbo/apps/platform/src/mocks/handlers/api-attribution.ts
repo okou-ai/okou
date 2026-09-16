@@ -1,10 +1,10 @@
-import { impactMarketingContract } from "@okouai/api-contracts/contracts/impact-marketing";
+import { impactOnboardingContract } from "@okouai/api-contracts/contracts/impact-marketing";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import { mockApi } from "../msw-contract.ts";
 
 export const apiAttributionHandlers = [
-  mockApi(impactMarketingContract.handoff, ({ respond }) => {
-    return respond(200, { handoff: null });
+  mockApi(impactOnboardingContract.record, ({ respond }) => {
+    return respond(204);
   }),
   mockApi(
     acquisitionAttributionContract.resolveGoogleAdsAccount,

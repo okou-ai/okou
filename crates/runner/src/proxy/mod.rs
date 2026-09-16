@@ -22,6 +22,9 @@
 //! - `logs.flush` captures an accepted-write prefix for the original run/path
 //!   and generation before upload. Processing includes failed append attempts;
 //!   it does not certify persistence. Connections never own pending writes.
+//! - `registry.apply` correlates published bytes with the actual registry/catalog
+//!   view compiled by the addon. `registry.status` observes the last completed
+//!   load without file I/O. Neither replaces request-time file enforcement.
 //!
 //! On supported Unix runner hosts, registry writes are target-path atomic so
 //! the addon never consumes partial JSON. Flush acknowledgements must match the
@@ -61,6 +64,7 @@ mod log_flush;
 mod managed_process;
 mod process;
 mod registry;
+mod registry_application;
 mod runtime;
 mod stderr;
 
@@ -70,7 +74,7 @@ pub(crate) use managed_process::ManagedMitmdump;
 pub(crate) use process::MitmRestartError;
 pub use process::{MitmProxy, ProxyConfig};
 pub(crate) use registry::{
-    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimeRegistryUpdate,
+    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistryUpdate,
     CustomConnectorRuntimeRegistryState,
 };
 pub use registry::{ProxyRegistryHandle, SandboxRegistration};

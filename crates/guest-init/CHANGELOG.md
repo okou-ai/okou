@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.16.264](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.263...guest-init-v0.16.264) (2026-09-16)
+
+## [0.16.263](https://github.com/vm0-ai/okou/compare/guest-init-v0.16.262...guest-init-v0.16.263) (2026-09-16)
+
 ## [0.16.262](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.261...guest-init-v0.16.262) (2026-09-15)
 
 ## [0.16.261](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.260...guest-init-v0.16.261) (2026-09-15)

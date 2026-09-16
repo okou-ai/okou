@@ -3901,15 +3901,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       publicReason: "provider_insufficient_credits",
     },
     {
-      name: "legacy BYOK balance",
-      builtIn: false,
-      reason: undefined,
-      error: "Credit balance is too low",
-      expected:
-        "Your connected model provider account has insufficient balance.",
-      publicReason: undefined,
-    },
-    {
       name: "vm0 credits during BYOK",
       builtIn: false,
       reason: "insufficient_credits",
@@ -3923,15 +3914,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       builtIn: true,
       reason: "provider_insufficient_credits",
       error: "Credit balance is too low",
-      expected: "The current model is unavailable.",
-      publicReason: undefined,
-    },
-    {
-      name: "legacy built-in affordability",
-      builtIn: true,
-      reason: "insufficient_credits",
-      error:
-        "API Error: 402 This request requires more credits. You can only afford 100 tokens.",
       expected: "The current model is unavailable.",
       publicReason: undefined,
     },
@@ -4133,6 +4115,29 @@ describe("CHAT-02: failed chat callbacks", () => {
           sequenceNumber: 9,
           eventData: { is_error: false, result: raw },
         },
+        {
+          type: "result",
+          sequenceNumber: 10,
+          is_error: true,
+          result: "You have hit your ChatGPT usage limit.",
+          failureReason: "provider_insufficient_credits",
+        },
+        {
+          type: "result",
+          sequenceNumber: 11,
+          eventData: {
+            is_error: true,
+            result: "You have hit your ChatGPT usage limit.",
+            failureReason: "provider_insufficient_credits",
+          },
+        },
+        {
+          type: "result",
+          sequenceNumber: 12,
+          is_error: true,
+          result: "Insufficient vm0 credits",
+          failureReason: "insufficient_credits",
+        },
       ];
       await webhooks.requestAgentEvents(
         { runId: run.runId, events },
@@ -4287,6 +4292,21 @@ describe("CHAT-02: failed chat callbacks", () => {
           : events[7],
         { ...events[8], eventData: { is_error: true, result: visible } },
         events[9],
+        builtIn
+          ? {
+              type: "result",
+              sequenceNumber: 10,
+              is_error: true,
+              result: visible,
+            }
+          : events[10],
+        builtIn
+          ? {
+              ...events[11],
+              eventData: { is_error: true, result: visible },
+            }
+          : events[11],
+        events[12],
       ]);
       const exported = await reads.requestAgentRunNetworkLogs(
         actor,

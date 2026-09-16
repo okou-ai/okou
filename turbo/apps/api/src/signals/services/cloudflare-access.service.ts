@@ -4,11 +4,7 @@ import type {
   UpdateCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -37,11 +33,6 @@ type Metadata = Pick<
   keyof typeof metadata
 >;
 const failures = {
-  unavailable: {
-    kind: "not_found",
-    code: SSH_ERROR_CODES.ACCESS_UNAVAILABLE,
-    message: "Cloudflare Access is not available",
-  },
   notFound: {
     kind: "not_found",
     code: SSH_ERROR_CODES.ACCESS_NOT_FOUND,
@@ -60,14 +51,6 @@ const failures = {
 } as const;
 export function cloudflareAccessFailure(reason: keyof typeof failures) {
   return { ok: false as const, ...failures[reason] };
-}
-export function isCloudflareAccessEnabled(
-  context: FeatureSwitchContext,
-): boolean {
-  return (
-    isFeatureEnabled(FeatureSwitchKey.SshAccess, context) &&
-    isFeatureEnabled(FeatureSwitchKey.CloudflareAccess, context)
-  );
 }
 function ownedConfig(owner: Owner, id?: string) {
   return and(

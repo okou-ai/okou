@@ -1515,31 +1515,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "1日1回、毎日",
+          "description": "毎日アプリを開くと獲得。00:00 UTC にリセット。",
           "name": "毎日チェックイン",
           "unit": "1日あたり"
         },
         "connector": {
-          "description": "Gmail、Notion など100以上",
+          "description": "OAuth で接続。各コネクタにつき1回獲得できます。",
           "name": "コネクタを接続",
           "unit": "コネクタごと"
         },
         "inReview": "確認中",
         "inReviewDescription": "送信済み、確認待ち",
         "invite": {
-          "description": "追加した人数だけ加算されます",
+          "description": "招待が承諾されると獲得。最大15人まで。",
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
-        "personalBalanceNote": "クレジットはあなた個人の残高に入ります。",
+        "pendingInvitations": "承諾待ちの招待: {{amount}}",
+        "personalBalanceNote": "報酬は付与から7日後に失効します。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "progressLabel": "セットアップの進捗",
+        "rejectedDescription": "この投稿は対象外です。Okou に言及した別の公開投稿を送信してください。",
         "reward": "+{{amount}}",
+        "rewardedConnections": "報酬獲得済みコネクタ: {{amount}}",
         "share": {
           "description": "投稿して、リンクを貼り付け",
           "name": "{{assistantName}} を X でシェア"
         },
         "shareDialog": {
-          "description": "作ったものについて投稿し、リンクを貼り付けてください。提出は1回だけです。",
+          "description": "公開投稿を送信して審査を受けます。報酬の獲得は1人1回です。",
           "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
           "inputLabel": "投稿のリンク",
           "placeholder": "https://x.com/...",
@@ -1547,14 +1550,14 @@
           "title": "{{assistantName}} を X でシェア"
         },
         "slack": {
-          "description": "チームがすでに使っている場所へ",
+          "description": "組織とワークスペースごとに1回、組織用クレジットを2,000獲得。",
           "name": "{{assistantName}} を Slack に追加"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "ステップを終えると、クレジットがもらえます。",
+        "subtitle": "タスクを試してクレジットを獲得。",
         "title": "はじめる",
         "workflow": {
-          "description": "繰り返しの作業を自動化に変える",
+          "description": "自分で作成したワークフローを正常に実行。",
           "name": "ワークフローを作る"
         }
       },
@@ -1768,7 +1771,6 @@
         "addTemplate": "テンプレートを追加",
         "chooseScene": "作成するものを選択",
         "chooseType": "種類を選択",
-        "description": "プレゼンテーション、動画、画像",
         "exit": "作成モードを終了",
         "image": "画像を作成",
         "imageDescription": "アイデアを画像に",
@@ -3654,7 +3656,7 @@
       },
       "feishu": {
         "addBot": "ボットの追加",
-        "addDialogDescription": "エンタープライズ カスタム アプリを作成し、そのボットを有効にして、Feishu 開発者コンソールでこれらの手順を完了します。",
+        "addDialogDescription": "Agent タイプのエンタープライズアプリを作成し、Feishu 開発者コンソールで次の手順を完了してください。",
         "addDialogTitle": "Feishu ボットを追加する",
         "agentDescription": "このボットに送信されたメッセージを処理するエージェントを選択します。",
         "backToIntegrations": "統合に戻る",
@@ -3667,14 +3669,14 @@
         "copied": "{{label}} がコピーされました",
         "copy": "コピー",
         "create": {
-          "descriptionAfter": "、任意の名前とアイコンでエンタープライズ カスタム アプリを作成してから、ボット機能を追加します。",
+          "descriptionAfter": "、エンタープライズアプリを作成し、Agent タイプを選択してください。任意の名前とアイコンを選べます。Agent テンプレートには Bot 機能が含まれています。",
           "descriptionBefore": "で ",
           "downloadIcon": "任意の {{brandName}} アイコンをダウンロードします",
           "iconAlt": "任意の {{brandName}} アプリ アイコン",
           "iconHint": "、またはお好みのアイコンを使用してください。",
           "iconTitle": "任意の {{brandName}} アプリ アイコン",
           "imageAlt": "Feishu アプリ名、アイコン、および [作成] ボタンが強調表示されたアプリ作成フォーム",
-          "title": "エンタープライズカスタムアプリを作成する"
+          "title": "Agent タイプのアプリを作成"
         },
         "credentials": {
           "appId": "アプリID",
@@ -3704,6 +3706,9 @@
         "faq": {
           "approvalAnswer": "可用性が [すべてのメンバー] に設定されている場合、Feishu 管理者はリリースを承認する必要があります。 Feishu は承認リクエストをダイレクト メッセージで管理者に送信し、アプリは管理者がレビューを完了するまで保留状態になります。",
           "approvalQuestion": "アプリの公開が承認を待っているのはなぜですか?",
+          "botFeatureAnswer": "Feishu 開発者コンソールで Features → Add Features を開きます。By Feature で Bot 機能を追加してから、このガイドの残りの手順を進め、アプリを公開してください。Agent タイプのアプリには Bot 機能が標準で含まれています。",
+          "botFeatureImageAlt": "Add Features 内の Bot 機能を表示した Lark 開発者コンソール",
+          "botFeatureQuestion": "Agent ではなく Custom App を選んだ場合は？",
           "challengeAnswer": "これは通常、トークンのステップ中に保存された暗号化キーまたは検証トークンが正しくないことを意味します。 「トークン」ステップに戻り、「イベント構成」→「暗号化戦略」から両方の値を再度入力し、保存して、リクエスト URL を再試行します。",
           "challengeQuestion": "Feishu に「チャレンジ コードは応答がありませんでした」と表示されるのはなぜですか?",
           "title": "セットアップに関するよくある質問"
@@ -3714,14 +3719,14 @@
         "moreOptions": "{{bot}} のその他のオプション",
         "pageDescription": "このワークスペースのボット ルーティングを管理する",
         "permissions": {
-          "description": "Feishu 開発者コンソールで「権限とスコープ」を開き、「一括インポート/エクスポート > インポート」を選択して、以下の JSON を貼り付けます。管理対象コネクタに必要なすべてのスコープがユーザー ID にインポートされます。これらは、連携の動作に必要な最小限の権限です。",
-          "hint": "インポートされたユーザー ID の権限はすべて維持し、OAuth 同意画面で権限を付与できるように、アプリの新しいバージョンを作成して公開します。いずれかの権限を削除すると連携は動作しなくなり、Feishu 管理者の承認が必要になる場合があります。",
-          "label": "ユーザートークンスコープ JSON",
+          "description": "Feishu 開発者コンソールで Permissions & Scopes を開き、Batch Import/Export > Import を選択して、以下の JSON を貼り付けます。ボット用のアプリ ID 権限と、接続済みアカウント用のユーザー ID 権限が含まれています。",
+          "hint": "両方の ID でインポートしたすべての権限を保持し、新しいアプリバージョンを作成して公開してください。Feishu 管理者の承認が必要な場合があります。",
+          "label": "アプリとユーザーのスコープ JSON",
           "menuAlt": "「スコープの一括インポート/エクスポート」メニューが強調表示された Feishu の「権限とスコープ」ページ",
           "menuLabel": "スコープの一括インポート/エクスポートを開く",
           "reviewAlt": "インポートした JSON と確認ボタンが強調表示された Feishu の「スコープの一括インポート/エクスポート」ダイアログ",
           "reviewLabel": "JSON を貼り付けて新しいスコープを確認",
-          "title": "ユーザートークンスコープをインポート"
+          "title": "アプリとユーザーのスコープをインポート"
         },
         "publish": {
           "allMembersAlt": "すべてのメンバーが選択された場合の Feishu 可用性設定",
@@ -3783,7 +3788,7 @@
       },
       "lark": {
         "addBot": "ボットの追加",
-        "addDialogDescription": "エンタープライズ カスタム アプリを作成し、そのボットを有効にして、Lark 開発者コンソールでこれらの手順を完了します。",
+        "addDialogDescription": "Agent タイプのエンタープライズアプリを作成し、Lark 開発者コンソールで次の手順を完了してください。",
         "addDialogTitle": "Lark ボットを追加する",
         "agentDescription": "このボットに送信されたメッセージを処理するエージェントを選択します。",
         "backToIntegrations": "統合に戻る",
@@ -3796,14 +3801,14 @@
         "copied": "{{label}} がコピーされました",
         "copy": "コピー",
         "create": {
-          "descriptionAfter": "、任意の名前とアイコンでエンタープライズ カスタム アプリを作成してから、ボット機能を追加します。",
+          "descriptionAfter": "、エンタープライズアプリを作成し、Agent タイプを選択してください。任意の名前とアイコンを選べます。Agent テンプレートには Bot 機能が含まれています。",
           "descriptionBefore": "で ",
           "downloadIcon": "任意の {{brandName}} アイコンをダウンロードします",
           "iconAlt": "任意の {{brandName}} アプリ アイコン",
           "iconHint": "、またはお好みのアイコンを使用してください。",
           "iconTitle": "任意の {{brandName}} アプリ アイコン",
           "imageAlt": "Feishu アプリ名、アイコン、および [作成] ボタンが強調表示されたアプリ作成フォーム",
-          "title": "エンタープライズカスタムアプリを作成する"
+          "title": "Agent タイプのアプリを作成"
         },
         "credentials": {
           "appId": "アプリID",
@@ -3833,6 +3838,9 @@
         "faq": {
           "approvalAnswer": "可用性が [すべてのメンバー] に設定されている場合、Lark 管理者はリリースを承認する必要があります。 Lark は承認リクエストをダイレクト メッセージで管理者に送信し、アプリは管理者がレビューを完了するまで保留状態になります。",
           "approvalQuestion": "アプリの公開が承認を待っているのはなぜですか?",
+          "botFeatureAnswer": "Lark 開発者コンソールで Features → Add Features を開きます。By Feature で Bot 機能を追加してから、このガイドの残りの手順を進め、アプリを公開してください。Agent タイプのアプリには Bot 機能が標準で含まれています。",
+          "botFeatureImageAlt": "Add Features 内の Bot 機能を表示した Lark 開発者コンソール",
+          "botFeatureQuestion": "Agent ではなく Custom App を選んだ場合は？",
           "challengeAnswer": "これは通常、トークンのステップ中に保存された暗号化キーまたは検証トークンが正しくないことを意味します。 「トークン」ステップに戻り、「イベント構成」→「暗号化戦略」から両方の値を再度入力し、保存して、リクエスト URL を再試行します。",
           "challengeQuestion": "Lark に「チャレンジ コードは応答がありませんでした」と表示されるのはなぜですか?",
           "title": "セットアップに関するよくある質問"
@@ -3844,14 +3852,14 @@
         "moreOptions": "{{bot}} のその他のオプション",
         "pageDescription": "このワークスペースのボット ルーティングを管理する",
         "permissions": {
-          "description": "Lark 開発者コンソールで「権限とスコープ」を開き、「一括インポート/エクスポート > インポート」を選択して、以下の JSON を貼り付けます。管理対象コネクタに必要なすべてのスコープがユーザー ID にインポートされます。これらは、連携の動作に必要な最小限の権限です。",
-          "hint": "インポートされたユーザー ID の権限はすべて維持し、OAuth 同意画面で権限を付与できるように、アプリの新しいバージョンを作成して公開します。いずれかの権限を削除すると連携は動作しなくなり、Lark 管理者の承認が必要になる場合があります。",
-          "label": "ユーザートークンスコープ JSON",
+          "description": "Lark 開発者コンソールで Permissions & Scopes を開き、Batch Import/Export > Import を選択して、以下の JSON を貼り付けます。ボット用のアプリ ID 権限と、接続済みアカウント用のユーザー ID 権限が含まれています。",
+          "hint": "両方の ID でインポートしたすべての権限を保持し、新しいアプリバージョンを作成して公開してください。Lark 管理者の承認が必要な場合があります。",
+          "label": "アプリとユーザーのスコープ JSON",
           "menuAlt": "「スコープの一括インポート/エクスポート」メニューが強調表示された Feishu の「権限とスコープ」ページ",
           "menuLabel": "スコープの一括インポート/エクスポートを開く",
           "reviewAlt": "インポートした JSON と確認ボタンが強調表示された Feishu の「スコープの一括インポート/エクスポート」ダイアログ",
           "reviewLabel": "JSON を貼り付けて新しいスコープを確認",
-          "title": "ユーザートークンスコープをインポート"
+          "title": "アプリとユーザーのスコープをインポート"
         },
         "publish": {
           "allMembersAlt": "すべてのメンバーが選択された場合の Feishu 可用性設定",
@@ -6285,7 +6293,7 @@
       "summary_other": "Access 設定 {{count}} 件",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH アプリケーションの Service Auth ポリシーで許可された Service Token を使用してください。SSH ログインとは別のものです。",
-      "unavailable": "このアカウントでは Cloudflare Access を利用できません。保護されたホストには接続できませんが、直接接続のホストには影響しません。",
+      "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
       "usedBy_other": "{{count}} 台のホストが使用："
     },
     "connectionStatus": {

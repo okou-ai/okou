@@ -756,8 +756,11 @@ impl ExecSetup {
         drain_cancel.cancel();
         kill_and_reap_child(child);
         drop(placement_bootstrap);
-        let containment_result =
-            cleanup_process_containment(process_containment, ProcessContainmentCleanupMode::Forced);
+        let containment_result = cleanup_process_containment(
+            process_containment,
+            ProcessContainmentCleanupMode::Forced,
+            false,
+        );
         join_stdin_writer_after_kill(stdin_writer);
         let containment_error = containment_result.as_ref().err().map(ToString::to_string);
         let diagnostic =
@@ -778,8 +781,11 @@ impl ExecSetup {
         } = self;
         kill_and_reap_child(child);
         drop(placement_bootstrap);
-        let _ =
-            cleanup_process_containment(process_containment, ProcessContainmentCleanupMode::Forced);
+        let _ = cleanup_process_containment(
+            process_containment,
+            ProcessContainmentCleanupMode::Forced,
+            false,
+        );
         completion.release_without_result();
     }
 }
@@ -829,8 +835,11 @@ impl ExecSetupWithStdout {
         drain_cancel.cancel();
         kill_and_reap_child(child);
         drop(placement_bootstrap);
-        let containment_result =
-            cleanup_process_containment(process_containment, ProcessContainmentCleanupMode::Forced);
+        let containment_result = cleanup_process_containment(
+            process_containment,
+            ProcessContainmentCleanupMode::Forced,
+            false,
+        );
         join_stdin_writer_after_kill(stdin_writer);
         let _ = stdout_handle.join();
         let containment_error = containment_result.as_ref().err().map(ToString::to_string);
@@ -1021,7 +1030,11 @@ impl RunningExec {
         if !matches!(&outcome, WaitOutcome::Exited(status) if status.success()) {
             process_containment.capture_error();
         }
-        let containment_result = cleanup_process_containment(process_containment, cleanup_mode);
+        let process_completed = !cancellation_observed
+            && startup_failure.is_none()
+            && matches!(&outcome, WaitOutcome::Exited(status) if status.success());
+        let containment_result =
+            cleanup_process_containment(process_containment, cleanup_mode, process_completed);
         join_stdin_writer_after_wait(stdin_writer, request.seq, &request.label);
         if matches!(outcome, WaitOutcome::Cancelled | WaitOutcome::TimedOut)
             || connection_cancel.load(Ordering::Acquire)
@@ -1293,8 +1306,9 @@ fn append_containment_cleanup_failure(diagnostic: &str, containment_error: Optio
 fn cleanup_process_containment(
     process_containment: ExecProcessContainment,
     mode: ProcessContainmentCleanupMode,
+    process_completed: bool,
 ) -> Result<Option<String>, ProcessContainmentError> {
-    process_containment.cleanup_with_evidence(mode)
+    process_containment.cleanup_with_evidence(mode, process_completed)
 }
 
 pub(crate) fn start_exec_operation(
@@ -2320,12 +2334,17 @@ fn exec_terminal_log_reason(
     slow: bool,
     notable: bool,
     oom_evidence_proof: bool,
+    contained_tool_oom: bool,
 ) -> Option<&'static str> {
     if notable {
         return Some("notable");
     }
     if oom_evidence_proof {
-        return Some("oom_evidence");
+        return Some(if contained_tool_oom {
+            "contained_tool_oom"
+        } else {
+            "oom_evidence"
+        });
     }
     if slow {
         return Some("slow");
@@ -2342,13 +2361,18 @@ struct ExecTerminalLogMessageInput<'a> {
     diagnostic_present: bool,
     oom_evidence: bool,
     oom_evidence_proof: bool,
+    contained_tool_oom: bool,
     slow: bool,
     notable: bool,
 }
 
 fn exec_terminal_log_message(input: ExecTerminalLogMessageInput<'_>) -> Option<String> {
-    let terminal_reason =
-        exec_terminal_log_reason(input.slow, input.notable, input.oom_evidence_proof)?;
+    let terminal_reason = exec_terminal_log_reason(
+        input.slow,
+        input.notable,
+        input.oom_evidence_proof,
+        input.contained_tool_oom,
+    )?;
     Some(format!(
         "exec result: seq={} label={} process_class={} operation_kind={} elapsed_ms={} slow={} notable={} terminal_reason={} termination={:?} stdout_len={} stderr_len={} stdout_truncated={} stderr_truncated={} diagnostic_present={} oom_evidence={} oom_evidence_proof={}",
         input.request.seq,
@@ -2377,7 +2401,7 @@ fn exec_terminal_log_message_for_diagnostic(
     stdout_result: &BoundedDrainResult,
     stderr_result: &BoundedDrainResult,
     diagnostic: &str,
-) -> Option<String> {
+) -> Option<(&'static str, String)> {
     let slow = elapsed >= EXEC_OPERATION_STAGE_SLOW_THRESHOLD;
     // The terminal frame also transports bounded OOM metadata. Classify on the
     // residual so an inspected-and-empty capture candidate is not reported as a
@@ -2386,10 +2410,24 @@ fn exec_terminal_log_message_for_diagnostic(
     let notable = exec_termination_is_notable(termination, &request.expected_exit_codes)
         || stdout_result.capture_truncated
         || stderr_result.capture_truncated
+        || stdout_result.stream_truncated
+        || stderr_result.stream_truncated
         || split.is_actionable()
         || split.malformed_lines > 0;
 
-    exec_terminal_log_message(ExecTerminalLogMessageInput {
+    let contained_tool_oom = request.role == ExecProcessRole::Agent
+        && request.lifecycle == ExecOperationLifecycle::Supervised
+        && matches!(termination, ExecTermination::Exited { exit_code: 0 })
+        && split.evidence.as_ref().is_some_and(|evidence| {
+            evidence.operation_sequence() == Some(request.seq)
+                && evidence.proves_contained_tool_oom()
+        });
+    let level = if contained_tool_oom && !notable {
+        "INFO"
+    } else {
+        "WARN"
+    };
+    let mut message = exec_terminal_log_message(ExecTerminalLogMessageInput {
         request,
         elapsed_ms: elapsed.as_millis(),
         termination,
@@ -2398,9 +2436,18 @@ fn exec_terminal_log_message_for_diagnostic(
         diagnostic_present: split.is_actionable(),
         oom_evidence: split.evidence.is_some(),
         oom_evidence_proof: split.has_proof(),
+        contained_tool_oom,
         slow,
         notable,
-    })
+    })?;
+    if let Some(operation_id) = split
+        .evidence
+        .as_ref()
+        .and_then(|evidence| uuid::Uuid::parse_str(&evidence.operation_id).ok())
+    {
+        message.push_str(&format!(" operation_id={operation_id}"));
+    }
+    Some((level, message))
 }
 
 fn log_exec_terminal_if_notable(
@@ -2411,7 +2458,7 @@ fn log_exec_terminal_if_notable(
     stderr_result: &BoundedDrainResult,
     diagnostic: &str,
 ) {
-    if let Some(message) = exec_terminal_log_message_for_diagnostic(
+    if let Some((level, message)) = exec_terminal_log_message_for_diagnostic(
         request,
         started.elapsed(),
         termination,
@@ -2419,7 +2466,7 @@ fn log_exec_terminal_if_notable(
         stderr_result,
         diagnostic,
     ) {
-        log("WARN", &message);
+        log(level, &message);
     }
 }
 
@@ -2852,6 +2899,7 @@ mod tests {
                 diagnostic_present: false,
                 oom_evidence: false,
                 oom_evidence_proof: false,
+                contained_tool_oom: false,
                 slow: true,
                 notable: false,
             })
@@ -2899,6 +2947,7 @@ mod tests {
             diagnostic_present: true,
             oom_evidence: false,
             oom_evidence_proof: false,
+            contained_tool_oom: false,
             slow: false,
             notable: true,
         })
@@ -2936,10 +2985,85 @@ mod tests {
                 diagnostic_present: false,
                 oom_evidence: false,
                 oom_evidence_proof: false,
+                contained_tool_oom: false,
                 slow: false,
                 notable: false,
             })
             .is_none()
+        );
+    }
+
+    #[test]
+    fn contained_tool_oom_terminal_logging_keeps_failures_actionable() {
+        let mut request = request(7, "private command must not be logged");
+        request.role = ExecProcessRole::Agent;
+        request.lifecycle = ExecOperationLifecycle::Supervised;
+        let evidence: guest_contracts::oom_evidence::OomEvidence = serde_json::from_str(
+            include_str!("../../guest-contracts/tests/fixtures/contained-tool-oom.json"),
+        )
+        .unwrap();
+        let metadata = format!(
+            "{}{}",
+            guest_contracts::oom_evidence::EVIDENCE_PREFIX,
+            serde_json::to_string(&evidence).unwrap()
+        );
+        for (termination, truncated, residual, expected) in [
+            (ExecTermination::Exited { exit_code: 0 }, false, "", "INFO"),
+            (
+                ExecTermination::Exited { exit_code: 137 },
+                false,
+                "",
+                "WARN",
+            ),
+            (ExecTermination::TimedOut, false, "", "WARN"),
+            (ExecTermination::WaitFailed, false, "", "WARN"),
+            (ExecTermination::Exited { exit_code: 0 }, true, "", "WARN"),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                false,
+                "cleanup failed\n",
+                "WARN",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                false,
+                "OKOU_OOM_EVIDENCE_V1 bad\n",
+                "WARN",
+            ),
+        ] {
+            let stdout = BoundedDrainResult {
+                stream_truncated: truncated,
+                ..Default::default()
+            };
+            let (level, message) = exec_terminal_log_message_for_diagnostic(
+                &request,
+                Duration::from_millis(10),
+                termination,
+                &stdout,
+                &BoundedDrainResult::default(),
+                &format!("{residual}{metadata}"),
+            )
+            .unwrap();
+            assert_eq!(level, expected, "{message}");
+            assert!(message.contains(&format!("operation_id={}", evidence.operation_id)));
+            assert!(!message.contains(&request.command));
+            if level == "INFO" {
+                assert!(message.contains("terminal_reason=contained_tool_oom"));
+            }
+        }
+        request.seq = 8;
+        assert_eq!(
+            exec_terminal_log_message_for_diagnostic(
+                &request,
+                Duration::ZERO,
+                ExecTermination::Exited { exit_code: 0 },
+                &BoundedDrainResult::default(),
+                &BoundedDrainResult::default(),
+                &metadata
+            )
+            .unwrap()
+            .0,
+            "WARN"
         );
     }
 
@@ -2968,6 +3092,7 @@ mod tests {
                 &stderr,
                 diagnostic,
             )
+            .map(|(_, message)| message)
         };
 
         let proof_message = message_for(&evidence_line(&evidence)).unwrap();

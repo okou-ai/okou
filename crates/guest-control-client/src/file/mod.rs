@@ -167,10 +167,20 @@ fn validate_guest_file_path(path: &str) -> io::Result<()> {
     Ok(())
 }
 
-fn read_regular_file_command(path: &str, missing_file_exit_code: i32) -> String {
+fn read_regular_file_command(
+    path: &str,
+    missing_file_exit_code: i32,
+    capture_limit_bytes: Option<u32>,
+) -> String {
     let path = quote_shell_arg(path);
+    let reader = match capture_limit_bytes {
+        // Read one extra byte so capture truncation distinguishes an exact fit
+        // from an oversized file. Widen first to preserve the full u32 budget.
+        Some(limit) => format!("head -c {}", u64::from(limit) + 1),
+        None => "cat".to_owned(),
+    };
     format!(
-        "if test -f {path}; then cat 2>/dev/null < {path} || {{ test -f {path} || exit {missing_file_exit_code}; printf '%s\\n' 'failed to read file' >&2; exit 1; }}; else exit {missing_file_exit_code}; fi"
+        "if test -f {path}; then {reader} 2>/dev/null < {path} || {{ test -f {path} || exit {missing_file_exit_code}; printf '%s\\n' 'failed to read file' >&2; exit 1; }}; else exit {missing_file_exit_code}; fi"
     )
 }
 

@@ -19,11 +19,6 @@ import type {
   ComposerSlashWorkflowMatch,
 } from "../../signals/okou-page/workflow-composer-domain.ts";
 
-import {
-  composerCreateCommandLabel,
-  type ComposerCreateCommand,
-} from "../../signals/okou-page/composer-create.ts";
-
 export const COMPOSER_CREATE_ICONS = {
   choose: Sparkles,
   image: Image,
@@ -77,59 +72,6 @@ export function scrollSlashWorkflowIntoView(
   });
 }
 
-function SlashCreateGroup({
-  modes,
-  selectedIndex,
-  onSelect,
-}: {
-  readonly modes: readonly ComposerCreateCommand[];
-  readonly selectedIndex: number;
-  readonly onSelect: (mode: ComposerCreateCommand) => void;
-}) {
-  const { t } = useTranslation();
-  if (modes.length === 0) {
-    return null;
-  }
-  return (
-    <div className="px-1 py-1">
-      {modes.map((mode, index) => {
-        const Icon = COMPOSER_CREATE_ICONS[mode];
-        return (
-          <button
-            key={mode}
-            id={slashWorkflowOptionId(mode)}
-            type="button"
-            aria-label={composerCreateCommandLabel(mode)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors",
-              index === selectedIndex ? "bg-accent" : "hover:bg-state-hover",
-            )}
-            onPointerDown={(event) => {
-              event.preventDefault();
-            }}
-            onClick={() => {
-              onSelect(mode);
-            }}
-          >
-            <Icon size={16} aria-hidden />
-            <span className="min-w-0 flex-1">
-              <span className="block">{composerCreateCommandLabel(mode)}</span>
-              {mode === "choose" && (
-                <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                  {t(($) => {
-                    return $.chat.composer.create.description;
-                  })}
-                </span>
-              )}
-            </span>
-            {mode === "choose" && <ChevronRight size={16} aria-hidden />}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /**
  * The name with the typed query emphasized. Shared with the slash panel so both
  * menus show the same match feedback while typing.
@@ -172,14 +114,11 @@ function SlashWorkflowRows({
   workflows,
   loading,
   selectedIndex,
-  indexOffset,
   onSelect,
 }: {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly loading: boolean;
   readonly selectedIndex: number;
-  /** How many rows precede these, so the shared index still lines up. */
-  readonly indexOffset: number;
   readonly onSelect: (workflow: ComposerSlashWorkflow) => void;
 }) {
   const { t } = useTranslation();
@@ -204,7 +143,7 @@ function SlashWorkflowRows({
   return (
     <div className="px-1 pb-1">
       {workflows.map((workflow, index) => {
-        const selected = index + indexOffset === selectedIndex;
+        const selected = index === selectedIndex;
         return (
           <button
             id={slashWorkflowOptionId(workflow.id)}
@@ -235,8 +174,6 @@ function SlashWorkflowRows({
 export function SlashWorkflowMenu({
   anchor,
   workflows,
-  createModes,
-  onSelectCreate,
   loading,
   selectedIndex,
   showWorkflowsPageLink,
@@ -245,14 +182,12 @@ export function SlashWorkflowMenu({
 }: {
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
-  readonly createModes: readonly ComposerCreateCommand[];
-  readonly onSelectCreate: (mode: ComposerCreateCommand) => void;
   readonly loading: boolean;
   readonly selectedIndex: number;
   readonly showWorkflowsPageLink: boolean;
   readonly onSelect: (workflow: ComposerSlashWorkflow) => void;
   /**
-   * The two-pane template panel. When present it replaces the flat list and
+   * The two-pane template panel. When present it replaces the workflow list and
    * owns its own scrolling, workflow rows and footer.
    */
   readonly panel?: ReactNode;
@@ -269,7 +204,7 @@ export function SlashWorkflowMenu({
       // Keep focus in the TipTap editor: the menu's keyboard navigation is
       // handled there, so the popover must never steal focus when it opens.
       initialFocus={false}
-      // The selected command owns focus, including the Create type chooser.
+      // The selected row owns focus once the menu closes.
       finalFocus={false}
       className={cn(
         "flex max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0",
@@ -282,11 +217,6 @@ export function SlashWorkflowMenu({
       {panel ?? (
         <>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <SlashCreateGroup
-              modes={createModes}
-              selectedIndex={selectedIndex}
-              onSelect={onSelectCreate}
-            />
             <div className="px-2.5 pt-2 pb-2 text-xs font-medium text-muted-foreground">
               {t(($) => {
                 return $.chat.composer.workflows.title;
@@ -296,7 +226,6 @@ export function SlashWorkflowMenu({
               workflows={workflows}
               loading={loading}
               selectedIndex={selectedIndex}
-              indexOffset={createModes.length}
               onSelect={onSelect}
             />
           </div>

@@ -1145,6 +1145,52 @@ pub mod runners {
             }
         }
 
+        /// Authenticated Run cancellation reconciliation DTOs.
+        pub mod cancellation {
+            /// Effective mode persisted by the API's canonical stop decision.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum ResponsePresentMode {
+                /// Allow bounded cancellation recovery.
+                #[serde(rename = "cooperative")]
+                Cooperative,
+                /// Stop without waiting for cooperative recovery.
+                #[serde(rename = "hard")]
+                Hard,
+            }
+
+            /// Stop intent or authenticated physical absence for an exact Run.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(tag = "state", rename_all_fields = "camelCase")]
+            pub enum Response {
+                /// The matching Run exists; only an explicit mode requests cancellation.
+                #[serde(rename = "present")]
+                Present {
+                    /// Version of the cancellation response contract.
+                    protocol_version: i64,
+                    /// Exact Run authorized by the request's sandbox credential.
+                    run_id: String,
+                    /// Explicit committed stop mode; null cannot reconstruct a historical intent.
+                    mode: Option<ResponsePresentMode>,
+                },
+                /// The authenticated Run is physically absent; stop its remaining execution.
+                #[serde(rename = "gone")]
+                Gone {
+                    /// Version of the cancellation response contract.
+                    protocol_version: i64,
+                    /// Exact Run authorized by the request's sandbox credential.
+                    run_id: String,
+                },
+                /// The present row does not match the expected owner or claim.
+                #[serde(rename = "unavailable")]
+                Unavailable {
+                    /// Version of the cancellation response contract.
+                    protocol_version: i64,
+                    /// Exact Run authorized by the request's sandbox credential.
+                    run_id: String,
+                },
+            }
+        }
+
         /// DTOs for reporting bounded built-in model provider failures.
         pub mod model_provider_failures {
             /// Request body for reporting a built-in model provider failure.

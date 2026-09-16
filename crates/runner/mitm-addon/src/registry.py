@@ -1,5 +1,6 @@
 """Proxy registry loading and sandbox lookup cache."""
 
+import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -8,6 +9,7 @@ from pathlib import Path
 import addon_process_logging
 import matching
 import registry_firewalls
+import registry_observation
 import state_file
 from firewall_auth_cache import (
     FIREWALL_AUTH_REGISTRY_GENERATION_ATTRIBUTE,
@@ -76,6 +78,7 @@ class _RegistrySnapshot:
     omitted_custom_connector_ids: dict[str, frozenset[str]]
     builtin_firewall_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None
     loaded_key: _RegistryFileKey | None
+    digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,8 @@ class RegistryUnavailable:
 
     reason: str
     message: str
+    loaded_key: _RegistryFileKey | None = None
+    digest: str | None = None
 
 
 RegistryState = _RegistrySnapshot | RegistryUnavailable
@@ -148,6 +153,7 @@ def reset_cache_for_tests() -> None:
     _registry_state.reset()
     _next_firewall_auth_registry_generation = 0
     registry_firewalls.reset_cache_for_tests()
+    registry_observation.reset()
 
 
 def _allocate_firewall_auth_registry_generation() -> int:
@@ -477,16 +483,28 @@ def _mark_unavailable(
     *,
     reason: str,
     message: str,
+    loaded_key: _RegistryFileKey | None = None,
+    digest: str | None = None,
 ) -> RegistryUnavailable:
     if state.unavailable is None and state.snapshot.loaded_key is not None:
         evict_all_cache_keys()
     state.snapshot = _empty_snapshot()
     state.builtin_firewall_core_cache.clear()
-    state.unavailable = RegistryUnavailable(reason, message)
+    state.unavailable = RegistryUnavailable(reason, message, loaded_key, digest)
     return state.unavailable
 
 
 def load_registry_state(registry_path: str) -> RegistryState:
+    """Load through the event-loop owner and expose only its completed observation."""
+    state = _load_registry_state(registry_path)
+    if isinstance(state, RegistryUnavailable):
+        registry_observation.publish_unavailable(state)
+    else:
+        registry_observation.publish_available(state)
+    return state
+
+
+def _load_registry_state(registry_path: str) -> RegistryState:
     """Load the proxy registry state, reusing cached data when possible.
 
     Cache state is scoped to one active registry path. A successful load
@@ -552,8 +570,12 @@ def load_registry_state(registry_path: str) -> RegistryState:
                 message="proxy registry is unavailable",
             )
 
+        digest = None
         try:
-            raw_registry = _read_registry_sandboxes(opened_file.read_bytes(MAX_REGISTRY_BYTES))
+            raw_bytes = opened_file.read_bytes(MAX_REGISTRY_BYTES)
+            digest = hashlib.sha256(raw_bytes).hexdigest()
+            raw_registry = _read_registry_sandboxes(raw_bytes)
+            del raw_bytes
         except OSError as e:
             message = str(e)
             state.failed_key = None
@@ -563,7 +585,7 @@ def load_registry_state(registry_path: str) -> RegistryState:
                     "warn",
                     f"Failed to read proxy registry: {message}",
                 )
-            return _mark_unavailable(state, reason="read_failed", message=message)
+            return _mark_unavailable(state, reason="read_failed", message=message, loaded_key=key)
         except (ValueError, RecursionError) as e:
             message = str(e)
             state.failed_key = key
@@ -572,7 +594,9 @@ def load_registry_state(registry_path: str) -> RegistryState:
                 "warn",
                 f"Failed to parse proxy registry: {message}",
             )
-            return _mark_unavailable(state, reason="parse_failed", message=message)
+            return _mark_unavailable(
+                state, reason="parse_failed", message=message, loaded_key=key, digest=digest
+            )
 
     (
         new_registry,
@@ -620,6 +644,7 @@ def load_registry_state(registry_path: str) -> RegistryState:
         omitted_custom_connector_ids,
         builtin_catalog_snapshot,
         key,
+        digest,
     )
     state.unavailable = None
     state.failed_key = None

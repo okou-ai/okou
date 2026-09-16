@@ -1,5 +1,35 @@
 # Changelog
 
+## [8.668.2](https://github.com/vm0-ai/okou/compare/core-v8.668.1...core-v8.668.2) (2026-09-16)
+
+
+### Refactoring
+
+* **ssh:** share rollout gating with cloudflare access ([#34489](https://github.com/vm0-ai/okou/issues/34489)) ([84a84fb](https://github.com/vm0-ai/okou/commit/84a84fba45ee6b5273b0ee5c6ade5a60a10b22c9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.1
+
+## [8.668.1](https://github.com/vm0-ai/okou/compare/core-v8.668.0...core-v8.668.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.0
+
+## [8.668.0](https://github.com/vm0-ai/okou/compare/core-v8.667.1...core-v8.668.0) (2026-09-16)
+
+
+### Features
+
+* **platform:** collapse the composer toolbar into one add menu ([#34394](https://github.com/vm0-ai/okou/issues/34394)) ([a54f703](https://github.com/vm0-ai/okou/commit/a54f703655d94b3552f856783294efbe97484a6b))
+
 ## [8.667.1](https://github.com/vm0-ai/okou/compare/core-v8.667.0...core-v8.667.1) (2026-09-16)
 
 

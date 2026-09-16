@@ -34,7 +34,7 @@ def reject(code):
 if binary.name == "gh":
     assert args == [
         "api",
-        "repos/vm0-ai/vm0/actions/artifacts/123/zip",
+        "repos/vm0-ai/okou/actions/artifacts/123/zip",
         "--allow-escape-sequences",
     ]
     raw = base64.b64decode(state["archive"])
@@ -45,11 +45,11 @@ if binary.name == "gh":
 
 if binary.name == "curl":
     url = next(arg for arg in args if arg.startswith("https://"))
-    if url == "https://api.github.com/repos/vm0-ai/vm0/actions/runs/54321":
+    if url == "https://api.github.com/repos/vm0-ai/okou/actions/runs/54321":
         result = state["run"]
     elif (
         url
-        == "https://api.github.com/repos/vm0-ai/vm0/actions/runs/54321/artifacts?per_page=100"
+        == "https://api.github.com/repos/vm0-ai/okou/actions/runs/54321/artifacts?per_page=100"
     ):
         result = {"total_count": 1, "artifacts": [state["artifact"]]}
     elif (

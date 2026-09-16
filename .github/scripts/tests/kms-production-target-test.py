@@ -31,12 +31,12 @@ class TargetProductionTest(unittest.TestCase):
                 "PATH": str(binary) + os.pathsep + os.environ["PATH"],
                 "RUNNER_TEMP": str(root),
                 "KMS_OPERATION": "verify-target",
-                "GITHUB_REPOSITORY": "vm0-ai/vm0",
+                "GITHUB_REPOSITORY": "vm0-ai/okou",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
                 "GITHUB_SHA": "a" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/kms-production-preflight.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-preflight.yml@refs/heads/main",
                 "EXPECTED_DEPLOYMENT_ID": "dpl_fixture",
                 "KMS_MIGRATION_ROLE_ARN": "arn:aws:iam::251964670836:role/vm0-kms-migration-github-32264",
                 "AWS_REGION": "us-west-2",
@@ -92,6 +92,7 @@ class TargetProductionTest(unittest.TestCase):
     def test_wrong_context_is_rejected_before_provider_access(self):
         for overrides in [
             {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY": "another-owner/okou"},
             {"GITHUB_EVENT_NAME": "pull_request"},
             {"GITHUB_WORKFLOW_REF": "other"},
         ]:

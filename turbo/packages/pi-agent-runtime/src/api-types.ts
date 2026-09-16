@@ -1,4 +1,5 @@
 import type { PiAgentModelConfig } from "./types";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { PiApiModelFailureDiagnostic } from "./api-failure";
 import type { PiApiFirstTurnOwnership } from "./provider-ownership";
 import type { PiPreparationObserver } from "./preparation-timing";
@@ -124,7 +125,7 @@ interface PiApiAssistantMessageFields {
   readonly model: string;
   readonly responseId?: string;
   /** Content-free product classification; native provider diagnostics stay private. */
-  readonly failureReason?: "reconnect_required" | "usage_limit";
+  readonly failureReason?: KnownRunFailureReason;
   readonly timestamp: number;
   readonly usage: {
     readonly input: number;

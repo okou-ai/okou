@@ -105,6 +105,11 @@ const expectedBindings = [
     direction: "response",
   },
   {
+    rustModulePath: ["runners", "runs", "cancellation"],
+    rustTypeName: "Response",
+    direction: "response",
+  },
+  {
     rustModulePath: ["runners", "runs", "model_provider_failures"],
     rustTypeName: "Request",
     direction: "request",

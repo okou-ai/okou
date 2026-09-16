@@ -2,6 +2,7 @@ import { type z } from "zod";
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import {
   runnersActiveInputsContract,
+  runnersCancellationContract,
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
   runnersJobClaimContract,
@@ -16,6 +17,14 @@ export interface RustDecodePathBinding {
 }
 
 export const rustDecodePathBindings = [
+  {
+    schema: runnersCancellationContract.get.responses[200],
+    rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],
+    rustConstName: "RESPONSE",
+    rustDoc: [
+      "Decode-path schema for Run stop intent and authenticated absence.",
+    ],
+  },
   {
     schema: runnersPollContract.poll.responses[200],
     rustModulePath: ["runners", "poll"],

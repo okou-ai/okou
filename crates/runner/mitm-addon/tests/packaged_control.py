@@ -4,6 +4,7 @@ Not part of normal test discovery: running this suite requires the verified bina
 and fails (rather than skips) when it is missing. No external service is contacted.
 """
 
+import hashlib
 import http.client
 import json
 import os
@@ -15,7 +16,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
-from tests.control_helpers import control_connection, exchange, log_flush_request, status_request
+from tests.control_helpers import (
+    control_connection,
+    exchange,
+    log_flush_request,
+    registry_apply_request,
+    registry_status_request,
+    status_request,
+)
+from tests.registry_builtin_helpers import write_catalog_cache
 
 
 @contextmanager
@@ -50,6 +59,8 @@ def launch(root: Path, generation: str):
                 "okou_api_url=http://127.0.0.1:1",
                 "--set",
                 f"okou_proxy_registry_path={directory / 'registry.json'}",
+                "--set",
+                f"okou_builtin_firewall_catalog_cache_path={directory / 'catalog.json'}",
                 "--set",
                 "connection_strategy=lazy",
             ],
@@ -176,3 +187,70 @@ def test_packaged_addon_flushes_production_network_log_after_unregister(tmp_path
         assert records[0]["url"] == "http://example.com/control-log"
         assert records[0]["action"] == "DENY"
         assert records[0]["status"] == 403
+
+
+def test_packaged_registry_receipt_matches_catalog_and_http_enforcement(tmp_path):
+    with launch(tmp_path, "generation-1") as (directory, port):
+        path = directory / "registry.json"
+        catalog = directory / "catalog.json"
+        write_catalog_cache(
+            catalog,
+            digest="sha256:" + "a" * 64,
+            version="packaged-catalog",
+            firewalls={
+                "example": {
+                    "name": "example",
+                    "apis": [
+                        {
+                            "base": "http://example.com",
+                            "auth": {"headers": {}},
+                            "permissions": [{"name": "read", "rules": ["GET /control-apply"]}],
+                        }
+                    ],
+                }
+            },
+        )
+        path.write_text(
+            json.dumps(
+                {
+                    "sandboxes": {
+                        "127.0.0.1": {
+                            "runId": str(uuid4()),
+                            "cliAgentType": "claude-code",
+                            "billableFirewalls": [],
+                            "firewalls": [{"kind": "builtin", "name": "example"}],
+                            "networkPolicies": {
+                                "example": {"allow": [], "deny": ["read"], "unknownPolicy": "deny"}
+                            },
+                        }
+                    },
+                    "updatedAt": 1,
+                }
+            )
+        )
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        response = exchange(directory, registry_apply_request(digest))
+        data = response["data"]
+        assert isinstance(data, dict)
+        assert data["state"] == "applied"
+        assert data["snapshot"]["digest"] == digest
+        assert data["snapshot"]["catalog"]["digest"] == "a" * 64
+        assert data["snapshot"]["catalog"]["file"]["inode"] == catalog.stat().st_ino
+        assert exchange(directory, registry_status_request())["data"] == data["snapshot"]
+        proxy = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        try:
+            proxy.request("GET", "http://example.com/control-apply")
+            denied = proxy.getresponse()
+            assert denied.status == 403
+            assert json.loads(denied.read())["reason"] == "permission_denied"
+            path.write_text("{invalid")
+            rejected = exchange(directory, registry_apply_request(digest))["data"]
+            assert isinstance(rejected, dict)
+            assert rejected["state"] == "rejected"
+            assert rejected["snapshot"]["reason"] == "parse_failed"
+            proxy.request("GET", "http://example.com/control-apply")
+            unavailable = proxy.getresponse()
+            assert unavailable.status == 503
+            assert json.loads(unavailable.read())["error"] == "registry_unavailable"
+        finally:
+            proxy.close()

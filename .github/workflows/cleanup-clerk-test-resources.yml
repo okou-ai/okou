@@ -39,7 +39,7 @@ jobs:
         run: >-
           cd e2e && pnpm exec tsx playwright/clerk-test-resources.ts
           cleanup-stale
-          browser,playwright,paid-onboarding,runner,runner-real-codex,runner-real-claude,runner-mock-claude
+          browser,playwright,paid-onboarding,runner,runner-real-codex,runner-real-claude,runner-mock-claude,runner-real-codex-built-in
           --ci-older-than-hours 2
           --staging-browser-older-than-hours 8
         env:

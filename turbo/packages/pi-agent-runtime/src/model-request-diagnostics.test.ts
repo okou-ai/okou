@@ -18,6 +18,7 @@ import {
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import rateLimitMessage from "./test/fixtures/codex-rate-limit.json";
+import { projectPiApiAssistantMessage } from "./api-turn";
 
 const route = {
   provider: "openai-codex",
@@ -81,6 +82,158 @@ function successResponse() {
 }
 
 describe("Codex model request diagnostics", () => {
+  it("preserves a top-level provider message before the SDK renders HTTP 503", async () => {
+    server.use(
+      http.post(endpoint, () => {
+        return HttpResponse.json(
+          {
+            message:
+              "Our servers are currently overloaded. Please try again later.",
+          },
+          { status: 503 },
+        );
+      }),
+    );
+    const result = await stream().result();
+    expect(result.stopReason).toBe("error");
+    expect(projectPiApiAssistantMessage(result, 503).failureReason).toBe(
+      "provider_overloaded",
+    );
+  });
+
+  it.each([
+    ...[
+      "insufficient_quota",
+      "billing_hard_limit_reached",
+      "insufficient_credits",
+    ].map((code) => {
+      return {
+        status: 429,
+        body: { error: { code, message: "Private provider billing details" } },
+        reason: "provider_insufficient_credits",
+      };
+    }),
+    {
+      status: 400,
+      body: {
+        error: {
+          type: "invalid_request_error",
+          message:
+            "Your credit balance is too low to access the Anthropic API. Please purchase credits.",
+        },
+      },
+      reason: "provider_insufficient_credits",
+    },
+    {
+      status: 503,
+      body: { error: { message: "Service unavailable" } },
+      reason: "provider_server_error",
+    },
+    {
+      status: 529,
+      body: { error: { message: "Service unavailable" } },
+      reason: "provider_overloaded",
+    },
+    {
+      status: 429,
+      body: {
+        error: { code: "rate_limit_exceeded", message: "Rate limit exceeded" },
+      },
+      reason: "provider_rate_limited",
+    },
+    {
+      status: 429,
+      body: {
+        error: { code: "usage_limit_reached", message: "Quota exhausted" },
+      },
+      reason: "usage_limit",
+    },
+    {
+      status: 429,
+      body: { error: { message: "You have hit your ChatGPT usage limit." } },
+      reason: "usage_limit",
+    },
+    {
+      status: 401,
+      body: {
+        error: {
+          code: "invalid_api_key",
+          message: "Private authentication details",
+        },
+      },
+      reason: "invalid_api_key",
+    },
+    {
+      status: 400,
+      body: {
+        error: { code: "context_length_exceeded", message: "Private prompt" },
+      },
+      reason: "context_window_exceeded",
+    },
+  ])(
+    "preserves $reason before SDK error rewriting",
+    async ({ status, body, reason }) => {
+      server.use(
+        http.post(endpoint, () => {
+          return HttpResponse.json(body, { status });
+        }),
+      );
+      const result = await stream().result();
+      expect(result.stopReason).toBe("error");
+      expect(result.diagnostics).toMatchObject([
+        {
+          details: {
+            httpStatus: status,
+            transportAttempts: 1,
+            failureReason: reason,
+          },
+        },
+      ]);
+      expect(projectPiApiAssistantMessage(result, status).failureReason).toBe(
+        reason,
+      );
+      expect(JSON.stringify(result.diagnostics)).not.toContain(
+        body.error.message,
+      );
+      expect(
+        result.diagnostics?.[0]?.details?.transportFailure,
+      ).toBeUndefined();
+    },
+  );
+
+  it.each([503, 529])(
+    "classifies JSON and opaque HTTP %s consistently",
+    async (status) => {
+      server.use(
+        http.post(endpoint, () => {
+          return new HttpResponse("Service unavailable", { status });
+        }),
+      );
+      const result = await stream().result();
+      expect(projectPiApiAssistantMessage(result, status).failureReason).toBe(
+        status === 529 ? "provider_overloaded" : "provider_server_error",
+      );
+    },
+  );
+
+  it("classifies the production overload after an HTTP 200 stream starts", async () => {
+    server.use(
+      http.post(endpoint, () => {
+        return new HttpResponse(
+          `data: ${JSON.stringify({ type: "error", message: "Our servers are currently overloaded. Please try again later." })}`,
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    const result = await stream().result();
+    expect(result.errorMessage).toBe(
+      "Codex error: Our servers are currently overloaded. Please try again later.",
+    );
+    expect(projectPiApiAssistantMessage(result, 200).failureReason).toBe(
+      "provider_overloaded",
+    );
+  });
+
   it.each(["events", "result"])(
     "preserves the shared rate-limit fixture via %s",
     async (consumer) => {

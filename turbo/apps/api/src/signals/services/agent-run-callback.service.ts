@@ -83,10 +83,7 @@ interface DispatchSingleCallbackInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly balanceContext: Omit<
-    Parameters<typeof formatRunBalanceError>[0],
-    "message"
-  >;
+  readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
 }
 
 export async function chatCallbackIdForRun(
@@ -320,7 +317,6 @@ export async function dispatchRunCallbacks(
       userId: agentRuns.userId,
       failureReason: agentRuns.failureReason,
       modelProvider: agentRuns.modelProvider,
-      launchSnapshot: agentRuns.launchSnapshot,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
@@ -371,7 +367,6 @@ export async function dispatchRunCallbacks(
       balanceContext: {
         failureReason: run.failureReason,
         modelProvider: run.modelProvider,
-        framework: run.launchSnapshot?.framework,
       },
     });
     results.push(dispatchResult);
@@ -421,7 +416,6 @@ export const dispatchRunCallbacks$ = command(
         userId: agentRuns.userId,
         failureReason: agentRuns.failureReason,
         modelProvider: agentRuns.modelProvider,
-        launchSnapshot: agentRuns.launchSnapshot,
       })
       .from(agentRuns)
       .where(eq(agentRuns.id, runId))
@@ -498,7 +492,6 @@ export const dispatchRunCallbacks$ = command(
             balanceContext: {
               failureReason: run.failureReason,
               modelProvider: run.modelProvider,
-              framework: run.launchSnapshot?.framework,
             },
           });
       signal.throwIfAborted();
@@ -694,8 +687,7 @@ async function dispatchHttpCallback(
     error:
       error === undefined
         ? undefined
-        : (formatRunBalanceError({ ...input.balanceContext, message: error }) ??
-          error),
+        : (formatRunBalanceError(input.balanceContext) ?? error),
     payload: callback.payload,
   });
   const timestamp = Math.floor(now() / 1000);
