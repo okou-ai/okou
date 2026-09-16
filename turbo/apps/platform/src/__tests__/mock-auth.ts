@@ -448,6 +448,12 @@ type MockedCreateOrganization = (
 ) => Promise<{ readonly id: string }>;
 
 export const mockedClerk = {
+  get instanceType(): BrowserClerk["instanceType"] {
+    return "production";
+  },
+  get frontendApi() {
+    return "clerk.example.test";
+  },
   get loaded() {
     return internalMockedClerkLoaded;
   },

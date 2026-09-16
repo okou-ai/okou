@@ -17,6 +17,7 @@ import { AuthV1LoadError } from "../views/auth-v1/auth-v1-load-error.tsx";
 import { logger } from "./log.ts";
 import { settle } from "./utils.ts";
 import { createAuthV1ClerkSignals } from "./auth-v1-clerk.ts";
+import { redirectToClerkAccountPortalPreview$ } from "./clerk-account-portal-preview.ts";
 
 const L = logger("AuthV1");
 
@@ -39,6 +40,9 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     // after readiness lets its provider reuse the loaded instance directly.
     const clerk = await get(clerk$);
     signal.throwIfAborted();
+    if (set(redirectToClerkAccountPortalPreview$, clerk, mode)) {
+      return;
+    }
     // The optional hosted UI can fail before a form exists, so `settle` keeps
     // cancellation propagating while this route offers a visible reload.
     const uiLoad = await settle(set(ensureClerkUiLoaded$, signal), signal);
