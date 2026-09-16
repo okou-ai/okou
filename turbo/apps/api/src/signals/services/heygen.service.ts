@@ -11,6 +11,7 @@ import {
 
 import { logger } from "../../lib/log";
 import { redactPresignedUrls } from "../../lib/presigned-url-redaction";
+import { providerBodySnippet } from "../../lib/provider-body-snippet";
 import { now } from "../../lib/time";
 import { safeJsonParse } from "../utils";
 
@@ -356,25 +357,6 @@ function providerErrorMessage(value: unknown): string | undefined {
     return undefined;
   }
   return optionalString(value.error.message);
-}
-
-const PROVIDER_BODY_SNIPPET_MAX_LENGTH = 200;
-
-/**
- * A gateway failure answers with its own error page instead of HeyGen's JSON
- * envelope, so `providerErrorMessage` finds nothing and every such event logs
- * the same unusable fallback. Keep a bounded, redacted slice of that body so
- * the error class stays distinguishable. Only a body that is not JSON at all
- * qualifies, which excludes any response shaped like a request echo.
- */
-function providerBodySnippet(body: string): string | undefined {
-  const collapsed = redactPresignedUrls(body).replace(/\s+/gu, " ").trim();
-  if (!collapsed) {
-    return undefined;
-  }
-  return collapsed.length > PROVIDER_BODY_SNIPPET_MAX_LENGTH
-    ? `${collapsed.slice(0, PROVIDER_BODY_SNIPPET_MAX_LENGTH)}…`
-    : collapsed;
 }
 
 interface HeyGenFailureContext {

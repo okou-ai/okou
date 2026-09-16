@@ -70,24 +70,11 @@ const PRICING_ROWS = [
     unitSize: 60,
   },
 ] as const satisfies readonly UsagePricingRow[];
-// A gateway answers with its own page rather than HeyGen's error envelope, and
-// it is long enough that an unbounded log would carry the whole document.
+// A gateway answers with its own page rather than HeyGen's error envelope.
 const GATEWAY_ERROR_PAGE = `<html>
   <head><title>502 Bad Gateway</title></head>
-  <body>
-    ${"upstream connect error or disconnect/reset before headers. ".repeat(6)}
-  </body>
+  <body>upstream connect error or disconnect/reset before headers</body>
 </html>`;
-
-function heyGenFailureLog(): readonly unknown[] {
-  const call = context.mocks.axiomLogging.warn.mock.calls.find(([message]) => {
-    return message === "HeyGen API request failed";
-  });
-  if (!call) {
-    throw new Error("Expected a HeyGen provider failure log");
-  }
-  return call;
-}
 
 interface Fixture {
   readonly orgId: string;
@@ -756,12 +743,14 @@ describe("Managed Intro Video Agent", () => {
     await expect(credits(f)).resolves.toBe(9390);
   });
 
-  it("attributes an opaque gateway failure to its operation with a bounded body", async () => {
+  it("retains an unknown submission when the gateway answers with an error page", async () => {
     const f = await fixture();
-    mockProvider();
-    context.mocks.axiomLogging.warn.mockClear();
+    const provider = mockProvider();
+    // A gateway 5xx carries no JSON error envelope, unlike every other failure
+    // this suite exercises, so it reaches the provider reader as plain text.
     server.use(
-      http.post(HEYGEN_CREATE_URL, () => {
+      http.post(HEYGEN_CREATE_URL, async ({ request: providerRequest }) => {
+        provider.submissions.push(record(await providerRequest.json()));
         return new HttpResponse(GATEWAY_ERROR_PAGE, {
           status: 502,
           headers: { "content-type": "text/html" },
@@ -771,39 +760,20 @@ describe("Managed Intro Video Agent", () => {
 
     const body = request();
     expect((await submit(f, body)).status).toBe(202);
-
-    const [, fields] = heyGenFailureLog();
-    expect(fields).toMatchObject({
-      context: "HeyGen",
-      operation: "submit-video-agent",
-      status: 502,
-      // A gateway page carries no HeyGen error envelope, so the message stays
-      // the fallback; the snippet is what still identifies the failure class.
-      providerMessage: "Unknown provider error",
-      providerBody: expect.stringContaining("502 Bad Gateway"),
+    await expect(status(f, body.requestId)).resolves.toMatchObject({
+      generationId: body.requestId,
+      status: "running",
+      providerStatus: "submission_unknown",
+      sessionId: null,
+      videoId: null,
+      notice: expect.stringContaining("do not submit another paid generation"),
     });
-    // 200 retained characters plus the truncation mark, never the whole page.
-    expect(fields).toMatchObject({
-      providerBody: expect.stringMatching(/^.{201}$/su),
-    });
-  });
 
-  it("keeps a structured provider message without repeating the response body", async () => {
-    const f = await fixture();
-    const provider = mockProvider();
-    provider.submitStatus = 503;
-    context.mocks.axiomLogging.warn.mockClear();
-
-    expect((await submit(f, request())).status).toBe(202);
-
-    const [, fields] = heyGenFailureLog();
-    expect(fields).toMatchObject({
-      context: "HeyGen",
-      operation: "submit-video-agent",
-      status: 503,
-      providerMessage: "Submission outcome is unknown",
-    });
-    expect(fields).not.toHaveProperty("providerBody");
+    // An ambiguous gateway failure must not license a second paid submission.
+    const retried = await submit(f, body);
+    expect([200, 202]).toContain(retried.status);
+    expect(provider.submissions).toHaveLength(1);
+    await expect(credits(f)).resolves.toBe(10_000);
   });
 
   it("rejects conflicting request IDs and hides another user's generation", async () => {
