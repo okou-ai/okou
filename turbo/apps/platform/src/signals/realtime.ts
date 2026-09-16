@@ -1396,10 +1396,15 @@ export const setWorkerAblyLoop$ = command(
 );
 
 /** App topics are checked against the Worker protocol before code can ship. */
-export const setAblyLoop$: Command<
-  void,
-  [SetAblyLoopArgs & AppRealtimeSubscription, AbortSignal]
-> = setWorkerAblyLoop$;
+export const setAblyLoop$ = command(
+  (
+    { set },
+    args: SetAblyLoopArgs & AppRealtimeSubscription,
+    signal: AbortSignal,
+  ): void => {
+    set(setWorkerAblyLoop$, args, signal);
+  },
+);
 
 /** Wait until the subscription finishes, fails, or is cancelled. */
 export const waitAblyLoopUntil$ = command(
@@ -1454,10 +1459,15 @@ export const setWorkerAblyPayloadLoop$ = command(
 );
 
 /** App subscriptions cannot use Worker-only topics or channel-wide listeners. */
-export const setAblyPayloadLoop$: Command<
-  void,
-  [SetAblyPayloadLoopArgs & AppRealtimeSubscription, AbortSignal]
-> = setWorkerAblyPayloadLoop$;
+export const setAblyPayloadLoop$ = command(
+  (
+    { set },
+    args: SetAblyPayloadLoopArgs & AppRealtimeSubscription,
+    signal: AbortSignal,
+  ): void => {
+    set(setWorkerAblyPayloadLoop$, args, signal);
+  },
+);
 
 /** Wait until the subscription finishes, fails, or is cancelled. */
 export const waitAblyPayloadLoopUntil$ = command(

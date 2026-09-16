@@ -121,12 +121,12 @@ const userRealtimeTopicSchema = z.union([
   ]),
 ]);
 
-const realtimeTopicSchemas = {
+const realtimeTopicSchemas = Object.freeze({
   credential: z.literal("morningBriefChanged"),
   org: z.enum(["presentationTemplatesChanged", "modelPoliciesChanged"]),
   user: userRealtimeTopicSchema,
   "run-output": z.uuid(),
-};
+});
 
 export type SharedDatabaseRealtimeTopic<
   TScope extends SharedDatabaseRealtimeScope,
