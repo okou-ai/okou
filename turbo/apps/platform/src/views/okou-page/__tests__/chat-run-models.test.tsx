@@ -1336,7 +1336,7 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
 );
 
 test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
-  "Keep a past automatic run limit readable after the conversation continues (%s)",
+  "Retire an automatic run limit after the conversation continues (%s)",
   async (error) => {
     configureModelPolicies(["gpt-5.6-sol"]);
     installRunChat({
@@ -1374,11 +1374,7 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
     await expect(
       screen.findByText("The analysis is complete."),
     ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "The limit for consecutive automatic runs has been reached. Confirm to continue.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId("assistant-error-card-shell")).toBeNull();
     expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
   },
 );
