@@ -589,18 +589,18 @@
       "videoLabel": "Pratinjau video untuk {{filename}}"
     },
     "sharing": {
-      "accessLabel": "",
-      "copyLink": "",
-      "loadFailed": "",
-      "onlyMe": "",
-      "onlyMeDescription": "",
-      "organization": "",
-      "organizationDescription": "",
-      "publicAccess": "",
-      "publicDescription": "",
-      "retry": "",
-      "savedAutomatically": "",
-      "saving": ""
+      "accessLabel": "Siapa yang dapat mengakses",
+      "copyLink": "Salin tautan",
+      "loadFailed": "Gagal memuat izin",
+      "onlyMe": "Hanya saya",
+      "onlyMeDescription": "Hanya Anda yang dapat melihat artefak ini",
+      "organization": "Organisasi",
+      "organizationDescription": "Siapa pun di {{organization}} yang memiliki tautan",
+      "publicAccess": "Akses publik",
+      "publicDescription": "Siapa pun yang memiliki tautan dapat melihat",
+      "retry": "Coba lagi",
+      "savedAutomatically": "Perubahan disimpan otomatis",
+      "saving": "Menyimpan…"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",

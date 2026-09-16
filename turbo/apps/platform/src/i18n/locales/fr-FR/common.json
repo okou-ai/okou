@@ -608,18 +608,18 @@
       "videoLabel": "Aperçu vidéo pour {{filename}}"
     },
     "sharing": {
-      "accessLabel": "",
-      "copyLink": "",
-      "loadFailed": "",
-      "onlyMe": "",
-      "onlyMeDescription": "",
-      "organization": "",
-      "organizationDescription": "",
-      "publicAccess": "",
-      "publicDescription": "",
-      "retry": "",
-      "savedAutomatically": "",
-      "saving": ""
+      "accessLabel": "Qui peut y accéder",
+      "copyLink": "Copier le lien",
+      "loadFailed": "Impossible de charger les autorisations",
+      "onlyMe": "Moi uniquement",
+      "onlyMeDescription": "Vous seul pouvez voir cet artefact",
+      "organization": "Organisation",
+      "organizationDescription": "Toute personne de {{organization}} disposant du lien",
+      "publicAccess": "Accès public",
+      "publicDescription": "Toute personne disposant du lien peut le voir",
+      "retry": "Réessayer",
+      "savedAutomatically": "Les modifications sont enregistrées automatiquement",
+      "saving": "Enregistrement…"
     },
     "sidebar": {
       "openSharedConversation": "Ouvrir la conversation partagée",

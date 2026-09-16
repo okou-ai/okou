@@ -608,18 +608,18 @@
       "videoLabel": "Visualização de vídeo de {{filename}}"
     },
     "sharing": {
-      "accessLabel": "",
-      "copyLink": "",
-      "loadFailed": "",
-      "onlyMe": "",
-      "onlyMeDescription": "",
-      "organization": "",
-      "organizationDescription": "",
-      "publicAccess": "",
-      "publicDescription": "",
-      "retry": "",
-      "savedAutomatically": "",
-      "saving": ""
+      "accessLabel": "Quem pode acessar",
+      "copyLink": "Copiar link",
+      "loadFailed": "Não foi possível carregar as permissões",
+      "onlyMe": "Somente eu",
+      "onlyMeDescription": "Somente você pode ver este artefato",
+      "organization": "Organização",
+      "organizationDescription": "Qualquer pessoa de {{organization}} com o link",
+      "publicAccess": "Acesso público",
+      "publicDescription": "Qualquer pessoa com o link pode ver",
+      "retry": "Tentar novamente",
+      "savedAutomatically": "As alterações são salvas automaticamente",
+      "saving": "Salvando…"
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversa compartilhada",

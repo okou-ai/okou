@@ -590,18 +590,18 @@
       "videoLabel": "{{filename}} के लिए वीडियो पूर्वावलोकन"
     },
     "sharing": {
-      "accessLabel": "",
-      "copyLink": "",
-      "loadFailed": "",
-      "onlyMe": "",
-      "onlyMeDescription": "",
-      "organization": "",
-      "organizationDescription": "",
-      "publicAccess": "",
-      "publicDescription": "",
-      "retry": "",
-      "savedAutomatically": "",
-      "saving": ""
+      "accessLabel": "किसे ऐक्सेस है",
+      "copyLink": "लिंक कॉपी करें",
+      "loadFailed": "अनुमतियाँ लोड नहीं हो सकीं",
+      "onlyMe": "केवल मैं",
+      "onlyMeDescription": "केवल आप यह आर्टिफ़ैक्ट देख सकते हैं",
+      "organization": "संगठन",
+      "organizationDescription": "{{organization}} में लिंक वाला कोई भी व्यक्ति",
+      "publicAccess": "सार्वजनिक ऐक्सेस",
+      "publicDescription": "लिंक वाला कोई भी व्यक्ति देख सकता है",
+      "retry": "फिर से कोशिश करें",
+      "savedAutomatically": "बदलाव अपने-आप सेव होते हैं",
+      "saving": "सेव हो रहा है…"
     },
     "sidebar": {
       "openSharedConversation": "साझा बातचीत खोलें",

@@ -589,18 +589,18 @@
       "videoLabel": "{{filename}} 비디오 미리보기"
     },
     "sharing": {
-      "accessLabel": "",
-      "copyLink": "",
-      "loadFailed": "",
-      "onlyMe": "",
-      "onlyMeDescription": "",
-      "organization": "",
-      "organizationDescription": "",
-      "publicAccess": "",
-      "publicDescription": "",
-      "retry": "",
-      "savedAutomatically": "",
-      "saving": ""
+      "accessLabel": "액세스 권한",
+      "copyLink": "링크 복사",
+      "loadFailed": "권한을 불러올 수 없습니다",
+      "onlyMe": "나만",
+      "onlyMeDescription": "나만 이 아티팩트를 볼 수 있습니다",
+      "organization": "조직",
+      "organizationDescription": "링크가 있는 {{organization}} 구성원",
+      "publicAccess": "공개 액세스",
+      "publicDescription": "링크가 있는 모든 사람이 볼 수 있습니다",
+      "retry": "다시 시도",
+      "savedAutomatically": "변경 사항은 자동으로 저장됩니다",
+      "saving": "저장 중…"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",

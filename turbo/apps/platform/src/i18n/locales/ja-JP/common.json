@@ -589,18 +589,18 @@
       "videoLabel": "{{filename}} のビデオ プレビュー"
     },
     "sharing": {
-      "accessLabel": "",
-      "copyLink": "",
-      "loadFailed": "",
-      "onlyMe": "",
-      "onlyMeDescription": "",
-      "organization": "",
-      "organizationDescription": "",
-      "publicAccess": "",
-      "publicDescription": "",
-      "retry": "",
-      "savedAutomatically": "",
-      "saving": ""
+      "accessLabel": "アクセスできるユーザー",
+      "copyLink": "リンクをコピー",
+      "loadFailed": "権限を読み込めませんでした",
+      "onlyMe": "自分のみ",
+      "onlyMeDescription": "このアーティファクトを表示できるのは自分だけです",
+      "organization": "組織",
+      "organizationDescription": "リンクを知っている {{organization}} のメンバー",
+      "publicAccess": "一般公開",
+      "publicDescription": "リンクを知っている全員が表示できます",
+      "retry": "再試行",
+      "savedAutomatically": "変更は自動的に保存されます",
+      "saving": "保存中…"
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",
