@@ -140,6 +140,21 @@ Playwright's setup project owns the feature account; unrelated lanes create no
 unused global account. Failed checkouts report HTTP status, request ID, and
 Retry-After, and product Playwright lanes retain traces on the first failure.
 
+Runner credential sign-in failures upload `runner-e2e-sign-in-diagnostics` for
+one day, separately from payment diagnostics and credentials. Each account's
+JSON report records document milestones, the first 64 requests (origin/path,
+resource type, status, elapsed timings and finished/failed/pending outcome),
+omitted-record counts, and best-effort page/Clerk readiness. Status and response
+timing are present only once the browser reports them; their absence is not
+proof that the server sent nothing. Pending script requests can explain a
+missing `DOMContentLoaded` milestone.
+Page-state capture has its own one-second deadline and can be unavailable.
+These reports exclude URL queries/fragments/userinfo, headers, cookies, payloads,
+raw console/error text, screenshots and raw traces. Successful sign-in writes
+no report; diagnostic failure preserves the original sign-in error and does not
+retry authentication or increase its deadlines. This evidence diagnoses future
+recurrences; it does not establish or fix an underlying provider/network outage.
+
 Use a different organization-scoped connector slug in each file that can run in
 parallel. Assert sandbox-visible output and Okou-owned telemetry; do not treat an
 external provider's exact response status or body as the test oracle.

@@ -439,6 +439,18 @@ unless token_step.dig("env", "E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID") ==
   raise "runner E2E token generation must receive the built-in Codex organization"
 end
 
+sign_in_diagnostic_upload = account_prepare.fetch("steps").find do |step|
+  step["name"] == "Upload runner E2E sign-in diagnostics"
+end
+raise "missing runner E2E sign-in diagnostic upload" unless sign_in_diagnostic_upload
+unless sign_in_diagnostic_upload.fetch("if") == "failure()" &&
+    sign_in_diagnostic_upload.dig("with", "name") == "runner-e2e-sign-in-diagnostics" &&
+    sign_in_diagnostic_upload.dig("with", "path") == "/tmp/e2e-runner-sign-in-diagnostics" &&
+    sign_in_diagnostic_upload.dig("with", "if-no-files-found") == "ignore" &&
+    sign_in_diagnostic_upload.dig("with", "retention-days") == 1
+  raise "runner E2E sign-in diagnostics must be failure-only, isolated from tokens, and short-lived"
+end
+
 diagnostic_upload_step = account_prepare.fetch("steps").find do |step|
   step["name"] == "Upload runner E2E Checkout diagnostics"
 end
