@@ -1268,30 +1268,13 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       .update(orgPlanEntitlements)
       .set({ baseConcurrencyLimit: 1 })
       .where(eq(orgPlanEntitlements.orgId, actor.orgId));
-    const active = await api.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "legacy active",
-      modelProvider: "anthropic-api-key",
-    });
+    // One free slot and one older persisted Sandbox demand. Waiting demand
+    // consumes no capacity, so the only reason to refuse the slot is order.
     const deferred = await fixture({
       orgId: actor.orgId,
       userId: actor.userId,
     });
-    const cancel = setupApp({ context, routes: runsCancelRoutes })(
-      runsCancelContract,
-    );
     createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-    await accept(
-      cancel.cancel({
-        params: { id: active.runId },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    // The freed slot belongs to the older persisted demand. This caller queues
-    // on the capacity outcome, so it waits instead of taking the slot; the
-    // unchanged `concurrentRunLimit()` return keeps a nonqueue caller's error.
     const refused = await api.requestCreateRun(
       actor,
       {
@@ -1301,8 +1284,10 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       },
       [201],
     );
+    // This caller queues on the capacity outcome instead of starting; the
+    // unchanged `concurrentRunLimit()` return keeps a nonqueue caller's error.
     expect(refused.body).toMatchObject({ status: "queued" });
-    // The older demand then takes the slot it was owed.
+    // The older demand then takes the slot it was owed, on its original clock.
     await expect(
       createStore().set(consumeDeferredPiRun$, deferred.runId, context.signal),
     ).resolves.toBeTruthy();
