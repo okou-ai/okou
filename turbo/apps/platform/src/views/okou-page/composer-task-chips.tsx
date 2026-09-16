@@ -43,7 +43,7 @@ import { ComposerVisualizationOptions } from "./composer-visualization-options.t
 
 /**
  * Both chip rows -- the task types and the ideas inside a type -- are the same
- * object, so they carry one definition of how that object is drawn.
+ * object, so the one thing they override carries one definition.
  *
  * `neutral` at its default size is a form button: `px-4` against a fixed `h-9`
  * leaves 17.25px of ink inset on the sides and 11.5px above and below, a
@@ -51,14 +51,14 @@ import { ComposerVisualizationOptions } from "./composer-visualization-options.t
  * brings the sides to 13.25px, or 1.15 : 1 -- close to even, with the slight
  * horizontal margin a label needs to not touch its own edge. The height is
  * deliberately left alone: `h-9` is what sets this row's rhythm under the
- * composer, and the complaint was the frame, not the size.
+ * composer, and what reads wrong is the frame, not the size.
  *
- * `border-border` is the same hairline the rest of the product draws. A chip is
- * one line of a row rather than a standalone control, and `control-border` sits
- * a stop darker than `--border` precisely to carry a control that stands by
- * itself; a row of twelve of them turns that stop into a grid.
+ * Padding is the caller's to set; the border is not. The stroke stays on the
+ * variant's `control-border`, because `--border` is `gray-200` rather than
+ * `gray-300` under the color presets, so borrowing it here would take two
+ * stops in those palettes instead of one.
  */
-const TASK_CHIP = "px-3 border-border";
+const TASK_CHIP = "px-3";
 const TASK_ICONS = {
   workflow: Route,
   presentation: Presentation,
