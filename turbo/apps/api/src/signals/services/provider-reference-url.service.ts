@@ -16,7 +16,7 @@ import {
 } from "../external/s3";
 import { safeUriComponentDecode, safeUrlParse } from "../utils";
 import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
-import { artifactFileReference } from "./private-artifact-storage.service";
+import { resolveArtifactFileReference } from "./private-artifact-storage.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
@@ -198,7 +198,8 @@ export const resolveProviderReferenceUrls$ = command(
     const db = get(db$);
     const resolved: string[] = [];
     for (const url of args.urls) {
-      const reference = artifactFileReference(url);
+      const reference = await get(resolveArtifactFileReference(url, signal));
+      signal.throwIfAborted();
       if (reference) {
         const object = await get(
           uploadedArtifactObject({

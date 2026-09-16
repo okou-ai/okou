@@ -48,6 +48,7 @@ describe("okou web download-file command", () => {
   describe("successful download", () => {
     it.each([
       "abc-123-def",
+      "/artifacts/abcxyz1234.txt",
       artifactReferencePath(
         "00000000-0000-4000-8000-000000000023",
         "result.txt",
@@ -59,6 +60,27 @@ describe("okou web download-file command", () => {
         const outPath = join(tmpDir, "result.txt");
 
         server.use(
+          http.get(
+            "http://localhost:3000/api/artifact-references/abcxyz1234.txt",
+            ({ request }) => {
+              expect(new URL(request.url).searchParams.get("kind")).toBe(
+                "file",
+              );
+              expect(request.headers.get("authorization")).toBe(
+                "Bearer test-token",
+              );
+              return HttpResponse.json({
+                url: "https://r2.example.com/file",
+                expiresAt: "2026-09-18T00:00:00Z",
+                filename: "result.txt",
+                contentType: "text/plain",
+                target: {
+                  kind: "file",
+                  id: "00000000-0000-4000-8000-000000000023",
+                },
+              });
+            },
+          ),
           http.get(DOWNLOAD_URL, ({ request }) => {
             const url = new URL(request.url);
             expect(url.searchParams.get("file_id")).toBe(

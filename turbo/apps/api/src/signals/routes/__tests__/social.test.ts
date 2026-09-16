@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { webFileUrlRoutes } from "../web-file-url";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -3106,8 +3105,8 @@ describe("managed SocialKit route", () => {
         },
       });
       if (privateFiles) {
-        expect(completed.body.artifact?.url).toBe(
-          artifactReferencePath(created.body.downloadId, "Public _ 视频.mp4"),
+        expect(completed.body.artifact?.url).toMatch(
+          /^\/artifacts\/[a-z0-9]{10}\.mp4$/u,
         );
         context.mocks.s3.send.mockImplementation((command) => {
           expect(command).toBeInstanceOf(HeadObjectCommand);

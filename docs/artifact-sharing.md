@@ -16,7 +16,7 @@ and multipart uploads), integration input/output files, browser screenshots,
 Social downloads, and generated preview images use the private artifact bucket.
 The upload purpose is not a storage-policy selector. Private objects have an
 ownership record with `metadata.storage: "private-artifact-v1"`, the bucket and
-object key, and a stable `/artifacts/` reference. Missing private configuration or
+object key, and a stable ten-character `/artifacts/` reference. Missing private configuration or
 bytes never falls back to a public write or public lookup.
 
 Reads authorize the recorded owner and organization and use the stored location,
@@ -72,9 +72,17 @@ A file ID is one version. A hosted site's share ID spans its versions, but its
 policy pins one explicitly selected deployment. A new generation or another
 `--site` upload does not update the share. Choosing an audience on a newer,
 not-yet-shared version explicitly updates the selected version and copies the
-link; the organization link stays stable. Repeating the action for the already
-shared version only copies that link.
-CLI/model URLs continue to be stable authenticated API references.
+link. New organization links reuse the selected version's owner reference, so
+the same version has the same short ID before and after sharing. A newer version
+has its own reference and remains owner-only until explicitly shared. After
+selecting another version, a recipient cannot use the earlier version's source
+reference to follow that change; the owner can still open their original version.
+Previously copied share-level organization links retain their existing behavior.
+Repeating the action for the already shared version only copies that link.
+CLI/model URLs use the same stable short references. CLI file and hosted-site
+consumers resolve owned references with `kind=file` or `kind=html`, respectively,
+under the existing `file:read` or `host:read` capability. Those requests cannot
+resolve another owner's organization share or cross the resource-type boundary.
 
 ## Standalone artifact viewer
 
@@ -96,13 +104,17 @@ slide and PDF page positions, are retained. **Continue with Okou** opens a new
 chat with the canonical artifact link as its prompt, without importing the
 source thread.
 
-Organization references contain 10 lowercase alphanumeric characters, matching
-generated image reference length. An immutable R2 record at
-`artifact-references/<reference>.json` maps the reference to the internal share
-UUID. Conditional creation retries collisions without overwriting another share.
-The reference grants no access: every resolution still checks the authoritative
-share policy and original-organization membership. Existing 32-character
-`/artifacts/` references and `/share/artifacts/<shareId>` links remain supported.
+Owner and organization references contain 10 lowercase alphanumeric characters.
+An immutable version-2 R2 record at `artifact-references/<reference>.json` maps
+each reference to a file or hosted deployment UUID. Creation allocates the
+reference without creating any sharing grant. Files retain it in their storage
+metadata; deployments retain their URL. Deterministic candidates and conditional
+creation preserve the ID across retries and handle collisions without overwrites.
+Owner reads check ownership; recipient reads require an active policy selecting
+that exact version and current original-organization membership. The reference
+itself grants no access. Version-1 index records still map old organization
+references to a share UUID. Existing 32-character `/artifacts/` references and
+`/share/artifacts/<shareId>` links remain supported.
 
 Named public sites use the existing immutable artifact-delivery registry. Name
 allocation checks other hosted sites, historical public pointers and registered

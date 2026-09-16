@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
+import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type {
   HostedArtifactKind,
   HostedSiteFilesResponse,
@@ -30,7 +31,7 @@ import {
 import { nowDate } from "../../lib/time";
 import { privateArtifactCreationEnabled } from "./private-artifact-storage.service";
 import { registerLegacyHostedSite$ } from "./artifact-delivery.service";
-import { privateHostedArtifactUrl } from "./private-hosted-preview.service";
+import { allocateArtifactReference$ } from "./artifact-reference.service";
 import {
   scheduleArtifactPreviewRender$,
   type RenderArtifactPreviewArgs,
@@ -169,6 +170,8 @@ type SiteDeploymentCreationResult =
 
 interface CreateHostedSiteDeploymentContext {
   readonly now: Date;
+  readonly deploymentId: string;
+  readonly privateReference: string | null;
 }
 
 interface HostedSiteAllocation {
@@ -689,10 +692,14 @@ async function insertHostedDeployment(
   allocation: HostedSiteAllocation,
 ): Promise<HostedDeploymentRow> {
   const { deploymentVersion, site } = allocation;
-  const deploymentId = crypto.randomUUID();
-  const artifactUrl = args.privateArtifacts
-    ? privateHostedArtifactUrl(deploymentId)
-    : deploymentUrl(site.publicBrand, deploymentId);
+  const { deploymentId } = context;
+  if (args.privateArtifacts !== (context.privateReference !== null)) {
+    throw new Error("Deployment reference does not match its storage policy");
+  }
+  const artifactUrl =
+    context.privateReference === null
+      ? deploymentUrl(site.publicBrand, deploymentId)
+      : artifactShareReferencePath(context.privateReference, "index.html");
   const aliasUrl = args.privateArtifacts
     ? artifactUrl
     : publicUrl(site.publicBrand, site.publicSlug);
@@ -818,10 +825,18 @@ export const prepareHostedSiteDeployment$ = command(
     };
     signal.throwIfAborted();
     const now = nowDate();
+    const deploymentId = crypto.randomUUID();
+    const privateReference = creationArgs.privateArtifacts
+      ? await set(
+          allocateArtifactReference$,
+          { kind: "html", id: deploymentId },
+          signal,
+        )
+      : null;
     const siteAndDeployment = await createHostedSiteDeployment(
       writeDb,
       creationArgs,
-      { now },
+      { now, deploymentId, privateReference },
     );
     signal.throwIfAborted();
     if (siteAndDeployment.kind === "scope_conflict") {

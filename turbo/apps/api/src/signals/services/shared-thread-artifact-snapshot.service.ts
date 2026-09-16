@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { command, computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
@@ -16,6 +16,7 @@ import {
 } from "@okouai/db/schema/hosted-site";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { env } from "../../lib/env";
+import { artifactHash } from "../../lib/file-url";
 import { db$ } from "../external/db";
 import {
   copyArtifactShareObject,
@@ -28,7 +29,11 @@ import {
   artifactFileReference,
   privateArtifactRecord,
 } from "./private-artifact-storage.service";
-import { registerArtifactDelivery$ } from "./artifact-delivery.service";
+import {
+  ArtifactDeliveryAliasConflict,
+  registerArtifactDelivery$,
+} from "./artifact-delivery.service";
+import { artifactReferenceRecord } from "./artifact-reference.service";
 
 const MAX_RESOURCES = 100;
 const MAX_TEXT_BYTES = 4 * 1024 * 1024;
@@ -103,6 +108,7 @@ function resourceUrl(
 
 interface ResourceReference {
   readonly id: string;
+  readonly kind?: "file" | "html";
   readonly suffix: string;
   readonly key?: string;
 }
@@ -111,12 +117,16 @@ function resourceReference(value: string, signal: AbortSignal) {
   return computed(async (get): Promise<ResourceReference | null> => {
     const reference = parseArtifactReference(value, env("APP_URL"));
     if (reference) {
-      // Organization links grant viewing, not publication of the source.
-      // Snapshotting requires its owner artifact/deployment reference.
-      if (reference.id === null) {
-        throw new SharedThreadArtifactUnavailable();
-      }
-      return { id: reference.id, suffix: reference.fragment };
+      if (reference.id) return { id: reference.id, suffix: reference.fragment };
+      const record = await get(artifactReferenceRecord(reference.hash, signal));
+      // Legacy share aliases grant viewing only. Source references still have
+      // their ownership checked before any independent snapshot is published.
+      if (record?.version !== 2) throw new SharedThreadArtifactUnavailable();
+      return {
+        id: record.target.id,
+        kind: record.target.kind,
+        suffix: reference.fragment,
+      };
     }
     const file = artifactFileReference(value);
     if (file) {
@@ -216,13 +226,64 @@ interface SnapshotOwner {
   readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
 }
 
-function privateFileSnapshot(
-  args: SnapshotOwner,
-  reference: ResourceReference,
-  token: string,
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+const allocateSnapshotReference$ = command(
+  async (
+    { set },
+    args: SnapshotOwner & {
+      readonly id: string;
+      readonly kind: "file" | "html";
+      readonly filename: string;
+      readonly reservedTokens: ReadonlySet<string>;
+    },
+    signal: AbortSignal,
+  ) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const token = artifactHash(
+        args.threadId,
+        `${args.kind}:${args.id}:${attempt}`,
+      );
+      if (args.reservedTokens.has(token)) continue;
+      const registered = await settle(
+        set(
+          registerArtifactDelivery$,
+          {
+            alias:
+              args.kind === "file"
+                ? `${token}${artifactFilenameExtension(args.filename)}`
+                : token,
+            targetKind: args.kind,
+            record: {
+              version: 1,
+              kind: "thread-resource",
+              publicBrand: args.publicBrand,
+              threadId: args.threadId,
+              publicToken: token,
+              targetKind: args.kind,
+              targetId: args.id,
+            },
+          },
+          signal,
+        ),
+        signal,
+      );
+      if (registered.ok) return token;
+      if (!(registered.error instanceof ArtifactDeliveryAliasConflict))
+        throw registered.error;
+    }
+    throw new Error(
+      "Unable to allocate a unique conversation artifact reference",
+    );
+  },
+);
+
+const privateFileSnapshot$ = command(
+  async (
+    { get, set },
+    args: SnapshotOwner & { readonly reservedTokens: ReadonlySet<string> },
+    reference: ResourceReference,
+    signal: AbortSignal,
+  ) => {
+    if (reference.kind === "html") return null;
     const file = await get(privateArtifactRecord(reference.id));
     signal.throwIfAborted();
     if (file) {
@@ -234,6 +295,11 @@ function privateFileSnapshot(
       ) {
         throw new SharedThreadArtifactUnavailable();
       }
+      const token = await set(
+        allocateSnapshotReference$,
+        { ...args, id: file.id, kind: "file", filename: file.filename },
+        signal,
+      );
       const target: SnapshotTarget = {
         kind: "file",
         id: file.id,
@@ -256,8 +322,8 @@ function privateFileSnapshot(
       return { resource, copy };
     }
     return null;
-  });
-}
+  },
+);
 
 function ownedHostedDeployment(
   args: SnapshotOwner,
@@ -265,7 +331,11 @@ function ownedHostedDeployment(
   signal: AbortSignal,
 ) {
   return computed(async (get) => {
-    if (!z.uuid().safeParse(reference.id).success || reference.key) {
+    if (
+      reference.kind === "file" ||
+      !z.uuid().safeParse(reference.id).success ||
+      reference.key
+    ) {
       throw new SharedThreadArtifactUnavailable();
     }
     const [row] = await get(db$)
@@ -382,11 +452,12 @@ function hostedSnapshotCopies(
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
-    { get },
+    { get, set },
     args: SnapshotOwner & { readonly messages: readonly SharedMessage[] },
     signal: AbortSignal,
   ): Promise<SharedThreadArtifactPlan | null> => {
     const resources = new Map<string, SnapshotResource>();
+    const reservedTokens = new Set<string>();
     const copies: SnapshotCopy[] = [];
     const budget = { sourceBytes: 0, outputBytes: 0 };
 
@@ -403,12 +474,15 @@ export const prepareSharedThreadArtifacts$ = command(
       if (resources.size >= MAX_RESOURCES) {
         throw new SharedThreadArtifactUnavailable();
       }
-      const token = randomBytes(12).toString("hex");
-      const file = await get(
-        privateFileSnapshot(args, reference, token, signal),
+      const file = await set(
+        privateFileSnapshot$,
+        { ...args, reservedTokens },
+        reference,
+        signal,
       );
       signal.throwIfAborted();
       if (file) {
+        reservedTokens.add(file.resource.token);
         resources.set(reference.id, file.resource);
         copies.push(file.copy);
         return file.resource;
@@ -417,6 +491,18 @@ export const prepareSharedThreadArtifacts$ = command(
         ownedHostedDeployment(args, reference, signal),
       );
       signal.throwIfAborted();
+      const token = await set(
+        allocateSnapshotReference$,
+        {
+          ...args,
+          id: deployment.id,
+          kind: "html",
+          filename: "index.html",
+          reservedTokens,
+        },
+        signal,
+      );
+      reservedTokens.add(token);
       const target: Extract<SnapshotTarget, { kind: "html" }> = {
         kind: "html",
         id: deployment.id,
@@ -516,7 +602,7 @@ export const prepareSharedThreadArtifacts$ = command(
 );
 
 export const copySharedThreadArtifacts$ = command(
-  async ({ get, set }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
+  async ({ get }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
     for (let start = 0; start < plan.copies.length; start += 10) {
       // Drain every started copy before cleanup can remove its destination.
       const results = await Promise.allSettled(
@@ -556,27 +642,6 @@ export const copySharedThreadArtifacts$ = command(
         throw failed.reason;
       }
       signal.throwIfAborted();
-    }
-    for (const [token, target] of Object.entries(plan.policy.resources)) {
-      await set(
-        registerArtifactDelivery$,
-        {
-          alias:
-            target.kind === "file"
-              ? `${token}${artifactFilenameExtension(target.filename)}`
-              : token,
-          targetKind: target.kind,
-          record: {
-            version: 1,
-            kind: "thread-resource",
-            publicBrand: plan.policy.publicBrand,
-            threadId: plan.policy.threadId,
-            publicToken: token,
-            targetKind: target.kind,
-          },
-        },
-        signal,
-      );
     }
   },
 );

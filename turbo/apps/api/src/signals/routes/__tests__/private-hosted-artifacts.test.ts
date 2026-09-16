@@ -1,5 +1,4 @@
 import { mockNow } from "../../../lib/time";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
@@ -43,7 +42,8 @@ async function fixture(enabled = true) {
 test("keeps runless deployments private across switch rollback and only issues owner previews", async () => {
   const { actor, capture, body } = await fixture();
   const draft = await api.prepareHostedSite(actor, body);
-  const canonical = artifactReferencePath(draft.deploymentId, "index.html");
+  const canonical = draft.url;
+  expect(canonical).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
   expect(draft).toMatchObject({ url: canonical, artifactUrl: canonical });
   expect(draft.aliasUrl).toBeUndefined();
   await billing.updateFeatureSwitches(actor, {
@@ -57,11 +57,15 @@ test("keeps runless deployments private across switch rollback and only issues o
   });
   expect(completed.aliasUrl).toBeUndefined();
   expect(
-    capture.puts.map(({ key }) => {
-      return key;
-    }),
+    capture.puts
+      .filter(({ key }) => key.startsWith("private-sites/"))
+      .map(({ key }) => {
+        return key;
+      }),
   ).toStrictEqual([`private-sites/okou/${draft.deploymentId}/manifest.json`]);
-  const manifest = JSON.parse(capture.puts[0]!.body) as Record<string, unknown>;
+  const manifest = JSON.parse(
+    capture.puts.find(({ key }) => key.endsWith("/manifest.json"))!.body,
+  ) as Record<string, unknown>;
   expect(manifest.access).toBe("owner-private-v1");
   const files = await api.readHostedSiteFiles(
     actor,
@@ -215,8 +219,6 @@ test("creates hostless references without requiring an API hostname", async () =
   const { actor, body, capture } = await fixture();
   mockEnv("OKOU_API_BACKEND_URL", undefined);
   const draft = await api.prepareHostedSite(actor, body);
-  expect(draft.url).toBe(
-    artifactReferencePath(draft.deploymentId, "index.html"),
-  );
-  expect(capture.puts).toStrictEqual([]);
+  expect(draft.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+  expect(capture.puts.some(({ key }) => key.startsWith("sites/"))).toBe(false);
 });

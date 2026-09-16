@@ -115,6 +115,29 @@ The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
 #### Private attachment uploads
 
+New private artifact creation allocates a ten-character version-2 R2 reference
+index and stores the reference in file metadata or the hosted deployment URL.
+Organization sharing reuses that version reference. Readers retain the existing
+32-character owner URLs and version-1 organization indexes. These are durable
+links, not a rollout cache; #32492 owns retirement only after accounting for
+stored and previously copied links. Files without `metadata.artifactReference`
+retain their original long URL, and no bulk rewrite or database migration runs.
+
+CLI owner resolution adds optional `kind=file|html` to the existing reference
+endpoint. Each mode requires its existing read capability and denies recipient
+access; the browser resolver retains its sharing authorization. Deploy the
+matching API and CLI before relying on short references in clone/download or
+generation-input commands. Existing file IDs and deployment IDs remain valid.
+An older API cannot resolve new version-2 indexes; keep capable readers in
+serving and rollback targets once the new writer is enabled.
+
+Thread resource records and policies accept both new ten-character tokens and
+persisted 24-character tokens. New registry records also bind `targetId` before
+publication; old records continue to resolve through their parent policy. Deploy
+the host Worker with the tolerant schemas before the API emits short snapshot
+links. An older Worker rejects the new records, failing closed. Original files,
+snapshot bytes, revocation policies, and rollout-switch defaults are unchanged.
+
 The API accepts the previous attachment prepare request without `purpose`, and
 selects private storage from the existing `privateArtifacts` switch. The current
 App completes a private single PUT before exposing a ready attachment; multipart

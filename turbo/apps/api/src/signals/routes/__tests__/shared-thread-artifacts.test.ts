@@ -11,7 +11,6 @@ import {
 import { beforeEach, expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
@@ -294,7 +293,6 @@ async function fixture() {
     return {
       ...prepared,
       name,
-      url: artifactReferencePath(prepared.deploymentId, "index.html"),
     };
   }
   return { actor, objects, copies, failedWrites, upload, selection, site };
@@ -325,7 +323,7 @@ test("copies only selected artifacts, rewrites the snapshot, and preserves sourc
     [200],
   );
   const content = shared.body.messages[0]!.content;
-  const urls = content.match(/https:\/\/a\.okou\.io\/[a-f0-9]{24}\.pdf/gu);
+  const urls = content.match(/https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf/gu);
   expect(urls).toHaveLength(2);
   expect(new Set(urls).size).toBe(1);
   expect(content).not.toContain("/artifacts/");
@@ -412,17 +410,17 @@ test("copies a complete fixed site and rewrites its managed private dependencies
     [200],
   );
   expect(shared.body.messages[0]!.content).toMatch(
-    /https:\/\/[a-f0-9]{24}\.okou\.app\/#page-2/u,
+    /https:\/\/[a-z0-9]{10}\.okou\.app\/#page-2/u,
   );
   const prefix = `test-hosted-sites/shared-artifacts/okou/${created.body.id}/${site.deploymentId}`;
   expect(f.objects.get(`${prefix}/index.html`)?.toString()).toMatch(
-    /https:\/\/a\.okou\.io\/[a-f0-9]{24}\.pdf/u,
+    /https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf/u,
   );
   expect(f.objects.get(`${prefix}/assets/style.css`)?.toString()).toBe(
     "body{color:red}",
   );
   expect(f.objects.get(`${prefix}/assets/app.js`)?.toString()).toMatch(
-    /^const asset = "https:\/\/a\.okou\.io\/[a-f0-9]{24}\.pdf";$/u,
+    /^const asset = "https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf";$/u,
   );
   expect(
     f.copies.filter((copy) => {
@@ -545,6 +543,84 @@ test("a partial copy failure leaves no usable share and cleans copied private by
   });
   expect(catalog.artifacts).toStrictEqual([]);
   expect(f.objects.has(file.key)).toBeTruthy();
+});
+
+test("snapshot short-reference collisions preserve the occupied alias and retry", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const selection = await f.selection(file.url);
+  const storage = context.mocks.s3.send.getMockImplementation()!;
+  let occupiedKey: string | undefined;
+  let occupiedBody: Buffer | undefined;
+  context.mocks.s3.send.mockImplementation((command) => {
+    if (
+      !occupiedKey &&
+      command instanceof PutObjectCommand &&
+      command.input.Key?.startsWith("artifact-delivery/files/")
+    ) {
+      occupiedKey = `${command.input.Bucket}/${command.input.Key}`;
+      const record = JSON.parse(String(command.input.Body)) as Record<
+        string,
+        unknown
+      >;
+      occupiedBody = Buffer.from(
+        JSON.stringify({
+          ...record,
+          threadId: randomUUID(),
+          targetId: randomUUID(),
+        }),
+      );
+      f.objects.set(occupiedKey, occupiedBody);
+    }
+    return storage(command);
+  });
+  const created = await accept(share(f.actor, selection), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const url = shared.body.messages[0]!.content;
+  expect(url).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
+  expect(occupiedKey).toBeDefined();
+  expect(occupiedKey).not.toContain(new URL(url).pathname.slice(1));
+  expect(f.objects.get(occupiedKey!)).toEqual(occupiedBody);
+});
+
+test("independent thread snapshots use different short references and revoke separately", async () => {
+  const f = await fixture();
+  const file = await f.upload();
+  const selection = await f.selection(file.url);
+  const first = await accept(share(f.actor, selection), [201]);
+  const second = await accept(share(f.actor, selection), [201]);
+  const firstView = await accept(
+    api()(sharedThreadsContract).get({ params: { id: first.body.id } }),
+    [200],
+  );
+  const secondView = await accept(
+    api()(sharedThreadsContract).get({ params: { id: second.body.id } }),
+    [200],
+  );
+  const firstUrl = firstView.body.messages[0]!.content;
+  const secondUrl = secondView.body.messages[0]!.content;
+  expect(firstUrl).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
+  expect(secondUrl).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
+  expect(secondUrl).not.toBe(firstUrl);
+  await accept(
+    api()(sharedThreadsContract).delete({
+      headers: headers(f.actor),
+      params: { id: first.body.id },
+    }),
+    [204],
+  );
+  await accept(
+    api()(sharedThreadsContract).get({ params: { id: first.body.id } }),
+    [404],
+  );
+  const retained = await accept(
+    api()(sharedThreadsContract).get({ params: { id: second.body.id } }),
+    [200],
+  );
+  expect(retained.body.messages[0]!.content).toBe(secondUrl);
 });
 
 test("owner deletion revokes a snapshot after switch rollback and preserves the private original", async () => {

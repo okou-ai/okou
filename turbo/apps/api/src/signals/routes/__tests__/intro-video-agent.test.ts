@@ -1071,7 +1071,7 @@ describe("Managed Intro Video Agent", () => {
       });
       expect(completed.url).toBeDefined();
       if (privateArtifacts) {
-        expect(completed.url).toMatch(/^\/artifacts\/[a-f0-9]{32}\.mp4$/u);
+        expect(completed.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.mp4$/u);
       }
       expect(completed.url).not.toBe(VIDEO_URL);
       expect(

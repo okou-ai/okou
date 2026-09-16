@@ -16,7 +16,7 @@ import { safeJsonParse, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
-  artifactFileReference,
+  resolveArtifactFileReference,
   completePrivateArtifact$,
   privateArtifactCreationEnabled,
   privateArtifactRecord,
@@ -141,11 +141,16 @@ async function extractVideoPoster(
 }
 
 const renderVideoPoster$ = command(
-  async ({ set }, args: RenderArtifactPreviewArgs, signal: AbortSignal) => {
+  async (
+    { get, set },
+    args: RenderArtifactPreviewArgs,
+    signal: AbortSignal,
+  ) => {
     if (!canExtractVideoPoster(args.contentType)) {
       return null;
     }
-    const reference = artifactFileReference(args.url);
+    const reference = await get(resolveArtifactFileReference(args.url, signal));
+    signal.throwIfAborted();
     if (reference) {
       if (!reference.id) {
         return null;

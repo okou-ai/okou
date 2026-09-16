@@ -534,6 +534,7 @@ export const resolveArtifactShare$ = command(
     args: {
       readonly id: string;
       readonly userId: string;
+      readonly expectedTarget?: ArtifactShareTarget;
     },
     signal: AbortSignal,
   ) => {
@@ -549,7 +550,13 @@ export const resolveArtifactShare$ = command(
     const stored = await get(policyFor(row, signal));
     signal.throwIfAborted();
     const policy = stored?.policy;
-    if (!policy || policy.status !== "active") {
+    if (
+      !policy ||
+      policy.status !== "active" ||
+      (args.expectedTarget &&
+        (policy.target.kind !== args.expectedTarget.kind ||
+          policy.target.id !== args.expectedTarget.id))
+    ) {
       return null;
     }
     // No active-org assumption and no membership cache: removal is observed at
@@ -601,5 +608,28 @@ export const resolveArtifactShare$ = command(
       contentType: file.contentType,
       target: { kind: "file" as const, id: policy.target.id },
     };
+  },
+);
+
+/** A version reference must never follow a site's share to a different version. */
+export const resolveArtifactTargetShare$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly target: ArtifactShareTarget;
+      readonly targetId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const row = await get(shareIdentity(args.target.kind, args.targetId));
+    signal.throwIfAborted();
+    return row
+      ? await set(
+          resolveArtifactShare$,
+          { id: row.id, userId: args.userId, expectedTarget: args.target },
+          signal,
+        )
+      : null;
   },
 );

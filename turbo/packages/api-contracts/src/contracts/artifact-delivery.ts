@@ -9,8 +9,10 @@ export const artifactDeliveryRecordSchema = z.discriminatedUnion("kind", [
     kind: z.literal("thread-resource"),
     publicBrand: brandSchema,
     threadId: z.uuid(),
-    publicToken: z.string().regex(/^[a-f0-9]{24}$/u),
+    publicToken: z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
     targetKind: z.enum(["file", "html"]),
+    // New registrations bind the alias to one resource before publication.
+    targetId: z.uuid().optional(),
   }),
   z.object({
     version: z.literal(1),

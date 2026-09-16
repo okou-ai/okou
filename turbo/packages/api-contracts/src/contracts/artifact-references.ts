@@ -67,6 +67,8 @@ export const artifactReferencesContract = c.router({
     method: "GET",
     path: "/api/artifact-references/:reference",
     headers: authHeadersSchema,
+    // Agent consumers resolve only their own resource under its existing capability.
+    query: z.object({ kind: z.enum(["file", "html"]).optional() }),
     pathParams: z.object({
       reference: z
         .string()

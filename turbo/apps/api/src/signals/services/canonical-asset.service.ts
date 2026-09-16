@@ -47,7 +47,7 @@ import { sourceForRun } from "./run-uploaded-files.service";
 import {
   artifactStorageBucket,
   privateArtifactCreationEnabled,
-  privateArtifactLocation,
+  allocatePrivateArtifactLocation$,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
 
@@ -74,10 +74,14 @@ const allocateCanonicalArtifact$ = command(
     );
     signal.throwIfAborted();
     if (enabled) {
-      return privateArtifactLocation(
-        randomUUID(),
-        args.filename,
-        args.publicBrand,
+      return await set(
+        allocatePrivateArtifactLocation$,
+        {
+          id: randomUUID(),
+          filename: args.filename,
+          publicBrand: args.publicBrand,
+        },
+        signal,
       );
     }
     const location = await set(allocateArtifactObject$, args, signal);
@@ -95,7 +99,7 @@ function canonicalAssetUrl(asset: CanonicalAssetRow): string {
         asset.storageKey,
         canonicalAssetPublicBrand(asset.metadata),
       )
-    : privateArtifactUrl(asset.id, asset.filename);
+    : privateArtifactUrl(asset.id, asset.filename, asset.metadata);
 }
 
 export class InputFileImportError extends Error {
@@ -1021,7 +1025,7 @@ export async function registerCanonicalWebInputAssets(
           materializationStatus: "ready",
           contentType: file.contentType,
           sizeBytes: file.size,
-          url: privateArtifactUrl(file.id, file.filename),
+          url: privateArtifactUrl(file.id, file.filename, owned.metadata),
           idempotencyScope: "web-input",
           idempotencyKey: file.id,
         })
