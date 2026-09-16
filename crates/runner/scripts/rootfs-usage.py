@@ -171,6 +171,7 @@ def main():
             try:
                 observation.walk(target, path, 0)
             except BudgetReached:
+                # The exhausted budget is recorded; emit the partial observation.
                 pass
             except OSError:
                 observation.reasons.add("io")

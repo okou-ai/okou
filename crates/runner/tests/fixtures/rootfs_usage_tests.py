@@ -167,8 +167,9 @@ class RootfsUsageTests(unittest.TestCase):
                 "sh",
                 "-eu",
                 "-c",
-                'mount -t tmpfs -o size=8m tmpfs "$1/tmp"\n'
-                'python3 -I -B "$2" --root "$1"',
+                """mount -t tmpfs -o size=8m tmpfs "$1/tmp"
+python3 -I -B "$2" --root "$1"
+""",
                 "rootfs-mount-fixture",
                 str(self.root),
                 str(SCRIPT),
