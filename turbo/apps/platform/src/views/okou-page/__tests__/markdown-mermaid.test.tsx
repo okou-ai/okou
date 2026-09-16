@@ -81,15 +81,8 @@ describe.each(["settings", "system"] as const)(
       });
       const image = await screen.findByRole("img", { name: "Diagram" });
       const source = image.getAttribute("src");
-      return { media, source };
-    }
-    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-    let settingsDialog: HTMLElement | undefined;
-    let darkButton: HTMLElement | undefined;
-    beforeEach(async () => {
-      preparedScenario = await prepareScenario();
-      settingsDialog = undefined;
-      darkButton = undefined;
+      let settingsDialog: HTMLElement | undefined;
+      let darkButton: HTMLElement | undefined;
       expect(getButtonByName("Expand diagram")).toBeEnabled();
 
       if (entry === "settings") {
@@ -104,9 +97,14 @@ describe.each(["settings", "system"] as const)(
           return getButtonByName("Dark", settingsDialog);
         });
       }
+      return { media, source, settingsDialog, darkButton };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
     it("keeps the same diagram available after changing the theme", async () => {
-      const { media, source } = preparedScenario;
+      const { media, source, settingsDialog, darkButton } = preparedScenario;
       if (entry === "settings") {
         if (!settingsDialog || !darkButton) {
           throw new Error("Expected the diagram theme settings to be ready");

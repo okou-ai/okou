@@ -6295,7 +6295,6 @@ describe("Official Workflow installations", () => {
         initialBlueprints,
         unrelatedInitial,
         actor,
-        agentId,
         headers,
         workflowId,
         initialDaily,
@@ -6608,7 +6607,7 @@ describe("Official Workflow installations", () => {
     });
 
     it("recovers superseded and crashed work while preserving permanent Blueprint identity", async () => {
-      const { definitionName, actor, agentId, headers, workflowId } = prepared;
+      const { definitionName, actor, headers, workflowId } = prepared;
       const firstAddition = await syncCatalog(
         catalog([activeDefinition(definitionName, [scheduledBlueprint()])]),
       );
@@ -9266,11 +9265,7 @@ describe("Official Workflow Run admission", () => {
       it("preserves result email and immutable admission provenance", async () => {
         const {
           definitionName,
-          actor,
-          agentId,
           headers,
-          atTime,
-          installed,
           runnerGroup,
           loopAutomation,
           onceAutomation,

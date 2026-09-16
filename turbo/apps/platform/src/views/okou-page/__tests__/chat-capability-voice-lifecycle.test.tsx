@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
 import {
@@ -12,7 +12,7 @@ import {
 } from "./chat-run-test-fixtures.ts";
 
 describe.each(["recording", "transcribing"])(
-  "Preserve the voice session when sharing remounts the composer during %s",
+  "preserve the voice session when sharing remounts the composer during %s",
   (phase) => {
     async function prepareIdleComposer() {
       const capture = context.mocks.deferred<(samples: Float32Array) => void>();
@@ -85,7 +85,7 @@ describe.each(["recording", "transcribing"])(
       prepared = await prepareIdleComposer();
     });
 
-    test("preserves recorded audio through the active composer remount", async () => {
+    it("preserves recorded audio through the active composer remount", async () => {
       const {
         capture,
         requested,

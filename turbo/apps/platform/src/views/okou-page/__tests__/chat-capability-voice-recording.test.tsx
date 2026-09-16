@@ -145,8 +145,6 @@ describe.each([
     let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
-    });
-    beforeEach(async () => {
       const { resetFirstPage$, retries } = preparedScenario;
       // Keep interrupted capture and repeated transcription failures independent:
       // each case needs only one reload before its successful recovery.

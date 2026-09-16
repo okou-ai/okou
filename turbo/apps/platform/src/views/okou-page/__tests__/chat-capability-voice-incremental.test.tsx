@@ -1,6 +1,6 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, it, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../../signals/utils.ts";
@@ -221,7 +221,7 @@ describe("a saved voice segment with failed final processing", () => {
     await findEnabledButton("Retry");
   });
 
-  test("Resume a completed segment after reload without retranscribing its audio", async () => {
+  it("resumes a completed segment after reload without retranscribing its audio", async () => {
     context.store.set(resetPage$);
     cleanup();
     vi.mocked(window.history.pushState).mockRestore();

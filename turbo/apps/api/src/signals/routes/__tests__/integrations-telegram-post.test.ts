@@ -1906,11 +1906,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         }
       | undefined;
 
-    beforeEach(async () => {
-      dm = await prepareTelegramDm(ownerKind);
-    });
-
-    beforeEach(async () => {
+    async function prepareReplyChain() {
       replyChain = undefined;
       if (scenario !== "models") {
         const branch = await dm.completeDm(
@@ -1931,6 +1927,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         );
         replyChain = { branch, followUp: branchFollowUp };
       }
+    }
+
+    beforeEach(async () => {
+      dm = await prepareTelegramDm(ownerKind);
+      await prepareReplyChain();
     });
 
     it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {

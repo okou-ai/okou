@@ -158,6 +158,19 @@ describe.each([false, true])(
         path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
         auth,
       });
+      await fill(
+        await screen.findByRole("textbox", { name: "Message" }),
+        "Start the conversation",
+      );
+      click(await enabledButton("Send"));
+      await waitFor(() => {
+        expect(sidebarThreadTitles()).toStrictEqual(["New chat"]);
+        expect(createdThreadId).toBeDefined();
+        expect(createdEventId).toBeDefined();
+      });
+      click(await enabledButton("Voice input"));
+      click(await enabledButton("Stop recording"));
+      await enabledButton("Retry");
       return {
         get createdThreadId() {
           return createdThreadId;
@@ -180,19 +193,6 @@ describe.each([false, true])(
     let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
-      await fill(
-        await screen.findByRole("textbox", { name: "Message" }),
-        "Start the conversation",
-      );
-      click(await enabledButton("Send"));
-      await waitFor(() => {
-        expect(sidebarThreadTitles()).toStrictEqual(["New chat"]);
-        expect(preparedScenario.createdThreadId).toBeDefined();
-        expect(preparedScenario.createdEventId).toBeDefined();
-      });
-      click(await enabledButton("Voice input"));
-      click(await enabledButton("Stop recording"));
-      await enabledButton("Retry");
     });
     it("finishes voice recovery before conversation confirmation", async () => {
       const {

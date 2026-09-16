@@ -317,20 +317,6 @@ describe("with a localized running conversation", () => {
     });
 
     const stop = await findAction("button", "Parar");
-    return {
-      stop,
-      get stoppedRequest() {
-        return stoppedRequest;
-      },
-      set stoppedRequest(next: typeof stoppedRequest) {
-        stoppedRequest = next;
-      },
-    };
-  }
-  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-  beforeEach(async () => {
-    preparedScenario = await prepareScenario();
-    const { stop } = preparedScenario;
     click(stop);
 
     const portugueseCancellation = await screen.findByText(
@@ -338,12 +324,15 @@ describe("with a localized running conversation", () => {
     );
     expect(portugueseCancellation).toBeVisible();
     await waitFor(() => {
-      expect(preparedScenario.stoppedRequest).toMatchObject({
+      expect(stoppedRequest).toMatchObject({
         agentId: AGENT_ID,
         threadId: THREAD_ID,
         interruptsRunId: RUN_ID,
       });
     });
+  }
+  beforeEach(async () => {
+    await prepareScenario();
   });
 
   it("a cancelled run keeps its meaning when the language changes", async () => {

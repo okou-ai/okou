@@ -17,7 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, test, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, test, vi, type Mock } from "vitest";
 
 import {
   click,
@@ -834,7 +834,7 @@ describe("leaving a member-package flow with unfinished choices", () => {
     );
   });
 
-  test("discards unfinished choices after leaving and reopening", async () => {
+  it("discards unfinished choices after leaving and reopening", async () => {
     const packagesDialog = screen.getByRole("dialog", {
       name: "Configure member packages",
     });

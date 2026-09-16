@@ -17,7 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, it, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
@@ -195,7 +195,7 @@ describe("a model or speed change during an active run", () => {
     await readyChat();
   });
 
-  test("Explain a model or speed change that will apply next", async () => {
+  it("explains a model or speed change that will apply next", async () => {
     const user = userEvent.setup({ delay: null });
     expect(screen.getByText("Sol is still working.")).toBeVisible();
     await selectComposerModel(user, "GPT 5.6 Sol", "GPT 5.6 Luna");

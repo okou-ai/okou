@@ -457,7 +457,7 @@ describe("connecting a custom connector for the active agent", () => {
     await openConnectors(user);
   });
 
-  test("Connect a custom connector for only the active agent", async () => {
+  it("connects a custom connector for only the active agent", async () => {
     let catalog = await openAddConnectors(user);
     expect(
       within(catalog).getByText("https://api.example.test/"),
