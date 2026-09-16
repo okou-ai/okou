@@ -1,8 +1,11 @@
 # Authorization membership refresh
 
-PAT and Agent authorization retain the shared database membership cache for
-60 seconds. Cache hits do not renew that timestamp, and expired roles are never
-served while a refresh is pending or Clerk is unavailable.
+The shared membership reader serves PAT and Agent authorization, GitHub/Slack/
+Teams OAuth membership checks, and membership-aware run-error formatting. These
+callers share the same process-local coordination, negative cache and limits.
+The positive database cache retains its 60-second lifetime. Cache hits do not
+renew that timestamp, and expired roles are never served while a refresh is
+pending or Clerk is unavailable.
 
 Each API process coalesces overlapping misses for the same `(orgId, userId)`.
 The owner rechecks the database and shares the Clerk read and cache write with
@@ -24,12 +27,17 @@ at capacity. Eviction can increase provider reads, but cannot grant authority.
 Existing Clerk retry and HTTP error classifications remain in effect.
 
 At most 512 refreshes are coordinated per process. Existing keys can still join
-at capacity, and fresh database hits remain available. Excess cold keys receive
-a non-cacheable authentication 503. Each shared refresh has a 15-second deadline;
-deadline expiry also produces a non-cacheable 503. One caller cancelling only
-stops its own wait. The final caller leaving aborts the owner. Settlement,
-deadline or abandonment removes that exact owner, so late work cannot remove
-a replacement refresh. The deadline timer is cancelled when ownership ends.
+at capacity, and fresh database hits remain available. Excess cold keys fail
+with a refresh-unavailable error. Each shared refresh has a 15-second deadline;
+expiry produces the same error with a deadline reason. The PAT/Agent auth
+boundary maps these errors to a non-cacheable 503. Other callers use their
+existing OAuth or run-error handling paths; the shared reader does not convert
+these failures into non-membership or prescribe their HTTP response.
+
+One caller cancelling only stops its own wait. The final caller leaving aborts
+the owner. Settlement, deadline or abandonment removes that exact owner, so
+late work cannot remove a replacement refresh. The deadline timer is cancelled
+when ownership ends.
 
 Clerk SDK 3.13.1 does not expose cancellation for the membership HTTP request.
 Logical cancellation releases coordination and observes any late promise
