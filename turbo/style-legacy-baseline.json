@@ -5,13 +5,6 @@
     "apps/platform/src/views/css/index.css": [
       {
         "atRules": [],
-        "selector": ".okou-border",
-        "property": "border",
-        "value": "0.7px solid hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-thumb-border",
         "property": "border",
         "value": "0.5px solid hsl(var(--gray-400))",

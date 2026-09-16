@@ -24,17 +24,16 @@ const MAX_CUSTOM_USD = 10_000;
 
 type Preset = (typeof PRESETS)[number];
 
-const settingsCardBorder = {
-  border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-} as const;
-
 const tileBaseClass =
   "flex flex-col rounded-xl bg-background px-4 py-3 text-left transition-colors";
 
 function tileBorderClass(selected: boolean): string {
+  // A text tile keeps the shared hairline in both states and only recolours it.
+  // The resting branch used to be `okou-border`, whose legacy 0.7px made
+  // selecting a preset quietly change the tile's border width as well.
   return selected
-    ? "border border-primary ring-2 ring-primary/20"
-    : "okou-border hover:border-muted-foreground/30";
+    ? "border border-primary"
+    : "border border-border hover:border-muted-foreground/30";
 }
 
 function PresetTile({
@@ -261,10 +260,7 @@ export function BuyCreditsSection() {
           return $.billing.credits.title;
         })}
       </h3>
-      <div
-        className="overflow-hidden rounded-xl bg-card"
-        style={settingsCardBorder}
-      >
+      <div className="overflow-hidden rounded-xl border border-surface-border bg-card">
         <div className="flex flex-col gap-3 px-5 py-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">

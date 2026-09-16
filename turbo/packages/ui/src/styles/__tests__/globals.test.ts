@@ -211,6 +211,31 @@ describe("global focus colors", () => {
   );
 });
 
+describe("stroke weights", () => {
+  function readThemeNumber(name: string): number {
+    const match = new RegExp(`--${name}:\\s*([\\d.]+)(px)?;`).exec(globalCss);
+    if (match === null) {
+      throw new Error(`Unable to locate --${name}`);
+    }
+    return Number(match[1]);
+  }
+
+  it("draws an emphasized edge and an icon at one weight", () => {
+    // The two are the same decision in different units: a border width carries
+    // px, while the icon token resolves in SVG user space and is unitless.
+    // Retuning either alone would silently split the weight in two.
+    expect(readThemeNumber("border-width-emphasis")).toBe(
+      readThemeNumber("stroke-width-icon"),
+    );
+  });
+
+  it("keeps the hairline the lighter of the two", () => {
+    expect(readThemeNumber("default-border-width")).toBeLessThan(
+      readThemeNumber("border-width-emphasis"),
+    );
+  });
+});
+
 describe("global Lucide defaults", () => {
   it("preserves explicit stroke widths while normalizing Lucide's default", () => {
     const selector =

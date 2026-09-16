@@ -352,7 +352,7 @@ function DowngradeConfirmDialogContent({
               }}
               className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
                 selectedTarget === "pro"
-                  ? "border-primary ring-2 ring-primary/20"
+                  ? "border-primary"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >
@@ -373,7 +373,7 @@ function DowngradeConfirmDialogContent({
               className={`flex items-center justify-between rounded-lg border p-3 text-left transition-colors ${
                 selectedTarget === "limited-free-1" ||
                 selectedTarget === "pro-suspend"
-                  ? "border-primary ring-2 ring-primary/20"
+                  ? "border-primary"
                   : "border-border hover:border-muted-foreground/30"
               }`}
             >

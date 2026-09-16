@@ -160,7 +160,7 @@ function AvatarEditButton({
           >
             <AvatarSvgPreview
               config={config}
-              className="h-12 w-12 rounded-full border-2 border-primary ring-2 ring-primary/20"
+              className="h-12 w-12 rounded-full border-(length:--border-width-emphasis) border-primary ring-2 ring-primary/20"
             />
             <span className="absolute -right-0.5 -bottom-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border">
               <Wand size={10} />

@@ -131,9 +131,11 @@ function VisualizationChartButton({
     >
       <span
         className={cn(
-          "flex h-[84px] items-center justify-center rounded-lg border-2 p-2.5 transition-colors",
-          // Selection is a heavier stroke, which survives a row of grey
-          // silhouettes in a way a fill alone does not.
+          "flex h-[84px] items-center justify-center rounded-lg border-(length:--border-width-emphasis) p-2.5 transition-colors",
+          // The tile's content is a drawing, so neither a fill nor the caption
+          // can carry selection: the edge has to. That is what the emphasis
+          // weight is for, and both branches take it so selecting a tile never
+          // moves its siblings.
           selected
             ? "border-primary bg-primary/10 text-foreground"
             : "border-transparent bg-muted/60 text-foreground/45 group-hover/tile:bg-muted group-hover/tile:text-foreground/70",

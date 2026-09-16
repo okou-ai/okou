@@ -142,21 +142,51 @@
   --color-brand-text-hover: hsl(var(--brand-text-hover));
 
   /* ===================================
-   * Border width
+   * Stroke weight
    *
-   * One hairline for the whole product. Tailwind's bare `border`, `border-t`,
-   * `divide-y`, and friends all read this key, so components ask for "a border"
-   * and the system decides how thick it is. Components must not hand-write a
-   * width; `border-0` and the deliberate emphasis widths (`border-2`) remain
-   * the only exceptions.
+   * The product draws lines at two weights, and a component picks between them
+   * by what the line is doing, not by which state it is in.
    *
-   * This is a real hairline, not a rounding no-op: on a 2x display 0.5px paints
-   * one device pixel where 1px paints two, so every bare border carries half
-   * the ink it used to. Colour has to carry what the width no longer does,
-   * which is why `--border` sits a stop darker than the ramp's lightest step.
-   * Layout is unaffected: the used value is still rounded to whole pixels.
+   * `--default-border-width` is the hairline: "there is a boundary here". It is
+   * the whole default. Tailwind's bare `border`, `border-t`, `divide-y`, and
+   * friends all read this key, so components ask for "a border" and the system
+   * decides how thick it is. Components must not hand-write a width.
+   *
+   * `--border-width-emphasis` is for a line that is itself the signal rather
+   * than a boundary around something that already reads. Two cases qualify, and
+   * both are lines drawn against artwork:
+   *
+   *   1. A tile whose content is a picture — a chart silhouette, an avatar, a
+   *      template preview — where selection cannot be carried by a fill (the
+   *      artwork owns the interior) or by the label (it sits outside the box),
+   *      so the edge has to say it. A hairline cannot: one device pixel
+   *      appearing at the rim of a filled tile reads as an antialiasing
+   *      artifact, not as a state.
+   *   2. A mark that overlaps artwork and needs a ring to stay legible against
+   *      whatever is behind it — an annotation pin, a count badge on a preview.
+   *
+   * In the first case it is a width for that whole surface, not for its
+   * selected state. A selection must never change an element's metrics, so the
+   * resting branch carries the same width in `border-transparent` and only the
+   * colour is stateful. Anything that is text plus a fill — pills, chips, menu
+   * rows, table rows — keeps the hairline in both states and recolours it.
+   *
+   * 1.5px is not a new value: it is what `--stroke-width-icon` already draws
+   * at, so an emphasized edge and an icon stroke are one weight in two units.
+   *
+   * The hairline is a real hairline, not a rounding no-op: on a 2x display
+   * 0.5px paints one device pixel where 1px paints two, so every bare border
+   * carries half the ink it used to. Colour has to carry what the width no
+   * longer does, which is why `--border` sits a stop darker than the ramp's
+   * lightest step. Layout is unaffected: the used value is still rounded to
+   * whole pixels.
+   *
+   * `border-0` stays available, and so does a literal `border-2` for geometry
+   * that is not a boundary at all: a dashed drop target, a spinner's ring, the
+   * inset that shapes a switch track.
    * =================================== */
   --default-border-width: 0.5px;
+  --border-width-emphasis: 1.5px;
 
   /* Radius */
   --radius-xl: 14px;

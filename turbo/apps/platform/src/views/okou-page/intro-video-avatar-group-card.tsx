@@ -41,7 +41,7 @@ function LookThumbnails({
             aria-pressed={look.id === active.id}
             title={look.name}
             className={cn(
-              "size-11 shrink-0 overflow-hidden rounded-lg border-2 bg-muted transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "size-11 shrink-0 overflow-hidden rounded-lg border-(length:--border-width-emphasis) bg-muted transition-colors hover:border-primary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               look.id === active.id ? "border-primary" : "border-transparent",
             )}
             onClick={() => {

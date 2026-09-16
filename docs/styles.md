@@ -33,9 +33,21 @@ Token names describe meaning rather than a page or component. A reusable interac
 
 Components must not introduce local CSS variables as an alternate token registry. A runtime value that is genuinely computed by the component may use a narrowly named custom property as data, while its visual semantics still come from Tailwind utilities and registered tokens.
 
-One hairline serves the whole product. `--default-border-width` in the shared `@theme` is 0.5px, and Tailwind's bare `border`, `border-t`, `border-x`, `divide-y`, and their siblings all read it, so a component asks for "a border" and the system decides how thick it is. Components must not hand-write a width: an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style` prop, is a second registry for a decision this token already owns. `border-0` and the deliberate emphasis widths such as `border-2` stay available, because they express a different decision rather than a competing value for the same one.
+The product draws lines at two weights, and a component picks between them by what the line is doing, not by which state it is in.
+
+One hairline serves the whole product. `--default-border-width` in the shared `@theme` is 0.5px, and Tailwind's bare `border`, `border-t`, `border-x`, `divide-y`, and their siblings all read it, so a component asks for "a border" and the system decides how thick it is. Components must not hand-write a width: an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style` prop, is a second registry for a decision this token already owns. `no-restricted-syntax` in `eslint.style.config.mjs` rejects both, and the three files that legitimately pin a whole pixel turn the rule off by name with their reason.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one device pixel where 1px paints two, so every bare border carries half the ink it used to; layout is unaffected, because the used value is still rounded to whole pixels. Colour has to carry what the width no longer does, which is why `--border` sits one stop darker than the surface ramp's lightest step: `gray-200` was calibrated for a 1px line and stops reading on a near-white card at half the thickness.
+
+`--border-width-emphasis` is 1.5px, and it is for a line that is itself the signal rather than a boundary around something that already reads. Two cases qualify, and both are lines drawn against artwork. The first is a tile whose content is a picture — a chart silhouette, an avatar look, a template preview — where selection cannot be carried by a fill, because the artwork owns the interior, nor by the label, because it sits outside the box. The edge is all that is left, and a hairline cannot do it: one device pixel appearing at the rim of a filled tile reads as an antialiasing artifact, not as a state. The second is a mark laid over artwork that needs a ring to stay legible against whatever is behind it, such as an annotation pin or a count badge on a preview. Consumers read it through `border-(length:--border-width-emphasis)`, the same way the surface and illustration widths are read.
+
+1.5px is not a new value. It is what `--stroke-width-icon` already draws at, so an emphasized edge and an icon stroke are one weight expressed in two units — the icon token is unitless because it resolves in SVG user space.
+
+In the tile case this is a width for the whole surface, not for its selected state. **A selection must never change an element's metrics**, so the resting branch carries the same width in `border-transparent` and only the colour is stateful; a token named for the state would invite `selected && "border-[1.5px]"`, which reflows the tile and shifts its siblings. This is the same rule that keeps a selected chip's font weight on its base class.
+
+Everything that is text plus a fill — pills, chips, menu rows, table rows, plan cards — keeps the shared hairline in both states and recolours it to `border-primary`. Selection is never a ring: `ring-*` belongs to the focus indicator, which 67 of its 80 usages already spell as `focus-visible:ring-2`, and a selected row that also draws a ring gives a keyboard user two rings fighting on one element. Selection owns the border, focus owns the ring.
+
+A literal `border-2` stays available for geometry that is not a boundary at all — a dashed drop target, a spinner's ring, the inset that shapes a switch track. Those express a different decision rather than a competing value for the same one. Selection is not on that list.
 
 A third token covers the case neither of those can. `--border` and `--divider` are both measured against the page canvas, and `--divider` is pinned to `gray-200` in every theme; the gradient color presets also keep `gray-200` for `--border`. The filled surfaces that carry their own rules are `gray-200` themselves, so under those presets a rule reading either neutral token resolves to its own background and disappears — the user message bubble's quote rule and its group divider were both painted in the bubble's fill, byte-identical, in all eight presets in both modes. `--border-on-fill` is one step off that fill rather than off the canvas. Use `border-border-on-fill` for a border or rule drawn on a filled surface, and keep `border-border` for one drawn on the canvas or a card. It equals `--border` in the neutral themes, so adopting it changes nothing there; moving `--border` itself would instead have restyled all 390 of its usages across 125 files, and the presets' `gray-200` already matches the neutral border weight against their lighter card.
 
@@ -520,15 +532,20 @@ hard-coded `0.7px` is invisible there and layout is unchanged. WebKit may draw
 the true hairline on a high-density display, which is the product behaviour the
 shared token already describes.
 
-The selector itself stays for now. `buy-credits-section.tsx` reaches for it from
-a function that returns a class string rather than from a `className` attribute,
-so neither the legacy baseline nor `no-unknown-classes` counts it, and that one
-consumer is not mechanically drainable: the retired rule is unlayered, so its
-`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on the
-same element and that hover colour never paints. Replacing only the legacy class
-activates it. Deciding between keeping a hover the tile has never had and
-deleting a utility the consumer spells is a visual decision, not an equivalence,
-and it is reviewed separately.
+The selector is now gone, and the last consumer took the visual decision the
+previous round deferred. `buy-credits-section.tsx` reached for it from a function
+returning a class string rather than from a `className` attribute, so neither the
+legacy baseline nor `no-unknown-classes` counted it. Because the rule was
+unlayered, its `border` shorthand outranked the sibling
+`hover:border-muted-foreground/30` on the same element, and that hover colour had
+never painted. The resting branch now spells `border border-border
+hover:border-muted-foreground/30`, so **the preset tiles gain a hover border they
+have never had** — the deliberate half of this change, not an equivalence.
+
+Selecting a preset also stopped changing the tile's border width. The resting
+branch was the legacy 0.7px and the selected branch a bare `border` at 0.5px, so
+the width moved with the state; both branches now take the hairline and only the
+colour is stateful.
 
 ### Page layouts
 
@@ -1442,6 +1459,15 @@ for these only for a drawing whose strokes are part of the picture. They live
 in the App token layer because the onboarding diagram is their only consumer
 today, and they promote to `@okouai/ui` when a second product surface draws
 with them. Adding a third weight is a token change, not a call-site decision.
+
+`--border-width-annotation-box` (2.5px) sits in the same App layer for the same
+reason: an image annotation is the user's drawing on top of a screenshot, so its
+outline is part of the picture rather than product chrome. It is registered
+despite being read from a `style` prop, because the mark's colour is a genuine
+runtime value — the component composes the colour, the system still owns the
+weight. The numbered pin beside it is chrome laid over artwork, not a drawing,
+so it takes the shared `--border-width-emphasis`. Do not collapse the two: a
+drawing tool's weights must be free to move without touching product chrome.
 
 The first consumers are the onboarding diagram's tiles: the icon box, the
 connector stack items, the overflow badge and the two action cards take
