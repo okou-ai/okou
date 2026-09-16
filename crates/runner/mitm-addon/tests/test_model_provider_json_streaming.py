@@ -59,7 +59,7 @@ class TestModelProviderJsonStreaming:
     def _sync_usage_delivery(self, sync_usage_executor, usage_webhook_api):
         self._usage_webhook_api = usage_webhook_api
 
-    def test_non_billable_json_response_does_not_register_incremental_parser(
+    def test_non_billable_json_response_uses_bounded_incremental_parser(
         self,
         tmp_path,
         real_flow,
@@ -79,7 +79,7 @@ class TestModelProviderJsonStreaming:
 
         response_stream(flow)(b"x" * (STREAM_BUFFER_LIMIT + 1000))
 
-        assert "model_json_usage_finish" not in flow.metadata
+        assert "model_json_usage_finish" in flow.metadata
         assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
         assert metadata_keys.STREAM_BUFFER not in flow.metadata
         assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata

@@ -8,6 +8,7 @@ from mitmproxy import http
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import openai_responses_events
+import run_usage
 import usage
 from logging_utils import log_proxy_entry
 
@@ -79,6 +80,7 @@ def _mark_correlation_ambiguous(
 ) -> None:
     """Disable prewarm exclusion after ownership can no longer be proven."""
     state.ambiguous = True
+    run_usage.mark(flow, "ambiguous_response")
     _clear_correlation_candidate(state)
     # Fail-open is sticky for the rest of the flow. Previously ignored IDs
     # must not remain capable of suppressing usage after that transition.
@@ -118,7 +120,9 @@ def should_observe_client_event(flow: http.HTTPFlow) -> bool:
     """Return whether prewarm correlation still needs client evidence."""
     state = flow.metadata.get(_MODEL_WEBSOCKET_PREWARM_STATE)
     return (
-        is_enabled(flow) and isinstance(state, _OpenAIResponsesPrewarmState) and not state.ambiguous
+        is_enabled(flow)
+        and isinstance(state, _OpenAIResponsesPrewarmState)
+        and (not state.ambiguous or run_usage.is_tracking(flow))
     )
 
 
@@ -128,6 +132,8 @@ def observe_client_event(
 ) -> None:
     """Track bounded request intent on one WebSocket flow."""
     state = flow.metadata.get(_MODEL_WEBSOCKET_PREWARM_STATE)
+    if event.request_kind != "unknown" and not event.is_prewarm:
+        run_usage.websocket_pending(flow, pending=True)
     if not isinstance(state, _OpenAIResponsesPrewarmState):
         return
 
@@ -221,6 +227,11 @@ def should_inspect_server_lifecycle(
     """Return whether usage correlation needs lifecycle evidence for this frame."""
     if not is_enabled(flow):
         return False
+    if run_usage.is_tracking(flow) and (
+        event.event_type is None
+        or event.event_type in openai_responses_events.SERVER_LIFECYCLE_EVENTS
+    ):
+        return True
     prewarm_state = flow.metadata.get(_MODEL_WEBSOCKET_PREWARM_STATE)
     return (
         isinstance(prewarm_state, _OpenAIResponsesPrewarmState)
@@ -253,10 +264,13 @@ def feed_usage(
     lifecycle = inspection.lifecycle
     if lifecycle is not None and isinstance(prewarm_state, _OpenAIResponsesPrewarmState):
         _observe_server_lifecycle(flow, prewarm_state, lifecycle)
+        if lifecycle.is_created and lifecycle.is_valid and prewarm_state.active_intent != "prewarm":
+            run_usage.websocket_pending(flow, pending=True)
 
     usage_result = inspection.usage
     inspection_error = inspection.usage_error
     if inspection_error is not None:
+        run_usage.mark(flow, "parse_error")
         if inspection_error == usage.OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR and isinstance(
             prewarm_state, _OpenAIResponsesPrewarmState
         ):
@@ -339,6 +353,7 @@ def feed_usage(
                 )
 
     if not suppressed and usage_result:
+        run_usage.observe(flow, usage_result, response_id=message_id)
         if has_message_id:
             usage_sources = flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE_SOURCES)
             if not isinstance(usage_sources, dict):
@@ -363,6 +378,12 @@ def feed_usage(
                 usage_target = {}
                 flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = usage_target
             usage.merge_openai_responses_usage_result(usage_target, usage_result)
+
+    if lifecycle is not None and lifecycle.is_terminal:
+        run_usage.terminal_response(flow, suppressed=suppressed)
+    elif lifecycle is not None and lifecycle.is_error:
+        run_usage.mark(flow, "interrupted")
+        run_usage.terminal_response(flow)
 
     if not isinstance(prewarm_state, _OpenAIResponsesPrewarmState):
         return

@@ -50,6 +50,7 @@ from .model_tokens import (
     MODEL_USAGE_CATEGORY_OUTPUT,
     update_model_usage_quantity,
 )
+from .openai_tokens import input_partition_overlaps
 from .openai_tokens import is_usage_quantity as _is_usage_quantity
 from .openai_tokens import partition_input_tokens as _partition_input_tokens
 from .quantities import MAX_USAGE_QUANTITY
@@ -557,6 +558,12 @@ def _merge_input_partition(target: dict, source: dict) -> None:
 
 
 def _store_response_values(values: dict, target: dict, prefix: tuple[str, ...] = ()) -> None:
+    if input_partition_overlaps(
+        values.get((*prefix, "usage", "input_tokens")),
+        values.get((*prefix, "usage", "input_tokens_details", "cached_tokens")),
+        values.get((*prefix, "usage", "input_tokens_details", "cache_write_tokens")),
+    ):
+        target["input_partition_incomplete"] = True
     model = values.get((*prefix, "model"))
     if isinstance(model, str) and model:
         target["model"] = model
@@ -617,6 +624,8 @@ def merge_openai_responses_usage_result(target: dict, source: dict) -> None:
     """
 
     target_has_positive_quantity = _has_positive_usage_quantity(target)
+    if source.get("input_partition_incomplete") is True:
+        target["input_partition_incomplete"] = True
     source_has_positive_quantity = _has_positive_usage_quantity(source)
     _merge_input_partition(target, source)
     update_model_usage_quantity(
@@ -652,6 +661,7 @@ def _store_sse_result_values(
     event_name: str | None,
     data_event_type: _ResponsesEventTypeClassification | None = None,
     data_event_identity_consistent: bool = True,
+    on_observation: Callable[[dict, bool], None] | None = None,
 ) -> dict | None:
     data_type = values.get(("type",))
     if (
@@ -673,6 +683,15 @@ def _store_sse_result_values(
     if not is_known_terminal_usage_event and not _has_usage_quantity(source):
         return None
     merge_openai_responses_usage_result(target, source)
+
+    terminal = (
+        data_event_identity_consistent
+        and _is_known_terminal_usage_event(event_identity)
+        and data_event_type in (None, _RESPONSES_EVENT_TERMINAL)
+        and (event_name is None or data_type is None or data_type == event_name)
+    )
+    if on_observation is not None:
+        on_observation(target, terminal)
 
     if not _has_positive_usage_quantity(source):
         return None
@@ -697,6 +716,7 @@ def create_openai_responses_sse_usage_extractor(
     on_parse_error: _SseUsageParseErrorCallback | None = None,
     on_terminal_usage: _SseTerminalUsageCallback | None = None,
     *,
+    on_observation: Callable[[dict, bool], None] | None = None,
     include_usage: bool = True,
     failure_observer: ModelHttpFailureObserver | None = None,
 ) -> tuple[SseUsageScanner, dict]:
@@ -721,6 +741,10 @@ def create_openai_responses_sse_usage_extractor(
     callback receives that event's normalized usage snapshot, not the live
     accumulator. This lets transport finalizers retain only terminal-proven
     values without changing forward-compatible extraction from unknown events.
+
+    ``on_observation(usage, terminal)`` observes each extracted snapshot,
+    including provider zero, independently of positive-only billing recovery.
+    ``terminal`` requires a recognized, consistent terminal event identity.
     """
 
     usage: dict = {}
@@ -729,6 +753,7 @@ def create_openai_responses_sse_usage_extractor(
             usage,
             on_parse_error=on_parse_error,
             on_terminal_usage=on_terminal_usage,
+            on_observation=on_observation,
             include_usage=include_usage,
             failure_observer=failure_observer,
         ),
@@ -746,6 +771,7 @@ class _OpenAIResponsesSseUsageHandler:
         *,
         on_parse_error: _SseUsageParseErrorCallback | None = None,
         on_terminal_usage: _SseTerminalUsageCallback | None = None,
+        on_observation: Callable[[dict, bool], None] | None = None,
         include_usage: bool = True,
         failure_observer: ModelHttpFailureObserver | None = None,
     ) -> None:
@@ -759,6 +785,7 @@ class _OpenAIResponsesSseUsageHandler:
         self._discard_named_event = False
         self._on_parse_error = on_parse_error
         self._on_terminal_usage = on_terminal_usage
+        self._on_observation = on_observation
         self._include_usage = include_usage
         self._failure_observer = failure_observer
 
@@ -837,9 +864,10 @@ class _OpenAIResponsesSseUsageHandler:
                 event_name=event_name,
                 data_event_type=data_event_type,
                 data_event_identity_consistent=(
-                    self._on_terminal_usage is None
+                    (self._on_terminal_usage is None and self._on_observation is None)
                     or extractor.selected_scalar_values_are_consistent(("type",))
                 ),
+                on_observation=self._on_observation,
             )
             if terminal_usage is not None and self._on_terminal_usage is not None:
                 self._on_terminal_usage(terminal_usage)
@@ -906,7 +934,10 @@ class _OpenAIResponsesSseUsageHandler:
                 include_failure=self._failure_observer is not None,
             ),
             scalar_consistency_paths=(
-                {("type",)} if self._include_usage and self._on_terminal_usage is not None else None
+                {("type",)}
+                if self._include_usage
+                and (self._on_terminal_usage is not None or self._on_observation is not None)
+                else None
             ),
             max_work_units=_RESPONSES_MAX_WORK_UNITS,
         )
@@ -917,6 +948,7 @@ class _OpenAIResponsesSseUsageHandler:
             self._data_event_type is None
             or (self._include_usage and self._on_parse_error is not None)
             or (self._include_usage and self._on_terminal_usage is not None)
+            or (self._include_usage and self._on_observation is not None)
             or self._failure_observer is not None
         )
 

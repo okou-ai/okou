@@ -10,6 +10,7 @@ import addon_process_logging
 import matching
 import registry_firewalls
 import registry_observation
+import run_usage
 import state_file
 from firewall_auth_cache import (
     FIREWALL_AUTH_REGISTRY_GENERATION_ATTRIBUTE,
@@ -500,6 +501,7 @@ def load_registry_state(registry_path: str) -> RegistryState:
     if isinstance(state, RegistryUnavailable):
         registry_observation.publish_unavailable(state)
     else:
+        run_usage.reconcile(state.sandboxes, state.digest)
         registry_observation.publish_available(state)
     return state
 

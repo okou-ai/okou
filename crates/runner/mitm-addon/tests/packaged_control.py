@@ -302,6 +302,7 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                             "sandboxToken": "synthetic-run-token",
                             "encryptedSecrets": "synthetic-ciphertext",
                             "modelUsageProvider": "claude-sonnet-4-6",
+                            "usageGeneration": "generation-1",
                             "billableFirewalls": ["model-provider:anthropic-api-key"],
                             "networkLogPath": str(log_path),
                             "proxyLogPath": str(directory / f"proxy-{run_id}.jsonl"),
@@ -356,6 +357,22 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
                 exchange(directory, status_request() | {"method": "delivery.status"})
             )
             assert state["reports"] == 1
+            observed = result_data(
+                exchange(
+                    directory,
+                    status_request()
+                    | {
+                        "method": "usage.snapshot",
+                        "params": {"runId": run_id},
+                    },
+                )
+            )
+            assert observed["state"] == "available"
+            assert observed["totals"]["total"] == 8
+            assert observed["observedResponses"] == 1
+            assert observed["outstandingResponses"] == 0
+            assert observed["complete"] is False
+            assert observed["reasons"] == ["missing_categories"]
             assert exchange(directory)["data"] == {"state": "running"}
             assert (
                 result_data(exchange(directory, log_flush_request(log_path, run_id)))["state"]

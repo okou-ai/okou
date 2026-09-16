@@ -22,6 +22,7 @@ from uuid import UUID
 import addon_process_logging
 import jsonl_writer
 import registry_observation
+import run_usage
 
 if TYPE_CHECKING:
     import registry_control
@@ -204,6 +205,12 @@ class ControlServer:
                 return self._error(request_id, "invalid_request")
             if generation != self._generation:
                 return self._error(request_id, "stale_generation")
+            if method == "usage.snapshot":
+                params = request["params"]
+                if set(params) != {"runId"}:
+                    return self._error(request_id, "invalid_request")
+                run_id = _identifier(params["runId"])
+                return self._result(request_id, run_usage.snapshot(run_id))
             if method in {"delivery.flush", "delivery.status", "delivery.drain"}:
                 return await self._delivery(request_id, method, request["params"])
             if method == "logs.flush":

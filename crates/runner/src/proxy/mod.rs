@@ -25,6 +25,8 @@
 //! - `registry.apply` correlates published bytes with the actual registry/catalog
 //!   view compiled by the addon. `registry.status` observes the last completed
 //!   load without file I/O. Neither replaces request-time file enforcement.
+//! - `usage.snapshot` reads cumulative per-run inference observations independently
+//!   of billing, using a frozen generation/run and bounded read admission.
 //!
 //! On supported Unix runner hosts, registry writes are target-path atomic so
 //! the addon never consumes partial JSON. Control replies must match the active
@@ -65,6 +67,7 @@ mod managed_process;
 mod process;
 mod registry;
 mod registry_application;
+mod run_usage;
 mod runtime;
 mod stderr;
 
@@ -77,3 +80,7 @@ pub(crate) use registry::{
     CustomConnectorRuntimeRegistryState,
 };
 pub use registry::{ProxyRegistryHandle, SandboxRegistration};
+pub use run_usage::{
+    CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
+    TokenTotals,
+};

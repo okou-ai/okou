@@ -238,6 +238,12 @@ pub struct MitmProxy {
     control: ControlHandle,
 }
 
+impl From<&MitmProxy> for super::run_usage::MitmUsageHandle {
+    fn from(proxy: &MitmProxy) -> Self {
+        Self::new(proxy.control.clone())
+    }
+}
+
 impl MitmProxy {
     /// Prepare the proxy: allocate a port, write addon script and empty registry.
     ///

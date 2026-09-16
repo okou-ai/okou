@@ -3,6 +3,17 @@
 from .quantities import is_usage_quantity
 
 
+def input_partition_overlaps(
+    input_tokens: object, cached_tokens: object, cache_write_tokens: object
+) -> bool:
+    """Identify clamped provider evidence without changing billing normalization."""
+    return (
+        is_usage_quantity(input_tokens)
+        and sum(value for value in (cached_tokens, cache_write_tokens) if is_usage_quantity(value))
+        > input_tokens
+    )
+
+
 def partition_input_tokens(
     input_tokens: object,
     cached_tokens: object,

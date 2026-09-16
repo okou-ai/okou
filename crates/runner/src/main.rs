@@ -74,6 +74,12 @@ mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;
 
+// Source-observation API; guest RPC composition is a separate delivery slice.
+pub use proxy::{
+    CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
+    TokenTotals,
+};
+
 use std::path::Path;
 use std::process::ExitCode;
 

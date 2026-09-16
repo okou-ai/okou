@@ -4,6 +4,7 @@ from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
 import model_websocket_usage
+import run_usage
 import usage
 
 _USAGE_FLOW_TRACKED = "_usage_flow_tracked"
@@ -19,6 +20,7 @@ def track_flow_if_needed(flow: http.HTTPFlow, firewall_billable: bool) -> None:
     upgrades release from websocket_end/error because the 101 response does not
     complete the usage reporting lifecycle.
     """
+    run_usage.admit(flow)
     if flow.metadata.get(_USAGE_FLOW_TRACKED):
         return
     if firewall_billable:
@@ -27,6 +29,7 @@ def track_flow_if_needed(flow: http.HTTPFlow, firewall_billable: bool) -> None:
 
 
 def release_tracked_flow(flow: http.HTTPFlow) -> None:
+    run_usage.finish(flow)
     if flow.metadata.pop(_USAGE_FLOW_TRACKED, False):
         usage.decrement_in_flight_flows()
 

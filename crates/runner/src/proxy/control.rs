@@ -31,9 +31,19 @@ pub(super) struct ControlTarget {
 }
 
 /// Short launch lookup/admission only; no I/O or operation waits hold this lock.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(super) struct ControlHandle {
     launch: Arc<Mutex<Option<ControlLaunch>>>,
+    pub(super) usage_admission: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for ControlHandle {
+    fn default() -> Self {
+        Self {
+            launch: Arc::default(),
+            usage_admission: Arc::new(tokio::sync::Semaphore::new(8)),
+        }
+    }
 }
 
 struct ControlLaunch {

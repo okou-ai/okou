@@ -74,8 +74,64 @@ mutations or move business state onto its thread.
 Runner and the embedded addon use the private control socket for all flush
 coordination. Old Runner instances retain their embedded addon; no
 API-first deployment or mixed Runner/addon protocol fallback is needed. This
-stage does not implement token accounting or guest RPC, and unit/packaged runtime
+transport does not implement guest RPC, and unit/packaged runtime
 tests do not claim production soak or a measured latency improvement.
+
+### Cumulative per-run inference observations
+
+`usage.snapshot` takes exactly `{"runId":"<run identifier>"}` and returns an
+independent MITM source observation. Request and generation identifiers and
+terminal EOF use the same strict envelope. Unknown or uninitialized runs return
+`{state: unavailable, runId}`; reads never create a run or report missing history
+as complete zero. The Rust reader freezes its run and generation before use,
+admits at most eight concurrent reads per proxy without a waiting queue, and
+releases its socket and permit on cancellation. It rejects invalid quantities,
+inconsistent totals/coverage, unknown fields/reasons and mismatched identities.
+
+Runner constructs a source handle with `MitmUsageHandle::from(&proxy)` and freezes
+a run with `for_run(run_id)` before calling `snapshot()`.
+
+Available data contains `runId`, `revision`, `sampledAtMs`, `observedResponses`,
+`outstandingResponses`, `complete`, `reasons` and `totals`. Totals contain disjoint
+`input`, `cacheRead`, `cacheCreation`, `output` and their `total`; exact integers
+are bounded by 2^53 - 1. The revision changes with observed state; sampling time
+is wall-clock milliseconds at the coherent read. Explicit provider zero counts
+as an observed response. Missing categories contribute no fabricated quantities
+and make coverage partial. A registered run before its first inference can have
+complete zero totals with zero observed responses.
+
+Validated registry loads initialize lifetimes. Runner records the original addon
+`usageGeneration` in each registration and preserves it on same-run refreshes.
+Absent or different generation means `history_lost`, including after restart.
+Flow attribution is captured before upstream work and survives IP reassignment.
+The supported model JSON/SSE and Responses WebSocket parsers feed this state
+independently of billing admission. Response identities are scoped to the run
+and provider firewall; HTTP without a provider ID uses its flow ID. Repeated
+snapshots replace known quantities for one response, and billing flushes do not
+clear totals or deduplication. Known partial/error observations remain visible.
+Idle WebSockets and proven prewarm do not count as outstanding inference.
+
+The owner retains at most 256 runs, 4096 response identities and outstanding
+flow handles per run, and 32768 response identities across the process. Retained
+identity strings are bounded at 1024 bytes. Inactive runs remain for five minutes;
+registry reconciliation and reads prune them, and registration pressure evicts
+inactive runs first. If all run slots are active, a new run remains unavailable.
+Response pressure refuses new identities rather than forgetting deduplication;
+existing eligible identities remain updatable. Once any run history is discarded,
+newly initialized runs conservatively carry `retention_lost` until the next addon
+generation, avoiding an unbounded tombstone set. Process exit owns final cleanup.
+
+Coverage reasons are `history_lost`, `retention_lost`, `missing_usage`,
+`missing_categories`, `parse_error`, `ambiguous_response`, `unsupported_protocol`,
+`interrupted`, `overflow` and `in_flight`. All except `in_flight` are sticky for
+the retained run; missing provider evidence can therefore never become an
+unqualified complete result. The read copies small totals under a short lock,
+without file, parser or delivery I/O. Blocked billing does not block it.
+
+This is an in-memory source measurement, not durable accounting, API-first-turn
+usage or a combined CLI query. Runner and its addon ship together; the optional
+registry field keeps older entries readable with explicit incomplete coverage.
+There is no new listener, guest-selected identity or automatic protocol fallback.
 
 ### Delivery admission, observation and shutdown
 
