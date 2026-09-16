@@ -510,7 +510,7 @@ function buildAgentToolsPrompt(args: {
       : []),
     ...(args.privateArtifactsEnabled
       ? [
-          "- Private artifact files: use `okou web download-file '/artifacts/<hash>.<extension>' -o <local-path>` to download and read private `/artifacts/...` links; references without an extension are also supported. For a full Okou artifact URL, extract the `/artifacts/...` path before passing it to the command. The command authenticates with `OKOU_TOKEN`. After downloading, open images with the image viewing tool and read or parse other files with the appropriate local tool. Run `okou web download-file -h` for the current interface.",
+          "- To read private images linked as `/artifacts/...`, use `okou web download-file -h`.",
         ]
       : []),
     ...buildIntegrationToolsPrompt(

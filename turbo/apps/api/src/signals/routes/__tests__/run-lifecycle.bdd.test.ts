@@ -1149,13 +1149,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       expect(prompt).toContain("okou web download-file -h");
       if (privateArtifacts) {
         expect(prompt).toContain(
-          "okou web download-file '/artifacts/<hash>.<extension>' -o <local-path>",
-        );
-        expect(prompt).toContain(
-          "extract the `/artifacts/...` path before passing it to the command",
+          "To read private images linked as `/artifacts/...`, use `okou web download-file -h`.",
         );
       } else {
-        expect(prompt).not.toContain("Private artifact files:");
         expect(prompt).not.toContain("/artifacts/");
       }
       await api.requestCancelRun(actor, run.runId, [200]);
