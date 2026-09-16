@@ -125,7 +125,7 @@ describe("inline SSH resource creation", () => {
                   await accept(
                     connections().create({
                       headers,
-                      body: { saveAttemptId: randomUUID(), ...fields },
+                      body: { id: randomUUID(), ...fields },
                     }),
                     [201],
                   )
@@ -136,7 +136,6 @@ describe("inline SSH resource creation", () => {
                       headers,
                       params: { connectionId: current.id },
                       body: {
-                        saveAttemptId: randomUUID(),
                         ...fields,
                         expectedGeneration: current.generation,
                       },
@@ -203,7 +202,7 @@ describe("inline SSH resource creation", () => {
         connections().create({
           headers,
           body: {
-            saveAttemptId: randomUUID(),
+            id: randomUUID(),
             ...fields,
             credential: { id: credentialId },
           },
@@ -215,7 +214,6 @@ describe("inline SSH resource creation", () => {
           headers,
           params: { connectionId: existingHost.id },
           body: {
-            saveAttemptId: randomUUID(),
             ...fields,
             expectedGeneration: existingHost.generation,
             credential: { id: credentialId },
@@ -229,7 +227,7 @@ describe("inline SSH resource creation", () => {
       await accept(
         connections().create({
           headers,
-          body: { saveAttemptId: randomUUID(), ...fields, transport },
+          body: { id: randomUUID(), ...fields, transport },
         }),
         [404],
       );
@@ -238,7 +236,6 @@ describe("inline SSH resource creation", () => {
           headers,
           params: { connectionId: existingHost.id },
           body: {
-            saveAttemptId: randomUUID(),
             ...fields,
             expectedGeneration: existingHost.generation,
             transport,
@@ -250,7 +247,7 @@ describe("inline SSH resource creation", () => {
     await accept(
       connections().create({
         headers,
-        body: { saveAttemptId: randomUUID(), ...fields, host: "127.0.0.1" },
+        body: { id: randomUUID(), ...fields, host: "127.0.0.1" },
       }),
       [400],
     );
@@ -259,7 +256,6 @@ describe("inline SSH resource creation", () => {
         headers,
         params: { connectionId: existingHost.id },
         body: {
-          saveAttemptId: randomUUID(),
           ...fields,
           expectedGeneration: existingHost.generation,
           port: 22,
@@ -272,7 +268,6 @@ describe("inline SSH resource creation", () => {
         headers,
         params: { connectionId: existingHost.id },
         body: {
-          saveAttemptId: randomUUID(),
           ...fields,
           expectedGeneration: existingHost.generation + 1,
         },
@@ -352,7 +347,7 @@ async function config(name = "Service token") {
     await accept(
       configs().create({
         headers,
-        body: { saveAttemptId: randomUUID(), name, credentials: token },
+        body: { id: randomUUID(), name, credentials: token },
       }),
       [201],
     )
@@ -364,7 +359,7 @@ async function host(configId?: string) {
       connections().create({
         headers,
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           displayName: configId ? "Protected host" : "Direct host",
           host: "ssh.example.com",
           port: configId ? 443 : 22,
@@ -464,7 +459,7 @@ describe("Cloudflare Access owner configuration", () => {
     await accept(
       configs().create({
         headers,
-        body: { saveAttemptId: randomUUID(), name: "Off", credentials: token },
+        body: { id: randomUUID(), name: "Off", credentials: token },
       }),
       [404],
     );
@@ -601,7 +596,7 @@ describe("Cloudflare Access owner configuration", () => {
       const result = await connections().create({
         headers,
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           displayName: "Foreign binding",
           host: "ssh.example.com",
           port: 443,
@@ -805,7 +800,6 @@ describe("protected SSH authority", () => {
         headers,
         params: { connectionId: f.host.id },
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 1,
           credential: {
             create: {
@@ -999,7 +993,6 @@ describe("protected SSH authority", () => {
           headers,
           params: { connectionId: f.host.id },
           body: {
-            saveAttemptId: randomUUID(),
             expectedGeneration: 2,
             transport: { type: "cloudflare_access", configId: target.id },
           },
@@ -1112,7 +1105,6 @@ describe("protected SSH authority", () => {
         headers,
         params,
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 1,
           displayName: "Renamed host",
         },
@@ -1128,7 +1120,6 @@ describe("protected SSH authority", () => {
         headers,
         params,
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 1,
           transport: { type: "direct" },
           port: 22,
@@ -1238,7 +1229,7 @@ describe("protected SSH authority", () => {
       configs().create({
         headers,
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           name: "Unavailable",
           credentials: token,
         },
@@ -1268,7 +1259,6 @@ describe("protected SSH authority", () => {
           headers,
           params,
           body: {
-            saveAttemptId: randomUUID(),
             expectedGeneration: connection.generation,
             displayName: "Unavailable",
           },
@@ -1395,7 +1385,6 @@ describe("protected SSH authority", () => {
           headers,
           params: { connectionId: f.host.id },
           body: {
-            saveAttemptId: randomUUID(),
             expectedGeneration: generation,
             ...body,
           },

@@ -6458,9 +6458,8 @@
     "retry": "Reintentar",
     "save": "Guardar",
     "saveRecovery": {
-      "checkResult": "Comprobar resultado",
-      "notSaved": "No se guardó nada. Tus datos siguen aquí; puedes editarlos o volver a guardar.",
-      "uncertain": "No pudimos confirmar si se guardaron los cambios. Comprueba el resultado antes de reintentar o editar. Si cierras, revisa la lista antes de añadirlos de nuevo."
+      "resourceIdConflict": "No se puede usar este ID de recurso. Cierra y vuelve a abrir el formulario para intentarlo de nuevo.",
+      "uncertain": "No pudimos confirmar si se guardaron los cambios. Reintenta el mismo guardado, o cierra y revisa la lista antes de añadirlos de nuevo."
     },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",

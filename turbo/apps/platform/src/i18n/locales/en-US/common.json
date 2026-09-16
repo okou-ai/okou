@@ -6384,9 +6384,8 @@
     "retry": "Retry",
     "save": "Save",
     "saveRecovery": {
-      "checkResult": "Check result",
-      "notSaved": "Nothing was saved. Your input is still here; you can edit it or save again.",
-      "uncertain": "We couldn't confirm whether your changes were saved. Check the result before retrying or editing. If you close, check the list before adding them again."
+      "resourceIdConflict": "This resource ID cannot be used. Close and reopen the form to try again.",
+      "uncertain": "We couldn't confirm whether your changes were saved. Retry the same save, or close and check the list before adding again."
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",

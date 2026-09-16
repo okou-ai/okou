@@ -10,7 +10,6 @@ import {
   sshCredentialsContract,
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { sshSaveAttemptsContract } from "@okouai/api-contracts/contracts/ssh-save-attempts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -338,7 +337,7 @@ test("Direct and protected mode retain their port and configuration drafts but s
   });
   expect(requests).toStrictEqual([
     {
-      saveAttemptId: expect.any(String),
+      id: expect.any(String),
       displayName: "Development",
       host: "ssh.example.com",
       port: 443,
@@ -419,9 +418,11 @@ test.each(["create", "edit"] as const)(
         await waitFor(() => {
           return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         });
+        const generatedId = expect.any(String);
         expect(requests.at(-1)).toStrictEqual({
-          saveAttemptId: expect.any(String),
-          ...(mode === "edit" ? { expectedGeneration: 1 } : {}),
+          ...(mode === "edit"
+            ? { expectedGeneration: 1 }
+            : { id: generatedId }),
           displayName: host.displayName,
           host: host.host,
           port: 443,
@@ -459,9 +460,6 @@ test.each(["create", "edit"] as const)(
 );
 
 test("A failed host save retains inline Access input for manual retry without a separate resource save", async () => {
-  context.mocks.api(sshSaveAttemptsContract.resolve, ({ respond }) => {
-    return respond(200, { saved: false });
-  });
   const hosts: unknown[] = [];
   let failing = true;
   const reached = context.mocks.deferred<void>();
@@ -505,14 +503,7 @@ test("A failed host save retains inline Access input for manual retry without a 
     "Development",
   );
   failing = false;
-  click(getAction("button", "Check result", dialog));
-  await within(dialog).findByText(
-    "Nothing was saved. Your input is still here; you can edit it or save again.",
-  );
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Save", dialog));
+  click(getAction("button", "Retry", dialog));
   await waitFor(() => {
     return expect(hosts).toHaveLength(2);
   });
@@ -520,7 +511,7 @@ test("A failed host save retains inline Access input for manual retry without a 
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   expect(hosts).toHaveLength(2);
-  expect(hosts[0]).not.toStrictEqual(hosts[1]);
+  expect(hosts[0]).toStrictEqual(hosts[1]);
   expect(hosts[0]).toMatchObject({
     transport: {
       type: "cloudflare_access",
@@ -536,9 +527,6 @@ test("A failed host save retains inline Access input for manual retry without a 
 });
 
 test("Pending and failed Access Save keep secrets for retry; a background refresh cannot reset them", async () => {
-  context.mocks.api(sshSaveAttemptsContract.resolve, ({ respond }) => {
-    return respond(200, { saved: false });
-  });
   const pending = context.mocks.deferred<void>();
   let failing = true;
   context.mocks.api(cloudflareAccessContract.create, async ({ respond }) => {
@@ -571,33 +559,23 @@ test("Pending and failed Access Save keep secrets for retry; a background refres
   );
   expect(secret).toHaveValue("test-client-secret");
   failing = false;
-  click(getAction("button", "Check result", dialog));
-  await within(dialog).findByText(
-    "Nothing was saved. Your input is still here; you can edit it or save again.",
-  );
-  click(getAction("button", "Save", dialog));
+  click(getAction("button", "Retry", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   expect(secret).toHaveValue("");
 });
 
-test("A committed Access creation is confirmed without submitting its Service Token again", async () => {
-  const submitted: string[] = [];
+test("A committed Access creation completes on same-ID retry without another configuration", async () => {
+  const submitted: unknown[] = [];
   context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
-    submitted.push(body.saveAttemptId);
-    return respond(500, {
-      error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
-    });
+    submitted.push(body);
+    return submitted.length > 1
+      ? respond(204)
+      : respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
+        });
   });
-  context.mocks.api(
-    sshSaveAttemptsContract.resolve,
-    ({ params, body, respond }) => {
-      expect(body).toStrictEqual({});
-      expect(submitted).toStrictEqual([params.attemptId]);
-      return respond(200, { saved: true });
-    },
-  );
   await page();
   click(getAction("radio", "Cloudflare Access"));
   click(
@@ -614,11 +592,14 @@ test("A committed Access creation is confirmed without submitting its Service To
   );
   expect(secret).toHaveValue("test-client-secret");
   expect(secret).toBeDisabled();
-  click(getAction("button", "Check result", dialog));
+  expect(submitted).toHaveLength(1);
+  click(getAction("button", "Retry", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(submitted).toHaveLength(1);
+  expect(submitted).toHaveLength(2);
+  expect(submitted[0]).toHaveProperty("id", expect.any(String));
+  expect(submitted[0]).toStrictEqual(submitted[1]);
   expect(secret).toHaveValue("");
 });
 
@@ -774,7 +755,6 @@ test("Access API unavailability blocks protected mutations without silently chan
   });
   expect(requests).toStrictEqual([
     {
-      saveAttemptId: expect.any(String),
       expectedGeneration: 1,
       displayName: direct.displayName,
       host: direct.host,
@@ -885,7 +865,6 @@ test("A Direct draft survives a failed conflict refresh and concurrent Access bi
   expect(requests).toStrictEqual(
     [1, 2].map((expectedGeneration) => {
       return {
-        saveAttemptId: expect.any(String),
         expectedGeneration,
         displayName: "My Direct draft",
         host: directHost.host,
@@ -1067,7 +1046,6 @@ test("Rebinding a host after a concurrent update requires review and preserves i
   expect(requests).toStrictEqual(
     [1, 2].map((expectedGeneration) => {
       return {
-        saveAttemptId: expect.any(String),
         expectedGeneration,
         displayName: "My host draft",
         host: host.host,

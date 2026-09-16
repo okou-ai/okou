@@ -61,9 +61,13 @@ export const cloudflareAccessContract = c.router({
     path: "/api/ssh/cloudflare-access/configs",
     headers: authHeadersSchema,
     body: createCloudflareAccessRequestSchema.extend({
-      saveAttemptId: z.uuid(),
+      id: z.uuid(),
     }),
-    responses: { 201: cloudflareAccessConfigSchema, ...errors },
+    responses: {
+      201: cloudflareAccessConfigSchema,
+      204: c.noBody(),
+      ...errors,
+    },
   },
   update: {
     method: "PATCH",

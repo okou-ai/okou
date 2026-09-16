@@ -18,12 +18,7 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
-import { lockSshOwner } from "./ssh-owner.service";
-import {
-  findSshSaveAttempt,
-  recordSshSaveAttempt,
-  sshSaveAttemptResolved,
-} from "./ssh-save-attempt.service";
+import { checkSshCreationId } from "./ssh-creation.service";
 
 interface Owner {
   readonly orgId: string;
@@ -62,6 +57,14 @@ const failures = {
 } as const;
 export function sshCredentialFailure(reason: keyof typeof failures) {
   return { ok: false as const, ...failures[reason] };
+}
+export async function lockSshOwner(
+  tx: Pick<Transaction, "execute">,
+  owner: Owner,
+): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`ssh_connection_owner:${owner.orgId}:${owner.userId}`}, 0))`,
+  );
 }
 const metadata = Object.freeze({
   id: sshCredentials.id,
@@ -209,26 +212,34 @@ export async function createSshCredential(args: {
   readonly db: Db;
   readonly owner: Owner;
   readonly body: CreateSshCredentialRequest;
-  readonly saveAttemptId: string;
+  readonly id: string;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<SshResult<SshCredentialResponse>> {
+}): Promise<SshResult<SshCredentialResponse | undefined>> {
   const prepared = await prepareCredential(args.body, args.featureContext);
   const row = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
-    if (await findSshSaveAttempt(tx, args.owner, args.saveAttemptId)) {
-      return sshSaveAttemptResolved;
+    const creation = await checkSshCreationId(
+      tx,
+      args.owner,
+      sshCredentials,
+      args.id,
+    );
+    if (!creation.ok) {
+      return creation;
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined };
     }
     const [created] = await tx
       .insert(sshCredentials)
-      .values({ ...args.owner, ...prepared })
+      .values({ ...args.owner, ...prepared, id: args.id })
       .returning(metadata);
     if (!created) {
       throw new Error("SSH credential insert returned no row");
     }
-    await recordSshSaveAttempt(tx, args.owner, args.saveAttemptId, true);
     return { ok: true as const, value: response(created, []) };
   });
-  if (row.ok) {
+  if (row.ok && row.value) {
     await publishSshClientInvalidation(args.owner);
   }
   return row;

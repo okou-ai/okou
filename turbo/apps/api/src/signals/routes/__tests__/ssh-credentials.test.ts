@@ -74,7 +74,7 @@ describe("reusable SSH credential owner routes", () => {
     const created = await accept(
       credentials().create({
         headers,
-        body: { saveAttemptId: randomUUID(), ...passwordBody },
+        body: { id: randomUUID(), ...passwordBody },
       }),
       [201],
     );
@@ -92,7 +92,7 @@ describe("reusable SSH credential owner routes", () => {
         connections().create({
           headers,
           body: {
-            saveAttemptId: randomUUID(),
+            id: randomUUID(),
             displayName,
             host: "ssh.example.com",
             credential: { id: created.body.id },
@@ -159,7 +159,7 @@ describe("reusable SSH credential owner routes", () => {
     const created = await accept(
       credentials().create({
         headers,
-        body: { saveAttemptId: randomUUID(), ...passwordBody },
+        body: { id: randomUUID(), ...passwordBody },
       }),
       [201],
     );
@@ -186,7 +186,7 @@ describe("reusable SSH credential owner routes", () => {
           connections().create({
             headers,
             body: {
-              saveAttemptId: randomUUID(),
+              id: randomUUID(),
               displayName: "Denied",
               host: "ssh.example.com",
               credential: { id: credentialId },
@@ -251,7 +251,7 @@ describe("reusable SSH credential owner routes", () => {
     const created = await accept(
       credentials().create({
         headers,
-        body: { saveAttemptId: randomUUID(), ...passwordBody },
+        body: { id: randomUUID(), ...passwordBody },
       }),
       [201],
     );
@@ -314,7 +314,7 @@ describe("reusable SSH credential owner routes", () => {
     const created = await accept(
       credentials().create({
         headers,
-        body: { saveAttemptId: randomUUID(), ...passwordBody },
+        body: { id: randomUUID(), ...passwordBody },
       }),
       [201],
     );
@@ -323,7 +323,7 @@ describe("reusable SSH credential owner routes", () => {
         connections().create({
           headers,
           body: {
-            saveAttemptId: randomUUID(),
+            id: randomUUID(),
             displayName: "Concurrent",
             host: "ssh.example.com",
             credential: { id: created.body.id },

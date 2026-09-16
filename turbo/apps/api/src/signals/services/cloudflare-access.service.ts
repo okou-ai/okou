@@ -12,13 +12,8 @@ import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
-import { sshCredentialFailure } from "./ssh-credential.service";
-import { lockSshOwner } from "./ssh-owner.service";
-import {
-  findSshSaveAttempt,
-  recordSshSaveAttempt,
-  sshSaveAttemptResolved,
-} from "./ssh-save-attempt.service";
+import { lockSshOwner, sshCredentialFailure } from "./ssh-credential.service";
+import { checkSshCreationId } from "./ssh-creation.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 
 interface Owner {
@@ -151,10 +146,12 @@ export async function insertCloudflareAccessConfig(
   tx: Transaction,
   owner: Owner,
   prepared: Awaited<ReturnType<typeof prepareCloudflareAccessConfig>>,
+  id?: string,
 ) {
   const [created] = await tx
     .insert(cloudflareAccessConfigs)
     .values({
+      id,
       orgId: owner.orgId,
       userId: owner.userId,
       ...prepared,
@@ -169,7 +166,7 @@ export async function createCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Owner;
   readonly body: CreateCloudflareAccessRequest;
-  readonly saveAttemptId: string;
+  readonly id: string;
   readonly featureContext: FeatureSwitchContext;
 }) {
   const prepared = await prepareCloudflareAccessConfig(
@@ -178,14 +175,27 @@ export async function createCloudflareAccessConfig(args: {
   );
   const config = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
-    if (await findSshSaveAttempt(tx, args.owner, args.saveAttemptId)) {
-      return sshSaveAttemptResolved;
+    const creation = await checkSshCreationId(
+      tx,
+      args.owner,
+      cloudflareAccessConfigs,
+      args.id,
+    );
+    if (!creation.ok) {
+      return creation;
     }
-    const value = await insertCloudflareAccessConfig(tx, args.owner, prepared);
-    await recordSshSaveAttempt(tx, args.owner, args.saveAttemptId, true);
+    if (!creation.value) {
+      return { ok: true as const, value: undefined };
+    }
+    const value = await insertCloudflareAccessConfig(
+      tx,
+      args.owner,
+      prepared,
+      args.id,
+    );
     return { ok: true as const, value };
   });
-  if (config.ok) {
+  if (config.ok && config.value) {
     await publishSshClientInvalidation(args.owner);
   }
   return config;

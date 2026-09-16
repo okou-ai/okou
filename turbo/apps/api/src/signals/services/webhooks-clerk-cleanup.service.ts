@@ -3,7 +3,6 @@ import {
   piInferenceErasureScopePredicate,
 } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
-import { sshSaveAttempts } from "@okouai/db/schema/ssh-save-attempt";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
 import { agents } from "@okouai/db/schema/agent";
@@ -799,7 +798,6 @@ async function deleteOrgData(
   signal: AbortSignal,
 ): Promise<void> {
   await cancelOrgRuns(db, orgId);
-  await db.delete(sshSaveAttempts).where(eq(sshSaveAttempts.orgId, orgId));
 
   const installations = await db
     .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
@@ -880,7 +878,6 @@ async function deleteUserData(
     .delete(slackOrgConnections)
     .where(eq(slackOrgConnections.userId, userId));
   await db.delete(githubUserLinks).where(eq(githubUserLinks.userId, userId));
-  await db.delete(sshSaveAttempts).where(eq(sshSaveAttempts.userId, userId));
   await db
     .delete(telegramUserLinks)
     .where(eq(telegramUserLinks.userId, userId));

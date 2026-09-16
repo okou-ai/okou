@@ -12,6 +12,7 @@ import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import {
   findSshCredential,
+  lockSshOwner,
   prepareSshCredentialSelection,
   selectSshCredential,
   sshCredentialFailure,
@@ -28,12 +29,7 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
-import { lockSshOwner } from "./ssh-owner.service";
-import {
-  findSshSaveAttempt,
-  recordSshSaveAttempt,
-  sshSaveAttemptResolved,
-} from "./ssh-save-attempt.service";
+import { checkSshCreationId } from "./ssh-creation.service";
 import {
   cloudflareAccessFailure,
   findCloudflareAccessConfig,
@@ -331,7 +327,7 @@ export async function createSshConnection(args: {
   readonly userId: string;
   readonly body: CreateSshConnectionRequest;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<SshConnectionResult<SshConnectionResponse>> {
+}): Promise<SshConnectionResult<SshConnectionResponse | undefined>> {
   const canonicalHost = canonicalizeSshHost(args.body.host);
   if (!canonicalHost.ok) {
     return canonicalHost;
@@ -354,8 +350,17 @@ export async function createSshConnection(args: {
 
   const result = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args);
-    if (await findSshSaveAttempt(tx, args, args.body.saveAttemptId)) {
-      return sshSaveAttemptResolved;
+    const creation = await checkSshCreationId(
+      tx,
+      args,
+      sshConnections,
+      args.body.id,
+    );
+    if (!creation.ok) {
+      return creation;
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined, authorizedAgents: false };
     }
     const bindingFailure = await validateAccessBinding(
       tx,
@@ -397,6 +402,7 @@ export async function createSshConnection(args: {
     const [connection] = await tx
       .insert(sshConnections)
       .values({
+        id: args.body.id,
         orgId: args.orgId,
         userId: args.userId,
         displayName: args.body.displayName,
@@ -423,14 +429,13 @@ export async function createSshConnection(args: {
         )
         .onConflictDoNothing();
     }
-    await recordSshSaveAttempt(tx, args, args.body.saveAttemptId, true);
     return {
       ok: true as const,
       value: toSshConnectionResponse(connection, credential.value),
       authorizedAgents: visibleAgents.length > 0,
     };
   });
-  if (result.ok) {
+  if (result.ok && result.value) {
     await publishSshRuntimeInvalidation(args.db, {
       orgId: args.orgId,
       userId: args.userId,
@@ -438,24 +443,6 @@ export async function createSshConnection(args: {
     });
   }
   return result;
-}
-
-async function resolveUpdatedCredential(
-  tx: Transaction,
-  current: SshConnectionRow,
-  prepared:
-    | Awaited<ReturnType<typeof prepareSshCredentialSelection>>
-    | undefined,
-) {
-  const owner = { orgId: current.orgId, userId: current.userId };
-  if (prepared !== undefined) {
-    return await selectSshCredential(tx, owner, prepared);
-  }
-  const credential = await findSshCredential(tx, owner, current.credentialId);
-  if (!credential) {
-    throw new Error("SSH connection credential is missing");
-  }
-  return { ok: true as const, value: credential };
 }
 
 export async function updateSshConnection(args: {
@@ -497,9 +484,6 @@ export async function updateSshConnection(args: {
     SshConnectionResult<SshConnectionResponse>
   >(async (tx) => {
     await lockSshOwner(tx, args);
-    if (await findSshSaveAttempt(tx, args, args.body.saveAttemptId)) {
-      return sshSaveAttemptResolved;
-    }
     const [current] = await tx
       .select()
       .from(sshConnections)
@@ -534,15 +518,19 @@ export async function updateSshConnection(args: {
     if (current.generation === 2_147_483_647) {
       return sshCredentialFailure("exhausted");
     }
-    const selected = await resolveUpdatedCredential(
-      tx,
-      current,
-      preparedCredential,
-    );
-    if (!selected.ok) {
+    const selected =
+      preparedCredential === undefined
+        ? undefined
+        : await selectSshCredential(tx, args, preparedCredential);
+    if (selected && !selected.ok) {
       return selected;
     }
-    const credential = selected.value;
+    const credential =
+      selected?.value ??
+      (await findSshCredential(tx, args, current.credentialId));
+    if (!credential) {
+      throw new Error("SSH connection credential is missing");
+    }
     const accessId = await insertAccessBinding(
       tx,
       args,
@@ -576,7 +564,6 @@ export async function updateSshConnection(args: {
       throw new Error("SSH connection update returned no row");
     }
 
-    await recordSshSaveAttempt(tx, args, args.body.saveAttemptId, true);
     return { ok: true, value: toSshConnectionResponse(updated, credential) };
   });
   if (result.ok) {

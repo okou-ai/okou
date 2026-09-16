@@ -137,7 +137,7 @@ describe("owner SSH grants and live Run inventory", () => {
       config().create({
         headers,
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           displayName: "Deployment",
           host,
           credential: inlineSshKey("deploy", "test-private-key"),
@@ -236,7 +236,7 @@ describe("owner SSH grants and live Run inventory", () => {
       config().create({
         headers,
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           displayName: "Maintenance",
           host: "SSH.example.com.",
           credential: inlineSshKey("ubuntu", "maintenance-private-key"),
@@ -375,7 +375,7 @@ describe("owner SSH grants and live Run inventory", () => {
       config().create({
         headers,
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           displayName: "Deployment",
           host: "ssh.example.com",
           credential: inlineSshKey("deploy", "test-private-key"),
@@ -438,7 +438,7 @@ describe("owner SSH grants and live Run inventory", () => {
         config().create({
           headers,
           body: {
-            saveAttemptId: randomUUID(),
+            id: randomUUID(),
             displayName: "Deployment",
             host: "ssh.example.com",
             credential: inlineSshKey(
@@ -472,7 +472,6 @@ describe("owner SSH grants and live Run inventory", () => {
           headers,
           params: { connectionId: connection.body.id },
           body: {
-            saveAttemptId: randomUUID(),
             expectedGeneration: 1,
             displayName: "Renamed",
           },

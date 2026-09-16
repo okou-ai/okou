@@ -2,7 +2,6 @@ import {
   sshCredentialsContract,
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { sshSaveAttemptsContract } from "@okouai/api-contracts/contracts/ssh-save-attempts";
 import { HttpResponse } from "msw";
 import {
   agentsByIdContract,
@@ -127,7 +126,7 @@ test("An existing credential can be reused without entering or reading its secre
   });
   expect(requests).toStrictEqual([
     {
-      saveAttemptId: expect.any(String),
+      id: expect.any(String),
       displayName: "Second host",
       host: "second.example.com",
       port: 22,
@@ -182,7 +181,7 @@ test("Password credentials preserve whitespace, clear mode-switched secrets, and
   });
   expect(requests).toStrictEqual([
     {
-      saveAttemptId: expect.any(String),
+      id: expect.any(String),
       name: "Password login",
       username: "operator",
       authentication: { method: "password", password: "  password-canary  " },
@@ -192,7 +191,7 @@ test("Password credentials preserve whitespace, clear mode-switched secrets, and
 });
 
 test.each(["host", "credential"])(
-  "An uncertain %s save keeps password input until confirmation allows a new save",
+  "An uncertain %s save retries the same resource with its frozen password input",
   async (kind) => {
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, { connections: [] });
@@ -200,9 +199,6 @@ test.each(["host", "credential"])(
     const ready = context.mocks.deferred<void>();
     const requests: unknown[] = [];
     let fail = true;
-    context.mocks.api(sshSaveAttemptsContract.resolve, ({ respond }) => {
-      return respond(200, { saved: false });
-    });
     const error = {
       error: { code: "INTERNAL_ERROR", message: "Temporary save failure" },
     };
@@ -272,7 +268,7 @@ test.each(["host", "credential"])(
     expect(privateKeyChoice).toHaveAttribute("aria-disabled", "true");
     ready.resolve();
     await waitFor(() => {
-      expect(getAction("button", "Check result", dialog)).toBeEnabled();
+      expect(getAction("button", "Retry", dialog)).toBeEnabled();
     });
     expect(within(dialog).getByLabelText("Credential name")).toHaveValue(
       "Password login",
@@ -282,13 +278,8 @@ test.each(["host", "credential"])(
       "  retry-password-canary  ",
     );
     expect(within(dialog).getByLabelText("Password")).toBeDisabled();
-    click(getAction("button", "Check result", dialog));
-    await within(dialog).findByText(
-      "Nothing was saved. Your input is still here; you can edit it or save again.",
-    );
-    expect(within(dialog).getByLabelText("Password")).toBeEnabled();
     fail = false;
-    click(getAction("button", "Save", dialog));
+    click(getAction("button", "Retry", dialog));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
@@ -311,10 +302,10 @@ test.each(["host", "credential"])(
           }
         : credentialBody;
     expect(requests).toStrictEqual([
-      { ...expected, saveAttemptId: expect.any(String) },
-      { ...expected, saveAttemptId: expect.any(String) },
+      { ...expected, id: expect.any(String) },
+      { ...expected, id: expect.any(String) },
     ]);
-    expect(requests[0]).not.toStrictEqual(requests[1]);
+    expect(requests[0]).toStrictEqual(requests[1]);
     click(getAction("button", kind === "host" ? "Add host" : "Add credential"));
     const reopened = await screen.findByRole("dialog");
     if (kind === "host") {
@@ -326,12 +317,11 @@ test.each(["host", "credential"])(
 );
 
 test.each(["host", "credential"] as const)(
-  "A committed %s save with a lost response is confirmed without resending secrets",
+  "A committed %s save with a lost response is completed by an explicit same-ID retry",
   async (kind) => {
-    let attemptId = "";
+    const requests: unknown[] = [];
     let committed = false;
-    const confirmed: string[] = [];
-    let confirmationResult: "network" | "malformed" | "saved" = "network";
+    let acknowledge = false;
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, {
         connections: committed && kind === "host" ? [base] : [],
@@ -342,29 +332,15 @@ test.each(["host", "credential"] as const)(
       `*/api/ssh/${kind === "host" ? "connections" : "credentials"}`,
       async ({ request }) => {
         const body = await request.json();
-        attemptId = (
+        requests.push(
           kind === "host"
             ? sshConnectionsContract.create.body.parse(body)
-            : sshCredentialsContract.create.body.parse(body)
-        ).saveAttemptId;
-        committed = true;
-        return HttpResponse.error();
-      },
-    );
-    context.mocks.http.post(
-      "*/api/ssh/save-attempts/:attemptId/resolve",
-      async ({ params, request }) => {
-        await expect(request.json()).resolves.toStrictEqual({});
-        confirmed.push(
-          sshSaveAttemptsContract.resolve.pathParams.parse({
-            attemptId: params.attemptId,
-          }).attemptId,
+            : sshCredentialsContract.create.body.parse(body),
         );
-        return confirmationResult === "network"
-          ? HttpResponse.error()
-          : HttpResponse.json(
-              confirmationResult === "malformed" ? {} : { saved: true },
-            );
+        committed = true;
+        return acknowledge
+          ? new HttpResponse(null, { status: 204 })
+          : HttpResponse.error();
       },
     );
     await page(kind === "host" ? "/connectors/ssh?add=1" : "/connectors/ssh");
@@ -403,28 +379,115 @@ test.each(["host", "credential"] as const)(
       "lost-response-secret",
     );
     expect(within(dialog).getByLabelText("Password")).toBeDisabled();
-    click(getAction("button", "Check result", dialog));
+    expect(requests).toHaveLength(1);
+    click(getAction("button", "Retry", dialog));
     await within(dialog).findByText(
       /We couldn't confirm whether your changes were saved/u,
     );
-    confirmationResult = "malformed";
-    click(getAction("button", "Check result", dialog));
-    await within(dialog).findByText(
-      /We couldn't confirm whether your changes were saved/u,
-    );
+    expect(requests).toHaveLength(2);
     expect(within(dialog).getByLabelText("Password")).toBeDisabled();
     expect(within(dialog).getByLabelText("Password")).toHaveValue(
       "lost-response-secret",
     );
-    confirmationResult = "saved";
-    click(getAction("button", "Check result", dialog));
+    acknowledge = true;
+    click(getAction("button", "Retry", dialog));
     await waitFor(() => {
       return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(confirmed).toStrictEqual([attemptId, attemptId, attemptId]);
+    expect(requests).toHaveLength(3);
+    expect(requests[0]).toHaveProperty("id", expect.any(String));
+    expect(requests[1]).toStrictEqual(requests[0]);
+    expect(requests[2]).toStrictEqual(requests[0]);
     expect(document.body.textContent).not.toContain("lost-response-secret");
   },
 );
+
+test("A rejected retry cannot unlock a credential draft whose original save is still uncertain", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(sshCredentialsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    if (requests.length === 1) {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
+      });
+    }
+    return requests.length === 2
+      ? respond(400, {
+          error: { code: "SSH_INVALID_INPUT", message: "Rejected retry" },
+        })
+      : respond(204);
+  });
+  await page();
+  click(getAction("radio", "Credentials"));
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add credential");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  await fill(within(dialog).getByLabelText("Credential name"), "Login");
+  await fill(within(dialog).getByLabelText("SSH username"), "deploy");
+  click(getAction("radio", "Password", dialog));
+  const secret = within(dialog).getByLabelText("Password");
+  await fill(secret, "retained-password");
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByText(/We couldn't confirm whether/u);
+  click(getAction("button", "Retry", dialog));
+  await within(dialog).findByText(/We couldn't confirm whether/u);
+  expect(requests).toHaveLength(2);
+  expect(secret).toBeDisabled();
+  expect(secret).toHaveValue("retained-password");
+  click(getAction("button", "Retry", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(requests).toHaveLength(3);
+  expect(requests[1]).toStrictEqual(requests[0]);
+  expect(requests[2]).toStrictEqual(requests[0]);
+});
+
+test("An uncertain host edit retries its original generation and requires explicit conflict review", async () => {
+  let current = base;
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [current] });
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    if (requests.length === 1) {
+      current = { ...base, displayName: "Saved draft", generation: 2 };
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
+      });
+    }
+    return respond(409, {
+      error: { code: "SSH_GENERATION_CONFLICT", message: "Stale generation" },
+    });
+  });
+  await page();
+  click(
+    await waitFor(() => {
+      return getAction("button", "Edit host");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  const name = within(dialog).getByLabelText("Display name");
+  await fill(name, "Saved draft");
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByText(/We couldn't confirm whether/u);
+  expect(name).toBeDisabled();
+  click(getAction("button", "Retry", dialog));
+  await within(dialog).findByText("Saved draft");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(name).toHaveValue("Saved draft");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toMatchObject({ expectedGeneration: 1 });
+  expect(requests[1]).toStrictEqual(requests[0]);
+});
 
 test("A known credential rejection leaves the retained input editable", async () => {
   context.mocks.api(sshCredentialsContract.create, ({ respond }) => {
@@ -453,7 +516,7 @@ test("A known credential rejection leaves the retained input editable", async ()
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   expect(secret).toBeEnabled();
   expect(secret).toHaveValue("owned-secret");
-  expect(queryAction("button", "Check result", dialog)).not.toBeInTheDocument();
+  expect(queryAction("button", "Retry", dialog)).not.toBeInTheDocument();
   expect(document.body.textContent).not.toContain("private server detail");
 });
 
@@ -1286,7 +1349,7 @@ test.each(["paste", "file"])(
     await screen.findByText("deploy@ssh.example.com:22");
     expect(requests).toStrictEqual([
       {
-        saveAttemptId: expect.any(String),
+        id: expect.any(String),
         displayName: "Deployment",
         host: "ssh.example.com",
         port: 22,
@@ -1314,7 +1377,6 @@ test.each(["paste", "file"])(
     click(getAction("button", "Save", edit));
     await screen.findByText("Renamed");
     expect(requests[1]).toStrictEqual({
-      saveAttemptId: expect.any(String),
       displayName: "Renamed",
       host: "ssh.example.com",
       port: 22,

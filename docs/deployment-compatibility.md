@@ -1507,15 +1507,16 @@ owner clears open secret forms and cancels their pending UI work. API authorizat
 and same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
 
-SSH save confirmation (#34503) adds a secret-free `ssh_save_attempts` table,
-requires `saveAttemptId` on host create/update and standalone credential/Access
-create, and adds a terminal confirmation endpoint. Apply the additive migration
-before the API and deploy the API before the App. Existing resources need no
-backfill and Runner/guest protocols are unchanged. Under the staff-only pre-GA
-policy, stale Apps/APIs may reject the new/missing field or lack confirmation;
-refresh staff clients after deployment. Do not fall back to an untracked save or
-automatically replay it. Keep terminal receipts across resource deletion; their
-lifetime and abandoned-dialog semantics are documented in [SSH access](ssh-access.md#save-outcome-confirmation).
+SSH save retries (#34503) require a client-generated resource `id` on host creation
+and standalone credential/Access creation. New resources return `201`; same-owner
+existing IDs return `204` without mutation. Host edits retain their existing
+`expectedGeneration` contract. There is no database migration or backfill, and
+Runner/guest protocols are unchanged. Deploy the API before the App. Under the
+staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
+to handle `204`; refresh staff clients after deployment. Do not fall back to a
+new-ID save or automatically replay it. Deduplication only covers the existing
+resource's lifetime, not deletion or abandoned forms; see
+[SSH access](ssh-access.md#save-retries).
 
 | State                                                              | Required behavior                                                                                      |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |

@@ -126,7 +126,7 @@ describe("SSH connection routes", () => {
       await accept(
         client().create({
           headers: authHeaders(),
-          body: { saveAttemptId: randomUUID(), ...createBody(host) },
+          body: { id: randomUUID(), ...createBody(host) },
         }),
         [201],
       );
@@ -167,7 +167,7 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           ...createBody("disabled.example.com"),
         },
       }),
@@ -204,7 +204,7 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           displayName: "  Production  ",
           host: "  BÜCHER.Example.  ",
           credential: inlineSshKey("  deploy  ", privateKey, passphrase),
@@ -275,7 +275,6 @@ describe("SSH connection routes", () => {
         headers: authHeaders(),
         params: { connectionId: created.body.id },
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 2,
           displayName: "Renamed",
           credential: inlineSshKey("operator", privateKey, passphrase),
@@ -296,7 +295,6 @@ describe("SSH connection routes", () => {
         headers: authHeaders(),
         params: { connectionId: created.body.id },
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 3,
           credential: inlineSshKey("operator", "replacement\n"),
         },
@@ -329,7 +327,6 @@ describe("SSH connection routes", () => {
         headers: authHeaders(),
         params: { connectionId: created.body.id },
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 4,
           host: "2001:0DB8:0:0::1",
           port: 2222,
@@ -385,7 +382,6 @@ describe("SSH connection routes", () => {
         headers: authHeaders(),
         params: { connectionId: created.body.id },
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 7,
           displayName: "Stale",
         },
@@ -446,7 +442,7 @@ describe("SSH connection routes", () => {
       const response = await accept(
         client().create({
           headers: authHeaders(),
-          body: { saveAttemptId: randomUUID(), ...createBody(host) },
+          body: { id: randomUUID(), ...createBody(host) },
         }),
         [400],
       );
@@ -457,7 +453,7 @@ describe("SSH connection routes", () => {
     const created = await accept(
       client().create({
         headers: authHeaders(),
-        body: { saveAttemptId: randomUUID(), ...createBody("EXAMPLE.com.") },
+        body: { id: randomUUID(), ...createBody("EXAMPLE.com.") },
       }),
       [201],
     );
@@ -586,7 +582,7 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           ...createBody("EXAMPLE.com.", { username: "ubuntu" }),
         },
       }),
@@ -595,7 +591,7 @@ describe("SSH connection routes", () => {
     const additional = await accept(
       client().create({
         headers: authHeaders(),
-        body: { saveAttemptId: randomUUID(), ...createBody("example.COM") },
+        body: { id: randomUUID(), ...createBody("example.COM") },
       }),
       [201],
     );
@@ -609,7 +605,7 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           ...createBody("other.example.com", { port: 2222 }),
         },
       }),
@@ -620,7 +616,6 @@ describe("SSH connection routes", () => {
         headers: authHeaders(),
         params: { connectionId: other.body.id },
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 1,
           host: "EXAMPLE.com.",
           port: 22,
@@ -653,7 +648,7 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           ...createBody("isolated.example.com"),
         },
       }),
@@ -668,7 +663,6 @@ describe("SSH connection routes", () => {
         headers: authHeaders(),
         params: { connectionId: created.body.id },
         body: {
-          saveAttemptId: randomUUID(),
           expectedGeneration: 1,
           credential: inlineSshKey("deploy", "should-not-encrypt"),
         },
@@ -694,7 +688,7 @@ describe("SSH connection routes", () => {
         client().create({
           headers: authHeaders(),
           body: {
-            saveAttemptId: randomUUID(),
+            id: randomUUID(),
             ...createBody("RACE.example.com", { privateKey: "first-key" }),
           },
         }),
@@ -704,7 +698,7 @@ describe("SSH connection routes", () => {
         client().create({
           headers: authHeaders(),
           body: {
-            saveAttemptId: randomUUID(),
+            id: randomUUID(),
             ...createBody("race.example.com.", { privateKey: "second-key" }),
           },
         }),
@@ -731,7 +725,7 @@ describe("SSH connection routes", () => {
         return client().create({
           headers: authHeaders(),
           body: {
-            saveAttemptId: randomUUID(),
+            id: randomUUID(),
             ...createBody(`seed-${index}.example.com`),
           },
         });
@@ -747,14 +741,14 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           ...createBody("final-a.example.com"),
         },
       }),
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           ...createBody("final-b.example.com"),
         },
       }),
@@ -793,7 +787,7 @@ describe("SSH connection routes", () => {
       client().create({
         headers: authHeaders(),
         body: {
-          saveAttemptId: randomUUID(),
+          id: randomUUID(),
           ...createBody("kms-failure.example.com"),
         },
       }),

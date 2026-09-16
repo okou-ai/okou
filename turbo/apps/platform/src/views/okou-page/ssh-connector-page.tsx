@@ -45,7 +45,6 @@ import {
   openSshDialog$,
   closeSshDialog$,
   saveSsh$,
-  resolveSshSave$,
   sshSaveUncertain$,
   sshSaveMessage$,
   cancelSshPrivateKeyFile$,
@@ -602,8 +601,7 @@ function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
 interface SshFormProps {
   readonly dialog: SshDialogState;
   readonly isSaving: boolean;
-  readonly save: (form: FormData, signal: AbortSignal) => Promise<void>;
-  readonly confirm: (signal: AbortSignal) => Promise<void>;
+  readonly save: (form: HTMLFormElement, signal: AbortSignal) => Promise<void>;
 }
 
 function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
@@ -619,14 +617,10 @@ function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
         ? t(($) => {
             return $.ssh.saveRecovery.uncertain;
           })
-        : message === "not-saved"
-          ? t(($) => {
-              return $.ssh.saveRecovery.notSaved;
-            })
-          : (localizedSshError(message ?? "") ??
-            t(($) => {
-              return $.ssh.errors.invalidInput;
-            }))}
+        : (localizedSshError(message ?? "") ??
+          t(($) => {
+            return $.ssh.errors.invalidInput;
+          }))}
     </p>
   );
 }
@@ -668,7 +662,7 @@ function SshFormActions({
             })
           : uncertain
             ? t(($) => {
-                return $.ssh.saveRecovery.checkResult;
+                return $.ssh.retry;
               })
             : destructive
               ? title
@@ -726,7 +720,7 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   );
 }
 
-function SshHostForm({ dialog, isSaving, save, confirm }: SshFormProps) {
+function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
   const uncertain = useGet(sshSaveUncertain$);
   const fieldsDisabled = isSaving || uncertain;
   const transport = useGet(sshTransportEditor$);
@@ -746,18 +740,11 @@ function SshHostForm({ dialog, isSaving, save, confirm }: SshFormProps) {
       aria-busy={isSaving}
       onSubmit={(event) => {
         event.preventDefault();
-        if (uncertain && !isSaving) {
-          detach(confirm(signal), Reason.DomCallback);
-          return;
-        }
-        if (blocked) {
+        if (isSaving || (!uncertain && blocked)) {
           return;
         }
         // Keep retryable input only in this form, never in ccstate or caches.
-        detach(
-          save(new FormData(event.currentTarget), signal),
-          Reason.DomCallback,
-        );
+        detach(save(event.currentTarget, signal), Reason.DomCallback);
       }}
     >
       <DialogBody className="grid gap-4">
@@ -801,7 +788,7 @@ function SshHostForm({ dialog, isSaving, save, confirm }: SshFormProps) {
   );
 }
 
-function SshAccessForm({ dialog, isSaving, save, confirm }: SshFormProps) {
+function SshAccessForm({ dialog, isSaving, save }: SshFormProps) {
   const uncertain = useGet(sshSaveUncertain$);
   const mountForm = useSet(mountSshAccessForm$);
   const signal = useGet(pageSignal$);
@@ -816,15 +803,8 @@ function SshAccessForm({ dialog, isSaving, save, confirm }: SshFormProps) {
       aria-busy={isSaving}
       onSubmit={(event) => {
         event.preventDefault();
-        if (uncertain && !isSaving) {
-          detach(confirm(signal), Reason.DomCallback);
-          return;
-        }
-        if (!isSaving && !conflict) {
-          detach(
-            save(new FormData(event.currentTarget), signal),
-            Reason.DomCallback,
-          );
+        if (!isSaving && (uncertain || !conflict)) {
+          detach(save(event.currentTarget, signal), Reason.DomCallback);
         }
       }}
     >
@@ -856,13 +836,10 @@ function SshDialog() {
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveSsh$);
   const [accessSaving, saveAccess] = useLoadableSet(saveSshCloudflare$);
-  const [confirming, confirm] = useLoadableSet(resolveSshSave$);
   const dialog = data.state === "hasData" ? data.data : null;
   const { title, description } = useDialogCopy(dialog?.kind);
   const isSaving =
-    saving.state === "loading" ||
-    accessSaving.state === "loading" ||
-    confirming.state === "loading";
+    saving.state === "loading" || accessSaving.state === "loading";
   if (!dialog) {
     return null;
   }
@@ -885,19 +862,13 @@ function SshDialog() {
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
         {!accessEditor && (
-          <SshHostForm
-            dialog={dialog}
-            isSaving={isSaving}
-            save={save}
-            confirm={confirm}
-          />
+          <SshHostForm dialog={dialog} isSaving={isSaving} save={save} />
         )}
         {accessEditor && (
           <SshAccessForm
             dialog={dialog}
             isSaving={isSaving}
             save={saveAccess}
-            confirm={confirm}
           />
         )}
       </DialogContent>

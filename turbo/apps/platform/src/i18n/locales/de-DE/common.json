@@ -6392,9 +6392,8 @@
     "retry": "Erneut versuchen",
     "save": "Speichern",
     "saveRecovery": {
-      "checkResult": "Ergebnis prüfen",
-      "notSaved": "Es wurde nichts gespeichert. Ihre Eingaben sind noch vorhanden; Sie können sie bearbeiten oder erneut speichern.",
-      "uncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Prüfen Sie das Ergebnis, bevor Sie es erneut versuchen oder Änderungen vornehmen. Wenn Sie dieses Fenster schließen, prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen."
+      "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
+      "uncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Wiederholen Sie denselben Speichervorgang, oder schließen Sie das Formular und prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen."
     },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",

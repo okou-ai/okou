@@ -51,9 +51,9 @@ Secrets are write-only and stay outside the sandbox. Use a least-privilege
 remote SSH user. Submitted input stays only in the open form while saving;
 controls are disabled until the request completes. A known input rejection preserves
 the input so the user can correct it or click Save again. An uncertain host save
-or credential/Access creation keeps the fields frozen and offers **Check result**.
-Confirmation closes the form when the save committed, or unlocks the retained
-input for a new Save when nothing was saved. It never resends secrets. Successful saves close
+or credential/Access creation keeps the fields frozen and offers **Retry**.
+Retry explicitly resends the same input with the same resource ID for creation,
+or the original expected generation for a host edit. Successful saves close
 the form and clear its secrets, as do cancellation, navigation and owner changes.
 Changing authentication methods clears the previous method's inputs. Secrets
 are never stored in reactive state or browser caches. A background notification
@@ -80,36 +80,39 @@ unchanged. Host/port changes clear only that host's learned identity. Stale host
 generations or credential revisions are not automatically retried. Review the
 latest host metadata in the dialog, or reopen a credential, before saving again.
 
-### Save outcome confirmation
+### Save retries
 
-Host create/update and standalone credential/Access create requests require a
-random `saveAttemptId`. Inline resource payloads do not have separate identities.
-The resource changes and a secret-free terminal receipt commit together under
-the existing SSH owner lock. A consumed identity is never reapplied, even with
-changed input or after deleting the resource. A replay reaching the write
-transaction returns `SSH_SAVE_ATTEMPT_RESOLVED`; existing validation or host-edit
-preflight checks may reject it earlier. This is single-use identity, not cached
-response replay. Use confirmation, not another mutation, to determine the outcome.
+Host creation and standalone credential/Access creation require a client-generated
+UUID `id`, stored as the existing resource's primary key. The first successful
+create returns `201`. A same-ID request reaching the write transaction returns
+`204` with no body when the resource already belongs to the same organization and
+user. It does not overwrite metadata or secrets, create more inline resources, or
+repeat grants and notifications. First commit wins even if the payload differs.
+An ID belonging to another owner returns an opaque `SSH_RESOURCE_ID_CONFLICT`;
+it never acknowledges or exposes that resource.
 
-`POST /api/ssh/save-attempts/:attemptId/resolve` takes an empty body and returns
-`{ saved: true }` when the operation committed. Otherwise it records and returns
-`{ saved: false }` under the same lock. This terminal negative result prevents a
-late original request from writing; a read-only lookup would not provide that
-guarantee. Confirmation can be retried with the same ID. Known validation failures
-do not consume an identity. A new Save after confirmed failure uses a new ID.
+Creation takes the existing SSH owner lock and a transaction-scoped resource-ID
+lock before any inserts. The latter also serializes different owners claiming
+the same ID. Host and inline credential/Access creation remain atomic. No new
+table, column, migration, receipt history, or confirmation endpoint is needed.
+Input validation and credential preparation still happen before the transaction
+and can reject a retry before the existing resource is acknowledged.
 
-Receipts are scoped to organization/user and contain only the operation ID,
-boolean outcome and creation time. No request payload, secret, ciphertext, hash
-or resource metadata is retained. Receipts have no TTL and survive resource
-deletion; expiring them would reopen old IDs. Final Clerk user/org erasure removes
-them, while ordinary membership changes do not reset their history.
+After a network or server failure, the open form retains and freezes its input.
+Only explicit **Retry** resends it. A later rejected retry does not prove that the
+original request cannot still commit, so it does not unlock the draft. A host-edit
+generation conflict instead uses the existing explicit latest-version review;
+the client never automatically advances the generation or reapplies the edit.
+Choosing to save after that review is a new edit, not confirmation of the old one.
 
-Closing or navigating away clears the local draft and attempt ID and aborts UI
-work, but does not claim to cancel a server commit. If an uncertain form is
-abandoned, inspect the refreshed list before intentionally starting a new save.
-No background mutation retry or secret persistence is introduced. Normal edits
-to existing credentials/Access configurations, deletion and host-key reset keep
-their existing concurrency contracts.
+Deduplication lasts only while the resource exists. Deleting it and then retrying
+an old create can recreate it; there are no tombstones or permanent operation
+history. Closing or navigating away clears the local draft and retry ID and
+aborts UI work, but does not claim to cancel a server commit. After abandoning an
+uncertain form, inspect the refreshed list before intentionally starting a new
+save. No background mutation retry or secret persistence is introduced. Normal
+edits to existing credentials/Access configurations, deletion and host-key reset
+keep their existing concurrency contracts.
 
 ### Owner storage and pre-GA cutover
 

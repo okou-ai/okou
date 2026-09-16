@@ -103,8 +103,8 @@ export const sshCredentialsContract = c.router({
     method: "POST",
     path: "/api/ssh/credentials",
     headers: authHeadersSchema,
-    body: createSshCredentialRequestSchema.extend({ saveAttemptId: z.uuid() }),
-    responses: { 201: sshCredentialResponseSchema, ...errors },
+    body: createSshCredentialRequestSchema.extend({ id: z.uuid() }),
+    responses: { 201: sshCredentialResponseSchema, 204: c.noBody(), ...errors },
     summary: "Create a reusable SSH credential",
   },
   update: {

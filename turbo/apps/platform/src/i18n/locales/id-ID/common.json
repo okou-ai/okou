@@ -6373,9 +6373,8 @@
     "retry": "Coba lagi",
     "save": "Simpan",
     "saveRecovery": {
-      "checkResult": "Periksa hasil",
-      "notSaved": "Tidak ada yang tersimpan. Isianmu masih ada; kamu dapat mengedit atau menyimpannya lagi.",
-      "uncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Periksa hasilnya sebelum mencoba lagi atau mengedit. Jika kamu menutup, periksa daftar sebelum menambahkannya lagi."
+      "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
+      "uncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Coba simpan ulang isian yang sama, atau tutup dan periksa daftar sebelum menambahkannya lagi."
     },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
