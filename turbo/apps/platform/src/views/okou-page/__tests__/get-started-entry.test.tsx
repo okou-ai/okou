@@ -4,6 +4,7 @@ import {
   getStartedContract,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -317,8 +318,36 @@ test("Sharing on X restores pending state and an Ably review notification update
   expect(within(panel).queryByText("In review")).not.toBeInTheDocument();
 });
 
-test("An Ably review notification restores a rejected submission without reopening the panel", async () => {
+test("Reward notifications refresh quests without disconnecting shared chat history", async () => {
   const data = configureQuestPage(context, "member");
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 640px)";
+  });
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      chatThreads: [
+        {
+          id: "b0000000-0000-4000-a000-000000000001",
+          agentId: QUEST_AGENT_ID,
+          title: "Existing reward conversation",
+          sortAt: data.serverNow,
+          createdAt: data.serverNow,
+          updatedAt: data.serverNow,
+          pinnedAt: null,
+          renamedAt: null,
+          selectedModel: null,
+          serviceTier: null,
+          computerUseHostId: null,
+          selectedVideoModel: null,
+        },
+      ],
+      latestEventId: null,
+      latestSeqId: null,
+    });
+  });
+  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
+    return respond(200, { events: [], hasMore: false });
+  });
   data.shareClaim = {
     id: "33333333-3333-4333-a333-333333333333",
     questKey: "share",
@@ -333,13 +362,29 @@ test("An Ably review notification restores a rejected submission without reopeni
   await setupPage({
     context,
     path: questChatPath(),
+    sharedWorkerTestTransport: "message-port",
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
+  await expect(
+    screen.findByText("Existing reward conversation"),
+  ).resolves.toBeInTheDocument();
   const panel = await openQuestPanel();
   expect(within(panel).getByText("In review")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        "user:test-user-123",
+        GET_STARTED_REWARDS_CHANGED_EVENT,
+      ),
+    ).toBeTruthy();
+  });
   data.shareClaim.status = "rejected";
   data.shareClaim.reason = "post_must_mention_okou";
-  context.mocks.ably.trigger(GET_STARTED_REWARDS_CHANGED_EVENT);
+  context.mocks.ably.triggerOnChannel(
+    "user:test-user-123",
+    GET_STARTED_REWARDS_CHANGED_EVENT,
+    null,
+  );
   await expect(
     within(panel).findByText(
       "This post is not eligible. Submit another public post mentioning Okou.",
