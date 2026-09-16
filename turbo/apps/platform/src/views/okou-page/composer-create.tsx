@@ -52,6 +52,23 @@ const CREATE_CONTROL_FOCUS =
   "focus-visible:bg-state-hover focus-visible:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
 
 /**
+ * The footer states one type at a time -- the chip a task chip leaves behind or
+ * the combobox a slash command does -- so both wear the same shape.
+ *
+ * `leading-5` pairs a line height with the arbitrary font size: `text-[13px]`
+ * emits `font-size` alone, so without it the control inherits whatever line
+ * height the row it sits in happens to carry.
+ */
+const TASK_CONTROL_SHAPE =
+  "h-8 min-w-0 shrink-0 gap-2 px-2.5 text-[13px] font-normal leading-5";
+/**
+ * The label drops out below a 600px composer, the width at which the model
+ * picker drops its own, so a phone keeps the icons, the type and send on one
+ * line. The icon and the accessible name still carry the type.
+ */
+const TASK_CONTROL_LABEL = "truncate @max-[600px]/composer:hidden";
+
+/**
  * One muted ink for every type. Only presentation, video and image ever had an
  * `--artifact-*` foreground, so the six choices read as three coloured and
  * three grey; colour on a picker is decoration, and the real colour here comes
@@ -66,7 +83,7 @@ const TASK_ICONS = {
   visualization: ChartNoAxesCombined,
 } as const;
 
-export function ComposerSelectedTask({
+function ComposerSelectedTask({
   signals,
 }: {
   readonly signals: ComposerSignals;
@@ -80,68 +97,83 @@ export function ComposerSelectedTask({
     },
     { returnObjects: true },
   );
-  const Icon = task ? TASK_ICONS[task] : null;
+  if (!task) {
+    return null;
+  }
+  const Icon = TASK_ICONS[task];
   /*
-    The presentation options sit on this line, beside the chip they describe.
-    In the action row below they were 260px right and 112px down from it, among
-    controls that act on the message rather than on the artifact.
-
-    Video is the exception, and it is not the same case: its spec has to be read
-    against the model that accepts it, and that model's picker lives in the
-    action row, so the spec is back there next to the connectors rather than two
-    rows above the value it depends on.
-
-    The row is not the chip's: the chip is gated by a switch the options are
-    not, so it also has to stand on its own. `empty:hidden` keeps it from
-    claiming space when neither is showing.
+    One control, not a label plus a button. The chip is the exit: its leading
+    type icon becomes the cross on hover, so nothing operable is visible while
+    the selection is just a state, and the hit area is the whole chip rather
+    than a 28px square.
   */
-  return withChatScrollLayout(
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5 px-4 pt-4 empty:hidden">
+  return (
+    <Button
+      type="button"
+      variant="neutral"
+      className={cn(
+        "group max-w-full",
+        TASK_CONTROL_SHAPE,
+        CREATE_CONTROL_FOCUS,
+      )}
+      aria-label={t(
+        ($) => {
+          return $.chat.taskChips.removeTask;
+        },
+        { task: labels[task] },
+      )}
+      onClick={() => {
+        selectTask(null);
+      }}
+    >
       {/*
-        One control, not a label plus a button. The chip is the exit: its
-        leading type icon becomes the cross on hover, so nothing operable is
-        visible while the selection is just a state, and the hit area is the
-        whole chip rather than a 28px square.
+        Both glyphs share one box and cross-fade, so the chip's width does not
+        change between rest and hover.
       */}
-      {task && Icon ? (
-        <Button
-          type="button"
-          variant="neutral"
-          className={cn(
-            "group h-8 max-w-full gap-2 px-2.5 text-[13px] font-normal",
-            CREATE_CONTROL_FOCUS,
-          )}
-          aria-label={t(
-            ($) => {
-              return $.chat.taskChips.removeTask;
-            },
-            { task: labels[task] },
-          )}
-          onClick={() => {
-            selectTask(null);
-          }}
-        >
-          {/*
-          Both glyphs share one box and cross-fade, so the chip's width does
-          not change between rest and hover.
-        */}
-          <span className="relative inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground">
-            <Icon
-              size={16}
-              className="transition-opacity group-hover:opacity-0"
-              aria-hidden
-            />
-            <X
-              size={16}
-              className="absolute opacity-0 transition-opacity group-hover:opacity-100"
-              aria-hidden
-            />
-          </span>
-          <span className="truncate">{labels[task]}</span>
-        </Button>
-      ) : null}
+      <span className="relative inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+        <Icon
+          size={16}
+          className="transition-opacity group-hover:opacity-0"
+          aria-hidden
+        />
+        <X
+          size={16}
+          className="absolute opacity-0 transition-opacity group-hover:opacity-100"
+          aria-hidden
+        />
+      </span>
+      <span className={TASK_CONTROL_LABEL}>{labels[task]}</span>
+    </Button>
+  );
+}
+
+/**
+ * What the run will make, at the end of the footer's icon row.
+ *
+ * The divider marks the break the row now carries: everything left of it adds
+ * content to the message and is cleared by a send, everything right of it is
+ * the composer's own state and is not. The type's parameters follow it on the
+ * same line -- the slide count here, Creative Video's spec in the chip after
+ * this group -- so a value sits beside the type it belongs to instead of two
+ * rows above the controls that act on it.
+ */
+export function ComposerTaskControls({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const task = useGet(signals.taskChips.task$);
+  const mode = useGet(signals.create.mode$);
+  if (task === null && mode === null) {
+    return null;
+  }
+  return (
+    <>
+      <div className="h-5 w-px shrink-0 bg-divider/60" aria-hidden />
+      <ComposerCreateControls signals={signals} />
+      <ComposerSelectedTask signals={signals} />
       <ComposerPresentationOptions signals={signals} />
-    </div>,
+    </>
   );
 }
 
@@ -196,7 +228,7 @@ function handleCreateTypeNavigation(event: KeyboardEvent<HTMLDivElement>) {
   options[next]?.focus();
 }
 
-export function ComposerCreateControls({
+function ComposerCreateControls({
   signals,
 }: {
   readonly signals: ComposerSignals;
@@ -208,12 +240,12 @@ export function ComposerCreateControls({
   const setPickerOpen = useSet(signals.create.setPickerOpen$);
   const setMode = useSet(signals.create.setMode$);
   if (task || !mode) {
-    return withChatScrollLayout(null);
+    return null;
   }
   const Icon = COMPOSER_CREATE_ICONS[mode];
-  return withChatScrollLayout(
+  return (
     <div
-      className="@container/create-controls flex shrink-0 items-center gap-1 px-4 pt-4 pb-1"
+      className="flex min-w-0 shrink-0 items-center gap-1"
       data-testid="composer-create-mode"
       onKeyDown={(event) => {
         if (event.key === "Escape" && pickerOpen) {
@@ -256,7 +288,9 @@ export function ComposerCreateControls({
         }}
       >
         <Icon className={CREATE_MODE_ICON_CLASS} aria-hidden />
-        <span className="truncate">{composerCreateModeLabel(mode)}</span>
+        <span className={TASK_CONTROL_LABEL}>
+          {composerCreateModeLabel(mode)}
+        </span>
         <ChevronDown
           className={cn("shrink-0 opacity-50", pickerOpen && "rotate-180")}
           aria-hidden
@@ -277,7 +311,7 @@ export function ComposerCreateControls({
       >
         <X aria-hidden />
       </Button>
-    </div>,
+    </div>
   );
 }
 

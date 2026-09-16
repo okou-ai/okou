@@ -22,6 +22,7 @@ const EMPTY_ALLOWLIST = {
   version: 1,
   selectors: [],
   styleInjections: [],
+  classDependencies: [],
   vendorFiles: [],
 };
 
@@ -225,6 +226,111 @@ test("counts literal legacy classes without matching longer class names", (t) =>
     checkStylePolicy({ root, allowlist: EMPTY_ALLOWLIST, baseline }).issues,
     [],
   );
+});
+
+test("an allowlisted class dependency authorizes one file, not the class", (t) => {
+  const owned = "apps/platform/src/frame.tsx";
+  const other = "apps/platform/src/other.tsx";
+  const root = createWorkspace(t, {
+    [owned]: 'export const Frame = () => <div className="adapter" />;',
+    [other]: 'export const Other = () => <div className="adapter" />;',
+  });
+  const allowlist = {
+    ...EMPTY_ALLOWLIST,
+    classDependencies: [
+      {
+        file: owned,
+        token: "adapter",
+        count: 1,
+        kind: "third-party-dom-adapter",
+        owner: "frontend-platform",
+        rationale: "The renderer keys on this class.",
+        upstream: "example renderer DOM",
+        removal: "Remove when the renderer is replaced.",
+      },
+    ],
+  };
+
+  const issues = checkStylePolicy({
+    root,
+    allowlist,
+    baseline: emptyBaseline(),
+  }).issues;
+
+  assert.deepEqual(
+    issues.map((issue) => {
+      return { file: issue.file, type: issue.type };
+    }),
+    [{ file: other, type: "growth" }],
+  );
+  assert.match(issues[0].message, /Replace the new use with Tailwind/u);
+});
+
+test("an allowlisted class dependency rejects a higher count in its own file", (t) => {
+  const owned = "apps/platform/src/frame.tsx";
+  const root = createWorkspace(t, {
+    [owned]: [
+      'export const Frame = () => <div className="adapter" />;',
+      'export const Second = () => <span className="adapter" />;',
+    ].join("\n"),
+  });
+  const allowlist = {
+    ...EMPTY_ALLOWLIST,
+    classDependencies: [
+      {
+        file: owned,
+        token: "adapter",
+        count: 1,
+        kind: "third-party-dom-adapter",
+        owner: "frontend-platform",
+        rationale: "The renderer keys on this class.",
+        upstream: "example renderer DOM",
+        removal: "Remove when the renderer is replaced.",
+      },
+    ],
+  };
+
+  const issues = checkStylePolicy({
+    root,
+    allowlist,
+    baseline: emptyBaseline(),
+  }).issues;
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].type, "growth");
+  assert.match(issues[0].message, /not a license to spread the class/u);
+});
+
+test("an allowlisted class dependency reports a count that no longer matches", (t) => {
+  const owned = "apps/platform/src/frame.tsx";
+  const root = createWorkspace(t, {
+    [owned]: "export const Frame = () => <div />;",
+  });
+  const allowlist = {
+    ...EMPTY_ALLOWLIST,
+    classDependencies: [
+      {
+        file: owned,
+        token: "adapter",
+        count: 1,
+        kind: "third-party-dom-adapter",
+        owner: "frontend-platform",
+        rationale: "The renderer keys on this class.",
+        upstream: "example renderer DOM",
+        removal: "Remove when the renderer is replaced.",
+      },
+    ],
+  };
+
+  const issues = checkStylePolicy({
+    root,
+    allowlist,
+    baseline: emptyBaseline(),
+  }).issues;
+
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].type, "stale");
+  assert.match(issues[0].message, /style-allowlist\.json/u);
 });
 
 test("rejects a new inline stylesheet", (t) => {

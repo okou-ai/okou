@@ -3631,7 +3631,11 @@ function RunWorkSectionRow({
           })}
           onClick={onToggle}
           data-chat-run-work-range
-          className={cn(className, "h-auto p-0 pr-1")}
+          // The hover surface needs an inset on the side its glyph starts on,
+          // otherwise the hourglass sits flush against the left edge while the
+          // chevron keeps `pr-1`. The negative margin spends that inset on the
+          // overhang, so the glyph still starts on the response column.
+          className={cn(className, "h-auto p-0 pl-1.5 pr-1 -ml-1.5")}
         >
           {content}
         </Button>
@@ -5038,7 +5042,7 @@ function AssistantRecoveryActions({
   const resetting = resetLoadable.state === "loading";
   const hasResetAction = recovery.actions.resetAndTryAgain !== null;
   const hasRetryAction = recovery.actions.tryAgain !== null;
-  const hasModelSelectionAction = recovery.kind !== "execution-timeout";
+  const hasModelSelectionAction = recovery.framework !== null;
   // `excludedModel` drops the failed model from the menu, so showing it as the
   // trigger label would offer a choice the user cannot make. Fall back to the
   // "Switch model" placeholder until they pick something else.
@@ -5100,8 +5104,7 @@ function AssistantRecoveryActions({
           }}
         >
           <AssistantRecoveryActionSpinner loading={retrying} />
-          {/* A timed-out run is resumed, not retried, and its copy says so. */}
-          {recovery.kind === "execution-timeout"
+          {recovery.framework === null
             ? t(($) => {
                 return $.chat.errors.recovery.continue;
               })
@@ -5178,6 +5181,11 @@ function AssistantErrorRecoveryCard({
         return $.chat.errors.recovery.timeoutTitle;
       });
     }
+    if (recovery.kind === "autonomy-budget-exhausted") {
+      return t(($) => {
+        return $.chat.errors.recovery.autonomyLimitTitle;
+      });
+    }
     if (recovery.kind === "model-unavailable") {
       return t(($) => {
         return $.chat.errors.recovery.unavailableTitle;
@@ -5210,17 +5218,21 @@ function AssistantErrorRecoveryCard({
         ? t(($) => {
             return $.chat.errors.recovery.timeoutDescription;
           })
-        : recovery.kind === "usage-limit"
+        : recovery.kind === "autonomy-budget-exhausted"
           ? t(($) => {
-              return $.chat.errors.recovery.usageDescription;
+              return $.chat.errors.recovery.autonomyLimitDescription;
             })
-          : recovery.kind === "model-unavailable"
+          : recovery.kind === "usage-limit"
             ? t(($) => {
-                return $.chat.errors.recovery.unavailableDescription;
+                return $.chat.errors.recovery.usageDescription;
               })
-            : t(($) => {
-                return $.chat.errors.recovery.capacityDescription;
-              });
+            : recovery.kind === "model-unavailable"
+              ? t(($) => {
+                  return $.chat.errors.recovery.unavailableDescription;
+                })
+              : t(($) => {
+                  return $.chat.errors.recovery.capacityDescription;
+                });
   const personalSource = recovery.source?.credentialScope === "member";
   const sourceDescription = personalSource
     ? recovery.source?.account.status === "unavailable"
@@ -5244,9 +5256,12 @@ function AssistantErrorRecoveryCard({
   return (
     <AssistantErrorCard
       icon={
-        recovery.kind === "usage-limit" || recovery.kind === "execution-timeout"
-          ? Clock
-          : Coffee
+        recovery.kind === "autonomy-budget-exhausted"
+          ? Hand
+          : recovery.kind === "usage-limit" ||
+              recovery.kind === "execution-timeout"
+            ? Clock
+            : Coffee
       }
       title={title}
       description={`${description}${resetText ? ` ${resetText}` : ""}`}

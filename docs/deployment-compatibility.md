@@ -1316,6 +1316,17 @@ capabilities in their client version. The API projects a stored locale to
 writes that the client did not advertise. Keep this compatibility layer until
 stale browser clients and API rollback windows have closed.
 
+### Retired Limelight color theme
+
+`limelight` is removed from `COLOR_THEMES`, so the API no longer parses it in
+either direction. Migration `1147_retire_limelight_color_theme` moves stored
+selections to `citrus-spark`, which declares the same two colours; it must run
+before the API that rejects the value, which is the normal migrate-then-promote
+order. The App is promoted after the API, so between the two an already-open
+bundle can still offer Limelight and receive `400` on that one write; every
+other palette, and the member's stored selection, is unaffected. The palette was
+only reachable under the `GradientColorThemes` rollout switch.
+
 ### Treat Database/API Transitions as a First-class Boundary
 
 Schema changes have two independent compatibility directions:
@@ -1528,6 +1539,17 @@ requires SSH eligibility and an explicit Direct selection. Losing SSH eligibilit
 owner clears open secret forms and cancels their pending UI work. API authorization
 and same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
+
+SSH save retries (#34503) require a client-generated resource `id` on host creation
+and standalone credential/Access creation. New resources return `201`; same-owner
+existing IDs return `204` without mutation. Host edits retain their existing
+`expectedGeneration` contract. There is no database migration or backfill, and
+Runner/guest protocols are unchanged. Deploy the API before the App. Under the
+staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
+to handle `204`; refresh staff clients after deployment. Do not fall back to a
+new-ID save or automatically replay it. Deduplication only covers the existing
+resource's lifetime, not deletion or abandoned forms; see
+[SSH access](ssh-access.md#save-retries).
 
 | State                                                              | Required behavior                                                                                      |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -1807,3 +1829,50 @@ continuation slot, so enablement requires both the capable Runner and the
 commit-addressed co-built CLI. Drain existing v4 intents/leases and release
 receipts before rolling the API back below that floor. No switch is enabled by
 the consumer implementation.
+
+## Email outbox provider replay (#34645)
+
+Migration 1148 adds nullable `email_outbox.provider_idempotency_key` and
+`email_outbox.provider_request`, plus a unique index over the key. Apply it
+before promoting API code; both columns stay NULL for producer-enqueued rows and
+for every row written before the migration, so an older API keeps working and a
+rollback retains the additive columns.
+
+The first delivery attempt of a row renders its template, commits that provider
+request together with a key derived from the row's own id, and only then calls
+Resend. Later attempts replay the committed request byte-for-byte under the same
+key, so a template change, a sender/`APP_URL` change, a restart, or a provider
+acceptance whose completion write is lost resolves to the same email instead of a
+second one. Attempts never derive a new key, and an idempotency conflict
+(`invalid_idempotent_request`) fails the row visibly rather than re-keying it.
+
+Recovery and bounds:
+
+- A prepared row stays `sending` and owns a 60-second lease. After the lease, a
+  drain re-selects it and replays the same request; the abandoned attempt's
+  completion is fenced on `(status, attempts)` and cannot overwrite the newer
+  one. `sending` is now a durable state, not only an in-transaction marker.
+- Expiry is evaluated against the clock reached immediately before the send, not
+  the timestamp the batch started with, so a paced backlog cannot send items past
+  the 15-minute outbox TTL. Expired and attempt-exhausted rows are failed without
+  contacting the provider and are then removed by the existing cleanup.
+- Three attempts within a 15-minute TTL stay well inside Resend's documented
+  24-hour idempotency retention. Outside that window the provider no longer
+  replays a key, so this is bounded retry safety, not unlimited exactly-once
+  delivery, and sends made before this rollout carried no key and cannot be
+  deduplicated retroactively.
+- Delivery clears the committed request and keeps only the key and provider id.
+  Undelivered rows are removed by the existing TTL cleanup, so the rendered
+  message is retained no longer than the template and recipient already on the
+  row, and no new retention or erasure obligation is created.
+
+Mixed-version limitation: an old drain worker selects only `pending` rows and
+sends without a key, so it can still duplicate a row that a new worker returned
+to `pending`. Full retry protection starts once every drain worker runs the new
+path. Row locking with `SKIP LOCKED` keeps the two versions from processing the
+same row at the same time, and an old worker never claims a `sending` row.
+
+Scale at the time of the change: a fully paginated masked read at 2026-09-16
+09:56:29 UTC found 1,008 retained outbox rows, all `sent` and none past one
+attempt. That is retained row inventory under the 15-minute TTL, not historical
+volume, and it does not establish that an ambiguous send never happened.

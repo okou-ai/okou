@@ -57,6 +57,7 @@ import {
 } from "./canonical-chat-event-read.service";
 
 const log = logger("api:chat-title");
+const TITLE_MODEL = "google/gemini-3.1-flash-lite";
 const TITLE_CONTEXT_CHAR_CAP = 150;
 const TITLE_PRIOR_MESSAGE_CAP = 10;
 const FOLLOWUP_CONTEXT_CHAR_CAP = 700;
@@ -190,6 +191,7 @@ function chatCompletionContextMessage(
 }
 
 async function generateFastPathText(
+  model: typeof TITLE_MODEL | typeof FAST_PATH_MODEL,
   messages: readonly ChatMessageForGeneration[],
   maxTokens = AUXILIARY_TEXT_MAX_TOKENS,
   options?: {
@@ -200,11 +202,11 @@ async function generateFastPathText(
   signal?: AbortSignal,
 ): Promise<string | null> {
   const generation = await generateTextWithUsage(
-    FAST_PATH_MODEL,
+    model,
     messages,
     maxTokens,
     {
-      reasoning: { effort: "low" },
+      reasoning: { effort: model === TITLE_MODEL ? "minimal" : "low" },
       temperature: 0.3,
       ...(options?.acceptTruncatedText === true
         ? { acceptTruncatedText: true }
@@ -249,6 +251,7 @@ function generateChatTitle(
   // A title is persisted immutably onto the thread, so a mid-word fragment is
   // worse than leaving the thread untitled: truncation stays rejected here.
   return generateFastPathText(
+    TITLE_MODEL,
     [
       {
         role: "system",
@@ -283,6 +286,7 @@ export async function generateSharedThreadTitle(
         // Public snapshots keep this title forever; a partial one is worse
         // than the fixed fallback, so truncation stays rejected.
         return generateFastPathText(
+          TITLE_MODEL,
           [
             {
               role: "system",
@@ -492,6 +496,7 @@ export async function generateChatNotificationSummary(
           // A shortened notification sentence still tells the user their task
           // finished; the alternative is a notification with no summary at all.
           return generateFastPathText(
+            FAST_PATH_MODEL,
             [
               {
                 role: "system",
@@ -567,6 +572,7 @@ async function generateRecommendedFollowups(
   // The output must parse as JSON, so a truncated array is unusable by
   // construction and stays rejected.
   const text = await generateFastPathText(
+    FAST_PATH_MODEL,
     [
       {
         role: "system",

@@ -1524,19 +1524,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "매일 앱을 여세요. 00:00 UTC에 초기화돼요.",
+          "description": "하루에 한 번, 매일",
           "name": "매일 출석하기",
           "unit": "하루당"
         },
         "connector": {
-          "description": "OAuth로 연결하세요. 커넥터별로 한 번 받을 수 있어요.",
+          "action": "연결",
+          "description": "Gmail, Notion 등 100개 이상",
           "name": "커넥터 연결하기",
           "unit": "커넥터당"
         },
         "inReview": "검토 중",
         "inReviewDescription": "제출됨, 검토 대기 중",
         "invite": {
-          "description": "초대가 수락되면 지급돼요. 최대 15명까지 가능해요.",
+          "action": "초대",
+          "description": "추가하는 사람마다 적립됩니다",
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
@@ -1547,6 +1549,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "보상을 받은 커넥터: {{amount}}",
         "share": {
+          "action": "공유",
           "description": "게시한 뒤 링크를 붙여넣기",
           "name": "X에 {{assistantName}} 공유하기"
         },
@@ -1559,14 +1562,16 @@
           "title": "X에 {{assistantName}} 공유하기"
         },
         "slack": {
-          "description": "조직 및 워크스페이스당 한 번, 조직 크레딧 2,000을 받으세요.",
+          "action": "추가",
+          "description": "팀이 이미 일하고 있는 곳으로",
           "name": "Slack에 {{assistantName}} 추가하기"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "작업을 시도하고 크레딧을 받으세요.",
         "title": "시작하기",
         "workflow": {
-          "description": "직접 만든 워크플로를 성공적으로 실행하세요.",
+          "action": "만들기",
+          "description": "반복 작업을 재사용 가능한 스킬로 만들기",
           "name": "워크플로 만들기"
         }
       },
@@ -1913,6 +1918,8 @@
       "providerIncompatibleAction": "새 세션 시작",
       "providerIncompatiblePrefix": "이 세션은 다른 모델 공급자로 시작되어 현재 공급자로 계속할 수 없습니다.",
       "recovery": {
+        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
+        "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 전환하세요.",
         "capacityTitle": "이 모델은 지금 혼잡합니다",
         "claudeCode": "Claude Code",
@@ -2953,27 +2960,6 @@
     "toasts": {
       "copied": "복사됨",
       "deleted": "채팅 삭제됨"
-    },
-    "translation": {
-      "action": "번역",
-      "close": "번역 닫기",
-      "copy": "번역 복사",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "번역",
-      "targetLanguage": "번역 언어"
     },
     "voice": {
       "checkingLimit": "음성 입력 제한 확인 중",
@@ -5886,8 +5872,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "기본",
+            "goldenHour": "Golden hour"
           },
           "title": "컬러 테마"
         },
@@ -6380,6 +6366,10 @@
     "resetHelp": "새 서버의 신원을 독립적으로 확인한 후에만 재설정하세요. 다음 연결에서는 새 호스트 키를 신뢰하고 저장합니다.",
     "retry": "다시 시도",
     "save": "저장",
+    "saveRecovery": {
+      "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
+      "uncertain": "변경 사항이 저장되었는지 확인하지 못했습니다. 같은 내용으로 저장을 다시 시도하거나, 닫고 목록을 확인한 후 다시 추가하세요."
+    },
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
     "title": "SSH 호스트",

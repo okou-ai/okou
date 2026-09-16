@@ -110,11 +110,11 @@ One hairline serves the whole product. `--default-border-width` in the shared
 `@theme` is 0.5px, and Tailwind's bare `border`, `border-t`, `border-x`,
 `divide-y`, and their siblings all read it, so a component asks for "a border"
 and the system decides how thick it is. Components must not hand-write a width:
-an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style`
-prop, is a second registry for a decision this token already owns. `border-0`
-and the deliberate emphasis widths such as `border-2` stay available, because
-they express a different decision rather than a competing value for the same
-one.
+an arbitrary bracketed width, or a literal width inside a `style` prop, is a
+second registry for a decision this token already owns, and the two round to
+different device-pixel counts wherever the device scale is odd. `border-0` and
+the deliberate emphasis widths such as `border-2` stay available, because they
+express a different decision rather than a competing value for the same one.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
 device pixel where 1px paints two, so every bare border carries half the ink it
@@ -150,6 +150,23 @@ and violet, while Cotton sky uses pastel pink and blue. Each preset's hue and
 ring values keep semantic surfaces, selected states, and focus indicators
 aligned with that palette in Light/Dark.
 
+The picker's first option, `default`, is the product's own palette rather than
+another preset. `signals/theme.ts` writes no palette attribute while it is
+selected, so every token keeps the shared Amber-on-Linen values and none of the
+`[data-gradient-color-themes]` rules key in — the interface is byte-identical to
+the one the capability's switch turns off. Its `[data-color-theme="default"]`
+rule therefore declares only an anchor and a companion, for the one element that
+does carry the attribute: the picker's own swatch. Neither is a designed colour:
+both are `primary-300`, the brand stop the interface already paints with, so the
+swatch shows the state it selects rather than a palette invented to represent
+it. Repeating the stop is also what removes the gradient — the shared preview
+gradient interpolates between two identical colours and resolves to one flat
+brand fill, which is correct, because the default state has no second colour and
+no gradient to show. For the same reason `--okou-color-theme-selected`, the wash
+behind the selected option, is owned at `:root` and refined by the preset rules
+rather than existing only under them: one option's selected card must not read
+heavier than another's.
+
 When `GradientColorThemes` is enabled on the document, each preset's HSL primary
 value supplies both its anchor color and the shared `--primary` token. Primary
 actions, including portaled dialog buttons, immediately use that fill and the
@@ -159,7 +176,7 @@ filled-state alpha tokens. Disabled buttons retain the shared opacity treatment.
 Removing the document's color-theme attributes restores the shared Amber primary
 tokens.
 
-The preset also supplies `--primary-400`, because one filled control reads that ramp stop rather than `--primary`. The checked `Switch` track takes 400 so it sits one step darker than the brand stop, which is what keeps a 44x24 fill reading as a fill on a near-white card; `Checkbox` and `Radio` are small enough to take `--primary` directly. A preset has a single anchor and no ramp, so pointing the stop at that anchor puts the checked toggle on the same fill as every other filled control instead of leaving it Amber under all eight palettes. This is the same move the presets already make on the gray ramp, and it is confined to the one stop with a consumer: `--brand-subtle`, `--brand-text`, and `--brand-text-hover` keep reading the Amber ramp, because the brand mark is not palette-driven.
+The preset also supplies `--primary-400`, because one filled control reads that ramp stop rather than `--primary`. The checked `Switch` track takes 400 so it sits one step darker than the brand stop, which is what keeps a 44x24 fill reading as a fill on a near-white card; `Checkbox` and `Radio` are small enough to take `--primary` directly. A preset has a single anchor and no ramp, so pointing the stop at that anchor puts the checked toggle on the same fill as every other filled control instead of leaving it Amber under every palette. This is the same move the presets already make on the gray ramp, and it is confined to the one stop with a consumer: `--brand-subtle`, `--brand-text`, and `--brand-text-hover` keep reading the Amber ramp, because the brand mark is not palette-driven.
 
 Auxiliary controls and previews revealed by hover or keyboard focus change
 opacity immediately. Do not add opacity transitions to message actions, sidebar
@@ -529,21 +546,6 @@ for this decision — the page-surface and badge tables above point at it — so
 these consumers take it rather than the raw `border-gray-400` ramp stop the
 horizontal rules kept. `border-border` would be wrong here: `--border` is
 `--gray-300`, one stop lighter.
-
-`okou-border` and `okou-thumb-border` are the two first-party class selectors
-still in the App stylesheet, and they are the last entries in the legacy
-baseline's CSS atoms. `okou-thumb-border` is a 0.5px hairline one step lighter
-than `okou-border`, so the edge of a thumbnail stays readable without the stroke
-reading as a frame.
-
-Draining `okou-border` is a visual decision rather than an equivalence.
-`buy-credits-section.tsx` reaches for it from a function that returns a class
-string rather than from a `className` attribute, so neither the legacy baseline
-nor `no-unknown-classes` counts that consumer. The selector is unlayered, so its
-`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on
-the same element and that hover color never paints; replacing the class
-activates it. Deciding between keeping a hover the tile has never had and
-deleting a utility the consumer spells is reviewed separately.
 
 ### Top-edge clearance
 
@@ -1073,6 +1075,12 @@ Only two exception kinds exist:
 - `third-party-dom-adapter` covers DOM or isolated documents whose element
   classes are owned outside the business component.
 
+They are recorded in three shapes: a `selectors` entry for a CSS rule, a
+`styleInjections` entry for an injected stylesheet, and a `classDependencies`
+entry for a class a component must put on an element because a third party's
+DOM contract keys on it. A `vendorFiles` entry pins a whole vendored stylesheet
+by hash.
+
 Hosted Clerk authentication does not use a third-party DOM adapter. It stays on
 Clerk's public appearance API under the narrower rules in
 [Clerk customization](./clerk-customize.md).
@@ -1105,11 +1113,17 @@ legacy class dependencies left in Platform and UI, beside `wmde-markdown` in
 `markdown-frame.tsx`. Sonner neither defines nor requires that class; the
 component invents it, hands it to Sonner's `className` prop, and then anchors
 its own `group-[.toaster]:` variants on it. Sonner's actual contract is the
-`[data-sonner-toaster]` attribute it puts on its own list element. There is also
-no mechanism to authorize this kind of dependency: `turbo/style-allowlist.json`
-holds CSS selectors, style injections and vendored files, so a legacy class
-named in a component's `className` can only be drained or left in the
-shrink-only baseline — never allowlisted.
+`[data-sonner-toaster]` attribute it puts on its own list element. Both are `classDependencies` entries in
+`turbo/style-allowlist.json`, which is where a class carrying a third party's
+DOM contract belongs: the baseline is a ratchet for debt, and neither of these
+is expected to go until its renderer does.
+
+An entry authorizes a count in a file, not a class. A second use in the same
+file, or any use in another file, still fails lint; a count that has fallen
+points back at the allowlist, because `pnpm lint:style:prune` cannot reach an
+entry it does not own. A class a first-party element invents for itself is not
+this kind of exception and is drained — the borrowed-name rule above is what
+separates the two.
 
 ## Shrink-only legacy state
 

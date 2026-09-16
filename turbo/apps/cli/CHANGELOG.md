@@ -1,5 +1,32 @@
 # Changelog
 
+## [9.336.2](https://github.com/vm0-ai/okou/compare/cli-v9.336.1...cli-v9.336.2) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.450.0
+    * @okouai/core bumped to 8.671.0
+    * @okouai/pi-agent-runtime bumped to 1.32.2
+
+## [9.336.1](https://github.com/vm0-ai/okou/compare/cli-v9.336.0...cli-v9.336.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **artifacts:** use consistent short resource references ([#34559](https://github.com/vm0-ai/okou/issues/34559)) ([9437bb7](https://github.com/vm0-ai/okou/commit/9437bb7e5dcc5b63d83ad01c63473e3535305139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.449.1
+    * @okouai/core bumped to 8.670.2
+    * @okouai/pi-agent-runtime bumped to 1.32.1
+
 ## [9.336.0](https://github.com/vm0-ai/okou/compare/cli-v9.335.7...cli-v9.336.0) (2026-09-16)
 
 

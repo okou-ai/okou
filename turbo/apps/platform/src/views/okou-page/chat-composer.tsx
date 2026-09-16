@@ -8,11 +8,10 @@ import {
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
-  ComposerCreateControls,
   ComposerCreatePicker,
   ComposerCreateImageModelPicker,
   ComposerCreateVideoModelPicker,
-  ComposerSelectedTask,
+  ComposerTaskControls,
 } from "./composer-create.tsx";
 import {
   ComposerAddMenu,
@@ -11051,11 +11050,12 @@ function ComposerFooter({
                 signals={signals}
                 actions={connectorActions}
               />
+              <ComposerTaskControls signals={signals} />
             </div>
             {/*
-              The video spec sits beside the connectors, at the head of the
-              controls that act on the run rather than on the message, and on
-              the same line as the model it is resolved against.
+              The video spec follows the type it describes, among the controls
+              that act on the run rather than on the message, and on the same
+              line as the model it is resolved against.
 
               It is a sibling of the icon row rather than a member of it: below
               640px this group is `display: contents`, so the chip reaches the
@@ -11130,9 +11130,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           ref={actions.bind}
           className={cn("flex flex-col", layoutHeightClassNames.shell)}
         >
-          <ComposerCreateControls signals={signals} />
           <ComposerAttachments signals={signals} />
-          <ComposerSelectedTask signals={signals} />
           <ComposerInputSlot
             signals={signals}
             actions={actions}

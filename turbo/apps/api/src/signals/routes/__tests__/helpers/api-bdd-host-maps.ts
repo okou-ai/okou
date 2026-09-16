@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import {
   hostContract,
   type HostedSiteCompleteResponse,
@@ -174,6 +175,16 @@ export function createHostMapsBddApi(context: TestContext) {
         const key = typeof input.Key === "string" ? input.Key : "";
         if (name === "HeadObjectCommand" && capture.missingKeys.has(key)) {
           return Promise.reject(notFoundS3Error(key));
+        }
+        if (name === "GetObjectCommand") {
+          if (capture.missingKeys.has(key)) {
+            return Promise.reject(notFoundS3Error(key));
+          }
+          return Promise.resolve({
+            Body: Readable.from([Buffer.from("Hosted fixture")]),
+            ETag: '"hosted-fixture"',
+            ContentLength: 14,
+          });
         }
         if (name === "PutObjectCommand") {
           capture.puts.push({ key, body: bodyText(input.Body) });

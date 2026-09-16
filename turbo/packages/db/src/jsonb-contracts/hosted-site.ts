@@ -8,6 +8,24 @@ export interface HostedSiteManifestFile {
   readonly immutable?: boolean;
 }
 
+/** Server-collected metadata; older deployments acquire it on first share. */
+export interface HostedSiteSnapshotDependencies {
+  readonly version: 1;
+  readonly sourceManifestHash: string;
+  readonly status: "complete" | "too-large";
+  readonly files: Readonly<
+    Record<
+      string,
+      {
+        readonly etag: string;
+        readonly sha256: string;
+        readonly size: number;
+        readonly references: readonly string[];
+      }
+    >
+  >;
+}
+
 export interface HostedSiteManifest {
   readonly version: 1;
   readonly access?: "owner-private-v1";
@@ -21,4 +39,5 @@ export interface HostedSiteManifest {
   readonly artifactKind?: "hosted-site" | "presentation-html";
   readonly spaFallback: boolean;
   readonly files: Record<string, HostedSiteManifestFile>;
+  readonly snapshotDependencies?: HostedSiteSnapshotDependencies;
 }

@@ -72,7 +72,6 @@ function createPreferences(
   return {
     timezone: null,
     locale,
-    translationLanguage: null,
     supportedLocales,
     pinnedAgentIds: [],
     sendMode: "enter",

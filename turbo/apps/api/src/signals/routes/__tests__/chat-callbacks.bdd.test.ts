@@ -1611,11 +1611,17 @@ describe("CHAT-02: completed chat callback", () => {
       }),
     ).toBeTruthy();
 
+    expect(requestsBySite.get("title")).toStrictEqual({
+      model: "google/gemini-3.1-flash-lite",
+      max_tokens: 2048,
+      reasoning: { effort: "minimal" },
+    });
+
     // Reasoning tokens are drawn from the same budget as the answer, so a
     // budget sized for a non-reasoning model starves the answer entirely. This
     // model cannot disable thinking and "low" is already its floor, so the
     // shared ceiling is the only lever that keeps the answer from being lost.
-    for (const site of ["title", "followups", "notification", "runSummary"]) {
+    for (const site of ["followups", "notification", "runSummary"]) {
       expect(requestsBySite.get(site)).toStrictEqual({
         model: "google/gemini-3.8-flash",
         max_tokens: 2048,

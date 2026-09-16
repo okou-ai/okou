@@ -28,6 +28,7 @@ import {
   type UserTemplateRow,
 } from "../services/user-template-data.service";
 import { deleteUserTemplate$ } from "../services/user-template-delete.service";
+import { publishUserTemplate$ } from "../services/user-template-publish.service";
 import { templateArtifactBucket } from "../services/private-artifact-storage.service";
 import {
   presentationTemplatePreviewPresignedUrlCacheKey,
@@ -47,6 +48,13 @@ const templateWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
   requiredCapability: "agent:write",
+} as const;
+
+/** Publishing is done by the reverse run, not by the browser session. */
+const templatePublishAuth = {
+  requireOrganization: true,
+  missingOrganizationStatus: 401,
+  requiredCapability: "user-template:write",
 } as const;
 
 /**
@@ -192,6 +200,47 @@ const coverUrlFor$ = command(
           ?.url ?? null);
   },
 );
+
+const publishBody$ = bodyResultOf(userTemplatesContract.publish);
+const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await get(customTemplatesEnabled$))) {
+    return customTemplatesDisabled;
+  }
+  signal.throwIfAborted();
+  const auth = get(organizationAuthContext$);
+  const bodyResult = await get(publishBody$);
+  signal.throwIfAborted();
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+  const result = await set(
+    publishUserTemplate$,
+    { orgId: auth.orgId, ownerUserId: auth.userId, body: bodyResult.data },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (result.kind === "rejected") {
+    return result.response;
+  }
+  const row = await loadAccessibleUserTemplate(get(db$), {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    templateId: result.templateId,
+  });
+  signal.throwIfAborted();
+  if (!row) {
+    throw new Error(`Published template not found: ${result.templateId}`);
+  }
+  const coverUrl = await set(coverUrlFor$, { row, orgId: auth.orgId });
+  signal.throwIfAborted();
+  // A fresh template is private, so only its owner needs to learn about it.
+  await publishPresentationTemplatesChangedForUserSafely(auth.userId);
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: userTemplateSummary(row, coverUrl, auth.userId),
+  };
+});
 
 const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(customTemplatesEnabled$))) {
@@ -426,6 +475,10 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const userTemplatesRoutes: readonly RouteEntry[] = [
+  {
+    route: userTemplatesContract.publish,
+    handler: authRoute(templatePublishAuth, publishInner$),
+  },
   {
     route: userTemplatesContract.list,
     handler: authRoute(templateReadAuth, listInner$),

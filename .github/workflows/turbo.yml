@@ -2630,6 +2630,15 @@ jobs:
           E2E_RUNNER_MOCK_CLAUDE_ORGANIZATION_ID: ${{ steps.account.outputs.mock-claude-organization-id }}
           E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID: ${{ steps.account.outputs.codex-built-in-organization-id }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      - name: Upload runner E2E sign-in diagnostics
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: runner-e2e-sign-in-diagnostics
+          path: /tmp/e2e-runner-sign-in-diagnostics
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Upload runner E2E Checkout diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

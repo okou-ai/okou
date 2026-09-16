@@ -52,6 +52,9 @@ surface; the index does not replace their detailed rules.
   publication-order evidence.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
+- [Morning Brief migration state](./morning-brief-migration-state.md): the
+  canonical reader for a member's existing brief, its ownership and thread
+  invariants, and the boundary the `simple-morning-brief` cutover must respect.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
@@ -90,6 +93,8 @@ surface; the index does not replace their detailed rules.
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
+- [Guest file compression](./guest-file-compression.md): caller-owned history
+  selection, bounded streaming, failure semantics and bundled compatibility.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
   deploy, and validate runner artifacts for supported host architectures.
 - [Testing catalog](./testing/anti-patterns.md): detailed testing anti-patterns.

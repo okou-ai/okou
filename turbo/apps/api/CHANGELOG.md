@@ -8,6 +8,51 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.612.0](https://github.com/vm0-ai/okou/compare/api-v1.611.1...api-v1.612.0) (2026-09-16)
+
+
+### Features
+
+* **api:** choose the delivery format from the deliverable, behind a switch ([#34604](https://github.com/vm0-ai/okou/issues/34604)) ([08c8d62](https://github.com/vm0-ai/okou/commit/08c8d62d8d5555b6bbe2f4c3f873a3d72d68e06f))
+
+
+### Bug Fixes
+
+* **api:** close deferred sandbox release, fairness and payload gaps ([#34595](https://github.com/vm0-ai/okou/issues/34595)) ([c8b0471](https://github.com/vm0-ai/okou/commit/c8b0471c07e9ec0b897e8e0caf4f0050225e9dcf))
+* **ssh:** prevent duplicate resources when retrying saves ([#34568](https://github.com/vm0-ai/okou/issues/34568)) ([c70d478](https://github.com/vm0-ai/okou/commit/c70d4789d1767a291991103a4db0c29a0788bfea))
+
+
+### Performance Improvements
+
+* **api:** skip pending invitation reads for ordinary members ([#34633](https://github.com/vm0-ai/okou/issues/34633)) ([72b06dd](https://github.com/vm0-ai/okou/commit/72b06dd94ef889380e1315d485f7e5614c1f7090))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.450.0
+    * @okouai/core bumped to 8.671.0
+    * @okouai/db bumped to 1.268.0
+    * @okouai/pi-agent-runtime bumped to 1.32.2
+
+## [1.611.1](https://github.com/vm0-ai/okou/compare/api-v1.611.0...api-v1.611.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **artifacts:** use consistent short resource references ([#34559](https://github.com/vm0-ai/okou/issues/34559)) ([9437bb7](https://github.com/vm0-ai/okou/commit/9437bb7e5dcc5b63d83ad01c63473e3535305139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.1
+    * @okouai/core bumped to 8.670.2
+    * @okouai/db bumped to 1.267.0
+    * @okouai/pi-agent-runtime bumped to 1.32.1
+
 ## [1.611.0](https://github.com/vm0-ai/okou/compare/api-v1.610.0...api-v1.611.0) (2026-09-16)
 
 

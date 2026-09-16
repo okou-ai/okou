@@ -74,6 +74,8 @@ export const MODEL_CACHE_CREATION_TOKEN_CATEGORIES = [
 
 // Usage kinds whose quantities are model tokens: the base "model" kind plus
 // managed tasks that bill a backing model's tokens under a task-scoped kind.
+// Translation has no live producer, but historical usage must remain readable
+// and priceable.
 export const MODEL_TOKEN_USAGE_KINDS = [
   "model",
   "image-recognition",

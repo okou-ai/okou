@@ -15,6 +15,11 @@ export const themePreferenceSchema = z.enum(["light", "dark", "system"]);
 export type ThemePreference = z.infer<typeof themePreferenceSchema>;
 
 export const COLOR_THEMES = [
+  // The product's own palette. It is the absence of a preset rather than
+  // another one: the App clears both palette attributes while it is selected,
+  // so every token resolves to the shared values the interface carried before
+  // the gradient color themes shipped.
+  "default",
   "golden-hour",
   "citrus-spark",
   "berry-blush",
@@ -22,7 +27,6 @@ export const COLOR_THEMES = [
   "blue-horizon",
   "daydream",
   "deep-lagoon",
-  "limelight",
 ] as const;
 export const colorThemeSchema = z.enum(COLOR_THEMES);
 export type ColorTheme = z.infer<typeof colorThemeSchema>;
@@ -42,42 +46,9 @@ export const SUPPORTED_USER_LOCALES = [
 export const userLocaleSchema = z.enum(SUPPORTED_USER_LOCALES);
 export type UserLocale = z.infer<typeof userLocaleSchema>;
 
-export const CHAT_TRANSLATION_LANGUAGES = [
-  "en",
-  "zh-CN",
-  "zh-TW",
-  "ja",
-  "ko",
-  "es",
-  "fr",
-  "de",
-  "pt-BR",
-  "it",
-  "id",
-  "hi",
-] as const;
-export const chatTranslationLanguageSchema = z.enum(CHAT_TRANSLATION_LANGUAGES);
-export type ChatTranslationLanguage = z.infer<
-  typeof chatTranslationLanguageSchema
->;
-
-export const CHAT_TRANSLATION_LANGUAGE_BY_USER_LOCALE = {
-  "en-US": "en",
-  "pt-BR": "pt-BR",
-  "ja-JP": "ja",
-  "ko-KR": "ko",
-  "id-ID": "id",
-  "de-DE": "de",
-  "es-ES": "es",
-  "it-IT": "it",
-  "fr-FR": "fr",
-  "hi-IN": "hi",
-} as const satisfies Record<UserLocale, ChatTranslationLanguage>;
-
 export const userPreferencesResponseSchema = z.object({
   timezone: z.string().nullable(),
   locale: userLocaleSchema.nullable(),
-  translationLanguage: chatTranslationLanguageSchema.nullable(),
   supportedLocales: z.array(userLocaleSchema),
   // Pinned agents are exposed as membership only. The API returns a stable
   // canonical order and ignores client-provided order on writes.
@@ -98,7 +69,6 @@ export const updateUserPreferencesRequestSchema = z
   .object({
     timezone: z.string().min(1).optional(),
     locale: userLocaleSchema.optional(),
-    translationLanguage: chatTranslationLanguageSchema.optional(),
     // Membership update only; request order is not used for display ordering.
     pinnedAgentIds: z.array(z.string()).optional(),
     sendMode: sendModeSchema.optional(),
@@ -113,7 +83,6 @@ export const updateUserPreferencesRequestSchema = z
       return (
         data.timezone !== undefined ||
         data.locale !== undefined ||
-        data.translationLanguage !== undefined ||
         data.pinnedAgentIds !== undefined ||
         data.sendMode !== undefined ||
         data.cloudBrowserEnabledByDefault !== undefined ||

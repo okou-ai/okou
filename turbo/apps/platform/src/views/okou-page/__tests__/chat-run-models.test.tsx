@@ -1282,6 +1282,103 @@ test("Continue a run classified by a structured execution timeout reason", async
   expect(queryButton("Continue", recovery)).toBeVisible();
 });
 
+test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
+  "Confirm continuation after an automatic run limit (%s)",
+  async (error) => {
+    const sentMessages: unknown[] = [];
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: [
+        {
+          id: "autonomy-error",
+          eventType: "output.error",
+          role: "assistant",
+          content:
+            "Maximum autonomous delegation depth reached. Send a new human message or confirm a permission request to continue.",
+          error,
+          seqId: 1,
+          createdAt: "2026-08-01T10:00:01.000Z",
+        },
+      ],
+      onRunCreate: (body) => {
+        sentMessages.push(body.userMessage);
+      },
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    const recovery = await openRecoveryDetails();
+    expect(recovery).toHaveTextContent("Automatic run limit reached");
+    expect(recovery).toHaveTextContent(
+      "The limit for consecutive automatic runs has been reached. Confirm to continue.",
+    );
+    expect(within(recovery).queryByRole("combobox")).toBeNull();
+    expect(queryButton("Reset and try again", recovery)).toBeNull();
+
+    const continueButton = queryButton("Continue", recovery);
+    if (!continueButton) {
+      throw new Error("Continue button was not visible");
+    }
+    click(continueButton);
+
+    await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(sentMessages).toStrictEqual([
+        {
+          version: 1,
+          parts: [{ type: "text", text: "continue" }],
+        },
+      ]);
+    });
+  },
+);
+
+test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
+  "Retire an automatic run limit after the conversation continues (%s)",
+  async (error) => {
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: [
+        {
+          id: "past-autonomy-error",
+          eventType: "output.error",
+          role: "assistant",
+          content:
+            "Maximum autonomous delegation depth reached. Send a new human message or confirm a permission request to continue.",
+          error,
+          seqId: 1,
+          createdAt: "2026-08-01T10:00:01.000Z",
+        },
+        promptEvent({
+          id: "continued-user",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Continue the analysis",
+        }),
+        assistantEvent({
+          id: "continued-answer",
+          runId: RUN_A,
+          seqId: 3,
+          text: "The analysis is complete.",
+        }),
+        completedEvent({ id: "continued-done", runId: RUN_A, seqId: 4 }),
+      ],
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    await expect(
+      screen.findByText("The analysis is complete."),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByTestId("assistant-error-card-shell")).toBeNull();
+    expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
+  },
+);
+
 test("Preserve provider errors that have no guided recovery", async () => {
   const providerError =
     "Selected model capacity warning from a custom gateway; contact its operator.";

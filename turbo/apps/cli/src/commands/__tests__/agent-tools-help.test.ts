@@ -66,10 +66,23 @@ describe("agent-facing operational CLI help", () => {
   it("routes SSH work through current inventory and exposes uncertainty and resource limits", async () => {
     const root = await helpFor(sshCommand);
     expect(root).toContain("okou ssh host list --json");
+    expect(root).toContain("relevant subcommand's --help before use");
+    expect(root).toContain(
+      "okou ssh exec <connection-id> --command <command> --json",
+    );
+    expect(root).toContain("okou ssh session --help");
+    expect(root).toContain("okou ssh session read --help");
+    expect(root).toContain(
+      "okou ssh upload <connection-id> <local-file> <remote-file> --json",
+    );
+    expect(root).toContain(
+      "okou ssh download <connection-id> <remote-file> <local-file> --json",
+    );
     expect(root).toContain("least-privilege remote SSH user");
     expect(root).toContain("unexpected key requires owner verification");
     expect(root).toContain("effects=unknown");
     expect(root).toContain("execution authority is cached for this Run");
+    expect(root).toContain("missed notification can leave stale authority");
 
     const read = await helpFor(sshCommand, ["session", "read"]);
     expect(read).toContain("Only 2 reads per Run");

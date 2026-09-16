@@ -30,6 +30,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["ssh:read", FeatureSwitchKey.SshAccess],
   ["ssh:write", FeatureSwitchKey.SshAccess],
+  ["user-template:write", FeatureSwitchKey.CustomTemplates],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 
 const AGENT_EXCLUDED_CAPABILITIES = [

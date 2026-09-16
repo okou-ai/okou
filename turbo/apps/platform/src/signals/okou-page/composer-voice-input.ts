@@ -7,7 +7,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { logger } from "../log.ts";
-import { onRef, onRejection, settle } from "../utils.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import {
   readVoiceDraftRecording,
   createVoiceDraftRecording,
@@ -47,7 +47,6 @@ export type ComposerVoiceInputSignals = ReturnType<
   typeof createComposerVoiceInputSignals
 >;
 export interface ComposerVoiceInputOwner {
-  readonly element: HTMLElement;
   readonly signal: AbortSignal;
 }
 
@@ -224,7 +223,6 @@ function createVoiceDraftTranscription(
     transcribe$,
     initialize$: incremental.initialize$,
     append$: incremental.append$,
-    watch$: incremental.watch$,
     cancel$: incremental.cancel$,
   };
 }
@@ -340,25 +338,53 @@ function createVoiceDraftMutations(
 function createVoiceActionBindings(
   data: VoiceDraftData,
   mutations: ReturnType<typeof createVoiceDraftMutations>,
-  watch$: Command<void, [AbortSignal]>,
 ) {
   const { state$, capture, restoreRecording$ } = data;
   const { start$, finish$, discard$, transcribe$ } = mutations;
   const internalOwner$ = state<ComposerVoiceInputOwner | null>(null);
+  const resetOwner$ = resetSignal();
   const owner$ = computed((get) => {
     return get(internalOwner$);
+  });
+  // The page or forward-target command owns cancellation, independently of
+  // whether React currently mounts this composer's controls.
+  const setup$ = command(({ get, set }, parentSignal: AbortSignal) => {
+    parentSignal.throwIfAborted();
+    const signal = set(resetOwner$, parentSignal);
+    const owner = { signal };
+    set(internalOwner$, owner);
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(internalOwner$) === owner) {
+          set(capture.cancel$);
+          set(internalOwner$, null);
+        }
+      },
+      { once: true },
+    );
   });
   const invocation$ = state<{
     readonly action: "start" | "finish" | "retry" | "discard";
     readonly owner: ComposerVoiceInputOwner;
   } | null>(null);
+  const execution$ = state<{
+    readonly owner: ComposerVoiceInputOwner | null;
+    readonly promise: Promise<void>;
+  } | null>(null);
+  const result$ = computed(async (get) => {
+    const execution = get(execution$);
+    if (execution && execution.owner === get(owner$)) {
+      await execution.promise;
+    }
+  });
   const action$ = computed((get) => {
     const invocation = get(invocation$);
     return invocation?.owner === get(owner$)
       ? (invocation?.action ?? null)
       : null;
   });
-  const run$ = command(
+  const execute$ = command(
     async (
       { get, set },
       action: ComposerVoiceAction,
@@ -394,32 +420,38 @@ function createVoiceActionBindings(
       signal.throwIfAborted();
     },
   );
-  const mount$ = onRef(
+  const run$ = command(
+    ({ get, set }, action: ComposerVoiceAction, signal: AbortSignal) => {
+      const owner = get(owner$);
+      const promise = set(execute$, action, signal);
+      set(execution$, { owner, promise });
+      return promise;
+    },
+  );
+  const root$ = state<{ readonly element: HTMLElement } | null>(null);
+  const setRootRef$ = onRef(
     command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      const owner = { element, signal };
-      set(internalOwner$, owner);
+      const root = { element };
+      set(root$, root);
       signal.addEventListener(
         "abort",
         () => {
-          if (get(internalOwner$)?.signal !== signal) {
-            return;
+          if (get(root$) === root) {
+            set(root$, null);
           }
-          set(capture.cancel$);
-          set(internalOwner$, null);
         },
         { once: true },
       );
-      set(watch$, signal);
     }),
   );
   // The global shortcut activates the same enabled control as a click, so it
-  // shares the React invocation's loadable state and cannot bypass disabled UI.
+  // shares the command's loadable state and cannot bypass disabled UI.
   const toggle$ = command(({ get }) => {
-    get(owner$)
+    get(root$)
       ?.element.querySelector<HTMLButtonElement>("[data-composer-voice-toggle]")
       ?.click();
   });
-  return { owner$, action$, run$, setRootRef$: mount$, toggle$ };
+  return { owner$, action$, result$, setup$, run$, setRootRef$, toggle$ };
 }
 
 export function createComposerVoiceInputSignals(
@@ -444,7 +476,6 @@ export function createComposerVoiceInputSignals(
       transcription.append$,
       transcription.cancel$,
     ),
-    transcription.watch$,
   );
   return {
     ...actions,

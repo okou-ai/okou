@@ -36,6 +36,84 @@ use crate::{
 // their shared request seam here so timeout lifecycle coverage remains fast.
 const FRAME_BUILDER_REQUEST_TIMEOUT: Duration = Duration::from_millis(50);
 
+#[tokio::test]
+async fn explicit_zstd_preserves_the_callers_choice_and_bytes() {
+    use guest_control_proto::{
+        MSG_WRITE_FILE_STREAM_BEGIN, MSG_WRITE_FILE_STREAM_CREDIT, MSG_WRITE_FILE_STREAM_DATA,
+        MSG_WRITE_FILE_STREAM_END,
+    };
+
+    let mut state = 34573_u64;
+    let noise = (0..64 * 1024)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 32) as u8
+        })
+        .collect::<Vec<_>>();
+    for content in [Vec::new(), b"x".to_vec(), noise] {
+        let (host, mut guest) = setup_host_and_mock_guest().await;
+        let receive = async {
+            let begin = guest.read_message().await;
+            assert_eq!(begin.msg_type, MSG_WRITE_FILE_STREAM_BEGIN);
+            assert_eq!(begin.payload[0], 1);
+            assert_eq!(
+                u32::from_be_bytes(begin.payload[1..5].try_into().unwrap()) as usize,
+                content.len()
+            );
+            let (path, bytes, sudo, append, private) =
+                guest_control_proto::decode_write_file(&begin.payload[5..]).unwrap();
+            assert_eq!(
+                (path, bytes, sudo, append, private),
+                ("/tmp/explicit", &[][..], false, false, false)
+            );
+            guest
+                .send_response(MSG_WRITE_FILE_STREAM_CREDIT, begin.seq, &[4])
+                .await;
+            let mut encoded = Vec::new();
+            loop {
+                let frame = guest.read_message().await;
+                assert_eq!(frame.seq, begin.seq);
+                if frame.msg_type == MSG_WRITE_FILE_STREAM_END {
+                    assert!(frame.payload.is_empty());
+                    break;
+                }
+                assert_eq!(frame.msg_type, MSG_WRITE_FILE_STREAM_DATA);
+                assert!(frame.payload.len() <= 64 * 1024);
+                encoded.extend_from_slice(&frame.payload);
+                guest
+                    .send_response(MSG_WRITE_FILE_STREAM_CREDIT, begin.seq, &[1])
+                    .await;
+            }
+            assert_ne!(encoded[4] & 4, 0, "frame must carry a checksum");
+            assert_eq!(
+                zstd::stream::decode_all(encoded.as_slice()).unwrap(),
+                content
+            );
+            guest
+                .send_response(
+                    MSG_WRITE_FILE_RESULT,
+                    begin.seq,
+                    &guest_control_proto::encode_write_file_result(true, ""),
+                )
+                .await;
+        };
+        let write = host.write_file_with_compression(
+            "/tmp/explicit",
+            &content,
+            false,
+            crate::FileCompression::Zstd,
+        );
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(write, receive)
+        })
+        .await
+        .unwrap();
+        result.unwrap();
+    }
+}
+
 fn assert_request_timeout(
     error: &io::Error,
     expected_stage: RequestTimeoutStage,
@@ -1066,6 +1144,36 @@ async fn write_file_cancelled_before_frame_write_does_not_poison_or_send_frame()
         NormalOperationReadiness::Idle
     );
 
+    drop(writer_guard);
+    assert_connection_accepts_exec_operation(&host, &mut guest).await;
+}
+
+#[tokio::test]
+async fn file_stream_cancel_before_begin_keeps_connection_usable() {
+    let (host, mut guest) = setup_host_and_guest().await;
+    let host = Arc::new(host);
+    let writer_guard = host.shared.writer.lock().await;
+    let write_task = {
+        let host = Arc::clone(&host);
+        tokio::spawn(async move {
+            let options = crate::FileCompression::Zstd;
+            host.write_file_with_compression("/tmp/stream-before-start", b"input", false, options)
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while normal_operation_readiness(&host) != NormalOperationReadiness::Busy {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    write_task.abort();
+    let _ = write_task.await;
+    assert_eq!(
+        normal_operation_readiness(&host),
+        NormalOperationReadiness::Idle
+    );
     drop(writer_guard);
     assert_connection_accepts_exec_operation(&host, &mut guest).await;
 }

@@ -11,6 +11,54 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.906.0](https://github.com/vm0-ai/okou/compare/app-v0.905.2...app-v0.906.0) (2026-09-16)
+
+
+### Features
+
+* **app:** offer the product's own palette in the color theme picker ([#34556](https://github.com/vm0-ai/okou/issues/34556)) ([c915c93](https://github.com/vm0-ai/okou/commit/c915c93abccb6448ccadd41f9dd1c893617928a7))
+* **platform:** give each get started quest a press affordance ([#34551](https://github.com/vm0-ai/okou/issues/34551)) ([c5497ee](https://github.com/vm0-ai/okou/commit/c5497eeb9002e93d2fd8f13ef4d8369c1fb3d7f3))
+
+
+### Bug Fixes
+
+* **ssh:** prevent duplicate resources when retrying saves ([#34568](https://github.com/vm0-ai/okou/issues/34568)) ([c70d478](https://github.com/vm0-ai/okou/commit/c70d4789d1767a291991103a4db0c29a0788bfea))
+
+
+### Refactoring
+
+* **app:** drain the last two hairline selectors and the avatar injection ([#34632](https://github.com/vm0-ai/okou/issues/34632)) ([38de4e7](https://github.com/vm0-ai/okou/commit/38de4e7b3e52db6081a7b1bfda679778b386c8d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.450.0
+    * @okouai/core bumped to 8.671.0
+
+## [0.905.2](https://github.com/vm0-ai/okou/compare/app-v0.905.1...app-v0.905.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **app:** add recovery page for unavailable artifacts ([#34565](https://github.com/vm0-ai/okou/issues/34565)) ([4670cc5](https://github.com/vm0-ai/okou/commit/4670cc5bb6acdaa2cefad6b46c1da7e4bdfae7a4))
+* **app:** type-check shared worker realtime topics ([#34583](https://github.com/vm0-ai/okou/issues/34583)) ([93d4c2f](https://github.com/vm0-ai/okou/commit/93d4c2f7280a5ceb826c7ea55ea29e4227947feb))
+* **platform:** stop user bubbles stacking on top of each other while sharing ([#34582](https://github.com/vm0-ai/okou/issues/34582)) ([bcebe14](https://github.com/vm0-ai/okou/commit/bcebe140c7d89c9dd17661764fe456262023f192))
+
+
+### Documentation
+
+* **styles:** keep the rules, drop the migration record ([#34522](https://github.com/vm0-ai/okou/issues/34522)) ([1c9510b](https://github.com/vm0-ai/okou/commit/1c9510b26bd225a80ebd259252d7fd89c9bf0bcc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.1
+    * @okouai/core bumped to 8.670.2
+
 ## [0.905.1](https://github.com/vm0-ai/okou/compare/app-v0.905.0...app-v0.905.1) (2026-09-16)
 
 
