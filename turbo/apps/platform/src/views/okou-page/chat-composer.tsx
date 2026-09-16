@@ -4476,7 +4476,7 @@ function TemplatePickerCategoryNav({
                         <div
                           key={`${value}-rule`}
                           role="presentation"
-                          className="my-2 h-px shrink-0 bg-border"
+                          className="my-2 shrink-0 border-t border-t-gray-400"
                         />,
                       ]
                     : []),
