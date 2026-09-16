@@ -99,6 +99,7 @@ async function file() {
 async function fixture() {
   const owner = `user_${randomUUID()}`;
   const org = `org_${randomUUID()}`;
+  const organization = { id: org, name: "Original organization" };
   const members = new Set([owner]);
   const objects = new Map<string, string>();
   const etag = (body: string) => {
@@ -108,10 +109,9 @@ async function fixture() {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
   mockEnv("OKOU_HOST_SCHEME", "https");
-  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-    id: org,
-    name: "Original organization",
-  });
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue(
+    organization,
+  );
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     (input) => {
       const params = z
@@ -131,6 +131,7 @@ async function fixture() {
             return {
               publicUserData: { userId: id },
               role: "org:member",
+              organization: { ...organization },
             };
           }),
         totalCount: members.size,
@@ -205,8 +206,87 @@ async function fixture() {
   }
   session();
   await flag(true);
-  return { owner, org, members, objects, session };
+  return { owner, org, organization, members, objects, session };
 }
+
+test.each(["private", "organization", "public"] as const)(
+  "%s share status reuses the fresh membership name and observes renames",
+  async (audience) => {
+    const { org, organization } = await fixture();
+    const target = await file();
+    context.mocks.clerk.organizations.getOrganization.mockClear();
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
+
+    const updated = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [200],
+    );
+    expect(updated.body).toMatchObject({
+      audience,
+      organization: { id: org, name: "Original organization" },
+    });
+
+    for (let read = 0; read < 2; read++) {
+      const status = await accept(
+        api()(artifactSharesContract).status({ headers, body: target }),
+        [200],
+      );
+      expect(status.body).toStrictEqual(updated.body);
+      expect(status.headers.get("cache-control")).toBe("private, no-store");
+    }
+
+    organization.name = "Renamed organization";
+    const renamed = await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [200],
+    );
+    expect(renamed.body).toStrictEqual({
+      ...updated.body,
+      organization: { id: org, name: "Renamed organization" },
+    });
+    expect(
+      context.mocks.clerk.organizations.getOrganization,
+    ).not.toHaveBeenCalled();
+    expect(
+      context.mocks.clerk.organizations.getOrganizationMembershipList,
+    ).toHaveBeenCalledTimes(4);
+  },
+);
+
+test("removing the owner denies status and updates after successful name reads", async () => {
+  const { owner, members } = await fixture();
+  const target = await file();
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "public" },
+    }),
+    [200],
+  );
+  await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+
+  members.delete(owner);
+  const unavailable = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [404],
+  );
+  expect(unavailable.body).toStrictEqual({
+    error: { code: "NOT_FOUND", message: "Artifact not found" },
+  });
+  await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "organization" },
+    }),
+    [404],
+  );
+});
 
 test("viewing and copying stable references grant nothing; only the owner can manage sharing", async () => {
   const { objects, members, session } = await fixture();
@@ -861,6 +941,17 @@ test.each([
       [500],
     );
     expect(response.body).not.toHaveProperty("url");
+    await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [500],
+    );
+    await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience: "public" },
+      }),
+      [500],
+    );
   },
 );
 
