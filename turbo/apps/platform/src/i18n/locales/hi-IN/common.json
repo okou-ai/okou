@@ -1921,6 +1921,8 @@
       "providerIncompatibleAction": "नया सत्र प्रारंभ करें",
       "providerIncompatiblePrefix": "यह सत्र एक अलग मॉडल प्रोवाइडर के साथ शुरू किया गया था और इसे वर्तमान के साथ जारी नहीं रखा जा सकता है।",
       "recovery": {
+        "autonomyLimitDescription": "लगातार अपने-आप चलने की सीमा पूरी हो गई है। जारी रखने के लिए पुष्टि करें।",
+        "autonomyLimitTitle": "अपने-आप चलने की सीमा पूरी हो गई",
         "capacityDescription": "थोड़ी देर बाद फिर कोशिश करें, या मॉडल बदलें।",
         "capacityTitle": "यह मॉडल अभी व्यस्त है",
         "claudeCode": "Claude Code",

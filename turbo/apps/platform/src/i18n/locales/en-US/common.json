@@ -1921,6 +1921,8 @@
       "providerIncompatibleAction": "Start a new session",
       "providerIncompatiblePrefix": "This session was started with a different model provider and can't be continued with the current one.",
       "recovery": {
+        "autonomyLimitDescription": "The limit for consecutive automatic runs has been reached. Confirm to continue.",
+        "autonomyLimitTitle": "Automatic run limit reached",
         "capacityDescription": "Try again shortly, or switch models.",
         "capacityTitle": "This model is busy right now",
         "claudeCode": "Claude Code",

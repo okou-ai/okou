@@ -1913,6 +1913,8 @@
       "providerIncompatibleAction": "新しいセッションを開始する",
       "providerIncompatiblePrefix": "このセッションは別のモデル プロバイダーで開始されたため、現在のモデル プロバイダーでは続行できません。",
       "recovery": {
+        "autonomyLimitDescription": "連続自動実行の上限に達しました。続行するには確認が必要です。",
+        "autonomyLimitTitle": "自動実行の上限に達しました",
         "capacityDescription": "少ししてからもう一度試すか、別のモデルに切り替えてください。",
         "capacityTitle": "このモデルは現在混雑しています",
         "claudeCode": "Claude Code",

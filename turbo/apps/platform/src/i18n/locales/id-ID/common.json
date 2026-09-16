@@ -1913,6 +1913,8 @@
       "providerIncompatibleAction": "Mulai sesi baru",
       "providerIncompatiblePrefix": "Sesi ini dimulai dengan provider model yang berbeda dan tidak bisa dilanjutkan dengan yang saat ini.",
       "recovery": {
+        "autonomyLimitDescription": "Batas proses otomatis berturut-turut telah tercapai. Konfirmasi untuk melanjutkan.",
+        "autonomyLimitTitle": "Batas proses otomatis tercapai",
         "capacityDescription": "Coba lagi sebentar lagi, atau ganti model.",
         "capacityTitle": "Model ini sedang sibuk",
         "claudeCode": "Claude Code",

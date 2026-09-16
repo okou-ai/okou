@@ -1921,6 +1921,8 @@
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",
       "providerIncompatiblePrefix": "Diese Sitzung wurde bei einem anderen Modellanbieter gestartet und kann nicht mit dem aktuellen fortgesetzt werden.",
       "recovery": {
+        "autonomyLimitDescription": "Das Limit für aufeinanderfolgende automatische Ausführungen wurde erreicht. Bestätige, um fortzufahren.",
+        "autonomyLimitTitle": "Limit für automatische Ausführungen erreicht",
         "capacityDescription": "Versuchen Sie es gleich erneut oder wechseln Sie das Modell.",
         "capacityTitle": "Dieses Modell ist gerade ausgelastet",
         "claudeCode": "Claude Code",

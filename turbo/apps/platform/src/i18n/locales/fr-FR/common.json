@@ -1956,6 +1956,8 @@
       "providerIncompatibleAction": "Commencer une nouvelle session",
       "providerIncompatiblePrefix": "Cette session a été commencée avec un fournisseur de modèle différent et ne peut pas être continuée avec le fournisseur actuel.",
       "recovery": {
+        "autonomyLimitDescription": "La limite des exécutions automatiques consécutives a été atteinte. Confirmez pour continuer.",
+        "autonomyLimitTitle": "Limite des exécutions automatiques atteinte",
         "capacityDescription": "Réessayez dans quelques instants ou changez de modèle.",
         "capacityTitle": "Ce modèle est saturé pour le moment",
         "claudeCode": "Claude Code",
