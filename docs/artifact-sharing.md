@@ -93,8 +93,9 @@ resolve another owner's organization share or cross the resource-type boundary.
 `okou artifact` uses the same owner management endpoints and stored policy as
 the Share menu. Run tokens receive `artifact:read` and `artifact:write` when
 `privateArtifacts` is enabled; file upload and hosting capabilities alone do
-not authorize sharing. The run system prompt includes usage when that switch
-is enabled. Existing session/PAT callers remain supported.
+not authorize sharing. When that switch is enabled, the run system prompt adds
+only a short pointer to `okou artifact --help`. Command help provides the detailed
+usage. Existing session/PAT callers remain supported.
 
 ```bash
 okou artifact status /artifacts/abc123def4.pdf --json

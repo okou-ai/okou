@@ -447,7 +447,7 @@ function buildAgentToolsPrompt(args: {
     "- Discover available commands: `okou --help`.",
     ...(args.privateArtifactsEnabled
       ? [
-          "- Private artifact sharing: use `okou artifact --help`. Read current permissions with `okou artifact status <artifact-url-or-reference> --json`; share the selected version with `okou artifact share <artifact-url-or-reference> --audience organization` or `--audience public`, and stop sharing with `--audience private`. For a file or deployment UUID, add `--kind file` or `--kind html`. Only change the audience when the user requests it; uploads, generation, and hosting do not grant access to others. Organization links require membership in the original organization; public links allow anyone with the link. There is one active audience: changing Public to organization or private revokes the old public link. Repeating the same audience and version reuses the link shared with the UI Share button; a newer hosted version must be explicitly shared. Return the exact URL from the command, never a temporary preview URL. If a request fails, read status before retrying because the change may have applied.",
+          "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
         ]
       : []),
     ...(args.sshEnabled

@@ -121,6 +121,7 @@ Examples:
 
 Notes:
   - Requires OKOU_TOKEN with artifact:read; changing sharing also requires artifact:write
+  - Read okou artifact share --help for audience, version, revocation, and retry behavior
   - These capabilities are available to new runs with privateArtifacts enabled
   - Only the owner in the original organization can manage an artifact's sharing
   - Uploading, generating, and hosting keep their existing privacy; share only when the user requests it

@@ -1142,18 +1142,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       });
       const run = await api.readRun(actor, created.runId);
       const prompt = run.appendSystemPrompt ?? "";
-      expect(prompt.includes("okou artifact --help")).toBe(enabled);
-      if (enabled) {
-        expect(prompt).toContain("--audience organization");
-        expect(prompt).toContain("--audience public");
-        expect(prompt).toContain("--audience private");
-        expect(prompt).toContain(
-          "Only change the audience when the user requests it",
-        );
-        expect(prompt).toContain(
-          "reuses the link shared with the UI Share button",
-        );
-      }
+      expect(
+        prompt
+          .split("\n")
+          .includes(
+            "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
+          ),
+      ).toBe(enabled);
       await api.requestCancelRun(actor, created.runId, [200]);
     }
   });
@@ -13010,7 +13005,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "For one known public URL when you only need page content, prefer `okou scrape <url> --format markdown`",
       "use `agent-browser` when you need browser state, authentication, JavaScript, screenshots, or interaction",
       "Local dev servers are useful for agent-side verification",
-      "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open; for HTML presentations, include `--artifact-kind presentation-html`",
+      "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a hosted URL that users can open; with private artifacts enabled, this is an owner-only artifact reference. For HTML presentations, include `--artifact-kind presentation-html`",
       "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime",
       "for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help`",
       "okou connector status <slug>",
