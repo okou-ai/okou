@@ -1,6 +1,13 @@
-import { useLastLoadable, useLoadable } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -20,6 +27,13 @@ import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contrac
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectorAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
 import { sshSummary$ } from "../../signals/ssh.ts";
+import {
+  bindConnectorCategoryRail$,
+  connectorCategoryRailTravel$,
+  measureRail,
+  setConnectorCategoryRailTravel$,
+} from "../../signals/okou-page/settings/connector-category-rail.ts";
+import { pageRail } from "../../signals/okou-page/rail-travel.ts";
 import { REMOTE_ACCESS_CATEGORY } from "../../signals/okou-page/settings/ssh-connector.ts";
 import type {
   ComposerConnectorUiState,
@@ -274,6 +288,56 @@ function CustomConnectorDirectoryCard({
   );
 }
 
+/**
+ * The overrun dissolves on whichever side still has travel, so the row reads as
+ * continuing rather than as ending on a cut. At either end that side has
+ * nothing left to dissolve and carries no fade. 48px is the pager's own width
+ * plus its gutter: the control then sits in the dissolved part instead of over
+ * a chip someone is reading.
+ */
+const CHIP_RAIL_FADE = {
+  none: "",
+  back: "[mask-image:linear-gradient(to_right,transparent,#000_48px)]",
+  forward:
+    "[mask-image:linear-gradient(to_right,#000_calc(100%_-_48px),transparent)]",
+  both: "[mask-image:linear-gradient(to_right,transparent,#000_48px,#000_calc(100%_-_48px),transparent)]",
+} as const;
+
+/**
+ * Sits over the faded end rather than beside the row, so it costs the row no
+ * width and the dissolving chip behind it reads as the reason the control is
+ * there. It needs its own opaque surface to stay legible on top of that chip.
+ */
+function DirectoryChipPager({ side }: { readonly side: "back" | "forward" }) {
+  const { t } = useTranslation();
+  const Icon = side === "back" ? ChevronLeft : ChevronRight;
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      className={cn(
+        "absolute top-1/2 z-10 size-7 -translate-y-1/2 rounded-full p-0",
+        "border border-border bg-background shadow-sm hover:bg-state-hover-overlay",
+        side === "back" ? "left-3" : "right-3",
+      )}
+      aria-label={t(($) => {
+        return side === "back"
+          ? $.chat.connectors.directory.previousCategories
+          : $.chat.connectors.directory.nextCategories;
+      })}
+      onClick={(event) => {
+        const root = event.currentTarget.closest("[data-chip-rail-root]");
+        const rail = root?.querySelector<HTMLElement>("[data-rail]");
+        if (rail) {
+          pageRail(rail, side);
+        }
+      }}
+    >
+      <Icon className="size-4" aria-hidden />
+    </Button>
+  );
+}
+
 function DirectoryCategoryChips({
   sections,
   categoryCounts,
@@ -298,45 +362,72 @@ function DirectoryCategoryChips({
       active ? "bg-state-selected text-foreground" : "text-muted-foreground",
     );
   };
+  const travel = useGet(connectorCategoryRailTravel$);
+  const setTravel = useSet(setConnectorCategoryRailTravel$);
+  // A stable ref: the command owns the row's observers and their teardown, so
+  // a re-render does not detach and rebuild them.
+  const bindRail = useSet(bindConnectorCategoryRail$);
+  const fade = travel.canScrollBack
+    ? travel.canScrollForward
+      ? CHIP_RAIL_FADE.both
+      : CHIP_RAIL_FADE.back
+    : travel.canScrollForward
+      ? CHIP_RAIL_FADE.forward
+      : CHIP_RAIL_FADE.none;
   return (
-    <div className="shrink-0 overflow-x-auto px-6 pt-3 [scrollbar-width:none]">
-      <div className="flex w-max gap-1.5 pb-1">
-        <button
-          type="button"
-          data-connector-category-chip=""
-          className={chipClass(selected === null)}
-          onClick={() => {
-            onSelect(null);
-          }}
-        >
-          {t(($) => {
-            return $.chat.connectors.directory.allCategories;
-          })}
-        </button>
-        {sections.map((section) => {
-          return (
-            <button
-              key={section.category}
-              type="button"
-              data-connector-category-chip=""
-              className={chipClass(selected === section.category)}
-              onClick={() => {
-                onSelect(section.category);
-              }}
-            >
-              {section.menuLabel}
-              {/* The chip stands for the whole category, not the slice
+    <div className="relative shrink-0" data-chip-rail-root="">
+      <div
+        data-rail="connector-categories"
+        ref={bindRail}
+        onScroll={(event) => {
+          setTravel(measureRail(event.currentTarget));
+        }}
+        className={cn(
+          "overflow-x-auto scroll-smooth px-6 pt-3",
+          "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          fade,
+        )}
+      >
+        <div className="flex w-max gap-1.5 pb-1">
+          <button
+            type="button"
+            data-connector-category-chip=""
+            className={chipClass(selected === null)}
+            onClick={() => {
+              onSelect(null);
+            }}
+          >
+            {t(($) => {
+              return $.chat.connectors.directory.allCategories;
+            })}
+          </button>
+          {sections.map((section) => {
+            return (
+              <button
+                key={section.category}
+                type="button"
+                data-connector-category-chip=""
+                className={chipClass(selected === section.category)}
+                onClick={() => {
+                  onSelect(section.category);
+                }}
+              >
+                {section.menuLabel}
+                {/* The chip stands for the whole category, not the slice
                   discovery returned, so it counts only what the server
                   reported and shows nothing when it reported nothing. */}
-              {categoryCounts?.[section.category] !== undefined && (
-                <span className="text-[11px] text-muted-foreground/70 tabular-nums">
-                  {categoryCounts[section.category]}
-                </span>
-              )}
-            </button>
-          );
-        })}
+                {categoryCounts?.[section.category] !== undefined && (
+                  <span className="text-[11px] text-muted-foreground/70 tabular-nums">
+                    {categoryCounts[section.category]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
+      {travel.canScrollBack && <DirectoryChipPager side="back" />}
+      {travel.canScrollForward && <DirectoryChipPager side="forward" />}
     </div>
   );
 }

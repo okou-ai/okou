@@ -1873,11 +1873,13 @@
         "matchCount_other": "{{count}} 件の一致",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "対応が必要",
+        "nextCategories": "次のカテゴリ",
         "noResultsBody": "製品名で検索するか、API や MCP サーバーから自分で作成してください。",
         "noResultsTitle": "「{{query}}」に一致するコネクターがありません",
         "openDetailAria": "{{connector}} の詳細を開く",
         "otherCategory": "その他",
         "permissionCount_other": "{{count}} 件の権限",
+        "previousCategories": "前のカテゴリ",
         "showAll_other": "すべて表示 ({{count}})",
         "tabCustom": "カスタム",
         "tabDiscover": "見つける"

@@ -1873,11 +1873,13 @@
         "matchCount_other": "{{count}}개 일치",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "확인 필요",
+        "nextCategories": "다음 카테고리",
         "noResultsBody": "제품 이름으로 검색하거나 API 또는 MCP 서버로 직접 만들어 보세요.",
         "noResultsTitle": "“{{query}}”와 일치하는 커넥터가 없습니다",
         "openDetailAria": "{{connector}} 세부 정보 열기",
         "otherCategory": "기타",
         "permissionCount_other": "권한 {{count}}개",
+        "previousCategories": "이전 카테고리",
         "showAll_other": "전체 {{count}}개 보기",
         "tabCustom": "커스텀",
         "tabDiscover": "탐색"

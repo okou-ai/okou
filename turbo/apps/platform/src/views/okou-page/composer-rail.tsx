@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import { measureRail } from "../../signals/okou-page/composer-task-chips.ts";
+import { measureRail, pageRail } from "../../signals/okou-page/rail-travel.ts";
 
 /**
  * A row is a rail, not a set of equal pages. Items pack continuously, so the
@@ -93,8 +93,6 @@ const RAIL_PAGER = cn(
   "absolute z-10 size-7 rounded-full border border-border bg-background p-0 shadow-sm",
   "hover:bg-state-hover-overlay",
 );
-/** A page is one visible width less an item's worth of overlap for context. */
-const RAIL_PAGE_OVERLAP = 64;
 function ComposerRailPager({ side }: { readonly side: "back" | "forward" }) {
   const { t } = useTranslation();
   const Icon = side === "back" ? ChevronLeft : ChevronRight;
@@ -121,8 +119,7 @@ function ComposerRailPager({ side }: { readonly side: "back" | "forward" }) {
         if (!rail) {
           return;
         }
-        const step = Math.max(rail.clientWidth - RAIL_PAGE_OVERLAP, 1);
-        rail.scrollBy({ left: side === "back" ? -step : step });
+        pageRail(rail, side);
       }}
     >
       <Icon className="size-4" aria-hidden />
