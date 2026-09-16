@@ -70,7 +70,7 @@ export function userTemplatePageKeys(row: UserTemplateRow): readonly string[] {
   return row.manifest.pageKeys;
 }
 
-export function userTemplateKind(row: UserTemplateRow): UserTemplateKind {
+function userTemplateKind(row: UserTemplateRow): UserTemplateKind {
   return row.manifest.kind;
 }
 
