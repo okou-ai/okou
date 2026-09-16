@@ -13,15 +13,19 @@ import { clerkUiAssetPlugin } from "./scripts/clerk-ui.ts";
 import {
   APPLICATION_LAZY_CHUNK,
   applicationJavaScriptBundlePlugin,
-  isVendorModule,
   singleWorkerJavaScriptBundlePlugin,
 } from "./scripts/single-bundle.ts";
+import {
+  dependencyVendorChunks,
+  VENDOR_GROUP_IDS,
+} from "./scripts/vendor-chunks.ts";
 import { workerDomGlobalsPlugin } from "./scripts/worker-dom-globals.ts";
 import { SENTRY_APPLICATION_KEY } from "./src/lib/sentry-application-key.ts";
 
 const APP_ASSET_BASE = "https://static.okou.io/okou-app/";
 const APP_GIT_COMMIT_SHA = process.env.OKOU_APP_GIT_COMMIT_SHA ?? "";
 const APP_VERSION = process.env.OKOU_APP_VERSION ?? platformPackage.version;
+const vendor = dependencyVendorChunks();
 
 const runtimeBuildInfoHtmlPlugin = {
   name: "platform-runtime-build-info-html",
@@ -59,6 +63,7 @@ export default defineConfig(({ command }) => ({
         const workerPath = new URL(filename, APP_ASSET_BASE).pathname;
         return { runtime: `location.origin + ${JSON.stringify(workerPath)}` };
       }
+      return undefined;
     },
   },
   envPrefix: ["VITE_", "PUBLIC_"],
@@ -81,10 +86,11 @@ export default defineConfig(({ command }) => ({
     clerkCoreHtmlPlugin(),
     clerkUiAssetPlugin(),
     runtimeBuildInfoHtmlPlugin,
-    applicationJavaScriptBundlePlugin(),
+    vendor.plugin,
+    applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),
     applicationResourcePriorityHtmlPlugin(),
     // Sentry source map upload (production builds only)
-    process.env.SENTRY_AUTH_TOKEN &&
+    Boolean(process.env.SENTRY_AUTH_TOKEN) &&
       sentryVitePlugin({
         applicationKey: SENTRY_APPLICATION_KEY,
         org: process.env.SENTRY_ORG,
@@ -108,20 +114,19 @@ export default defineConfig(({ command }) => ({
     // Generate source maps for Sentry (uploaded and removed by plugin)
     sourcemap: !!process.env.SENTRY_AUTH_TOKEN,
     rolldownOptions: {
+      preserveEntrySignatures: false,
       output: {
-        // Keep the optional KaTeX runtime in its own lazy chunk. All other
-        // third-party modules and the pinned generated Mermaid package remain
-        // in one cache-stable eager vendor chunk.
+        strictExecutionOrder: true,
+        // Keep optional KaTeX lazy. Vendor membership is generated from the
+        // dependency graph and stays fixed between reviewed manifest updates.
         codeSplitting: {
+          includeDependenciesRecursively: false,
           groups: [
             {
               name: APPLICATION_LAZY_CHUNK.name,
               test: APPLICATION_LAZY_CHUNK.modulePattern,
             },
-            {
-              name: "vendor",
-              test: isVendorModule,
-            },
+            ...vendor.groups,
           ],
         },
       },
