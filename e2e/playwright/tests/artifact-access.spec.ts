@@ -26,9 +26,7 @@ async function buttonContrast(button: Locator): Promise<number> {
     canvas.height = 1;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Canvas color conversion is unavailable");
-    const luminance = (color: string) => {
-      context.fillStyle = color;
-      context.fillRect(0, 0, 1, 1);
+    const luminance = () => {
       const channels = Array.from(context.getImageData(0, 0, 1, 1).data)
         .slice(0, 3)
         .map((channel) => {
@@ -39,8 +37,24 @@ async function buttonContrast(button: Locator): Promise<number> {
         });
       return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
     };
-    const foreground = luminance(style.color);
-    const background = luminance(style.backgroundColor);
+    // Outline controls use translucent interaction fills. Composite them over
+    // their actual card surface before measuring the rendered text contrast.
+    const layers: string[] = [];
+    let ancestor: Element | null = element;
+    while (ancestor) {
+      layers.unshift(getComputedStyle(ancestor).backgroundColor);
+      ancestor = ancestor.parentElement;
+    }
+    context.fillStyle = "white";
+    context.fillRect(0, 0, 1, 1);
+    for (const color of layers) {
+      context.fillStyle = color;
+      context.fillRect(0, 0, 1, 1);
+    }
+    const background = luminance();
+    context.fillStyle = style.color;
+    context.fillRect(0, 0, 1, 1);
+    const foreground = luminance();
     return (
       (Math.max(foreground, background) + 0.05) /
       (Math.min(foreground, background) + 0.05)
