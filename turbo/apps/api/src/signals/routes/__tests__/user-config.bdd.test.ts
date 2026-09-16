@@ -577,6 +577,7 @@ describe("AUTH-02 auth probe CLI PAT bearers", () => {
     });
 
     cfg.mockMembership(admin, "org:admin");
+    mockNow(base + 125_000);
     const refreshed = await cfg.probeAuth(bearer, {}, [200]);
     expect(refreshed.body).toStrictEqual(first.body);
   });

@@ -18,6 +18,7 @@ import { AgentAuthContext, AuthContext, CliAuth } from "../../types/auth";
 import {
   cliTokenRecord,
   getMemberRoleAndUpdateCache$,
+  MemberRoleRefreshUnavailableError,
   updateCliTokenLastUsedAt$,
 } from "../services/auth.service";
 import {
@@ -335,9 +336,18 @@ export const requiredAuthContext$ = command(
       signal,
     );
     if (!resolved.ok) {
-      // Allowlist, deliberately written as a negated guard: an exhausted Clerk
-      // read is the only authentication failure mapped to a response here.
-      // Everything else keeps escaping to the unhandled-request path.
+      if (resolved.error instanceof MemberRoleRefreshUnavailableError) {
+        L.error("Membership refresh unavailable during authentication", {
+          type: "membership_refresh_unavailable",
+          reason: resolved.error.reason,
+        });
+        set(setResHeader$, "Cache-Control", "no-store");
+        return providerUnavailable(
+          "Authentication refresh is temporarily unavailable",
+        );
+      }
+      // Among Clerk failures, only an exhausted read is mapped here. The
+      // negated allowlist keeps all other errors on their existing path.
       const unavailable = clerkReadUnavailable(resolved.error);
       if (!unavailable) {
         throw resolved.error;
