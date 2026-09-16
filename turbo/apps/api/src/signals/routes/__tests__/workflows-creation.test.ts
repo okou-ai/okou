@@ -387,6 +387,8 @@ describe("Workflow creation publication", () => {
   it("publishes independent workflows on the same agent while another publication waits on its thread", async () => {
     const { actor, thread, body } = await setupCreation();
     installS3Fixture();
+    // Infrastructure exception: the API cannot hold a ChatThread row lock
+    // open. This gate only synchronizes creation and readback through real APIs.
     const boundary = await holdWorkflowCreationThreadFixture(
       thread.id,
       context.signal,
