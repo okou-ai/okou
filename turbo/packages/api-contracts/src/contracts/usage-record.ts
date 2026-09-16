@@ -46,6 +46,9 @@ export type UsageRecordKind = z.infer<typeof usageRecordKindSchema>;
 const usageRecordProviderBreakdownSchema = z.object({
   provider: z.string(),
   credits: z.number(),
+  // Present only when counted units have an explicit non-deduplicable annotation.
+  // Absence does not establish that historical usage was deduplicated.
+  nonDeduplicatedQuantity: z.int().positive().optional(),
   usageKinds: z.array(
     z.object({
       kind: z.string(),

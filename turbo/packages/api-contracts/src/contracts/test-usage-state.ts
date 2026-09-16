@@ -84,6 +84,7 @@ export const testUsageStateActionBodySchema = z.discriminatedUnion("action", [
     provider: z.string().optional(),
     category: z.string().optional(),
     quantity: z.number().optional(),
+    non_deduplicated_quantity: z.number().optional(),
     status: z.string().optional(),
     credits_charged: z.number().optional(),
     idempotency_key: z.string().optional(),

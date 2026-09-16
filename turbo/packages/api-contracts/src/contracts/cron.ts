@@ -160,6 +160,7 @@ const cronCompactUsageEventsResponseSchema = z.object({
   hourlyRowsDeleted: z.number().int().nonnegative(),
   hourlyRowsInserted: z.number().int().nonnegative(),
   quantity: z.string().regex(/^-?\d+$/),
+  nonDeduplicatedQuantity: z.string().regex(/^\d+$/).optional(),
   creditsCharged: z.string().regex(/^-?\d+$/),
   allowanceUnits: z.string().regex(/^-?\d+$/),
   affectedShortWindows: z.number().int().nonnegative(),

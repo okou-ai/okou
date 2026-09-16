@@ -27,6 +27,7 @@ interface UsageMemberTotalsRow {
   readonly cacheReadInputTokens: number;
   readonly cacheCreationInputTokens: number;
   readonly creditsCharged: number;
+  readonly nonDeduplicatedQuantity: number;
 }
 
 export async function getMemberUsageTotals(
@@ -60,6 +61,10 @@ export async function getMemberUsageTotals(
       "cache_creation_input_tokens",
     ),
     creditsCharged: usageCreditsSum(usage, "credits_charged"),
+    nonDeduplicatedQuantity:
+      sql`COALESCE(${sum(usage.nonDeduplicatedQuantity)}, 0)::bigint`
+        .mapWith(pgInt8ToSafeIntegerDecoder)
+        .as("non_deduplicated_quantity"),
   } satisfies Record<keyof UsageMemberTotalsRow, unknown>;
 
   return await db

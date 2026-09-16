@@ -13,6 +13,8 @@ const memberUsageSchema = z.object({
   cacheReadInputTokens: z.number(),
   cacheCreationInputTokens: z.number(),
   creditsCharged: z.number(),
+  // Omitted when no non-deduplicable quantity was recorded.
+  nonDeduplicatedQuantity: z.int().positive().optional(),
 });
 
 const usageMembersResponseSchema = z.object({

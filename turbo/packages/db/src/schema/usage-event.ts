@@ -76,6 +76,13 @@ export const usageEvent = pgTable(
     provider: varchar("provider", { length: 100 }).notNull(),
     category: varchar("category", { length: 100 }).notNull(),
     quantity: bigint("quantity", { mode: "number" }).notNull(),
+    // Counted units whose resource identity could not be deduplicated.
+    // Zero means no recorded annotation, including historical/old-writer rows.
+    nonDeduplicatedQuantity: bigint("non_deduplicated_quantity", {
+      mode: "number",
+    })
+      .notNull()
+      .default(0),
     creditsCharged: bigint("credits_charged", { mode: "number" }),
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     billingError: varchar("billing_error", { length: 50 }),
@@ -84,6 +91,10 @@ export const usageEvent = pgTable(
   },
   (table) => {
     return [
+      check(
+        "chk_usage_event_non_deduplicated_quantity",
+        sql`${table.nonDeduplicatedQuantity} >= 0 AND ${table.nonDeduplicatedQuantity} <= ${table.quantity}`,
+      ),
       index("idx_usage_event_billing_run").on(table.billingRunId),
       check(
         "usage_event_billing_context_check",

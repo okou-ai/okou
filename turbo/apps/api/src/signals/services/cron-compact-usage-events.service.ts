@@ -45,6 +45,7 @@ interface UsageEventCompactionStats {
   readonly hourlyRowsDeleted: number;
   readonly hourlyRowsInserted: number;
   readonly quantity: string;
+  readonly nonDeduplicatedQuantity: string;
   readonly creditsCharged: string;
   readonly allowanceUnits: string;
   readonly affectedShortWindows: number;
@@ -73,6 +74,7 @@ const compactionRowSchema = z.object({
   hourlyRowsDeleted: z.int(),
   hourlyRowsInserted: z.int(),
   quantity: integerTextSchema,
+  nonDeduplicatedQuantity: integerTextSchema,
   creditsCharged: integerTextSchema,
   allowanceUnits: integerTextSchema,
   affectedShortWindows: z.int(),
@@ -196,6 +198,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         grain.short_window_id,
         grain.weekly_window_id,
         event.quantity,
+        event.non_deduplicated_quantity,
         COALESCE(event.credits_charged, 0)::bigint AS credits_charged
       FROM selected_grains grain
       INNER JOIN ${usageEvent} ${event}
@@ -242,6 +245,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         event.short_window_id,
         event.weekly_window_id,
         event.quantity,
+        event.non_deduplicated_quantity,
         event.credits_charged,
         COALESCE(allocation.units_applied, 0)::bigint AS allowance_units
       FROM locked_raw_events event
@@ -262,6 +266,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         hourly.short_window_id,
         hourly.weekly_window_id,
         hourly.quantity,
+        hourly.non_deduplicated_quantity,
         hourly.credits_charged,
         hourly.allowance_units
       FROM selected_grains grain
@@ -279,11 +284,17 @@ function lockedSourceCtes(cutoff: string): SQL {
           sql`${hourly.weeklyWindowId} IS NOT DISTINCT FROM grain.weekly_window_id`,
         )}
       FOR UPDATE OF hourly
-    ),
+    )
+  `;
+}
+
+function consolidatedSourceCtes(): SQL {
+  return sql`
     source_facts AS MATERIALIZED (
       SELECT
         ${physicalGrainColumns("locked_raw")},
         locked_raw.quantity::numeric AS quantity,
+        locked_raw.non_deduplicated_quantity::numeric AS non_deduplicated_quantity,
         locked_raw.credits_charged::numeric AS credits_charged,
         locked_raw.allowance_units::numeric AS allowance_units
       FROM locked_raw
@@ -293,6 +304,7 @@ function lockedSourceCtes(cutoff: string): SQL {
       SELECT
         ${physicalGrainColumns("locked_hourly")},
         locked_hourly.quantity::numeric AS quantity,
+        locked_hourly.non_deduplicated_quantity::numeric AS non_deduplicated_quantity,
         locked_hourly.credits_charged::numeric AS credits_charged,
         locked_hourly.allowance_units::numeric AS allowance_units
       FROM locked_hourly
@@ -301,6 +313,7 @@ function lockedSourceCtes(cutoff: string): SQL {
       SELECT
         ${physicalGrainColumns("source_facts")},
         SUM(source_facts.quantity) AS quantity,
+        SUM(source_facts.non_deduplicated_quantity) AS non_deduplicated_quantity,
         SUM(source_facts.credits_charged) AS credits_charged,
         SUM(source_facts.allowance_units) AS allowance_units
       FROM source_facts
@@ -332,12 +345,14 @@ function mutationCtes(): SQL {
         short_window_id,
         weekly_window_id,
         quantity,
+        non_deduplicated_quantity,
         credits_charged,
         allowance_units
       )
       SELECT
         ${physicalGrainColumns("consolidated")},
         consolidated.quantity,
+        consolidated.non_deduplicated_quantity,
         consolidated.credits_charged,
         consolidated.allowance_units
       FROM consolidated
@@ -355,6 +370,7 @@ function mutationCtes(): SQL {
         short_window_id,
         weekly_window_id,
         quantity,
+        non_deduplicated_quantity,
         credits_charged,
         allowance_units
     ),
@@ -390,6 +406,7 @@ function productTotalCtes(): SQL {
     source_totals AS (
       SELECT
         COALESCE(SUM(quantity), 0)::numeric AS quantity,
+        COALESCE(SUM(non_deduplicated_quantity), 0)::numeric AS non_deduplicated_quantity,
         COALESCE(SUM(credits_charged), 0)::numeric AS credits_charged,
         COALESCE(SUM(allowance_units), 0)::numeric AS allowance_units
       FROM source_facts
@@ -397,6 +414,7 @@ function productTotalCtes(): SQL {
     inserted_totals AS (
       SELECT
         COALESCE(SUM(quantity), 0)::numeric AS quantity,
+        COALESCE(SUM(non_deduplicated_quantity), 0)::numeric AS non_deduplicated_quantity,
         COALESCE(SUM(credits_charged), 0)::numeric AS credits_charged,
         COALESCE(SUM(allowance_units), 0)::numeric AS allowance_units
       FROM inserted_hourly
@@ -491,12 +509,14 @@ function compactionSummarySelect(): SQL {
       row_counts.hourly_rows_deleted AS "hourlyRowsDeleted",
       row_counts.hourly_rows_inserted AS "hourlyRowsInserted",
       source_totals.quantity::text AS "quantity",
+      source_totals.non_deduplicated_quantity::text AS "nonDeduplicatedQuantity",
       source_totals.credits_charged::text AS "creditsCharged",
       source_totals.allowance_units::text AS "allowanceUnits",
       window_reconciliation.short_windows AS "affectedShortWindows",
       window_reconciliation.weekly_windows AS "affectedWeeklyWindows",
       (
         source_totals.quantity = inserted_totals.quantity
+        AND source_totals.non_deduplicated_quantity = inserted_totals.non_deduplicated_quantity
         AND source_totals.credits_charged = inserted_totals.credits_charged
         AND source_totals.allowance_units = inserted_totals.allowance_units
         AND window_reconciliation.reconciled
@@ -520,6 +540,7 @@ function compactUsageEventsSql(args: {
     WITH
     ${candidateCtes(args)},
     ${lockedSourceCtes(args.cutoff)},
+    ${consolidatedSourceCtes()},
     ${mutationCtes()},
     ${rowCountCte()},
     ${productTotalCtes()},
@@ -649,6 +670,7 @@ async function compactUsageEventBatch(
       hourlyRowsDeleted: compaction.hourlyRowsDeleted,
       hourlyRowsInserted: compaction.hourlyRowsInserted,
       quantity: compaction.quantity,
+      nonDeduplicatedQuantity: compaction.nonDeduplicatedQuantity,
       creditsCharged: compaction.creditsCharged,
       allowanceUnits: compaction.allowanceUnits,
       affectedShortWindows: compaction.affectedShortWindows,

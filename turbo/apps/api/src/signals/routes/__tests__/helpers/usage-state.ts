@@ -49,6 +49,7 @@ interface InsertUsageEventArgs {
   readonly provider?: string;
   readonly category?: string;
   readonly quantity?: number;
+  readonly nonDeduplicatedQuantity?: number;
   readonly status?: string;
   readonly creditsCharged?: number;
   readonly idempotencyKey?: string;
@@ -278,6 +279,7 @@ export const insertUsageEvent$ = command(
       provider: args.provider,
       category: args.category,
       quantity: args.quantity,
+      non_deduplicated_quantity: args.nonDeduplicatedQuantity,
       status: args.status,
       credits_charged: args.creditsCharged,
       idempotency_key: args.idempotencyKey,

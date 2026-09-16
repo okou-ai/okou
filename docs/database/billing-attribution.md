@@ -109,6 +109,36 @@ and #33911 compete for migration 1117. These are overlap records, not
 dependencies or ordering reservations.
 The first merged migration is canonical; later PRs regenerate against main.
 
+## Non-deduplicable resource quantities
+
+`usage_event.non_deduplicated_quantity` and its hourly-rollup counterpart
+record the portion of billable `quantity` whose resource identity could not
+be deduplicated. Values are nonnegative and cannot exceed `quantity`. Zero
+means no annotation was recorded, including historical rows and old writers;
+it does not establish that their resources were deduplicated. The field is
+normal billing provenance, not `billing_error`, and does not affect pricing,
+allowance allocation or eligibility for compaction.
+
+The compactor carries and reconciles this counter using exact numeric sums.
+Finalized personal usage returns a positive optional `nonDeduplicatedQuantity`
+per provider; the existing administrator-only member usage API returns the
+corresponding member total. Zero-credit records retain positive annotations.
+Existing organization/member/period filters still determine access.
+
+The additive column migration installs subset constraints as `NOT VALID`;
+the following migration validates them in a separate transaction under the
+normal bounded lock/statement timeouts. New writes are checked immediately,
+and existing-row validation does not retain the initial table-alteration lock.
+No historical resource identities or nonzero quantities are backfilled.
+
+Deploy these readers and compactors before activating any writer of positive
+annotations. All serving and retained rollback compactors must preserve the
+counter before that activation: an older compactor would replace it with the
+column default. The preparation PR for #34609 enables no resource-observation
+writer or global deduplication. Parent #34532 owns subsequent writer and
+scope-wide rollout gates. Do not use elapsed raw-retention time as proof that
+an incompatible compactor is no longer reachable.
+
 ## Bounded operator backfill
 
 Run from `turbo` with the repository-pinned pnpm and an explicitly authorized

@@ -29,6 +29,7 @@ export function buildFinalizedUsageRelation(bounds?: FinalizedUsageBounds) {
       shortWindowId: usageAllowanceAllocations.shortWindowId,
       weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
       quantity: usageEvent.quantity,
+      nonDeduplicatedQuantity: usageEvent.nonDeduplicatedQuantity,
       creditsCharged: sql`COALESCE(${usageEvent.creditsCharged}, 0)::bigint`
         .mapWith(pgInt8ToSafeIntegerDecoder)
         .as("credits_charged"),
@@ -62,6 +63,7 @@ export function buildFinalizedUsageRelation(bounds?: FinalizedUsageBounds) {
       shortWindowId: usageEventHourlyRollup.shortWindowId,
       weeklyWindowId: usageEventHourlyRollup.weeklyWindowId,
       quantity: usageEventHourlyRollup.quantity,
+      nonDeduplicatedQuantity: usageEventHourlyRollup.nonDeduplicatedQuantity,
       creditsCharged: usageEventHourlyRollup.creditsCharged,
       allowanceUnits: usageEventHourlyRollup.allowanceUnits,
     })

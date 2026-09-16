@@ -22,6 +22,7 @@ import {
   isNull,
   max,
   notInArray,
+  or,
   sql,
   sum,
   type SQLWrapper,
@@ -91,11 +92,13 @@ interface UsageRecordBreakdownSqlRow {
   readonly usageKind: string;
   readonly provider: string;
   readonly credits: number;
+  readonly nonDeduplicatedQuantity: number;
 }
 
 interface UsageRecordProviderAccumulator {
   readonly provider: string;
   credits: number;
+  nonDeduplicatedQuantity?: number;
   readonly usageKinds: {
     readonly kind: string;
     readonly credits: number;
@@ -474,6 +477,7 @@ async function queryUsageRecordBreakdown(
           .mapWith(pgTextDecoder)
           .as("provider"),
         credits: usageCreditsExpr(usage).as("credits"),
+        nonDeduplicatedQuantity: usage.nonDeduplicatedQuantity,
       })
       .from(usage)
       .innerJoin(agentRuns, eq(agentRuns.id, usage.runId))
@@ -507,6 +511,7 @@ async function queryUsageRecordBreakdown(
         usageKind: usageRows.usageKind,
         provider: usageRows.provider,
         credits: usageRows.credits,
+        nonDeduplicatedQuantity: usageRows.nonDeduplicatedQuantity,
       })
       .from(usageRows),
   );
@@ -520,11 +525,19 @@ async function queryUsageRecordBreakdown(
       credits: sql`${sum(keyed.credits)}::bigint`
         .mapWith(pgInt8ToSafeIntegerDecoder)
         .as("credits"),
+      nonDeduplicatedQuantity: safeIntegerSum(keyed.nonDeduplicatedQuantity).as(
+        "non_deduplicated_quantity",
+      ),
     })
     .from(keyed)
     .where(inArray(keyed.rowKey, [...rowKeys]))
     .groupBy(keyed.rowKey, keyed.kind, keyed.usageKind, keyed.provider)
-    .having(gt(sum(keyed.credits), sql`0`))
+    .having(
+      or(
+        gt(sum(keyed.credits), sql`0`),
+        gt(sum(keyed.nonDeduplicatedQuantity), sql`0`),
+      ),
+    )
     .orderBy(
       asc(keyed.rowKey),
       asc(keyed.kind),
@@ -532,6 +545,12 @@ async function queryUsageRecordBreakdown(
       asc(keyed.usageKind),
     );
 
+  return groupUsageRecordBreakdown(rows);
+}
+
+function groupUsageRecordBreakdown(
+  rows: readonly UsageRecordBreakdownSqlRow[],
+): Map<string, UsageRecordRow["breakdown"]> {
   const byRow = new Map<
     string,
     Map<UsageRecordKind, Map<string, UsageRecordProviderAccumulator>>
@@ -539,12 +558,24 @@ async function queryUsageRecordBreakdown(
   for (const row of rows) {
     const kinds = byRow.get(row.rowKey) ?? new Map();
     const providers = kinds.get(row.kind) ?? new Map();
-    const provider = providers.get(row.provider) ?? {
+    const provider: UsageRecordProviderAccumulator = providers.get(
+      row.provider,
+    ) ?? {
       provider: row.provider,
       credits: 0,
       usageKinds: [],
     };
     provider.credits += row.credits;
+    if (row.nonDeduplicatedQuantity > 0) {
+      const quantity =
+        (provider.nonDeduplicatedQuantity ?? 0) + row.nonDeduplicatedQuantity;
+      if (!Number.isSafeInteger(quantity)) {
+        throw new Error(
+          "Non-deduplicated usage quantity exceeds the safe integer range",
+        );
+      }
+      provider.nonDeduplicatedQuantity = quantity;
+    }
     provider.usageKinds.push({
       kind: row.usageKind,
       credits: row.credits,

@@ -71,6 +71,10 @@ export const usageMembers$ = command(
         cacheReadInputTokens: row.cacheReadInputTokens,
         cacheCreationInputTokens: row.cacheCreationInputTokens,
         creditsCharged: row.creditsCharged,
+        nonDeduplicatedQuantity:
+          row.nonDeduplicatedQuantity > 0
+            ? row.nonDeduplicatedQuantity
+            : undefined,
       };
     });
 
