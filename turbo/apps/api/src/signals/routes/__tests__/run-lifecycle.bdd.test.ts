@@ -1127,6 +1127,41 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).not.toContain(`/home/user/.claude/skills/${INTRO_VIDEO_SKILL_NAME}`);
   });
 
+  it.each([false, true])(
+    "advertises private artifact downloads only when privateArtifacts is enabled (%s)",
+    async (privateArtifacts) => {
+      const api = createRunsApi(context);
+      const connectors = createConnectorBddApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
+      });
+
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: "read the linked artifact",
+        modelProvider: "anthropic-api-key",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const prompt = claim.appendSystemPrompt ?? "";
+      expect(prompt).toContain("# Agent Tools");
+      expect(prompt).toContain("okou web download-file -h");
+      if (privateArtifacts) {
+        expect(prompt).toContain(
+          "okou web download-file '/artifacts/<hash>.<extension>' -o <local-path>",
+        );
+        expect(prompt).toContain(
+          "extract the `/artifacts/...` path before passing it to the command",
+        );
+      } else {
+        expect(prompt).not.toContain("Private artifact files:");
+        expect(prompt).not.toContain("/artifacts/");
+      }
+      await api.requestCancelRun(actor, run.runId, [200]);
+    },
+  );
+
   it("always advertises presentation screenshots", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();

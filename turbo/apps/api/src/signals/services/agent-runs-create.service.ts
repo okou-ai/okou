@@ -438,6 +438,7 @@ function buildAgentToolsPrompt(args: {
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly privateArtifactsEnabled: boolean;
 }): string {
   const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou`;
   return [
@@ -505,6 +506,11 @@ function buildAgentToolsPrompt(args: {
     ...(args.larkEnabled
       ? [
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
+        ]
+      : []),
+    ...(args.privateArtifactsEnabled
+      ? [
+          "- Private artifact files: use `okou web download-file '/artifacts/<hash>.<extension>' -o <local-path>` to download and read private `/artifacts/...` links; references without an extension are also supported. For a full Okou artifact URL, extract the `/artifacts/...` path before passing it to the command. The command authenticates with `OKOU_TOKEN`. After downloading, open images with the image viewing tool and read or parse other files with the appropriate local tool. Run `okou web download-file -h` for the current interface.",
         ]
       : []),
     ...buildIntegrationToolsPrompt(
@@ -605,6 +611,7 @@ function buildAppendSystemPrompt(args: {
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly privateArtifactsEnabled: boolean;
 }): string {
   const identity = buildAgentIdentityPrompt(args.agent);
   return [
@@ -620,6 +627,7 @@ function buildAppendSystemPrompt(args: {
       larkEnabled: args.larkEnabled,
       introVideoEnabled: args.introVideoEnabled,
       deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
+      privateArtifactsEnabled: args.privateArtifactsEnabled,
     }),
     buildCurrentUserPrompt(args.userInfo),
   ]
@@ -797,6 +805,7 @@ function createRunBody(args: {
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly privateArtifactsEnabled: boolean;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
@@ -810,6 +819,7 @@ function createRunBody(args: {
     larkEnabled: args.larkEnabled,
     introVideoEnabled: args.introVideoEnabled,
     deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
+    privateArtifactsEnabled: args.privateArtifactsEnabled,
   });
   return {
     prompt: args.body.prompt,
@@ -1026,6 +1036,10 @@ function buildCreateAgentRunArgs(args: {
       ),
       deliveryFormatGuidanceEnabled: isFeatureEnabled(
         FeatureSwitchKey.DeliveryFormatGuidance,
+        args.featureSwitchContext,
+      ),
+      privateArtifactsEnabled: isFeatureEnabled(
+        FeatureSwitchKey.PrivateArtifacts,
         args.featureSwitchContext,
       ),
       introVideoEnabled,
