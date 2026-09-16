@@ -44,7 +44,19 @@ async function setupChips(enabled = true): Promise<HTMLElement> {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ComposerTaskChips]: enabled,
-      [FeatureSwitchKey.ComposerCreateCommands]: false,
+    },
+  });
+  return await findComposerEditor();
+}
+
+/** The chips and the slash panel are separate switches, so both are named. */
+async function setupChipsWithSlashPanel(): Promise<HTMLElement> {
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
     },
   });
   return await findComposerEditor();
@@ -625,19 +637,21 @@ test.each([
 
 test("Slash commands keep the selected task and recommendations in sync", async () => {
   mockTemplateChat();
-  const editor = await setupChips();
-  await fill(editor, "A quiet garden /create image");
+  const editor = await setupChipsWithSlashPanel();
+  await fill(editor, "A quiet garden /ill");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Create image", menu));
+  const user = userEvent.setup({ delay: null });
+  // The panel's rows act on mousedown, which only a full pointer sequence fires.
+  await user.click(button("Illustration", menu));
   await waitFor(() => {
     expect(selectedTask(editor, "Image")).toBeVisible();
   });
   expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
   expect(editor).toHaveTextContent("A quiet garden");
-  expect(editor).not.toHaveTextContent("/create image");
-  await fill(editor, "A quiet garden /create video");
+  expect(editor).not.toHaveTextContent("/ill");
+  await fill(editor, "A quiet garden /vid");
   const videoMenu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Create video", videoMenu));
+  await user.click(button("Video", videoMenu));
   await waitFor(() => {
     expect(selectedTask(editor, "Video")).toBeVisible();
   });

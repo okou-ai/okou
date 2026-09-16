@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.15](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.14...guest-control-server-v0.21.15) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
 ## [0.21.14](https://github.com/vm0-ai/okou/compare/guest-control-server-v0.21.13...guest-control-server-v0.21.14) (2026-09-16)
 
 ## [0.21.13](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.12...guest-control-server-v0.21.13) (2026-09-15)
