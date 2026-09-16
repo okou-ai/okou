@@ -33,12 +33,12 @@ test.each(["sign-in", "sign-up"])(
     expect(destination.origin).toBe("https://accounts.example.test");
     expect(destination.pathname).toBe(`/${mode}`);
     expect(destination.searchParams.get("redirect_url")).toBe(returnUrl);
-    expect(destination.searchParams.has("sign_in_force_redirect_url")).toBe(
-      false,
-    );
-    expect(destination.searchParams.has("x-vercel-protection-bypass")).toBe(
-      false,
-    );
+    expect(
+      destination.searchParams.has("sign_in_force_redirect_url"),
+    ).toBeFalsy();
+    expect(
+      destination.searchParams.has("x-vercel-protection-bypass"),
+    ).toBeFalsy();
   },
 );
 
