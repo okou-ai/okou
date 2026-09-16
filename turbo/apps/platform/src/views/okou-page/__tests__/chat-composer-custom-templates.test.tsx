@@ -309,7 +309,9 @@ test("A populated panel keeps upload in the toolbar", async () => {
   await within(dialog).findByText("Q3 board review");
 
   expect(uploadControls(dialog)).toHaveLength(1);
-  expect(within(dialog).queryByText("No templates yet")).not.toBeInTheDocument();
+  expect(
+    within(dialog).queryByText("No templates yet"),
+  ).not.toBeInTheDocument();
 });
 
 async function openDetail(
