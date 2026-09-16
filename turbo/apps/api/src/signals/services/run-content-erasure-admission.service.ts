@@ -15,8 +15,124 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
-import { settle } from "../utils";
+import { isAbortError, settle, settleIncludingAbort } from "../utils";
 import { lockChatQueueThread } from "./chat-event-queue.service";
+
+type RunOutputPhase =
+  | "preparation"
+  | "transaction_setup"
+  | "ownership_snapshot"
+  | "subject_admission"
+  | "resource_identity_locks"
+  | "output_advisory_lock"
+  | "thread_lock"
+  | "run_lock"
+  | "session_lock"
+  | "ownership_recheck"
+  | "projection_write"
+  | "transaction_finalize";
+
+interface RunOutputFailureFields {
+  readonly outputPhase: RunOutputPhase;
+  readonly outputPhaseElapsedMs?: number;
+  readonly outputAttemptElapsedMs?: number;
+}
+
+function boundedElapsed(
+  startedAt: number,
+  endedAt: number,
+): number | undefined {
+  const elapsed = endedAt - startedAt;
+  // Operation elapsed includes scheduling and execution, not just lock wait.
+  return Number.isFinite(elapsed) && elapsed >= 0
+    ? Math.min(60_000, Math.round(elapsed))
+    : undefined;
+}
+
+/** One required-output invocation owns this receipt, never a store or error. */
+export class RunOutputDiagnostics {
+  private timing:
+    | {
+        phase: RunOutputPhase;
+        phaseStartedAt: number;
+        attemptStartedAt: number;
+      }
+    | undefined;
+  private failure:
+    | { readonly error: unknown; readonly fields: RunOutputFailureFields }
+    | undefined;
+
+  startAttempt(phase: RunOutputPhase): void {
+    const startedAt = performance.now();
+    this.failure = undefined;
+    this.timing = {
+      phase,
+      phaseStartedAt: startedAt,
+      attemptStartedAt: startedAt,
+    };
+  }
+
+  enter(phase: RunOutputPhase): void {
+    if (this.timing) {
+      this.timing.phase = phase;
+      this.timing.phaseStartedAt = performance.now();
+    }
+  }
+
+  recordFailure(error: unknown): void {
+    if (isAbortError(error) || (this.failure && this.failure.error !== error)) {
+      // Rollback can replace a body error. Its provenance is unavailable.
+      this.clear();
+    } else if (!this.failure && this.timing) {
+      const endedAt = performance.now();
+      this.failure = {
+        error,
+        fields: {
+          outputPhase: this.timing.phase,
+          outputPhaseElapsedMs: boundedElapsed(
+            this.timing.phaseStartedAt,
+            endedAt,
+          ),
+          outputAttemptElapsedMs: boundedElapsed(
+            this.timing.attemptStartedAt,
+            endedAt,
+          ),
+        },
+      };
+    }
+  }
+
+  takeFailure(error: unknown): RunOutputFailureFields | undefined {
+    const fields =
+      this.failure && this.failure.error === error
+        ? this.failure.fields
+        : undefined;
+    this.clear();
+    return fields;
+  }
+
+  clear(): void {
+    this.timing = undefined;
+    this.failure = undefined;
+  }
+}
+
+async function observeOutputFailure<T>(
+  operation: Promise<T>,
+  diagnostics: RunOutputDiagnostics | undefined,
+): Promise<T> {
+  if (!diagnostics) {
+    return await operation;
+  }
+  // Freeze the original rejection before the transaction driver rolls back.
+  // Cancellation is observed only to release diagnostics, then rethrown intact.
+  const result = await settleIncludingAbort(operation);
+  if (!result.ok) {
+    diagnostics.recordFailure(result.error);
+    throw result.error;
+  }
+  return result.value;
+}
 
 interface Owner {
   readonly userId: string;
@@ -163,23 +279,34 @@ export async function readRunContentOwnership(
 export async function prepareRunOutputOwnership(
   db: Db,
   runId: string,
+  diagnostics?: RunOutputDiagnostics,
 ): Promise<RunContentOwnership | undefined> {
-  return await db.transaction(
-    async (tx) => {
-      await setContentDeadlines(tx);
-      const [run] = await tx
-        .select({ status: agentRuns.status })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, runId));
-      if (!run) {
-        throw new AgentEventRunNotFoundError(runId);
-      }
-      if (run.status === "timeout") {
-        return undefined;
-      }
-      return await readOwnership(tx, runId);
-    },
-    { isolationLevel: "read committed" },
+  return await observeOutputFailure(
+    db.transaction(
+      async (tx) => {
+        const value = await observeOutputFailure(
+          (async () => {
+            await setContentDeadlines(tx);
+            const [run] = await tx
+              .select({ status: agentRuns.status })
+              .from(agentRuns)
+              .where(eq(agentRuns.id, runId));
+            if (!run) {
+              throw new AgentEventRunNotFoundError(runId);
+            }
+            if (run.status === "timeout") {
+              return undefined;
+            }
+            return await readOwnership(tx, runId);
+          })(),
+          diagnostics,
+        );
+        diagnostics?.enter("transaction_finalize");
+        return value;
+      },
+      { isolationLevel: "read committed" },
+    ),
+    diagnostics,
   );
 }
 
@@ -227,12 +354,14 @@ async function admitSubjects(
 async function lockOwnership(
   tx: Tx,
   snapshot: RunContentOwnership,
+  diagnostics?: RunOutputDiagnostics,
 ): Promise<{
   readonly status: RunStatus;
   readonly modelProvider: string | null;
 }> {
   // Resource composite keys include owner/org. KEY SHARE prevents transfer or
   // deletion without serializing unrelated non-identity resource updates.
+  diagnostics?.enter("resource_identity_locks");
   for (const resource of snapshot.resources) {
     await tx
       .select({ id: agents.id })
@@ -247,13 +376,16 @@ async function lockOwnership(
       .where(eq(storages.id, snapshot.memory.storage.id))
       .for("key share");
   }
+  diagnostics?.enter("output_advisory_lock");
   const lockKey = `run_output_projection:${snapshot.runId}`;
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
   );
   if (snapshot.thread) {
+    diagnostics?.enter("thread_lock");
     await lockChatQueueThread(tx, snapshot.thread.chatThreadId);
   }
+  diagnostics?.enter("run_lock");
   const [run] = await tx
     .select({
       status: agentRuns.status,
@@ -265,11 +397,13 @@ async function lockOwnership(
   if (!run) {
     throw new AgentEventRunNotFoundError(snapshot.runId);
   }
+  diagnostics?.enter("session_lock");
   await tx
     .select({ id: agentSessions.id })
     .from(agentSessions)
     .where(eq(agentSessions.id, snapshot.sessionId))
     .for("update");
+  diagnostics?.enter("ownership_recheck");
   const current = await readOwnership(tx, snapshot.runId);
   if (JSON.stringify(current) !== JSON.stringify(snapshot)) {
     // Roll back before discovering/acquiring any additional subject locks.
@@ -291,6 +425,7 @@ export async function withRunContentWrite<T>(
     readonly runOwner?: Owner;
     readonly destination?: Owner & { readonly threadId: string };
     readonly ownership: RunContentOwnership;
+    readonly diagnostics?: RunOutputDiagnostics;
   },
   write: (
     tx: Tx,
@@ -307,45 +442,68 @@ export async function withRunContentWrite<T>(
     }
   | { readonly outcome: "closed" }
 > {
+  const { diagnostics } = args;
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
+    diagnostics?.startAttempt("transaction_setup");
     const result = await settle(
-      db.transaction(
-        async (tx) => {
-          await setContentDeadlines(tx);
-          const snapshot = await readOwnership(tx, args.runId);
-          if (!(await admitSubjects(tx, snapshot))) {
-            return { outcome: "closed" as const };
-          }
-          const run = await lockOwnership(tx, snapshot);
-          signal.throwIfAborted();
-          if (
-            JSON.stringify(snapshot) !== JSON.stringify(args.ownership) ||
-            (args.runOwner && !sameOwner(snapshot, args.runOwner)) ||
-            (args.destination &&
-              (snapshot.thread?.chatThreadId !== args.destination.threadId ||
-                snapshot.thread.userId !== args.destination.userId ||
-                snapshot.orgId !== args.destination.orgId)) ||
-            (snapshot.memory &&
-              (!sameOwner(snapshot, snapshot.memory.mount) ||
-                !sameOwner(snapshot, snapshot.memory.storage)))
-          ) {
-            throw new Error("Prepared run content ownership no longer matches");
-          }
-          const value = await write(
-            tx,
-            snapshot,
-            run.status,
-            run.modelProvider,
-          );
-          signal.throwIfAborted();
-          return { outcome: "written" as const, value, ownership: snapshot };
-        },
-        { isolationLevel: "read committed" },
+      observeOutputFailure(
+        db.transaction(
+          async (tx) => {
+            const completed = await observeOutputFailure(
+              (async () => {
+                await setContentDeadlines(tx);
+                diagnostics?.enter("ownership_snapshot");
+                const snapshot = await readOwnership(tx, args.runId);
+                diagnostics?.enter("subject_admission");
+                if (!(await admitSubjects(tx, snapshot))) {
+                  return { outcome: "closed" as const };
+                }
+                const run = await lockOwnership(tx, snapshot, diagnostics);
+                signal.throwIfAborted();
+                if (
+                  JSON.stringify(snapshot) !== JSON.stringify(args.ownership) ||
+                  (args.runOwner && !sameOwner(snapshot, args.runOwner)) ||
+                  (args.destination &&
+                    (snapshot.thread?.chatThreadId !==
+                      args.destination.threadId ||
+                      snapshot.thread.userId !== args.destination.userId ||
+                      snapshot.orgId !== args.destination.orgId)) ||
+                  (snapshot.memory &&
+                    (!sameOwner(snapshot, snapshot.memory.mount) ||
+                      !sameOwner(snapshot, snapshot.memory.storage)))
+                ) {
+                  throw new Error(
+                    "Prepared run content ownership no longer matches",
+                  );
+                }
+                diagnostics?.enter("projection_write");
+                const value = await write(
+                  tx,
+                  snapshot,
+                  run.status,
+                  run.modelProvider,
+                );
+                signal.throwIfAborted();
+                return {
+                  outcome: "written" as const,
+                  value,
+                  ownership: snapshot,
+                };
+              })(),
+              diagnostics,
+            );
+            diagnostics?.enter("transaction_finalize");
+            return completed;
+          },
+          { isolationLevel: "read committed" },
+        ),
+        diagnostics,
       ),
     );
     signal.throwIfAborted();
     if (result.ok) {
+      diagnostics?.clear();
       return result.value;
     }
     if (!(result.error instanceof ContentOwnershipRaceError) || attempt === 2) {

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   assertErasureSubjectWritable,
   projectErasureDecision,
+  lockErasureSubjects,
   type ErasureDecision,
 } from "@okouai/db/operations/account-erasure";
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
@@ -76,7 +77,13 @@ import { generateSandboxToken } from "../../auth/tokens";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
 import { insertAssistantEvents } from "../chat-event-shared.service";
-import { readRunContentOwnership } from "../run-content-erasure-admission.service";
+import {
+  readRunContentOwnership,
+  withRunContentWrite,
+  RunOutputDiagnostics,
+} from "../run-content-erasure-admission.service";
+import { materializeRunOutputEvents$ } from "../agent-event-consumer-run-output.service";
+import { isLockNotAvailable } from "../../../lib/pg-errors";
 import {
   handleChatInternalCallback$,
   handleChatInternalCallbackWithoutCcstate,
@@ -1100,7 +1107,10 @@ describe("actual compute transactions versus the B1 projector", () => {
   // citations/ack fields. Setup still creates runs through the actual API.
   describe("late run content admission", () => {
     async function outputFixture(orgId?: string) {
-      const f = await fixture(orgId);
+      return await outputForFixture(await fixture(orgId));
+    }
+
+    async function outputForFixture(f: Fixture) {
       const sent = await chat.requestSendEvent(
         f.actor,
         {
@@ -1302,56 +1312,64 @@ describe("actual compute transactions versus the B1 projector", () => {
       return { content, materialization, citations, run, thread };
     }
 
-    describe.each(["webhook", "callback"] as const)(
-      "%s transaction",
-      (kind) => {
-        it("closure first blocks the actual transaction with no partial content", async () => {
-          const f = await outputFixture();
-          const before = await contentState(f);
-          const closure = await holdClosure(decision(f.actor.userId));
-          const writing =
-            kind === "webhook"
-              ? settle(sendOutput(f))
-              : settle(insertHistory(f));
-          await waitForBlockedBy(closure.pid);
-          await expect(contentState(f)).resolves.toStrictEqual(before);
-          await closure.release();
-          expect((await writing).ok).toBeTruthy();
-          await flushWaitUntilForTest();
-          await expect(contentState(f)).resolves.toStrictEqual(before);
-        });
+    describe.each([
+      ["webhook", "user"],
+      ["callback", "user"],
+      ["webhook", "organization"],
+      ["callback", "organization"],
+    ] as const)("%s transaction with %s closure", (kind, subjectKind) => {
+      it("closure first blocks the actual transaction with no partial content", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const closure = await holdClosure(
+          decision(
+            subjectKind === "user" ? f.actor.userId : f.orgId,
+            subjectKind,
+          ),
+        );
+        const writing =
+          kind === "webhook" ? settle(sendOutput(f)) : settle(insertHistory(f));
+        await waitForBlockedBy(closure.pid);
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+        await closure.release();
+        expect((await writing).ok).toBeTruthy();
+        await flushWaitUntilForTest();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
 
-        it("writer first commits before B1 closure", async () => {
-          const f = await outputFixture();
-          const resource = await holdResource(f.agentId);
-          const writing =
-            kind === "webhook"
-              ? settle(sendOutput(f))
-              : settle(insertHistory(f));
-          const writerPid = await waitForBlockedBy(resource.pid);
-          const closing = close(decision(f.actor.userId));
-          await waitForBlockedBy(writerPid);
-          await resource.release();
-          expect((await writing).ok).toBeTruthy();
-          await closing;
-          await flushWaitUntilForTest();
-          const after = await contentState(f);
-          expect(after.content).toHaveLength(kind === "webhook" ? 2 : 1);
-          expect(after.thread?.sequence).toBeGreaterThan(0);
-          if (kind === "webhook") {
-            expect(after.materialization).toMatchObject([
-              { latestResultText: "result 1" },
-            ]);
-            expect(after.citations).toMatchObject([{ citation }]);
-            expect(after.run?.ack).toBeInstanceOf(Date);
-          }
-          const beforeRetry = await contentState(f);
-          await (kind === "webhook" ? sendOutput(f, 8) : insertHistory(f, 8));
-          await flushWaitUntilForTest();
-          await expect(contentState(f)).resolves.toStrictEqual(beforeRetry);
-        });
-      },
-    );
+      it("writer first commits before B1 closure", async () => {
+        const f = await outputFixture();
+        const resource = await holdResource(f.agentId);
+        const writing =
+          kind === "webhook" ? settle(sendOutput(f)) : settle(insertHistory(f));
+        const writerPid = await waitForBlockedBy(resource.pid);
+        const closing = close(
+          decision(
+            subjectKind === "user" ? f.actor.userId : f.orgId,
+            subjectKind,
+          ),
+        );
+        await waitForBlockedBy(writerPid);
+        await resource.release();
+        expect((await writing).ok).toBeTruthy();
+        await closing;
+        await flushWaitUntilForTest();
+        const after = await contentState(f);
+        expect(after.content).toHaveLength(kind === "webhook" ? 2 : 1);
+        expect(after.thread?.sequence).toBeGreaterThan(0);
+        if (kind === "webhook") {
+          expect(after.materialization).toMatchObject([
+            { latestResultText: "result 1" },
+          ]);
+          expect(after.citations).toMatchObject([{ citation }]);
+          expect(after.run?.ack).toBeInstanceOf(Date);
+        }
+        const beforeRetry = await contentState(f);
+        await (kind === "webhook" ? sendOutput(f, 8) : insertHistory(f, 8));
+        await flushWaitUntilForTest();
+        await expect(contentState(f)).resolves.toStrictEqual(beforeRetry);
+      });
+    });
 
     it("reacquires closure admission for fallback after a committed history transaction", async () => {
       const f = await outputFixture();
@@ -1476,6 +1494,467 @@ describe("actual compute transactions versus the B1 projector", () => {
           .from(runActivitySnapshots)
           .where(eq(runActivitySnapshots.runId, f.runId)),
       ).resolves.toHaveLength(0);
+    });
+
+    // B2b2-P uses the existing infrastructure exception: production APIs cannot
+    // hold PostgreSQL locks, project dormant B1 decisions or expose a rejection
+    // before HTTP classification. The receipt below is the handler's actual
+    // invocation-owned capture; no logger or Axiom calls are observed.
+    describe("required-output failure provenance", () => {
+      function projectOutput(
+        f: OutputFixture,
+        diagnostics: RunOutputDiagnostics,
+        signal: AbortSignal,
+      ) {
+        return createStore().set(
+          materializeRunOutputEvents$,
+          {
+            diagnostics,
+            payload: {
+              runId: f.runId,
+              context: { userId: f.actor.userId, orgId: f.orgId },
+              events: events(10),
+            },
+            suppliedCitations: [{ sequenceNumber: 10, citation }],
+          },
+          signal,
+        );
+      }
+
+      function expectReceipt(
+        diagnostics: RunOutputDiagnostics,
+        error: unknown,
+        phase: string,
+      ) {
+        const receipt = diagnostics.takeFailure(error);
+        expect(receipt?.outputPhase).toBe(phase);
+        for (const elapsed of [
+          receipt?.outputPhaseElapsedMs,
+          receipt?.outputAttemptElapsedMs,
+        ]) {
+          expect(Number.isInteger(elapsed)).toBeTruthy();
+          expect(elapsed).toBeGreaterThanOrEqual(0);
+          expect(elapsed).toBeLessThanOrEqual(60_000);
+        }
+        expect(receipt?.outputAttemptElapsedMs).toBeGreaterThanOrEqual(
+          receipt!.outputPhaseElapsedMs!,
+        );
+        expect(diagnostics.takeFailure(error)).toBeUndefined();
+      }
+
+      it.each([
+        "user",
+        "organization",
+        "resource_identity_locks",
+        "output_advisory_lock",
+        "thread_lock",
+        "run_lock",
+        "session_lock",
+        "projection_write",
+      ] as const)(
+        "attributes a real %s timeout after rollback and allows an idempotent HTTP retry",
+        async (phase) => {
+          const f = await outputFixture();
+          await sendOutput(f);
+          await flushWaitUntilForTest();
+          const before = await contentState(f);
+          const held = await holdBusinessRow((tx) => {
+            switch (phase) {
+              case "user":
+              case "organization": {
+                return lockErasureSubjects(tx, [
+                  {
+                    subjectKind: phase,
+                    subjectId: phase === "user" ? f.actor.userId : f.orgId,
+                  },
+                ]);
+              }
+              case "resource_identity_locks": {
+                return tx
+                  .select()
+                  .from(agents)
+                  .where(eq(agents.id, f.agentId))
+                  .for("update");
+              }
+              case "output_advisory_lock": {
+                return tx.execute(
+                  sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${f.runId}`}, 0))`,
+                );
+              }
+              case "thread_lock": {
+                return tx
+                  .select()
+                  .from(chatThreads)
+                  .where(eq(chatThreads.id, f.threadId))
+                  .for("update");
+              }
+              case "run_lock": {
+                return tx
+                  .select()
+                  .from(agentRuns)
+                  .where(eq(agentRuns.id, f.runId))
+                  .for("update");
+              }
+              case "session_lock": {
+                return tx
+                  .select()
+                  .from(agentSessions)
+                  .where(eq(agentSessions.id, f.sessionId))
+                  .for("update");
+              }
+              case "projection_write": {
+                return tx
+                  .select()
+                  .from(runOutputMaterializations)
+                  .where(eq(runOutputMaterializations.runId, f.runId))
+                  .for("update");
+              }
+            }
+          });
+          const diagnostics = new RunOutputDiagnostics();
+          const writing = settle(projectOutput(f, diagnostics, context.signal));
+          await waitForBlockedBy(held.pid);
+          const result = await writing;
+          expect(result.ok).toBeFalsy();
+          if (result.ok) {
+            throw new Error("Expected a real lock timeout");
+          }
+          expect(isLockNotAvailable(result.error)).toBeTruthy();
+          expectReceipt(
+            diagnostics,
+            result.error,
+            phase === "user" || phase === "organization"
+              ? "subject_admission"
+              : phase,
+          );
+          await expect(contentState(f)).resolves.toStrictEqual(before);
+          await webhooks.requestAgentEvents(
+            outputBody(f, 10),
+            outputHeaders(f),
+            [503],
+          );
+          await expect(contentState(f)).resolves.toStrictEqual(before);
+          await held.release();
+          await sendOutput(f, 10);
+          await flushWaitUntilForTest();
+          const accepted = await contentState(f);
+          expect(accepted.content).toHaveLength(4);
+          expect(accepted.materialization).toMatchObject([
+            { latestResultText: "result 10" },
+          ]);
+          await sendOutput(f, 10);
+          await flushWaitUntilForTest();
+          // Existing insertion reserves sequence numbers before deduplication.
+          // Replays keep the same durable output, while sequence gaps are legal.
+          await expect(contentState(f)).resolves.toMatchObject({
+            content: accepted.content,
+            citations: accepted.citations,
+            run: accepted.run,
+            materialization: [{ latestResultText: "result 10" }],
+          });
+        },
+      );
+
+      it("progresses same-org and unrelated writers around a blocked invocation", async () => {
+        const f = await outputFixture();
+        const peer = await outputFixture(f.orgId);
+        const unrelated = await outputFixture();
+        const held = await holdResource(f.agentId);
+        const firstDiagnostics = new RunOutputDiagnostics();
+        const peerDiagnostics = new RunOutputDiagnostics();
+        const unrelatedDiagnostics = new RunOutputDiagnostics();
+        const first = settle(
+          projectOutput(f, firstDiagnostics, context.signal),
+        );
+        await waitForBlockedBy(held.pid);
+        // Ordinary writers share subject admission, so a same-organization
+        // member owning different resources no longer waits behind this
+        // blocked invocation; only its own business rows serialize it.
+        for (const [fixture, capture] of [
+          [peer, peerDiagnostics],
+          [unrelated, unrelatedDiagnostics],
+        ] as const) {
+          await expect(
+            projectOutput(fixture, capture, context.signal),
+          ).resolves.toMatchObject({ outcome: "accepted" });
+        }
+        const failed = await first;
+        if (failed.ok) {
+          throw new Error("Expected held resource timeout");
+        }
+        expectReceipt(
+          firstDiagnostics,
+          failed.error,
+          "resource_identity_locks",
+        );
+        for (const capture of [peerDiagnostics, unrelatedDiagnostics]) {
+          expect(capture.takeFailure(failed.error)).toBeUndefined();
+        }
+        await held.release();
+        await sendOutput(f, 10);
+        await flushWaitUntilForTest();
+      });
+
+      it("attributes both same-org members to admission while an unrelated subject progresses", async () => {
+        const f = await outputFixture();
+        const peer = await outputFixture(f.orgId);
+        const unrelated = await outputFixture();
+        // Erasure mutations and first closure keep exclusive subject locks, so
+        // both members wait in admission rather than at a business row.
+        const held = await holdBusinessRow((tx) => {
+          return lockErasureSubjects(tx, [
+            { subjectKind: "organization", subjectId: f.orgId },
+          ]);
+        });
+        const firstDiagnostics = new RunOutputDiagnostics();
+        const peerDiagnostics = new RunOutputDiagnostics();
+        const unrelatedDiagnostics = new RunOutputDiagnostics();
+        const first = settle(
+          projectOutput(f, firstDiagnostics, context.signal),
+        );
+        const second = settle(
+          projectOutput(peer, peerDiagnostics, context.signal),
+        );
+        await waitForBlockedBy(held.pid);
+        await expect(
+          projectOutput(unrelated, unrelatedDiagnostics, context.signal),
+        ).resolves.toMatchObject({ outcome: "accepted" });
+        const failed = await first;
+        const peerFailed = await second;
+        if (failed.ok || peerFailed.ok) {
+          throw new Error("Expected held organization admission timeouts");
+        }
+        expect(isLockNotAvailable(failed.error)).toBeTruthy();
+        expect(isLockNotAvailable(peerFailed.error)).toBeTruthy();
+        // Each receipt stays bound to its own rejected invocation.
+        expect(failed.error).not.toBe(peerFailed.error);
+        expectReceipt(peerDiagnostics, peerFailed.error, "subject_admission");
+        expectReceipt(firstDiagnostics, failed.error, "subject_admission");
+        expect(unrelatedDiagnostics.takeFailure(failed.error)).toBeUndefined();
+        await held.release();
+        await sendOutput(f, 10);
+        await sendOutput(peer, 10);
+        await flushWaitUntilForTest();
+      });
+
+      it("clears an aborted invocation and preserves the exact abort reason", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        const controller = new AbortController();
+        onTestFinished(() => {
+          controller.abort();
+        });
+        const reason = Object.freeze(
+          new DOMException("Synthetic cancellation", "AbortError"),
+        );
+        const held = await holdResource(f.agentId);
+        const writing = settleIncludingAbort(
+          projectOutput(f, diagnostics, controller.signal),
+        );
+        await waitForBlockedBy(held.pid);
+        controller.abort(reason);
+        await held.release();
+        const result = await writing;
+        if (result.ok) {
+          throw new Error("Expected cancellation");
+        }
+        expect(result.error).toBe(reason);
+        expect(diagnostics.takeFailure(reason)).toBeUndefined();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+        await expect(
+          projectOutput(f, diagnostics, context.signal),
+        ).resolves.toMatchObject({ outcome: "accepted" });
+        expect(diagnostics.takeFailure(reason)).toBeUndefined();
+      });
+
+      it.each([false, true])(
+        "resets an actual ownership retry before its next outcome (timeout: %s)",
+        async (timeout) => {
+          const f = await outputFixture();
+          const resourceOwner = `synthetic-resource-${randomUUID()}`;
+          await db
+            .update(agents)
+            .set({ owner: resourceOwner })
+            .where(eq(agents.id, f.agentId));
+          const ownership = await readRunContentOwnership(db, f.runId);
+          await db
+            .update(agents)
+            .set({ owner: `synthetic-transient-${randomUUID()}` })
+            .where(eq(agents.id, f.agentId));
+          const held = await holdResource(f.agentId, resourceOwner);
+          const subject = timeout
+            ? await holdBusinessRow((tx) => {
+                return lockErasureSubjects(tx, [
+                  { subjectKind: "user", subjectId: resourceOwner },
+                ]);
+              })
+            : undefined;
+          const diagnostics = new RunOutputDiagnostics();
+          const writing = settle(
+            withRunContentWrite(
+              db,
+              { runId: f.runId, ownership, diagnostics },
+              async (tx) => {
+                await tx.insert(runOutputMaterializations).values({
+                  runId: f.runId,
+                  latestResultText: "retry accepted",
+                });
+              },
+              context.signal,
+            ),
+          );
+          await waitForBlockedBy(held.pid);
+          await held.release();
+          if (subject) {
+            await waitForBlockedBy(subject.pid);
+          }
+          const result = await writing;
+          if (timeout) {
+            if (result.ok) {
+              throw new Error("Expected second-attempt subject timeout");
+            }
+            expect(isLockNotAvailable(result.error)).toBeTruthy();
+            expectReceipt(diagnostics, result.error, "subject_admission");
+            expect((await contentState(f)).materialization).toHaveLength(0);
+          } else {
+            expect(result).toMatchObject({
+              ok: true,
+              value: { outcome: "written" },
+            });
+            expect((await contentState(f)).materialization).toMatchObject([
+              { latestResultText: "retry accepted" },
+            ]);
+            expect(diagnostics.takeFailure(undefined)).toBeUndefined();
+          }
+          await subject?.release();
+        },
+      );
+
+      it("retains a real non-55P03 error object through rollback", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        let original: unknown;
+        const result = await settle(
+          withRunContentWrite(
+            db,
+            { runId: f.runId, ownership: f.ownership, diagnostics },
+            async (tx) => {
+              await tx
+                .insert(runOutputMaterializations)
+                .values({ runId: f.runId });
+              const failed = await settle(tx.execute(sql`SELECT 1 / 0`));
+              if (failed.ok) {
+                throw new Error("Expected PostgreSQL division failure");
+              }
+              original = failed.error;
+              Object.freeze(original);
+              throw original;
+            },
+            context.signal,
+          ),
+        );
+        if (result.ok) {
+          throw new Error("Expected projection failure");
+        }
+        expect(result.error).toBe(original);
+        expect(isLockNotAvailable(result.error)).toBeFalsy();
+        expectReceipt(diagnostics, result.error, "projection_write");
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
+
+      it("attributes a deferred PostgreSQL commit failure to finalization", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        // A connection-local deferred constraint is an infrastructure-only
+        // commit failure. It does not modify any shared schema or production row.
+        const result = await settle(
+          withRunContentWrite(
+            db,
+            { runId: f.runId, ownership: f.ownership, diagnostics },
+            async (tx) => {
+              await tx
+                .insert(runOutputMaterializations)
+                .values({ runId: f.runId });
+              await tx.execute(
+                sql`CREATE TEMP TABLE output_phase_commit_fixture (id integer UNIQUE DEFERRABLE INITIALLY DEFERRED) ON COMMIT DROP`,
+              );
+              await tx.execute(
+                sql`INSERT INTO output_phase_commit_fixture VALUES (1), (1)`,
+              );
+            },
+            context.signal,
+          ),
+        );
+        if (result.ok) {
+          throw new Error("Expected deferred constraint rejection");
+        }
+        expectReceipt(diagnostics, result.error, "transaction_finalize");
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
+
+      it("omits body provenance when a disconnected transaction replaces the body error", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        const client = await pool.connect();
+        const disconnected = createDeferredPromise<Error>(context.signal);
+        // A terminated backend reports the server FATAL and the closed socket
+        // separately; keep one listener so neither becomes an unhandled error.
+        client.on("error", (error) => {
+          if (!disconnected.settled()) {
+            disconnected.resolve(error);
+          }
+        });
+        onTestFinished(() => {
+          client.release(true);
+        });
+        let original: unknown;
+        // Only this test-owned connection is terminated, after capturing a real
+        // query rejection. Production APIs cannot construct a failed rollback.
+        const result = await settle(
+          withRunContentWrite(
+            drizzle(client),
+            { runId: f.runId, ownership: f.ownership, diagnostics },
+            async (tx) => {
+              const pid = await backendPid(tx);
+              await tx
+                .insert(runOutputMaterializations)
+                .values({ runId: f.runId });
+              const failed = await settle(tx.execute(sql`SELECT 1 / 0`));
+              if (failed.ok) {
+                throw new Error("Expected PostgreSQL division failure");
+              }
+              original = failed.error;
+              await db.execute(sql`SELECT pg_terminate_backend(${pid})`);
+              await disconnected.promise;
+              throw original;
+            },
+            context.signal,
+          ),
+        );
+        if (result.ok) {
+          throw new Error("Expected rollback rejection");
+        }
+        expect(result.error).not.toBe(original);
+        expect(diagnostics.takeFailure(result.error)).toBeUndefined();
+        expect(diagnostics.takeFailure(original)).toBeUndefined();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
+
+      it("clears a closed admission without an accepted batch or receipt", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        await close(decision(f.actor.userId));
+        const diagnostics = new RunOutputDiagnostics();
+        await expect(
+          projectOutput(f, diagnostics, context.signal),
+        ).resolves.toStrictEqual({ outcome: "ignored-closure" });
+        expect(diagnostics.takeFailure(undefined)).toBeUndefined();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
     });
 
     it("preserves infrastructure lock failures and rejects mismatched sandbox identity", async () => {
@@ -3012,6 +3491,43 @@ describe("actual compute transactions versus the B1 projector", () => {
       // Finite local observations, with no CI latency or production-throughput claim.
       process.stdout.write(`B2B2_OUTPUT_PAIR_MS ${JSON.stringify(samples)}\n`);
       expect(samples).toHaveLength(4);
+    });
+
+    it("measures bounded output diagnostic overhead on four subject layouts", async () => {
+      const f = await outputFixture();
+      const sameUserAgent = await bdd.createAgent(f.actor, {
+        displayName: "Synthetic same-user peer",
+        visibility: "public",
+      });
+      const sameUser = await outputForFixture({
+        ...f,
+        agentId: sameUserAgent.agentId,
+      });
+      const sameOrg = await outputFixture(f.orgId);
+      const unrelated = await outputFixture();
+      const samples: { layout: string; elapsedMs: number }[] = [];
+      for (const [layout, peer] of [
+        ["uncontended", undefined],
+        ["same-user", sameUser],
+        ["same-org", sameOrg],
+        ["unrelated", unrelated],
+      ] as const) {
+        for (let sample = 0; sample < 3; sample++) {
+          const sequence = 100 + samples.length * 10;
+          const start = performance.now();
+          await Promise.all([
+            sendOutput(f, sequence),
+            ...(peer ? [sendOutput(peer, sequence)] : []),
+          ]);
+          samples.push({ layout, elapsedMs: performance.now() - start });
+          // Await owned consumers outside the measured HTTP completion interval.
+          await flushWaitUntilForTest();
+        }
+      }
+      process.stdout.write(
+        `B2B2_OUTPUT_DIAGNOSTIC_MS ${JSON.stringify(samples)}\n`,
+      );
+      expect(samples).toHaveLength(12);
     });
   });
 });

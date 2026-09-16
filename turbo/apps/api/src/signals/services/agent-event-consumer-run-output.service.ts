@@ -10,6 +10,7 @@ import type {
   EventConsumerPayload,
 } from "../../lib/event-consumer/verify";
 import type { Tx } from "../../lib/db-types";
+import { settleIncludingAbort } from "../utils";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
@@ -26,6 +27,7 @@ import { historicalRunGroupId } from "./run-event-provenance.service";
 import {
   withRunContentWrite,
   prepareRunOutputOwnership,
+  type RunOutputDiagnostics,
 } from "./run-content-erasure-admission.service";
 import {
   normalizeRunOutputEvents,
@@ -59,6 +61,7 @@ type RunOutputMaterializationResult =
   | { readonly outcome: "ignored-timeout" | "ignored-closure" };
 
 interface RunOutputEventAdmission {
+  readonly diagnostics: RunOutputDiagnostics;
   readonly payload: EventConsumerPayload;
   readonly suppliedCitations: readonly EventCitation[];
 }
@@ -412,14 +415,20 @@ async function materializeRunOutputEvents(
   admission: RunOutputEventAdmission,
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
-  const { payload, suppliedCitations } = admission;
+  const { payload, suppliedCitations, diagnostics } = admission;
+  diagnostics.startAttempt("preparation");
   const prepared = preparedRunOutputProjection(payload, suppliedCitations);
 
-  const ownership = await prepareRunOutputOwnership(writeDb, payload.runId);
+  const ownership = await prepareRunOutputOwnership(
+    writeDb,
+    payload.runId,
+    diagnostics,
+  );
   signal.throwIfAborted();
   if (!ownership) {
     return { outcome: "ignored-timeout" };
   }
+  diagnostics.enter("preparation");
   const runGroupId =
     ownership.thread &&
     prepared.payload.events.some((event) => {
@@ -432,7 +441,7 @@ async function materializeRunOutputEvents(
       : undefined;
   const result = await withRunContentWrite(
     writeDb,
-    { runId: payload.runId, runOwner: payload.context, ownership },
+    { runId: payload.runId, runOwner: payload.context, ownership, diagnostics },
     async (
       tx,
       ownership,
@@ -473,7 +482,18 @@ export const materializeRunOutputEvents$ = command(
     admission: RunOutputEventAdmission,
     signal: AbortSignal,
   ): Promise<RunOutputMaterializationResult> => {
-    return await materializeRunOutputEvents(set(writeDb$), admission, signal);
+    const result = await settleIncludingAbort(
+      materializeRunOutputEvents(set(writeDb$), admission, signal),
+    );
+    if (signal.aborted) {
+      admission.diagnostics.clear();
+    }
+    if (!result.ok) {
+      admission.diagnostics.recordFailure(result.error);
+      throw result.error;
+    }
+    admission.diagnostics.clear();
+    return result.value;
   },
 );
 
