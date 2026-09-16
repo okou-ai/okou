@@ -4724,16 +4724,28 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
+/**
+ * A notice card's height comes from its own rows, so a card that carries only a
+ * headline is one row tall. The supporting line keeps a reserved two-line box
+ * instead: billing status and failure-recovery classification both resolve
+ * asynchronously and swap this text inside an already mounted frame, and
+ * `docs/chat-cards.md` requires that swap to leave the frame's geometry
+ * untouched. Clamping alone would let a one-line message resize the transcript
+ * once the asynchronous read lands.
+ */
+const CHAT_NOTICE_DESCRIPTION_CLASS =
+  "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+
 function CreditsAvailableMessage() {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full flex-col justify-center p-3">
+    <div className="flex flex-col p-3">
       <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
         {t(($) => {
           return $.chat.billing.creditsAvailable;
         })}
       </p>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
         {t(($) => {
           return $.chat.billing.creditsAdded;
         })}
@@ -4948,14 +4960,12 @@ function InsufficientCreditsCard() {
   };
 
   return (
-    <div className="flex h-full flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
       <div className="min-w-0">
         <p className="truncate text-[0.9375rem] font-medium text-foreground">
           {headline}
         </p>
-        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-          {helper}
-        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
       {!canShowBillingAction ? null : shouldStartProCheckout ? (
         <Button
@@ -5136,7 +5146,7 @@ function AssistantErrorCard({
     <div
       role="status"
       data-testid={testId}
-      className="flex h-full w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
+      className="flex w-full flex-col justify-between gap-3 p-3 text-foreground @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 items-start gap-2.5 @[640px]:flex-1">
         <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
@@ -5144,9 +5154,11 @@ function AssistantErrorCard({
           <div className="truncate text-[0.9375rem] font-medium leading-6">
             {title}
           </div>
-          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
-            {description}
-          </div>
+          {description !== "" && (
+            <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+              {description}
+            </div>
+          )}
         </div>
       </div>
       {(description !== "" ||
@@ -5452,10 +5464,7 @@ function AssistantErrorContent({
   thread: ChatPanelSignals;
 }) {
   return (
-    <ChatCard
-      data-testid="assistant-error-card-shell"
-      className="h-[136px] w-full @[640px]:h-[88px]"
-    >
+    <ChatCard data-testid="assistant-error-card-shell" className="w-full">
       <AssistantErrorState error={error} eventId={eventId} thread={thread} />
     </ChatCard>
   );

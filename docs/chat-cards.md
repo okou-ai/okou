@@ -29,11 +29,21 @@ presentation.
 
 ## Fixed Height and Stable Layout
 
-Every card in the chat transcript must keep a fixed outer height at a given
-available width. This includes action, failure recovery, billing, unavailable,
-and resource-preview cards. Different card types may use different dimensions,
-and responsive breakpoints may select a different fixed height. Asynchronous
-data and status changes must not select the card's height.
+Every card in the chat transcript must keep one outer height for the lifetime of
+that card occurrence, at a given available width. This includes action, failure
+recovery, billing, unavailable, and resource-preview cards. Different card types
+may use different dimensions, and responsive breakpoints may select a different
+height. Asynchronous data and status changes must not select the card's height.
+
+The height itself may come from the card's own synchronous row structure rather
+than from a hardcoded pixel value. A notice card that renders only a headline is
+one row tall, and the same card with a supporting line is taller, because that
+choice is made from props already present at mount and never changes afterwards.
+Reserve geometry wherever the asynchronous read does reach: the notice cards in
+`chat-thread-page.tsx` keep a two-line box for the supporting line, since
+billing status and failure-recovery classification swap that text inside an
+already mounted frame. Do not pay for that reservation on rows the asynchronous
+read cannot introduce.
 
 ### Keep the frame mounted
 
