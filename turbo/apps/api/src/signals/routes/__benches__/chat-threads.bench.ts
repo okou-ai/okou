@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 import { eq, sql } from "drizzle-orm";
-import { HttpResponse, delay, http, passthrough } from "msw";
+import { delay } from "msw";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -48,6 +48,7 @@ import { connectorCatalogSource } from "../../services/connector-catalog-source"
 import { currentConnectorCatalogValidatorIdentity } from "../../services/connector-catalog-validator-authority";
 import { normalizeRunMetadata } from "../../services/agent-run-metadata-write.service";
 import { seedUserModelProvider$ } from "./helpers/model-providers";
+import { createBenchHttpHandlers, MOCK_R2_LIST_DELAY_MS } from "./helpers/http";
 import { seedOrgMembership$ } from "../__tests__/helpers/org-membership";
 import { createRouteMocks } from "../__tests__/helpers/route-test";
 import { billingStatusRoutes } from "../billing-status";
@@ -87,7 +88,6 @@ const BACKGROUND_THREAD_COUNT = 200;
 const BACKGROUND_RUNS_PER_THREAD = 50;
 const BULK_INSERT_CHUNK = 500;
 const TARGET_ATTACHMENT_COUNT = 6;
-const MOCK_R2_LIST_DELAY_MS = 10;
 const STATUSES = ["completed", "completed", "failed", "running"] as const;
 const queryPlanRowSchema = z.object({ "QUERY PLAN": z.string() });
 const BENCH_CONNECTOR_CATALOG_VERSION = "bench-api-v1";
@@ -373,7 +373,7 @@ function commandInput(command: unknown): Record<string, unknown> {
   return command.input as Record<string, unknown>;
 }
 
-function installR2ListMock(): void {
+function installBenchExternalMocks(): void {
   mockEnv("S3_FORCE_PATH_STYLE", "true");
   context.mocks.s3.send.mockImplementation(async (command: unknown) => {
     if (commandName(command) !== "ListObjectsV2Command") {
@@ -398,43 +398,7 @@ function installR2ListMock(): void {
       ],
     };
   });
-  server.use(
-    http.get("*", async ({ request }) => {
-      const url = new URL(request.url);
-      if (!url.hostname.endsWith(".r2.cloudflarestorage.com")) {
-        return passthrough();
-      }
-      const pathBucket = url.pathname.split("/").filter(Boolean)[0];
-      const hostBucket = url.hostname.split(".")[0];
-      const bucket = pathBucket ?? hostBucket;
-      if (
-        bucket !== "test-user-artifacts" ||
-        url.searchParams.get("list-type") !== "2"
-      ) {
-        return HttpResponse.text("not found", { status: 404 });
-      }
-
-      await delay(MOCK_R2_LIST_DELAY_MS);
-      const prefix = url.searchParams.get("prefix") ?? "";
-      return HttpResponse.xml(
-        `<?xml version="1.0" encoding="UTF-8"?>
-<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Name>test-user-artifacts</Name>
-  <Prefix>${prefix}</Prefix>
-  <KeyCount>1</KeyCount>
-  <MaxKeys>1000</MaxKeys>
-  <IsTruncated>false</IsTruncated>
-  <Contents>
-    <Key>${prefix}bench-attachment.md</Key>
-    <LastModified>2026-05-25T00:00:00.000Z</LastModified>
-    <ETag>"bench-etag"</ETag>
-    <Size>4096</Size>
-    <StorageClass>STANDARD</StorageClass>
-  </Contents>
-</ListBucketResult>`,
-      );
-    }),
-  );
+  server.use(...createBenchHttpHandlers());
 }
 
 async function seedBackgroundLoad(): Promise<void> {
@@ -766,7 +730,7 @@ const ensureSeeded: () => Promise<BenchChatThreadFixture> = (() => {
   let cached: Promise<BenchChatThreadFixture> | undefined;
   return () => {
     cached ??= (async () => {
-      installR2ListMock();
+      installBenchExternalMocks();
       await seedBenchConnectorCatalog();
       const seeded = await seedBenchChatThread();
       await seedBackgroundLoad();
@@ -807,6 +771,28 @@ const ensureSeeded: () => Promise<BenchChatThreadFixture> = (() => {
       if (missingConnectorSlugs.length > 0) {
         throw new Error(
           `connector sanity check omitted seeded connectors: ${missingConnectorSlugs.join(", ")}`,
+        );
+      }
+      const providers = await personalModelProvidersClient.list({
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      if (providers.status !== 200) {
+        throw new Error(
+          `model provider sanity check failed: status=${String(providers.status)}`,
+        );
+      }
+      const claude = providers.body.modelProviders.find((provider) => {
+        return provider.type === "claude-code-oauth-token";
+      });
+      if (
+        claude?.accountEmail !== "bench@example.test" ||
+        claude.workspaceName !== "Bench API" ||
+        claude.planType !== "pro" ||
+        claude.subscriptionUsage?.fiveHour?.usedPercent !== 25 ||
+        claude.subscriptionUsage.weekly?.usedPercent !== 10
+      ) {
+        throw new Error(
+          "model provider sanity check omitted benchmark metadata",
         );
       }
       return seeded;
