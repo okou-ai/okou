@@ -12,7 +12,9 @@ export interface WorkflowTemplateItem {
   // WORKFLOW_TEMPLATE_CATEGORIES.
   readonly category: string;
   // Connector slugs shown as icons on the card. The catalog is curated by hand;
-  // the picker filters these to entries with an icon.
+  // the picker filters these to entries with an icon. Every slug listed here
+  // must expose an OAuth auth method: a template is a one-click start, and a
+  // connector that can only be set up by pasting an API key is not.
   readonly connectorSlugs: readonly ConnectorSlug[];
   readonly promptGuidance: string;
 }
@@ -88,23 +90,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: gmail required.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the Gmail label name, handling rules, and final action.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:daily-standup-report",
-    category: "Engineering",
-    title: "Daily standup report",
-    description:
-      "Pull product and engineering signals each morning, create a short report, and post it to Slack.",
-    shortDescription: "Post a morning product and engineering brief.",
-    connectorSlugs: ["github", "sentry", "axiom", "plausible", "slack"],
-    behavior: [
-      "Create a scheduled workflow that runs every weekday or every morning.",
-      "Pull recent GitHub activity, Sentry issues, Axiom metrics, and Plausible traffic signals.",
-      "Summarize changes, incidents, usage movement, blockers, and notable risks.",
-      "Post the final standup report to a Slack channel selected by the user.",
-    ],
-    missingInfo:
-      "Connectors: github, slack required; sentry, axiom, plausible optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the schedule, timezone, Slack channel, metric scope, and any required report sections.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:github-pr-summarizer",
@@ -301,55 +286,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: figma required; linear, slack optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Figma has no native event trigger, so poll on a cadence.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
-    id: "workflow-template:revenuecat-subscription-digest",
-    category: "Data",
-    title: "RevenueCat subscription digest",
-    description:
-      "Track subscriptions in Sheets and alert Slack when churn or cancellation patterns change.",
-    shortDescription: "Track subscriptions and alert Slack on churn.",
-    connectorSlugs: ["revenuecat", "google-sheets", "slack"],
-    behavior: [
-      "Create a daily scheduled workflow that pulls RevenueCat subscription activity.",
-      "Log new subscriptions, renewals, cancellations, and notable churn signals in Google Sheets.",
-      "Compare recent movement against the user's alert thresholds.",
-      "Post a Slack summary and send urgent alerts when churn spikes.",
-    ],
-    missingInfo:
-      "Connectors: revenuecat, google-sheets required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the RevenueCat project, schedule, timezone, Sheets destination, Slack channel, and alert thresholds.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:post-daily-metrics-slack",
-    category: "Data",
-    title: "Post daily metrics to Slack",
-    description:
-      "Post daily visitors, signups, and activation numbers to Slack.",
-    shortDescription: "Post daily visitors and signups to Slack.",
-    connectorSlugs: ["plausible", "slack", "posthog", "clerk"],
-    behavior: [
-      "Pull the metrics",
-      "Assembled into a KPI snapshot",
-      "Posted to Slack",
-    ],
-    missingInfo:
-      "Connectors: plausible, slack required; posthog, clerk optional.\nSuggested trigger: Add a schedule trigger (e.g. every morning).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:run-daily-query-sheets",
-    category: "Data",
-    title: "Run a daily query into Google Sheets",
-    description:
-      "Run your saved SQL on a schedule and append the results to a Sheet.",
-    shortDescription: "Run saved SQL and append results to a Sheet.",
-    connectorSlugs: ["snowflake", "google-sheets", "slack"],
-    behavior: [
-      "Run the query",
-      "Results formatted",
-      "Written to Google Sheets",
-    ],
-    missingInfo:
-      "Connectors: snowflake, google-sheets required; slack optional.\nSuggested trigger: Add a schedule trigger (e.g. every morning).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
     id: "workflow-template:check-posthog-signup-funnel",
     category: "Data",
     title: "Check the PostHog signup funnel",
@@ -364,66 +300,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: posthog required; slack optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:alert-metric-moves-slack",
-    category: "Data",
-    title: "Alert when a metric moves",
-    description:
-      "Watch your key metrics and alert Slack when one moves sharply.",
-    shortDescription: "Alert Slack when a key metric moves sharply.",
-    connectorSlugs: ["plausible", "slack", "posthog"],
-    behavior: [
-      "Check the metric",
-      "Compared to normal range",
-      "Alert posted to Slack",
-    ],
-    missingInfo:
-      "Connectors: plausible, slack required; posthog optional.\nSuggested trigger: Add a schedule trigger on a tight cadence (e.g. hourly) so anomalies surface quickly.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:track-signup-sources-sheets",
-    category: "Data",
-    title: "Track signup sources in Google Sheets",
-    description: "Attribute each new signup to its source in a tracking Sheet.",
-    shortDescription: "Attribute each signup to its source in a Sheet.",
-    connectorSlugs: ["clerk", "google-sheets", "plausible"],
-    behavior: [
-      "Read new signups",
-      "Attributed to a channel",
-      "Logged to Google Sheets",
-    ],
-    missingInfo:
-      "Connectors: clerk, google-sheets required; plausible optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Clerk has no native event trigger here, so poll on a cadence.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:build-weekly-deck-gamma",
-    category: "Data",
-    title: "Build the weekly deck in Gamma",
-    description:
-      "Turn the week's metrics into a ready-to-present deck in Gamma.",
-    shortDescription: "Turn the week's metrics into a Gamma deck.",
-    connectorSlugs: ["google-sheets", "gamma", "plausible", "slack"],
-    behavior: ["Gather the numbers", "Deck built in Gamma", "Posted to Slack"],
-    missingInfo:
-      "Connectors: google-sheets, gamma required; plausible, slack optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:competitive-intel-monitor",
-    category: "Marketing",
-    title: "Competitive intel monitor",
-    description:
-      "Monitor competitor sites for pricing and feature changes, save findings to Notion, and alert Slack.",
-    shortDescription: "Log competitor pricing changes in Notion.",
-    connectorSlugs: ["firecrawl", "notion", "slack"],
-    behavior: [
-      "Create a weekly or daily scheduled workflow for a list of competitor pages.",
-      "Use Firecrawl to detect meaningful pricing, packaging, messaging, and feature changes.",
-      "Save structured findings with source links and change summaries in Notion.",
-      "Post Slack alerts for important changes that need review.",
-    ],
-    missingInfo:
-      "Connectors: firecrawl, notion required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among competitor URLs, cadence, timezone, Notion destination, Slack channel, and alert criteria.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:x-brand-monitor",
@@ -441,54 +317,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: x, notion required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the keywords or accounts, cadence, Notion database, Slack channel, and alert thresholds.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:track-keyword-ranks-ahrefs",
-    category: "Marketing",
-    title: "Track keyword ranks with Ahrefs",
-    description:
-      "Track keyword rankings in Ahrefs and report the movers in Notion.",
-    shortDescription: "Report the week's keyword rank movers.",
-    connectorSlugs: ["ahrefs", "similarweb", "notion"],
-    behavior: [
-      "Read keyword positions",
-      "Movers identified",
-      "Reported in Notion",
-    ],
-    missingInfo:
-      "Connectors: ahrefs required; similarweb, notion optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:publish-scheduled-posts-buffer",
-    category: "Marketing",
-    title: "Publish scheduled posts to Buffer",
-    description:
-      "Publish the day's scheduled content and queue the social posts.",
-    shortDescription: "Publish the day's scheduled social posts.",
-    connectorSlugs: ["notion", "strapi", "buffer"],
-    behavior: [
-      "Read today's calendar",
-      "Published to the CMS",
-      "Social queued in Buffer",
-    ],
-    missingInfo:
-      "Connectors: notion, strapi required; buffer optional.\nSuggested trigger: Add a schedule trigger (e.g. every morning) to publish the day's scheduled content.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:blog-posts-to-x",
-    category: "Marketing",
-    title: "Turn blog posts into social posts",
-    description:
-      "Turn each new blog post into social variants queued via Buffer.",
-    shortDescription: "Turn each new blog post into social posts.",
-    connectorSlugs: ["strapi", "buffer", "x"],
-    behavior: [
-      "Find new posts",
-      "Cut into social variants",
-      "Queued in Buffer",
-    ],
-    missingInfo:
-      "Connectors: strapi, buffer required; x optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Publishing has no native event trigger, so poll for newly published posts.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:draft-newsletter-mailchimp",
@@ -523,112 +351,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: google-ads, slack required; meta-ads optional.\nSuggested trigger: Add a schedule trigger (e.g. every morning).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
-    id: "workflow-template:salesforce-pipeline-digest",
-    category: "Sales",
-    title: "Salesforce pipeline digest",
-    description:
-      "Summarize Salesforce opportunity changes and close-date risks in Slack each week.",
-    shortDescription: "Summarize Salesforce pipeline risks weekly.",
-    connectorSlugs: ["salesforce", "slack"],
-    behavior: [
-      "Create a weekly scheduled workflow that reviews selected Salesforce opportunities.",
-      "Summarize new opportunities, stage changes, close-date movement, and blocked deals.",
-      "Highlight risks, stale opportunities, and follow-ups due soon.",
-      "Post the pipeline digest to a Slack channel.",
-    ],
-    missingInfo:
-      "Connectors: salesforce, slack required.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the Salesforce object scope, cadence, timezone, Slack channel, and pipeline rules.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:catch-leads-gmail",
-    category: "Sales",
-    title: "Catch leads from Gmail",
-    description:
-      "Spot buying signals in new email and log the qualified leads.",
-    shortDescription: "Spot buying signals and log qualified leads.",
-    connectorSlugs: ["gmail", "apollo", "google-sheets", "slack"],
-    behavior: [
-      "Scan new mail",
-      "Lead enriched and logged",
-      "Next step suggested",
-    ],
-    missingInfo:
-      "Connectors: gmail required; apollo, google-sheets, slack optional.\nSuggested trigger: Add a gmail-new-message event trigger so it runs on each new incoming email.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:new-gmail-contacts-hubspot",
-    category: "Sales",
-    title: "Add new Gmail contacts to HubSpot",
-    description: "Add and enrich unknown email senders as HubSpot contacts.",
-    shortDescription: "Add unknown email senders to HubSpot.",
-    connectorSlugs: ["gmail", "hubspot", "apollo"],
-    behavior: [
-      "Spot an unknown sender",
-      "Contact created and enriched",
-      "Logged for follow-up",
-    ],
-    missingInfo:
-      "Connectors: gmail, hubspot required; apollo optional.\nSuggested trigger: Add a gmail-new-message event trigger so it runs on each new incoming email.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:research-new-signups-apollo",
-    category: "Sales",
-    title: "Research new signups",
-    description: "Research each new signup and post a quick snapshot.",
-    shortDescription: "Research each new signup and post a snapshot.",
-    connectorSlugs: ["clerk", "slack", "apollo"],
-    behavior: [
-      "Read new signups",
-      "Researched with Apollo",
-      "Snapshot posted to Slack",
-    ],
-    missingInfo:
-      "Connectors: clerk, slack required; apollo optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Clerk signups have no native event trigger, so poll on a cadence.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:gmail-followups-auto",
-    category: "Sales",
-    title: "Send Gmail follow-ups automatically",
-    description: "Find contacts who didn't reply and draft the next follow-up.",
-    shortDescription: "Draft follow-ups for contacts who didn't reply.",
-    connectorSlugs: ["instantly", "gmail", "apollo"],
-    behavior: ["Check sequence status", "Next touch drafted", "Ready in Gmail"],
-    missingInfo:
-      "Connectors: instantly, gmail required; apollo optional.\nSuggested trigger: Add a schedule trigger (e.g. every morning). Instantly has no native event trigger, so poll for non-repliers.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:prep-google-calendar-meetings",
-    category: "Sales",
-    title: "Prep for Google Calendar meetings",
-    description:
-      "Research external attendees and send a prep brief before meetings.",
-    shortDescription: "Send a prep brief before external meetings.",
-    connectorSlugs: ["google-calendar", "apollo", "gong", "slack"],
-    behavior: [
-      "A meeting is added",
-      "Attendee researched",
-      "Prep brief sent to Slack",
-    ],
-    missingInfo:
-      "Connectors: google-calendar required; apollo, gong, slack optional.\nSuggested trigger: Add a google-calendar-event-created event trigger, or a morning schedule that scans the day's meetings.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:log-gong-calls-hubspot",
-    category: "Sales",
-    title: "Log Gong calls to HubSpot",
-    description:
-      "Pull notes and next steps from a Gong call into the HubSpot deal.",
-    shortDescription: "Pull Gong call notes into the HubSpot deal.",
-    connectorSlugs: ["gong", "hubspot", "slack"],
-    behavior: [
-      "Read the transcript",
-      "Summary and next steps drafted",
-      "Logged to HubSpot",
-    ],
-    missingInfo:
-      "Connectors: gong, hubspot required; slack optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Gong has no native event trigger, so poll for new call transcripts.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
     id: "workflow-template:support-ticket-router",
     category: "Support",
     title: "Support ticket router",
@@ -646,38 +368,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: gmail, notion required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the inbox or label, triage rules, Notion database, Slack channel, and escalation criteria.",
   }),
   defineWorkflowTemplate({
-    id: "workflow-template:zendesk-knowledge-base",
-    category: "Support",
-    title: "Zendesk knowledge base",
-    description:
-      "Find recurring Zendesk questions, draft FAQ entries, and save them to Notion.",
-    shortDescription: "Turn recurring questions into FAQ entries.",
-    connectorSlugs: ["zendesk", "notion", "slack"],
-    behavior: [
-      "Create a scheduled workflow that reviews recent Zendesk conversations or tickets.",
-      "Cluster recurring questions, gaps, and confusing product areas.",
-      "Draft FAQ or knowledge-base entries in Notion with source ticket examples.",
-      "Post a Slack summary when new FAQ drafts are ready for review.",
-    ],
-    missingInfo:
-      "Connectors: zendesk, notion required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the Zendesk scope, cadence, Notion destination, Slack channel, and publishing/review rules.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:draft-replies-notion-faq",
-    category: "Support",
-    title: "Draft replies from your Notion FAQ",
-    description: "Draft ticket replies grounded in your Notion FAQ.",
-    shortDescription: "Draft ticket replies from your Notion FAQ.",
-    connectorSlugs: ["intercom", "notion", "gmail"],
-    behavior: [
-      "A question arrives",
-      "Check the Notion FAQ",
-      "Reply drafted for review",
-    ],
-    missingInfo:
-      "Connectors: intercom, notion required; gmail optional.\nSuggested trigger: Add a schedule trigger on a tight cadence (e.g. every 15 minutes), or a webhook-received trigger if Intercom can post to a webhook.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
     id: "workflow-template:send-bugs-github-slack",
     category: "Support",
     title: "Send bugs to GitHub and Slack",
@@ -692,84 +382,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: github, slack required; linear optional.\nSuggested trigger: Add a github-pull-request event trigger with the labeled action on the bug label.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:spot-churn-risk-stripe-zendesk",
-    category: "Support",
-    title: "Spot churn risk in Stripe and Zendesk",
-    description: "Flag accounts at risk of churn and draft a recovery email.",
-    shortDescription: "Flag churn risk and draft a recovery email.",
-    connectorSlugs: ["clerk", "stripe", "zendesk", "resend", "slack"],
-    behavior: [
-      "Scan accounts",
-      "At-risk accounts flagged",
-      "Recovery email drafted",
-    ],
-    missingInfo:
-      "Connectors: clerk, stripe required; zendesk, resend, slack optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Stripe and Zendesk have no native event trigger here, so poll on a cadence.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:summarize-zendesk-tickets-daily",
-    category: "Support",
-    title: "Summarize Zendesk tickets daily",
-    description:
-      "Summarize the last day of Zendesk tickets and post it to Slack.",
-    shortDescription: "Post a daily summary of Zendesk tickets.",
-    connectorSlugs: ["zendesk", "slack"],
-    behavior: [
-      "Read the queue",
-      "Grouped by severity and age",
-      "Posted to Slack",
-    ],
-    missingInfo:
-      "Connectors: zendesk, slack required.\nSuggested trigger: Add a schedule trigger (e.g. every morning).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:daily-company-brief-slack",
-    category: "CEO",
-    title: "Post a daily company brief to Slack",
-    description:
-      "Pull product, growth, and revenue into a daily brief on Slack.",
-    shortDescription: "Pull product, growth, and revenue into a brief.",
-    connectorSlugs: [
-      "plausible",
-      "slack",
-      "clerk",
-      "stripe",
-      "github",
-      "sentry",
-    ],
-    behavior: [
-      "Gather the signals",
-      "Assembled into a pulse",
-      "Posted to Slack",
-    ],
-    missingInfo:
-      "Connectors: plausible, slack required; clerk, stripe, github, sentry optional.\nSuggested trigger: Add a schedule trigger (e.g. every morning).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:daily-industry-news-slack",
-    category: "CEO",
-    title: "Post daily industry news to Slack",
-    description:
-      "Round up the day's relevant industry news into a Slack brief.",
-    shortDescription: "Round up the day's industry news for Slack.",
-    connectorSlugs: ["exa", "slack"],
-    behavior: ["Scan the news", "Distilled into a brief", "Posted to Slack"],
-    missingInfo:
-      "Connectors: exa, slack required.\nSuggested trigger: Add a schedule trigger (e.g. every morning).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:business-review-gamma",
-    category: "CEO",
-    title: "Build the business review in Gamma",
-    description:
-      "Turn the month's metrics into a business review deck in Gamma.",
-    shortDescription: "Turn the month's metrics into a review deck.",
-    connectorSlugs: ["stripe", "gamma", "clerk"],
-    behavior: ["Pull the numbers", "Deck built in Gamma", "Ready to present"],
-    missingInfo:
-      "Connectors: stripe, gamma required; clerk optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:highlight-key-emails-gmail",
@@ -810,23 +422,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: gmail required; google-calendar, slack optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
-    id: "workflow-template:clickup-slack-standup",
-    category: "Operations",
-    title: "ClickUp Slack standup",
-    description:
-      "Pull ClickUp tasks each morning and post a team standup summary to Slack.",
-    shortDescription: "Post a morning standup from ClickUp tasks.",
-    connectorSlugs: ["clickup", "slack"],
-    behavior: [
-      "Create a daily scheduled workflow that reads selected ClickUp spaces, folders, lists, or assignees.",
-      "Summarize active tasks, completed work, blockers, and overdue items by person or team.",
-      "Keep the report compact enough for daily Slack consumption.",
-      "Post the standup summary to the selected Slack channel.",
-    ],
-    missingInfo:
-      "Connectors: clickup, slack required.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the ClickUp scope, schedule, timezone, grouping preference, and Slack channel.",
-  }),
-  defineWorkflowTemplate({
     id: "workflow-template:sync-asana-projects-notion",
     category: "Operations",
     title: "Sync Asana projects to Notion",
@@ -836,21 +431,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     behavior: ["Read Asana", "Rolled into one board", "Digest posted"],
     missingInfo:
       "Connectors: asana, notion required.\nSuggested trigger: Add a schedule trigger (e.g. every morning). Asana has no native event trigger, so poll on a cadence.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:meeting-notes-asana-tasks",
-    category: "Operations",
-    title: "Turn meeting notes into Asana tasks",
-    description: "Turn meeting notes into assigned, due-dated tasks in Asana.",
-    shortDescription: "Turn meeting notes into tasks in Asana.",
-    connectorSlugs: ["fireflies", "asana"],
-    behavior: [
-      "Read the transcript",
-      "Action items extracted",
-      "Tasks created in Asana",
-    ],
-    missingInfo:
-      "Connectors: fireflies, asana required.\nSuggested trigger: Add a google-meet-transcript-generated event trigger if you meet on Google Meet; otherwise a schedule trigger, since Fireflies has no native event trigger.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:file-gmail-invoices-drive",
@@ -956,22 +536,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: gmail required.\nSuggested trigger: Add a gmail-new-message event trigger so it runs on each new incoming email.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
-    id: "workflow-template:research-calendar-meetings",
-    category: "Everyone",
-    title: "Research your calendar meetings",
-    description:
-      "Research the people you're meeting before each calendar event.",
-    shortDescription: "Research the people you meet before each event.",
-    connectorSlugs: ["google-calendar", "exa", "slack"],
-    behavior: [
-      "A meeting is added",
-      "Attendees researched",
-      "Dossier delivered",
-    ],
-    missingInfo:
-      "Connectors: google-calendar required; exa, slack optional.\nSuggested trigger: Add a google-calendar-event-created event trigger, or a morning schedule that scans the day's meetings.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
     id: "workflow-template:summarize-gmail-newsletters",
     category: "Everyone",
     title: "Summarize Gmail newsletters",
@@ -985,18 +549,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: gmail, slack required.\nSuggested trigger: Add a schedule trigger (e.g. weekly) to digest the newsletters, or a gmail-label-applied trigger on your newsletter label.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:meeting-recaps-slack",
-    category: "Everyone",
-    title: "Get meeting recaps in Slack",
-    description:
-      "Share a recap with decisions and action items after each meeting.",
-    shortDescription: "Share decisions and action items after meetings.",
-    connectorSlugs: ["fireflies", "gmail", "slack"],
-    behavior: ["Read the transcript", "Recap written", "Sent to you"],
-    missingInfo:
-      "Connectors: fireflies required; gmail, slack optional.\nSuggested trigger: Add a google-meet-transcript-generated event trigger if you meet on Google Meet; otherwise a schedule trigger, since Fireflies has no native event trigger.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:flagged-gmail-todoist-tasks",

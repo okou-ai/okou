@@ -19,6 +19,10 @@ interface WorkflowRecommendationDraft {
   readonly prompt: string;
 }
 
+// A null templateId means the card contributes its prompt without attaching a
+// built-in template: the workflow catalog only carries templates whose
+// connectors all support OAuth, so recommendations built on API-key-only
+// services keep their prompt and drop the attachment.
 export const WORKFLOW_RECOMMENDATIONS = [
   {
     id: "morning",
@@ -27,7 +31,7 @@ export const WORKFLOW_RECOMMENDATIONS = [
   },
   {
     id: "meetings",
-    templateId: "workflow-template:research-calendar-meetings",
+    templateId: null,
     connectors: ["google-calendar"],
   },
   {
@@ -42,7 +46,7 @@ export const WORKFLOW_RECOMMENDATIONS = [
   },
   {
     id: "recap",
-    templateId: "workflow-template:meeting-recaps-slack",
+    templateId: null,
     connectors: ["fireflies"],
   },
   {
@@ -52,12 +56,12 @@ export const WORKFLOW_RECOMMENDATIONS = [
   },
   {
     id: "competitors",
-    templateId: "workflow-template:competitive-intel-monitor",
+    templateId: null,
     connectors: ["firecrawl", "notion"],
   },
   {
     id: "metrics",
-    templateId: "workflow-template:post-daily-metrics-slack",
+    templateId: null,
     connectors: ["plausible", "slack"],
   },
   { id: "reply", templateId: null, connectors: ["gmail"] },

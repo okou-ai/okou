@@ -696,11 +696,6 @@
       "websitePreview": "{{title}} Vorschau der Website-Vorlage",
       "workflow": "Workflow",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Beobachten Sie Ihre wichtigsten Kennzahlen und benachrichtigen Sie Slack, wenn sich eine starke Veränderung abzeichnet.",
-          "shortDescription": "Slack melden, wenn eine Kennzahl stark ausschlägt.",
-          "title": "Warnung, wenn sich eine Metrik ändert"
-        },
         "auto-inbox-label": {
           "description": "Erstellen Sie einen Workflow, der startet, sobald ein Gmail-Label gesetzt wird, und die markierte E-Mail bearbeitet.",
           "shortDescription": "Workflow starten, sobald Sie ein Gmail-Label setzen.",
@@ -711,30 +706,10 @@
           "shortDescription": "Fertige PRs mergen, sobald die CI grün ist.",
           "title": "GitHub-PRs automatisch mergen"
         },
-        "blog-posts-to-x": {
-          "description": "Machen Sie aus jedem neuen Blogbeitrag Social-Varianten in der Buffer-Warteschlange.",
-          "shortDescription": "Aus jedem neuen Blogbeitrag Social-Posts machen.",
-          "title": "Verwandeln Sie Blog-Beiträge in soziale Beiträge"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Verwandeln Sie die Kennzahlen der Woche in ein präsentationsfertiges Deck in Gamma.",
-          "shortDescription": "Die Wochenzahlen zu einem Gamma-Deck machen.",
-          "title": "Baue das wöchentliche Deck in Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Verwandeln Sie die Kennzahlen des Monats in ein Business-Review-Deck in Gamma.",
-          "shortDescription": "Die Monatszahlen zu einem Review-Deck machen.",
-          "title": "Business-Review in Gamma erstellen"
-        },
         "catch-calendar-conflicts": {
           "description": "Scannen Sie Ihren Kalender auf Doppelbuchungen und benachrichtigen Sie frühzeitig.",
           "shortDescription": "Doppelbuchungen im Kalender früh erkennen.",
           "title": "Google Calendar-Konflikte erkennen"
-        },
-        "catch-leads-gmail": {
-          "description": "Erkennen Sie Kaufsignale in neuen E-Mails und protokollieren Sie die qualifizierten Leads.",
-          "shortDescription": "Kaufsignale erkennen und Leads erfassen.",
-          "title": "Erfassen Sie Leads von Gmail"
         },
         "chase-overdue-asana-tasks": {
           "description": "Finden Sie überfällige Asana-Aufgaben und stoßen Sie deren Besitzer auf Slack an.",
@@ -746,35 +721,10 @@
           "shortDescription": "Den größten Abbruch im Anmeldefunnel posten.",
           "title": "Schauen Sie sich den PostHog-Anmeldetrichter an"
         },
-        "clickup-slack-standup": {
-          "description": "Holen Sie jeden Morgen die ClickUp-Aufgaben und posten Sie eine Standup-Zusammenfassung des Teams in Slack.",
-          "shortDescription": "Ein Morgen-Standup aus ClickUp-Aufgaben posten.",
-          "title": "ClickUp-Standup in Slack"
-        },
         "compare-google-ads-last-month": {
           "description": "Vergleichen Sie Werbeausgaben und ROAS mit dem Vormonat und melden Sie Auffälligkeiten in Slack.",
           "shortDescription": "Werbeausgaben und ROAS mit dem Vormonat vergleichen.",
           "title": "Vergleichen Sie Google Ads mit dem letzten Monat"
-        },
-        "competitive-intel-monitor": {
-          "description": "Beobachten Sie Preise und Funktionen auf Wettbewerber-Websites, sichern Sie die Funde in Notion und melden Sie sie in Slack.",
-          "shortDescription": "Preisänderungen der Wettbewerber in Notion festhalten.",
-          "title": "Wettbewerbsbeobachtung"
-        },
-        "daily-company-brief-slack": {
-          "description": "Fassen Sie Produkte, Wachstum und Umsatz in einem täglichen Briefing auf Slack zusammen.",
-          "shortDescription": "Produkt, Wachstum und Umsatz in einem Briefing.",
-          "title": "Veröffentlichen Sie täglich ein Unternehmensbriefing auf Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Fassen Sie die relevanten Branchennachrichten des Tages in einem Slack-Briefing zusammen.",
-          "shortDescription": "Die Branchennews des Tages für Slack bündeln.",
-          "title": "Veröffentlichen Sie täglich Branchennachrichten auf Slack"
-        },
-        "daily-standup-report": {
-          "description": "Sammeln Sie jeden Morgen Produkt- und Engineering-Signale, erstellen Sie einen kurzen Bericht und posten Sie ihn in Slack.",
-          "shortDescription": "Morgens ein Produkt- und Engineering-Briefing posten.",
-          "title": "Täglicher Standup-Bericht"
         },
         "draft-github-release-notes-notion": {
           "description": "Wandeln Sie die seit der letzten Veröffentlichung zusammengeführten PRs in saubere Notizen in Notion um.",
@@ -785,11 +735,6 @@
           "description": "Fassen Sie die jüngsten Neuigkeiten zu einem Newsletter-Entwurf in Mailchimp zusammen.",
           "shortDescription": "Neuigkeiten zu einem Newsletter zusammenstellen.",
           "title": "Entwerfen Sie den Newsletter in Mailchimp"
-        },
-        "draft-replies-notion-faq": {
-          "description": "Entwürfe von Ticketantworten basieren auf Ihren Notion-FAQ.",
-          "shortDescription": "Ticket-Antworten aus Ihrer Notion-FAQ entwerfen.",
-          "title": "Antwortentwürfe aus Ihren Notion-FAQs"
         },
         "feedback-router": {
           "description": "Beobachten Sie einen Slack-Kanal und leiten Sie Produktfeedback mit Labels und Zuständigen nach Notion weiter.",
@@ -826,11 +771,6 @@
           "shortDescription": "Gemergte Pull Requests zu einem Bericht bündeln.",
           "title": "GitHub-PR-Zusammenfassung"
         },
-        "gmail-followups-auto": {
-          "description": "Suchen Sie nach Kontakten, die nicht geantwortet haben, und verfassen Sie das nächste Follow-up.",
-          "shortDescription": "Nachfassen bei Kontakten, die nicht geantwortet haben.",
-          "title": "Senden Sie Gmail-Follow-ups automatisch"
-        },
         "gmail-reconnect-reminders": {
           "description": "Zeigen Sie wichtige Kontakte an, die Sie schon lange nicht mehr per E-Mail verschickt haben.",
           "shortDescription": "Kontakte zeigen, denen Sie lange nicht schrieben.",
@@ -846,30 +786,10 @@
           "shortDescription": "Kennzahlen zu einem Investoren-Update bündeln.",
           "title": "Entwerfen Sie das Investoren-Update in Google Docs"
         },
-        "log-gong-calls-hubspot": {
-          "description": "Ziehen Sie Notizen und nächste Schritte aus einem Gong-Anruf in den HubSpot-Deal ein.",
-          "shortDescription": "Gong-Gesprächsnotizen in den HubSpot-Deal holen.",
-          "title": "Gong-Anrufe bei HubSpot protokollieren"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Wandeln Sie Besprechungsnotizen in Asana in zugewiesene, fällige Aufgaben um.",
-          "shortDescription": "Aus Meetingnotizen Aufgaben in Asana machen.",
-          "title": "Verwandeln Sie Besprechungsnotizen in Asana-Aufgaben"
-        },
-        "meeting-recaps-slack": {
-          "description": "Teilen Sie nach jedem Meeting eine Zusammenfassung mit Entscheidungen und Aktionspunkten.",
-          "shortDescription": "Entscheidungen und To-dos nach dem Meeting teilen.",
-          "title": "Erhalten Sie Besprechungsrückblicke in Slack"
-        },
         "morning-brief": {
           "description": "Machen Sie aus Gmail-, Kalender- und Notion-Updates einen kurzen Tagesplan in Slack.",
           "shortDescription": "Aus Mails und Terminen einen kurzen Tagesplan machen.",
           "title": "Morgenbriefing"
-        },
-        "new-gmail-contacts-hubspot": {
-          "description": "Fügen Sie unbekannte E-Mail-Absender als HubSpot-Kontakte hinzu und bereichern Sie sie.",
-          "shortDescription": "Unbekannte Absender in HubSpot anlegen.",
-          "title": "Fügen Sie neue Gmail-Kontakte zu HubSpot hinzu"
         },
         "onboard-new-hires-asana": {
           "description": "Erstellen Sie die Checkliste für die Onboarding-Aufgaben für jeden neuen Mitarbeiter in Asana.",
@@ -881,50 +801,10 @@
           "shortDescription": "Ihre Woche aus GitHub und Gmail zusammenfassen.",
           "title": "Persönlicher Wochenüberblick"
         },
-        "post-daily-metrics-slack": {
-          "description": "Veröffentlichen Sie tägliche Besucher, Anmeldungen und Aktivierungsnummern in Slack.",
-          "shortDescription": "Tägliche Besucher und Anmeldungen in Slack posten.",
-          "title": "Veröffentlichen Sie tägliche Kennzahlen auf Slack"
-        },
         "post-release-notes-slack": {
           "description": "Erstellen Sie ein Änderungsprotokoll der kürzlich versendeten Arbeit und veröffentlichen Sie es in Slack.",
           "shortDescription": "Ein Changelog entwerfen und in Slack posten.",
           "title": "Veröffentlichen Sie Versionshinweise in Slack"
-        },
-        "prep-google-calendar-meetings": {
-          "description": "Recherchieren Sie externe Teilnehmer und senden Sie vor Besprechungen ein Vorbereitungsbriefing.",
-          "shortDescription": "Vor externen Terminen ein Briefing schicken.",
-          "title": "Auf Google Calendar-Meetings vorbereiten"
-        },
-        "publish-scheduled-posts-buffer": {
-          "description": "Veröffentlichen Sie die für den Tag geplanten Inhalte und stellen Sie die Social-Beiträge in die Warteschlange.",
-          "shortDescription": "Die für heute geplanten Social-Beiträge posten.",
-          "title": "Veröffentlichen Sie geplante Beiträge in Buffer"
-        },
-        "research-calendar-meetings": {
-          "description": "Informieren Sie sich vor jedem Kalenderereignis über die Personen, die Sie treffen.",
-          "shortDescription": "Vor jedem Termin die Teilnehmenden recherchieren.",
-          "title": "Recherchieren Sie Ihre Kalenderbesprechungen"
-        },
-        "research-new-signups-apollo": {
-          "description": "Recherchieren Sie jede neue Anmeldung und veröffentlichen Sie einen kurzen Schnappschuss.",
-          "shortDescription": "Jede neue Anmeldung recherchieren und posten.",
-          "title": "Recherchieren Sie neue Anmeldungen"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Verfolgen Sie Abos in Sheets und melden Sie in Slack, wenn sich Kündigungs- oder Abwanderungsmuster ändern.",
-          "shortDescription": "Abos verfolgen und Abwanderung in Slack melden.",
-          "title": "RevenueCat-Abo-Überblick"
-        },
-        "run-daily-query-sheets": {
-          "description": "Führen Sie Ihr gespeichertes SQL nach einem Zeitplan aus und hängen Sie die Ergebnisse an ein Blatt an.",
-          "shortDescription": "Gespeichertes SQL ausführen und in ein Sheet schreiben.",
-          "title": "Führen Sie täglich eine Abfrage in Google Sheets durch"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Fassen Sie wöchentlich Änderungen an Salesforce-Opportunities und Risiken beim Abschlussdatum in Slack zusammen.",
-          "shortDescription": "Wöchentlich die Risiken der Salesforce-Pipeline bündeln.",
-          "title": "Salesforce-Pipeline-Überblick"
         },
         "send-bugs-github-slack": {
           "description": "Erfassen Sie als Fehler gekennzeichnete Berichte als GitHub-Issues und benachrichtigen Sie das Team in Slack.",
@@ -941,20 +821,10 @@
           "shortDescription": "Posteingang sortieren und Antworten entwerfen.",
           "title": "Sortieren Sie Gmail- und Antwortentwürfe"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Kennzeichnen Sie Konten, bei denen das Risiko einer Abwanderung besteht, und verfassen Sie eine Wiederherstellungs-E-Mail.",
-          "shortDescription": "Abwanderungsrisiko erkennen und Mail entwerfen.",
-          "title": "Erkennen Sie das Abwanderungsrisiko bei Stripe und Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Fassen Sie die Newsletter in Ihrem Posteingang in einer kurzen Zusammenfassung zusammen.",
           "shortDescription": "Ihre Newsletter zu einer Zusammenfassung bündeln.",
           "title": "Fassen Sie Gmail-Newsletter zusammen"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Fassen Sie die Zendesk-Tickets des letzten Tages zusammen und veröffentlichen Sie sie auf Slack.",
-          "shortDescription": "Täglich die Zendesk-Tickets zusammenfassen.",
-          "title": "Fassen Sie Zendesk-Tickets täglich zusammen"
         },
         "support-ticket-router": {
           "description": "Klassifizieren Sie Support-E-Mails, legen Sie Notion-Einträge an und melden Sie kritische Tickets in Slack.",
@@ -976,16 +846,6 @@
           "shortDescription": "Die größten Nutzungsänderungen der Woche zeigen.",
           "title": "Verfolgen Sie die Funktionsnutzung mit PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Verfolgen Sie Keyword-Rankings in Ahrefs und halten Sie die größten Bewegungen in Notion fest.",
-          "shortDescription": "Die Keyword-Bewegungen der Woche berichten.",
-          "title": "Verfolgen Sie Keyword-Ränge mit Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Ordnen Sie jede neue Anmeldung in einem Tracking-Sheet ihrer Quelle zu.",
-          "shortDescription": "Jede Anmeldung ihrer Quelle im Sheet zuordnen.",
-          "title": "Verfolgen Sie Anmeldequellen in Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Überwachen Sie Vercel-Deployments, verknüpfen Sie sie mit GitHub-Commits und melden Sie Fehlschläge in Slack.",
           "shortDescription": "Slack melden, wenn ein Vercel-Deploy fehlschlägt.",
@@ -995,11 +855,6 @@
           "description": "Verfolgen Sie Markenerwähnungen auf X, sichern Sie relevante Beiträge in Notion und melden Sie wichtige Erwähnungen in Slack.",
           "shortDescription": "Starke Markenerwähnungen auf X in Slack melden.",
           "title": "Markenbeobachtung auf X"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Finden Sie wiederkehrende Zendesk-Fragen, entwerfen Sie FAQ-Einträge und speichern Sie sie in Notion.",
-          "shortDescription": "Wiederkehrende Fragen zu FAQ-Einträgen machen.",
-          "title": "Zendesk-Wissensdatenbank"
         }
       },
       "workflowCategories": {

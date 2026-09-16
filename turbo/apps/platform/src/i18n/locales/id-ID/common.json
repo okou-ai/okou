@@ -695,11 +695,6 @@
       "websitePreview": "pratinjau template website {{title}}",
       "workflow": "Alur kerja",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "Pantau metrik utama Anda dan beri peringatan ke Slack saat salah satunya berubah tajam.",
-          "shortDescription": "Beri tahu Slack saat metrik kunci bergerak tajam.",
-          "title": "Beri peringatan saat metrik berubah"
-        },
         "auto-inbox-label": {
           "description": "Buat alur kerja yang berjalan saat label Gmail dipasang dan menangani email berlabel itu.",
           "shortDescription": "Jalankan alur kerja saat Anda memasang label Gmail.",
@@ -710,30 +705,10 @@
           "shortDescription": "Merge PR yang siap begitu CI lolos.",
           "title": "Auto-merge PR GitHub"
         },
-        "blog-posts-to-x": {
-          "description": "Ubah tiap artikel blog baru menjadi versi sosial di antrean Buffer.",
-          "shortDescription": "Ubah tiap artikel blog baru jadi post sosial.",
-          "title": "Ubah posting blog menjadi posting sosial"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "Ubah metrik minggu ini menjadi deck siap presentasi di Gamma.",
-          "shortDescription": "Ubah metrik minggu ini jadi deck Gamma.",
-          "title": "Buat deck mingguan di Gamma"
-        },
-        "business-review-gamma": {
-          "description": "Ubah metrik bulan ini menjadi deck tinjauan bisnis di Gamma.",
-          "shortDescription": "Ubah metrik bulan ini jadi deck review.",
-          "title": "Buat tinjauan bisnis di Gamma"
-        },
         "catch-calendar-conflicts": {
           "description": "Pindai kalender Anda untuk jadwal ganda dan beri tahu lebih awal.",
           "shortDescription": "Temukan jadwal ganda di kalender lebih awal.",
           "title": "Deteksi konflik Google Calendar"
-        },
-        "catch-leads-gmail": {
-          "description": "Temukan sinyal pembelian di email baru dan catat lead yang memenuhi syarat.",
-          "shortDescription": "Kenali sinyal beli dan catat lead yang layak.",
-          "title": "Tangkap lead dari Gmail"
         },
         "chase-overdue-asana-tasks": {
           "description": "Temukan tugas Asana yang terlambat dan ingatkan pemiliknya di Slack.",
@@ -745,35 +720,10 @@
           "shortDescription": "Posting titik drop-off terbesar di funnel signup.",
           "title": "Periksa alur pendaftaran PostHog"
         },
-        "clickup-slack-standup": {
-          "description": "Ambil tugas ClickUp tiap pagi dan posting ringkasan standup tim ke Slack.",
-          "shortDescription": "Posting standup pagi dari tugas ClickUp.",
-          "title": "Standup ClickUp di Slack"
-        },
         "compare-google-ads-last-month": {
           "description": "Bandingkan belanja iklan dan ROAS dengan bulan lalu, lalu tandai anomalinya di Slack.",
           "shortDescription": "Bandingkan belanja iklan dan ROAS dengan bulan lalu.",
           "title": "Bandingkan Google Ads vs bulan lalu"
-        },
-        "competitive-intel-monitor": {
-          "description": "Pantau perubahan harga dan fitur di situs kompetitor, simpan temuannya di Notion, dan beri tahu Slack.",
-          "shortDescription": "Catat perubahan harga kompetitor di Notion.",
-          "title": "Pemantau kompetitor"
-        },
-        "daily-company-brief-slack": {
-          "description": "Tarik produk, pertumbuhan, dan pendapatan ke ringkasan harian di Slack.",
-          "shortDescription": "Satukan produk, pertumbuhan, dan pendapatan jadi ringkasan.",
-          "title": "Kirim ringkasan harian perusahaan ke Slack"
-        },
-        "daily-industry-news-slack": {
-          "description": "Kumpulkan berita industri relevan hari ini menjadi ringkasan Slack.",
-          "shortDescription": "Rangkum berita industri hari itu untuk Slack.",
-          "title": "Kirim berita industri harian ke Slack"
-        },
-        "daily-standup-report": {
-          "description": "Kumpulkan sinyal produk dan engineering tiap pagi, buat laporan singkat, lalu posting ke Slack.",
-          "shortDescription": "Posting ringkasan produk dan engineering tiap pagi.",
-          "title": "Laporan standup harian"
         },
         "draft-github-release-notes-notion": {
           "description": "Ubah PR yang digabung sejak rilis terakhir menjadi catatan yang rapi di Notion.",
@@ -784,11 +734,6 @@
           "description": "Rangkum update terbaru menjadi draf newsletter di Mailchimp.",
           "shortDescription": "Rangkum update terbaru jadi satu newsletter.",
           "title": "Buat draf newsletter di Mailchimp"
-        },
-        "draft-replies-notion-faq": {
-          "description": "Buat draf balasan tiket berdasarkan FAQ Notion Anda.",
-          "shortDescription": "Susun balasan tiket dari FAQ Notion Anda.",
-          "title": "Buat draf balasan dari FAQ Notion Anda"
         },
         "feedback-router": {
           "description": "Pantau satu kanal Slack dan salurkan feedback produk ke Notion lengkap dengan label dan penanggung jawab.",
@@ -825,11 +770,6 @@
           "shortDescription": "Kumpulkan pull request yang di-merge jadi laporan.",
           "title": "Ringkasan PR GitHub"
         },
-        "gmail-followups-auto": {
-          "description": "Temukan kontak yang belum membalas dan susun tindak lanjut berikutnya.",
-          "shortDescription": "Susun follow-up untuk kontak yang belum membalas.",
-          "title": "Kirim follow-up Gmail otomatis"
-        },
         "gmail-reconnect-reminders": {
           "description": "Tampilkan kontak penting yang sudah lama belum Anda email.",
           "shortDescription": "Tampilkan kontak yang lama tak Anda hubungi.",
@@ -845,30 +785,10 @@
           "shortDescription": "Rangkai metrik jadi update untuk investor.",
           "title": "Susun update investor di Google Docs"
         },
-        "log-gong-calls-hubspot": {
-          "description": "Ambil catatan dan langkah berikutnya dari panggilan Gong ke deal HubSpot.",
-          "shortDescription": "Tarik catatan panggilan Gong ke deal HubSpot.",
-          "title": "Catat panggilan Gong ke HubSpot"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "Ubah catatan rapat menjadi tugas Asana yang ditugaskan dan diberi tenggat.",
-          "shortDescription": "Ubah catatan rapat jadi tugas di Asana.",
-          "title": "Ubah catatan rapat menjadi tugas Asana"
-        },
-        "meeting-recaps-slack": {
-          "description": "Bagikan rangkuman berisi keputusan dan item aksi setelah setiap rapat.",
-          "shortDescription": "Bagikan keputusan dan tindak lanjut usai rapat.",
-          "title": "Dapatkan rangkuman rapat di Slack"
-        },
         "morning-brief": {
           "description": "Ubah update Gmail, Calendar, dan Notion jadi rencana harian singkat di Slack.",
           "shortDescription": "Ubah email dan rapat jadi rencana harian singkat.",
           "title": "Ringkasan pagi"
-        },
-        "new-gmail-contacts-hubspot": {
-          "description": "Tambahkan dan lengkapi pengirim email yang belum dikenal sebagai kontak HubSpot.",
-          "shortDescription": "Tambahkan pengirim email tak dikenal ke HubSpot.",
-          "title": "Tambahkan kontak Gmail baru ke HubSpot"
         },
         "onboard-new-hires-asana": {
           "description": "Buat checklist tugas onboarding untuk setiap karyawan baru di Asana.",
@@ -880,50 +800,10 @@
           "shortDescription": "Rangkum pekan Anda dari GitHub dan Gmail.",
           "title": "Ringkasan mingguan pribadi"
         },
-        "post-daily-metrics-slack": {
-          "description": "Posting jumlah pengunjung, signup, dan aktivasi harian ke Slack.",
-          "shortDescription": "Posting pengunjung dan signup harian ke Slack.",
-          "title": "Posting metrik harian ke Slack"
-        },
         "post-release-notes-slack": {
           "description": "Susun changelog dari pekerjaan yang baru dirilis dan posting ke Slack.",
           "shortDescription": "Susun changelog lalu posting ke Slack.",
           "title": "Posting catatan rilis ke Slack"
-        },
-        "prep-google-calendar-meetings": {
-          "description": "Teliti peserta eksternal dan kirim brief persiapan sebelum meeting.",
-          "shortDescription": "Kirim ringkasan persiapan sebelum rapat eksternal.",
-          "title": "Siapkan meeting Google Calendar"
-        },
-        "publish-scheduled-posts-buffer": {
-          "description": "Terbitkan konten terjadwal hari itu dan antrekan post sosialnya.",
-          "shortDescription": "Terbitkan post sosial yang dijadwalkan hari ini.",
-          "title": "Publikasikan posting terjadwal ke Buffer"
-        },
-        "research-calendar-meetings": {
-          "description": "Teliti orang yang akan Anda temui sebelum setiap event kalender.",
-          "shortDescription": "Teliti orang yang akan Anda temui sebelum acara.",
-          "title": "Teliti meeting kalender Anda"
-        },
-        "research-new-signups-apollo": {
-          "description": "Teliti setiap pendaftaran baru dan kirim snapshot singkat.",
-          "shortDescription": "Teliti tiap signup baru dan posting ringkasannya.",
-          "title": "Teliti pendaftaran baru"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Lacak langganan di Sheets dan beri tahu Slack saat pola churn atau pembatalan berubah.",
-          "shortDescription": "Lacak langganan dan beri tahu Slack soal churn.",
-          "title": "Ringkasan langganan RevenueCat"
-        },
-        "run-daily-query-sheets": {
-          "description": "Jalankan SQL tersimpan Anda sesuai jadwal dan tambahkan hasilnya ke Sheet.",
-          "shortDescription": "Jalankan SQL tersimpan dan tambahkan hasilnya ke Sheet.",
-          "title": "Jalankan query harian ke Google Sheets"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "Rangkum tiap minggu perubahan opportunity Salesforce dan risiko tanggal closing ke Slack.",
-          "shortDescription": "Rangkum risiko pipeline Salesforce tiap minggu.",
-          "title": "Ringkasan pipeline Salesforce"
         },
         "send-bugs-github-slack": {
           "description": "Arsipkan laporan bertanda bug sebagai issue GitHub dan beri tahu tim di Slack.",
@@ -940,20 +820,10 @@
           "shortDescription": "Sortir inbox dan susun balasan yang perlu.",
           "title": "Sortir Gmail dan buat draf balasan"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "Tandai akun yang berisiko churn dan buat draf email pemulihan.",
-          "shortDescription": "Tandai risiko churn dan susun email pemulihan.",
-          "title": "Deteksi risiko churn di Stripe dan Zendesk"
-        },
         "summarize-gmail-newsletters": {
           "description": "Ringkas newsletter di inbox Anda menjadi satu ringkasan singkat.",
           "shortDescription": "Padatkan newsletter Anda jadi satu ringkasan.",
           "title": "Ringkas newsletter Gmail"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "Ringkas tiket Zendesk 24 jam terakhir dan posting ke Slack.",
-          "shortDescription": "Posting ringkasan harian tiket Zendesk.",
-          "title": "Ringkas tiket Zendesk setiap hari"
         },
         "support-ticket-router": {
           "description": "Klasifikasikan email support, buat catatannya di Notion, dan beri tahu Slack untuk tiket kritis.",
@@ -975,16 +845,6 @@
           "shortDescription": "Tampilkan perubahan penggunaan terbesar minggu ini.",
           "title": "Lacak penggunaan fitur dengan PostHog"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Lacak peringkat kata kunci di Ahrefs dan catat perubahan terbesarnya di Notion.",
-          "shortDescription": "Laporkan pergerakan peringkat kata kunci minggu ini.",
-          "title": "Lacak peringkat kata kunci dengan Ahrefs"
-        },
-        "track-signup-sources-sheets": {
-          "description": "Atribusikan setiap pendaftaran baru ke sumbernya di Sheet pelacakan.",
-          "shortDescription": "Catat asal tiap signup di sebuah Sheet.",
-          "title": "Lacak sumber pendaftaran di Google Sheets"
-        },
         "vercel-deploy-digest": {
           "description": "Pantau deploy Vercel, hubungkan dengan commit GitHub, dan beri tahu Slack saat gagal.",
           "shortDescription": "Beri tahu Slack saat deploy Vercel gagal.",
@@ -994,11 +854,6 @@
           "description": "Lacak sebutan brand di X, simpan post yang relevan di Notion, dan beri tahu Slack untuk sebutan penting.",
           "shortDescription": "Beri tahu Slack saat brand banyak disebut di X.",
           "title": "Pemantau brand di X"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Temukan pertanyaan berulang di Zendesk, buat draf entri FAQ, dan simpan ke Notion.",
-          "shortDescription": "Ubah pertanyaan berulang jadi entri FAQ.",
-          "title": "Basis pengetahuan Zendesk"
         }
       },
       "workflowCategories": {

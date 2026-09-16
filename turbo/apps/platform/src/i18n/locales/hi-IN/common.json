@@ -696,11 +696,6 @@
       "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
       "workflow": "वर्कफ़्लो",
       "workflowCatalog": {
-        "alert-metric-moves-slack": {
-          "description": "अपने प्रमुख मेट्रिक्स देखें और जब कोई तेजी से आगे बढ़े तो Slack को सचेत करें।",
-          "shortDescription": "मुख्य मेट्रिक तेज़ी से बदलने पर Slack में बताएँ।",
-          "title": "जब कोई मीट्रिक बदलता है तो अलर्ट करें"
-        },
         "auto-inbox-label": {
           "description": "ऐसा वर्कफ़्लो बनाएँ जो Gmail लेबल लगते ही चले और उस ईमेल को संभाले।",
           "shortDescription": "Gmail लेबल लगाते ही वर्कफ़्लो चलाएँ।",
@@ -711,30 +706,10 @@
           "shortDescription": "CI पास होते ही तैयार PR मर्ज करें।",
           "title": "ऑटो-मर्ज GitHub PRs"
         },
-        "blog-posts-to-x": {
-          "description": "हर नए ब्लॉग पोस्ट को सोशल वर्ज़न में बदलकर Buffer की कतार में डालें।",
-          "shortDescription": "हर नए ब्लॉग पोस्ट को सोशल पोस्ट में बदलें।",
-          "title": "ब्लॉग पोस्ट को सोशल पोस्ट में बदलें"
-        },
-        "build-weekly-deck-gamma": {
-          "description": "सप्ताह के मेट्रिक्स को गामा में प्रस्तुत करने के लिए तैयार डेक में बदलें।",
-          "shortDescription": "हफ़्ते के आंकड़ों से Gamma डेक बनाएँ।",
-          "title": "गामा में साप्ताहिक डेक बनाएं"
-        },
-        "business-review-gamma": {
-          "description": "महीने के मेट्रिक्स को गामा में व्यावसायिक समीक्षा डेक में बदलें।",
-          "shortDescription": "महीने के आंकड़ों से रिव्यू डेक बनाएँ।",
-          "title": "गामा में व्यवसाय समीक्षा बनाएं"
-        },
         "catch-calendar-conflicts": {
           "description": "डबल-बुकिंग के लिए अपने कैलेंडर को स्कैन करें और आपको पहले ही सचेत कर दें।",
           "shortDescription": "कैलेंडर की डबल-बुकिंग समय रहते पकड़ें।",
           "title": "Google Calendar संघर्षों को पकड़ें"
-        },
-        "catch-leads-gmail": {
-          "description": "नए ईमेल में स्पॉट खरीदारी संकेत और योग्य लीड लॉग करें।",
-          "shortDescription": "खरीद के संकेत पहचानें और लीड दर्ज करें।",
-          "title": "Gmail से लीड पकड़ें"
         },
         "chase-overdue-asana-tasks": {
           "description": "अतिदेय आसन कार्यों को खोजें और Slack पर उनके मालिकों को प्रेरित करें।",
@@ -746,35 +721,10 @@
           "shortDescription": "साइनअप फ़नल का सबसे बड़ा ड्रॉप-ऑफ़ बताएँ।",
           "title": "PostHog साइनअप फ़नल की जाँच करें"
         },
-        "clickup-slack-standup": {
-          "description": "हर सुबह ClickUp के टास्क लेकर टीम का स्टैंडअप सारांश Slack पर पोस्ट करें।",
-          "shortDescription": "ClickUp टास्क से सुबह का स्टैंडअप पोस्ट करें।",
-          "title": "ClickUp का Slack स्टैंडअप"
-        },
         "compare-google-ads-last-month": {
           "description": "विज्ञापन खर्च और ROAS की पिछले महीने से तुलना करें और गड़बड़ी Slack में बताएँ।",
           "shortDescription": "विज्ञापन खर्च और ROAS की पिछले महीने से तुलना करें।",
           "title": "Google विज्ञापनों की तुलना पिछले महीने से करें"
-        },
-        "competitive-intel-monitor": {
-          "description": "प्रतिस्पर्धियों की साइट पर कीमत और फ़ीचर बदलाव देखें, Notion में सहेजें और Slack में सूचित करें।",
-          "shortDescription": "प्रतिस्पर्धियों के कीमत बदलाव Notion में दर्ज करें।",
-          "title": "प्रतिस्पर्धी निगरानी"
-        },
-        "daily-company-brief-slack": {
-          "description": "Slack पर उत्पाद, विकास और राजस्व को दैनिक संक्षिप्त में शामिल करें।",
-          "shortDescription": "प्रोडक्ट, ग्रोथ और रेवेन्यू एक ब्रीफ़ में लाएँ।",
-          "title": "Slack पर दैनिक कंपनी संक्षिप्त पोस्ट करें"
-        },
-        "daily-industry-news-slack": {
-          "description": "दिन भर की प्रासंगिक उद्योग समाचारों को Slack संक्षिप्त में सारांशित करें।",
-          "shortDescription": "दिन की इंडस्ट्री खबरें Slack के लिए जुटाएँ।",
-          "title": "Slack पर दैनिक उद्योग समाचार पोस्ट करें"
-        },
-        "daily-standup-report": {
-          "description": "हर सुबह प्रोडक्ट और इंजीनियरिंग के आंकड़े जुटाएँ, छोटी रिपोर्ट बनाएँ और Slack पर पोस्ट करें।",
-          "shortDescription": "हर सुबह प्रोडक्ट और इंजीनियरिंग ब्रीफ़ पोस्ट करें।",
-          "title": "दैनिक स्टैंडअप रिपोर्ट"
         },
         "draft-github-release-notes-notion": {
           "description": "पिछली रिलीज के बाद से मर्ज किए गए पीआर को Notion में साफ नोट्स में बदलें।",
@@ -785,11 +735,6 @@
           "description": "हाल के अपडेट जोड़कर Mailchimp में न्यूज़लेटर का ड्राफ़्ट बनाएँ।",
           "shortDescription": "हाल के अपडेट को एक न्यूज़लेटर में जोड़ें।",
           "title": "Mailchimp में न्यूज़लेटर का ड्राफ्ट तैयार करें"
-        },
-        "draft-replies-notion-faq": {
-          "description": "ड्राफ्ट टिकट के उत्तर आपके Notion FAQ पर आधारित हैं।",
-          "shortDescription": "Notion FAQ से टिकट के जवाब लिखें।",
-          "title": "आपके Notion FAQ से ड्राफ्ट उत्तर तैयार करें"
         },
         "feedback-router": {
           "description": "किसी Slack चैनल पर नज़र रखें और प्रोडक्ट फ़ीडबैक को लेबल व ज़िम्मेदार के साथ Notion में भेजें।",
@@ -826,11 +771,6 @@
           "shortDescription": "मर्ज हुए पुल रिक्वेस्ट को एक रिपोर्ट में जोड़ें।",
           "title": "GitHub PR सारांश"
         },
-        "gmail-followups-auto": {
-          "description": "उन संपर्कों को ढूंढें जिन्होंने उत्तर नहीं दिया और अगली अनुवर्ती कार्रवाई का मसौदा तैयार करें।",
-          "shortDescription": "जवाब न देने वालों के लिए फ़ॉलो-अप लिखें।",
-          "title": "Gmail फॉलो-अप स्वचालित रूप से भेजें"
-        },
         "gmail-reconnect-reminders": {
           "description": "उन महत्वपूर्ण संपर्कों को सामने लाएँ जिन्हें आपने कुछ समय से ईमेल नहीं किया है।",
           "shortDescription": "जिन्हें लंबे समय से नहीं लिखा, उन्हें दिखाएँ।",
@@ -846,30 +786,10 @@
           "shortDescription": "आंकड़े जोड़कर निवेशक अपडेट तैयार करें।",
           "title": "Google डॉक्स में निवेशक अपडेट ड्राफ्ट करें"
         },
-        "log-gong-calls-hubspot": {
-          "description": "HubSpot डील में गोंग कॉल से नोट्स और अगले चरण निकालें।",
-          "shortDescription": "Gong कॉल नोट्स HubSpot डील में जोड़ें।",
-          "title": "गोंग कॉल को HubSpot पर लॉग करें"
-        },
-        "meeting-notes-asana-tasks": {
-          "description": "मीटिंग नोट्स को असाइन किए गए, नियत तिथियों वाले कार्यों में Asana में बदलें।",
-          "shortDescription": "मीटिंग नोट्स को Asana टास्क में बदलें।",
-          "title": "मीटिंग नोट्स को Asana कार्यों में बदलें"
-        },
-        "meeting-recaps-slack": {
-          "description": "प्रत्येक बैठक के बाद निर्णयों और कार्रवाई मदों का सारांश साझा करें।",
-          "shortDescription": "मीटिंग के बाद फ़ैसले और काम साझा करें।",
-          "title": "Slack में मीटिंग पुनर्कथन प्राप्त करें"
-        },
         "morning-brief": {
           "description": "Gmail, कैलेंडर और Notion के अपडेट को Slack पर दिन की छोटी योजना में बदलें।",
           "shortDescription": "मेल और मीटिंग से दिन की छोटी योजना बनाएँ।",
           "title": "सुबह की ब्रीफ़"
-        },
-        "new-gmail-contacts-hubspot": {
-          "description": "अज्ञात ईमेल प्रेषकों को HubSpot संपर्कों के रूप में जोड़ें और समृद्ध करें।",
-          "shortDescription": "अनजान ईमेल भेजने वालों को HubSpot में जोड़ें।",
-          "title": "HubSpot में नए Gmail संपर्क जोड़ें"
         },
         "onboard-new-hires-asana": {
           "description": "आसन में प्रत्येक नए कर्मचारी के लिए ऑनबोर्डिंग कार्य चेकलिस्ट बनाएं।",
@@ -881,50 +801,10 @@
           "shortDescription": "GitHub और Gmail से अपने हफ़्ते का सार बनाएँ।",
           "title": "व्यक्तिगत साप्ताहिक डाइजेस्ट"
         },
-        "post-daily-metrics-slack": {
-          "description": "Slack पर दैनिक विज़िटर, साइनअप और सक्रियण संख्या पोस्ट करें।",
-          "shortDescription": "रोज़ के विज़िटर और साइनअप Slack पर पोस्ट करें।",
-          "title": "Slack पर दैनिक मेट्रिक्स पोस्ट करें"
-        },
         "post-release-notes-slack": {
           "description": "हाल ही में भेजे गए कार्य से एक चेंजलॉग ड्राफ्ट करें और इसे Slack पर पोस्ट करें।",
           "shortDescription": "चेंजलॉग लिखकर Slack पर पोस्ट करें।",
           "title": "Slack पर रिलीज़ नोट्स पोस्ट करें"
-        },
-        "prep-google-calendar-meetings": {
-          "description": "बाहरी उपस्थित लोगों पर शोध करें और बैठकों से पहले तैयारी का विवरण भेजें।",
-          "shortDescription": "बाहरी मीटिंग से पहले तैयारी ब्रीफ़ भेजें।",
-          "title": "Google Calendar बैठकों के लिए तैयारी"
-        },
-        "publish-scheduled-posts-buffer": {
-          "description": "दिन का शेड्यूल किया गया कंटेंट प्रकाशित करें और सोशल पोस्ट कतार में लगाएँ।",
-          "shortDescription": "आज शेड्यूल किए सोशल पोस्ट प्रकाशित करें।",
-          "title": "बफ़र पर निर्धारित पोस्ट प्रकाशित करें"
-        },
-        "research-calendar-meetings": {
-          "description": "प्रत्येक कैलेंडर ईवेंट से पहले उन लोगों पर शोध करें जिनसे आप मिल रहे हैं।",
-          "shortDescription": "हर मीटिंग से पहले लोगों के बारे में जानें।",
-          "title": "अपनी कैलेंडर बैठकों पर शोध करें"
-        },
-        "research-new-signups-apollo": {
-          "description": "प्रत्येक नए साइनअप पर शोध करें और एक त्वरित स्नैपशॉट पोस्ट करें।",
-          "shortDescription": "हर नए साइनअप पर शोध कर ब्योरा पोस्ट करें।",
-          "title": "नए साइनअप पर शोध करें"
-        },
-        "revenuecat-subscription-digest": {
-          "description": "Sheets में सब्सक्रिप्शन ट्रैक करें और चर्न या कैंसिलेशन का पैटर्न बदलने पर Slack में सूचित करें।",
-          "shortDescription": "सब्सक्रिप्शन ट्रैक करें, चर्न पर Slack में बताएँ।",
-          "title": "RevenueCat सब्सक्रिप्शन डाइजेस्ट"
-        },
-        "run-daily-query-sheets": {
-          "description": "अपने सहेजे गए SQL को एक शेड्यूल पर चलाएं और परिणामों को एक शीट में जोड़ें।",
-          "shortDescription": "सहेजा SQL चलाकर नतीजे शीट में जोड़ें।",
-          "title": "Google शीट्स में दैनिक क्वेरी चलाएँ"
-        },
-        "salesforce-pipeline-digest": {
-          "description": "हर हफ़्ते Salesforce अवसरों के बदलाव और क्लोज़ डेट के जोखिम Slack में बताएँ।",
-          "shortDescription": "हर हफ़्ते Salesforce पाइपलाइन के जोखिम बताएँ।",
-          "title": "Salesforce पाइपलाइन डाइजेस्ट"
         },
         "send-bugs-github-slack": {
           "description": "GitHub इश्यू के रूप में बग-टैग की गई रिपोर्ट दर्ज करें और Slack पर टीम को सचेत करें।",
@@ -941,20 +821,10 @@
           "shortDescription": "इनबॉक्स छाँटें और ज़रूरी जवाब लिखें।",
           "title": "Gmail को क्रमबद्ध करें और उत्तरों का मसौदा तैयार करें"
         },
-        "spot-churn-risk-stripe-zendesk": {
-          "description": "मंथन के जोखिम वाले खातों को चिह्नित करें और एक पुनर्प्राप्ति ईमेल का मसौदा तैयार करें।",
-          "shortDescription": "चर्न जोखिम बताएँ और वापसी ईमेल लिखें।",
-          "title": "स्ट्राइप और ज़ेंडेस्क में मंथन जोखिम को पहचानें"
-        },
         "summarize-gmail-newsletters": {
           "description": "अपने इनबॉक्स में मौजूद न्यूज़लेटर्स को एक संक्षिप्त सारांश में समेटें।",
           "shortDescription": "अपने न्यूज़लेटर एक सारांश में समेटें।",
           "title": "Gmail न्यूज़लेटर्स का सारांश प्रस्तुत करें"
-        },
-        "summarize-zendesk-tickets-daily": {
-          "description": "ज़ेंडेस्क टिकटों के अंतिम दिन का सारांश बनाएं और इसे Slack पर पोस्ट करें।",
-          "shortDescription": "Zendesk टिकट का रोज़ाना सारांश पोस्ट करें।",
-          "title": "प्रतिदिन ज़ेंडेस्क टिकटों का सारांश बनाएं"
         },
         "support-ticket-router": {
           "description": "सपोर्ट ईमेल वर्गीकृत करें, Notion में रिकॉर्ड बनाएँ और गंभीर टिकट पर Slack में सूचित करें।",
@@ -976,16 +846,6 @@
           "shortDescription": "इस हफ़्ते उपयोग में सबसे बड़े बदलाव दिखाएँ।",
           "title": "PostHog के साथ फीचर उपयोग को ट्रैक करें"
         },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Ahrefs में कीवर्ड रैंकिंग ट्रैक करें और सबसे बड़े बदलाव Notion में दर्ज करें।",
-          "shortDescription": "इस हफ़्ते की कीवर्ड रैंक हलचल बताएँ।",
-          "title": "Ahrefs के साथ कीवर्ड रैंक ट्रैक करें"
-        },
-        "track-signup-sources-sheets": {
-          "description": "ट्रैकिंग शीट में प्रत्येक नए साइनअप को उसके स्रोत से जोड़ें।",
-          "shortDescription": "हर साइनअप का स्रोत शीट में दर्ज करें।",
-          "title": "Google शीट्स में साइनअप स्रोत ट्रैक करें"
-        },
         "vercel-deploy-digest": {
           "description": "Vercel डिप्लॉयमेंट पर नज़र रखें, उन्हें GitHub कमिट से जोड़ें और विफलता पर Slack में सूचित करें।",
           "shortDescription": "Vercel डिप्लॉय विफल होने पर Slack में बताएँ।",
@@ -995,11 +855,6 @@
           "description": "X पर ब्रांड के ज़िक्र ट्रैक करें, अहम पोस्ट Notion में सहेजें और बड़े ज़िक्र पर Slack में सूचित करें।",
           "shortDescription": "X पर बड़े ब्रांड ज़िक्र की सूचना Slack में दें।",
           "title": "X पर ब्रांड निगरानी"
-        },
-        "zendesk-knowledge-base": {
-          "description": "Zendesk में बार-बार आने वाले सवाल खोजें, FAQ प्रविष्टियाँ लिखें और Notion में सहेजें।",
-          "shortDescription": "बार-बार आने वाले सवालों को FAQ बनाएँ।",
-          "title": "Zendesk नॉलेज बेस"
         }
       },
       "workflowCategories": {
