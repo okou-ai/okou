@@ -1,5 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
-
 import { singleton } from "../../lib/singleton";
 import { now } from "../../lib/time";
 import type { ClerkClient } from "../external/clerk";
@@ -26,15 +24,6 @@ function createEmailCache() {
 // Expired entries are pruned on access and oldest entries evicted at capacity.
 // Concurrent cold reads remain independently owned; no promises are retained.
 const emailCache = singleton(createEmailCache);
-const scopedEmailCache = singleton(() => {
-  return new AsyncLocalStorage<ReturnType<typeof createEmailCache>>();
-});
-
-export async function withSlackAppHomeEmailCacheForTest<T>(
-  work: () => Promise<T>,
-): Promise<T> {
-  return await scopedEmailCache().run(createEmailCache(), work);
-}
 
 export async function getSlackAppHomePrimaryEmail(
   client: ClerkClient,
@@ -42,7 +31,7 @@ export async function getSlackAppHomePrimaryEmail(
   signal: AbortSignal,
 ): Promise<string | undefined> {
   signal.throwIfAborted();
-  const cache = scopedEmailCache.peek()?.getStore() ?? emailCache();
+  const cache = emailCache();
   const startedAt = now();
   for (const [id, entry] of cache.entries) {
     if (entry.expiresAt <= startedAt) {

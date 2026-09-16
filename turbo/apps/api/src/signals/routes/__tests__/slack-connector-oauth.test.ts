@@ -14,7 +14,6 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { withSlackAppHomeEmailCacheForTest } from "../../services/slack-app-home-email.service";
 import { createDeferredPromise } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
@@ -43,9 +42,7 @@ const routes = [
 ] as const;
 
 aroundEach(async (runTest) => {
-  await withNowScopeForTest(async () => {
-    await withSlackAppHomeEmailCacheForTest(runTest);
-  });
+  await withNowScopeForTest(runTest);
 });
 
 function clients(signal?: AbortSignal) {
@@ -431,6 +428,10 @@ test("post-connect App Home does not let an older profile response replace a new
   const earlier = createDeferredPromise<{
     data: ReturnType<typeof clerkProfile>[];
   }>(context.signal);
+  onTestFinished(async () => {
+    earlier.resolve({ data: [clerkProfile(current, "older@example.com")] });
+    await flushWaitUntilForTest();
+  });
   const published = createDeferredPromise<unknown>(context.signal);
   context.mocks.clerk.users.getUserList
     .mockImplementationOnce(async () => {
@@ -443,21 +444,18 @@ test("post-connect App Home does not let an older profile response replace a new
     return Promise.resolve({ ok: true });
   });
 
-  try {
-    await complete(await startInstall(), current);
-    await entered.promise;
-    expect(
-      (await complete(await startConnect(current), current)).searchParams.get(
-        "status",
-      ),
-    ).toBe("connected");
-    expect(JSON.stringify(await published.promise)).toContain(
-      "Account: newer@example.com",
-    );
-  } finally {
-    earlier.resolve({ data: [clerkProfile(current, "older@example.com")] });
-    await flushWaitUntilForTest();
-  }
+  await complete(await startInstall(), current);
+  await entered.promise;
+  expect(
+    (await complete(await startConnect(current), current)).searchParams.get(
+      "status",
+    ),
+  ).toBe("connected");
+  expect(JSON.stringify(await published.promise)).toContain(
+    "Account: newer@example.com",
+  );
+  earlier.resolve({ data: [clerkProfile(current, "older@example.com")] });
+  await flushWaitUntilForTest();
   expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(2);
   expect(
     JSON.stringify(context.mocks.slack.views.publish.mock.calls),
@@ -473,13 +471,17 @@ test("post-connect App Home does not let an older profile response replace a new
 test("post-connect App Home does not retain a profile read cancelled by its owner", async () => {
   const current = actor();
   const controller = new AbortController();
-  onTestFinished(() => {
-    controller.abort();
-  });
   const entered = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<{
     data: ReturnType<typeof clerkProfile>[];
   }>(context.signal);
+  onTestFinished(async () => {
+    controller.abort();
+    response.resolve({
+      data: [clerkProfile(current, "cancelled@example.com")],
+    });
+    await flushWaitUntilForTest();
+  });
   context.mocks.clerk.users.getUserList
     .mockImplementationOnce(async () => {
       entered.resolve();
@@ -488,18 +490,15 @@ test("post-connect App Home does not retain a profile read cancelled by its owne
     .mockResolvedValue({
       data: [clerkProfile(current, "recovered@example.com")],
     });
-  try {
-    await complete(await startInstall(), current, {
-      signal: controller.signal,
-    });
-    await entered.promise;
-    controller.abort();
-  } finally {
-    response.resolve({
-      data: [clerkProfile(current, "cancelled@example.com")],
-    });
-    await flushWaitUntilForTest();
-  }
+  await complete(await startInstall(), current, {
+    signal: controller.signal,
+  });
+  await entered.promise;
+  controller.abort();
+  response.resolve({
+    data: [clerkProfile(current, "cancelled@example.com")],
+  });
+  await flushWaitUntilForTest();
   expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
   await completeWithAppHome(
     await startConnect(current),
