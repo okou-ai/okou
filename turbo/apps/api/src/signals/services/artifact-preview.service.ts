@@ -56,7 +56,7 @@ const PRIMARY_NAVIGATION_OPTIONS = {
 // most 2.7s from navigation start.
 const NAVIGATION_TIMEOUT_RETRY_OPTIONS = {
   gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
-  waitForTimeout: 3_000,
+  waitForTimeout: 3000,
 } as const;
 
 const browserSnapshotSchema = z.object({

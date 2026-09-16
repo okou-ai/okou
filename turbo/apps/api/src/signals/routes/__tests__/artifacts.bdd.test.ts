@@ -1068,7 +1068,7 @@ describe("hosted Artifact previews", () => {
     });
     expect(snapshotRequests[1]?.body).toMatchObject({
       gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
-      waitForTimeout: 3_000,
+      waitForTimeout: 3000,
       actionTimeout: 30_000,
     });
     // Readiness must not depend on which node the document opens its body with:
