@@ -509,8 +509,8 @@ body {
    carry the attribute, the picker's own swatch, which has to show what the
    interface is made of. */
 [data-color-theme="default"] {
-  --okou-color-theme-anchor: hsl(38.8 100% 50%); /* #FFA500 - brand */
-  --okou-color-theme-companion: #faf5f3; /* Linen */
+  --okou-color-theme-anchor: hsl(38.8 100% 50%); /* primary-300 - brand */
+  --okou-color-theme-companion: #c37d00; /* primary-500 */
 }
 
 /* Each named theme pairs one anchor with one companion; the same pair drives
