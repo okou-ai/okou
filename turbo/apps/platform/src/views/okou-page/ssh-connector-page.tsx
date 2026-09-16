@@ -721,7 +721,10 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
     >
       <DialogBody className="grid gap-4">
         {!destructive && (
-          <fieldset disabled={isSaving} className="grid min-w-0 gap-4">
+          <fieldset
+            disabled={isSaving}
+            className={hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-4"}
+          >
             {hostEditor ? (
               <>
                 <EndpointFields
@@ -729,12 +732,8 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
                   disabled={isSaving}
                 />
                 {transport.mode === "cloudflare_access" && (
-                  <>
-                    <div aria-hidden="true" className="h-px bg-divider" />
-                    <AccessSelection disabled={isSaving} />
-                  </>
+                  <AccessSelection disabled={isSaving} />
                 )}
-                <div aria-hidden="true" className="h-px bg-divider" />
                 <CredentialSelection disabled={isSaving} />
               </>
             ) : (
