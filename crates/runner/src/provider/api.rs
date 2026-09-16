@@ -1,6 +1,9 @@
 //! [`JobProvider`] backed by an Ably control plane + HTTP polling + REST API.
 
-use super::{DeferredSandboxFence, deferred_release::DeferredReleaseOutbox};
+use super::{
+    DeferredSandboxFence,
+    deferred_release::{DeferredReleaseOutbox, ReleaseOutcome},
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1500,7 +1503,7 @@ impl ApiClient {
         &self,
         run_id: RunId,
         body: &serde_json::Value,
-    ) -> RunnerResult<bool> {
+    ) -> RunnerResult<ReleaseOutcome> {
         let id = run_id.to_string();
         let response = send_api(
             self.http
@@ -1518,12 +1521,22 @@ impl ApiClient {
         #[derive(Deserialize)]
         struct ReleaseReceipt {
             released: bool,
+            /// Absent on an API that predates the explicit outcome, and unknown
+            /// values stay unknown: both fall back to the legacy boolean.
+            #[serde(default)]
+            outcome: Option<String>,
         }
         let receipt: ReleaseReceipt = response
             .json()
             .await
             .map_err(|error| RunnerError::Api(format!("decode deferred release: {error}")))?;
-        Ok(receipt.released)
+        Ok(match receipt.outcome.as_deref() {
+            Some("released") => ReleaseOutcome::Released,
+            Some("stale") => ReleaseOutcome::Stale,
+            Some("inconclusive") => ReleaseOutcome::Inconclusive,
+            _ if receipt.released => ReleaseOutcome::Released,
+            _ => ReleaseOutcome::Stale,
+        })
     }
 
     async fn poll(

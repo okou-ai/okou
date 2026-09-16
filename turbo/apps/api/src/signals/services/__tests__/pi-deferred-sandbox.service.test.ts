@@ -44,7 +44,7 @@ import {
 } from "../../../test-fixtures/pi-inference-lifecycle";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createStore } from "ccstate";
 import { eq, sql } from "drizzle-orm";
@@ -57,6 +57,7 @@ import {
   agentRunSandboxLease,
 } from "@okouai/db/schema/agent-run-inference";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
   runnersPollContract,
@@ -70,6 +71,7 @@ import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   piDeferredConfigurationSchema,
   piDeferredContextSchema,
+  piDeferredH1Schema,
 } from "../pi-deferred-sandbox-contract";
 import {
   publishPiInferenceObject,
@@ -1050,6 +1052,262 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     );
     expect(result.body.apiStartTime).toBe(deferred.apiStartedAt.getTime());
   }, 60_000);
+  it("releases owned capacity after the private maintenance binding retires", async () => {
+    const f = await fixture({ maintenance: true });
+    const maintenance = f.maintenance;
+    if (!maintenance) {
+      throw new Error("Missing private lease");
+    }
+    await expect(
+      createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
+    ).resolves.toBeTruthy();
+    const runnerId = randomUUID();
+    await accept(claim(f.runId, true, runnerId), [200]);
+    // Normal maintenance success retires the live binding before the Runner
+    // proves physical destruction.
+    await db()
+      .update(piMemoryPhase2Jobs)
+      .set({
+        status: "idle",
+        completedRevision: 1,
+        claimedRevision: null,
+        claimedBaseVersionId: null,
+        leaseToken: null,
+        legacyLeaseToken: null,
+        sandboxLeaseToken: null,
+        leaseExpiresAt: null,
+        maintenanceRunId: null,
+        claimedSelectionDigest: null,
+        claimedSelectedCount: null,
+        claimedSelectedUtf8Bytes: null,
+      })
+      .where(
+        eq(piMemoryPhase2Jobs.memoryStorageId, maintenance.memoryStorageId),
+      );
+    const app = setupApp({ context, routes: runnersRoutes });
+    const release = (body: {
+      runnerId: string;
+      ownerEpoch: number;
+      generation: number;
+      proof: "destroyed";
+    }) => {
+      return app(runnersJobClaimContract).release({
+        params: { id: f.runId },
+        headers: {
+          authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
+        },
+        body,
+      });
+    };
+    const mismatched = await accept(
+      release({ runnerId, ownerEpoch: 2, generation: 2, proof: "destroyed" }),
+      [200],
+    );
+    expect(mismatched.body).toStrictEqual({
+      released: false,
+      outcome: "stale",
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const released = await accept(
+        release({ runnerId, ownerEpoch: 2, generation: 1, proof: "destroyed" }),
+        [200],
+      );
+      expect(released.body).toStrictEqual({
+        released: true,
+        outcome: "released",
+      });
+    }
+    const state = await readRequiredPiFixture(f);
+    expect(state.lease?.state).toBe("released");
+    expect(state.inference.usageSettled).toBeFalsy();
+  }, 60_000);
+
+  it("rejects an oversized durable continuation before it can be claimed", async () => {
+    const f = await fixture({ publish: false });
+    const oversized = "a".repeat(17 * 1024 * 1024);
+    await expect(
+      publishPiInferenceObject(db(), f, "h1", piDeferredH1Schema, {
+        schemaVersion: 1,
+        manifestGeneration: 3,
+        lastEventSequence: 4,
+        sessionHistory: oversized,
+        historyHash: "0".repeat(64),
+      }),
+    ).rejects.toThrow();
+    // Multibyte content stays inside a UTF-16 length limit while overflowing
+    // the reader's UTF-8 ceiling.
+    await expect(
+      publishPiInferenceObject(db(), f, "h1", piDeferredH1Schema, {
+        schemaVersion: 1,
+        manifestGeneration: 3,
+        lastEventSequence: 4,
+        sessionHistory: "\u20ac".repeat(9 * 1024 * 1024),
+        historyHash: "0".repeat(64),
+      }),
+    ).rejects.toThrow();
+    expect(
+      await db()
+        .select({ hash: agentRunInferenceObjects.hash })
+        .from(agentRunInferenceObjects)
+        .where(eq(agentRunInferenceObjects.runId, f.runId)),
+    ).toStrictEqual([]);
+  }, 60_000);
+
+  it("finalizes individually valid objects that exceed the combined limit", async () => {
+    const f = await fixture({ publish: false });
+    const piSessionId = f.threadId;
+    const history = createPiSessionJsonl({
+      cwd: "/home/user/workspace",
+      sessionId: piSessionId,
+      timestamp: new Date().toISOString(),
+    });
+    const contextHash = await publishPiInferenceObject(
+      db(),
+      f,
+      "context",
+      piDeferredContextSchema,
+      {
+        schemaVersion: 1,
+        baseSession: { sessionId: piSessionId, sha256: null },
+        resourceSnapshot: {
+          schemaVersion: 1,
+          agentsFiles: [
+            { path: "/AGENTS.md", content: "b".repeat(31 * 1024 * 1024) },
+          ],
+          skills: [],
+        },
+        storageMounts: [],
+        h0SessionHistory: history,
+      },
+    );
+    const h1Hash = await publishPiInferenceObject(
+      db(),
+      f,
+      "h1",
+      piDeferredH1Schema,
+      {
+        schemaVersion: 1,
+        manifestGeneration: 3,
+        lastEventSequence: 4,
+        sessionHistory: history,
+        historyHash: createHash("sha256").update(history).digest("hex"),
+      },
+    );
+    const existing = await readRequiredPiFixture(f);
+    await db()
+      .update(agentRunInference)
+      .set({
+        input: { ...existing.inference.input, contextHash },
+        publication: { h1Hash, manifestGeneration: 3, lastEventSequence: 4 },
+      })
+      .where(eq(agentRunInference.runId, f.runId));
+    await expect(
+      publishPiSandboxDemand(
+        db(),
+        { runId: f.runId, ownerEpoch: 1, generation: 1 },
+        {
+          mode: "pending-tools",
+          h1Hash,
+          manifestGeneration: 3,
+          pendingToolIds: ["tool-1"],
+          lastEventSequence: 4,
+        },
+      ),
+    ).resolves.toBeFalsy();
+    expect(
+      await db()
+        .select({ runId: agentRunSandboxIntent.runId })
+        .from(agentRunSandboxIntent)
+        .where(eq(agentRunSandboxIntent.runId, f.runId)),
+    ).toStrictEqual([]);
+    expect(
+      await db()
+        .select({ runId: runnerJobQueue.runId })
+        .from(runnerJobQueue)
+        .where(eq(runnerJobQueue.runId, f.runId)),
+    ).toStrictEqual([]);
+    const [run] = await db()
+      .select({ status: agentRuns.status, error: agentRuns.error })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, f.runId));
+    expect(run?.status).toBe("failed");
+    expect(run?.error).toContain("serialized bytes");
+    expect((await readRequiredPiFixture(f)).inference.usageSettled).toBeFalsy();
+    await accept(claim(f.runId, true, randomUUID()), [404]);
+  }, 60_000);
+
+  it("keeps a fresh legacy create behind older waiting Sandbox demand", async () => {
+    const api = createRunsApi(context);
+    const bdd = createBddApi(context);
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Missing fixture org");
+    }
+    bdd.acceptAgentStorageWrites();
+    api.acceptStorageDownloads();
+    api.acceptTelemetryIngest();
+    api.configureRunnerGroup();
+    await api.grantProEntitlement(actor);
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Fair direct admission fixture",
+      visibility: "public",
+    });
+    await db()
+      .update(orgPlanEntitlements)
+      .set({ baseConcurrencyLimit: 1 })
+      .where(eq(orgPlanEntitlements.orgId, actor.orgId));
+    const active = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "legacy active",
+      modelProvider: "anthropic-api-key",
+    });
+    const deferred = await fixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+    });
+    const cancel = setupApp({ context, routes: runsCancelRoutes })(
+      runsCancelContract,
+    );
+    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+    await accept(
+      cancel.cancel({
+        params: { id: active.runId },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    // The freed slot belongs to the older persisted demand, so a nonqueue
+    // caller keeps the existing capacity error instead of taking it.
+    await expect(
+      api.createRun(actor, {
+        agentId: agent.agentId,
+        prompt: "fresh legacy",
+        modelProvider: "anthropic-api-key",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      createStore().set(consumeDeferredPiRun$, deferred.runId, context.signal),
+    ).resolves.toBeTruthy();
+    await accept(claim(deferred.runId, true, randomUUID()), [200]);
+    // Ordinary behaviour returns once no older demand is waiting.
+    await accept(
+      cancel.cancel({
+        params: { id: deferred.runId },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const later = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "later legacy",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(later.runId).toBeTruthy();
+  }, 90_000);
+
   it("suppresses terminal effects when the captured resource owner closes after transfer", async () => {
     const original = `user_${randomUUID()}`;
     const f = await fixture({ resourceUserId: original });

@@ -1637,7 +1637,13 @@ export const runnersJobClaimContract = c.router({
       }),
     ]),
     responses: {
-      200: z.object({ released: z.boolean() }),
+      // `released` stays the legacy boolean an older Runner reads. `outcome`
+      // additionally separates a definitive `stale` acknowledgement from an
+      // `inconclusive` cleanup whose obligation a capable Runner must retry.
+      200: z.object({
+        released: z.boolean(),
+        outcome: z.enum(["released", "stale", "inconclusive"]),
+      }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

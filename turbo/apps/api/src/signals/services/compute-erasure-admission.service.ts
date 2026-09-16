@@ -27,6 +27,15 @@ export interface ComputeRunOwner extends Owner {
   readonly resourceOwner?: Owner;
   /** Cleanup retains the captured B1 subjects even after resource transfer. */
   readonly capturedCleanupOwner?: Owner;
+  /**
+   * Durable resource identity captured when the run was admitted. A threadless
+   * private maintenance run is otherwise discoverable only through the live
+   * `pi_memory_phase2_jobs.maintenance_run_id` binding, which normal checkpoint
+   * settlement, success and failure retire. Cleanup callers pass the captured
+   * identity so a later physical-release proof still finds the exact resource;
+   * execution admission keeps validating the live lease separately.
+   */
+  readonly capturedMaintenanceStorageId?: string;
 }
 
 interface ResourceOwner extends Owner {
@@ -247,12 +256,23 @@ export async function prepareComputeRunAdmission(
           .where(eq(piMemoryPhase2Jobs.maintenanceRunId, runId))
           .limit(1)
       : [];
+  // A retired maintenance binding is not proof that no obligation remains. Fall
+  // back to the caller's captured identity, which only cleanup supplies.
+  const capturedMaintenance =
+    owner.agentId === null &&
+    !maintenance &&
+    expected.capturedMaintenanceStorageId !== undefined &&
+    expected.capturedCleanupOwner !== undefined
+      ? expected.capturedMaintenanceStorageId
+      : undefined;
   const identity =
     owner.agentId !== null
       ? { kind: "agent" as const, id: owner.agentId }
       : maintenance
         ? { kind: "maintenance" as const, id: maintenance.id }
-        : undefined;
+        : capturedMaintenance
+          ? { kind: "maintenance" as const, id: capturedMaintenance }
+          : undefined;
   const resource = identity
     ? await readResource(tx, identity, false)
     : undefined;
@@ -277,9 +297,11 @@ export async function prepareComputeRunAdmission(
   }
   if (
     resource.kind === "maintenance" &&
-    (!maintenance ||
-      !sameOwner(maintenance, owner) ||
-      !sameOwner(resource, owner))
+    (!sameOwner(resource, owner) ||
+      (capturedMaintenance === undefined
+        ? !maintenance || !sameOwner(maintenance, owner)
+        : !expected.capturedCleanupOwner ||
+          !sameOwner(resource, expected.capturedCleanupOwner)))
   ) {
     return undefined;
   }
