@@ -467,8 +467,8 @@ interface PreparedOutboxItem {
 
 type PrepareOutcome =
   | { readonly kind: "empty" }
-  // Resolved without contacting the provider: suppressed, expired, out of
-  // attempts, or holding an undecodable committed request.
+  // Resolved without contacting the provider: expired, out of attempts, or
+  // suppressed.
   | { readonly kind: "resolved" }
   | { readonly kind: "prepared"; readonly item: PreparedOutboxItem };
 
@@ -561,22 +561,14 @@ async function prepareNextOutboxItem(
       );
     }
 
-    let request: ProviderRequest;
-    if (!hasCommittedRequest) {
-      request = buildProviderRequest(row);
-    } else {
-      const committed = providerRequestSchema.safeParse(committedRequest);
-      if (!committed.success) {
-        // A committed request means the provider may already hold this key.
-        // Re-rendering would change the payload, so surface it instead.
-        return await resolveWithoutSending(
-          tx,
-          itemId,
-          "Committed provider request is unreadable",
-        );
-      }
-      request = committed.data;
-    }
+    // Render only for a row whose request is not committed yet. Once it is,
+    // the provider may already hold this key, so the committed request is the
+    // only payload that can be sent under it.
+    const request: ProviderRequest = hasCommittedRequest
+      ? providerRequestSchema.parse(committedRequest)
+      : buildProviderRequest(row);
+    // The committed key stays authoritative for the row it was written for,
+    // even if the derivation below ever changes.
     const idempotencyKey =
       row.provider_idempotency_key ?? providerIdempotencyKey(itemId);
 
