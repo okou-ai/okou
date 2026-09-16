@@ -1127,6 +1127,37 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     ).not.toContain(`/home/user/.claude/skills/${INTRO_VIDEO_SKILL_NAME}`);
   });
 
+  it("advertises artifact sharing only when private artifacts are enabled", async () => {
+    const api = createRunsApi(context);
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId } = await entitledRunActor();
+    for (const enabled of [false, true]) {
+      await connectors.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PrivateArtifacts]: enabled,
+      });
+      const created = await api.createRun(actor, {
+        agentId,
+        prompt: "share the report with my organization",
+        modelProvider: "anthropic-api-key",
+      });
+      const run = await api.readRun(actor, created.runId);
+      const prompt = run.appendSystemPrompt ?? "";
+      expect(prompt.includes("okou artifact --help")).toBe(enabled);
+      if (enabled) {
+        expect(prompt).toContain("--audience organization");
+        expect(prompt).toContain("--audience public");
+        expect(prompt).toContain("--audience private");
+        expect(prompt).toContain(
+          "Only change the audience when the user requests it",
+        );
+        expect(prompt).toContain(
+          "reuses the link shared with the UI Share button",
+        );
+      }
+      await api.requestCancelRun(actor, created.runId, [200]);
+    }
+  });
+
   it("always advertises presentation screenshots", async () => {
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();

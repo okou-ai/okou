@@ -88,6 +88,42 @@ consumers resolve owned references with `kind=file` or `kind=html`, respectively
 under the existing `file:read` or `host:read` capability. Those requests cannot
 resolve another owner's organization share or cross the resource-type boundary.
 
+## Agent CLI sharing
+
+`okou artifact` uses the same owner management endpoints and stored policy as
+the Share menu. Run tokens receive `artifact:read` and `artifact:write` when
+`privateArtifacts` is enabled; file upload and hosting capabilities alone do
+not authorize sharing. The run system prompt includes usage when that switch
+is enabled. Existing session/PAT callers remain supported.
+
+```bash
+okou artifact status /artifacts/abc123def4.pdf --json
+okou artifact share /artifacts/abc123def4.pdf --audience organization
+okou artifact share /artifacts/abc123def4.html --audience public
+okou artifact share /artifacts/abc123def4.html --audience private
+```
+
+The input accepts an owned artifact reference or an absolute artifact URL on
+`OKOU_APP_URL`. A UUID requires `--kind file` or `--kind html`. Reference
+resolution uses `kind=artifact` with `artifact:read`, accepts either resource
+type, and never resolves another owner's organization share. Legacy UUID
+references remain supported. Public delivery URLs and temporary preview URLs
+are not management identities.
+
+Status is read-only. Sharing checks the selected target, version, audience and
+allocated alias before writing; an already shared version returns its current
+link. The Share button sees the same policy and reuses that link. A newer hosted
+version remains private until explicitly selected for sharing. Setting an
+already private artifact to private creates no grant. There is one active
+audience, so switching Public to organization or private revokes the old public
+link; later Public sharing allocates a new public token. Previously issued
+temporary previews retain their existing expiration.
+
+If an update fails or its response is lost, read status before retrying: the
+policy write may already have succeeded. Deploy the API and CLI together before
+using these commands; older run tokens lack the new capabilities and require a
+new run. No storage migration or host Worker protocol change is required.
+
 ## Standalone artifact viewer
 
 The shared `privateArtifacts` switch applies to

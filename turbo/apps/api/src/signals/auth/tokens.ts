@@ -26,6 +26,8 @@ const PAT_TOKEN_PREFIX = "vm0_pat_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["artifact:read", FeatureSwitchKey.PrivateArtifacts],
+  ["artifact:write", FeatureSwitchKey.PrivateArtifacts],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["ssh:read", FeatureSwitchKey.SshAccess],

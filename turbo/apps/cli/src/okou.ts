@@ -11,6 +11,7 @@ import {
 import { getOkouToken } from "./lib/okou-env.js";
 import { introVideoCatalogCommand } from "./commands/__intro-video-catalog.js";
 import { introVideoAgentCommand } from "./commands/__intro-video-agent.js";
+import { artifactCommand } from "./commands/artifact/index.js";
 
 interface CommandDefinition {
   name: string;
@@ -64,6 +65,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   web: null,
   video: null,
   host: ["host:read", "host:write"],
+  artifact: ["artifact:read", "artifact:write"],
   presentation: null,
   "presentation-template": "presentation-template:write",
   maps: "maps:read",
@@ -81,6 +83,13 @@ const COMMAND_CAPABILITY_MAP: Record<
 const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "image-recognition"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "artifact",
+    description: "Inspect and change sharing for owned private artifacts",
+    load: async () => {
+      return artifactCommand;
+    },
+  },
   {
     name: "ssh",
     description: "List authorized SSH hosts and execute remote commands",
@@ -591,6 +600,11 @@ export function buildHelpText(
     ...(canReadHost
       ? ["  Clone hosted site?     okou host clone <public-slug>"]
       : []),
+    ...commandExampleIfVisible(
+      "artifact",
+      "  Share an artifact?     okou artifact --help",
+      payload,
+    ),
     ...commandExampleIfVisible(
       "maps",
       '  Get directions?       okou maps directions --origin "SFO" --destination "Mountain View" --json',

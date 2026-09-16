@@ -30,7 +30,7 @@ const resolveFileReference$ = command(
     { get, set },
     args: {
       readonly id: string;
-      readonly ownerKind: "file" | "html" | undefined;
+      readonly ownerKind: "file" | "html" | "artifact" | undefined;
     },
     signal: AbortSignal,
   ) => {
@@ -194,6 +194,10 @@ const authorizedHostedResolve$ = authRoute(
   { requiredCapability: "host:read" },
   resolve$,
 );
+const authorizedArtifactResolve$ = authRoute(
+  { requiredCapability: "artifact:read" },
+  resolve$,
+);
 
 export const artifactReferenceRoutes: readonly RouteEntry[] = [
   {
@@ -207,7 +211,9 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
           ? authorizedFileResolve$
           : kind === "html"
             ? authorizedHostedResolve$
-            : authorizedResolve$,
+            : kind === "artifact"
+              ? authorizedArtifactResolve$
+              : authorizedResolve$,
         signal,
       );
     }),

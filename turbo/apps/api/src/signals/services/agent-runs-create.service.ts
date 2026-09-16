@@ -347,7 +347,7 @@ function buildIntegrationToolsPrompt(
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Localhost URLs, local dev server ports, and processes started inside the agent runtime are generally only reachable inside that runtime; users cannot rely on them as a way to view the result directly.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
-    "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open; for HTML presentations, include `--artifact-kind presentation-html`.",
+    "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a hosted URL that users can open; with private artifacts enabled, this is an owner-only artifact reference. For HTML presentations, include `--artifact-kind presentation-html`.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     ...(deliveryFormatGuidanceEnabled
       ? [
@@ -429,6 +429,7 @@ function buildIntegrationToolsPrompt(
 }
 
 function buildAgentToolsPrompt(args: {
+  readonly privateArtifactsEnabled: boolean;
   readonly feishuPlatform: FeishuPlatform | undefined;
   readonly sshEnabled: boolean;
   readonly triggerSource: TriggerSource;
@@ -444,6 +445,11 @@ function buildAgentToolsPrompt(args: {
     "# Agent Tools",
     `You have access to the Okou CLI. Run commands with: \`${okouCliCommand} <command>\``,
     "- Discover available commands: `okou --help`.",
+    ...(args.privateArtifactsEnabled
+      ? [
+          "- Private artifact sharing: use `okou artifact --help`. Read current permissions with `okou artifact status <artifact-url-or-reference> --json`; share the selected version with `okou artifact share <artifact-url-or-reference> --audience organization` or `--audience public`, and stop sharing with `--audience private`. For a file or deployment UUID, add `--kind file` or `--kind html`. Only change the audience when the user requests it; uploads, generation, and hosting do not grant access to others. Organization links require membership in the original organization; public links allow anyone with the link. There is one active audience: changing Public to organization or private revokes the old public link. Repeating the same audience and version reuses the link shared with the UI Share button; a newer hosted version must be explicitly shared. Return the exact URL from the command, never a temporary preview URL. If a request fails, read status before retrying because the change may have applied.",
+        ]
+      : []),
     ...(args.sshEnabled
       ? [
           "- SSH: use `okou ssh host list --json` for current connection IDs, then `okou ssh exec <connection-id> --command <command> --json`. List again after an unavailable or unknown ID; never invent IDs or replay an uncertain command. The owner must enable SSH access in Agent settings; the grant covers all of that owner's configured hosts. Agents cannot grant themselves access. Ask the owner to use a least-privilege remote SSH user. Configured does not mean connectivity tested. The first successful connection learns the server's host key (TOFU); an unexpected key requires owner verification and an explicit reset in SSH settings, never automatic acceptance. Credentials stay outside the sandbox. Inspect structured failure_reason and effects, not error text. If effects is unknown, a remote command may have run: never automatically retry. Inventory is live, but execution authority is cached for this Run and invalidated by notifications; a missed notification can leave stale authority until this Run ends. Ask the owner to end active Runs when immediate revocation is required.",
@@ -595,6 +601,7 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
 }
 
 function buildAppendSystemPrompt(args: {
+  readonly privateArtifactsEnabled: boolean;
   readonly socialStatusEnabled: boolean;
   readonly sshEnabled: boolean;
   readonly agent: AgentRunRecord;
@@ -611,6 +618,7 @@ function buildAppendSystemPrompt(args: {
     identity,
     buildExecutionTimeLimitPrompt(),
     buildAgentToolsPrompt({
+      privateArtifactsEnabled: args.privateArtifactsEnabled,
       feishuPlatform: args.userInfo.feishuPlatform,
       socialStatusEnabled: args.socialStatusEnabled,
       sshEnabled: args.sshEnabled,
@@ -784,6 +792,7 @@ function agentRunOrigin(args: {
 }
 
 function createRunBody(args: {
+  readonly privateArtifactsEnabled: boolean;
   readonly sshEnabled: boolean;
   readonly body: AgentRunCreateBody;
   readonly agent: AgentRunRecord;
@@ -800,6 +809,7 @@ function createRunBody(args: {
 }) {
   const triggerSource = args.triggerSource ?? "web";
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
+    privateArtifactsEnabled: args.privateArtifactsEnabled,
     socialStatusEnabled: args.socialStatusEnabled,
     sshEnabled: args.sshEnabled,
     agent: args.agent,
@@ -1001,6 +1011,10 @@ function buildCreateAgentRunArgs(args: {
     userId: command.auth.userId,
     orgId: command.auth.orgId,
     body: createRunBody({
+      privateArtifactsEnabled: isFeatureEnabled(
+        FeatureSwitchKey.PrivateArtifacts,
+        args.featureSwitchContext,
+      ),
       sshEnabled: isFeatureEnabled(
         FeatureSwitchKey.SshAccess,
         args.featureSwitchContext,
