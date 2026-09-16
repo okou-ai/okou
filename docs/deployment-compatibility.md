@@ -909,16 +909,26 @@ uses persisted run ownership to display a platform-owned balance failure as
 metadata. Model unavailability is presentation, not a completion failure reason.
 The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
 use generic failure copy for an unknown token instead of rejecting the run or
-showing the vm0 recharge card. No schema migration is required.
+showing the vm0 recharge card. The token addition required no schema migration.
 
-Prefer API readers before the runner writer for this change. Old runners and
-retained rows can still have missing reasons or legacy upstream affordability
-text labeled `insufficient_credits`; exact legacy presentation remains supported
-without inferring an unobserved status or suppressing unknown diagnostics. Remove
-that compatibility only after old runners drain and affected retained rows are
-gone or migrated. Public run, activity, HTTP callback, model-error event, and network-export
-projections keep built-in balance details internal; rolling back these readers
-can restore the prior disclosure behavior even though the tokens remain readable.
+The #34219 cleanup follows the reader/writer rollout in #34251. The production
+read on 2026-09-16 found API `1.607.0`, App `0.902.2`, and all three running
+Runners on `0.194.6`, containing the owner-aware reader and structured writer
+commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`.
+
+Historical errors remain as stored, including missing or misclassified failure
+reasons. No data migration or repair is required. The user accepted that those
+records may display raw errors or the old incorrect credit classification after
+terminal text inference is removed. Terminal readers use the persisted cause.
+Current failed provider-event detection and network-export redaction remain.
+The production rollback resolver enforces the commit above for both the API
+target and its independently resolved Runner tag, preventing an older writer or
+public reader from returning for new runs.
+
+This change does not certify alert delivery. #34219 remains open for actual
+built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+verification. Runner INFO events are below the Axiom upload threshold, and the
+investigation token could not read monitor configuration.
 
 Avoid one-shot protocol flips:
 

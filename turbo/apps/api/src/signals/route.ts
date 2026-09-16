@@ -65,7 +65,6 @@ import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
-import { impactMarketingRoutes } from "./routes/impact-marketing";
 import { acquisitionAttributionRoutes } from "./routes/acquisition-attribution";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
@@ -274,7 +273,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentsRoutes,
   ...artifactCatalogRoutes,
   ...acquisitionAttributionRoutes,
-  ...impactMarketingRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
   ...billingConcurrencyCheckoutRoutes,

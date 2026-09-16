@@ -18,6 +18,7 @@ import {
   ComposerAddMenu,
   type ComposerAddMenuGroup,
 } from "./composer-add-menu.tsx";
+import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -11016,6 +11017,19 @@ function ComposerFooter({
                 actions={connectorActions}
               />
             </div>
+            {/*
+              The video spec sits beside the connectors, at the head of the
+              controls that act on the run rather than on the message, and on
+              the same line as the model it is resolved against.
+
+              It is a sibling of the icon row rather than a member of it: below
+              640px this group is `display: contents`, so the chip reaches the
+              footer grid directly and its own `col-span-2 row-start-1 w-full`
+              gives it a full-width first row instead of competing with four
+              icons for a 344px line. Nested inside the row, those placements
+              would resolve against a flex box and do nothing.
+            */}
+            <ComposerVideoOptionsChip signals={signals} />
           </div>
           <div
             className={cn(

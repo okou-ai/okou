@@ -3720,7 +3720,7 @@
       },
       "feishu": {
         "addBot": "Ajouter un bot",
-        "addDialogDescription": "Créez une application personnalisée d'entreprise, activez son bot et complétez ces étapes dans la console développeur Feishu.",
+        "addDialogDescription": "Créez une application d’entreprise de type Agent, puis suivez ces étapes dans la console développeur Feishu.",
         "addDialogTitle": "Ajouter un bot Feishu",
         "agentDescription": "Choisissez l'agent qui devrait gérer les messages envoyés à ce bot.",
         "backToIntegrations": "Retour aux intégrations",
@@ -3733,14 +3733,14 @@
         "copied": "{{label}} copié",
         "copy": "Copier",
         "create": {
-          "descriptionAfter": ", créez une application personnalisée d'entreprise avec le nom et l'icône de votre choix, puis ajoutez la capacité Bot.",
+          "descriptionAfter": ", créez une application d’entreprise et sélectionnez le type Agent. Choisissez le nom et l’icône souhaités ; le modèle Agent inclut la fonctionnalité Bot.",
           "descriptionBefore": "Dans le",
           "downloadIcon": "Téléchargez l'icône {{brandName}} facultative",
           "iconAlt": "Icône facultative de l'application {{brandName}}",
           "iconHint": ", ou utilisez toute icône de votre choix.",
           "iconTitle": "Icône facultative de l'application {{brandName}}",
           "imageAlt": "Formulaire de création de l'application Feishu avec le nom de l'application, l'icône et le bouton Créer mis en évidence",
-          "title": "Créer une application personnalisée d'entreprise"
+          "title": "Créer une application de type Agent"
         },
         "credentials": {
           "appId": "ID de l'application",
@@ -3770,6 +3770,9 @@
         "faq": {
           "approvalAnswer": "Si la disponibilité est définie sur Tous les membres, un administrateur Feishu doit approuver la publication. Feishu envoie la demande d'approbation à un administrateur via un message direct, et l'application reste en attente jusqu'à ce qu'un administrateur termine la vérification.",
           "approvalQuestion": "Pourquoi la publication de l'application attend-elle l'approbation ?",
+          "botFeatureAnswer": "Ouvrez Features → Add Features dans la console développeur Feishu. Sous By Feature, ajoutez la fonctionnalité Bot, puis poursuivez ce guide et publiez l’application. Les applications de type Agent incluent la fonctionnalité Bot par défaut.",
+          "botFeatureImageAlt": "Console développeur Lark affichant la fonctionnalité Bot sous Add Features",
+          "botFeatureQuestion": "Que faire si j’ai choisi Custom App au lieu d’Agent ?",
           "challengeAnswer": "Cela signifie généralement que la clé de chiffrement ou le jeton de vérification enregistré lors de l'étape des jetons est incorrect. Retournez à l'étape des jetons, entrez à nouveau les deux valeurs provenant de Configuration de l'événement → Stratégie de chiffrement, enregistrez-les, puis réessayez l'URL de demande.",
           "challengeQuestion": "Pourquoi Feishu affiche-t-il \"Le code de défi n'a pas reçu de réponse\" ?",
           "title": "FAQ de configuration"
@@ -3780,14 +3783,14 @@
         "moreOptions": "Plus d'options pour {{bot}}",
         "pageDescription": "Gérer le routage du bot pour cet espace de travail",
         "permissions": {
-          "description": "Dans la console développeur Feishu, ouvrez Autorisations et portées, choisissez Importation/exportation par lots > Importer, puis collez le JSON ci-dessous. Toutes les portées du connecteur géré sont importées sous l'identité Utilisateur. Il s’agit des autorisations minimales requises pour que l’intégration fonctionne.",
-          "hint": "Conservez toutes les autorisations importées de l'identité Utilisateur, puis créez et publiez une nouvelle version de l'application afin que l'écran de consentement OAuth puisse les accorder. Si vous en retirez une, l’intégration ne fonctionnera plus et l’approbation d’un administrateur Feishu peut être requise.",
-          "label": "JSON des portées du jeton utilisateur",
+          "description": "Dans la console développeur Feishu, ouvrez Permissions & Scopes, choisissez Batch Import/Export > Import et collez le JSON ci-dessous. Il contient les autorisations d’identité d’application pour le bot et d’identité utilisateur pour votre compte connecté.",
+          "hint": "Conservez toutes les autorisations importées pour les deux identités, puis créez et publiez une nouvelle version de l’application. L’approbation d’un administrateur Feishu peut être nécessaire.",
+          "label": "JSON des portées d’application et d’utilisateur",
           "menuAlt": "Page Autorisations et portées de Feishu avec le menu d’importation/exportation par lots des portées mis en évidence",
           "menuLabel": "Ouvrir l’importation/exportation par lots des portées",
           "reviewAlt": "Boîte de dialogue d’importation/exportation par lots des portées de Feishu avec le JSON importé et le bouton de vérification mis en évidence",
           "reviewLabel": "Coller le JSON et vérifier les nouvelles portées",
-          "title": "Importer les portées du jeton utilisateur"
+          "title": "Importer les portées d’application et d’utilisateur"
         },
         "publish": {
           "allMembersAlt": "Paramètres de disponibilité de Feishu avec Tous les membres sélectionnés",
@@ -3849,7 +3852,7 @@
       },
       "lark": {
         "addBot": "Ajouter un bot",
-        "addDialogDescription": "Créez une application personnalisée d'entreprise, activez son bot et complétez ces étapes dans la console développeur Lark.",
+        "addDialogDescription": "Créez une application d’entreprise de type Agent, puis suivez ces étapes dans la console développeur Lark.",
         "addDialogTitle": "Ajouter un bot Lark",
         "agentDescription": "Choisissez l'agent qui devrait gérer les messages envoyés à ce bot.",
         "backToIntegrations": "Retour aux intégrations",
@@ -3862,14 +3865,14 @@
         "copied": "{{label}} copié",
         "copy": "Copier",
         "create": {
-          "descriptionAfter": ", créez une application personnalisée d'entreprise avec le nom et l'icône de votre choix, puis ajoutez la capacité Bot.",
+          "descriptionAfter": ", créez une application d’entreprise et sélectionnez le type Agent. Choisissez le nom et l’icône souhaités ; le modèle Agent inclut la fonctionnalité Bot.",
           "descriptionBefore": "Dans le",
           "downloadIcon": "Téléchargez l'icône {{brandName}} facultative",
           "iconAlt": "Icône facultative de l'application {{brandName}}",
           "iconHint": ", ou utilisez toute icône de votre choix.",
           "iconTitle": "Icône facultative de l'application {{brandName}}",
           "imageAlt": "Formulaire de création de l'application Feishu avec le nom de l'application, l'icône et le bouton Créer mis en évidence",
-          "title": "Créer une application personnalisée d'entreprise"
+          "title": "Créer une application de type Agent"
         },
         "credentials": {
           "appId": "ID de l'application",
@@ -3899,6 +3902,9 @@
         "faq": {
           "approvalAnswer": "Si la disponibilité est définie sur Tous les membres, un administrateur Lark doit approuver la publication. Lark envoie la demande d'approbation à un administrateur via un message direct, et l'application reste en attente jusqu'à ce qu'un administrateur termine la vérification.",
           "approvalQuestion": "Pourquoi la publication de l'application attend-elle l'approbation ?",
+          "botFeatureAnswer": "Ouvrez Features → Add Features dans la console développeur Lark. Sous By Feature, ajoutez la fonctionnalité Bot, puis poursuivez ce guide et publiez l’application. Les applications de type Agent incluent la fonctionnalité Bot par défaut.",
+          "botFeatureImageAlt": "Console développeur Lark affichant la fonctionnalité Bot sous Add Features",
+          "botFeatureQuestion": "Que faire si j’ai choisi Custom App au lieu d’Agent ?",
           "challengeAnswer": "Cela signifie généralement que la clé de chiffrement ou le jeton de vérification enregistré lors de l'étape des jetons est incorrect. Retournez à l'étape des jetons, entrez à nouveau les deux valeurs provenant de Configuration de l'événement → Stratégie de chiffrement, enregistrez-les, puis réessayez l'URL de demande.",
           "challengeQuestion": "Pourquoi Lark affiche-t-il \"Le code de défi n'a pas reçu de réponse\" ?",
           "title": "FAQ de configuration"
@@ -3910,14 +3916,14 @@
         "moreOptions": "Plus d'options pour {{bot}}",
         "pageDescription": "Gérer le routage du bot pour cet espace de travail",
         "permissions": {
-          "description": "Dans la console développeur Lark, ouvrez Autorisations et portées, choisissez Importation/exportation par lots > Importer, puis collez le JSON ci-dessous. Toutes les portées du connecteur géré sont importées sous l'identité Utilisateur. Il s’agit des autorisations minimales requises pour que l’intégration fonctionne.",
-          "hint": "Conservez toutes les autorisations importées de l'identité Utilisateur, puis créez et publiez une nouvelle version de l'application afin que l'écran de consentement OAuth puisse les accorder. Si vous en retirez une, l’intégration ne fonctionnera plus et l’approbation d’un administrateur Lark peut être requise.",
-          "label": "JSON des portées du jeton utilisateur",
+          "description": "Dans la console développeur Lark, ouvrez Permissions & Scopes, choisissez Batch Import/Export > Import et collez le JSON ci-dessous. Il contient les autorisations d’identité d’application pour le bot et d’identité utilisateur pour votre compte connecté.",
+          "hint": "Conservez toutes les autorisations importées pour les deux identités, puis créez et publiez une nouvelle version de l’application. L’approbation d’un administrateur Lark peut être nécessaire.",
+          "label": "JSON des portées d’application et d’utilisateur",
           "menuAlt": "Page Autorisations et portées de Feishu avec le menu d’importation/exportation par lots des portées mis en évidence",
           "menuLabel": "Ouvrir l’importation/exportation par lots des portées",
           "reviewAlt": "Boîte de dialogue d’importation/exportation par lots des portées de Feishu avec le JSON importé et le bouton de vérification mis en évidence",
           "reviewLabel": "Coller le JSON et vérifier les nouvelles portées",
-          "title": "Importer les portées du jeton utilisateur"
+          "title": "Importer les portées d’application et d’utilisateur"
         },
         "publish": {
           "allMembersAlt": "Paramètres de disponibilité de Feishu avec Tous les membres sélectionnés",

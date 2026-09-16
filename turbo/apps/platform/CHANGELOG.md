@@ -11,6 +11,30 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.903.2](https://github.com/vm0-ai/okou/compare/app-v0.903.1...app-v0.903.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* complete lark and feishu setup permissions ([#34491](https://github.com/vm0-ai/okou/issues/34491)) ([13b706d](https://github.com/vm0-ai/okou/commit/13b706d293f61d6bd6f71b039baac2f54f19fdc7))
+* **platform:** follow the color preset on the checked switch track ([#34506](https://github.com/vm0-ai/okou/issues/34506)) ([9be1044](https://github.com/vm0-ai/okou/commit/9be10442d6ef4762d792330a9f4ff97bea18f5a7))
+* **platform:** weight the scale's dots per state, not once ([#34500](https://github.com/vm0-ai/okou/issues/34500)) ([f74f465](https://github.com/vm0-ai/okou/commit/f74f4651707da906bd4a18a119125680d0e0aeff))
+
+
+### Refactoring
+
+* **app:** remove the inert app shell class ([#34482](https://github.com/vm0-ai/okou/issues/34482)) ([b9c7da3](https://github.com/vm0-ai/okou/commit/b9c7da343512b84f20162b3bc6eaafb22b151686)), closes [#32402](https://github.com/vm0-ai/okou/issues/32402)
+* **app:** replace impact iframe with one onboarding request ([#34403](https://github.com/vm0-ai/okou/issues/34403)) ([4f33be6](https://github.com/vm0-ai/okou/commit/4f33be6e54d54757a49c796e5bacd87d75d2b274))
+* **ssh:** share rollout gating with cloudflare access ([#34489](https://github.com/vm0-ai/okou/issues/34489)) ([84a84fb](https://github.com/vm0-ai/okou/commit/84a84fba45ee6b5273b0ee5c6ade5a60a10b22c9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.446.1
+    * @okouai/core bumped to 8.668.2
+
 ## [0.903.1](https://github.com/vm0-ai/okou/compare/app-v0.903.0...app-v0.903.1) (2026-09-16)
 
 

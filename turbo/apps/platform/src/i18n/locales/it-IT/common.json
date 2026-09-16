@@ -3720,7 +3720,7 @@
       },
       "feishu": {
         "addBot": "Aggiungi bot",
-        "addDialogDescription": "Crea un'app aziendale personalizzata, abilita il relativo bot e completa questi passaggi nella Feishu console per sviluppatori.",
+        "addDialogDescription": "Crea un’app aziendale di tipo Agent, quindi completa questi passaggi nella console sviluppatori di Feishu.",
         "addDialogTitle": "Aggiungi un bot Feishu",
         "agentDescription": "Scegli l'agente che dovrà gestire i messaggi inviati a questo bot.",
         "backToIntegrations": "Torniamo alle integrazioni",
@@ -3733,14 +3733,14 @@
         "copied": "{{label}} copiato",
         "copy": "Copia",
         "create": {
-          "descriptionAfter": ", crea un'app aziendale personalizzata con il nome e l'icona che preferisci, quindi aggiungi la funzionalità Bot.",
+          "descriptionAfter": ", crea un’app aziendale e seleziona il tipo Agent. Scegli il nome e l’icona che preferisci; il modello Agent include la funzionalità Bot.",
           "descriptionBefore": "Nel ",
           "downloadIcon": "Scarica l'icona {{brandName}} facoltativa",
           "iconAlt": "Icona facoltativa dell'app {{brandName}}",
           "iconHint": "oppure utilizza l'icona che preferisci.",
           "iconTitle": "Icona facoltativa dell'app {{brandName}}",
           "imageAlt": "Feishu modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
-          "title": "Creare un'app aziendale personalizzata"
+          "title": "Crea un’app di tipo Agent"
         },
         "credentials": {
           "appId": "Applicazione ID",
@@ -3770,6 +3770,9 @@
         "faq": {
           "approvalAnswer": "Se la disponibilità è impostata su Tutti i membri, un amministratore Feishu deve approvare la versione. Feishu invia la richiesta di approvazione a un amministratore in un messaggio diretto e l'app rimane in sospeso finché un amministratore non completa la revisione.",
           "approvalQuestion": "Perché la pubblicazione dell'app è in attesa di approvazione?",
+          "botFeatureAnswer": "Apri Features → Add Features nella console sviluppatori di Feishu. In By Feature, aggiungi la funzionalità Bot, quindi prosegui con questa guida e pubblica l’app. Le app di tipo Agent includono la funzionalità Bot per impostazione predefinita.",
+          "botFeatureImageAlt": "Console sviluppatori Lark con la funzionalità Bot in Add Features",
+          "botFeatureQuestion": "Cosa devo fare se ho scelto Custom App invece di Agent?",
           "challengeAnswer": "Ciò in genere significa che la chiave di crittografia o il token di verifica salvato durante il passaggio Token non è corretto. Torna al passaggio Token, inserisci nuovamente entrambi i valori da Configurazione evento → Strategia di crittografia, salvali e riprova a eseguire la richiesta URL.",
           "challengeQuestion": "Perché Feishu mostra \"Il codice di sfida non ha ricevuto risposta\"?",
           "title": "Domande frequenti sulla configurazione"
@@ -3780,14 +3783,14 @@
         "moreOptions": "Altre opzioni per {{bot}}",
         "pageDescription": "Gestisci il routing dei bot per questa area di lavoro",
         "permissions": {
-          "description": "Nella console per sviluppatori di Feishu, apri Autorizzazioni e ambiti, scegli Importazione/esportazione in blocco > Importa e incolla il JSON seguente. Verranno importati tutti gli ambiti del connettore gestito per l'identità utente. Queste sono le autorizzazioni minime necessarie per il funzionamento dell'integrazione.",
-          "hint": "Mantieni tutte le autorizzazioni importate per l'identità utente, quindi crea e pubblica una nuova versione dell'app affinché la schermata di consenso OAuth possa concederle. La rimozione di qualsiasi autorizzazione impedirà il funzionamento dell'integrazione e potrebbe essere necessaria l'approvazione di un amministratore Feishu.",
-          "label": "JSON degli ambiti del token utente",
+          "description": "Nella console sviluppatori di Feishu, apri Permissions & Scopes, scegli Batch Import/Export > Import e incolla il JSON qui sotto. Include le autorizzazioni dell’identità dell’app per il bot e dell’identità utente per il tuo account collegato.",
+          "hint": "Mantieni tutte le autorizzazioni importate per entrambe le identità, quindi crea e pubblica una nuova versione dell’app. Potrebbe essere necessaria l’approvazione di un amministratore di Feishu.",
+          "label": "JSON degli ambiti dell’app e dell’utente",
           "menuAlt": "Pagina Autorizzazioni e ambiti di Feishu con il menu di importazione/esportazione in blocco degli ambiti evidenziato",
           "menuLabel": "Apri l'importazione/esportazione in blocco degli ambiti",
           "reviewAlt": "Finestra di importazione/esportazione in blocco degli ambiti di Feishu con il JSON importato e il pulsante di revisione evidenziato",
           "reviewLabel": "Incolla il JSON e rivedi i nuovi ambiti",
-          "title": "Importa gli ambiti del token utente"
+          "title": "Importa gli ambiti dell’app e dell’utente"
         },
         "publish": {
           "allMembersAlt": "Impostazioni di disponibilità Feishu con Tutti i membri selezionati",
@@ -3849,7 +3852,7 @@
       },
       "lark": {
         "addBot": "Aggiungi bot",
-        "addDialogDescription": "Crea un'app aziendale personalizzata, abilita il relativo bot e completa questi passaggi nella Lark console per sviluppatori.",
+        "addDialogDescription": "Crea un’app aziendale di tipo Agent, quindi completa questi passaggi nella console sviluppatori di Lark.",
         "addDialogTitle": "Aggiungi un bot Lark",
         "agentDescription": "Scegli l'agente che dovrà gestire i messaggi inviati a questo bot.",
         "backToIntegrations": "Torniamo alle integrazioni",
@@ -3862,14 +3865,14 @@
         "copied": "{{label}} copiato",
         "copy": "Copia",
         "create": {
-          "descriptionAfter": ", crea un'app aziendale personalizzata con il nome e l'icona che preferisci, quindi aggiungi la funzionalità Bot.",
+          "descriptionAfter": ", crea un’app aziendale e seleziona il tipo Agent. Scegli il nome e l’icona che preferisci; il modello Agent include la funzionalità Bot.",
           "descriptionBefore": "Nel ",
           "downloadIcon": "Scarica l'icona {{brandName}} facoltativa",
           "iconAlt": "Icona facoltativa dell'app {{brandName}}",
           "iconHint": "oppure utilizza l'icona che preferisci.",
           "iconTitle": "Icona facoltativa dell'app {{brandName}}",
           "imageAlt": "Feishu modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
-          "title": "Creare un'app aziendale personalizzata"
+          "title": "Crea un’app di tipo Agent"
         },
         "credentials": {
           "appId": "Applicazione ID",
@@ -3899,6 +3902,9 @@
         "faq": {
           "approvalAnswer": "Se la disponibilità è impostata su Tutti i membri, un amministratore Lark deve approvare la versione. Lark invia la richiesta di approvazione a un amministratore in un messaggio diretto e l'app rimane in sospeso finché un amministratore non completa la revisione.",
           "approvalQuestion": "Perché la pubblicazione dell'app è in attesa di approvazione?",
+          "botFeatureAnswer": "Apri Features → Add Features nella console sviluppatori di Lark. In By Feature, aggiungi la funzionalità Bot, quindi prosegui con questa guida e pubblica l’app. Le app di tipo Agent includono la funzionalità Bot per impostazione predefinita.",
+          "botFeatureImageAlt": "Console sviluppatori Lark con la funzionalità Bot in Add Features",
+          "botFeatureQuestion": "Cosa devo fare se ho scelto Custom App invece di Agent?",
           "challengeAnswer": "Ciò in genere significa che la chiave di crittografia o il token di verifica salvato durante il passaggio Token non è corretto. Torna al passaggio Token, inserisci nuovamente entrambi i valori da Configurazione evento → Strategia di crittografia, salvali e riprova a eseguire la richiesta URL.",
           "challengeQuestion": "Perché Lark mostra \"Il codice di sfida non ha ricevuto risposta\"?",
           "title": "Domande frequenti sulla configurazione"
@@ -3910,14 +3916,14 @@
         "moreOptions": "Altre opzioni per {{bot}}",
         "pageDescription": "Gestisci il routing dei bot per questa area di lavoro",
         "permissions": {
-          "description": "Nella console per sviluppatori di Lark, apri Autorizzazioni e ambiti, scegli Importazione/esportazione in blocco > Importa e incolla il JSON seguente. Verranno importati tutti gli ambiti del connettore gestito per l'identità utente. Queste sono le autorizzazioni minime necessarie per il funzionamento dell'integrazione.",
-          "hint": "Mantieni tutte le autorizzazioni importate per l'identità utente, quindi crea e pubblica una nuova versione dell'app affinché la schermata di consenso OAuth possa concederle. La rimozione di qualsiasi autorizzazione impedirà il funzionamento dell'integrazione e potrebbe essere necessaria l'approvazione di un amministratore Lark.",
-          "label": "JSON degli ambiti del token utente",
+          "description": "Nella console sviluppatori di Lark, apri Permissions & Scopes, scegli Batch Import/Export > Import e incolla il JSON qui sotto. Include le autorizzazioni dell’identità dell’app per il bot e dell’identità utente per il tuo account collegato.",
+          "hint": "Mantieni tutte le autorizzazioni importate per entrambe le identità, quindi crea e pubblica una nuova versione dell’app. Potrebbe essere necessaria l’approvazione di un amministratore di Lark.",
+          "label": "JSON degli ambiti dell’app e dell’utente",
           "menuAlt": "Pagina Autorizzazioni e ambiti di Feishu con il menu di importazione/esportazione in blocco degli ambiti evidenziato",
           "menuLabel": "Apri l'importazione/esportazione in blocco degli ambiti",
           "reviewAlt": "Finestra di importazione/esportazione in blocco degli ambiti di Feishu con il JSON importato e il pulsante di revisione evidenziato",
           "reviewLabel": "Incolla il JSON e rivedi i nuovi ambiti",
-          "title": "Importa gli ambiti del token utente"
+          "title": "Importa gli ambiti dell’app e dell’utente"
         },
         "publish": {
           "allMembersAlt": "Impostazioni di disponibilità Feishu con Tutti i membri selezionati",

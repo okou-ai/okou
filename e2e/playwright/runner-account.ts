@@ -16,6 +16,7 @@ const RUNNER_TEST_ROLES = [
   "runner-real-codex",
   "runner-real-claude",
   "runner-mock-claude",
+  "runner-real-codex-built-in",
 ] as const satisfies readonly ClerkTestRole[];
 
 async function main(): Promise<void> {
@@ -77,6 +78,12 @@ async function prepareRunnerAccounts(
       mockClaudeUserId,
       "runner-mock-claude",
     );
+    const codexBuiltInUserId = await createUser(runnerAccounts.codexBuiltIn);
+    const codexBuiltInOrganizationId = await createOrganization(
+      `e2e-runner-real-codex-built-in-${jobRef}`,
+      codexBuiltInUserId,
+      "runner-real-codex-built-in",
+    );
 
     await appendFile(
       requiredEnvironmentVariable("GITHUB_OUTPUT"),
@@ -85,10 +92,12 @@ async function prepareRunnerAccounts(
         `codex-organization-id=${codexOrganizationId}`,
         `claude-organization-id=${claudeOrganizationId}`,
         `mock-claude-organization-id=${mockClaudeOrganizationId}`,
+        `codex-built-in-organization-id=${codexBuiltInOrganizationId}`,
         `runner-email=${runnerAccounts.runner}`,
         `codex-email=${runnerAccounts.codex}`,
         `claude-email=${runnerAccounts.claude}`,
         `mock-claude-email=${runnerAccounts.mockClaude}`,
+        `codex-built-in-email=${runnerAccounts.codexBuiltIn}`,
         "",
       ].join("\n"),
       "utf8",
@@ -99,6 +108,7 @@ async function prepareRunnerAccounts(
       codexOrganizationId,
       claudeOrganizationId,
       mockClaudeOrganizationId,
+      codexBuiltInOrganizationId,
       ...runnerAccounts,
     });
   } catch (cause) {

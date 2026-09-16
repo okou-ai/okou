@@ -67,12 +67,12 @@ class SourceAuditCliTest(unittest.TestCase):
                 "KMS_OPERATION": "source-audit",
                 "SOURCE_AUDIT_WINDOW_START": start.isoformat(),
                 "RUNNER_TEMP": str(root),
-                "GITHUB_REPOSITORY": "vm0-ai/vm0",
+                "GITHUB_REPOSITORY": "vm0-ai/okou",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
                 "GITHUB_SHA": "a" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/kms-production-preflight.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-preflight.yml@refs/heads/main",
                 "EXPECTED_BACKUP_SHA256": hashlib.sha256(raw.encode()).hexdigest(),
                 "DOPPLER_SERVICE_IDENTITY_ID": "c0c87790-e651-45dd-b7fa-c5ed07bb990f",
                 "ACTIONS_ID_TOKEN_REQUEST_URL": "https://pipelines.actions.githubusercontent.com/oidc",
@@ -192,6 +192,7 @@ class SourceAuditCliTest(unittest.TestCase):
     ):
         for overrides in [
             {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY": "another-owner/okou"},
             {"GITHUB_EVENT_NAME": "pull_request"},
             {"GITHUB_WORKFLOW_REF": "other-workflow"},
             {"KMS_OPERATION": "verify"},

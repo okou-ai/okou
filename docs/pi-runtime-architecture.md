@@ -132,6 +132,29 @@ native streaming path. Failed native assistant messages carry this evidence in
 `okou_model_request`. Both stream iteration and `result()` expose the same
 diagnostic. Bedrock keeps its native SDK transport without fetch diagnostics.
 
+Request rejection and response-body read failure also retain optional
+`transportFailure` before the SDK reduces the exception to display text. It
+contains the observed `request` or `response_body` phase, whether the model caller's
+signal was already aborted, and allowlisted exception names and direct/nested
+Node or Undici codes. Causal inspection stops after four nested errors. It never
+includes messages, stack traces, URLs, headers, bodies, addresses or raw causes.
+Signal state reports the model caller, not an SDK-created timeout signal, and
+does not establish user cancellation. SDK-owned timeouts that do not reject a
+fetch/body read retain their existing timeout diagnostics. A bare `terminated`
+result still cannot establish the original cause.
+
+The response observer uses one demand-driven reader, forwards original bytes
+and errors, propagates cancellation, and releases its reader on termination.
+Evidence resets on every fetch attempt and is published only on a failed
+assistant message; success and abort retain their existing lifecycle. API-first
+failure telemetry and Runner terminal logs carry the same reduced evidence.
+Semantic errors and non-fetch transports can legitimately omit it. Older Guest
+readers ignore the additive field and current readers accept its absence; no
+public reason token or database migration changes. Verify both the deployed CLI
+and Runner artifact before attributing production diagnostics to this change,
+then observe the exact failure signature in a bounded window. Historical errors
+cannot be retrospectively diagnosed from the new fields.
+
 Guest projects this evidence into the failed terminal result and optional
 `FailureDiagnostic.modelRequest`. A failed retry records the attempt number and
 limit from its native `auto_retry_start` event. A scheduled sleep does not count

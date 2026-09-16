@@ -228,6 +228,33 @@ test.each([false, true])(
   },
 );
 
+test("Keep the video spec with the run controls below the message", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
+  });
+  await selectVideoTemplate();
+  /*
+    The spec is a setting for the run, not content for this message, so it
+    belongs in the action row beside the model that decides which values exist
+    — not in the lane above the input, which clears on send.
+
+    This pins the band the control sits in, not its markup: every other case in
+    this file resolves it by accessible name, so when it was moved into that
+    lane the whole suite stayed green.
+  */
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const spec = fastControl("button", "Video options 16:9 · 8s · 720p");
+  expect(editor.compareDocumentPosition(spec)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(spec.compareDocumentPosition(sendButton())).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
 test.each([false, true])(
   "Submit default video options with the slash panel on: %s",
   async (enabled) => {

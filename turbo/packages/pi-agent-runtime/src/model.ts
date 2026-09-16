@@ -375,7 +375,11 @@ export function piAgentStreamForConfig(
       configuredOptions.fetch ?? globalThis.fetch,
       configuredOptions.onObservedResponseStatus,
     );
-    return streamWithModelRequestDiagnostics(start, fetch);
+    return streamWithModelRequestDiagnostics(
+      start,
+      fetch,
+      configuredOptions.signal,
+    );
   };
 }
 

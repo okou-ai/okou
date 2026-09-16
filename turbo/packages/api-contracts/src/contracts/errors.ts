@@ -773,7 +773,6 @@ function formatStructuredRunError(params: {
     case "provider-balance": {
       return formatRunBalanceError({
         failureReason: params.failureReason,
-        message: params.errorMessage,
         modelProvider: params.modelProviderType,
       })!;
     }
@@ -841,18 +840,6 @@ export function formatRunErrorForExternalSurface(params: {
 }): string {
   const errorMessage = params.message.trim() || "Run failed";
   const modelProviderType = params.modelProviderType;
-  if ([undefined, "insufficient_credits"].includes(params.failureReason)) {
-    const balanceMessage = formatRunBalanceError({
-      failureReason: params.failureReason,
-      message: errorMessage,
-      modelProvider: modelProviderType,
-      framework: params.framework,
-    });
-    if (balanceMessage !== undefined) {
-      return balanceMessage;
-    }
-  }
-
   if (params.failureReason !== undefined) {
     return formatStructuredRunError({
       failureReason: params.failureReason,

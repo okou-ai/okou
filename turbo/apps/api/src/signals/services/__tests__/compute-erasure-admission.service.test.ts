@@ -485,12 +485,13 @@ describe("actual compute transactions versus the B1 projector", () => {
     };
   }
 
-  it("measures bounded concurrent actual claims for shared and separate subject sets", async () => {
-    const samples: Record<"shared" | "separate", number[]> = {
-      shared: [],
-      separate: [],
-    };
-    for (const mode of ["shared", "separate"] as const) {
+  it.each(["shared", "separate"] as const)(
+    "measures bounded concurrent actual claims for %s subject sets",
+    async (mode) => {
+      const samples: Record<"shared" | "separate", number[]> = {
+        shared: [],
+        separate: [],
+      };
       for (let round = 0; round < 2; round++) {
         const first = await fixture();
         const second = mode === "shared" ? first : await fixture();
@@ -508,11 +509,11 @@ describe("actual compute transactions versus the B1 projector", () => {
           }),
         ).toStrictEqual([200, 200]);
       }
-    }
-    // Local end-to-end observations, deliberately no global throughput claim
-    // or latency threshold tied to a shared CI machine.
-    process.stdout.write(`B2B1_CLAIM_PAIR_MS ${JSON.stringify(samples)}\n`);
-  });
+      // Local end-to-end observations, deliberately no global throughput claim
+      // or latency threshold tied to a shared CI machine.
+      process.stdout.write(`B2B1_CLAIM_PAIR_MS ${JSON.stringify(samples)}\n`);
+    },
+  );
 
   it("promotes a surviving queued item behind a closed corrupt payload and retains its locator", async () => {
     const f = await fixture();

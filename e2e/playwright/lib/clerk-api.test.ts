@@ -57,6 +57,8 @@ test("creates and parses generation-scoped test identities", () => {
         claude: "pr-123+clerk_test+31500000000-2+runner-real-claude@vm0-e2e.ai",
         mockClaude:
           "pr-123+clerk_test+31500000000-2+runner-mock-claude@vm0-e2e.ai",
+        codexBuiltIn:
+          "pr-123+clerk_test+31500000000-2+runner-real-codex-built-in@vm0-e2e.ai",
       });
     },
   );

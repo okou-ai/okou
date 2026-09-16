@@ -3666,7 +3666,7 @@
       },
       "feishu": {
         "addBot": "Bot hinzufügen",
-        "addDialogDescription": "Erstellen Sie eine benutzerdefinierte Unternehmensanwendung, aktivieren Sie ihren Bot und führen Sie diese Schritte in der Feishu-Entwicklerkonsole aus.",
+        "addDialogDescription": "Erstellen Sie eine Unternehmensanwendung vom Typ Agent und führen Sie dann diese Schritte in der Feishu-Entwicklerkonsole aus.",
         "addDialogTitle": "Fügen Sie einen Feishu-Bot hinzu",
         "agentDescription": "Wählen Sie den Agenten aus, der an diesen Bot gesendete Nachrichten verarbeiten soll.",
         "backToIntegrations": "Zurück zu Integrationen",
@@ -3679,14 +3679,14 @@
         "copied": "{{label}} kopiert",
         "copy": "Kopieren",
         "create": {
-          "descriptionAfter": ", erstellen Sie eine benutzerdefinierte Unternehmensanwendung mit dem gewünschten Namen und Symbol und fügen Sie dann die Bot-Funktion hinzu.",
+          "descriptionAfter": ", erstellen Sie eine Unternehmensanwendung und wählen Sie den Typ Agent. Wählen Sie den gewünschten Namen und das Symbol; die Agent-Vorlage enthält die Bot-Funktion.",
           "descriptionBefore": "Im ",
           "downloadIcon": "Laden Sie optional das {{brandName}}-Symbol herunter",
           "iconAlt": "Optionales {{brandName}}-App-Symbol",
           "iconHint": ", oder verwenden Sie ein beliebiges Symbol Ihrer Wahl.",
           "iconTitle": "Optionales {{brandName}}-App-Symbol",
           "imageAlt": "Feishu-App-Erstellungsformular mit hervorgehobenem App-Namen, Symbol und Schaltfläche „Erstellen“.",
-          "title": "Erstellen Sie eine benutzerdefinierte Unternehmensanwendung"
+          "title": "Eine Agent-App erstellen"
         },
         "credentials": {
           "appId": "App-ID",
@@ -3716,6 +3716,9 @@
         "faq": {
           "approvalAnswer": "Wenn die Verfügbarkeit auf „Alle Mitglieder“ eingestellt ist, muss ein Feishu-Administrator die Veröffentlichung genehmigen. Feishu sendet die Genehmigungsanfrage in einer Direktnachricht an einen Administrator und die App bleibt ausstehend, bis ein Administrator die Überprüfung abschließt.",
           "approvalQuestion": "Warum wartet die Veröffentlichung der App auf die Genehmigung?",
+          "botFeatureAnswer": "Öffnen Sie Features → Add Features in der Feishu-Entwicklerkonsole. Fügen Sie unter By Feature die Bot-Funktion hinzu, folgen Sie dann dieser Anleitung und veröffentlichen Sie die App. Agent-Apps enthalten die Bot-Funktion standardmäßig.",
+          "botFeatureImageAlt": "Lark-Entwicklerkonsole mit der Bot-Funktion unter Add Features",
+          "botFeatureQuestion": "Was, wenn ich Custom App statt Agent gewählt habe?",
           "challengeAnswer": "Dies bedeutet normalerweise, dass der im Schritt „Tokens“ gespeicherte Verschlüsselungsschlüssel oder Verifizierungstoken falsch ist. Kehren Sie zum Schritt „Tokens“ zurück, geben Sie beide Werte aus „Ereigniskonfiguration“ → „Verschlüsselungsstrategie“ erneut ein, speichern Sie sie und versuchen Sie es erneut mit der Anforderungs-URL.",
           "challengeQuestion": "Warum zeigt Feishu an, dass der Challenge-Code keine Antwort erhalten hat?",
           "title": "Häufig gestellte Fragen zur Einrichtung"
@@ -3726,14 +3729,14 @@
         "moreOptions": "Weitere Optionen für {{bot}}",
         "pageDescription": "Verwalten Sie das Bot-Routing für diesen Arbeitsbereich",
         "permissions": {
-          "description": "Öffnen Sie in der Feishu-Entwicklerkonsole „Berechtigungen & Bereiche“, wählen Sie „Stapelimport/-export > Importieren“ und fügen Sie das folgende JSON ein. Dadurch werden alle Bereiche des verwalteten Connectors unter der Benutzeridentität importiert. Dies sind die Mindestberechtigungen, die für die Funktion der Integration erforderlich sind.",
-          "hint": "Behalten Sie alle importierten Berechtigungen der Benutzeridentität bei. Erstellen und veröffentlichen Sie anschließend eine neue App-Version, damit der OAuth-Zustimmungsbildschirm sie gewähren kann. Wenn Sie eine Berechtigung entfernen, funktioniert die Integration nicht mehr, und möglicherweise ist die Genehmigung eines Feishu-Administrators erforderlich.",
-          "label": "JSON für Benutzertoken-Bereiche",
+          "description": "Öffnen Sie in der Feishu-Entwicklerkonsole Permissions & Scopes, wählen Sie Batch Import/Export > Import und fügen Sie das folgende JSON ein. Es enthält App-Identitätsberechtigungen für den Bot und Benutzeridentitätsberechtigungen für Ihr verbundenes Konto.",
+          "hint": "Behalten Sie alle importierten Berechtigungen für beide Identitäten bei und erstellen und veröffentlichen Sie anschließend eine neue App-Version. Möglicherweise ist die Genehmigung eines Feishu-Administrators erforderlich.",
+          "label": "JSON für App- und Benutzerberechtigungen",
           "menuAlt": "Feishu-Seite „Berechtigungen & Bereiche“ mit hervorgehobenem Menü „Stapelimport/-export von Bereichen“",
           "menuLabel": "Stapelimport/-export von Bereichen öffnen",
           "reviewAlt": "Feishu-Dialog „Stapelimport/-export von Bereichen“ mit importiertem JSON und hervorgehobener Prüfschaltfläche",
           "reviewLabel": "JSON einfügen und neue Bereiche prüfen",
-          "title": "Benutzertoken-Bereiche importieren"
+          "title": "App- und Benutzerberechtigungen importieren"
         },
         "publish": {
           "allMembersAlt": "Feishu-Verfügbarkeitseinstellungen mit ausgewählter Option „Alle Mitglieder“.",
@@ -3795,7 +3798,7 @@
       },
       "lark": {
         "addBot": "Bot hinzufügen",
-        "addDialogDescription": "Erstellen Sie eine benutzerdefinierte Unternehmensanwendung, aktivieren Sie ihren Bot und führen Sie diese Schritte in der Lark-Entwicklerkonsole aus.",
+        "addDialogDescription": "Erstellen Sie eine Unternehmensanwendung vom Typ Agent und führen Sie dann diese Schritte in der Lark-Entwicklerkonsole aus.",
         "addDialogTitle": "Fügen Sie einen Lark-Bot hinzu",
         "agentDescription": "Wählen Sie den Agenten aus, der an diesen Bot gesendete Nachrichten verarbeiten soll.",
         "backToIntegrations": "Zurück zu Integrationen",
@@ -3808,14 +3811,14 @@
         "copied": "{{label}} kopiert",
         "copy": "Kopieren",
         "create": {
-          "descriptionAfter": ", erstellen Sie eine benutzerdefinierte Unternehmensanwendung mit dem gewünschten Namen und Symbol und fügen Sie dann die Bot-Funktion hinzu.",
+          "descriptionAfter": ", erstellen Sie eine Unternehmensanwendung und wählen Sie den Typ Agent. Wählen Sie den gewünschten Namen und das Symbol; die Agent-Vorlage enthält die Bot-Funktion.",
           "descriptionBefore": "Im ",
           "downloadIcon": "Laden Sie optional das {{brandName}}-Symbol herunter",
           "iconAlt": "Optionales {{brandName}}-App-Symbol",
           "iconHint": ", oder verwenden Sie ein beliebiges Symbol Ihrer Wahl.",
           "iconTitle": "Optionales {{brandName}}-App-Symbol",
           "imageAlt": "Feishu-App-Erstellungsformular mit hervorgehobenem App-Namen, Symbol und Schaltfläche „Erstellen“.",
-          "title": "Erstellen Sie eine benutzerdefinierte Unternehmensanwendung"
+          "title": "Eine Agent-App erstellen"
         },
         "credentials": {
           "appId": "App-ID",
@@ -3845,6 +3848,9 @@
         "faq": {
           "approvalAnswer": "Wenn die Verfügbarkeit auf „Alle Mitglieder“ eingestellt ist, muss ein Lark-Administrator die Veröffentlichung genehmigen. Lark sendet die Genehmigungsanfrage in einer Direktnachricht an einen Administrator und die App bleibt ausstehend, bis ein Administrator die Überprüfung abschließt.",
           "approvalQuestion": "Warum wartet die Veröffentlichung der App auf die Genehmigung?",
+          "botFeatureAnswer": "Öffnen Sie Features → Add Features in der Lark-Entwicklerkonsole. Fügen Sie unter By Feature die Bot-Funktion hinzu, folgen Sie dann dieser Anleitung und veröffentlichen Sie die App. Agent-Apps enthalten die Bot-Funktion standardmäßig.",
+          "botFeatureImageAlt": "Lark-Entwicklerkonsole mit der Bot-Funktion unter Add Features",
+          "botFeatureQuestion": "Was, wenn ich Custom App statt Agent gewählt habe?",
           "challengeAnswer": "Dies bedeutet normalerweise, dass der im Schritt „Tokens“ gespeicherte Verschlüsselungsschlüssel oder Verifizierungstoken falsch ist. Kehren Sie zum Schritt „Tokens“ zurück, geben Sie beide Werte aus „Ereigniskonfiguration“ → „Verschlüsselungsstrategie“ erneut ein, speichern Sie sie und versuchen Sie es erneut mit der Anforderungs-URL.",
           "challengeQuestion": "Warum zeigt Lark an, dass der Challenge-Code keine Antwort erhalten hat?",
           "title": "Häufig gestellte Fragen zur Einrichtung"
@@ -3856,14 +3862,14 @@
         "moreOptions": "Weitere Optionen für {{bot}}",
         "pageDescription": "Verwalten Sie das Bot-Routing für diesen Arbeitsbereich",
         "permissions": {
-          "description": "Öffnen Sie in der Lark-Entwicklerkonsole „Berechtigungen & Bereiche“, wählen Sie „Stapelimport/-export > Importieren“ und fügen Sie das folgende JSON ein. Dadurch werden alle Bereiche des verwalteten Connectors unter der Benutzeridentität importiert. Dies sind die Mindestberechtigungen, die für die Funktion der Integration erforderlich sind.",
-          "hint": "Behalten Sie alle importierten Berechtigungen der Benutzeridentität bei. Erstellen und veröffentlichen Sie anschließend eine neue App-Version, damit der OAuth-Zustimmungsbildschirm sie gewähren kann. Wenn Sie eine Berechtigung entfernen, funktioniert die Integration nicht mehr, und möglicherweise ist die Genehmigung eines Lark-Administrators erforderlich.",
-          "label": "JSON für Benutzertoken-Bereiche",
+          "description": "Öffnen Sie in der Lark-Entwicklerkonsole Permissions & Scopes, wählen Sie Batch Import/Export > Import und fügen Sie das folgende JSON ein. Es enthält App-Identitätsberechtigungen für den Bot und Benutzeridentitätsberechtigungen für Ihr verbundenes Konto.",
+          "hint": "Behalten Sie alle importierten Berechtigungen für beide Identitäten bei und erstellen und veröffentlichen Sie anschließend eine neue App-Version. Möglicherweise ist die Genehmigung eines Lark-Administrators erforderlich.",
+          "label": "JSON für App- und Benutzerberechtigungen",
           "menuAlt": "Feishu-Seite „Berechtigungen & Bereiche“ mit hervorgehobenem Menü „Stapelimport/-export von Bereichen“",
           "menuLabel": "Stapelimport/-export von Bereichen öffnen",
           "reviewAlt": "Feishu-Dialog „Stapelimport/-export von Bereichen“ mit importiertem JSON und hervorgehobener Prüfschaltfläche",
           "reviewLabel": "JSON einfügen und neue Bereiche prüfen",
-          "title": "Benutzertoken-Bereiche importieren"
+          "title": "App- und Benutzerberechtigungen importieren"
         },
         "publish": {
           "allMembersAlt": "Feishu-Verfügbarkeitseinstellungen mit ausgewählter Option „Alle Mitglieder“.",

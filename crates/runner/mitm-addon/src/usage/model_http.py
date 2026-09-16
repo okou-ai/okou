@@ -64,9 +64,9 @@ class ModelHttpFailureEvidence:
     The fields are a bounded projection of the selected JSON values and SSE framing state. An
     evidence instance is invalid by default. For evidence created by
     :func:`failure_evidence_from_result`, ``is_valid`` is true only when extraction completed and
-    no failure-sensitive string exceeded the 128-byte bound. Incomplete or overflowed extraction
-    preserves the event identity and ``is_done`` marker, but must not be interpreted as a
-    successful or failed payload.
+    no failure-sensitive string exceeded the 128-byte bound. Incomplete extraction or
+    failure-sensitive overflow preserves the event identity and ``is_done`` marker, but must
+    not be interpreted as a successful or failed payload.
 
     Fields:
         event_name: The optional SSE framing event name. It is independent from ``payload_type``;
@@ -86,8 +86,12 @@ class ModelHttpFailureEvidence:
             ``"error"``, the top-level JSON ``code`` is appended after those values. Values are
             not deduplicated. The exact Anthropic insufficient-balance message on an
             ``invalid_request_error`` envelope appends the normalized ``billing`` code.
-            This optional message evidence is bounded separately to 512 bytes; its
-            absence or overflow does not invalidate an otherwise recognized code.
+            This optional message evidence is bounded separately to 512 bytes. Its absence does
+            not invalidate an otherwise recognized code. With both usage and failure inspection
+            enabled, an oversized message is discarded and recognized codes remain valid if
+            extraction otherwise completes within the failure-sensitive bounds. Failure-only
+            inspection and the strict buffered-body fallback instead stop extraction on message
+            overflow, producing invalid evidence with no failure codes.
         has_error: Whether a configured error value is present at ``error``, ``response.error``,
             or the first choice's ``error`` path. This records presence, not truthiness.
         has_choices: Whether the top-level ``choices`` value is present. This records presence,

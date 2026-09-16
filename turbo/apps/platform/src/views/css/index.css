@@ -244,10 +244,10 @@
   /* The dots drawn on the texture the top step reveals. That texture's colours
      are fixed rather than theme-paired, so a mark on it cannot take a grey ramp
      stop: the ramp inverts in dark and the dots would turn light against a
-     light ground. This is the light ramp's `gray-700` at the alpha the dots
-     reach on the plain track, which is what keeps the scale at one weight
-     either side of the reveal. */
-  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.45);
+     light ground. It is much fainter than the dots on the plain track, because
+     the texture is busy where they sit: the weight that reads as a scale on
+     flat grey reads as specks on the aurora. */
+  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.18);
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
     0.04px 5.55px,
@@ -1277,6 +1277,17 @@ details > summary {
     var(--okou-color-theme-anchor),
     var(--okou-color-theme-companion) var(--state-on-filled-pressed-alpha)
   );
+
+  /* The checked switch track is the one filled control that reads a raw stop
+     of the Amber ramp instead of `--primary`: 400 sits one step darker than
+     the brand stop, and a 44x24 track needs that step to read as a fill on a
+     near-white card. A preset supplies a single anchor rather than a ramp, so
+     the stop resolves to that anchor while the preset is active and the track
+     lands on the same fill the checkbox, the radio and every filled button
+     already take from `--primary`. Without this the toggle stayed Amber under
+     all eight palettes. The `--brand-*` stops deliberately keep reading the
+     Amber ramp: the brand mark is not palette-driven. */
+  --primary-400: var(--okou-color-theme-primary);
 
   --gray-0: var(--okou-color-theme-hue) 24% 98.3%;
   --gray-50: var(--okou-color-theme-hue) 22% 97.7%;

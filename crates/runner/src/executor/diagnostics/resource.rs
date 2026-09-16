@@ -171,6 +171,17 @@ pub(in crate::executor) async fn collect_agent_abnormal_exit_diagnostics(
         Ok(result) => {
             let stdout = String::from_utf8_lossy(&result.stdout);
             let stderr = String::from_utf8_lossy(&result.stderr);
+            // Axiom bounds each text field independently. Keep usage evidence
+            // separate from the binary/resource prefix and kernel diagnostics.
+            let guest_root_fs_usage =
+                stdout
+                    .split_once("\n== rootfs-usage ==\n")
+                    .map(|(_, section)| {
+                        section
+                            .split_once("\n== ")
+                            .map_or(section, |(usage, _)| usage)
+                            .trim()
+                    });
             let diagnostic_succeeded = helper_exec_succeeded(&result);
             let resource_diagnostics = parse_agent_abnormal_exit_resource_diagnostics(&stdout);
             let resource_failure_kind = resource_diagnostics
@@ -210,6 +221,7 @@ pub(in crate::executor) async fn collect_agent_abnormal_exit_diagnostics(
                 guest_workspace_fs_used_percent,
                 guest_memory_available_mb,
                 diagnostic_stdout = %stdout,
+                guest_root_fs_usage,
                 diagnostic_stderr = %stderr,
                 "agent abnormal exit in-vm diagnostics"
             );

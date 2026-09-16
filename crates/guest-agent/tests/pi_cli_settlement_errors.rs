@@ -177,11 +177,33 @@ fi
                 transport_attempts: 1,
                 retry_attempts: 0,
                 retry_limit: None,
+                transport_failure: None,
             })
         );
         let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
             terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
         assert_eq!(serde_json::to_value(reason)?, "provider_rate_limited");
+    }
+    if expected_failure_reason == Some(FailureReason::ResponseConnectionLost) {
+        assert_eq!(
+            result
+                .cli_observed_exit
+                .as_ref()
+                .and_then(|exit| exit.exit_code),
+            Some(0)
+        );
+        let request = terminal_failure
+            .diagnostic
+            .model_request
+            .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
+        assert_eq!(request.http_status, Some(200));
+        assert_eq!(
+            serde_json::to_value(request.transport_failure)?,
+            serde_json::json!({
+                "phase": "response_body", "signalAborted": false,
+                "errorName": "TypeError", "causeCode": "UND_ERR_RES_CONTENT_LENGTH_MISMATCH"
+            })
+        );
     }
 
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
@@ -341,6 +363,19 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
         std::slice::from_ref(&rate_limit),
         ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
         Some(FailureReason::ProviderRateLimited),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    let terminated: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-stream-terminated.json"
+    ))?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000145",
+        &[terminated],
+        ExpectedTerminalResult::Exact("terminated"),
+        Some(FailureReason::ResponseConnectionLost),
         None,
         &base_path,
         &original_directory,

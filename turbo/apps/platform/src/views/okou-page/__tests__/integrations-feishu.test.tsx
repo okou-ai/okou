@@ -96,12 +96,13 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     click(await screen.findByText("Add bot"));
 
     await expect(
-      screen.findByText("Create an enterprise custom app"),
+      screen.findByText("Create an Agent app"),
     ).resolves.toBeInTheDocument();
     const createGuideImage = screen.getByRole("img", {
       name: "Feishu app creation form with the app name, icon, and Create button highlighted",
     });
     expect(createGuideImage).toBeInTheDocument();
+    expect(screen.getByText(/select the Agent type/u)).toBeVisible();
     const iconDownload = getAction("link", "Download the optional Okou icon");
     expect(iconDownload).toHaveAttribute(
       "href",
@@ -209,7 +210,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
         ),
       ).toBeVisible();
       click(getAction("button", "Next"));
-      expect(screen.getByText("Import user token scopes")).toBeVisible();
+      expect(screen.getByText("Import app and user scopes")).toBeVisible();
       click(getAction("button", "Next"));
       expect(screen.getByText("Configure event delivery")).toBeVisible();
       expect(getAction("button", "Waiting for callback")).toBeDisabled();
@@ -278,7 +279,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     ).toBeInTheDocument();
     expect(getAction("button", "Next")).toBeEnabled();
     click(getAction("button", "Next"));
-    expect(screen.getByText("Import user token scopes")).toBeInTheDocument();
+    expect(screen.getByText("Import app and user scopes")).toBeInTheDocument();
     click(getAction("button", "Next"));
     expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
     click(getAction("button", "Next"));
@@ -398,9 +399,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(
       screen.getByRole("heading", { name: `${provider.name} review guide` }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("Create an enterprise custom app"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Create an Agent app")).toBeInTheDocument();
     click(getAction("button", "Next"));
     expect(screen.getByLabelText("App ID")).toHaveValue("cli_completed_admin");
     expect(screen.getByLabelText("App ID")).toBeDisabled();
@@ -417,10 +416,23 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.getByText("Configure the OAuth redirect URL"),
     ).toBeInTheDocument();
     click(getAction("button", "Next"));
-    expect(screen.getByText("Import user token scopes")).toBeInTheDocument();
-    const scopeImportJson = screen.getByTestId("feishu-user-scope-import-json");
+    expect(screen.getByText("Import app and user scopes")).toBeInTheDocument();
+    const scopeImportJson = screen.getByTestId("feishu-scope-import-json");
     expect(JSON.parse(scopeImportJson.textContent ?? "")).toStrictEqual({
-      scopes: { tenant: [], user: [...FEISHU_OAUTH_SCOPES] },
+      scopes: {
+        tenant: expect.arrayContaining([
+          "im:message.p2p_msg:readonly",
+          "im:message.group_at_msg:readonly",
+          "im:message.group_at_msg.include_bot:readonly",
+          "im:message.group_msg",
+          "im:message:send_as_bot",
+          "im:message:update",
+          "im:resource",
+          "cardkit:card:read",
+          "cardkit:card:write",
+        ]),
+        user: [...FEISHU_OAUTH_SCOPES],
+      },
     });
     expect(screen.getByRole("note")).toBeInTheDocument();
     click(getAction("button", "Next"));
@@ -613,7 +625,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.getByDisplayValue(`https://app.okou.test${provider.callbackPath}`),
     ).toBeInTheDocument();
     click(getAction("button", "Next"));
-    expect(screen.getByText("Import user token scopes")).toBeInTheDocument();
+    expect(screen.getByText("Import app and user scopes")).toBeInTheDocument();
     click(getAction("button", "Next"));
     expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
     expect(screen.getAllByText("Waiting for callback")).not.toHaveLength(0);
@@ -730,6 +742,18 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     await expect(
       screen.findByRole("heading", { name: "Setup FAQ" }),
     ).resolves.toBeInTheDocument();
+    click(screen.getByText("What if I chose Custom App instead of Agent?"));
+    expect(
+      screen.getByText(/Under By Feature, add the Bot capability/u),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("img", {
+        name: "Lark developer console showing the Bot capability under Add Features",
+      }),
+    ).toHaveAttribute(
+      "src",
+      "https://static.okou.io/platform/views/zero-page/assets/lark/add-bot-feature-88e089e41a87.png",
+    );
     expect(
       screen.getByText(
         `Why does ${provider.name} show "Challenge code didn't get a response"?`,

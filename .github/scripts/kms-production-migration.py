@@ -773,12 +773,12 @@ def retirement_verification():
     digest = required_env("VERIFICATION_ARTIFACT_SHA256")
     require(run_id.isdigit(), "invalid_verification_run")
     require(re.fullmatch(r"[0-9a-f]{64}", digest), "invalid_verification_digest")
-    base = "https://api.github.com/repos/vm0-ai/vm0/actions"
+    base = "https://api.github.com/repos/vm0-ai/okou/actions"
     token = required_env("GH_TOKEN")
     run = request_json(base + "/runs/" + run_id, token)
     require(
         str(run["id"]) == run_id
-        and run["repository"]["full_name"] == "vm0-ai/vm0"
+        and run["repository"]["full_name"] == "vm0-ai/okou"
         and run["workflow_id"] == 353130414
         and run["path"] == ".github/workflows/kms-production-preflight.yml"
         and run["event"] == "workflow_dispatch"
@@ -811,7 +811,7 @@ def retirement_verification():
         [
             "gh",
             "api",
-            "repos/vm0-ai/vm0/actions/artifacts/" + str(artifact["id"]) + "/zip",
+            "repos/vm0-ai/okou/actions/artifacts/" + str(artifact["id"]) + "/zip",
             "--allow-escape-sequences",
         ],
         capture_output=True,
@@ -1114,14 +1114,14 @@ def main():
         "source-status": "kms-production-retire.yml",
     }[mode]
     require(
-        required_env("GITHUB_REPOSITORY") == "vm0-ai/vm0"
+        required_env("GITHUB_REPOSITORY") == "vm0-ai/okou"
         and required_env("GITHUB_REF") == "refs/heads/main"
         and required_env("GITHUB_EVENT_NAME") == "workflow_dispatch",
         "protected_manual_main_required",
     )
     require(
         required_env("GITHUB_WORKFLOW_REF")
-        == "vm0-ai/vm0/.github/workflows/" + workflow + "@refs/heads/main",
+        == "vm0-ai/okou/.github/workflows/" + workflow + "@refs/heads/main",
         "workflow_scope_mismatch",
     )
     require(

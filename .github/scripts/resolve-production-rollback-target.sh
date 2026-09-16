@@ -15,6 +15,7 @@ readonly PERSONAL_SUBSCRIPTION_PRIORITY_COMMIT=8a5e1299b4d26bd114ccec017b84b7a83
 readonly ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT=6e1abbb785dc1613d0f5cd1b1dd80fae694abb46
 readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a24
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
+readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 
 fail() {
   echo "::error::$*" >&2
@@ -116,6 +117,12 @@ if ! git merge-base --is-ancestor "$privacy_cleanup_reader_commit" "$TARGET_COMM
   fail "Rollback target predates marketing privacy storage cleanup preparation: ${privacy_cleanup_reader_commit}."
 fi
 
+# Terminal presentation trusts the stored cause without repairing old records.
+# Keep the owner-aware reader and structured Runner writer available for new runs.
+if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates owner-aware provider balance failures: ${PROVIDER_BALANCE_FAILURE_COMMIT}."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \
@@ -152,6 +159,9 @@ if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_co
 fi
 if ! git merge-base --is-ancestor "$BLANK_SANDBOX_STATUS_READER_COMMIT" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates the blank sandbox status reader: ${BLANK_SANDBOX_STATUS_READER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates structured provider balance failures: ${PROVIDER_BALANCE_FAILURE_COMMIT}."
 fi
 
 runner_matrix=$("${script_dir}/runner-host-architecture-groups.sh" target-matrix)

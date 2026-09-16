@@ -1,25 +1,21 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
-import { apiErrorSchema } from "./errors";
 
 const c = initContract();
-export const impactMarketingContract = c.router({
-  handoff: {
+
+/** Marketing verifies the App bearer token and reads its own attribution cookies. */
+export const impactOnboardingContract = c.router({
+  record: {
     method: "POST",
-    path: "/api/attribution/impact/handoff",
+    path: "/api/marketing/impact/onboarding",
     headers: authHeadersSchema,
-    body: z.object({}).strict(),
+    body: c.noBody(),
     responses: {
-      200: z.object({
-        handoff: z
-          .object({ token: z.string(), nonce: z.string(), iframeUrl: z.url() })
-          .nullable(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      500: apiErrorSchema,
+      204: c.noBody(),
+      401: z.object({ error: z.string() }),
+      403: z.object({ error: z.string() }),
+      503: z.object({ error: z.string() }),
     },
-    summary:
-      "Issue a short-lived identity proof for the Marketing Impact iframe",
+    summary: "Associate existing Marketing attribution during onboarding",
   },
 });
