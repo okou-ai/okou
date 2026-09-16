@@ -32,8 +32,12 @@ interface MorningBriefProjectionOwner {
 /** Bounds every wait in this file, matching the deferred-lock precedent. */
 const ARRIVAL_TIMEOUT_MS = 10_000;
 
-/** Bounds a blocked cleanup so teardown can never wait on a held gate. */
-const CLEANUP_LOCK_TIMEOUT = "15s";
+/**
+ * Bounds a blocked cleanup so teardown can never wait on a held gate. It stays
+ * under the teardown hook budget and far above the observed lock wait, which is
+ * one poll interval in practice.
+ */
+const CLEANUP_LOCK_TIMEOUT = "8s";
 
 const pidSchema = z.object({ pid: z.number() });
 const blockedSchema = z.object({ blocked: z.boolean() });
