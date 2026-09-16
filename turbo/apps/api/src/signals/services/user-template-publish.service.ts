@@ -25,12 +25,12 @@ import {
 } from "./template-package.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 
-const USER_TEMPLATE_PACKAGE_LIMITS: TemplatePackageLimits = {
+const USER_TEMPLATE_PACKAGE_LIMITS: TemplatePackageLimits = Object.freeze({
   maxBytes: MAX_USER_TEMPLATE_PACKAGE_BYTES,
   maxFiles: MAX_USER_TEMPLATE_PACKAGE_FILES,
   maxFileBytes: MAX_USER_TEMPLATE_PACKAGE_FILE_BYTES,
   requiredPaths: REQUIRED_USER_TEMPLATE_PACKAGE_FILES,
-};
+});
 
 function checkSource(source: ResolvedUpload): string | null {
   const accepted: readonly string[] = USER_TEMPLATE_SOURCE_CONTENT_TYPES;
