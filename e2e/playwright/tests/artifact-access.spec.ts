@@ -15,6 +15,37 @@ import { deriveAppUrl } from "../playwright.config";
 // from the shared feature-test account and its parallel chat tests.
 test.use({ storageState: { cookies: [], origins: [] } });
 
+async function expectPrimaryTheme(
+  button: Locator,
+  state: "rest" | "hover" | "pressed",
+) {
+  await expect
+    .poll(() =>
+      button.evaluate((element, interaction) => {
+        const style = getComputedStyle(element);
+        const context = document.createElement("canvas").getContext("2d");
+        if (!context) throw new Error("Canvas color conversion is unavailable");
+        const rgba = (color: string) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          return Array.from(context.getImageData(0, 0, 1, 1).data).join(",");
+        };
+        const fill =
+          interaction === "rest"
+            ? `hsl(${style.getPropertyValue("--primary")})`
+            : style.getPropertyValue(`--color-primary-${interaction}`);
+        return {
+          fill: rgba(style.backgroundColor) === rgba(fill),
+          label:
+            rgba(style.color) ===
+            rgba(`hsl(${style.getPropertyValue("--primary-foreground")})`),
+        };
+      }, state),
+    )
+    .toEqual({ fill: true, label: true });
+}
+
 async function buttonContrast(button: Locator): Promise<number> {
   return button.evaluate(async (element) => {
     await Promise.all(
@@ -62,7 +93,7 @@ async function buttonContrast(button: Locator): Promise<number> {
   });
 }
 
-test("unavailable artifacts recover access and keep readable actions across themes", async ({
+test("unavailable artifacts recover access with readable actions that follow the selected theme", async ({
   page,
 }, testInfo) => {
   test.setTimeout(240_000);
@@ -156,6 +187,7 @@ test("unavailable artifacts recover access and keep readable actions across them
         ["retry", retry],
       ] as const) {
         await page.mouse.move(0, 0);
+        if (action === "switch") await expectPrimaryTheme(button, "rest");
         await expect
           .poll(() => buttonContrast(button))
           .toBeGreaterThanOrEqual(4.5);
@@ -167,6 +199,7 @@ test("unavailable artifacts recover access and keep readable actions across them
           contrast: await buttonContrast(button),
         });
         await button.hover();
+        if (action === "switch") await expectPrimaryTheme(button, "hover");
         await expect
           .poll(() => buttonContrast(button))
           .toBeGreaterThanOrEqual(4.5);
@@ -179,6 +212,7 @@ test("unavailable artifacts recover access and keep readable actions across them
         });
         await page.mouse.down();
         try {
+          if (action === "switch") await expectPrimaryTheme(button, "pressed");
           await expect
             .poll(() => buttonContrast(button))
             .toBeGreaterThanOrEqual(4.5);

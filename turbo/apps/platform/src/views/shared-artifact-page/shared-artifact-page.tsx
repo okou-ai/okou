@@ -125,7 +125,6 @@ function ArtifactAccessPage() {
           <div className="mt-7 flex flex-wrap items-center justify-center gap-2">
             <Button
               type="button"
-              className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
               disabled={switchLoadable.state === "loading"}
               aria-busy={switchLoadable.state === "loading"}
               onClick={() => {
