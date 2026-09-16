@@ -105,9 +105,13 @@ The parent contains only the rewritten outgoing text values, has no artifact-cat
 entry, and is excluded from public conversation and metadata reads. Manual conversation
 shares have independent identities and grants.
 
-Delivery waits for the complete policy to become active. Existing delivery retry
-paths reuse its persisted rewritten message and URLs, including after an ambiguous
-activation response. Copy failures revoke and clean up the incomplete snapshot;
+Delivery runs the shared copy phase before activation and waits for the complete
+policy to become active. Publication checks the durable delivery identity under
+the parent lock to exclude internal snapshots from the artifact catalog; manual
+thread shares still register their catalog entry in the activation transaction.
+Existing delivery retry paths reuse the persisted rewritten content and URLs,
+including after an ambiguous activation response. Copy failures revoke and clean
+up the incomplete snapshot;
 recognized missing or foreign private references fail delivery. A concurrent
 preparation is left alone; a retry can recover a preparing identity older than five
 minutes. A delivery record with a revoked policy fails closed. This does not
@@ -126,7 +130,7 @@ existing privacy and share settings. Account/organization erasure uses the same
 foreground revocation and background byte cleanup described above, with the same
 browser-cache limitations. Provider messages already sent are not recalled.
 
-Apply migration `1147_integration_artifact_deliveries` before deploying this API.
+Apply migration `1149_integration_artifact_deliveries` before deploying this API.
 The Worker must support the existing `thread-resource` protocol before this API
 is deployed; this change adds no protocol, App, DNS or bucket requirement. Older
 APIs tolerate the additive table; rolling back stops automatic snapshot creation

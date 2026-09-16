@@ -1,6 +1,7 @@
 import { command, computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { artifacts } from "@okouai/db/schema/artifact";
+import { integrationArtifactDeliveries } from "@okouai/db/schema/integration-artifact-delivery";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import {
   sharedThreadArtifactPolicyKey,
@@ -159,6 +160,11 @@ const changeSharedThreadArtifactPhase$ = command(
         await set(copySharedThreadArtifacts$, plan, signal);
         return;
       }
+      const [integrationDelivery] = await tx
+        .select({ snapshotId: integrationArtifactDeliveries.snapshotId })
+        .from(integrationArtifactDeliveries)
+        .where(eq(integrationArtifactDeliveries.snapshotId, row.id))
+        .limit(1);
       signal.throwIfAborted();
       await get(
         writeArtifactSharePolicyObject(
@@ -170,6 +176,11 @@ const changeSharedThreadArtifactPhase$ = command(
         ),
       );
       signal.throwIfAborted();
+      // Delivery snapshots share publication/erasure locking with manual
+      // shares, but their durable identity keeps them out of the catalog.
+      if (integrationDelivery) {
+        return;
+      }
       await tx.insert(artifacts).values({
         orgId: current.policy.orgId,
         authorUserId: sharedThreadArtifactAuthorUserId(row.userId),

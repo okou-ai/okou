@@ -623,6 +623,46 @@ function snapshotReferences(content: string, preserveUnmanaged: boolean) {
   ];
 }
 
+const rewriteSnapshotContent$ = command(
+  async (
+    { get },
+    args: {
+      readonly content: string;
+      readonly preserveUnmanaged: boolean;
+      readonly resolve: (
+        reference: ResourceReference,
+      ) => Promise<SnapshotResource>;
+    },
+    signal: AbortSignal,
+  ) => {
+    const replacements = new Map(
+      await mapConcurrent(
+        snapshotReferences(args.content, args.preserveUnmanaged),
+        10,
+        async (value) => {
+          const source = value.replaceAll("&amp;", "&");
+          const reference = await get(
+            resourceReference(source, signal, args.preserveUnmanaged),
+          );
+          signal.throwIfAborted();
+          if (!reference) {
+            return [value, value] as const;
+          }
+          const resource = await args.resolve(reference);
+          signal.throwIfAborted();
+          return [value, `${resource.url}${reference.suffix}`] as const;
+        },
+      ),
+    );
+    signal.throwIfAborted();
+    return replaceSnapshotReferences(
+      args.content,
+      replacements,
+      args.preserveUnmanaged,
+    );
+  },
+);
+
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
@@ -715,29 +755,12 @@ export const prepareSharedThreadArtifacts$ = command(
       return resource;
     }
 
-    async function rewrite(
-      content: string,
-      preserveUnmanaged = false,
-    ): Promise<string> {
-      const replacements = new Map(
-        await mapConcurrent(
-          snapshotReferences(content, preserveUnmanaged),
-          10,
-          async (value) => {
-            const source = value.replaceAll("&amp;", "&");
-            const reference = await get(resourceReference(source, signal, preserveUnmanaged));
-            signal.throwIfAborted();
-            if (!reference) {
-              return [value, value] as const;
-            }
-            const resource = await resolve(reference);
-            signal.throwIfAborted();
-            return [value, `${resource.url}${reference.suffix}`] as const;
-          },
-        ),
+    function rewrite(content: string, preserveUnmanaged = false) {
+      return set(
+        rewriteSnapshotContent$,
+        { content, preserveUnmanaged, resolve },
+        signal,
       );
-      signal.throwIfAborted();
-      return replaceSnapshotReferences(content, replacements, preserveUnmanaged);
     }
 
     const messages = await rewriteSnapshotMessages(

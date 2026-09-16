@@ -1025,6 +1025,18 @@ test.each(["publish", "delete", "cancel"] as const)(
       [200],
     );
     expect(shared.body.title).toBe("Shared report");
+    const catalog = await chat.listArtifactCatalog(f.actor, {
+      kind: "shared-thread",
+    });
+    expect(catalog.artifacts).toHaveLength(1);
+    const detail = await chat.getArtifactCatalogEntry(
+      f.actor,
+      catalog.artifacts[0]!.id,
+    );
+    expect(detail).toMatchObject({
+      title: "Shared report",
+      sharedThread: { id },
+    });
     expect(JSON.parse(f.objects.get(policyKey)!.toString())).toMatchObject({
       status: "active",
     });

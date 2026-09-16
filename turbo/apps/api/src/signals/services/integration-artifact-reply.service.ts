@@ -14,6 +14,7 @@ import {
 } from "./shared-thread-artifact-snapshot.service";
 import {
   initializeSharedThreadArtifacts$,
+  prepareSharedThreadArtifactCopies$,
   publishSharedThreadArtifacts$,
   readSharedThreadArtifactPolicy,
   removeSharedThreadArtifactCopies,
@@ -232,6 +233,8 @@ export const prepareIntegrationContent$ = command(
         }
         return content;
       }
+      await set(prepareSharedThreadArtifactCopies$, plan, signal);
+      signal.throwIfAborted();
       await set(publishSharedThreadArtifacts$, plan, signal);
       signal.throwIfAborted();
       return plan.messages.map((message) => {

@@ -29,13 +29,28 @@ export async function privateIntegrationArtifact(
   }
   const storage = installSharedThreadStorage(context);
   const content = "Private integration report bytes";
-  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+  const organization = {
     id: actor.orgId,
     name: "Artifact test organization",
-  });
+    slug: null,
+    imageUrl: "",
+    hasImage: false,
+    createdAt: 0,
+  };
+  context.mocks.clerk.organizations.getOrganization.mockResolvedValue(
+    organization,
+  );
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
-      data: [{ publicUserData: { userId: actor.userId } }],
+      data: [
+        {
+          id: `orgmem_${randomUUID()}`,
+          role: "org:admin",
+          createdAt: 0,
+          organization,
+          publicUserData: { userId: actor.userId },
+        },
+      ],
       totalCount: 1,
     },
   );
