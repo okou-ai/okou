@@ -44,6 +44,7 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 
 const context = testContext();
 interface LinkedAgentPhoneActor {
@@ -389,6 +390,27 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await expect(storages.listStorages(actor, "user")).resolves.toStrictEqual(
       [],
     );
+  });
+
+  it("delivers a readable private artifact snapshot in AgentPhone plain text", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const artifact = await privateIntegrationArtifact(context, actor);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "generate a private report",
+      conversationId: uniqueConversationId(),
+      isGroup: false,
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    const before = sends.messages.length;
+    await completeSandboxRun(run.sandboxToken, run.runId, 0, {
+      resultText: `Report: [download](${artifact.url})`,
+    });
+    await waitForSendCount(sends, before + 1);
+    expect(lastSend(sends).body).toContain("Report:");
+    await artifact.expectDelivered(lastSend(sends).body ?? "");
   });
 
   it.each(["dispatch context", "typing and plain-text completion"] as const)(

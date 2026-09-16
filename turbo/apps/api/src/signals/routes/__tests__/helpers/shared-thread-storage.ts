@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import {
   CopyObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
@@ -62,6 +63,16 @@ async function putStoredObject(
       $metadata: { httpStatusCode: 412 },
     });
   }
+  const previous = objects.get(path);
+  if (
+    command.input.IfMatch &&
+    (!previous || command.input.IfMatch !== etag(previous))
+  ) {
+    throw Object.assign(new Error("Object changed"), {
+      name: "PreconditionFailed",
+      $metadata: { httpStatusCode: 412 },
+    });
+  }
   objects.set(path, {
     bytes: await objectBytes(command.input.Body),
     contentType: command.input.ContentType ?? "application/octet-stream",
@@ -102,7 +113,9 @@ function readStoredObject(
 ) {
   const object = objects.get(`${command.input.Bucket}/${command.input.Key}`);
   if (!object) {
-    throw Object.assign(new Error("Object not found"), { name: "NotFound" });
+    throw Object.assign(new Error("Object not found"), {
+      name: command instanceof GetObjectCommand ? "NoSuchKey" : "NotFound",
+    });
   }
   if (
     command instanceof GetObjectCommand &&
@@ -146,6 +159,7 @@ export function installSharedThreadStorage(context: TestContext) {
         command instanceof GetObjectCommand ||
         command instanceof ListObjectsV2Command ||
         command instanceof PutObjectCommand ||
+        command instanceof DeleteObjectsCommand ||
         command instanceof CopyObjectCommand
       )
     ) {
@@ -161,6 +175,12 @@ export function installSharedThreadStorage(context: TestContext) {
         throw new Error("Missing storage fixture");
       }
       return await otherStorage(command);
+    }
+    if (command instanceof DeleteObjectsCommand) {
+      for (const object of command.input.Delete?.Objects ?? []) {
+        objects.delete(`${bucket}/${object.Key}`);
+      }
+      return {};
     }
     if (command instanceof ListObjectsV2Command) {
       const prefix = `${bucket}/${command.input.Prefix}`;
@@ -187,6 +207,45 @@ export function installSharedThreadStorage(context: TestContext) {
     return readStoredObject(objects, command);
   });
   server.use(
+    http.get("https://*.okou.app/*", ({ request }) => {
+      const url = new URL(request.url);
+      const alias = url.hostname.split(".")[0];
+      const registration = objects.get(
+        `test-hosted-sites/artifact-delivery/okou/html/${alias}.json`,
+      );
+      if (!registration) {
+        return new HttpResponse(null, { status: 404 });
+      }
+      const record = artifactDeliveryRecordSchema.parse(
+        JSON.parse(registration.bytes.toString()),
+      );
+      if (record.kind !== "thread-resource") {
+        return new HttpResponse(null, { status: 404 });
+      }
+      const parent = objects.get(
+        `test-hosted-sites/${sharedThreadArtifactPolicyKey(record.publicBrand, record.threadId)}`,
+      );
+      if (!parent) {
+        return new HttpResponse(null, { status: 404 });
+      }
+      const policy = sharedThreadArtifactPolicySchema.parse(
+        JSON.parse(parent.bytes.toString()),
+      );
+      const target = policy.resources[record.publicToken];
+      if (policy.status !== "active" || target?.kind !== "html") {
+        return new HttpResponse(null, { status: 404 });
+      }
+      const path = url.pathname === "/" ? "/index.html" : url.pathname;
+      const file = target.manifest.files[path];
+      const object = objects.get(
+        `test-hosted-sites/shared-artifacts/${record.publicBrand}/${target.snapshotId}/${target.id}${path}`,
+      );
+      return file && object
+        ? new HttpResponse(new Uint8Array(object.bytes), {
+            headers: { "Content-Type": file.contentType },
+          })
+        : new HttpResponse(null, { status: 404 });
+    }),
     http.put("https://attachment-storage.example/*", async ({ request }) => {
       const upload = uploads.get(request.url);
       if (!upload) {
@@ -244,6 +303,22 @@ export function installSharedThreadStorage(context: TestContext) {
     }),
   );
   return {
+    snapshotThreadId(url: string) {
+      const alias = new URL(url).pathname.slice(1);
+      const registration = objects.get(
+        `test-hosted-sites/artifact-delivery/files/${encodeURIComponent(alias)}.json`,
+      );
+      if (!registration) {
+        throw new Error("Expected a registered snapshot URL");
+      }
+      const record = artifactDeliveryRecordSchema.parse(
+        JSON.parse(registration.bytes.toString()),
+      );
+      if (record.kind !== "thread-resource") {
+        throw new Error("Expected a snapshot delivery record");
+      }
+      return record.threadId;
+    },
     removeUpload(url: string) {
       const upload = uploads.get(url);
       if (!upload) {

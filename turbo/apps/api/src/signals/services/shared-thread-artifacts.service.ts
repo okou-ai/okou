@@ -34,7 +34,10 @@ type SnapshotIdentity = Pick<
   "id" | "userId" | "orgId" | "publicBrand" | "hasArtifactSnapshot"
 >;
 
-function readPolicy(identity: SnapshotIdentity, signal: AbortSignal) {
+export function readSharedThreadArtifactPolicy(
+  identity: SnapshotIdentity,
+  signal: AbortSignal,
+) {
   return computed(async (get) => {
     const read = await settle(
       get(
@@ -74,7 +77,8 @@ export function sharedThreadArtifactsReadable(
   return computed(async (get) => {
     return (
       !identity.hasArtifactSnapshot ||
-      (await get(readPolicy(identity, signal)))?.policy.status === "active"
+      (await get(readSharedThreadArtifactPolicy(identity, signal)))?.policy
+        .status === "active"
     );
   });
 }
@@ -117,7 +121,7 @@ const changeSharedThreadArtifactPhase$ = command(
       if (!row?.hasArtifactSnapshot) {
         throw new Error("Conversation snapshot was removed before publication");
       }
-      const current = await get(readPolicy(row, signal));
+      const current = await get(readSharedThreadArtifactPolicy(row, signal));
       if (!current || current.policy.status !== "preparing") {
         throw new Error(
           "Conversation snapshot is no longer pending publication",
@@ -202,7 +206,7 @@ function revokePolicy(identity: SnapshotIdentity, signal: AbortSignal) {
     if (!identity.hasArtifactSnapshot) {
       return null;
     }
-    const current = await get(readPolicy(identity, signal));
+    const current = await get(readSharedThreadArtifactPolicy(identity, signal));
     if (!current) {
       return null;
     }

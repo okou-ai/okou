@@ -127,7 +127,26 @@ interface ResourceReference {
   readonly key?: string;
 }
 
-function resourceReference(value: string, signal: AbortSignal) {
+function unmanagedReference(preserve: boolean): null {
+  if (preserve) {
+    return null;
+  }
+  throw new SharedThreadArtifactUnavailable();
+}
+
+function isApiUrl(url: URL, apiOrigin: string | undefined): boolean {
+  return (
+    apiOrigin !== undefined &&
+    url.origin === new URL(apiOrigin).origin &&
+    url.pathname.startsWith("/api/")
+  );
+}
+
+function resourceReference(
+  value: string,
+  signal: AbortSignal,
+  preserveUnmanaged = false,
+) {
   return computed(async (get): Promise<ResourceReference | null> => {
     const reference = parseArtifactReference(value, env("APP_URL"));
     if (reference) {
@@ -162,7 +181,7 @@ function resourceReference(value: string, signal: AbortSignal) {
     }
     const url = new URL(value);
     if (url.username || url.password) {
-      throw new SharedThreadArtifactUnavailable();
+      return unmanagedReference(preserveUnmanaged);
     }
     // Resolve managed signed dependencies by their owned storage identity;
     // possession of a signature itself never authorizes publication.
@@ -175,17 +194,15 @@ function resourceReference(value: string, signal: AbortSignal) {
       if (bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME") && id) {
         return { id, key, suffix: url.hash };
       }
-      throw new SharedThreadArtifactUnavailable();
+      return unmanagedReference(preserveUnmanaged);
     }
     const preview = await get(hostedPreviewReference(url, signal));
     if (preview) {
       return preview;
     }
     if (
-      url.searchParams.has("X-Amz-Signature") ||
-      (apiOrigin &&
-        url.origin === new URL(apiOrigin).origin &&
-        url.pathname.startsWith("/api/"))
+      !preserveUnmanaged &&
+      (url.searchParams.has("X-Amz-Signature") || isApiUrl(url, apiOrigin))
     ) {
       throw new SharedThreadArtifactUnavailable();
     }
@@ -515,8 +532,9 @@ const hostedSnapshotCopies$ = command(
 
 async function rewriteSnapshotMessages(
   sourceMessages: readonly SharedMessage[],
-  rewrite: (content: string) => Promise<string>,
+  rewrite: (content: string, preserveUnmanaged?: boolean) => Promise<string>,
   signal: AbortSignal,
+  preserveUnmanagedMessageLinks = false,
 ): Promise<SharedMessage[]> {
   const messages: SharedMessage[] = [];
   for (const message of sourceMessages) {
@@ -531,7 +549,8 @@ async function rewriteSnapshotMessages(
     }
     messages.push({
       ...message,
-      content: await rewrite(message.content),
+      // Integration action links remain usable; bundle dependencies stay strict.
+      content: await rewrite(message.content, preserveUnmanagedMessageLinks),
       ...(attachments === undefined ? {} : { attachments }),
     });
   }
@@ -568,11 +587,16 @@ function replaceSnapshotReferences(
   });
 }
 
+interface SnapshotSelection extends SnapshotOwner {
+  readonly messages: readonly SharedMessage[];
+  readonly preserveUnmanagedMessageLinks?: boolean;
+}
+
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
     { get, set },
-    args: SnapshotOwner & { readonly messages: readonly SharedMessage[] },
+    args: SnapshotSelection,
     signal: AbortSignal,
   ): Promise<SharedThreadArtifactPlan | null> => {
     const resources = new Map<string, SnapshotResource>();
@@ -660,14 +684,17 @@ export const prepareSharedThreadArtifacts$ = command(
       return resource;
     }
 
-    async function rewrite(content: string): Promise<string> {
+    async function rewrite(
+      content: string,
+      preserveUnmanaged = false,
+    ): Promise<string> {
       const replacements = new Map(
         await mapConcurrent(
           artifactTextReferences(content),
           10,
           async (value) => {
             const source = value.replaceAll("&amp;", "&");
-            const reference = await get(resourceReference(source, signal));
+            const reference = await get(resourceReference(source, signal, preserveUnmanaged));
             signal.throwIfAborted();
             if (!reference) {
               return [value, value] as const;
@@ -686,6 +713,7 @@ export const prepareSharedThreadArtifacts$ = command(
       args.messages,
       rewrite,
       signal,
+      args.preserveUnmanagedMessageLinks,
     );
     if (resources.size === 0) {
       return null;

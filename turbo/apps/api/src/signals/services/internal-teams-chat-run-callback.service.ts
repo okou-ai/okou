@@ -28,6 +28,7 @@ import {
   teamsChatCallbackPayloadSchema,
   type TeamsDeliveryTarget,
 } from "./teams-chat-callback-payload";
+import { snapshotIntegrationReply } from "./integration-artifact-reply.service";
 
 const L = logger("InternalCallbacksTeamsChat");
 const TEAMS_THINKING_REACTION_TYPE = "1f4ad_thoughtballoon";
@@ -67,6 +68,7 @@ function recordDelivery(args: {
 }
 
 interface ClaimedTeamsChatDelivery {
+  readonly id: string;
   readonly runId: string;
   readonly payload: unknown;
 }
@@ -87,6 +89,7 @@ async function claimTeamsChatDelivery(
       ),
     )
     .returning({
+      id: agentRunCallbacks.id,
       runId: agentRunCallbacks.runId,
       payload: agentRunCallbacks.payload,
     });
@@ -268,11 +271,25 @@ async function deliverClaimedTeamsChatCallback(
   },
   signal: AbortSignal,
 ): Promise<"delivered" | "skipped_revoked"> {
-  const { payload, run, messageContent, binding } =
-    await loadTeamsChatDeliveryContext(args, signal);
+  const {
+    payload,
+    run,
+    messageContent: sourceContent,
+    binding,
+  } = await loadTeamsChatDeliveryContext(args, signal);
   if (!binding) {
     return "skipped_revoked";
   }
+  const messageContent = await snapshotIntegrationReply(
+    {
+      db: args.db,
+      runId: args.callback.runId,
+      deliveryKey: `callback:${args.callback.id}`,
+      publicBrand: payload.publicBrand,
+      content: sourceContent,
+    },
+    signal,
+  );
 
   const [mentionerCount, featureContext] = await Promise.all([
     countTeamsMentioners({

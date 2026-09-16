@@ -42,11 +42,13 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { storeTelegramBotMessage } from "./telegram-callback-persistence.service";
 import { resolveTelegramAgentReplyFooterText } from "./telegram-footer.service";
+import { snapshotIntegrationReply } from "./integration-artifact-reply.service";
 
 const L = logger("InternalCallbacksTelegramChat");
 const TELEGRAM_COMPLETION_CHUNK_THROTTLE_MS = 1100;
 
 interface ClaimedTelegramChatDelivery {
+  readonly id: string;
   readonly runId: string;
   readonly payload: unknown;
 }
@@ -113,6 +115,7 @@ async function claimTelegramChatDelivery(
       ),
     )
     .returning({
+      id: agentRunCallbacks.id,
       runId: agentRunCallbacks.runId,
       payload: agentRunCallbacks.payload,
     });
@@ -521,11 +524,25 @@ async function deliverClaimedTelegramChatCallback(
   },
   signal: AbortSignal,
 ): Promise<"delivered" | "skipped_revoked"> {
-  const { payload, run, messageContent, binding } =
-    await loadTelegramChatDeliveryContext(args, signal);
+  const {
+    payload,
+    run,
+    messageContent: sourceContent,
+    binding,
+  } = await loadTelegramChatDeliveryContext(args, signal);
   if (!binding) {
     return "skipped_revoked";
   }
+  const messageContent = await snapshotIntegrationReply(
+    {
+      db: args.db,
+      runId: args.callback.runId,
+      deliveryKey: `callback:${args.callback.id}`,
+      publicBrand: payload.publicBrand,
+      content: sourceContent,
+    },
+    signal,
+  );
 
   await deleteThinkingMessageIfPresent({
     botToken: binding.botToken,

@@ -34,6 +34,7 @@ import type {
 } from "./internal-run-callback";
 import { readAcceptedOfficialWorkflowRevision } from "./official-workflow-catalog-read.service";
 import { getRunOutputText } from "./run-output.service";
+import { snapshotIntegrationReply } from "./integration-artifact-reply.service";
 
 const log = logger("api:official-automation-result-email");
 const EMPTY_RESULT_FALLBACK = "This run completed without a text result.";
@@ -169,6 +170,26 @@ async function workflowAutomationManageUrl(
     : `${args.productUrl}/workflows`;
 }
 
+async function snapshotResultEmail(
+  db: Db,
+  runId: string,
+  payload: z.infer<typeof callbackPayloadSchema>,
+  signal: AbortSignal,
+): Promise<string> {
+  const output = await getRunOutputText(db, runId, signal);
+  const rewritten = await snapshotIntegrationReply(
+    {
+      db,
+      runId,
+      deliveryKey: `result-email:${runId}:${payload.automationId}`,
+      publicBrand: payload.publicBrand,
+      content: boundedResultText(output),
+    },
+    signal,
+  );
+  return boundedResultText(rewritten);
+}
+
 export async function handleWorkflowAutomationResultEmailInternalCallback(
   db: Db,
   envelope: InternalRunCallbackEnvelope,
@@ -212,7 +233,12 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
     return { success: true, skipped: true };
   }
 
-  const output = await getRunOutputText(db, envelope.runId, signal);
+  const resultText = await snapshotResultEmail(
+    db,
+    envelope.runId,
+    payload.data,
+    signal,
+  );
   const workflowLabel = await resultEmailWorkflowLabel(
     db,
     payload.data.workflowName,
@@ -281,7 +307,7 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
         template: "official-automation-result",
         props: {
           title: resultEmailTitle(payload.data.workflowName),
-          resultText: boundedResultText(output),
+          resultText,
           runUrl: `${productUrl}/activities/${encodeURIComponent(envelope.runId)}`,
           // Keep the persisted props shape rollout-compatible while changing
           // manageUrl from the legacy account unsubscribe destination to the

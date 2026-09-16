@@ -10,8 +10,9 @@ import { artifacts } from "@okouai/db/schema/artifact";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
+import { integrationArtifactDeliveries } from "@okouai/db/schema/integration-artifact-delivery";
 import type { SharedThreadMessageAttachments } from "@okouai/db/jsonb-contracts/shared-thread";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
 import { command, computed, type Computed } from "ccstate";
 
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -635,7 +636,19 @@ export const readSharedThread$ = command(
         hasArtifactSnapshot: sharedThreads.hasArtifactSnapshot,
       })
       .from(sharedThreads)
-      .where(eq(sharedThreads.id, id))
+      .where(
+        and(
+          eq(sharedThreads.id, id),
+          notExists(
+            get(db$)
+              .select({ id: integrationArtifactDeliveries.snapshotId })
+              .from(integrationArtifactDeliveries)
+              .where(
+                eq(integrationArtifactDeliveries.snapshotId, sharedThreads.id),
+              ),
+          ),
+        ),
+      )
       .limit(1);
     signal.throwIfAborted();
     return row && (await get(sharedThreadArtifactsReadable(row, signal)))
@@ -676,7 +689,19 @@ export const readSharedThreadMeta$ = command(
         publicBrand: sharedThreads.publicBrand,
       })
       .from(sharedThreads)
-      .where(eq(sharedThreads.id, id))
+      .where(
+        and(
+          eq(sharedThreads.id, id),
+          notExists(
+            get(db$)
+              .select({ id: integrationArtifactDeliveries.snapshotId })
+              .from(integrationArtifactDeliveries)
+              .where(
+                eq(integrationArtifactDeliveries.snapshotId, sharedThreads.id),
+              ),
+          ),
+        ),
+      )
       .limit(1);
     signal.throwIfAborted();
     return row && (await get(sharedThreadArtifactsReadable(row, signal)))

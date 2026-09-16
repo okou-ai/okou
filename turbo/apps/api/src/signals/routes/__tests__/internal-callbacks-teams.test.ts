@@ -39,6 +39,7 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { chatThreadRoutes } from "../chat-threads";
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -567,8 +568,21 @@ async function completeSandboxRun(args: {
   readonly sandboxToken: string;
   readonly exitCode: number;
   readonly error?: string;
+  readonly resultText?: string;
 }): Promise<string | undefined> {
   const sandboxHeaders = { authorization: `Bearer ${args.sandboxToken}` };
+  if (args.resultText !== undefined) {
+    await webhooksApi.requestAgentEvents(
+      {
+        runId: args.runId,
+        events: [
+          { type: "result", sequenceNumber: 0, result: args.resultText },
+        ],
+      },
+      sandboxHeaders,
+      [200],
+    );
+  }
   if (args.exitCode === 0) {
     const cliAgentSessionId = `bdd-teams-cli-${args.runId}`;
     const cliAgentSessionHistory = `bdd teams history ${args.runId}`;
@@ -594,6 +608,7 @@ async function completeSandboxRun(args: {
       {
         runId: args.runId,
         exitCode: args.exitCode,
+        ...(args.resultText === undefined ? {} : { lastEventSequence: 0 }),
         checkpoint: {
           cliAgentType: "claude-code",
           cliAgentSessionId,
@@ -830,6 +845,29 @@ describe("Teams chat callbacks", () => {
         },
       ),
     ).toHaveLength(0);
+  });
+
+  it("delivers a readable private artifact snapshot in Teams", async () => {
+    const teams = await setupConnectedTeamsActor();
+    const provider = teamsApiMocks({ fixture: teams.fixture });
+    const artifact = await privateIntegrationArtifact(context, teams.actor);
+    const runId = await dispatchTeamsPersonalRun({
+      fixture: teams.fixture,
+      activityId: teamsFixtureExternalId(teams.fixture, "artifact-reply"),
+      text: "generate a private report",
+    });
+    const claim = await claimTeamsRun({
+      runnerGroup: teams.runnerGroup,
+      runId,
+    });
+    await completeSandboxRun({
+      runId,
+      sandboxToken: claim.sandboxToken,
+      exitCode: 0,
+      resultText: `Report: [download](${artifact.url})`,
+    });
+    expect(JSON.stringify(provider.postedActivities)).toContain("Report:");
+    await artifact.expectDelivered(JSON.stringify(provider.postedActivities));
   });
 
   it("uses installation bot identity when the activity omits it", async () => {

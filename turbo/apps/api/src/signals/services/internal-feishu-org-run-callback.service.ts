@@ -32,6 +32,7 @@ import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { getRunOutputText } from "./run-output.service";
 import { saveRunSummary, saveRunSummary$ } from "./run-summary.service";
 import { resolveIntegrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
+import { snapshotIntegrationReply } from "./integration-artifact-reply.service";
 
 const L = logger("InternalCallbacksFeishuOrg");
 
@@ -249,7 +250,16 @@ async function handleFeishuCallback(
       ? (errorText ?? "Agent execution failed.")
       : (output ?? "Task completed successfully.");
   const responseMessage = buildFeishuAgentResponseMessage({
-    text: responseText,
+    text: await snapshotIntegrationReply(
+      {
+        db: args.db,
+        runId: args.callback.runId,
+        deliveryKey: `feishu:org:${args.callback.runId}:${payload.connectionId}:${payload.chatId}:${payload.messageId}`,
+        publicBrand: payload.publicBrand,
+        content: responseText,
+      },
+      signal,
+    ),
     auditUrl: presentation.logsUrl,
     footerText: presentation.footerText,
   });

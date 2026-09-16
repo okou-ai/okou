@@ -36,6 +36,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 
 const context = testContext();
 const store = createStore();
@@ -343,6 +344,44 @@ describe("Official Automation result email callbacks", () => {
     );
     await runs.requestCancelRun(scenario.actor, agentRun.body.runId, [200]);
     await flushWaitUntilForTest();
+  });
+
+  it("reuses private artifact snapshots when automation result email is retried", async () => {
+    const scenario = await setupScenario();
+    const runId = await startRun(scenario, "https://app.okou.ai");
+    const artifact = await privateIntegrationArtifact(context, scenario.actor);
+    await seedResultCallback({
+      runId,
+      automationId: scenario.automationId,
+      publicBrand: "okou",
+      workflowName: "Artifact report",
+    });
+    mockEnv("RESEND_FROM_DOMAIN", undefined);
+    await completeRun(scenario, runId, {
+      exitCode: 0,
+      output: `Report: [download](${artifact.url})\n${"x".repeat(8000)}`,
+    });
+    await expect(resultCallbackState(scenario, runId)).resolves.toMatchObject([
+      { status: "failed", attempts: 1 },
+    ]);
+    artifact.removeOriginal();
+    artifact.rejectCopies();
+    mockEnv("RESEND_FROM_DOMAIN", "okou.io");
+    await accept(
+      executionClient().dispatchCallbacks({
+        body: { run_id: runId, status: "completed", dispatch_count: 8 },
+      }),
+      [200],
+    );
+    const source = await outbox.findSourceState({
+      sourceRunId: runId,
+      sourceWorkflowAutomationId: scenario.automationId,
+    });
+    expect(source.items).toHaveLength(1);
+    await expect(outbox.drainItems([source.items[0]!.id])).resolves.toBe(1);
+    await artifact.expectDelivered(
+      JSON.stringify(context.mocks.resend.send.mock.calls),
+    );
   });
 
   it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {

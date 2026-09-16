@@ -80,3 +80,46 @@ enabling a test cohort. Older Workers reject the new delivery-record kind, so
 mixed deployments fail closed for new snapshot links. This change creates no
 bucket, DNS route, credential or rollout override. Per-PR staging acceptance is
 still needed for the deployed App/API/Worker combination.
+
+## Integration final replies
+
+Final replies in Slack, Feishu, Lark, Microsoft Teams, Telegram, GitHub comments,
+AgentPhone and automation result emails prepare the same resource snapshot before
+provider formatting and delivery. The legacy Feishu organization callback follows
+the same path. Only that final reply's references and their managed static
+dependencies are selected; canonical chat history keeps its original private URLs.
+Plain text, existing public URLs and external URLs do not create a snapshot.
+Authorization/action links and unmanaged download links in the reply retain their
+original URLs. Static bundle dependencies retain the stricter sharing checks.
+
+Each delivery has a separate `integration_artifact_deliveries` identity bound to
+its owner, organization, brand and source-content hash. It points to a dedicated
+`shared_threads` parent for the existing publication and account-erasure protocol.
+The parent contains one rewritten assistant message, has no artifact-catalog entry,
+and is excluded from public conversation and metadata reads. Manual conversation
+shares have independent identities and grants.
+
+Delivery waits for the complete policy to become active. Existing delivery retry
+paths reuse its persisted rewritten message and URLs, including after an ambiguous
+activation response. Copy failures revoke and clean up the incomplete snapshot;
+recognized missing or foreign private references fail delivery. A concurrent
+preparation is left alone; a retry can recover a preparing identity older than five
+minutes. A delivery record with a revoked policy fails closed. This does not
+introduce new provider-message retry behavior.
+
+Snapshot URLs can be opened by anyone possessing the link. They do not enforce
+membership in the destination conversation. Original artifacts retain their
+existing privacy and share settings. Account/organization erasure uses the same
+foreground revocation and background byte cleanup described above, with the same
+browser-cache limitations. Provider messages already sent are not recalled.
+
+Apply migration `1147_integration_artifact_deliveries` before deploying this API.
+The Worker must support the existing `thread-resource` protocol before this API
+is deployed; this change adds no protocol, App, DNS or bucket requirement. Older
+APIs tolerate the additive table; rolling back stops automatic snapshot creation
+while existing delivery links retain their policy. Rolling back to an API without
+the conversation-read exclusion can expose the single final reply if its internal
+snapshot UUID is known; no preceding conversation messages are stored in that
+parent. The existing `privateArtifacts` switch still controls source artifact
+creation; delivery also handles already-created private artifacts after the
+switch is disabled.

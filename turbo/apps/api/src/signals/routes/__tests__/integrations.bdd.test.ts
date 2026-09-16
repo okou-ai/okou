@@ -53,6 +53,7 @@ import {
 } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readConnectorOAuthAccountMutation } from "./helpers/connector-credential-storage-state";
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 
 /*
 helper gap:
@@ -5305,6 +5306,132 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
+  it.each([
+    "success",
+    "copy failure",
+    "missing artifact",
+    "foreign artifact",
+    "action links only",
+    "owner deleted",
+  ] as const)(
+    "handles private Slack artifact delivery: %s",
+    async (scenario) => {
+      const actor = bdd.user();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      integrations.configureSlackAppMocks();
+      integrations.acceptSlackSessionHistoryDownloads();
+      const runnerGroup = runs.configureRunnerGroup();
+      await runs.grantProEntitlement(actor);
+      await integrations.configureSlackRunModelPolicies(actor);
+      await bdd.readOnboardingStatus(actor);
+      const slackUser = uniqueSlackUserId();
+      const { teamId } = await integrations.installSlackWorkspace(actor, {
+        installerSlackUserId: slackUser,
+      });
+      const artifactOwner =
+        scenario === "foreign artifact"
+          ? bdd.user({ orgId: actor.orgId })
+          : actor;
+      const artifact = await privateIntegrationArtifact(context, artifactOwner);
+      const site = scenario === "success" ? await artifact.createSite() : null;
+      integrations.clearSlackCallHistory();
+      await integrations.postSlackEvent(teamId, {
+        type: "app_mention",
+        user: slackUser,
+        text: "generate a private report",
+        ts: "4500.000100",
+        channel: "C_ARTIFACT_REPLY",
+      });
+      const runId = await pollSlackRun(runnerGroup);
+      const claim = await runs.claimRunnerJob(runId);
+      if (scenario === "copy failure") {
+        artifact.rejectCopies();
+      }
+      const privateUrl =
+        scenario === "missing artifact"
+          ? artifact.url.replace(
+              /[a-z0-9]{10}(?=\.pdf)/u,
+              randomUUID().replaceAll("-", "").slice(0, 10),
+            )
+          : artifact.url;
+      const action = `${env("OKOU_API_BACKEND_URL")}/api/connectors/slack/authorize?state=fixture`;
+      const signedExternal =
+        "https://external.example/report.pdf?X-Amz-Signature=fixture";
+      const content =
+        scenario === "action links only"
+          ? `Authorize ${action}; external download ${signedExternal}`
+          : `Private report [download](${privateUrl})${site ? ` [site](${site})` : ""} Authorize ${action}`;
+      context.mocks.slack.chat.postMessage.mockClear();
+      await completeSlackTriggeredRun({
+        runId,
+        sandboxToken: claim.sandboxToken,
+        cliAgentType: "claude-code",
+        resultText: content,
+      });
+      await flushWaitUntilForTest();
+      if (scenario === "action links only") {
+        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({ text: content }),
+        );
+        return;
+      }
+      if (scenario !== "success" && scenario !== "owner deleted") {
+        expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+        return;
+      }
+      expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(1);
+      expect(slackPostMessageCallsJson()).toContain(action);
+      const deliveredFile = await artifact.expectDelivered(
+        slackPostMessageCallsJson(),
+      );
+      if (site) {
+        const siteUrl = slackPostMessageCallsJson().match(
+          /https:\/\/[a-z0-9]{10}\.okou\.app\//u,
+        )?.[0];
+        expect(siteUrl).toBeDefined();
+        const siteResponse = await fetch(siteUrl!);
+        expect(siteResponse.status).toBe(200);
+        const html = await siteResponse.text();
+        expect(html).toContain(deliveredFile);
+        expect(html).not.toContain(artifact.url);
+        const plotResponse = await fetch(new URL("plot.svg", siteUrl));
+        expect(plotResponse.status).toBe(200);
+        await expect(plotResponse.text()).resolves.toContain("Snapshot plot");
+      }
+      const threads = await chat.requestThreadEvents(actor, {}, [200]);
+      if (threads.status !== 200) {
+        throw new Error("Expected thread events");
+      }
+      const created = threads.body.events.find((event) => {
+        return event.kind === "created";
+      });
+      if (!created) {
+        throw new Error("Expected a canonical Slack thread");
+      }
+      const events = await chat.listThreadEvents(actor, created.chatThreadId);
+      expect(events.events).toContainEqual(
+        expect.objectContaining({ content }),
+      );
+      if (scenario !== "owner deleted") {
+        return;
+      }
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: "user.deleted",
+        data: { id: actor.userId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      const revoked = await fetch(deliveredFile);
+      expect(revoked.status).toBe(404);
+      await flushWaitUntilForTest();
+    },
+  );
+
   it("delivers canonical Slack callbacks for progress, attribution footers, failures, and Slack errors", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
@@ -6284,7 +6411,7 @@ describe("INT-02: Telegram integration", () => {
     });
   });
 
-  it("keeps Telegram Fast footers bound to the originating run", async () => {
+  it("delivers private Telegram artifacts and keeps Fast footers bound to the originating run", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
@@ -6405,13 +6532,14 @@ describe("INT-02: Telegram integration", () => {
     expect(agentSend.body).toMatchObject({ ok: true });
     expect(JSON.stringify(sentMessages)).toContain("GPT 5.6 Sol Fast");
 
+    const artifact = await privateIntegrationArtifact(context, actor);
     sentMessages.length = 0;
     await integrations.updateUserModelPreference(actor, "gpt-5.6-sol", null);
     await completeSlackTriggeredRun({
       runId,
       sandboxToken: claim.sandboxToken,
       cliAgentType: "codex",
-      codexAgentMessageText: "telegram fast reply",
+      codexAgentMessageText: `telegram fast reply [report](${artifact.url})`,
     });
     await flushWaitUntilAndAssert(() => {
       const providerOutput = JSON.stringify(sentMessages);
@@ -6421,6 +6549,7 @@ describe("INT-02: Telegram integration", () => {
         `https://app.okou.ai/activities/${runId}`,
       );
     });
+    await artifact.expectDelivered(JSON.stringify(sentMessages));
   });
 
   it("refreshes telegram typing for pending webhook-dispatched runs", async () => {

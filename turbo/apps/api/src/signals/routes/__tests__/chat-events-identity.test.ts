@@ -23,6 +23,7 @@ import {
   userMessages,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 
 const context = testContext();
 const {
@@ -199,7 +200,7 @@ describe("CHAT-02: default assistant identity", () => {
     await cancelChatRun(actor, customRun.runId);
   }, 90_000);
 
-  it("posts GitHub Audit links to the configured Okou app", async () => {
+  it("delivers private GitHub artifacts and posts Audit links to the configured Okou app", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     bdd.acceptAgentStorageWrites();
@@ -249,8 +250,12 @@ describe("CHAT-02: default assistant identity", () => {
       agentId,
     });
 
+    const artifact = await privateIntegrationArtifact(context, actor);
     chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "GitHub callback brand response"),
+      assistantEvent(
+        0,
+        `GitHub callback brand response [report](${artifact.url})`,
+      ),
     ]);
     await completeChatRunOk(run.runId, claim.sandboxHeaders);
     await flushWaitUntilForTest();
@@ -259,6 +264,7 @@ describe("CHAT-02: default assistant identity", () => {
       `📋 [Audit](https://app.okou.ai/activities/${run.runId})`,
     );
     expect(postedComments).toHaveLength(1);
+    await artifact.expectDelivered(postedComments[0]!);
   }, 90_000);
 });
 

@@ -100,6 +100,7 @@ import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
 import { customConnectorsUpdateRoutes } from "../custom-connectors-update";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { feishuConnectRoutes } from "../feishu-connect";
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 
 const customConnectorByIdTestRoutes = Object.freeze([
   ...customConnectorsDeleteRoutes,
@@ -5155,6 +5156,34 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     expect(context.mocks.ably.publish).not.toHaveBeenCalledWith(
       `chatThreadDetailChanged:${created.chatThreadId}`,
       null,
+    );
+  });
+
+  it("delivers a readable snapshot of private artifacts in the final reply", async () => {
+    const fixture = await setupFeishuRunFixture();
+    const { actor, runnerGroup, appId, callbackUrl } = fixture;
+    await connectFixtureUser(fixture);
+    const artifact = await privateIntegrationArtifact(context, actor);
+    outboundMessages = [];
+    await postEvent(
+      callbackUrl,
+      directMessage(appId, "generate a private report"),
+      { encrypted: true },
+    );
+    await flushWaitUntilForTest();
+    const run = await findRun(actor, "generate a private report");
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.id);
+    await completeRunSession({
+      runId: run.id,
+      sandboxToken: claim.sandboxToken,
+      sessionId: `artifact-${run.id}`,
+      history: `artifact history ${run.id}`,
+      assistantText: `Report: [download](${artifact.url})`,
+    });
+    expect(outboundMessages.at(-1)?.msgType).toBe("interactive");
+    await artifact.expectDelivered(
+      outboundMessages.map(messageContent).join("\n"),
     );
   });
 

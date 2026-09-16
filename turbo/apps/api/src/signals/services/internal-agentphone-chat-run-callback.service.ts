@@ -27,11 +27,13 @@ import {
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import { snapshotIntegrationReply } from "./integration-artifact-reply.service";
 
 const L = logger("InternalCallbacksAgentPhoneChat");
 type AgentPhoneSendResult = Awaited<ReturnType<typeof sendAgentPhoneMessage>>;
 
 interface ClaimedAgentPhoneChatDelivery {
+  readonly id: string;
   readonly runId: string;
   readonly payload: unknown;
 }
@@ -93,6 +95,7 @@ async function claimAgentPhoneChatDelivery(
       ),
     )
     .returning({
+      id: agentRunCallbacks.id,
       runId: agentRunCallbacks.runId,
       payload: agentRunCallbacks.payload,
     });
@@ -322,11 +325,25 @@ async function deliverClaimedAgentPhoneChatCallback(
   },
   signal: AbortSignal,
 ): Promise<"delivered" | "skipped_revoked"> {
-  const { payload, run, messageContent, binding } =
-    await loadAgentPhoneChatDeliveryContext(args, signal);
+  const {
+    payload,
+    run,
+    messageContent: sourceContent,
+    binding,
+  } = await loadAgentPhoneChatDeliveryContext(args, signal);
   if (!binding) {
     return "skipped_revoked";
   }
+  const messageContent = await snapshotIntegrationReply(
+    {
+      db: args.db,
+      runId: args.callback.runId,
+      deliveryKey: `callback:${args.callback.id}`,
+      publicBrand: payload.publicBrand,
+      content: sourceContent,
+    },
+    signal,
+  );
   const presentation = await resolveAgentPhonePresentation(
     {
       db: args.db,

@@ -26,10 +26,12 @@ import {
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { resolveGithubAgentReplyFooterText } from "./github-agent-reply-footer.service";
+import { snapshotIntegrationReply } from "./integration-artifact-reply.service";
 
 const L = logger("InternalCallbacksGithubChat");
 
 interface ClaimedGitHubChatDelivery {
+  readonly id: string;
   readonly runId: string;
   readonly payload: unknown;
 }
@@ -92,6 +94,7 @@ async function claimGitHubChatDelivery(
       ),
     )
     .returning({
+      id: agentRunCallbacks.id,
       runId: agentRunCallbacks.runId,
       payload: agentRunCallbacks.payload,
     });
@@ -311,7 +314,16 @@ async function deliverClaimedGitHubChatCallback(
       runId: args.callback.runId,
       run: context.run,
       target: context.payload,
-      messageContent: context.messageContent,
+      messageContent: await snapshotIntegrationReply(
+        {
+          db: args.db,
+          runId: args.callback.runId,
+          deliveryKey: `callback:${args.callback.id}`,
+          publicBrand: context.payload.publicBrand,
+          content: context.messageContent,
+        },
+        signal,
+      ),
     },
     signal,
   );
