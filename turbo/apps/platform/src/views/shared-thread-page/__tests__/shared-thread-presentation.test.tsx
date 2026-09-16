@@ -269,3 +269,24 @@ test("A public conversation carries the signed-in viewer's color theme", async (
     );
   });
 });
+
+test("A public conversation reads inside the app's workspace sheet", async () => {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          { messageIndex: 0, role: "assistant", content: "The plan is ready." },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const sheet = await screen.findByTestId("workspace-inset");
+  expect(within(sheet).getByText("The plan is ready.")).toBeInTheDocument();
+  expect(
+    within(sheet).getByText("Make this conversation yours"),
+  ).toBeInTheDocument();
+});
