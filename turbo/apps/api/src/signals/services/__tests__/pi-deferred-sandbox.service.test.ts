@@ -82,6 +82,7 @@ import {
   deletePiObjectOrphansForOwner,
   readPiInferenceObject,
   reclaimPiInferenceObjects,
+  retainPiInferenceObject,
 } from "../pi-inference-object.service";
 import { runnersRoutes } from "../../routes/runners";
 import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
@@ -1311,6 +1312,122 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     );
     expect(claimed.body.apiStartTime).toBe(deferred.apiStartedAt.getTime());
   }, 90_000);
+
+  it("recovers cleanup and release after a failed maintenance binding retires", async () => {
+    const f = await fixture({ maintenance: true });
+    const maintenance = f.maintenance;
+    if (!maintenance) {
+      throw new Error("Missing private lease");
+    }
+    await expect(
+      createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
+    ).resolves.toBeTruthy();
+    const runnerId = randomUUID();
+    await accept(claim(f.runId, true, runnerId), [200]);
+    // A maintenance failure retires the same live binding a success does.
+    await db()
+      .update(piMemoryPhase2Jobs)
+      .set({
+        status: "retryable_failure",
+        claimedRevision: null,
+        claimedBaseVersionId: null,
+        leaseToken: null,
+        legacyLeaseToken: null,
+        sandboxLeaseToken: null,
+        leaseExpiresAt: null,
+        maintenanceRunId: null,
+        retryCount: 1,
+        retryAt: new Date(Date.now() + 60_000),
+        lastErrorClass: "maintenance_run_failed",
+        claimedSelectionDigest: null,
+        claimedSelectedCount: null,
+        claimedSelectedUtf8Bytes: null,
+      })
+      .where(
+        eq(piMemoryPhase2Jobs.memoryStorageId, maintenance.memoryStorageId),
+      );
+    // Cleanup-only terminal recovery converges instead of losing the owner.
+    await createStore().set(recoverDeferredPiRuns$, [f.runId], context.signal);
+    const released = await accept(
+      setupApp({ context, routes: runnersRoutes })(
+        runnersJobClaimContract,
+      ).release({
+        params: { id: f.runId },
+        headers: {
+          authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`,
+        },
+        body: { runnerId, ownerEpoch: 2, generation: 1, proof: "destroyed" },
+      }),
+      [200],
+    );
+    expect(released.body).toStrictEqual({
+      released: true,
+      outcome: "released",
+    });
+    expect((await readRequiredPiFixture(f)).lease?.state).toBe("released");
+  }, 60_000);
+
+  it("keeps an object a concurrent retain is still committing out of the sweep", async () => {
+    const f = await fixture();
+    const shared = await publishPiInferenceObject(
+      db(),
+      f,
+      "h1",
+      piDeferredH1Schema,
+      {
+        schemaVersion: 1,
+        manifestGeneration: 8,
+        lastEventSequence: 8,
+        sessionHistory: `shared-${f.runId}`,
+        historyHash: createHash("sha256")
+          .update(`shared-${f.runId}`)
+          .digest("hex"),
+      },
+    );
+    await db()
+      .update(piInferenceObjects)
+      .set({ createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
+      .where(eq(piInferenceObjects.hash, shared));
+    // Hold an in-flight retain, then run the real sweep against it.
+    const held = await holdDeferredRow(context.signal, (tx) => {
+      return retainPiInferenceObject(tx, {
+        runId: f.runId,
+        orgId: f.orgId,
+        userId: f.userId,
+        kind: "h1",
+        hash: shared,
+      });
+    });
+    await reclaimPiInferenceObjects(db());
+    await expect(
+      db()
+        .select({ hash: piInferenceObjects.hash })
+        .from(piInferenceObjects)
+        .where(eq(piInferenceObjects.hash, shared)),
+    ).resolves.toStrictEqual([{ hash: shared }]);
+    await held.release();
+    // The committed reference keeps protecting it on the next sweep.
+    await reclaimPiInferenceObjects(db());
+    await expect(
+      db()
+        .select({ hash: piInferenceObjects.hash })
+        .from(piInferenceObjects)
+        .where(eq(piInferenceObjects.hash, shared)),
+    ).resolves.toStrictEqual([{ hash: shared }]);
+    await expect(
+      readPiInferenceObject(
+        db(),
+        {
+          runId: f.runId,
+          orgId: f.orgId,
+          userId: f.userId,
+          kind: "h1",
+          hash: shared,
+        },
+        piDeferredH1Schema,
+      ),
+    ).resolves.toMatchObject({ manifestGeneration: 8 });
+  }, 60_000);
 
   it("rejects a foreign namespace and an unretained hash through the object seam", async () => {
     const f = await fixture();
