@@ -1275,6 +1275,9 @@ def _block_request_classification(
     if classification.kind == "platform_path_denied":
         _block_platform_path_denied(flow)
         return
+    if classification.kind == "gmail_send_blocked":
+        http_local_responses.block_gmail_send(flow)
+        return
     if classification.kind == "firewall_ambiguous":
         _set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
         return

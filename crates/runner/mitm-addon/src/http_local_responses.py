@@ -314,6 +314,32 @@ def block_builtin_host_policy_denied(
     )
 
 
+def block_gmail_send(flow: http.HTTPFlow) -> None:
+    error_code = "gmail_send_blocked"
+    flow_metadata.set_firewall_decision(flow.metadata, "DENY", error=error_code)
+    flow.response = make_local_json_response(
+        flow,
+        403,
+        {
+            # Gmail SDKs extract error.message when rendering an HTTP failure.
+            "error": {
+                "code": 403,
+                "status": "PERMISSION_DENIED",
+                "errors": [{"domain": "okou", "reason": error_code}],
+                "message": (
+                    "Direct Gmail API sending and Gmail batch requests are disabled. "
+                    "Use okou mail draft --file <message.eml> to create a Gmail draft "
+                    "(see okou mail draft --help). If a draft already exists, reuse it. "
+                    "In Web chat, run okou mail link <gmail-draft-id> and return the review URL "
+                    "so the user can review and send. Outside Web chat, ask the user to review "
+                    "and send the draft in Gmail. Permission grants cannot unblock direct sending. "
+                    "For batch reads or draft edits, use individual API requests."
+                ),
+            },
+        },
+    )
+
+
 def set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBlock) -> None:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     if result.reason == "malformed_network_policy":
