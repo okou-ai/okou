@@ -434,7 +434,7 @@ function CustomTemplateDetailSidebar({
             { count: detail.pageCount, filename: detail.sourceFilename },
           )}
         </p>
-        <div className="my-4 border-t border-border" />
+        <div className="my-4 border-t border-t-gray-400" />
         {detail.canManage ? (
           <Popover>
             <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">

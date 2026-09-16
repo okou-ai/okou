@@ -9,6 +9,7 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -49,6 +50,57 @@ function mockCustomTemplates(templates: readonly UserTemplateDetail[]): void {
       }),
     );
   });
+}
+
+/**
+ * List, detail and update served from one mutable array, so a mutation is
+ * observable the only way a user can observe it: by looking at the panel again.
+ */
+function mockCustomTemplateStore(initial: readonly UserTemplateDetail[]): void {
+  const templates = [...initial];
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    return respond(
+      200,
+      templates.map(({ pageUrls: _pageUrls, ...entry }) => {
+        return entry;
+      }),
+    );
+  });
+  context.mocks.api(userTemplatesContract.get, ({ params, respond }) => {
+    const template = templates.find((candidate) => {
+      return candidate.id === params.templateId;
+    });
+    if (!template) {
+      throw new Error(`No template mocked for ${params.templateId}`);
+    }
+    return respond(200, template);
+  });
+  context.mocks.api(
+    userTemplatesContract.update,
+    ({ body, params, respond }) => {
+      const index = templates.findIndex((candidate) => {
+        return candidate.id === params.templateId;
+      });
+      const current = templates[index];
+      if (!current) {
+        throw new Error(`No template mocked for ${params.templateId}`);
+      }
+      const updated: UserTemplateDetail = {
+        ...current,
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.visibility === undefined
+          ? {}
+          : { visibility: body.visibility }),
+      };
+      templates[index] = updated;
+      const {
+        pageUrls: _pageUrls,
+        previewAssets: _previewAssets,
+        ...summary
+      } = updated;
+      return respond(200, summary);
+    },
+  );
 }
 
 function queryTabByText(text: string): HTMLElement | undefined {
@@ -227,6 +279,74 @@ test("Opening a custom template shows its pages and management controls", async 
   // repointed at this table.
   expect(buttonByName("Use", dialog)).toBeUndefined();
   expect(buttonByName("Use this template", dialog)).toBeUndefined();
+});
+
+async function openDetail(
+  dialog: HTMLElement,
+  title: string,
+): Promise<HTMLElement> {
+  click(tabByText("Custom"));
+  await within(dialog).findByText(title);
+  click(buttonByName(`Preview ${title}`, dialog)!);
+  return within(dialog).findByLabelText("Rename template");
+}
+
+test("Clearing the title and leaving the field keeps the template named", async () => {
+  mockCustomTemplateStore([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  const input = await openDetail(dialog, "Q3 board review");
+
+  await fill(input, "");
+  fireEvent.blur(input);
+  click(buttonByName("Custom templates", dialog)!);
+
+  // A blank field is a slip, not a request to erase the name.
+  await expect(
+    within(dialog).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Renaming a template updates its card in the panel", async () => {
+  mockCustomTemplateStore([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  const input = await openDetail(dialog, "Q3 board review");
+
+  await fill(input, "  Board   review FY26  ");
+  fireEvent.blur(input);
+  click(buttonByName("Custom templates", dialog)!);
+
+  // Surrounding and repeated whitespace is collapsed before it is stored.
+  await expect(
+    within(dialog).findByText("Board review FY26"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+});
+
+test("Changing visibility updates the card's meta line", async () => {
+  mockCustomTemplateStore([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  await openDetail(dialog, "Q3 board review");
+
+  click(buttonByName("Change", dialog)!);
+  const organization = await waitFor(() => {
+    const option = queryAllByRoleFast("radio").find((candidate) => {
+      return candidate.textContent?.startsWith("Organization");
+    });
+    if (!option) {
+      throw new Error("Expected an Organization visibility option");
+    }
+    return option;
+  });
+  click(organization);
+  click(buttonByName("Custom templates", dialog)!);
+
+  await expect(
+    within(dialog).findByText("Organization"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByText("Private")).not.toBeInTheDocument();
 });
 
 test("Deleting a custom template removes it from the panel", async () => {
