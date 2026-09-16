@@ -663,7 +663,7 @@ describe("CHAT-02: run-level model overrides", () => {
       });
     }),
   )(
-    "classifies a $name with tier $tier without replay, billing, or private diagnostics (organization API: $organizationApi)",
+    "classifies a $name after admission with tier $tier without replay, billing, or private diagnostics (organization API: $organizationApi)",
     async (scenario) => {
       mockOptionalEnv("OKOU_DEBUG", "webhook:firewall-auth,pi-api-first-turn");
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -734,10 +734,14 @@ describe("CHAT-02: run-level model overrides", () => {
         );
       }
       let refreshAttempts = 0;
+      const admitted = createDeferredPromise<void>(context.signal);
       if (scenario.expired) {
         server.use(
-          http.post("https://auth.openai.com/oauth/token", () => {
+          http.post("https://auth.openai.com/oauth/token", async () => {
             refreshAttempts += 1;
+            // Exercise run-level failure after the API accepts the run. Pi
+            // preparation can otherwise disconnect the account before admission.
+            await admitted.promise;
             return HttpResponse.json(
               {
                 error: {
@@ -821,6 +825,7 @@ describe("CHAT-02: run-level model overrides", () => {
         model: "gpt-5.6-terra",
         runOptions: { codexServiceTier: scenario.tier },
       });
+      admitted.resolve(undefined);
       if (scenario.name === "transient provider failure") {
         // Existing Pi recovery hands the same personal source to Sandbox. This
         // is not an organization API/model/account retry or a paid model route.
