@@ -11,9 +11,11 @@ const TARGET = {
   id: "00000000-0000-4000-8000-000000000001",
 };
 const SHARE_ID = "00000000-0000-4000-8000-000000000002";
-const ORG_URL = `https://app.okou.ai${REFERENCE}`;
+const OWNER_URL = `https://app.okou.ai${REFERENCE}`;
+const ORG_URL = OWNER_URL;
 const PUBLIC_URL = "https://a.okou.io/xyz123abcd.pdf";
 const PRIVATE: ArtifactShareStatus = {
+  ownerUrl: OWNER_URL,
   shareId: null,
   audience: "private",
   organization: { id: "org_original", name: "Original organization" },
@@ -62,13 +64,11 @@ describe("okou artifact", () => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", API);
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-    for (const command of artifactCommand.commands) {
-      command.setOptionValue("json", false);
-      command.setOptionValue("kind", undefined);
-      command.setOptionValue("audience", undefined);
-      command.exitOverride();
-      command.configureOutput({ writeErr: () => {} });
-    }
+    artifactCommand.setOptionValue("json", false);
+    artifactCommand.setOptionValue("kind", undefined);
+    artifactCommand.setOptionValue("visibility", undefined);
+    artifactCommand.exitOverride();
+    artifactCommand.configureOutput({ writeErr: () => {} });
   });
 
   afterEach(() => {
@@ -81,12 +81,37 @@ describe("okou artifact", () => {
 
   it("reads an owner URL without creating a share or returning temporary credentials", async () => {
     serveStatus();
-    await artifactCommand.parseAsync(
-      ["status", `${ORG_URL}#page=2`, "--json"],
-      { from: "user" },
-    );
-    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual(PRIVATE);
+    await artifactCommand.parseAsync([`${OWNER_URL}#page=2`, "--json"], {
+      from: "user",
+    });
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
+      visibility: "only-me",
+      url: OWNER_URL,
+      organization: PRIVATE.organization,
+      selectedTarget: null,
+      selectedVersion: null,
+      candidateVersion: null,
+    });
   });
+
+  it.each(["organization", "public"] as const)(
+    "reads %s visibility and its URL without changing permissions",
+    async (audience) => {
+      const url = audience === "organization" ? ORG_URL : PUBLIC_URL;
+      serveStatus({
+        ...PRIVATE,
+        audience,
+        shareId: SHARE_ID,
+        selectedTarget: TARGET,
+        url,
+      });
+      await artifactCommand.parseAsync([REFERENCE, "--json"], { from: "user" });
+      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+        visibility: audience === "organization" ? "org" : "public",
+        url,
+      });
+    },
+  );
 
   it.each(["organization", "public"] as const)(
     "shares a file to %s using the UI endpoint",
@@ -108,10 +133,17 @@ describe("okou artifact", () => {
         }),
       );
       await artifactCommand.parseAsync(
-        ["share", REFERENCE, "--audience", audience],
+        [
+          REFERENCE,
+          "--visibility",
+          audience === "organization" ? "org" : "public",
+        ],
         { from: "user" },
       );
       expect(log.mock.calls.flat().join("\n")).toContain(`URL: ${url}`);
+      expect(log.mock.calls.flat().join("\n")).toContain(
+        `Visibility: ${audience === "organization" ? "org" : "public"}`,
+      );
     },
   );
 
@@ -152,20 +184,38 @@ describe("okou artifact", () => {
       };
       serveStatus(shared, kind);
       await artifactCommand.parseAsync(
-        ["share", REFERENCE, "--audience", audience, "--json"],
+        [
+          REFERENCE,
+          "--visibility",
+          audience === "organization" ? "org" : "public",
+          "--json",
+        ],
         { from: "user" },
       );
-      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual(shared);
+      expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
+        visibility: audience === "organization" ? "org" : "public",
+        url,
+        selectedTarget: { ...TARGET, kind },
+        selectedVersion: version,
+        candidateVersion: version,
+      });
     },
   );
 
   it("does not create a sharing record when an artifact is already private", async () => {
     serveStatus();
     await artifactCommand.parseAsync(
-      ["share", TARGET.id, "--kind", "file", "--audience", "private", "--json"],
+      [TARGET.id, "--kind", "file", "--visibility", "only-me", "--json"],
       { from: "user" },
     );
-    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual(PRIVATE);
+    expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
+      visibility: "only-me",
+      url: OWNER_URL,
+      organization: PRIVATE.organization,
+      selectedTarget: null,
+      selectedVersion: null,
+      candidateVersion: null,
+    });
   });
 
   it("revokes public sharing through the existing policy update", async () => {
@@ -189,11 +239,10 @@ describe("okou artifact", () => {
         });
       }),
     );
-    await artifactCommand.parseAsync(
-      ["share", REFERENCE, "--audience", "private"],
-      { from: "user" },
-    );
-    expect(log.mock.calls.flat().join("\n")).toContain("no active share link");
+    await artifactCommand.parseAsync([REFERENCE, "--visibility", "only-me"], {
+      from: "user",
+    });
+    expect(log.mock.calls.flat().join("\n")).toContain(`URL: ${OWNER_URL}`);
     expect(log.mock.calls.flat().join("\n")).not.toContain(PUBLIC_URL);
   });
 
@@ -221,7 +270,7 @@ describe("okou artifact", () => {
       }),
     );
     await artifactCommand.parseAsync(
-      ["share", TARGET.id, "--kind", "html", "--audience", "public", "--json"],
+      [TARGET.id, "--kind", "html", "--visibility", "public", "--json"],
       { from: "user" },
     );
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
@@ -253,10 +302,9 @@ describe("okou artifact", () => {
         });
       }),
     );
-    await artifactCommand.parseAsync(
-      ["share", REFERENCE, "--audience", "public"],
-      { from: "user" },
-    );
+    await artifactCommand.parseAsync([REFERENCE, "--visibility", "public"], {
+      from: "user",
+    });
     expect(log.mock.calls.flat().join("\n")).toContain(
       "URL: https://report.okou.app/",
     );
@@ -280,7 +328,7 @@ describe("okou artifact", () => {
       }),
     );
     await expect(
-      artifactCommand.parseAsync(["share", REFERENCE, "--audience", "public"], {
+      artifactCommand.parseAsync([REFERENCE, "--visibility", "public"], {
         from: "user",
       }),
     ).rejects.toThrow("CLI exit");
@@ -290,17 +338,31 @@ describe("okou artifact", () => {
     expect(exit).toHaveBeenCalledWith(1);
   });
 
-  it("requires an explicit audience before making any request", async () => {
+  it("reports a historical organization share without a URL without allocating one on read", async () => {
+    serveStatus({
+      ...PRIVATE,
+      audience: "organization",
+      shareId: SHARE_ID,
+      selectedTarget: TARGET,
+    });
+    await artifactCommand.parseAsync([REFERENCE], { from: "user" });
+    expect(log.mock.calls.flat().join("\n")).toContain("--visibility org");
+    expect(log.mock.calls.flat().join("\n")).not.toContain(`URL: ${OWNER_URL}`);
+  });
+
+  it("rejects an invalid visibility before making any request", async () => {
     await expect(
-      artifactCommand.parseAsync(["share", REFERENCE], { from: "user" }),
-    ).rejects.toThrow("required option");
+      artifactCommand.parseAsync([REFERENCE, "--visibility", "everyone"], {
+        from: "user",
+      }),
+    ).rejects.toThrow("Allowed choices");
     expect(log).not.toHaveBeenCalled();
   });
 
   it("rejects a foreign artifact URL instead of changing a same-named owned artifact", async () => {
     await expect(
       artifactCommand.parseAsync(
-        ["share", `https://other.example${REFERENCE}`, "--audience", "public"],
+        [`https://other.example${REFERENCE}`, "--visibility", "public"],
         { from: "user" },
       ),
     ).rejects.toThrow("CLI exit");

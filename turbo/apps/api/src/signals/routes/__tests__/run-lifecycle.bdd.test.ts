@@ -1149,6 +1149,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
             "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
           ),
       ).toBe(enabled);
+      expect(
+        prompt.includes(
+          "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
+        ),
+      ).toBe(enabled);
       await api.requestCancelRun(actor, created.runId, [200]);
     }
   });

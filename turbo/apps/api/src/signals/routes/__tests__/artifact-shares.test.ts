@@ -293,6 +293,9 @@ test("agent sharing and the Share menu reuse one policy, including revocation af
     [200],
   );
   expect(initial.body).toMatchObject({
+    ownerUrl: expect.stringMatching(
+      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+    ),
     audience: "private",
     shareId: null,
     url: null,
@@ -307,6 +310,10 @@ test("agent sharing and the Share menu reuse one policy, including revocation af
       [200],
     );
     expect(shared.body.url).not.toBeNull();
+    expect(shared.body.ownerUrl).toBe(initial.body.ownerUrl);
+    if (audience === "organization") {
+      expect(shared.body.url).toBe(initial.body.ownerUrl);
+    }
     const uiStatus = await accept(
       api()(artifactSharesContract).status({ headers, body: target }),
       [200],
@@ -337,7 +344,11 @@ test("agent sharing and the Share menu reuse one policy, including revocation af
     }),
     [200],
   );
-  expect(revoked.body).toMatchObject({ audience: "private", url: null });
+  expect(revoked.body).toMatchObject({
+    audience: "private",
+    url: null,
+    ownerUrl: initial.body.ownerUrl,
+  });
   const uiStatus = await accept(
     api()(artifactSharesContract).status({ headers, body: target }),
     [200],
@@ -1127,6 +1138,18 @@ test("html sharing pins the selected version until an explicit update and resolv
     "artifact:read",
     "artifact:write",
   ]);
+  const privateStatus = await accept(
+    api()(artifactSharesContract).status({
+      headers: agentHeaders,
+      body: target,
+    }),
+    [200],
+  );
+  expect(privateStatus.body).toMatchObject({
+    audience: "private",
+    ownerUrl: `https://app.okou.ai${first.url}`,
+    url: null,
+  });
   const ownerReference = artifactReferencePath(first.deploymentId, "hint.pdf")
     .split("/")
     .at(-1)!;
@@ -1171,6 +1194,7 @@ test("html sharing pins the selected version until an explicit update and resolv
     [200],
   );
   expect(before.body).toMatchObject({
+    ownerUrl: `https://app.okou.ai${second.url}`,
     selectedTarget: target,
     selectedVersion: 1,
     candidateVersion: 2,
@@ -1239,6 +1263,19 @@ test("html sharing pins the selected version until an explicit update and resolv
     [200],
   );
   expect(current.body.target).toStrictEqual(newer);
+  session();
+  const revoked = await accept(
+    api()(artifactSharesContract).update({
+      headers: agentHeaders,
+      body: { target: newer, audience: "private" },
+    }),
+    [200],
+  );
+  expect(revoked.body).toMatchObject({
+    audience: "private",
+    url: null,
+    ownerUrl: `https://app.okou.ai${second.url}`,
+  });
 });
 
 test("public site names stay on the selected version and rotate after revocation", async () => {

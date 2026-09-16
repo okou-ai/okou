@@ -138,20 +138,30 @@ describe("Okou CLI lazy command loading", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each([[], ["file:write"], ["artifact:read"], ["artifact:write"]])(
-    "shows artifact sharing only with its own capability: %j",
+  it.each([
+    [],
+    ["file:write"],
+    ["file:read"],
+    ["artifact:read"],
+    ["artifact:write"],
+  ])(
+    "shows artifacts with a visibility or download capability: %j",
     (...capabilities: string[]) => {
       vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
       const cli = new Command("okou");
       registerCommands(cli);
       expect(cli.helpInformation().includes("artifact")).toBe(
         capabilities.some((capability) => {
-          return capability.startsWith("artifact:");
+          return (
+            capability.startsWith("artifact:") || capability === "file:read"
+          );
         }),
       );
       expect(buildHelpText().includes("okou artifact --help")).toBe(
         capabilities.some((capability) => {
-          return capability.startsWith("artifact:");
+          return (
+            capability.startsWith("artifact:") || capability === "file:read"
+          );
         }),
       );
     },

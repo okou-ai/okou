@@ -15,11 +15,19 @@ import { tmpdir } from "os";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { downloadFileCommand } from "../download-file";
+import { artifactCommand } from "../../artifact";
 import chalk from "chalk";
 
 const DOWNLOAD_URL = "http://localhost:3000/api/web/download-file";
 
-describe("okou web download-file command", () => {
+describe.each([
+  { name: "okou web download-file", command: downloadFileCommand, prefix: [] },
+  {
+    name: "okou artifact download",
+    command: artifactCommand,
+    prefix: ["download"],
+  },
+])("$name", ({ command, prefix }) => {
   vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);
@@ -40,6 +48,7 @@ describe("okou web download-file command", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
     rmSync(tmpDir, { recursive: true, force: true });
@@ -102,9 +111,10 @@ describe("okou web download-file command", () => {
           }),
         );
 
-        await downloadFileCommand.parseAsync([
+        await command.parseAsync([
           "node",
           "cli",
+          ...prefix,
           input,
           "-o",
           outPath,
@@ -139,7 +149,7 @@ describe("okou web download-file command", () => {
         }),
       );
 
-      await downloadFileCommand.parseAsync(["node", "cli", "uuid-default"]);
+      await command.parseAsync(["node", "cli", ...prefix, "uuid-default"]);
 
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       const parsed = JSON.parse(stdout) as Record<string, unknown>;
@@ -166,9 +176,10 @@ describe("okou web download-file command", () => {
       );
 
       await expect(async () => {
-        await downloadFileCommand.parseAsync([
+        await command.parseAsync([
           "node",
           "cli",
+          ...prefix,
           "missing-uuid",
           "-o",
           join(tmpDir, "missing.bin"),
@@ -191,9 +202,10 @@ describe("okou web download-file command", () => {
       );
 
       await expect(async () => {
-        await downloadFileCommand.parseAsync([
+        await command.parseAsync([
           "node",
           "cli",
+          ...prefix,
           "some-uuid",
           "-o",
           join(tmpDir, "f1.bin"),

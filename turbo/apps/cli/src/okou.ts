@@ -65,7 +65,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   web: null,
   video: null,
   host: ["host:read", "host:write"],
-  artifact: ["artifact:read", "artifact:write"],
+  artifact: ["artifact:read", "artifact:write", "file:read"],
   presentation: null,
   "presentation-template": "presentation-template:write",
   maps: "maps:read",
@@ -85,7 +85,8 @@ const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "image-recognition"]);
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
     name: "artifact",
-    description: "Inspect and change sharing for owned private artifacts",
+    description:
+      "Read or set an owned artifact's visibility and return its URL",
     load: async () => {
       return artifactCommand;
     },
@@ -602,7 +603,7 @@ export function buildHelpText(
       : []),
     ...commandExampleIfVisible(
       "artifact",
-      "  Share an artifact?     okou artifact --help",
+      "  Artifact visibility?   okou artifact --help",
       payload,
     ),
     ...commandExampleIfVisible(

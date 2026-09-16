@@ -28,7 +28,10 @@ import {
   generateArtifactPreviewUrl,
   putHostedSitesS3Object,
 } from "../external/s3";
-import { privateArtifactRecord } from "./private-artifact-storage.service";
+import {
+  privateArtifactRecord,
+  privateArtifactUrl,
+} from "./private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 
@@ -114,6 +117,10 @@ function ownedShareTarget(
       }
       return {
         targetId: file.id,
+        ownerUrl: new URL(
+          privateArtifactUrl(file.id, file.filename, file.metadata),
+          env("APP_URL"),
+        ).href,
         publicBrand: file.publicBrand,
         candidateVersion: null,
         target: {
@@ -148,6 +155,7 @@ function ownedShareTarget(
     const deployment = row.deployment;
     return {
       targetId: deployment.siteId,
+      ownerUrl: new URL(deployment.artifactUrl, env("APP_URL")).href,
       publicBrand: deployment.publicBrand,
       candidateVersion: deployment.deploymentVersion,
       target: {
@@ -253,6 +261,7 @@ const shareStatus$ = command(
     args: {
       readonly policy: ArtifactSharePolicy | null;
       readonly orgId: string;
+      readonly ownerUrl: string;
       readonly candidateVersion: number | null;
     },
     signal: AbortSignal,
@@ -265,6 +274,7 @@ const shareStatus$ = command(
     const policy = args.policy;
     const shortUrl = shortShareUrl(policy);
     return {
+      ownerUrl: args.ownerUrl,
       shareId: policy?.shareId ?? null,
       audience: policy?.audience ?? "private",
       organization: { id: args.orgId, name: org.name },
@@ -342,6 +352,7 @@ export const readArtifactShare$ = command(
       {
         policy: stored?.policy ?? null,
         orgId: args.orgId,
+        ownerUrl: candidate.ownerUrl,
         candidateVersion: candidate.candidateVersion,
       },
       signal,
@@ -511,6 +522,7 @@ export const updateArtifactShare$ = command(
       {
         policy,
         orgId: args.orgId,
+        ownerUrl: candidate.ownerUrl,
         candidateVersion: candidate.candidateVersion,
       },
       signal,

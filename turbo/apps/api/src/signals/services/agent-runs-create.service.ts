@@ -448,6 +448,7 @@ function buildAgentToolsPrompt(args: {
     ...(args.privateArtifactsEnabled
       ? [
           "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
+          "- Private artifact downloads: to download files referenced by `/artifacts/xxx`, use `okou artifact download -h`.",
         ]
       : []),
     ...(args.sshEnabled

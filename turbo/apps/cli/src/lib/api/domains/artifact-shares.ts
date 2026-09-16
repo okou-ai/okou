@@ -50,7 +50,7 @@ export async function getArtifactShareStatus(
   return response.body;
 }
 
-export async function shareArtifact(
+export async function setArtifactAudience(
   target: ArtifactShareTarget,
   audience: ArtifactShareStatus["audience"],
 ): Promise<ArtifactShareStatus> {
@@ -76,7 +76,7 @@ export async function shareArtifact(
   if (response.status !== 200) {
     handleError(
       response,
-      "Could not change artifact sharing. Check status before retrying; the change may have applied.",
+      "Could not change artifact visibility. Rerun without --visibility before retrying; the change may have applied.",
     );
   }
   return response.body;
