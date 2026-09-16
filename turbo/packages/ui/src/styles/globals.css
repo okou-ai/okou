@@ -152,18 +152,21 @@
    * friends all read this key, so components ask for "a border" and the system
    * decides how thick it is. Components must not hand-write a width.
    *
-   * `--border-width-emphasis` is for a line that is itself the signal rather
-   * than a boundary around something that already reads. Two cases qualify, and
-   * both are lines drawn against artwork:
+   * `--border-width-emphasis` is for one thing: a line drawn against artwork,
+   * where the hairline would read as part of the picture instead of as chrome.
+   * A boundary around something that already reads takes the hairline. Today
+   * that rule covers three kinds of line:
    *
-   *   1. A tile whose content is a picture — a chart silhouette, an avatar, a
-   *      template preview — where selection cannot be carried by a fill (the
-   *      artwork owns the interior) or by the label (it sits outside the box),
-   *      so the edge has to say it. A hairline cannot: one device pixel
-   *      appearing at the rim of a filled tile reads as an antialiasing
-   *      artifact, not as a state.
+   *   1. Selection on a tile whose content is a picture — a chart silhouette,
+   *      an avatar look, a template preview — where selection cannot be carried
+   *      by a fill (the artwork owns the interior) or by the label (it sits
+   *      outside the box), so the edge has to say it. A hairline cannot: one
+   *      device pixel appearing at the rim of a filled tile reads as an
+   *      antialiasing artifact, not as a state.
    *   2. A mark that overlaps artwork and needs a ring to stay legible against
    *      whatever is behind it — an annotation pin, a count badge on a preview.
+   *   3. A ring that marks artwork as the product's own and actionable, such as
+   *      the account avatar's editable ring, which is never not emphasized.
    *
    * In the first case it is a width for that whole surface, not for its
    * selected state. A selection must never change an element's metrics, so the

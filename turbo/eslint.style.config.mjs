@@ -125,12 +125,19 @@ export default [
     },
   },
   {
-    // The two that pin a whole pixel do it for the reason `docs/styles.md`
-    // records: a fractional border visibly repaints when the box's content
-    // resolves, so a card flickers at its edge as an image or an iframe lands
-    // inside it. Neither is a competing opinion about how thick a border is.
-    // The 404 page's `border-[24px]` is a mat around the artwork rather than a
-    // border on anything.
+    // Each file is exempt for its own reason, recorded at its own call site:
+    //
+    // - `chat-card.tsx` pins a whole pixel because a fractional border visibly
+    //   repaints when the card's content resolves, so the edge flickers as an
+    //   image or an iframe lands inside it. `docs/styles.md` records this.
+    // - `mermaid-diagram.tsx` pins one only to preserve the width the rule it
+    //   replaced drew. That is a weaker argument than the flicker one and is
+    //   worth re-examining on its own merits; it is carried unchanged here
+    //   rather than settled by a guard that was not written for it.
+    // - `not-found-page.tsx` uses `border-[24px]` as a mat around the artwork,
+    //   which is not a border on anything.
+    //
+    // None of the three is a competing opinion about how thick a border is.
     files: [
       "apps/platform/src/views/components/mermaid-diagram.tsx",
       "apps/platform/src/views/not-found-page.tsx",
