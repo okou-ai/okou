@@ -315,7 +315,11 @@ test("Grant connected banking access and continue", async () => {
 
   await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
   await readyChat();
-  const card = await screen.findByTestId("banking-action-card");
+  const summary = await screen.findByTestId("banking-action-card");
+  click(getButton("View details", summary));
+  const card = await screen.findByRole("dialog", {
+    name: "Banking access request",
+  });
   const account = await within(card).findByRole("checkbox", {
     name: /Operating account/u,
   });
@@ -377,7 +381,11 @@ test("Revoke active banking access after continuing the conversation", async () 
 
   await setupPage({ context, host: "app.okou.ai", path: RUN_PATH });
   await readyChat();
-  const card = await screen.findByTestId("banking-action-card");
+  const summary = await screen.findByTestId("banking-action-card");
+  click(getButton("View details", summary));
+  const card = await screen.findByRole("dialog", {
+    name: "Banking access request",
+  });
   const activeAccess = await within(card).findByText(
     "Access active for 1 account",
   );

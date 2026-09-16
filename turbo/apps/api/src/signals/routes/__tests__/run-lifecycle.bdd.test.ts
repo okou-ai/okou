@@ -895,6 +895,30 @@ async function setupSameThreadReuseScenario(sourceRunnerIdentity?: {
   };
 }
 
+async function scopedRuntimeScenario() {
+  const api = createRunsApi(context);
+  mockEnv(
+    "R2_USER_STORAGES_BUCKET_NAME",
+    `test-run-lifecycle-scoped-runtime-${randomUUID()}`,
+  );
+  const catalogVersion = `api-test-scoped-runtime-${randomUUID()}`;
+  await installApiTestConnectorCatalog({ catalogVersion });
+  const { actor, agentId, runnerGroup } = await entitledRunActor();
+  const createScopedRun = async (
+    prompt: string,
+    allowedConnectorSlugs: readonly string[],
+  ) => {
+    return await api.createDirectRun(actor, {
+      ...agentBackedDirectRunBody({ agentId, prompt }),
+      connectorScope: {
+        allowedConnectorSlugs,
+        allowedCustomConnectorIds: [],
+      },
+    });
+  };
+  return { api, actor, runnerGroup, catalogVersion, createScopedRun };
+}
+
 describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks", () => {
   it("names the deck guide in the agent tools prompt", async () => {
     const api = createRunsApi(context);
@@ -1511,31 +1535,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(requestController.signal.reason).toBe(abortError);
   });
 
-  it("memoizes scoped runtime entries by exact catalog identity", async () => {
-    const api = createRunsApi(context);
+  it("reuses scoped runtime entries and materializes sibling connectors", async () => {
+    const { api, actor, createScopedRun } = await scopedRuntimeScenario();
     const connectors = createConnectorBddApi(context);
-    const fw = createFirewallApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-scoped-runtime-${randomUUID()}`,
-    );
-    const initialCatalogVersion = `api-test-scoped-runtime-${randomUUID()}`;
-    await installApiTestConnectorCatalog({
-      catalogVersion: initialCatalogVersion,
-    });
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const createScopedRun = async (
-      prompt: string,
-      allowedConnectorSlugs: readonly string[],
-    ) => {
-      return await api.createDirectRun(actor, {
-        ...agentBackedDirectRunBody({ agentId, prompt }),
-        connectorScope: {
-          allowedConnectorSlugs,
-          allowedCustomConnectorIds: [],
-        },
-      });
-    };
 
     const firstRun = await createScopedRun("cold scoped connector runtime", [
       "x",
@@ -1560,6 +1562,14 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(completeSearch.connectors).toContainEqual(
       expect.objectContaining({ slug: "youtube" }),
     );
+  });
+
+  it("rematerializes scoped runtime entries after catalog identity rotation", async () => {
+    const { api, actor, createScopedRun } = await scopedRuntimeScenario();
+    const firstRun = await createScopedRun("warm scoped connector runtime", [
+      "x",
+    ]);
+    await api.requestCancelRun(actor, firstRun.runId, [200]);
 
     const rotatedCatalogVersion = `api-test-scoped-runtime-${randomUUID()}`;
     await installApiTestConnectorCatalog({
@@ -1569,21 +1579,47 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "materialize after catalog identity rotation",
       ["x"],
     );
+    expect((await api.readRun(actor, rotatedRun.runId)).status).toBe("pending");
     await api.requestCancelRun(actor, rotatedRun.runId, [200]);
+  });
 
+  it("rematerializes scoped runtime entries after capability identity rotation", async () => {
     const capabilityIdentityEnvName = "CAL_COM_OAUTH_CLIENT_ID";
-    const capabilityIdentityEnvValue = "api-test-calcom-oauth-client-id";
+    mockOptionalEnv(
+      capabilityIdentityEnvName,
+      "api-test-calcom-oauth-client-id",
+    );
+    const { api, actor, catalogVersion, createScopedRun } =
+      await scopedRuntimeScenario();
+    const firstRun = await createScopedRun("warm scoped connector runtime", [
+      "x",
+    ]);
+    await api.requestCancelRun(actor, firstRun.runId, [200]);
+
     mockOptionalEnv(capabilityIdentityEnvName, undefined);
-    await installApiTestConnectorCatalog({
-      catalogVersion: rotatedCatalogVersion,
-    });
+    await installApiTestConnectorCatalog({ catalogVersion });
     const capabilityRotatedPrompt =
       "materialize after capability identity rotation";
     const capabilityRotatedRun = await createScopedRun(
       capabilityRotatedPrompt,
       ["x"],
     );
+    expect((await api.readRun(actor, capabilityRotatedRun.runId)).status).toBe(
+      "pending",
+    );
     await api.requestCancelRun(actor, capabilityRotatedRun.runId, [200]);
+  });
+
+  it("omits filtered auth from scoped runtime claims after identity rotation", async () => {
+    const capabilityIdentityEnvName = "CAL_COM_OAUTH_CLIENT_ID";
+    mockOptionalEnv(capabilityIdentityEnvName, undefined);
+    const { api, actor, runnerGroup, createScopedRun } =
+      await scopedRuntimeScenario();
+    const fw = createFirewallApi(context);
+    const firstRun = await createScopedRun("warm scoped connector runtime", [
+      "x",
+    ]);
+    await api.requestCancelRun(actor, firstRun.runId, [200]);
 
     await fw.seedTestConnector(actor, {
       connectorSlug: "x",
@@ -1591,7 +1627,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       accessToken: "x-filtered-access",
       refreshToken: "x-filtered-refresh",
     });
-    mockOptionalEnv(capabilityIdentityEnvName, capabilityIdentityEnvValue);
+    mockOptionalEnv(
+      capabilityIdentityEnvName,
+      "api-test-calcom-oauth-client-id",
+    );
     await installApiTestConnectorCatalog({
       catalogVersion: `api-test-scoped-runtime-${randomUUID()}`,
       runtimeProjection: true,
