@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
-import { onRejection, settle } from "../utils";
+import { joinAll, onRejection, settle } from "../utils";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
@@ -17,6 +17,10 @@ import { command, computed, type Computed } from "ccstate";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import {
+  recordSharedThreadPhase,
+  measureSharedThreadPhase,
+} from "./shared-thread-telemetry";
 import {
   sharedThreadArtifactAuthorUserId,
   sharedThreadArtifactLogicalKey,
@@ -49,6 +53,7 @@ import {
 } from "./shared-thread-artifact-snapshot.service";
 import {
   initializeSharedThreadArtifacts$,
+  prepareSharedThreadArtifactCopies$,
   publishSharedThreadArtifacts$,
   removeSharedThreadArtifactCopies,
   sharedThreadArtifactsReadable,
@@ -337,7 +342,7 @@ const persistSharedThread$ = command(
     args: CreateSharedThreadArgs,
     snapshot: {
       readonly id: string;
-      readonly title: string;
+      readonly title: Promise<string>;
       readonly createdAt: Date;
       readonly messages: readonly SharedMessage[];
       readonly plan: SharedThreadArtifactPlan | null;
@@ -350,6 +355,9 @@ const persistSharedThread$ = command(
       if (plan) {
         await set(initializeSharedThreadArtifacts$, plan, signal);
       }
+      // A durable, denied identity lets deletion/revocation find in-flight
+      // snapshots. Only artifact snapshots may exist before the title settles.
+      const initialTitle = plan ? "Shared conversation" : await title;
       signal.throwIfAborted();
       await database.transaction(async (transaction) => {
         const [sharedThread] = await transaction
@@ -360,7 +368,7 @@ const persistSharedThread$ = command(
             orgId: args.orgId,
             hasArtifactSnapshot: plan !== null,
             sourceChatThreadId: args.threadId,
-            title,
+            title: initialTitle,
             ...sharedThreadMessageColumns(plan?.messages ?? messages),
             publicBrand: args.publicBrand,
             createdAt,
@@ -368,6 +376,9 @@ const persistSharedThread$ = command(
           .returning({ id: sharedThreads.id });
         if (!sharedThread) {
           throw new Error("Shared thread insert did not return a row");
+        }
+        if (plan) {
+          return;
         }
         await transaction.insert(artifacts).values({
           orgId: args.orgId,
@@ -377,7 +388,7 @@ const persistSharedThread$ = command(
           logicalKey: sharedThreadArtifactLogicalKey(sharedThread.id),
           projectionFileId: null,
           projectionCreatedAt: createdAt,
-          title,
+          title: initialTitle,
           thumbnail: null,
           createdAt,
           updatedAt: createdAt,
@@ -385,6 +396,24 @@ const persistSharedThread$ = command(
       });
       signal.throwIfAborted();
       if (plan) {
+        await set(prepareSharedThreadArtifactCopies$, plan, signal);
+        // Never hold the deletion lock or a DB transaction while awaiting LLM.
+        const finalTitle = await title;
+        signal.throwIfAborted();
+        const updated = await database
+          .update(sharedThreads)
+          .set({ title: finalTitle })
+          .where(
+            and(
+              eq(sharedThreads.id, id),
+              eq(sharedThreads.userId, args.userId),
+            ),
+          )
+          .returning({ id: sharedThreads.id });
+        signal.throwIfAborted();
+        if (updated.length === 0) {
+          throw new SharedThreadArtifactUnavailable();
+        }
         await set(publishSharedThreadArtifacts$, plan, signal);
       }
     }
@@ -426,12 +455,103 @@ const persistSharedThread$ = command(
   },
 );
 
+const prepareAndPersistSharedThread$ = command(
+  async (
+    { get, set },
+    args: CreateSharedThreadArgs,
+    snapshot: {
+      readonly id: string;
+      readonly messages: readonly SharedMessage[];
+      readonly attachmentCopies: ReadonlyMap<
+        string,
+        SharedThreadAttachmentCopy
+      >;
+      readonly title: Promise<string>;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { id, messages, attachmentCopies, title } = snapshot;
+    const preparationStartedAt = performance.now();
+    const enabled = await get(
+      privateArtifactCreationEnabled(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    const preparation =
+      enabled ||
+      [...attachmentCopies.values()].some((copy) => {
+        return copy.isPrivate;
+      })
+        ? await settle(
+            set(
+              prepareSharedThreadArtifacts$,
+              { ...args, threadId: id, messages },
+              signal,
+            ),
+            signal,
+          )
+        : { ok: true as const, value: null };
+    recordSharedThreadPhase({
+      shareId: id,
+      phase: "prepare",
+      durationMs: Math.round(performance.now() - preparationStartedAt),
+      status: preparation.ok ? "success" : "failed",
+    });
+    if (!preparation.ok) {
+      if (preparation.error instanceof SharedThreadArtifactUnavailable) {
+        return { kind: "artifact-unavailable" } as const;
+      }
+      throw preparation.error;
+    }
+    const plan = preparation.value;
+    if (
+      plan &&
+      Buffer.byteLength(JSON.stringify(plan.messages)) >
+        SHARED_THREAD_MAX_SERIALIZED_BYTES
+    ) {
+      return { kind: "too-large" } as const;
+    }
+    await set(
+      publishSharedThreadAttachments$,
+      attachmentCopies.values(),
+      signal,
+    );
+    const publication = await settle(
+      set(
+        persistSharedThread$,
+        args,
+        {
+          id,
+          title,
+          createdAt: nowDate(),
+          messages,
+          plan,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!publication.ok) {
+      if (publication.error instanceof SharedThreadArtifactUnavailable) {
+        return { kind: "artifact-unavailable" } as const;
+      }
+      throw publication.error;
+    }
+    await publishUserSignal(
+      [args.userId],
+      `chatThreadArtifactsChanged:${args.threadId}`,
+    );
+    signal.throwIfAborted();
+    return { kind: "created", id } as const;
+  },
+);
+
 export const createSharedThread$ = command(
   async (
     { get, set },
     args: CreateSharedThreadArgs,
     signal: AbortSignal,
   ): Promise<CreateSharedThreadResult> => {
+    const startedAt = performance.now();
     const database = set(writeDb$);
     if (!(await ownsSharedThreadSource(database, args, signal))) {
       return { kind: "thread-not-found" };
@@ -474,76 +594,30 @@ export const createSharedThread$ = command(
       return { kind: "too-large" };
     }
 
-    const title = await generateSharedThreadTitle(messages, signal);
-    signal.throwIfAborted();
-    const createdAt = nowDate();
-    const id = shareId;
-    const enabled = await get(
-      privateArtifactCreationEnabled(args.orgId, args.userId),
+    const title = measureSharedThreadPhase(
+      { shareId, phase: "title" },
+      generateSharedThreadTitle(messages, signal),
+    );
+    // Join every started branch even when preparation fails or the request is
+    // cancelled; no copy may outlive rollback and write into a revoked share.
+    const [, result] = await measureSharedThreadPhase(
+      { shareId, phase: "total" },
+      joinAll([
+        title,
+        set(
+          prepareAndPersistSharedThread$,
+          args,
+          { id: shareId, messages, attachmentCopies, title },
+          signal,
+        ),
+      ]),
+      ([, publication]) => {
+        return publication.kind;
+      },
+      startedAt,
     );
     signal.throwIfAborted();
-    const preparation =
-      enabled ||
-      [...attachmentCopies.values()].some((copy) => {
-        return copy.isPrivate;
-      })
-        ? await settle(
-            set(
-              prepareSharedThreadArtifacts$,
-              { ...args, threadId: id, messages },
-              signal,
-            ),
-            signal,
-          )
-        : { ok: true as const, value: null };
-    if (!preparation.ok) {
-      if (preparation.error instanceof SharedThreadArtifactUnavailable) {
-        return { kind: "artifact-unavailable" };
-      }
-      throw preparation.error;
-    }
-    const plan = preparation.value;
-    if (
-      plan &&
-      Buffer.byteLength(JSON.stringify(plan.messages)) >
-        SHARED_THREAD_MAX_SERIALIZED_BYTES
-    ) {
-      return { kind: "too-large" };
-    }
-    await set(
-      publishSharedThreadAttachments$,
-      attachmentCopies.values(),
-      signal,
-    );
-    const publication = await settle(
-      set(
-        persistSharedThread$,
-        args,
-        {
-          id,
-          title,
-          createdAt,
-          messages,
-          plan,
-        },
-        signal,
-      ),
-      signal,
-    );
-    if (!publication.ok) {
-      if (publication.error instanceof SharedThreadArtifactUnavailable) {
-        return { kind: "artifact-unavailable" };
-      }
-      throw publication.error;
-    }
-    signal.throwIfAborted();
-
-    await publishUserSignal(
-      [args.userId],
-      `chatThreadArtifactsChanged:${args.threadId}`,
-    );
-    signal.throwIfAborted();
-    return { kind: "created", id };
+    return result;
   },
 );
 

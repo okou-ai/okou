@@ -84,7 +84,6 @@ import { bankingRoutes } from "./routes/banking";
 import { chatThreadRoutes } from "./routes/chat-threads";
 import { welcomeChatThreadRoutes } from "./routes/welcome-chat-threads";
 import { chatEventsRoutes } from "./routes/chat-events";
-import { chatTranslationRoutes } from "./routes/chat-translation";
 import { sharedThreadRoutes } from "./routes/shared-threads";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
@@ -293,7 +292,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatThreadRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
-  ...chatTranslationRoutes,
   ...sharedThreadRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,

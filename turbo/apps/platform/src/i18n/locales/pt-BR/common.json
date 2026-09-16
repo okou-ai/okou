@@ -1961,6 +1961,8 @@
       "providerIncompatibleAction": "Iniciar uma nova sessão",
       "providerIncompatiblePrefix": "Esta sessão foi iniciada com um provedor de modelo diferente e não pode continuar com o atual.",
       "recovery": {
+        "autonomyLimitDescription": "O limite de execuções automáticas consecutivas foi atingido. Confirme para continuar.",
+        "autonomyLimitTitle": "Limite de execuções automáticas atingido",
         "capacityDescription": "Tente novamente em instantes ou troque de modelo.",
         "capacityTitle": "Este modelo está ocupado no momento",
         "claudeCode": "Claude Code",
@@ -3013,27 +3015,6 @@
     "toasts": {
       "copied": "Copiado",
       "deleted": "Conversa excluída"
-    },
-    "translation": {
-      "action": "Traduzir",
-      "close": "Fechar tradução",
-      "copy": "Copiar tradução",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Tradução",
-      "targetLanguage": "Idioma da tradução"
     },
     "voice": {
       "checkingLimit": "Verificando limite da entrada de voz",

@@ -1,5 +1,5 @@
 import { GOOGLE_ADS_ADSMARCH_ACCOUNT_ID } from "@okouai/core/google-ads-account";
-import { command, state } from "ccstate";
+import { command } from "ccstate";
 import {
   acquisitionAttributionContract,
   type GoogleAdsConversionMilestoneKind,
@@ -7,9 +7,13 @@ import {
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { user$ } from "../auth.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { jsonParseOr } from "../utils.ts";
+import {
+  createAttributionRequest,
+  readAttributionContext$,
+  type AttributionContext,
+} from "./attribution-request.ts";
 import {
   fireGoogleAdsConversion,
   GOOGLE_ADS_ADSMARCH_FIRST_RUN_COMPLETED_SEND_TO,
@@ -24,7 +28,6 @@ const GOOGLE_ADS_MILESTONE_STORAGE_KEY =
   "googleAds.18407336975.conversionMilestones";
 
 const milestoneStorage = localStorageSignals(GOOGLE_ADS_MILESTONE_STORAGE_KEY);
-const bootstrappedUserIds$ = state<ReadonlySet<string>>(new Set());
 
 interface StoredMilestoneState {
   readonly transactionIds: readonly string[];
@@ -103,25 +106,31 @@ function writeUserMilestoneState(
   });
 }
 
-export const syncGoogleAdsConversionMilestones$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-    const user = await get(user$);
-    signal.throwIfAborted();
+const syncMilestones$ = command(
+  async (
+    { get, set },
+    context: AttributionContext,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const user = context.user;
     if (!user) {
       return false;
     }
 
-    const client = get(apiClient$)(acquisitionAttributionContract);
+    const client = get(apiClient$)(acquisitionAttributionContract, {
+      getTokenGuard: context.getTokenGuard,
+    });
     const response = await accept(
       client.googleAdsMilestones({ fetchOptions: { signal } }),
       [200],
     );
     signal.throwIfAborted();
+    context.assertCurrent();
 
     // Old-account milestones use UPLOAD_CLICKS, not these website actions.
     // Unresolved ownership must not initialize or advance the delivery state.
     if (response.body.googleAdsAccountId !== GOOGLE_ADS_ADSMARCH_ACCOUNT_ID) {
-      return false;
+      return response.body.googleAdsAccountId !== null;
     }
 
     const stored = storedMilestonesByUser(get(milestoneStorage.get$));
@@ -170,20 +179,26 @@ export const syncGoogleAdsConversionMilestones$ = command(
   },
 );
 
+export const syncGoogleAdsConversionMilestones$ = command(
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const context = await set(readAttributionContext$, signal);
+    return await set(syncMilestones$, context, signal);
+  },
+);
+
+const bootstrapRequest = createAttributionRequest(
+  syncMilestones$,
+  (resolved) => {
+    return resolved;
+  },
+);
+
 export const bootstrapGoogleAdsConversionMilestones$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const user = await get(user$);
-    signal.throwIfAborted();
-    if (!user || get(bootstrappedUserIds$).has(user.id)) {
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    const context = await set(readAttributionContext$, signal);
+    if (!context.user) {
       return;
     }
-    const resolved = await set(syncGoogleAdsConversionMilestones$, signal);
-    signal.throwIfAborted();
-    if (!resolved) {
-      return;
-    }
-    set(bootstrappedUserIds$, (previous) => {
-      return new Set([...previous, user.id]);
-    });
+    await set(bootstrapRequest.request$, context, signal);
   },
 );

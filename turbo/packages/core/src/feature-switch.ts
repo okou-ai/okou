@@ -45,12 +45,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SocialStatus]: {
-    maintainer: "liangyou@okou.ai",
-    description: "On-demand public Social service health",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
@@ -236,6 +230,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Morning Brief and email subscription management in Preferences.",
     enabled: true,
   },
+  [FeatureSwitchKey.SimpleMorningBrief]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Select the platform-funded simple-morning-brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+    enabled: false,
+  },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -351,12 +351,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatTranslation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Translate selected assistant text into a remembered target language.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:
@@ -414,12 +408,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "linghan@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
-  },
-  [FeatureSwitchKey.TelegramDmSessions]: {
-    maintainer: "linghan@okou.ai",
-    description:
-      "Use agent/model-scoped Telegram DM sessions and separate reply chains.",
-    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",

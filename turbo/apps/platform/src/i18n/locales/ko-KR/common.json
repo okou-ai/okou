@@ -1918,6 +1918,8 @@
       "providerIncompatibleAction": "새 세션 시작",
       "providerIncompatiblePrefix": "이 세션은 다른 모델 공급자로 시작되어 현재 공급자로 계속할 수 없습니다.",
       "recovery": {
+        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
+        "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 전환하세요.",
         "capacityTitle": "이 모델은 지금 혼잡합니다",
         "claudeCode": "Claude Code",
@@ -2958,27 +2960,6 @@
     "toasts": {
       "copied": "복사됨",
       "deleted": "채팅 삭제됨"
-    },
-    "translation": {
-      "action": "번역",
-      "close": "번역 닫기",
-      "copy": "번역 복사",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "번역",
-      "targetLanguage": "번역 언어"
     },
     "voice": {
       "checkingLimit": "음성 입력 제한 확인 중",

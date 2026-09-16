@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
@@ -149,6 +149,9 @@ function storedS3ObjectResponse(
   const body =
     object?.body ?? (object ? new Uint8Array(object.size) : undefined);
   return {
+    ETag: body
+      ? `"${createHash("md5").update(body).digest("hex")}"`
+      : undefined,
     ContentLength: object?.size,
     ContentType: object?.contentType,
     LastModified: object ? nowDate() : undefined,

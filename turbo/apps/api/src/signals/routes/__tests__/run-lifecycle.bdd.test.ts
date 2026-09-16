@@ -13392,36 +13392,26 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
   });
 
-  it("advertises live Social status only while the feature is enabled", async () => {
+  it("advertises live Social status for an ordinary organization", async () => {
     const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    for (const enabled of [false, true]) {
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SocialStatus]: enabled,
-      });
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "check public social service health",
-        modelProvider: "anthropic-api-key",
-      });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-      expect(prompt).toContain("okou social capabilities [platform] --json");
-      expect(prompt).toContain(
-        "total/page limits, source constraints, and advanced inputs",
-      );
-      if (enabled) {
-        expect(prompt).toContain("okou social status [platform] --json");
-        expect(prompt).toContain(
-          "health does not establish caller access, account quota, or Okou balance",
-        );
-      } else {
-        expect(prompt).not.toContain("okou social status [platform] --json");
-      }
-      await api.requestCancelRun(actor, run.runId, [200]);
-    }
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "check public social service health",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou social capabilities [platform] --json");
+    expect(prompt).toContain(
+      "total/page limits, source constraints, and advanced inputs",
+    );
+    expect(prompt).toContain("okou social status [platform] --json");
+    expect(prompt).toContain(
+      "health does not establish caller access, account quota, or Okou balance",
+    );
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("advertises Slack bot reads for an ordinary organization", async () => {
@@ -13459,30 +13449,17 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
         (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
       if (enabled) {
         expect(prompt).toContain("okou ssh host list --json");
-        expect(prompt).toContain("failure_reason and effects, not error text");
-        expect(prompt).toContain(
-          "okou ssh upload <connection-id> <local-file> <remote-file> --json",
-        );
-        expect(prompt).toContain(
-          "okou ssh download <connection-id> <remote-file> <local-file> --json",
-        );
-        expect(prompt).toContain("1 GiB (1,073,741,824 bytes) per file");
-        expect(prompt).toContain(
-          "15 minutes total per helper invocation, including setup and I/O waits",
-        );
-        expect(prompt).toContain(
-          "2 simultaneous transfers per Run, shared by uploads and downloads",
-        );
-        expect(prompt).toContain("No option overrides these limits");
-        expect(prompt).toContain("okou ssh session read <session-id>");
-        expect(prompt).toContain("Read waits up to 10 seconds for progress");
-        expect(prompt).toContain("--wait 0");
-        expect(prompt).toContain(
-          "35 seconds collecting, 256 chunks and 64 page requests",
-        );
-        expect(prompt).toContain(
-          "CLI exit 0 means the read succeeded, not that the remote process succeeded",
-        );
+        expect(prompt).toContain("okou ssh exec");
+        expect(prompt).toContain("okou ssh session");
+        expect(prompt).toContain("okou ssh upload");
+        expect(prompt).toContain("okou ssh download");
+        expect(prompt).toContain("okou ssh --help");
+        expect(prompt).toContain("relevant subcommand's `--help` before use");
+        const sshGuidance = prompt.split("\n").filter((line) => {
+          return line.startsWith("- SSH");
+        });
+        expect(sshGuidance).toHaveLength(1);
+        expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
       } else {
         expect(prompt).not.toContain("okou ssh");
       }

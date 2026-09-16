@@ -52,6 +52,9 @@ surface; the index does not replace their detailed rules.
   publication-order evidence.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
+- [Morning Brief migration state](./morning-brief-migration-state.md): the
+  canonical reader for a member's existing brief, its ownership and thread
+  invariants, and the boundary the `simple-morning-brief` cutover must respect.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload

@@ -20,11 +20,28 @@ import { artifactHash } from "../../lib/file-url";
 import { db$ } from "../external/db";
 import {
   copyArtifactShareObject,
-  downloadHostedSitesS3Buffer,
+  readHostedSiteSnapshotSource,
   putHostedSitesS3Object,
   readArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
+import { mapConcurrent } from "../../lib/map-concurrent";
+import {
+  recordSharedThreadPhase,
+  measureSharedThreadPhase,
+} from "./shared-thread-telemetry";
+import {
+  ARTIFACT_REFERENCE_PATTERN as REFERENCE_PATTERN,
+  artifactTextContentType,
+  artifactTextReferences,
+  MAX_ARTIFACT_TEXT_BYTES as MAX_TEXT_BYTES,
+  MAX_ARTIFACT_TOTAL_TEXT_BYTES as MAX_TOTAL_TEXT_BYTES,
+} from "../../lib/artifact-text-references";
+import {
+  collectHostedSiteDependencies$,
+  hostedSiteDeliveryManifest,
+} from "./hosted-site-dependencies.service";
+
 import {
   artifactFileReference,
   privateArtifactRecord,
@@ -36,10 +53,6 @@ import {
 import { artifactReferenceRecord } from "./artifact-reference.service";
 
 const MAX_RESOURCES = 100;
-const MAX_TEXT_BYTES = 4 * 1024 * 1024;
-const MAX_TOTAL_TEXT_BYTES = 32 * 1024 * 1024;
-const REFERENCE_PATTERN =
-  /https?:\/\/[^\s<>"'`)\]]+|\/artifacts\/[^\s<>"'`)\]]+|\/api\/[^\s<>"'`)\]]+/gu;
 
 export class SharedThreadArtifactUnavailable extends Error {
   constructor() {
@@ -52,6 +65,7 @@ type SnapshotTarget = SharedThreadArtifactPolicy["resources"][string];
 interface SnapshotCopy {
   readonly bucket: string;
   readonly sourceKey: string;
+  readonly sourceEtag?: string;
   readonly targetKey: string;
   readonly hosted: boolean;
   readonly body?: Buffer;
@@ -237,10 +251,11 @@ const allocateSnapshotReference$ = command(
       readonly id: string;
       readonly kind: "file" | "html";
       readonly filename: string;
-      readonly reservedTokens: ReadonlySet<string>;
+      readonly reservedTokens: Set<string>;
     },
     signal: AbortSignal,
   ) => {
+    const startedAt = performance.now();
     for (let attempt = 0; attempt < 10; attempt += 1) {
       const token = artifactHash(
         args.threadId,
@@ -249,6 +264,9 @@ const allocateSnapshotReference$ = command(
       if (args.reservedTokens.has(token)) {
         continue;
       }
+      // Reserve before awaiting storage: aliases with different extensions
+      // still share the same token namespace in the snapshot policy.
+      args.reservedTokens.add(token);
       const registered = await settle(
         set(
           registerArtifactDelivery$,
@@ -273,6 +291,12 @@ const allocateSnapshotReference$ = command(
         signal,
       );
       if (registered.ok) {
+        recordSharedThreadPhase({
+          shareId: args.threadId,
+          phase: "alias",
+          durationMs: Math.round(performance.now() - startedAt),
+          attempts: attempt + 1,
+        });
         return token;
       }
       if (!(registered.error instanceof ArtifactDeliveryAliasConflict)) {
@@ -288,7 +312,7 @@ const allocateSnapshotReference$ = command(
 const privateFileSnapshot$ = command(
   async (
     { get, set },
-    args: SnapshotOwner & { readonly reservedTokens: ReadonlySet<string> },
+    args: SnapshotOwner & { readonly reservedTokens: Set<string> },
     reference: ResourceReference,
     signal: AbortSignal,
   ) => {
@@ -374,60 +398,95 @@ function ownedHostedDeployment(
   });
 }
 
-function hostedSnapshotCopies(
-  args: {
-    readonly threadId: string;
-    readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
-    readonly deployment: typeof privateHostedDeployments.$inferSelect;
-    readonly target: Extract<SnapshotTarget, { kind: "html" }>;
-    readonly budget: { sourceBytes: number; outputBytes: number };
-    readonly rewrite: (content: string) => Promise<string>;
-  },
-  signal: AbortSignal,
-) {
-  return computed(async (get) => {
+const hostedSnapshotCopies$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly threadId: string;
+      readonly publicBrand: SharedThreadArtifactPolicy["publicBrand"];
+      readonly deployment: typeof privateHostedDeployments.$inferSelect;
+      readonly target: Extract<SnapshotTarget, { kind: "html" }>;
+      readonly budget: { sourceBytes: number; outputBytes: number };
+      readonly rewrite: (content: string) => Promise<string>;
+    },
+    signal: AbortSignal,
+  ) => {
     const { deployment, target, budget, rewrite } = args;
     const copies: SnapshotCopy[] = [];
     const bucket = sharedThreadArtifactsBucket();
+    const index = await set(
+      collectHostedSiteDependencies$,
+      deployment,
+      bucket,
+      signal,
+    );
+    if (index.status !== "complete") {
+      throw new SharedThreadArtifactUnavailable();
+    }
     const prefix = `shared-artifacts/${args.publicBrand}/${args.threadId}/${deployment.id}`;
     for (const [path, entry] of Object.entries(deployment.manifest.files)) {
       signal.throwIfAborted();
       const sourceKey = `${deployment.r2Prefix}${path}`;
       const targetKey = `${prefix}${path}`;
-      if (
-        /^(?:text\/(?:html|css)|(?:application|text)\/(?:javascript|json))(?:;|$)/u.test(
-          entry.contentType,
-        )
-      ) {
+      const copy = { bucket, sourceKey, targetKey, hosted: true };
+      if (!artifactTextContentType(entry.contentType)) {
+        copies.push(copy);
+        continue;
+      }
+      const indexed = index.files[path];
+      if (!indexed || indexed.size > MAX_TEXT_BYTES) {
+        throw new SharedThreadArtifactUnavailable();
+      }
+      budget.sourceBytes += indexed.size;
+      if (budget.sourceBytes > MAX_TOTAL_TEXT_BYTES) {
+        throw new SharedThreadArtifactUnavailable();
+      }
+      // Re-resolve ownership at share time. The index contains references,
+      // never an authorization grant, and may include recursive dependencies.
+      const references = indexed.references.join("\n");
+      const rewrittenReferences = await rewrite(references);
+      signal.throwIfAborted();
+      if (references === rewrittenReferences) {
+        budget.outputBytes += indexed.size;
+        target.manifest.files[path] = {
+          ...entry,
+          size: indexed.size,
+          sha256: indexed.sha256,
+        };
+        copies.push({ ...copy, sourceEtag: indexed.etag });
+      } else {
+        const read = await settle(
+          get(
+            readHostedSiteSnapshotSource(
+              bucket,
+              sourceKey,
+              signal,
+              indexed.etag,
+            ),
+          ),
+          signal,
+        );
+        if (!read.ok) {
+          if (
+            read.error instanceof Error &&
+            ["NoSuchKey", "PreconditionFailed"].includes(read.error.name)
+          ) {
+            throw new SharedThreadArtifactUnavailable();
+          }
+          throw read.error;
+        }
+        const original = read.value;
         if (
-          entry.size > MAX_TEXT_BYTES ||
-          budget.sourceBytes + entry.size > MAX_TOTAL_TEXT_BYTES
+          createHash("sha256").update(original.buffer).digest("hex") !==
+          indexed.sha256
         ) {
           throw new SharedThreadArtifactUnavailable();
         }
-        const original = await get(
-          downloadHostedSitesS3Buffer(
-            bucket,
-            sourceKey,
-            {
-              maxBytes: MAX_TEXT_BYTES,
-            },
-            signal,
-          ),
+        const body = Buffer.from(
+          await rewrite(original.buffer.toString("utf8")),
         );
         signal.throwIfAborted();
-        budget.sourceBytes += original.byteLength;
-        if (
-          original.byteLength > MAX_TEXT_BYTES ||
-          budget.sourceBytes > MAX_TOTAL_TEXT_BYTES
-        ) {
-          throw new SharedThreadArtifactUnavailable();
-        }
-        const body = Buffer.from(await rewrite(original.toString("utf8")));
-        if (
-          body.byteLength > MAX_TEXT_BYTES ||
-          budget.outputBytes + body.byteLength > MAX_TOTAL_TEXT_BYTES
-        ) {
+        if (body.byteLength > MAX_TEXT_BYTES) {
           throw new SharedThreadArtifactUnavailable();
         }
         budget.outputBytes += body.byteLength;
@@ -436,16 +495,10 @@ function hostedSnapshotCopies(
           size: body.byteLength,
           sha256: createHash("sha256").update(body).digest("hex"),
         };
-        copies.push({
-          bucket,
-          sourceKey,
-          targetKey,
-          hosted: true,
-          body,
-          contentType: entry.contentType,
-        });
-      } else {
-        copies.push({ bucket, sourceKey, targetKey, hosted: true });
+        copies.push({ ...copy, body, contentType: entry.contentType });
+      }
+      if (budget.outputBytes > MAX_TOTAL_TEXT_BYTES) {
+        throw new SharedThreadArtifactUnavailable();
       }
     }
     copies.push({
@@ -457,8 +510,8 @@ function hostedSnapshotCopies(
       contentType: "application/json",
     });
     return copies;
-  });
-}
+  },
+);
 
 async function rewriteSnapshotMessages(
   sourceMessages: readonly SharedMessage[],
@@ -505,6 +558,16 @@ function snapshotPolicy(
   });
 }
 
+function replaceSnapshotReferences(
+  content: string,
+  replacements: ReadonlyMap<string, string>,
+): string {
+  return content.replace(REFERENCE_PATTERN, (match) => {
+    const value = match.replace(/[.,;!]+$/u, "");
+    return `${replacements.get(value) ?? value}${match.slice(value.length)}`;
+  });
+}
+
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
@@ -513,23 +576,18 @@ export const prepareSharedThreadArtifacts$ = command(
     signal: AbortSignal,
   ): Promise<SharedThreadArtifactPlan | null> => {
     const resources = new Map<string, SnapshotResource>();
+    const pendingResources = new Map<string, Promise<SnapshotResource>>();
+    const hostedQueue: {
+      deployment: typeof privateHostedDeployments.$inferSelect;
+      target: Extract<SnapshotTarget, { kind: "html" }>;
+    }[] = [];
     const reservedTokens = new Set<string>();
     const copies: SnapshotCopy[] = [];
     const budget = { sourceBytes: 0, outputBytes: 0 };
 
-    async function resolve(
+    async function allocate(
       reference: ResourceReference,
     ): Promise<SnapshotResource> {
-      const existing = resources.get(reference.id);
-      if (existing) {
-        if (reference.key && reference.key !== existing.sourceKey) {
-          throw new SharedThreadArtifactUnavailable();
-        }
-        return existing;
-      }
-      if (resources.size >= MAX_RESOURCES) {
-        throw new SharedThreadArtifactUnavailable();
-      }
       const file = await set(
         privateFileSnapshot$,
         { ...args, reservedTokens },
@@ -538,7 +596,6 @@ export const prepareSharedThreadArtifacts$ = command(
       );
       signal.throwIfAborted();
       if (file) {
-        reservedTokens.add(file.resource.token);
         resources.set(reference.id, file.resource);
         copies.push(file.copy);
         return file.resource;
@@ -558,7 +615,7 @@ export const prepareSharedThreadArtifacts$ = command(
         },
         signal,
       );
-      reservedTokens.add(token);
+      const sourceManifest = hostedSiteDeliveryManifest(deployment.manifest);
       const target: Extract<SnapshotTarget, { kind: "html" }> = {
         kind: "html",
         id: deployment.id,
@@ -566,7 +623,7 @@ export const prepareSharedThreadArtifacts$ = command(
         snapshotId: args.threadId,
         deploymentVersion: deployment.deploymentVersion,
         manifest: {
-          ...deployment.manifest,
+          ...sourceManifest,
           access: "owner-private-v1",
           publicBrand: args.publicBrand,
           files: { ...deployment.manifest.files },
@@ -577,47 +634,52 @@ export const prepareSharedThreadArtifacts$ = command(
         target,
         url: resourceUrl(args.publicBrand, token, target),
       };
-      // Register before walking dependencies so self references and cycles share
-      // one pinned deployment instead of recursively creating new snapshots.
+      // Walk dependency bodies after allocation. Cycles need only each other's
+      // reserved URL, never a promise for a recursively completed snapshot.
       resources.set(reference.id, resource);
-      const bundle = await get(
-        hostedSnapshotCopies(
-          {
-            ...args,
-            deployment,
-            target,
-            budget,
-            rewrite,
-          },
-          signal,
-        ),
-      );
+      hostedQueue.push({ deployment, target });
+      return resource;
+    }
+
+    async function resolve(
+      reference: ResourceReference,
+    ): Promise<SnapshotResource> {
+      let pending = pendingResources.get(reference.id);
+      if (!pending) {
+        if (pendingResources.size >= MAX_RESOURCES) {
+          throw new SharedThreadArtifactUnavailable();
+        }
+        pending = allocate(reference);
+        pendingResources.set(reference.id, pending);
+      }
+      const resource = await pending;
       signal.throwIfAborted();
-      copies.push(...bundle);
+      if (reference.key && reference.key !== resource.sourceKey) {
+        throw new SharedThreadArtifactUnavailable();
+      }
       return resource;
     }
 
     async function rewrite(content: string): Promise<string> {
-      const replacements = new Map<string, string>();
-      for (const match of content.matchAll(REFERENCE_PATTERN)) {
-        const value = match[0].replace(/[.,;!]+$/u, "");
-        if (replacements.has(value)) {
-          continue;
-        }
-        const source = value.replaceAll("&amp;", "&");
-        const reference = await get(resourceReference(source, signal));
-        signal.throwIfAborted();
-        if (!reference) {
-          continue;
-        }
-        const resource = await resolve(reference);
-        signal.throwIfAborted();
-        replacements.set(value, `${resource.url}${reference.suffix}`);
-      }
-      return content.replace(REFERENCE_PATTERN, (match) => {
-        const value = match.replace(/[.,;!]+$/u, "");
-        return `${replacements.get(value) ?? value}${match.slice(value.length)}`;
-      });
+      const replacements = new Map(
+        await mapConcurrent(
+          artifactTextReferences(content),
+          10,
+          async (value) => {
+            const source = value.replaceAll("&amp;", "&");
+            const reference = await get(resourceReference(source, signal));
+            signal.throwIfAborted();
+            if (!reference) {
+              return [value, value] as const;
+            }
+            const resource = await resolve(reference);
+            signal.throwIfAborted();
+            return [value, `${resource.url}${reference.suffix}`] as const;
+          },
+        ),
+      );
+      signal.throwIfAborted();
+      return replaceSnapshotReferences(content, replacements);
     }
 
     const messages = await rewriteSnapshotMessages(
@@ -628,6 +690,17 @@ export const prepareSharedThreadArtifacts$ = command(
     if (resources.size === 0) {
       return null;
     }
+    // Processing a site may enqueue more sites. Each deployment is allocated
+    // once, so nested, repeated, and cyclic references terminate naturally.
+    for (const site of hostedQueue) {
+      const bundle = await set(
+        hostedSnapshotCopies$,
+        { ...args, ...site, budget, rewrite },
+        signal,
+      );
+      signal.throwIfAborted();
+      copies.push(...bundle);
+    }
     const policy = snapshotPolicy(args, resources);
     return { messages, policy, copies };
   },
@@ -635,11 +708,22 @@ export const prepareSharedThreadArtifacts$ = command(
 
 export const copySharedThreadArtifacts$ = command(
   async ({ get }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
-    for (let start = 0; start < plan.copies.length; start += 10) {
-      // Drain every started copy before cleanup can remove its destination.
-      const results = await Promise.allSettled(
-        plan.copies.slice(start, start + 10).map((copy) => {
-          return copy.body !== undefined
+    const result = await settle(
+      measureSharedThreadPhase(
+        {
+          shareId: plan.policy.threadId,
+          phase: "copy",
+          copyCount: plan.copies.filter((copy) => {
+            return copy.body === undefined;
+          }).length,
+          uploadCount: plan.copies.filter((copy) => {
+            return copy.body !== undefined;
+          }).length,
+          resourceCount: Object.keys(plan.policy.resources).length,
+        },
+        mapConcurrent(plan.copies, 10, async (copy) => {
+          signal.throwIfAborted();
+          await (copy.body !== undefined
             ? get(
                 putHostedSitesS3Object(
                   copy.bucket,
@@ -649,31 +733,20 @@ export const copySharedThreadArtifacts$ = command(
                   signal,
                 ),
               )
-            : get(
-                copyArtifactShareObject(
-                  copy.bucket,
-                  copy.sourceKey,
-                  copy.targetKey,
-                  copy.hosted,
-                  signal,
-                ),
-              );
+            : get(copyArtifactShareObject(copy, signal)));
         }),
-      );
-      signal.throwIfAborted();
-      const failed = results.find((result) => {
-        return result.status === "rejected";
-      });
-      if (failed?.status === "rejected") {
-        if (
-          failed.reason instanceof Error &&
-          failed.reason.name === "NoSuchKey"
-        ) {
-          throw new SharedThreadArtifactUnavailable();
-        }
-        throw failed.reason;
+      ),
+      signal,
+    );
+    if (!result.ok) {
+      if (
+        result.error instanceof Error &&
+        ["NoSuchKey", "PreconditionFailed"].includes(result.error.name)
+      ) {
+        throw new SharedThreadArtifactUnavailable();
       }
-      signal.throwIfAborted();
+      throw result.error;
     }
+    signal.throwIfAborted();
   },
 );

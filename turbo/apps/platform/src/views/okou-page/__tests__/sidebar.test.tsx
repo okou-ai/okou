@@ -1309,7 +1309,6 @@ test("Keep pin management usable with many pinned agents", async () => {
     return respond(200, {
       timezone: null,
       locale: null,
-      translationLanguage: null,
       supportedLocales: [
         "en-US",
         "pt-BR",

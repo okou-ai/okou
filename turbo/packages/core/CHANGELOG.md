@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.671.0](https://github.com/vm0-ai/okou/compare/core-v8.670.2...core-v8.671.0) (2026-09-16)
+
+
+### Features
+
+* **api:** choose the delivery format from the deliverable, behind a switch ([#34604](https://github.com/vm0-ai/okou/issues/34604)) ([08c8d62](https://github.com/vm0-ai/okou/commit/08c8d62d8d5555b6bbe2f4c3f873a3d72d68e06f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.450.0
+
 ## [8.670.2](https://github.com/vm0-ai/okou/compare/core-v8.670.1...core-v8.670.2) (2026-09-16)
 
 
