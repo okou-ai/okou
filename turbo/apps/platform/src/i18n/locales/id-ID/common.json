@@ -1562,7 +1562,7 @@
         "title": "Mulai",
         "workflow": {
           "action": "Buat",
-          "description": "Ubah tugas berulang jadi otomatisasi",
+          "description": "Ubah tugas berulang jadi skill yang bisa dipakai ulang",
           "name": "Buat workflow"
         }
       },

@@ -1587,7 +1587,7 @@
         "title": "Primeros pasos",
         "workflow": {
           "action": "Crear",
-          "description": "Convierte una tarea repetida en una automatización",
+          "description": "Convierte una tarea repetida en una habilidad reutilizable",
           "name": "Crea un workflow"
         }
       },

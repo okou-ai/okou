@@ -1562,7 +1562,7 @@
         "title": "시작하기",
         "workflow": {
           "action": "만들기",
-          "description": "반복 작업을 자동화로 바꾸기",
+          "description": "반복 작업을 재사용 가능한 스킬로 만들기",
           "name": "워크플로 만들기"
         }
       },

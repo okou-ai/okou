@@ -1563,7 +1563,7 @@
         "title": "Get started",
         "workflow": {
           "action": "Build",
-          "description": "Turn a repeat task into an automation",
+          "description": "Turn a repeat task into a reusable skill",
           "name": "Build a workflow"
         }
       },

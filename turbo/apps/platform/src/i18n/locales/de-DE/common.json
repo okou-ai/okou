@@ -1563,7 +1563,7 @@
         "title": "Einstieg",
         "workflow": {
           "action": "Bauen",
-          "description": "Mach aus einer wiederkehrenden Aufgabe eine Automatisierung",
+          "description": "Mach aus einer Routineaufgabe eine wiederverwendbare Fähigkeit",
           "name": "Workflow bauen"
         }
       },

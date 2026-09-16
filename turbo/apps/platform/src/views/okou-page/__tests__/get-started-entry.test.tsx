@@ -206,7 +206,7 @@ test("An admin sees every step and what each one pays", async () => {
   expect(workflow.getByText("Build a workflow")).toBeInTheDocument();
   // The reward leads the description line, so the two read as one sentence.
   expect(normalizedText(workflowRow)).toContain(
-    "+1,000 · Turn a repeat task into an automation",
+    "+1,000 · Turn a repeat task into a reusable skill",
   );
   expect(workflow.getByText("+1,000")).toBeInTheDocument();
   // An unfinished quest names what pressing the row does.

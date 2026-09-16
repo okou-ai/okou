@@ -1587,7 +1587,7 @@
         "title": "Inizia",
         "workflow": {
           "action": "Crea",
-          "description": "Trasforma un'attività ricorrente in un'automazione",
+          "description": "Trasforma un'attività ricorrente in una competenza riutilizzabile",
           "name": "Crea un workflow"
         }
       },
