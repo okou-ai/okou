@@ -38,6 +38,7 @@ export const USER_TEMPLATE_SOURCE_CONTENT_TYPES = [
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ] as const;
 export const USER_TEMPLATE_PAGE_CONTENT_TYPE = "image/png";
+export const USER_TEMPLATE_PACKAGE_CONTENT_TYPE = "application/gzip";
 
 /** Guidance a later generation run reads. Assets are optional; these are not. */
 export const REQUIRED_USER_TEMPLATE_PACKAGE_FILES = [

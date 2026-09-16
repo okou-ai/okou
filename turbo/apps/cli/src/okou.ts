@@ -352,6 +352,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     },
   },
   {
+    name: "user-template",
+    description: "Publish custom templates compiled from a file you uploaded",
+    load: async () => {
+      return (await import("./commands/user-template")).userTemplateCommand;
+    },
+  },
+  {
     name: "maps",
     description: "Use managed Okou maps services",
     load: async () => {
