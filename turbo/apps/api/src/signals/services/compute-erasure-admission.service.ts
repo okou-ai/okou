@@ -27,6 +27,15 @@ export interface ComputeRunOwner extends Owner {
   readonly resourceOwner?: Owner;
   /** Cleanup retains the captured B1 subjects even after resource transfer. */
   readonly capturedCleanupOwner?: Owner;
+  /**
+   * Durable resource identity captured when the run was admitted. A threadless
+   * private maintenance run is otherwise discoverable only through the live
+   * `pi_memory_phase2_jobs.maintenance_run_id` binding, which normal checkpoint
+   * settlement, success and failure retire. Cleanup callers pass the captured
+   * identity so a later physical-release proof still finds the exact resource;
+   * execution admission keeps validating the live lease separately.
+   */
+  readonly capturedMaintenanceStorageId?: string;
 }
 
 interface ResourceOwner extends Owner {
@@ -212,6 +221,42 @@ export async function validateNewComputeSession(
   );
 }
 
+/**
+ * Only a cleanup caller that carries a captured cleanup owner may recover a
+ * retired private maintenance identity. Execution admission never does.
+ */
+function recoveredMaintenanceId(
+  expected: ComputeRunOwner,
+  run: { readonly agentId: string | null; readonly bound: boolean },
+): string | undefined {
+  if (run.agentId !== null || run.bound) {
+    return undefined;
+  }
+  return expected.capturedCleanupOwner === undefined
+    ? undefined
+    : expected.capturedMaintenanceStorageId;
+}
+
+/**
+ * A live binding stays authoritative when it exists. A recovered identity is
+ * accepted only when the storage still belongs to both the Run owner and the
+ * captured cleanup owner.
+ */
+function maintenanceResourceOwned(args: {
+  readonly resource: ResourceOwner;
+  readonly owner: Owner;
+  readonly bound: Owner | undefined;
+  readonly capturedCleanupOwner: Owner | undefined;
+}): boolean {
+  if (!sameOwner(args.resource, args.owner)) {
+    return false;
+  }
+  if (args.capturedCleanupOwner === undefined) {
+    return args.bound !== undefined && sameOwner(args.bound, args.owner);
+  }
+  return sameOwner(args.resource, args.capturedCleanupOwner);
+}
+
 /** Resolve without business locks, then acquire the complete sorted B1 set. */
 export async function prepareComputeRunAdmission(
   tx: Tx,
@@ -253,17 +298,24 @@ export async function prepareComputeRunAdmission(
           .where(eq(piMemoryPhase2Jobs.maintenanceRunId, runId))
           .limit(1)
       : [];
+  // A retired maintenance binding is not proof that no obligation remains. Fall
+  // back to the caller's captured identity, which only cleanup supplies.
+  const capturedMaintenance = recoveredMaintenanceId(expected, {
+    agentId: owner.agentId,
+    bound: maintenance !== undefined,
+  });
+  const maintenanceId = maintenance?.id ?? capturedMaintenance;
   // This join only discovers subjects. The resource still needs its locked
   // reread below, and maintenance keeps its independent job/Storage authority.
   const resource = owner.agentOwner
     ? { ...owner.agentOwner, kind: "agent" as const }
-    : maintenance
-      ? await readResource(
+    : maintenanceId === undefined
+      ? undefined
+      : await readResource(
           tx,
-          { kind: "maintenance", id: maintenance.id },
+          { kind: "maintenance", id: maintenanceId },
           false,
-        )
-      : undefined;
+        );
   const allowed = await writable(tx, [
     owner,
     owner.sessionOwner,
@@ -285,9 +337,14 @@ export async function prepareComputeRunAdmission(
   }
   if (
     resource.kind === "maintenance" &&
-    (!maintenance ||
-      !sameOwner(maintenance, owner) ||
-      !sameOwner(resource, owner))
+    !maintenanceResourceOwned({
+      resource,
+      owner,
+      bound: maintenance,
+      capturedCleanupOwner: capturedMaintenance
+        ? expected.capturedCleanupOwner
+        : undefined,
+    })
   ) {
     return undefined;
   }

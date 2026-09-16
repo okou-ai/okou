@@ -1,6 +1,7 @@
 //! CLI session restore helpers for guest agent frameworks.
 
 mod codex;
+mod compression;
 
 use std::sync::Arc;
 
@@ -180,7 +181,7 @@ async fn restore_pi_session(
     let session_id = session.cli_agent_session_id();
     let session_dir = api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR;
     let session_path = format!("{session_dir}/restored-{session_id}.jsonl");
-    write_session_history_file(sandbox, &session_path, session_history).await?;
+    write_session_history_file(sandbox, &session_path, session).await?;
     let diagnostics = SessionRestoreDiagnostics {
         framework: "pi",
         session_id: session_id.to_string(),
@@ -210,7 +211,7 @@ pub(super) async fn restore_claude_session(
     let session_id = session.cli_agent_session_id();
     let session_path = format!("{session_dir}/{session_id}.jsonl");
 
-    write_session_history_file(sandbox, &session_path, session_history).await?;
+    write_session_history_file(sandbox, &session_path, session).await?;
     let diagnostics = SessionRestoreDiagnostics {
         framework: "claude-code",
         session_id: session_id.to_string(),
@@ -229,10 +230,11 @@ pub(super) async fn restore_claude_session(
 async fn write_session_history_file(
     sandbox: &dyn Sandbox,
     session_path: &str,
-    session_history: &[u8],
+    session: &MaterializedResumeSession,
 ) -> RunnerResult<()> {
+    let compression = compression::select(session).await?;
     sandbox
-        .write_file(session_path, session_history)
+        .write_file_with_compression(session_path, session.history_bytes(), compression)
         .await
         .map_err(RunnerError::Sandbox)
 }

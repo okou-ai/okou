@@ -1182,7 +1182,18 @@ impl Sandbox for MockSandbox {
     }
 
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()> {
+        self.write_file_with_compression(path, content, sandbox::FileCompression::None)
+            .await
+    }
+
+    async fn write_file_with_compression(
+        &self,
+        path: &str,
+        content: &[u8],
+        compression: sandbox::FileCompression,
+    ) -> Result<()> {
         let call = WriteFileCall {
+            compression,
             path: path.to_string(),
             content: content.to_vec(),
         };
@@ -1211,6 +1222,7 @@ impl Sandbox for MockSandbox {
         let calls = files
             .iter()
             .map(|file| WriteFileCall {
+                compression: sandbox::FileCompression::None,
                 path: file.path.to_string(),
                 content: file.content.to_vec(),
             })
@@ -1257,6 +1269,7 @@ impl Sandbox for MockSandbox {
             wait_lifecycle_gate(&overrides.file.private_write_file_gate).await;
         }
         let call = WriteFileCall {
+            compression: sandbox::FileCompression::None,
             path: path.to_string(),
             content: content.to_vec(),
         };
@@ -1301,6 +1314,7 @@ impl Sandbox for MockSandbox {
             files: files
                 .iter()
                 .map(|file| WriteFileCall {
+                    compression: sandbox::FileCompression::None,
                     path: file.path.to_string(),
                     content: file.content.to_vec(),
                 })

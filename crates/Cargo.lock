@@ -1805,6 +1805,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test-support",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -1926,6 +1927,7 @@ dependencies = [
  "guest-control-proto",
  "libc",
  "tempfile",
+ "zstd",
 ]
 
 [[package]]
@@ -3477,7 +3479,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.195.0"
+version = "0.195.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",

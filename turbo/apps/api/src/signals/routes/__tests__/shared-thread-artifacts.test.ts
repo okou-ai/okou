@@ -349,12 +349,15 @@ test("copies only selected artifacts, rewrites the snapshot, and preserves sourc
   const source = await chat.listThreadEvents(f.actor, selection.threadId);
   expect(JSON.stringify(source.events)).toContain(file.url);
   expect(JSON.stringify(source.events)).not.toContain(urls![0]);
-  context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-    id: f.actor.orgId,
-    name: "Owner organization",
-  });
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    { data: [{ publicUserData: { userId: f.actor.userId } }] },
+    {
+      data: [
+        {
+          publicUserData: { userId: f.actor.userId },
+          organization: { id: f.actor.orgId, name: "Owner organization" },
+        },
+      ],
+    },
   );
   const status = await accept(
     api()(artifactSharesContract).status({
@@ -504,16 +507,18 @@ test.each(["short", "legacy"] as const)(
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
         data: [
-          { publicUserData: { userId: owner.userId } },
-          { publicUserData: { userId: f.actor.userId } },
+          {
+            publicUserData: { userId: owner.userId },
+            organization: { id: f.actor.orgId, name: "Owner organization" },
+          },
+          {
+            publicUserData: { userId: f.actor.userId },
+            organization: { id: f.actor.orgId, name: "Owner organization" },
+          },
         ],
         totalCount: 2,
       },
     );
-    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-      id: f.actor.orgId,
-      name: "Owner organization",
-    });
     const shared = await accept(
       api()(artifactSharesContract).update({
         headers: headers(owner),

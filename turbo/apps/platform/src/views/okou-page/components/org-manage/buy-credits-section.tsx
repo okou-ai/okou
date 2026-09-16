@@ -34,7 +34,7 @@ const tileBaseClass =
 function tileBorderClass(selected: boolean): string {
   return selected
     ? "border border-primary ring-2 ring-primary/20"
-    : "okou-border hover:border-muted-foreground/30";
+    : "border border-surface-border";
 }
 
 function PresetTile({

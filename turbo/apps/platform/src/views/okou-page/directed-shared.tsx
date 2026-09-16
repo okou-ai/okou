@@ -1,31 +1,28 @@
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
 import { Link } from "../router/link.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
 import { SettingsDialogMount } from "./components/settings/settings-dialog.tsx";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
-  colorTheme$,
+  paletteColorTheme$,
   shellDocumentAttributesRef$,
 } from "../../signals/theme.ts";
 
 export function StandaloneLayout({ children }: { children: ReactNode }) {
-  const colorTheme = useGet(colorTheme$);
-  const features = useGet(featureSwitch$);
-  const gradientColorThemesEnabled =
-    features[FeatureSwitchKey.GradientColorThemes] ?? false;
+  const paletteColorTheme = useGet(paletteColorTheme$);
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
 
   return (
     <div
       ref={shellDocumentAttributesRef}
       className="box-border flex h-full max-h-full min-h-full w-full flex-col overflow-hidden bg-background pb-(--sab)"
-      data-gradient-color-themes={gradientColorThemesEnabled || undefined}
-      data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
+      data-gradient-color-themes={
+        paletteColorTheme === undefined ? undefined : true
+      }
+      data-color-theme={paletteColorTheme}
     >
       <SettingsDialogMount />
       <CreditPurchaseConfirmDialog />

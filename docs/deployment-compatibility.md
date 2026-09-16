@@ -1316,6 +1316,17 @@ capabilities in their client version. The API projects a stored locale to
 writes that the client did not advertise. Keep this compatibility layer until
 stale browser clients and API rollback windows have closed.
 
+### Retired Limelight color theme
+
+`limelight` is removed from `COLOR_THEMES`, so the API no longer parses it in
+either direction. Migration `1147_retire_limelight_color_theme` moves stored
+selections to `citrus-spark`, which declares the same two colours; it must run
+before the API that rejects the value, which is the normal migrate-then-promote
+order. The App is promoted after the API, so between the two an already-open
+bundle can still offer Limelight and receive `400` on that one write; every
+other palette, and the member's stored selection, is unaffected. The palette was
+only reachable under the `GradientColorThemes` rollout switch.
+
 ### Treat Database/API Transitions as a First-class Boundary
 
 Schema changes have two independent compatibility directions:
@@ -1528,6 +1539,17 @@ requires SSH eligibility and an explicit Direct selection. Losing SSH eligibilit
 owner clears open secret forms and cancels their pending UI work. API authorization
 and same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
+
+SSH save retries (#34503) require a client-generated resource `id` on host creation
+and standalone credential/Access creation. New resources return `201`; same-owner
+existing IDs return `204` without mutation. Host edits retain their existing
+`expectedGeneration` contract. There is no database migration or backfill, and
+Runner/guest protocols are unchanged. Deploy the API before the App. Under the
+staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
+to handle `204`; refresh staff clients after deployment. Do not fall back to a
+new-ID save or automatically replay it. Deduplication only covers the existing
+resource's lifetime, not deletion or abandoned forms; see
+[SSH access](ssh-access.md#save-retries).
 
 | State                                                              | Required behavior                                                                                      |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |

@@ -29,6 +29,7 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
+import { checkSshCreationId } from "./ssh-creation.service";
 import {
   cloudflareAccessFailure,
   findCloudflareAccessConfig,
@@ -326,7 +327,7 @@ export async function createSshConnection(args: {
   readonly userId: string;
   readonly body: CreateSshConnectionRequest;
   readonly featureContext: FeatureSwitchContext;
-}): Promise<SshConnectionResult<SshConnectionResponse>> {
+}): Promise<SshConnectionResult<SshConnectionResponse | undefined>> {
   const canonicalHost = canonicalizeSshHost(args.body.host);
   if (!canonicalHost.ok) {
     return canonicalHost;
@@ -349,6 +350,18 @@ export async function createSshConnection(args: {
 
   const result = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args);
+    const creation = await checkSshCreationId(
+      tx,
+      args,
+      sshConnections,
+      args.body.id,
+    );
+    if (!creation.ok) {
+      return creation;
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined, authorizedAgents: false };
+    }
     const bindingFailure = await validateAccessBinding(
       tx,
       args,
@@ -389,6 +402,7 @@ export async function createSshConnection(args: {
     const [connection] = await tx
       .insert(sshConnections)
       .values({
+        id: args.body.id,
         orgId: args.orgId,
         userId: args.userId,
         displayName: args.body.displayName,
@@ -421,7 +435,7 @@ export async function createSshConnection(args: {
       authorizedAgents: visibleAgents.length > 0,
     };
   });
-  if (result.ok) {
+  if (result.ok && result.value) {
     await publishSshRuntimeInvalidation(args.db, {
       orgId: args.orgId,
       userId: args.userId,
