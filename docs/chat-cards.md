@@ -74,6 +74,11 @@ contract by themselves.
 - Allocate bounded title, summary, status, and action areas within the frame.
   Showing a spinner, an account label, a reset time, a new action, or a terminal
   status must not add height or remove the reserved action area.
+- Permission requests share the connector action card dimensions: 88px high
+  when the chat container is at least 640px wide, and 136px otherwise. Keep
+  permission scope and controls in that frame, with one compact line for an
+  error or expiry when present. Do not reserve extra blank status rows or grow
+  the frame; full explanations and expiry details remain in the details dialog.
 - Keep long text and translated copy within their allocated rows. Do not let
   overflowing descendants enlarge the transcript's scrollable area. Full
   descriptions and diagnostics belong in an accessible dialog, popover, or

@@ -426,7 +426,7 @@ function ArtifactCardView({
   );
 }
 
-const CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS = "h-[136px] @[640px]:h-[88px]";
+const CHAT_ACTION_CARD_HEIGHT_CLASS = "h-[136px] @[640px]:h-[88px]";
 
 function UnavailableActionCard({ fillFrame = false }: { fillFrame?: boolean }) {
   const { t } = useTranslation();
@@ -563,7 +563,7 @@ function ConnectorActionCard({ signals }: { signals: ConnectorSignals }) {
   return (
     <div
       data-testid="connector-action-card-shell"
-      className={cn("w-full", CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS)}
+      className={cn("w-full", CHAT_ACTION_CARD_HEIGHT_CLASS)}
     >
       {signals.kind === "catalog" ? (
         <CatalogConnectorActionCard signals={signals} />
@@ -813,10 +813,17 @@ function PermissionActionTerminalStatus({
 
 function PermissionActionInlineStatus({
   status,
+  compact = false,
 }: {
   status: PermissionActionCardStatus;
+  compact?: boolean;
 }) {
   const { t } = useTranslation();
+  const errorClassName = cn(
+    "flex min-w-0 items-center gap-1.5 text-xs font-medium text-destructive",
+    !compact && "mt-1",
+  );
+  const textClassName = compact ? "truncate" : undefined;
   switch (status.kind) {
     case "loading": {
       return (
@@ -832,9 +839,9 @@ function PermissionActionInlineStatus({
     }
     case "load-error": {
       return (
-        <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-destructive">
-          <AlertCircle size={13} />
-          <span>
+        <div className={errorClassName}>
+          <AlertCircle size={13} className="shrink-0" />
+          <span className={textClassName}>
             {t(($) => {
               return $.chat.permissions.loadFailed;
             })}
@@ -844,9 +851,9 @@ function PermissionActionInlineStatus({
     }
     case "save-error": {
       return (
-        <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-destructive">
-          <AlertCircle size={13} />
-          <span>
+        <div className={errorClassName}>
+          <AlertCircle size={13} className="shrink-0" />
+          <span className={textClassName}>
             {t(($) => {
               return $.chat.permissions.updateFailed;
             })}
@@ -856,9 +863,9 @@ function PermissionActionInlineStatus({
     }
     case "missing-target": {
       return (
-        <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-destructive">
-          <AlertCircle size={13} />
-          <span>
+        <div className={errorClassName}>
+          <AlertCircle size={13} className="shrink-0" />
+          <span className={textClassName}>
             {t(($) => {
               return $.chat.permissions.agentNotFound;
             })}
@@ -868,9 +875,9 @@ function PermissionActionInlineStatus({
     }
     case "missing-permission": {
       return (
-        <div className="mt-1 flex items-center gap-1.5 text-xs font-medium text-destructive">
-          <AlertCircle size={13} />
-          <span>
+        <div className={errorClassName}>
+          <AlertCircle size={13} className="shrink-0" />
+          <span className={textClassName}>
             {t(($) => {
               return $.chat.permissions.unknown;
             })}
@@ -1246,6 +1253,11 @@ function PermissionActionCardContent({
     (status.kind === "ready" ||
       status.kind === "saving" ||
       status.kind === "save-error");
+  const showInlineStatus =
+    status.kind === "load-error" ||
+    status.kind === "save-error" ||
+    status.kind === "missing-target" ||
+    status.kind === "missing-permission";
   return (
     <div
       data-testid="permission-action-card"
@@ -1267,7 +1279,7 @@ function PermissionActionCardContent({
               },
             )}
           </div>
-          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
+          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
             {t(
               ($) => {
                 return $.chat.permissions.actionDescription;
@@ -1278,14 +1290,15 @@ function PermissionActionCardContent({
               },
             )}
           </div>
-          <div className="h-5 overflow-hidden">
-            {status.kind !== "loading" && (
-              <PermissionActionInlineStatus status={status} />
-            )}
-          </div>
-          <div className="h-4 truncate text-xs font-medium text-amber-700 dark:text-amber-400">
-            {expiryText}
-          </div>
+          {showInlineStatus ? (
+            <PermissionActionInlineStatus status={status} compact />
+          ) : (
+            expiryText && (
+              <div className="truncate text-xs font-medium text-amber-700 dark:text-amber-400">
+                {expiryText}
+              </div>
+            )
+          )}
         </div>
         <ChatCardDetails compact title={connectorLabel}>
           <p>
@@ -1422,7 +1435,7 @@ function PermissionActionCard({ signals }: { signals: PermissionSignals }) {
   return (
     <ChatCard
       data-testid="permission-action-card-shell"
-      className="h-[188px] w-full @[640px]:h-[136px]"
+      className={cn("w-full", CHAT_ACTION_CARD_HEIGHT_CLASS)}
     >
       <PermissionActionCardState signals={signals} />
     </ChatCard>
