@@ -510,7 +510,7 @@ function buildAgentToolsPrompt(args: {
       : []),
     ...(args.privateArtifactsEnabled
       ? [
-          "- To read private images linked as `/artifacts/...`, use `okou web download-file -h`.",
+          "- To read private files linked as `/artifacts/...`, use `okou web download-file -h`.",
         ]
       : []),
     ...buildIntegrationToolsPrompt(

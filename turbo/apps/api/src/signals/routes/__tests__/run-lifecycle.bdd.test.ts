@@ -1149,7 +1149,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       expect(prompt).toContain("okou web download-file -h");
       if (privateArtifacts) {
         expect(prompt).toContain(
-          "To read private images linked as `/artifacts/...`, use `okou web download-file -h`.",
+          "To read private files linked as `/artifacts/...`, use `okou web download-file -h`.",
         );
       } else {
         expect(prompt).not.toContain("/artifacts/");
