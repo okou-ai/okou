@@ -15,9 +15,12 @@ async function migrate(name: string) {
   );
   await client.query(sql.replaceAll('"public".', `"${schema}".`));
 }
-async function rejects(query: string, code: string) {
+async function rejects(
+  query: string,
+  expected: { code: string | RegExp; constraint?: string },
+) {
   await client.query("SAVEPOINT invalid_write");
-  await assert.rejects(client.query(query), { code });
+  await assert.rejects(client.query(query), expected);
   await client.query("ROLLBACK TO SAVEPOINT invalid_write");
 }
 try {
@@ -78,11 +81,14 @@ try {
       ('00000000-0000-4000-8000-000000000005','org','foreign','Foreign','encrypted-id','encrypted-secret')`);
   await rejects(
     "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000004'",
-    "23514",
+    { code: "23514" },
   );
   await rejects(
     "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000005',port=443",
-    "23503",
+    {
+      code: "23503",
+      constraint: "ssh_connections_cloudflare_access_owner_fk",
+    },
   );
   await client.query(
     "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000004',port=443",
@@ -95,17 +101,27 @@ try {
     "https://ssh.example.com",
     "ssh..example.com",
   ]) {
-    await rejects(`UPDATE ssh_connections SET host='${host}'`, "23514");
+    await rejects(`UPDATE ssh_connections SET host='${host}'`, {
+      code: "23514",
+    });
   }
+  // PostgreSQL 18 reports RESTRICT violations as 23001 instead of 23503.
   await rejects(
     "DELETE FROM cloudflare_access_configs WHERE id='00000000-0000-4000-8000-000000000004'",
-    "23503",
+    {
+      code: /^(23503|23001)$/,
+      constraint: "ssh_connections_cloudflare_access_owner_fk",
+    },
   );
-  await rejects("UPDATE cloudflare_access_configs SET generation=0", "23514");
-  await rejects("UPDATE cloudflare_access_configs SET revision=0", "23514");
+  await rejects("UPDATE cloudflare_access_configs SET generation=0", {
+    code: "23514",
+  });
+  await rejects("UPDATE cloudflare_access_configs SET revision=0", {
+    code: "23514",
+  });
   await rejects(
     "UPDATE cloudflare_access_configs SET encrypted_client_secret=''",
-    "23514",
+    { code: "23514" },
   );
   await client.query(
     "UPDATE ssh_connections SET cloudflare_access_id=NULL,port=22",

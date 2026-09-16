@@ -15,9 +15,12 @@ async function migrate(name: string) {
   );
   await client.query(sql.replaceAll('"public".', `"${schema}".`));
 }
-async function rejects(query: string, code: string) {
+async function rejects(
+  query: string,
+  expected: { code: string | RegExp; constraint?: string },
+) {
   await client.query("SAVEPOINT invalid_write");
-  await assert.rejects(client.query(query), { code });
+  await assert.rejects(client.query(query), expected);
   await client.query("ROLLBACK TO SAVEPOINT invalid_write");
 }
 try {
@@ -73,25 +76,42 @@ try {
     INSERT INTO ssh_connections (org_id,user_id,display_name,host,credential_id)
       VALUES ('org','user','New host','new.example.com','00000000-0000-4000-8000-000000000003');
   `);
-  await rejects("DELETE FROM ssh_credentials", "23503");
-  await rejects("UPDATE ssh_connections SET user_id='foreign'", "23503");
-  await rejects("UPDATE ssh_connections SET org_id='foreign'", "23503");
-  await rejects("UPDATE ssh_connections SET credential_id=NULL", "23502");
+  // PostgreSQL 18 reports RESTRICT violations as 23001 instead of 23503.
+  await rejects("DELETE FROM ssh_credentials", {
+    code: /^(23503|23001)$/,
+    constraint: "ssh_connections_credential_owner_fk",
+  });
+  await rejects("UPDATE ssh_connections SET user_id='foreign'", {
+    code: "23503",
+    constraint: "ssh_connections_credential_owner_fk",
+  });
+  await rejects("UPDATE ssh_connections SET org_id='foreign'", {
+    code: "23503",
+    constraint: "ssh_connections_credential_owner_fk",
+  });
+  await rejects("UPDATE ssh_connections SET credential_id=NULL", {
+    code: "23502",
+  });
   await rejects(
     "UPDATE ssh_credentials SET encrypted_private_key='key' WHERE auth_method='password'",
-    "23514",
+    { code: "23514" },
   );
-  await rejects("UPDATE ssh_credentials SET encrypted_password=NULL", "23514");
-  await rejects("UPDATE ssh_credentials SET encrypted_password=''", "23514");
-  await rejects("UPDATE ssh_credentials SET revision=0", "23514");
+  await rejects("UPDATE ssh_credentials SET encrypted_password=NULL", {
+    code: "23514",
+  });
+  await rejects("UPDATE ssh_credentials SET encrypted_password=''", {
+    code: "23514",
+  });
+  await rejects("UPDATE ssh_credentials SET revision=0", { code: "23514" });
   await client.query(
     "UPDATE ssh_credentials SET auth_method='private_key',encrypted_private_key='key',encrypted_password=NULL",
   );
-  await rejects("UPDATE ssh_credentials SET encrypted_passphrase=''", "23514");
-  await rejects(
-    "UPDATE ssh_credentials SET encrypted_password='password'",
-    "23514",
-  );
+  await rejects("UPDATE ssh_credentials SET encrypted_passphrase=''", {
+    code: "23514",
+  });
+  await rejects("UPDATE ssh_credentials SET encrypted_password='password'", {
+    code: "23514",
+  });
   await client.query("DELETE FROM ssh_connections");
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM ssh_credentials"))
