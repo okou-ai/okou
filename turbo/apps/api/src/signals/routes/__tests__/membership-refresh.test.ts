@@ -92,6 +92,9 @@ function statusRequest(token: string, signal: AbortSignal = context.signal) {
 }
 
 function agentToken(actor: ApiTestUser): string {
+  if (!actor.orgId) {
+    throw new Error("Expected test actor to have an org");
+  }
   const seconds = Math.floor(now() / 1000);
   return signSandboxJwtForTests({
     scope: "okou",
