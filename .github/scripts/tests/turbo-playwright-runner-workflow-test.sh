@@ -116,6 +116,18 @@ browser = jobs.fetch("cli-e2e-02-browser")
 playwright = jobs.fetch("cli-e2e-02-playwright")
 playwright_finalizer = jobs.fetch("cli-e2e-02-playwright-finalize")
 account_prepare = jobs.fetch("cli-e2e-03-runner-prepare")
+account_prepare_steps = account_prepare.fetch("steps")
+model_policy_index = account_prepare_steps.index do |step|
+  step["name"] == "Check runner E2E model policy" &&
+    step["run"] == "cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts"
+end
+prepare_accounts_index = account_prepare_steps.index do |step|
+  step["name"] == "Prepare runner E2E accounts"
+end
+unless model_policy_index && prepare_accounts_index &&
+    model_policy_index < prepare_accounts_index
+  raise "runner E2E must check the Luna cost policy before preparing real accounts"
+end
 bootstrap = jobs.fetch("cli-e2e-03-runner-bootstrap")
 runner = jobs.fetch("cli-e2e-03-runner")
 account_cleanup = jobs.fetch("cli-e2e-03-runner-cleanup")
@@ -578,6 +590,10 @@ end
 unless claude_script.include?('defaultProviderType: "built-in"') &&
     claude_script.include?("modelProviderId: null")
   raise "real Claude bootstrap must use the built-in provider"
+end
+unless claude_script.include?('"piLoop":true') &&
+    claude_script.include?('.effectiveSwitches.piLoop == true')
+  raise "real Claude/Pi bootstrap must enable Pi before the parallel Luna shards"
 end
 
 shard_step = runner.fetch("steps").find do |step|

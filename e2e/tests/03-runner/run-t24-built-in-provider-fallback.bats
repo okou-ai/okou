@@ -7,8 +7,7 @@ load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 BATS_TEST_TIMEOUT=600
-# Keep Codex fallback coverage on a model outside the Pi expansion.
-BUILT_IN_FALLBACK_MODEL="gpt-6-astra"
+BUILT_IN_FALLBACK_MODEL="gpt-5.6-luna"
 
 setup() {
     local credentials="/tmp/e2e-api-credentials-runner-real-claude.json"
@@ -22,7 +21,8 @@ setup() {
     local feature_switches
     feature_switches="$(runner_api_curl "/api/feature-switches")"
     jq -e '
-        .effectiveSwitches._realAgentInPreview == true
+        .effectiveSwitches._realAgentInPreview == true and
+        .effectiveSwitches.piLoop == true
     ' <<<"$feature_switches" >/dev/null
 }
 
@@ -102,7 +102,7 @@ report_built_in_model_failure() {
     assert_success
     primary_context="$output"
     run jq -e --arg model "$BUILT_IN_FALLBACK_MODEL" '
-        .cliAgentType == "codex" and
+        .cliAgentType == "pi" and
         .environment.OPENAI_MODEL == $model and
         (.environment | has("OPENAI_BASE_URL") | not) and
         any(.firewalls[]?;
@@ -136,7 +136,7 @@ report_built_in_model_failure() {
     assert_success
     fallback_context="$output"
     run jq -e --arg model "openai/${BUILT_IN_FALLBACK_MODEL}" '
-        .cliAgentType == "codex" and
+        .cliAgentType == "pi" and
         .environment.OPENAI_BASE_URL == "https://openrouter.ai/api/v1" and
         .environment.OPENAI_MODEL == $model and
         any(.firewalls[]?;

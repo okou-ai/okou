@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 
-# Real Codex smoke and built-in usage attribution through public APIs.
+# Real Luna smoke and built-in usage attribution through public APIs.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
-    local credentials="/tmp/e2e-api-credentials-runner-real-codex.json"
+    local credentials="/tmp/e2e-api-credentials-runner-real-claude.json"
     export E2E_API_TOKEN E2E_API_URL
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
@@ -19,27 +19,27 @@ teardown() {
     runner_e2e_teardown_test
 }
 
-@test "real codex reports built-in model usage" {
-    run create_runner_agent "e2e-real-codex-${TEST_ID}"
+@test "real luna reports built-in model usage" {
+    run create_runner_agent "e2e-real-luna-${TEST_ID}"
     echo "$output"
     assert_success
     AGENT_ID="$output"
 
     run set_runner_agent_instructions \
         "$AGENT_ID" \
-        "Real Codex billing smoke test instructions."
+        "Real Luna billing smoke test instructions."
     echo "$output"
     assert_success
 
-    # The same dedicated Codex organization uses gpt-5.6-luna for BYOK steer
-    # coverage. Its independent gpt-6-astra policy remains built-in, so the
-    # two real-agent shards can run concurrently without changing org state.
+    # The Codex account uses Luna for BYOK steering. The real Claude/Pi
+    # account keeps Luna built-in, so billing and steering can run concurrently
+    # without changing either organization's model policies.
     run runner_api_curl "/api/model-policies"
     echo "$output"
     assert_success
     run jq -e '
         any(.policies[]?;
-            .model == "gpt-6-astra" and
+            .model == "gpt-5.6-luna" and
             .defaultProviderType == "built-in" and
             .credentialScope == "org" and
             .modelProviderId == null
@@ -48,8 +48,8 @@ teardown() {
     echo "$output"
     assert_success
 
-    local prompt="Briefly confirm that the real Codex runner is responding."
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "gpt-6-astra"
+    local prompt="Briefly confirm that the real Luna model is responding."
+    run runner_chat_send "$AGENT_ID" "$prompt" "" "gpt-5.6-luna"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -104,11 +104,11 @@ teardown() {
     run runner_e2e_wait_for_usage_event \
         "$THREAD_ID" \
         "$RUN_ID" \
-        "gpt-6-astra"
+        "gpt-5.6-luna"
     echo "$output"
     assert_success
 
-    run runner_e2e_wait_for_usage_record "$THREAD_ID" "gpt-6-astra"
+    run runner_e2e_wait_for_usage_record "$THREAD_ID" "gpt-5.6-luna"
     echo "$output"
     assert_success
     local usage_record="$output"
@@ -120,7 +120,7 @@ teardown() {
             any(.breakdown[]?;
                 .kind == "model" and
                 any(.providers[]?;
-                    .provider == "gpt-6-astra" and .credits > 0
+                    .provider == "gpt-5.6-luna" and .credits > 0
                 )
             )
         )

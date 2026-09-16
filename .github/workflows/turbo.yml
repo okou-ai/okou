@@ -2584,6 +2584,8 @@ jobs:
           node-version: 22
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
+      - name: Check runner E2E model policy
+        run: cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts
       - name: Generate runner E2E shard matrix
         id: shards
         shell: bash
@@ -2826,10 +2828,11 @@ jobs:
 
           curl -fsS "${headers[@]}" \
             -X POST \
-            -d '{"switches":{"_realAgentInPreview":true}}' \
+            -d '{"switches":{"_realAgentInPreview":true,"piLoop":true}}' \
             "${api_url}/api/feature-switches" \
             | jq -e '
-                .effectiveSwitches._realAgentInPreview == true
+                .effectiveSwitches._realAgentInPreview == true and
+                .effectiveSwitches.piLoop == true
               ' \
             >/dev/null
         env:
