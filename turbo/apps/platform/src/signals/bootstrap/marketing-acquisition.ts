@@ -158,6 +158,14 @@ export const setupMarketingAcquisition$ = command(
     window.addEventListener("focus", resume, { signal });
     window.addEventListener("online", resume, { signal });
     // Recheck the runtime flag every minute and retry unacknowledged batches.
-    setLoop(synchronize, 10_000, signal, { testIntervalMs: 10_000 });
+    setLoop(
+      async () => {
+        await synchronize();
+        return false;
+      },
+      10_000,
+      signal,
+      { testIntervalMs: 10_000 },
+    );
   },
 );
