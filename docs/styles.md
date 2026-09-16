@@ -530,20 +530,25 @@ these consumers take it rather than the raw `border-gray-400` ramp stop the
 horizontal rules kept. `border-border` would be wrong here: `--border` is
 `--gray-300`, one stop lighter.
 
-`okou-border` and `okou-thumb-border` are the two first-party class selectors
-still in the App stylesheet, and they are the last entries in the legacy
-baseline's CSS atoms. `okou-thumb-border` is a 0.5px hairline one step lighter
-than `okou-border`, so the edge of a thumbnail stays readable without the stroke
-reading as a frame.
+Thumbnails take the same pair. Their stroke was already the shared 0.5px, so
+adopting the token is exact at every device scale.
 
-Draining `okou-border` is a visual decision rather than an equivalence.
-`buy-credits-section.tsx` reaches for it from a function that returns a class
-string rather than from a `className` attribute, so neither the legacy baseline
-nor `no-unknown-classes` counts that consumer. The selector is unlayered, so its
-`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on
-the same element and that hover color never paints; replacing the class
-activates it. Deciding between keeping a hover the tile has never had and
-deleting a utility the consumer spells is reviewed separately.
+The credit tiles were the last hand-written `0.7px`, and joining the shared
+hairline is a deliberate trade rather than an equivalence. Measured in Chromium,
+`0.7px` and `0.5px` resolve to the same used width at device scale 1 (`1px`) and
+2 (`0.5px`), but they part at scale 3: `0.666667px` against `0.333333px`, two
+device pixels of ink against one, and a box `0.666667px` taller. That is the
+hairline behaving as designed — it is the same trade `okou-border-t` and
+`okou-btn-morandi` made when they joined it — and it is why a component must not
+hand-write a width: a second value for this decision diverges from the first
+wherever the device scale is odd.
+
+The tile also carried a `hover:border-muted-foreground/30` that never painted,
+because the retired selector was unlayered and its `border` shorthand outranked
+the layered utility. Forcing `:hover` on the retired rule reports the resting
+`rgb(202, 199, 196)` unchanged. Adopting the token would have activated that
+hover for the first time, so the dead utility is deleted with the class and the
+tile keeps the appearance it has.
 
 ### Top-edge clearance
 
