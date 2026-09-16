@@ -16,6 +16,67 @@ beforeEach(() => {
 });
 
 describe("agent usage event webhook", () => {
+  it.each([false, true])(
+    "rejects prepared resource observations before count billing (mixed=%s)",
+    async (mixed) => {
+      const runId = randomUUID();
+      const token = generateSandboxToken(
+        `user_${randomUUID()}`,
+        runId,
+        `org_${randomUUID()}`,
+      );
+      const resourceEvent = {
+        protocol: "x-resource-v1" as const,
+        idempotencyKey: randomUUID(),
+        kind: "connector" as const,
+        provider: "x" as const,
+        category: "tweet.read" as const,
+        quantity: 1,
+        bindingId: randomUUID(),
+        observedAt: "2026-09-16T00:00:00.000Z",
+        resources: [{ id: "9007199254740993", occurrences: 1 }],
+        remainder: [],
+      };
+      const client = setupApp({
+        context,
+        routes: webhooksAgentHealthUsageTelemetryRoutes,
+      })(webhookUsageEventContract);
+      const response = await accept(
+        client.send({
+          headers: { authorization: `Bearer ${token}` },
+          body: {
+            runId,
+            events: mixed
+              ? [
+                  {
+                    idempotencyKey: randomUUID(),
+                    kind: "connector",
+                    provider: "x",
+                    category: "tweet.read",
+                    quantity: 2,
+                  },
+                  resourceEvent,
+                ]
+              : [resourceEvent],
+          },
+        }),
+        [400],
+      );
+      expect(response.body.error.message).toBe(
+        "X resource observations are not enabled",
+      );
+
+      const unauthorized = await accept(
+        client.send({
+          headers: { authorization: `Bearer ${token}` },
+          body: { runId: randomUUID(), events: [resourceEvent] },
+        }),
+        [401],
+      );
+      expect(unauthorized.body.error.code).toBe("UNAUTHORIZED");
+    },
+  );
+
   it("returns not found when a usage event targets a missing run", async () => {
     const runId = randomUUID();
     const orgId = `org_usage_missing_${randomUUID().slice(0, 8)}`;
