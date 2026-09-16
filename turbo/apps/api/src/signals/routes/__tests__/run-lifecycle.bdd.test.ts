@@ -1137,10 +1137,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
       });
 
-      const run = await api.createRun(actor, {
+      const run = await sendChatRunMessage(actor, {
         agentId,
         prompt: "read the linked artifact",
-        modelProvider: "anthropic-api-key",
       });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
