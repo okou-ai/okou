@@ -13,25 +13,10 @@ import { z } from "zod";
 
 import { closeDbPool, db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
-import type { Tx } from "../lib/db-types";
 import { nowDate } from "../lib/time";
 import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 
-const pidRowSchema = z.object({ pid: z.number() });
 const waiterCountRowSchema = z.object({ waiterCount: z.number() });
-
-async function backendPid(tx: Tx): Promise<number> {
-  const rows = await executeRawRows(
-    tx,
-    sql`SELECT pg_backend_pid() AS "pid"`,
-    pidRowSchema,
-  );
-  const pid = rows[0]?.pid;
-  if (pid === undefined) {
-    throw new Error("Expected a chat search erasure fixture backend pid");
-  }
-  return pid;
-}
 
 async function blockedWaiterCount(holderPid: number): Promise<number> {
   const rows = await executeRawRows(
@@ -89,93 +74,23 @@ export async function removeChatSearchErasureSubjectsFixture(
     .where(inArray(accountErasureJobs.id, [...jobIds]));
 }
 
-/**
- * Holds one uncommitted closure so a test can observe whether an ordinary
- * writer's shared admission really conflicts with it. Product APIs cannot pause
- * between B1's exclusive subject lock and its commit.
+/** Reassigns one Agent's owner, the change a future ownership transfer would
+ * persist. No production writer updates this column today, and the unique
+ * `(id, org_id, owner)` key makes it the key update the projector's KEY SHARE
+ * is meant to conflict with.
  */
-export async function holdChatSearchErasureClosureFixture(args: {
-  readonly subject: ErasureSubject;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => Promise<void>;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const jobIds: string[] = [];
-  const done = db().transaction(async (tx) => {
-    const job = await projectErasureDecision(tx, erasureDecision(args.subject));
-    jobIds.push(job.id);
-    started.resolve(await backendPid(tx));
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-  const release = async () => {
-    if (!released.settled()) {
-      released.resolve(undefined);
-    }
-    await done;
-    await removeChatSearchErasureSubjectsFixture(jobIds);
-  };
-  return {
-    release,
-    done,
-    blockedWaiterCount: async () => {
-      return await blockedWaiterCount(holderPid);
-    },
-  };
-}
-
-/**
- * Holds one Agent identity row so a test can place an owner transfer exactly
- * inside the projector's lock wait. Product APIs neither pause while holding
- * this row nor reassign `agents.owner`, so the transfer models the writer a
- * future ownership move would use.
- */
-export async function holdChatSearchAgentRowLockFixture(args: {
+export async function transferChatSearchAgentOwnerFixture(args: {
   readonly agentId: string;
-  readonly transferOwnerTo?: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => Promise<void>;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const [locked] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(eq(agents.id, args.agentId))
-      .for("update");
-    if (!locked) {
-      throw new Error("Expected the chat search fixture Agent row");
-    }
-    started.resolve(await backendPid(tx));
-    await released.promise;
-    if (args.transferOwnerTo !== undefined) {
-      await tx
-        .update(agents)
-        .set({ owner: args.transferOwnerTo })
-        .where(eq(agents.id, args.agentId));
-    }
-  });
-  const holderPid = await started.promise;
-  return {
-    release: async () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-      await done;
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await blockedWaiterCount(holderPid);
-    },
-  };
+  readonly owner: string;
+}): Promise<void> {
+  const updated = await db()
+    .update(agents)
+    .set({ owner: args.owner })
+    .where(eq(agents.id, args.agentId))
+    .returning({ id: agents.id });
+  if (updated.length !== 1) {
+    throw new Error("Expected one chat search Agent owner to transfer");
+  }
 }
 
 function barrierQueryText(queryArgs: unknown[]): string {
@@ -190,33 +105,74 @@ function barrierQueryText(queryArgs: unknown[]): string {
   ).toLowerCase();
 }
 
-function isProjectionWatermarkWrite(
+function barrierQueryBinds(queryArgs: unknown[], value: string): boolean {
+  const values = z.array(z.unknown()).safeParse(queryArgs[1]);
+  return values.success && values.data.includes(value);
+}
+
+/** The per-thread transaction's first statement: the unlocked, content-free
+ * ownership resolution. Candidate selection also joins Agents, but it left-joins
+ * the watermarks and never filters on a single thread id.
+ */
+function isProjectionOwnershipRead(
   queryArgs: unknown[],
   chatThreadId: string,
 ): boolean {
   const text = barrierQueryText(queryArgs);
-  const values = z.array(z.unknown()).safeParse(queryArgs[1]);
   return (
-    text.startsWith("insert") &&
-    text.includes('"chat_event_search_message_watermarks"') &&
-    values.success &&
-    values.data.includes(chatThreadId)
+    text.startsWith("select") &&
+    text.includes('from "chat_threads" inner join "agents"') &&
+    !text.includes("left join") &&
+    text.includes('where "chat_threads"."id" =') &&
+    barrierQueryBinds(queryArgs, chatThreadId)
   );
 }
 
-/**
- * Infrastructure exception: no API can delay delivery of a real COMMIT, and the
- * projector's per-thread transaction is the only place its retained barriers can
- * be observed from another session. Every original query still executes
- * unchanged; only the selected transaction's COMMIT waits, and only for the
- * thread this test owns. Nothing is mocked and no result or error is replaced.
- *
- * Pausing at COMMIT, rather than at a statement, keeps the projector's own lock
- * and statement deadlines out of the observation window.
+function isProjectionAgentLock(queryArgs: unknown[]): boolean {
+  const text = barrierQueryText(queryArgs);
+  return (
+    text.startsWith("select") &&
+    text.includes('from "agents"') &&
+    text.includes("for key share")
+  );
+}
+
+/** Where the paused transaction stops. `ownership` precedes subject admission,
+ * `agent-lock` sits between the unlocked ownership read and the first identity
+ * lock, and `commit` retains every barrier with all writes already applied.
  */
-export async function withChatSearchProjectionCommitBarrierFixture<T>(
+type ChatSearchProjectionBarrierStop = "ownership" | "agent-lock" | "commit";
+
+function reachedBarrierStop(
+  stop: ChatSearchProjectionBarrierStop,
+  queryArgs: unknown[],
+  ownershipRead: boolean,
+): boolean {
+  if (stop === "ownership") {
+    return ownershipRead;
+  }
+  if (stop === "agent-lock") {
+    return isProjectionAgentLock(queryArgs);
+  }
+  return barrierQueryText(queryArgs) === "commit";
+}
+
+/**
+ * Infrastructure exception: no API can suspend a real transaction between its
+ * statements, and the projector's per-thread transaction is the only place its
+ * ordering and retained barriers can be observed from another session. Every
+ * original query still executes unchanged and in order; only the transaction
+ * that resolved this test's own thread waits, at one chosen point. Nothing is
+ * mocked and no result or error is replaced.
+ *
+ * The pause always happens before the chosen statement is dispatched, so no
+ * server-side lock or statement timer runs during the observation window and a
+ * test never has to win the projector's own bounded budget.
+ */
+export async function withChatSearchProjectionBarrierFixture<T>(
   args: {
     readonly chatThreadId: string;
+    readonly stopAt: ChatSearchProjectionBarrierStop;
     readonly work: (barrier: {
       readonly entered: Promise<{
         readonly lockTimeout: string;
@@ -251,13 +207,17 @@ export async function withChatSearchProjectionCommitBarrierFixture<T>(
   let paused = false;
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
-      if (!paused && isProjectionWatermarkWrite(queryArgs, args.chatThreadId)) {
+      const ownershipRead = isProjectionOwnershipRead(
+        queryArgs,
+        args.chatThreadId,
+      );
+      if (!paused && ownershipRead) {
         selected = receiver;
       }
       if (
-        barrierQueryText(queryArgs) !== "commit" ||
+        paused ||
         receiver !== selected ||
-        paused
+        !reachedBarrierStop(args.stopAt, queryArgs, ownershipRead)
       ) {
         return Reflect.apply(target, receiver, queryArgs);
       }

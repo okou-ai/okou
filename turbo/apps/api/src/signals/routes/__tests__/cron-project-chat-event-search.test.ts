@@ -26,10 +26,9 @@ import {
 } from "../../../test-fixtures/chat-events";
 import {
   closeChatSearchErasureSubjectFixture,
-  holdChatSearchAgentRowLockFixture,
-  holdChatSearchErasureClosureFixture,
   removeChatSearchErasureSubjectsFixture,
-  withChatSearchProjectionCommitBarrierFixture,
+  transferChatSearchAgentOwnerFixture,
+  withChatSearchProjectionBarrierFixture,
 } from "../../../test-fixtures/chat-search-erasure";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
@@ -256,11 +255,9 @@ describe("GET /api/cron/project-chat-event-search", () => {
       await Promise.allSettled([heldDeletion.done, tick]);
     });
 
-    // The projector's own identity lock is what waits, so the deletion never
-    // races ahead of a projection that could recreate its rows.
-    await expect
-      .poll(heldDeletion.firstBlockedStatementKind, BLOCKED)
-      .toBe("select_for_key_share");
+    // Deferral is only reachable through the new identity lock: the projector
+    // waited on the held parent instead of writing past it. Its own bounded
+    // budget owns that wait, so the test never races it for an observation.
     const projected = await tick;
     expect(projected.success).toBeTruthy();
     expect(projected.threads).toBe(0);
@@ -321,9 +318,10 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const marker = `commitorder${randomUUID().replaceAll("-", "")}`;
     await seedProjectionContent(threadId, marker);
 
-    const projected = await withChatSearchProjectionCommitBarrierFixture(
+    const projected = await withChatSearchProjectionBarrierFixture(
       {
         chatThreadId: threadId,
+        stopAt: "commit",
         work: async ({ entered, blockedWaiterCount, release }) => {
           const tick = projectOwnedChatEventSearch([threadId]);
           const barrier = await entered;
@@ -359,9 +357,10 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const marker = `closureorder${randomUUID().replaceAll("-", "")}`;
     await seedProjectionContent(threadId, marker);
 
-    const projected = await withChatSearchProjectionCommitBarrierFixture(
+    const projected = await withChatSearchProjectionBarrierFixture(
       {
         chatThreadId: threadId,
+        stopAt: "commit",
         work: async ({ entered, blockedWaiterCount, release }) => {
           const tick = projectOwnedChatEventSearch([threadId]);
           await entered;
@@ -403,23 +402,30 @@ describe("GET /api/cron/project-chat-event-search", () => {
   it("denies a closure committed after candidate selection", async () => {
     const { actor, threadId } = await createProjectionFixture();
     await seedProjectionContent(threadId, `lateclosure ${randomUUID()}`);
-    const heldClosure = await holdChatSearchErasureClosureFixture({
-      subject: { subjectKind: "user", subjectId: actor.userId },
-      signal: context.signal,
-    });
-    const tick = projectOwnedChatEventSearch([threadId]);
-    onTestFinished(async () => {
-      await Promise.allSettled([heldClosure.release(), tick]);
-    });
 
-    // Selection cannot see the uncommitted job, so the thread is a candidate
-    // and only the in-transaction admission can deny it.
-    await expect
-      .poll(heldClosure.blockedWaiterCount, BLOCKED)
-      .toBeGreaterThan(0);
-    await heldClosure.release();
+    const denied = await withChatSearchProjectionBarrierFixture(
+      {
+        chatThreadId: threadId,
+        // Pause the per-thread transaction before it resolves ownership, so the
+        // candidate was already selected while the subject was open.
+        stopAt: "ownership",
+        work: async ({ entered, release }) => {
+          const tick = projectOwnedChatEventSearch([threadId]);
+          const barrier = await entered;
+          expect(barrier.lockTimeout).toBe("1s");
+          expect(barrier.statementTimeout).toBe("5s");
+          await closeSubject({
+            subjectKind: "user",
+            subjectId: actor.userId,
+          });
+          release();
+          return await tick;
+        },
+      },
+      context.signal,
+    );
 
-    const denied = await tick;
+    // Selection did not deny it; only the in-transaction admission can.
     expect(denied.closedThreads).toBe(1);
     expect(denied.threads).toBe(0);
     expect(denied.indexedEvents).toBe(0);
@@ -567,22 +573,26 @@ describe("GET /api/cron/project-chat-event-search", () => {
       subjectId: nextOwner.userId,
     });
 
-    const heldAgent = await holdChatSearchAgentRowLockFixture({
-      agentId: current.agentId,
-      transferOwnerTo: nextOwner.userId,
-      signal: context.signal,
-    });
-    const tick = projectOwnedChatEventSearch([current.threadId]);
-    onTestFinished(async () => {
-      await Promise.allSettled([heldAgent.release(), tick]);
-    });
+    const denied = await withChatSearchProjectionBarrierFixture(
+      {
+        chatThreadId: current.threadId,
+        // The unlocked ownership read and subject admission have already used
+        // the previous owner; the transfer commits before the identity locks.
+        stopAt: "agent-lock",
+        work: async ({ entered, release }) => {
+          const tick = projectOwnedChatEventSearch([current.threadId]);
+          await entered;
+          await transferChatSearchAgentOwnerFixture({
+            agentId: current.agentId,
+            owner: nextOwner.userId,
+          });
+          release();
+          return await tick;
+        },
+      },
+      context.signal,
+    );
 
-    // The projector already admitted the previous owner and is waiting on the
-    // Agent identity lock when the transfer commits.
-    await expect.poll(heldAgent.blockedWaiterCount, BLOCKED).toBeGreaterThan(0);
-    await heldAgent.release();
-
-    const denied = await tick;
     expect(denied.closedThreads).toBe(1);
     expect(denied.threads).toBe(0);
     expect(denied.indexedEvents).toBe(0);
