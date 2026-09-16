@@ -8,6 +8,43 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.613.0](https://github.com/vm0-ai/okou/compare/api-v1.612.0...api-v1.613.0) (2026-09-16)
+
+
+### Features
+
+* **api:** make social status generally available ([#34671](https://github.com/vm0-ai/okou/issues/34671)) ([998634e](https://github.com/vm0-ai/okou/commit/998634e9f3f394868f1f91998ced12e0fb0d0824))
+* **api:** publish a compiled reverse run as a user template ([#34642](https://github.com/vm0-ai/okou/issues/34642)) ([1d641f8](https://github.com/vm0-ai/okou/commit/1d641f8bdc8231fc8f849ea5df7848f6833ac9f0))
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+* **api:** isolate agent mutation row locks ([#34690](https://github.com/vm0-ai/okou/issues/34690)) ([fbd6871](https://github.com/vm0-ai/okou/commit/fbd6871c48ee4102f6db3165de8d272d89f17757))
+* **api:** recover terminal callbacks after ownership capture fails ([#34446](https://github.com/vm0-ai/okou/issues/34446)) ([757455b](https://github.com/vm0-ai/okou/commit/757455b06df079e9d4e96ee5669cb9ac3c636d61))
+* **api:** replay one provider request for email outbox retries ([#34675](https://github.com/vm0-ai/okou/issues/34675)) ([dead4e4](https://github.com/vm0-ai/okou/commit/dead4e4a5575ec9e48b4a168ff59655de79e7d56))
+
+
+### Refactoring
+
+* **api:** establish canonical morning brief migration state ([#34672](https://github.com/vm0-ai/okou/issues/34672)) ([6377cee](https://github.com/vm0-ai/okou/commit/6377cee9d4c7d5640bd9bd465a47b153de86085a))
+
+
+### Performance Improvements
+
+* **api:** coalesce concurrent clerk membership refreshes ([#34652](https://github.com/vm0-ai/okou/issues/34652)) ([cad1dd2](https://github.com/vm0-ai/okou/commit/cad1dd212818c58729a4f739249035fd9162cc39))
+* **api:** parallelize thread sharing and index hosted dependencies ([#34641](https://github.com/vm0-ai/okou/issues/34641)) ([bdc8a63](https://github.com/vm0-ai/okou/commit/bdc8a631b7727b29b7c0b96d9ba28629d126b894))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.451.0
+    * @okouai/core bumped to 8.672.0
+    * @okouai/db bumped to 1.268.1
+    * @okouai/pi-agent-runtime bumped to 1.32.3
+
 ## [1.612.0](https://github.com/vm0-ai/okou/compare/api-v1.611.1...api-v1.612.0) (2026-09-16)
 
 

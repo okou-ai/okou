@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.195.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.2...runner-rs-v0.195.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+
 ## [0.195.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.1...runner-rs-v0.195.2) (2026-09-16)
 
 

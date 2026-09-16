@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.906.1](https://github.com/vm0-ai/okou/compare/app-v0.906.0...app-v0.906.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+* **app:** keep the composer's type in the footer and in the thread it opens ([#34660](https://github.com/vm0-ai/okou/issues/34660)) ([d5cff0a](https://github.com/vm0-ai/okou/commit/d5cff0a8edf0b237ad3085cbc877a4fd1c5f80b1))
+* keep the model picker flyout focus ring inside its row ([#34664](https://github.com/vm0-ai/okou/issues/34664)) ([f419bc3](https://github.com/vm0-ai/okou/commit/f419bc3324e6244de5754b289821317400eb4824))
+
+
+### Performance Improvements
+
+* **app:** deduplicate retained attribution requests ([#34649](https://github.com/vm0-ai/okou/issues/34649)) ([2f007cc](https://github.com/vm0-ai/okou/commit/2f007ccb86ff61d279443552030e4107fce50200))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.451.0
+    * @okouai/core bumped to 8.672.0
+
 ## [0.906.0](https://github.com/vm0-ai/okou/compare/app-v0.905.2...app-v0.906.0) (2026-09-16)
 
 

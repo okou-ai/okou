@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.337.0](https://github.com/vm0-ai/okou/compare/cli-v9.336.2...cli-v9.337.0) (2026-09-16)
+
+
+### Features
+
+* **api:** make social status generally available ([#34671](https://github.com/vm0-ai/okou/issues/34671)) ([998634e](https://github.com/vm0-ai/okou/commit/998634e9f3f394868f1f91998ced12e0fb0d0824))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.451.0
+    * @okouai/core bumped to 8.672.0
+    * @okouai/pi-agent-runtime bumped to 1.32.3
+
 ## [9.336.2](https://github.com/vm0-ai/okou/compare/cli-v9.336.1...cli-v9.336.2) (2026-09-16)
 
 
