@@ -14,7 +14,17 @@ async fn zstd_streams_large_files_through_existing_publication() {
     let options = FileCompression::Zstd;
     let target = h.dir.join("history.jsonl");
     fs::write(&target, b"old").unwrap();
-    let bytes = vec![b'x'; 17 * 1024 * 1024 + 1];
+    // Incompressible data exercises repeated credit replenishment as well as
+    // crossing the 15 MiB request boundary; repeated bytes fit the initial window.
+    let mut state = 34573_u64;
+    let bytes = (0..17 * 1024 * 1024 + 1)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 32) as u8
+        })
+        .collect::<Vec<_>>();
     h.host()
         .write_file_with_compression(target.to_str().unwrap(), &bytes, false, options)
         .await
