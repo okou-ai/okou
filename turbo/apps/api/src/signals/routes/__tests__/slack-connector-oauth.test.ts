@@ -429,7 +429,9 @@ test("post-connect App Home does not let an older profile response replace a new
     data: ReturnType<typeof clerkProfile>[];
   }>(context.signal);
   onTestFinished(async () => {
-    earlier.resolve({ data: [clerkProfile(current, "older@example.com")] });
+    if (!earlier.settled()) {
+      earlier.resolve({ data: [clerkProfile(current, "older@example.com")] });
+    }
     await flushWaitUntilForTest();
   });
   const published = createDeferredPromise<unknown>(context.signal);
@@ -477,9 +479,11 @@ test("post-connect App Home does not retain a profile read cancelled by its owne
   }>(context.signal);
   onTestFinished(async () => {
     controller.abort();
-    response.resolve({
-      data: [clerkProfile(current, "cancelled@example.com")],
-    });
+    if (!response.settled()) {
+      response.resolve({
+        data: [clerkProfile(current, "cancelled@example.com")],
+      });
+    }
     await flushWaitUntilForTest();
   });
   context.mocks.clerk.users.getUserList
