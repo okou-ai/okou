@@ -101,6 +101,7 @@ enum Warning {
         pid: u32,
         port: u16,
         ppid: Option<u32>,
+        generation: Option<process::ProcfsProcessGeneration>,
     },
     /// Runner is stopped but a mitmproxy process is still using its port.
     StaleMitmproxy { port: u16 },
@@ -158,7 +159,9 @@ impl fmt::Display for Warning {
                     "orphan firecracker PID {pid} (sandbox {sandbox_id}, ppid={ppid_str})"
                 )
             }
-            Self::OrphanMitmdump { pid, port, ppid } => {
+            Self::OrphanMitmdump {
+                pid, port, ppid, ..
+            } => {
                 let ppid_str = ppid.map_or("?".into(), |p| p.to_string());
                 write!(
                     f,
@@ -322,10 +325,19 @@ impl Warning {
                     generation.as_ref(),
                 ) && process::is_orphan(*pid, runner_pids).await
             }
-            Self::OrphanMitmdump { pid, .. } => {
-                // Resolved if the process exited or a runner registry entry
-                // appeared after the initial scan and now owns the process.
-                pid_exists(*pid) && process::is_orphan(*pid, runner_pids).await
+            Self::OrphanMitmdump {
+                pid,
+                port,
+                generation,
+                ..
+            } => {
+                // A live PID alone may belong to a replacement. Require the
+                // same known proxy observation before checking current ancestry.
+                generation.is_some()
+                    && fresh.mitmdumps.iter().any(|mitm| {
+                        mitm.pid == *pid && mitm.port == *port && mitm.generation == *generation
+                    })
+                    && process::is_orphan(*pid, runner_pids).await
             }
             Self::OrphanNamespace { ns_name, lock_path } => {
                 if network_namespaces.is_some_and(|namespaces| !namespaces.contains(ns_name)) {
@@ -355,11 +367,6 @@ impl Warning {
 struct ObservedNetworkNamespace {
     ns_name: String,
     pool_idx: u32,
-}
-
-/// Check if a process is still alive via `/proc/{pid}`.
-fn pid_exists(pid: u32) -> bool {
-    Path::new(&format!("/proc/{pid}")).exists()
 }
 
 fn fresh_contains_firecracker(
@@ -599,13 +606,7 @@ pub async fn run_doctor(args: DoctorArgs) -> RunnerResult<ExitCode> {
     }
 
     // Phase 7: Output
-    let total_warnings = print_report(&reports, &stopped, &global_warnings);
-
-    if total_warnings > 0 {
-        Ok(ExitCode::FAILURE)
-    } else {
-        Ok(ExitCode::SUCCESS)
-    }
+    Ok(print_report(&reports, &stopped, &global_warnings))
 }
 
 async fn recheck_per_runner_warnings(
@@ -1239,6 +1240,23 @@ async fn detect_global_orphans(
     // Orphan firecracker processes (all runners)
     warnings.extend(detect_orphan_firecrackers(fc_procs, &runner_pids, None).await);
 
+    warnings.extend(detect_orphan_mitmdumps(reports, mitm_procs, &runner_pids).await);
+
+    // Orphan network namespaces
+    warnings.extend(detect_orphan_namespaces().await);
+
+    // Orphan NBD devices
+    warnings.extend(detect_nbd_orphans().await);
+
+    warnings
+}
+
+async fn detect_orphan_mitmdumps(
+    reports: &[RunnerReport],
+    mitm_procs: &[process::MitmproxyProcessInfo],
+    runner_pids: &[u32],
+) -> Vec<Warning> {
+    let mut warnings = Vec::new();
     // Orphan mitmproxy processes.
     // A mitmdump belongs to a runner if its port matches the runner's proxy
     // port (from status.json). All processes on that port — main process and
@@ -1251,20 +1269,15 @@ async fn detect_global_orphans(
         if claimed_ports.contains(&mitm.port) {
             continue;
         }
-        if process::is_orphan(mitm.pid, &runner_pids).await {
+        if process::is_orphan(mitm.pid, runner_pids).await {
             warnings.push(Warning::OrphanMitmdump {
                 pid: mitm.pid,
                 port: mitm.port,
                 ppid: mitm.ppid,
+                generation: mitm.generation,
             });
         }
     }
-
-    // Orphan network namespaces
-    warnings.extend(detect_orphan_namespaces().await);
-
-    // Orphan NBD devices
-    warnings.extend(detect_nbd_orphans().await);
 
     warnings
 }
@@ -1401,7 +1414,7 @@ fn print_report(
     reports: &[RunnerReport],
     stopped: &[StoppedInfo],
     global_warnings: &[Warning],
-) -> usize {
+) -> ExitCode {
     let running = reports.len();
     let stopped_count = stopped.len();
     println!("Runners ({running} running, {stopped_count} stopped):\n");
@@ -1524,7 +1537,11 @@ fn print_report(
     let total_warnings: usize =
         reports.iter().map(|r| r.warnings.len()).sum::<usize>() + global_warnings.len();
     println!("{total_warnings} warning(s) found");
-    total_warnings
+    if total_warnings > 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 fn format_idle_sandbox_diagnostic_line(sandbox: &IdleSandbox) -> String {
@@ -3082,20 +3099,95 @@ printf '%s\n' \
     }
 
     #[tokio::test]
-    async fn orphan_mitmdump_clears_when_parent_runner_pid_appears() {
+    async fn orphan_mitmdump_rechecks_original_identity_and_current_ancestry() {
         let child = sleeping_child();
-        let warning = Warning::OrphanMitmdump {
-            pid: child.0.id(),
-            port: 32821,
-            ppid: Some(std::process::id()),
+        let mut fresh = process::DiscoveredProcesses {
+            mitmdumps: vec![mitm_proc(child.0.id(), 32821)],
+            ..empty_fresh()
         };
+        let warnings = detect_orphan_mitmdumps(&[], &fresh.mitmdumps, &[]).await;
+        assert_eq!(warnings.len(), 1);
+        let warning = &warnings[0];
 
-        assert!(warning.persists(None, &empty_fresh(), &[], None).await);
+        assert!(warning.persists(None, &fresh, &[], None).await);
+        assert_eq!(print_report(&[], &[], &warnings), ExitCode::FAILURE);
+        // Reparenting changes observed PPID, not the proxy's generation.
+        fresh.mitmdumps[0].ppid = Some(1);
+        assert!(warning.persists(None, &fresh, &[], None).await);
         assert!(
             !warning
-                .persists(None, &empty_fresh(), &[std::process::id()], None)
+                .persists(None, &fresh, &[std::process::id()], None)
                 .await
         );
+    }
+
+    #[tokio::test]
+    async fn orphan_mitmdump_resolution_restores_success() {
+        // Kernel PID recycling cannot be requested through the doctor CLI.
+        // Supply its post-reuse observation deterministically while a real
+        // child keeps the numeric PID alive and exercises production ancestry.
+        let child = sleeping_child();
+        let pid = child.0.id();
+        let original = mitm_proc(pid, 32821);
+        let generation = original.generation.unwrap();
+        let observations = [
+            None,
+            Some(process::MitmproxyProcessInfo {
+                generation: Some(process::ProcfsProcessGeneration {
+                    starttime: generation.starttime + 1,
+                    ..generation
+                }),
+                ..mitm_proc(pid, 32821)
+            }),
+            Some(process::MitmproxyProcessInfo {
+                generation: Some(process::ProcfsProcessGeneration {
+                    pgid: generation.pgid + 1,
+                    ..generation
+                }),
+                ..mitm_proc(pid, 32821)
+            }),
+            Some(mitm_proc(pid, 32822)),
+            Some(process::MitmproxyProcessInfo {
+                pid: pid + 1,
+                ..mitm_proc(pid, 32821)
+            }),
+            Some(process::MitmproxyProcessInfo {
+                generation: None,
+                ..mitm_proc(pid, 32821)
+            }),
+        ];
+        for observation in observations {
+            let warnings = detect_orphan_mitmdumps(&[], std::slice::from_ref(&original), &[]).await;
+            assert_eq!(warnings.len(), 1);
+            let fresh = process::DiscoveredProcesses {
+                mitmdumps: observation.into_iter().collect(),
+                ..empty_fresh()
+            };
+            let mut remaining = Vec::new();
+            for warning in warnings {
+                if warning.persists(None, &fresh, &[], None).await {
+                    remaining.push(warning);
+                }
+            }
+            assert_eq!(print_report(&[], &[], &remaining), ExitCode::SUCCESS);
+        }
+    }
+
+    #[tokio::test]
+    async fn orphan_mitmdump_unknown_generation_cannot_establish_persistence() {
+        let child = sleeping_child();
+        let mut fresh = process::DiscoveredProcesses {
+            mitmdumps: vec![process::MitmproxyProcessInfo {
+                generation: None,
+                ..mitm_proc(child.0.id(), 32821)
+            }],
+            ..empty_fresh()
+        };
+        let warnings = detect_orphan_mitmdumps(&[], &fresh.mitmdumps, &[]).await;
+        assert_eq!(warnings.len(), 1);
+        assert!(!warnings[0].persists(None, &fresh, &[], None).await);
+        fresh.mitmdumps[0] = mitm_proc(child.0.id(), 32821);
+        assert!(!warnings[0].persists(None, &fresh, &[], None).await);
     }
 
     #[test]
@@ -3433,6 +3525,10 @@ printf '%s\n' \
             pid,
             ppid: None,
             port,
+            generation: Some(process::ProcfsProcessGeneration {
+                pgid: pid,
+                starttime: u64::from(pid),
+            }),
         }
     }
 
