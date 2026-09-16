@@ -278,8 +278,16 @@ failure. This adds no plaintext cache, early lock release, retry or transport
 cancellation. A slow sibling can extend error-return/lock-held time. Independent
 providers multiply this per-bundle fan-out; it is not a fleet-wide limit. See the
 [controlled experiment and limitations](subscription-decryption-experiment.md).
-Normal ciphertext equality and the exceptional serial equivalence proof remain
-unchanged, as do lazy environment preparation and database-only final admission.
+
+Bundle equivalence skips identical ciphertext. For each unequal ciphertext
+field, canonical and mirror decrypts run as a joined pair with canonical-first
+error selection. Fields remain sequential and stop after mismatch or failure.
+A canonical failure can leave an extra mirror request to join and retain the
+existing provider owner while that slow sibling finishes. The comparison also runs
+outside locks during admission preparation; concurrent proofs multiply its
+per-pair bound. See the [paired proof experiment](subscription-equivalence-experiment.md).
+Lazy environment preparation and database-only final admission retain their
+existing boundaries.
 
 | Consumer                                                 | Coordination and observable boundary                                                                                                                                                                                                                                |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
