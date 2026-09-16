@@ -24,8 +24,8 @@ import {
   reloadQueueData$,
 } from "../signals/queue-page/queue-signals.ts";
 import {
-  setWorkerAblyLoop$,
-  setWorkerAblyPayloadLoop$,
+  setAblyLoop$,
+  setAblyPayloadLoop$,
   setupRealtime$,
 } from "../signals/realtime.ts";
 import {
@@ -362,7 +362,7 @@ const runSharedDatabaseWorkerDaemons$ = command(
     };
 
     set(
-      setWorkerAblyPayloadLoop$,
+      setAblyPayloadLoop$,
       {
         scope: "credential",
         topic: null,
@@ -373,7 +373,7 @@ const runSharedDatabaseWorkerDaemons$ = command(
       signal,
     );
     set(
-      setWorkerAblyLoop$,
+      setAblyLoop$,
       {
         scope: "credential",
         topic: "threadListChanged",
@@ -386,7 +386,7 @@ const runSharedDatabaseWorkerDaemons$ = command(
       signal,
     );
     set(
-      setWorkerAblyPayloadLoop$,
+      setAblyPayloadLoop$,
       {
         scope: "credential",
         topic: "chatThreadReadCursorUpdated",
@@ -396,7 +396,7 @@ const runSharedDatabaseWorkerDaemons$ = command(
       signal,
     );
     set(
-      setWorkerAblyLoop$,
+      setAblyLoop$,
       {
         scope: "user",
         topic: "computerUseHostsChanged",
@@ -409,7 +409,7 @@ const runSharedDatabaseWorkerDaemons$ = command(
       signal,
     );
     set(
-      setWorkerAblyLoop$,
+      setAblyLoop$,
       {
         scope: "user",
         topic: "billing:changed",

@@ -11,7 +11,6 @@ import type {
 import type {
   SharedDatabaseRealtimeMessage,
   SharedDatabaseRealtimeScope,
-  SharedDatabaseRealtimeTopic,
 } from "./protocol.ts";
 import type { ComputedKey, ComputedValue } from "./computed-key.ts";
 
@@ -46,10 +45,10 @@ export class SingleConnectionSharedDatabaseBridge implements SharedDatabaseBridg
     signal.throwIfAborted();
   }
 
-  subscribeRealtime<TScope extends SharedDatabaseRealtimeScope>(
+  subscribeRealtime(
     subscriptionId: string,
-    scope: TScope,
-    topic: SharedDatabaseRealtimeTopic<NoInfer<TScope>>,
+    scope: SharedDatabaseRealtimeScope,
+    topic: string,
     listener: (message: SharedDatabaseRealtimeMessage) => void,
     onResync: () => void,
   ): Promise<void> {

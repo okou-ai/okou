@@ -1,5 +1,4 @@
 import { command, computed, state, type Command } from "ccstate";
-import type { SharedDatabaseRealtimeTopic } from "../../shared-database/protocol.ts";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
@@ -110,12 +109,12 @@ function changedModelSettingsPatch(args: {
 type ChatRealtimeSubscription =
   | {
       readonly kind: "invalidate";
-      readonly topic: SharedDatabaseRealtimeTopic<"user">;
+      readonly topic: string;
       readonly invalidations: RealtimeInvalidationCommands;
     }
   | {
       readonly kind: "command";
-      readonly topic: SharedDatabaseRealtimeTopic<"user">;
+      readonly topic: string;
       readonly loopCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>;
     };
 

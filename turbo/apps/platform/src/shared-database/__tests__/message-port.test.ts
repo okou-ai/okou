@@ -204,6 +204,65 @@ function connectProtocolTransport(
   };
 }
 
+test.each(["user", "org", "credential"] as const)(
+  "Forward new %s events without registering their names and keep chat reads available",
+  async (scope) => {
+    const threadId = crypto.randomUUID();
+    const existingRow = row(threadId, 1);
+    context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+      return respond(
+        200,
+        chatEventRowsResponse(
+          query.sinceSeqId === 0 ? [existingRow] : [],
+          query,
+        ),
+      );
+    });
+    initializeWorker();
+    const { bridge } = connectProtocolTransport(context.signal);
+    await bridge.registerTab(context.signal);
+
+    const topic = "newFeature:changed";
+    const { userId, orgId } = identity();
+    const channelName = {
+      user: `user:${userId}`,
+      org: `org:${orgId}`,
+      credential: `user-org:${userId}:${orgId}`,
+    }[scope];
+    const messages: unknown[] = [];
+    await bridge.subscribeRealtime(
+      "new-feature",
+      scope,
+      topic,
+      (message) => {
+        messages.push(message.data);
+      },
+      () => {},
+    );
+
+    context.mocks.ably.triggerOnChannel(`${channelName}-other`, topic, {
+      revision: "other identity",
+    });
+    context.mocks.ably.triggerOnChannel(channelName, "anotherFeature:changed", {
+      revision: "other event",
+    });
+    context.mocks.ably.triggerOnChannel(channelName, topic, { revision: 1 });
+    await vi.waitFor(() => {
+      expect(messages).toStrictEqual([{ revision: 1 }]);
+    });
+    await expect(
+      bridge.query(
+        {
+          dataKey: dataKey(threadId),
+          afterSeqId: null,
+          consistency: "catch-up",
+        },
+        context.signal,
+      ),
+    ).resolves.toStrictEqual([existingRow]);
+  },
+);
+
 test("share one Worker realtime subscription until tabs disconnect", async () => {
   initializeWorker();
   const resetFirstOwner$ = resetSignal();

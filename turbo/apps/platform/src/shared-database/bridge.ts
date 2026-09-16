@@ -7,16 +7,15 @@ import type { ComputedKey, ComputedValue } from "./computed-key.ts";
 import type {
   SharedDatabaseRealtimeMessage,
   SharedDatabaseRealtimeScope,
-  SharedDatabaseRealtimeTopic,
   SharedDatabaseWorkerUnavailableReason,
 } from "./protocol.ts";
 
 export interface SharedDatabaseBridge {
   registerTab(signal: AbortSignal): Promise<void>;
-  subscribeRealtime<TScope extends SharedDatabaseRealtimeScope>(
+  subscribeRealtime(
     subscriptionId: string,
-    scope: TScope,
-    topic: SharedDatabaseRealtimeTopic<NoInfer<TScope>>,
+    scope: SharedDatabaseRealtimeScope,
+    topic: string,
     listener: (message: SharedDatabaseRealtimeMessage) => void,
     onResync: () => void,
   ): Promise<void>;
