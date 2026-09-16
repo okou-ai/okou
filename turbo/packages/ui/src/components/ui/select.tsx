@@ -4,6 +4,7 @@ import * as React from "react";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
+import { MENU_ROW_HEIGHT_CLASS } from "./menu-row";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 
@@ -339,9 +340,8 @@ const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
         ref={ref}
         data-slot="select-item"
         className={cn(
-          // `min-h-9 py-1.5 text-sm` is the shared 36px popup row; the reasoning
-          // for the floor lives on `MENU_ROW_HEIGHT_CLASS` in dropdown-menu.tsx.
-          "relative flex min-h-9 w-full cursor-pointer select-none items-center rounded-lg py-1.5 pl-2 pr-8 text-sm outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
+          "relative flex w-full cursor-pointer select-none items-center rounded-lg pl-2 pr-8 outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
+          MENU_ROW_HEIGHT_CLASS,
           className,
         )}
         {...props}

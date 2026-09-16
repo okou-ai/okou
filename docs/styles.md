@@ -331,8 +331,9 @@ composer variant. They are not a supported API for a new surface; reach for
 ### Menu and select rows
 
 Every popup list draws one row height: 36px, the same figure `Button` ships as
-its default size and `IconButton` ships as its square. `DropdownMenuItem`,
-`DropdownMenuSubTrigger` and `SelectItem` own it as `min-h-9 py-1.5 text-sm`. It
+its default size and `IconButton` ships as its square. `MENU_ROW_HEIGHT_CLASS`
+in `components/ui/menu-row.ts` is its single owner — `min-h-9 py-1.5 text-sm` —
+and `DropdownMenuItem`, `DropdownMenuSubTrigger` and `SelectItem` compose it. It
 is a floor rather than a fixed height so a row whose label wraps or whose child
 is taller than the line box grows instead of clipping, and a floor rather than
 padding alone because padding expresses the height only in terms of the line
