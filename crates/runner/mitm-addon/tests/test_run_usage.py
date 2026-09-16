@@ -319,6 +319,65 @@ async def test_registry_refresh_restart_and_lost_retention_are_explicit(
         assert "retention_lost" in read_usage(control, "run-2")["reasons"]
 
 
+@pytest.mark.parametrize("prewarm_usage", [False, True])
+async def test_duplicate_prewarm_terminal_does_not_finish_active_inference(
+    tmp_path,
+    control,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    monkeypatch,
+    prewarm_usage,
+):
+    capture_deferred_websocket_trims(monkeypatch)
+    path = write_registration(tmp_path)
+    warm = payload("warm") if prewarm_usage else {"id": "warm"}
+    with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
+        flow = make_openai_responses_websocket_request_flow(real_flow)
+        await mitm_addon.request(flow)
+        flow.response = tutils.tresp(
+            status_code=101, headers=make_openai_responses_websocket_response_headers()
+        )
+        mitm_addon.responseheaders(flow)
+        for response_id, prewarm in [("warm", True), ("active", False)]:
+            set_websocket_message(
+                flow,
+                from_client=True,
+                content=json.dumps({"type": "response.create", "generate": not prewarm}).encode(),
+            )
+            mitm_addon.websocket_message(flow)
+            feed_websocket_server_message(
+                flow,
+                json.dumps({"type": "response.created", "response": {"id": response_id}}).encode(),
+            )
+            if prewarm:
+                feed_websocket_server_message(
+                    flow,
+                    json.dumps({"type": "response.completed", "response": warm}).encode(),
+                )
+        assert read_usage(control)["outstandingResponses"] == 1
+        # This terminal is provably a duplicate of the completed prewarm,
+        # while a different response still owns the connection's active work.
+        feed_websocket_server_message(
+            flow,
+            json.dumps({"type": "response.completed", "response": warm}).encode(),
+        )
+        pending = read_usage(control)
+        assert pending["outstandingResponses"] == 1
+        assert pending["reasons"] == ["in_flight"]
+        assert pending["complete"] is False
+        assert pending["observedResponses"] == 0
+        feed_websocket_server_message(
+            flow,
+            json.dumps({"type": "response.completed", "response": payload("active")}).encode(),
+        )
+        mitm_addon.websocket_end(flow)
+    result = read_usage(control)
+    assert result["outstandingResponses"] == 0
+    assert result["complete"] is True
+    assert result["totals"]["total"] == 70
+
+
 async def test_response_capacity_never_forgets_duplicate_identity(
     tmp_path,
     control,

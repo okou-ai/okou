@@ -282,18 +282,17 @@ def websocket_pending(flow: http.HTTPFlow, *, pending: bool) -> None:
             run.revision += 1
 
 
-def terminal_response(flow: http.HTTPFlow, *, suppressed: bool = False) -> None:
+def terminal_response(flow: http.HTTPFlow) -> None:
     """Settle one response without turning absent usage into provider zero."""
     with _lock:
         state = _state(flow)
         if state is None or state.finished:
             return
-        if not suppressed:
-            quantities = state.run.responses.get(state.response_key) if state.response_key else None
-            if quantities is None:
-                _mark(state.run, "missing_usage")
-            elif any(category not in quantities for category in MODEL_USAGE_CATEGORIES):
-                _mark(state.run, "missing_categories")
+        quantities = state.run.responses.get(state.response_key) if state.response_key else None
+        if quantities is None:
+            _mark(state.run, "missing_usage")
+        elif any(category not in quantities for category in MODEL_USAGE_CATEGORIES):
+            _mark(state.run, "missing_categories")
         if state.websocket:
             state.response_key = None
         else:

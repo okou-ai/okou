@@ -292,37 +292,38 @@ def feed_usage(
     suppressed = False
     if isinstance(prewarm_state, _OpenAIResponsesPrewarmState):
         if (
-            usage_result is not None
-            and has_message_id
-            and lifecycle is not None
+            lifecycle is not None
             and lifecycle.is_terminal
             and lifecycle.is_valid
-            and lifecycle.response_id == message_id
+            and lifecycle.response_id is not None
         ):
+            terminal_id = lifecycle.response_id
             if (
                 not prewarm_state.ambiguous
                 and prewarm_state.active_intent == "prewarm"
-                and prewarm_state.active_response_id == message_id
+                and prewarm_state.active_response_id == terminal_id
             ):
-                suppressed = _retain_ignored_response_id(flow, prewarm_state, message_id)
+                suppressed = _retain_ignored_response_id(flow, prewarm_state, terminal_id)
             elif (
                 not prewarm_state.ambiguous
-                and message_id in prewarm_state.ignored_response_diagnostics
+                and terminal_id in prewarm_state.ignored_response_diagnostics
             ):
                 suppressed = True
             if (
                 suppressed
-                and not prewarm_state.ignored_response_diagnostics[message_id]
+                and message_id == terminal_id
+                and usage_result is not None
+                and not prewarm_state.ignored_response_diagnostics[terminal_id]
                 and usage.has_positive_model_provider_usage(usage_result)
             ):
                 usage.log_ignored_model_provider_usage_source(
                     flow,
                     flow_metadata.run_id(flow.metadata),
-                    message_id,
+                    terminal_id,
                     usage_result,
                     reason="responses_generate_false",
                 )
-                prewarm_state.ignored_response_diagnostics[message_id] = True
+                prewarm_state.ignored_response_diagnostics[terminal_id] = True
         if (
             not suppressed
             and usage_result is not None
@@ -379,8 +380,10 @@ def feed_usage(
                 flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = usage_target
             usage.merge_openai_responses_usage_result(usage_target, usage_result)
 
-    if lifecycle is not None and lifecycle.is_terminal:
-        run_usage.terminal_response(flow, suppressed=suppressed)
+    if lifecycle is not None and lifecycle.is_terminal and not suppressed:
+        # A duplicate prewarm terminal can arrive during a different response.
+        # It owns no inference observation and cannot settle that active work.
+        run_usage.terminal_response(flow)
     elif lifecycle is not None and lifecycle.is_error:
         run_usage.mark(flow, "interrupted")
         run_usage.terminal_response(flow)
