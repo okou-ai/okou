@@ -79,7 +79,7 @@ Examples:
   Print JSON:        okou chat create "Launch plan" --json
 
 Notes:
-  - Creates an empty thread; send its first message with okou chat send
+  - Creates an empty thread and does not start a run; send its first self-contained message with okou chat send
   - Defaults --agent to the agent of OKOU_CHAT_THREAD_ID
   - Defaults --model to the model of the run that owns OKOU_TOKEN
   - Defaults priority to the priority of the current chat thread

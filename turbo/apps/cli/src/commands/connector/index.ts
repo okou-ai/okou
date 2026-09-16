@@ -52,8 +52,26 @@ Selectors:
   Full identifiers take precedence over display names; ambiguous matches are rejected.
   Each command retains its supported connector types. Use UUIDs for stable custom automation.
 
+Account selection:
+  Inspect the account used by this Run with connector status <slug> --json, and
+  list alternatives with connector account list <slug> --json. Use only an
+  exact returned connectionId; never invent one or reuse it for another connector.
+  Account switches affect future runs in the current chat, not this Run or a
+  global default.
+
+Permission recovery:
+  Diagnose the exact failed URL and method with connector check before trying
+  ad hoc fixes or requesting access. Check okou whoami --permissions first,
+  plan only the concrete operations needed now, and use the exact
+  permission-request command emitted for a deny/ask result. Provider OAuth
+  scope names are not Okou permissions.
+  Use a callback only when the current turn has exactly one access action. For
+  multiple actions, return ordinary links separately and wait for all of them.
+  Always return action URLs verbatim with every query parameter.
+
 Examples:
   okou connector status builtin:github
+  okou connector account list github --json
   okou connector custom status "Acme Search"
   okou connector check --connector custom:_acme-search --url https://api.acme.test/items
 

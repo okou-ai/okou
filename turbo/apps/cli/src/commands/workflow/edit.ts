@@ -36,7 +36,8 @@ Examples:
   okou workflow edit <workflow-id> --display-name "My Workflow" --description "Does things"
 
 Notes:
-  - SKILL.md is synthesized automatically; --dir uploads supplementary files only
+  - SKILL.md is synthesized automatically; --dir uploads supplementary files only and rejects SKILL.md
+  - This command persists the update through the API. Editing /home/user/.codex/skills or /home/user/.claude/skills is runtime-only and will not sync back
   - At least one of --instruction, --instruction-file, --dir, --display-name, or --description is required`,
   )
   .action(

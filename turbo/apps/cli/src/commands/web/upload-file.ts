@@ -28,6 +28,9 @@ Output:
   With --json, prints metadata plus inlineMarkdownLink, previewMarkdownBlock, and artifactPresentationContext.
 
 Notes:
+  - This delivers a file; it does not publish a static site or user-openable HTML artifact view. Use okou host for that
+  - Upload when the user needs the file itself or no hosted, email, cloud-document, or other destination already provides access
+  - Avoid duplicate delivery unless the channels serve distinct needs (for example, a live view plus its source file)
   - Authenticates via OKOU_TOKEN (requires file:write capability)
   - Persist the returned stable URL in chat messages
   - Private file URLs require the owner's authentication; they do not grant public access

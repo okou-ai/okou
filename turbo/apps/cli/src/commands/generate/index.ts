@@ -60,7 +60,18 @@ function buildGenerateHelpText(): string {
     "  Force built-in:        okou generate image --provider built-in --model gpt-image-2 --raw-prompt ...",
   ];
 
-  return `\nExamples:\n${examples.join("\n")}\n\nNotes:\n  - Run "okou generate <type>" with no --prompt to list generation choices for that type.
+  return `
+Examples:
+${examples.join("\n")}
+
+Routing:
+  - If the task includes an attached generation template, follow that template's exact commands and resources. Do not run generic provider discovery unless the template names it as a fallback.
+  - Otherwise, run this help to choose a supported type, then run "okou generate <type>" with no generation input to list every available provider for that type. Run the type's --help before execution; flags differ (for example, avatar-video uses --script or --audio-url, not --prompt).
+  - Supported generation surfaces are image, video, avatar-video, presentation, voice/audio, website, and connector-backed text, code, or document plus the listed HTML artifact types. Do not infer unsupported types.
+
+Execution:
+  - Use --provider built-in for Okou execution or --provider <connector> for connector skill-invocation guidance where offered.
+  - After starting an Okou generation, wait for it to finish and use the returned artifact. Do not launch a duplicate or recreate the result because generation is taking time.
   - Media and connector-backed generation types may expose --provider for Okou or connector execution guidance.
   - HTML artifact types use registry-backed --design-system and --template selection.`;
 }
