@@ -1177,8 +1177,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         baseSession: { sessionId: piSessionId, sha256: null },
         resourceSnapshot: {
           schemaVersion: 1,
+          // 25 MiB of resource content fits the per-object envelope on its own.
           agentsFiles: [
-            { path: "/AGENTS.md", content: "b".repeat(31 * 1024 * 1024) },
+            { path: "/AGENTS.md", content: "b".repeat(25 * 1024 * 1024) },
           ],
           skills: [],
         },
@@ -1186,6 +1187,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         h0SessionHistory: history,
       },
     );
+    // 10 MiB of history is inside the supported history ceiling on its own, but
+    // the two together exceed the serialized handoff the chunk API can carry.
+    const largeHistory = `${history}${"c".repeat(10 * 1024 * 1024)}`;
     const h1Hash = await publishPiInferenceObject(
       db(),
       f,
@@ -1195,8 +1199,8 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         schemaVersion: 1,
         manifestGeneration: 3,
         lastEventSequence: 4,
-        sessionHistory: history,
-        historyHash: createHash("sha256").update(history).digest("hex"),
+        sessionHistory: largeHistory,
+        historyHash: createHash("sha256").update(largeHistory).digest("hex"),
       },
     );
     const existing = await readRequiredPiFixture(f);
@@ -1284,8 +1288,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       [200],
     );
     await flushWaitUntilForTest();
-    // The freed slot belongs to the older persisted demand, so a nonqueue
-    // caller keeps the existing capacity error instead of taking it.
+    // The freed slot belongs to the older persisted demand. This caller queues
+    // on the capacity outcome, so it waits instead of taking the slot; the
+    // unchanged `concurrentRunLimit()` return keeps a nonqueue caller's error.
     const refused = await api.requestCreateRun(
       actor,
       {
@@ -1293,11 +1298,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         prompt: "fresh legacy",
         modelProvider: "anthropic-api-key",
       },
-      [429],
+      [201],
     );
-    expect(refused.body).toMatchObject({
-      error: { code: "CONCURRENT_RUN_LIMIT" },
-    });
+    expect(refused.body).toMatchObject({ status: "queued" });
     // The older demand then takes the slot it was owed.
     await expect(
       createStore().set(consumeDeferredPiRun$, deferred.runId, context.signal),
