@@ -11,8 +11,6 @@ import {
 } from "@okouai/core/google-ads-account";
 import type { AdAttributionMetadata } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import { command } from "ccstate";
-import { enqueueMarketingEvent$ } from "./marketing-events.ts";
-import { settle } from "../utils.ts";
 import { capturePaidOnboardingEvent } from "../../lib/posthog.ts";
 import {
   fireGoogleAdsConversion,
@@ -94,24 +92,7 @@ export const capturePaidOnboardingStepViewed$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const stepIndex = ONBOARDING_STEP_ORDER.indexOf(step);
-    const observation = await settle(
-      set(
-        enqueueMarketingEvent$,
-        "StepViewed",
-        {
-          route_path: window.location.pathname,
-          step_key: step,
-          step_index: stepIndex,
-          step_count: ONBOARDING_STEP_ORDER.length,
-        },
-        signal,
-      ),
-      signal,
-    );
     capturePaidOnboardingEvent("StepViewed", {
-      ...(observation.ok && observation.value
-        ? { acquisition_observation_id: observation.value }
-        : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
       step_key: step,
       step_index: stepIndex,
@@ -152,24 +133,8 @@ export const capturePaidOnboardingStepViewed$ = command(
 );
 
 export const capturePaidOnboardingCheckoutCreated$ = command(
-  async (
-    { set },
-    checkoutSource: string,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const observation = await settle(
-      set(
-        enqueueMarketingEvent$,
-        "CheckoutCreated",
-        { checkout_source: checkoutSource },
-        signal,
-      ),
-      signal,
-    );
+  ({ set }, checkoutSource: string): void => {
     capturePaidOnboardingEvent("CheckoutCreated", {
-      ...(observation.ok && observation.value
-        ? { acquisition_observation_id: observation.value }
-        : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
       checkout_source: checkoutSource,
     });
@@ -177,15 +142,8 @@ export const capturePaidOnboardingCheckoutCreated$ = command(
 );
 
 export const capturePaidOnboardingRoleConfirmed$ = command(
-  async ({ set }, role: string, signal: AbortSignal): Promise<void> => {
-    const observation = await settle(
-      set(enqueueMarketingEvent$, "RoleConfirmed", { role }, signal),
-      signal,
-    );
+  ({ set }, role: string): void => {
     capturePaidOnboardingEvent("RoleConfirmed", {
-      ...(observation.ok && observation.value
-        ? { acquisition_observation_id: observation.value }
-        : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
       role,
     });
@@ -198,21 +156,7 @@ export const capturePaidOnboardingRedirectToStripe$ = command(
     checkoutSource: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const observation = await settle(
-      set(
-        enqueueMarketingEvent$,
-        "RedirectToStripe",
-        {
-          checkout_source: checkoutSource,
-        },
-        signal,
-      ),
-      signal,
-    );
     capturePaidOnboardingEvent("RedirectToStripe", {
-      ...(observation.ok && observation.value
-        ? { acquisition_observation_id: observation.value }
-        : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
       checkout_source: checkoutSource,
     });
@@ -249,24 +193,8 @@ export const capturePaidOnboardingRedirectToStripe$ = command(
 );
 
 export const capturePaidOnboardingAppHandoff$ = command(
-  async ({ set }, prompt: string, signal: AbortSignal): Promise<void> => {
-    const observation = await settle(
-      set(
-        enqueueMarketingEvent$,
-        "AppHandoff",
-        {
-          destination: "app",
-          prompt_present: prompt.trim().length > 0,
-          prompt_length: prompt.length,
-        },
-        signal,
-      ),
-      signal,
-    );
+  ({ set }, prompt: string): void => {
     capturePaidOnboardingEvent("AppHandoff", {
-      ...(observation.ok && observation.value
-        ? { acquisition_observation_id: observation.value }
-        : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
       destination: "app",
       prompt_present: prompt.trim().length > 0,

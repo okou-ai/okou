@@ -47,6 +47,7 @@ import {
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { enterImpactOnboarding$ } from "./onboarding-impact.ts";
+import { enterAcquisitionOnboarding$ } from "./onboarding-acquisition.ts";
 
 interface OnboardingPageConfig {
   readonly step: OnboardingRouteStep;
@@ -126,7 +127,7 @@ function createOnboardingPageSetup(
         );
         const handoffParams = promptHandoffParams(searchParams);
         handoffParams.set("prompt", checkoutPrompt);
-        await set(capturePaidOnboardingAppHandoff$, checkoutPrompt, signal);
+        set(capturePaidOnboardingAppHandoff$, checkoutPrompt);
         set(detachedNavigateTo$, ROUTES.prompt, {
           searchParams: handoffParams,
           replace: true,
@@ -151,6 +152,7 @@ function createOnboardingPageSetup(
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
     set(enterImpactOnboarding$, identity);
+    set(enterAcquisitionOnboarding$, identity);
     set(hydrateOnboardingRoute$, config.step, searchParams);
     const draft = get(onboardingDraft$);
     if (config.fallbackPath && !hasRequiredSelection(config.step, draft)) {

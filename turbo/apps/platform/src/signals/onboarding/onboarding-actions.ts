@@ -59,7 +59,7 @@ export const completeOnboarding$ = command(
     );
     signal.throwIfAborted();
     if (role) {
-      await set(capturePaidOnboardingRoleConfirmed$, role, signal);
+      set(capturePaidOnboardingRoleConfirmed$, role);
     }
     // Both a prior route and the Worker's HTML prefetch can retain an empty
     // list from before the status endpoint provisioned the default agent.
@@ -144,11 +144,7 @@ export const prepareOnboardingVideoRun$ = command(
       throw new Error("Onboarding checkout unexpectedly returned a preview");
     }
     const checkoutUrl = result.body.url;
-    await set(
-      capturePaidOnboardingCheckoutCreated$,
-      "onboarding_video",
-      signal,
-    );
+    set(capturePaidOnboardingCheckoutCreated$, "onboarding_video");
     await bestEffort(
       set(capturePaidOnboardingRedirectToStripe$, "onboarding_video", signal),
       signal,

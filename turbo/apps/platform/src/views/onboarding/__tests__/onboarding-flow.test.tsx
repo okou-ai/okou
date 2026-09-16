@@ -1,8 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  marketingAcquisitionContract,
-  type ObservedAcquisitionEvent,
-} from "@okouai/api-contracts/contracts/marketing-acquisition";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import {
   agentsByIdContract,
@@ -1436,16 +1432,10 @@ test.each([
   "Onboarding and checkout route only to $accountId",
   async ({ accountId, onboarding, checkout }) => {
     const marketing = "https://www.okou.ai/api/marketing/acquisition";
-    const observations: ObservedAcquisitionEvent[] = [];
-    context.mocks.http.post(`${marketing}/events`, async ({ request }) => {
-      const batch = marketingAcquisitionContract.events.body.parse(
-        await request.json(),
-      );
-      observations.push(...batch.events);
-      return Response.json({
-        recorded: true,
-        consented: true,
-      });
+    const requests: Request[] = [];
+    context.mocks.http.post(`${marketing}/onboarding`, ({ request }) => {
+      requests.push(request);
+      return new Response(null, { status: 204 });
     });
     context.mocks.api(
       acquisitionAttributionContract.resolveGoogleAdsAccount,
@@ -1498,22 +1488,7 @@ test.each([
       expect(window.location.href).toContain("checkout.stripe.com");
       expect(sentConversions(gtag)).toStrictEqual([...onboarding, ...checkout]);
     });
-    await waitFor(() => {
-      expect(
-        observations.map((event) => {
-          return event.name;
-        }),
-      ).toStrictEqual(
-        expect.arrayContaining([
-          "StepViewed",
-          "CheckoutCreated",
-          "RedirectToStripe",
-        ]),
-      );
-    });
-    for (const observation of observations) {
-      expect(observation.properties).not.toHaveProperty("gclid");
-      expect(observation.properties).not.toHaveProperty("ga_client_id");
-    }
+    expect(requests).toHaveLength(1);
+    await expect(requests[0]?.text()).resolves.toBe("");
   },
 );

@@ -48,7 +48,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.MarketingAcquisitionShadow]: {
     maintainer: "yuma@okou.ai",
     description:
-      "Mirror App acquisition observations to Marketing for comparison",
+      "Bind Marketing acquisition once during onboarding for comparison",
     enabled: false,
   },
   [FeatureSwitchKey.SocialStatus]: {

@@ -73,7 +73,7 @@ import {
   setupOnboardingWorkflowRunPage$,
 } from "./onboarding/onboarding-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
-import { setupMarketingAcquisition$ } from "./bootstrap/marketing-acquisition.ts";
+import { setupOnboardingAcquisition$ } from "./onboarding/onboarding-acquisition.ts";
 import { setupOnboardingImpact$ } from "./onboarding/onboarding-impact.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
@@ -658,7 +658,7 @@ export const bootstrap$ = command(
     if (!isDesktopAuthFlow()) {
       set(setupAuthenticatedRealtime$, signal);
       set(setupOnboardingImpact$, signal);
-      set(setupMarketingAcquisition$, signal);
+      set(setupOnboardingAcquisition$, signal);
     }
     const ready = set(completeBootstrap$, render, signal);
 
