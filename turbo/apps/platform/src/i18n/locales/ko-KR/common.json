@@ -2057,7 +2057,7 @@
     },
     "newChat": "새 채팅",
     "origins": {
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
