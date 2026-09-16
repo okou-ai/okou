@@ -9,14 +9,14 @@ First-party CSS class selectors are not a second component API. New CSS modules,
 The goal is zero first-party CSS class selectors for business styling. Preventing growth is an interim guardrail, not completion of this goal.
 
 - Business and shared UI components use Tailwind utilities and semantic component variants. They neither define nor depend on first-party styling classes, including classes that wrap `@apply`.
-- First-party selectors, their class dependencies, and component-owned inline or injected styles are eliminated. The legacy baseline is empty; existing code is not a permanent exception.
+- First-party selectors, their class dependencies, and component-owned inline or injected styles are eliminated.
 - Runtime behavior and tests use semantic roles, accessible names, refs, `data-*` hooks, or documented component slots instead of querying styling classes.
 - Remaining handwritten CSS is limited to centrally managed design variables and tokens, explicitly allowlisted global environment rules, and explicitly allowlisted third-party DOM adapters. These exceptions do not authorize business styling.
 - Every environment or adapter exception has an exact scope, owner, rationale, and removal condition. Third-party entries also identify the upstream DOM owner; vendored stylesheets are pinned to their exact content hash. Directory-wide ignores and class-prefix exemptions are not allowed.
 - The design system has a documented ownership chain from primitive variables to semantic tokens, Tailwind utilities, and component variants, including naming, theme mapping, introduction, change, deprecation, and review. Components reuse that contract instead of creating a parallel variable or token registry.
 - Lint and agent instructions enforce the same boundary. Failures direct contributors to this guide and the underlying fix; business selectors cannot be authorized by disabling lint, expanding a baseline, or adding an allowlist entry.
 
-Passing the current lint establishes compliance with the guardrail; it does not establish that the remaining first-party selectors have been cleared. The complete goal is tracked in [#32402](https://github.com/vm0-ai/vm0/issues/32402).
+Passing the current lint establishes compliance with the guardrail.
 
 ## Sources of truth
 
