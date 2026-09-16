@@ -39,11 +39,15 @@ The height itself may come from the card's own synchronous row structure rather
 than from a hardcoded pixel value. A notice card that renders only a headline is
 one row tall, and the same card with a supporting line is taller, because that
 choice is made from props already present at mount and never changes afterwards.
-Reserve geometry wherever the asynchronous read does reach: the notice cards in
+Reserve geometry wherever the asynchronous read does reach. The notice cards in
 `chat-thread-page.tsx` keep a two-line box for the supporting line, since
 billing status and failure-recovery classification swap that text inside an
-already mounted frame. Do not pay for that reservation on rows the asynchronous
-read cannot introduce.
+already mounted frame, and the billing states keep their action slot at the
+shared action height whether or not an action is resolved yet. Below the card's
+640px breakpoint the body is a column, so a late action row would add its own
+height plus the container gap. Do not pay for either reservation on rows the
+asynchronous read cannot introduce, such as the supporting line of a notice that
+never carries one.
 
 ### Keep the frame mounted
 

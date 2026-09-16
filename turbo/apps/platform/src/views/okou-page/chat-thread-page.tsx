@@ -4736,20 +4736,33 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
 const CHAT_NOTICE_DESCRIPTION_CLASS =
   "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
 
+/**
+ * The billing notice's action is the other row an asynchronous read introduces:
+ * it appears only once `billingStatusAsync$` and `isOrgAdmin$` resolve, and the
+ * credits-available state replaces the whole body without one. Below the card's
+ * 640px breakpoint the body is a column, so mounting that row late would add its
+ * own height plus the container gap and resize the transcript. Every billing
+ * state therefore keeps this slot, filled or empty, at the shared action height.
+ */
+const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
+
 function CreditsAvailableMessage() {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-col p-3">
-      <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
-        {t(($) => {
-          return $.chat.billing.creditsAvailable;
-        })}
-      </p>
-      <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-        {t(($) => {
-          return $.chat.billing.creditsAdded;
-        })}
-      </p>
+    <div className="flex flex-col justify-between gap-3 p-3 @[640px]:flex-row @[640px]:items-center">
+      <div className="min-w-0">
+        <p className="truncate text-[0.9375rem] font-medium text-emerald-700 dark:text-emerald-300">
+          {t(($) => {
+            return $.chat.billing.creditsAvailable;
+          })}
+        </p>
+        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>
+          {t(($) => {
+            return $.chat.billing.creditsAdded;
+          })}
+        </p>
+      </div>
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
     </div>
   );
 }
@@ -4967,37 +4980,39 @@ function InsufficientCreditsCard() {
         </p>
         <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
-      {!canShowBillingAction ? null : shouldStartProCheckout ? (
-        <Button
-          type="button"
-          onClick={handleUpgradeClick}
-          disabled={checkoutRedirecting}
-          variant="default"
-          size="sm"
-          className="shrink-0 disabled:opacity-60"
-        >
-          {checkoutRedirecting
-            ? t(($) => {
-                return $.chat.billing.redirecting;
-              })
-            : t(($) => {
-                return $.chat.billing.upgradeToPro;
-              })}
-        </Button>
-      ) : (
-        <ChatCardDetails
-          title={headline}
-          triggerLabel={t(($) => {
-            return $.runErrors.actions.addCredits;
-          })}
-        >
-          <p>{helper}</p>
-          <PaidCreditCheckoutActions
-            preparing={creditCheckoutPreparing}
-            handleCreditClick={handleCreditClick}
-          />
-        </ChatCardDetails>
-      )}
+      <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+        {!canShowBillingAction ? null : shouldStartProCheckout ? (
+          <Button
+            type="button"
+            onClick={handleUpgradeClick}
+            disabled={checkoutRedirecting}
+            variant="default"
+            size="sm"
+            className="shrink-0 disabled:opacity-60"
+          >
+            {checkoutRedirecting
+              ? t(($) => {
+                  return $.chat.billing.redirecting;
+                })
+              : t(($) => {
+                  return $.chat.billing.upgradeToPro;
+                })}
+          </Button>
+        ) : (
+          <ChatCardDetails
+            title={headline}
+            triggerLabel={t(($) => {
+              return $.runErrors.actions.addCredits;
+            })}
+          >
+            <p>{helper}</p>
+            <PaidCreditCheckoutActions
+              preparing={creditCheckoutPreparing}
+              handleCreditClick={handleCreditClick}
+            />
+          </ChatCardDetails>
+        )}
+      </div>
     </div>
   );
 }
