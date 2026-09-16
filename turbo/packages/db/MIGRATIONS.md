@@ -60,15 +60,6 @@ explicit `showUsagePack: false` behavior.
 
 ### Active transition validators
 
-- `scripts/test-provider-balance-migration.ts` protects migration
-  `1144_normalize_provider_balance_failures` (#34219): recognized provider
-  envelopes, ownership-aware presentation, unrelated diagnostics/reasons/statuses,
-  retained-table scale, transactional rollback and idempotent retry. Keep it until
-  the production journal confirms normalization and the API/Runner rollback floors
-  close the old-writer window. Current structured-cause presentation, event/export
-  redaction and rollback-target checks remain permanent coverage; the three
-  retirement conditions above still apply.
-
 - `scripts/test-marketing-privacy-retirement.ts` protects migration
   `1139_retire_marketing_privacy_storage` (#33747): populated/empty storage,
   unrelated state preservation, restrictive external dependencies, shared

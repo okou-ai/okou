@@ -914,26 +914,21 @@ showing the vm0 recharge card. The token addition required no schema migration.
 The #34219 cleanup follows the reader/writer rollout in #34251. The production
 read on 2026-09-16 found API `1.607.0`, App `0.902.2`, and all three running
 Runners on `0.194.6`, containing the owner-aware reader and structured writer
-commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`. Two retained BYOK failures
-still required normalization; their presence did not justify dropping the reader.
+commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`.
 
-Before promoting the cleanup API, apply
-`1144_normalize_provider_balance_failures`. It normalizes only failed runs with
-a missing or `insufficient_credits` reason and recognized provider error evidence.
-It preserves raw errors, ownership, unrelated reasons, and immutable chat events.
-Terminal readers then use the persisted cause without inferring it from error
-text. Current failed provider-event detection and network-export redaction remain.
+Historical errors remain as stored, including missing or misclassified failure
+reasons. No data migration or repair is required. The user accepted that those
+records may display raw errors or the old incorrect credit classification after
+terminal text inference is removed. Terminal readers use the persisted cause.
+Current failed provider-event detection and network-export redaction remain.
 The production rollback resolver enforces the commit above for both the API
 target and its independently resolved Runner tag, preventing an older writer or
-public reader from returning. The data migration is idempotent and transactionally
-reversible before commit; a code rollback retains the normalized causes.
+public reader from returning for new runs.
 
 This change does not certify alert delivery. #34219 remains open for actual
 built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
 verification. Runner INFO events are below the Axiom upload threshold, and the
-investigation token could not read monitor configuration. Deployment of this
-migration must be confirmed from the production migration receipt before
-claiming the retained-data gate complete.
+investigation token could not read monitor configuration.
 
 Avoid one-shot protocol flips:
 

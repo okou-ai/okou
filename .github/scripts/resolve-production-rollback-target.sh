@@ -117,8 +117,8 @@ if ! git merge-base --is-ancestor "$privacy_cleanup_reader_commit" "$TARGET_COMM
   fail "Rollback target predates marketing privacy storage cleanup preparation: ${privacy_cleanup_reader_commit}."
 fi
 
-# Retained balance causes are normalized before terminal text inference retires.
-# Keep the owner-aware public reader and the structured Runner writer available.
+# Terminal presentation trusts the stored cause without repairing old records.
+# Keep the owner-aware reader and structured Runner writer available for new runs.
 if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates owner-aware provider balance failures: ${PROVIDER_BALANCE_FAILURE_COMMIT}."
 fi
