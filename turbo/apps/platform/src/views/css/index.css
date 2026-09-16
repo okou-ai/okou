@@ -504,13 +504,16 @@ body {
 
 /* The product's own palette. It is the absence of a preset rather than a ninth
    one: `signals/theme.ts` writes no palette attribute while it is selected, so
-   every token keeps the shared Amber-on-Linen values and none of the rules
-   below key in. The anchor and companion exist for the one element that does
-   carry the attribute, the picker's own swatch, which has to show what the
-   interface is made of. */
+   every token keeps the shared values and none of the rules below key in. These
+   two exist for the one element that does carry the attribute, the picker's own
+   swatch, and they are not a designed pair: both are the brand stop the
+   interface already paints with, so the swatch shows the state it selects
+   rather than a new palette. The companion repeats the anchor because the
+   default state has no second colour and no gradient — the shared preview
+   gradient then resolves to one flat brand fill. */
 [data-color-theme="default"] {
-  --okou-color-theme-anchor: hsl(38.8 100% 50%); /* primary-300 - brand */
-  --okou-color-theme-companion: #c37d00; /* primary-500 */
+  --okou-color-theme-anchor: hsl(var(--primary-300));
+  --okou-color-theme-companion: hsl(var(--primary-300));
 }
 
 /* Each named theme pairs one anchor with one companion; the same pair drives
