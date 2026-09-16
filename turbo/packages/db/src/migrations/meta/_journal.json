@@ -470,6 +470,13 @@
       "when": 1789528865735,
       "tag": "1144_get_started_rewards",
       "breakpoints": true
+    },
+    {
+      "idx": 1145,
+      "version": "7",
+      "when": 1789545125622,
+      "tag": "1145_user_templates",
+      "breakpoints": true
     }
   ]
 }
