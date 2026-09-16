@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core";
 
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -41,7 +40,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
@@ -251,11 +249,6 @@ async function seedTelegramPostFixture(
   if (!fixture) {
     throw new Error("seedTelegramPostFixture: response missing fixture");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: String(fixture.user_id), orgId: String(fixture.org_id) },
-    { [FeatureSwitchKey.TelegramDmSessions]: true },
-  );
   return {
     orgId: String(fixture.org_id),
     userId: String(fixture.user_id),
@@ -1720,10 +1713,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
   });
 
-  async function prepareTelegramDm(
-    ownerKind: "custom" | "official",
-    enabled: boolean,
-  ) {
+  async function prepareTelegramDm(ownerKind: "custom" | "official") {
     const runnerGroup = configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
@@ -1734,11 +1724,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const onboarded = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "Telegram DM agent",
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.TelegramDmSessions]: enabled },
-    );
     const provider = await runsApi.createOrgModelProvider(actor, {
       type: "anthropic-api-key",
       secret: "telegram-dm-model-routing-key",
@@ -1906,96 +1891,76 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   }
 
   describe.each([
-    { ownerKind: "custom", enabled: true, scenario: "models" },
-    { ownerKind: "official", enabled: true, scenario: "models" },
-    { ownerKind: "custom", enabled: true, scenario: "reply-anchors" },
-    { ownerKind: "official", enabled: true, scenario: "reply-anchors" },
-    { ownerKind: "custom", enabled: true, scenario: "pinned-replies" },
-    { ownerKind: "official", enabled: true, scenario: "pinned-replies" },
-    { ownerKind: "custom", enabled: false, scenario: "models" },
-    { ownerKind: "official", enabled: false, scenario: "models" },
-  ] as const)(
-    "$ownerKind Telegram DM $scenario (scoped sessions: $enabled)",
-    ({ ownerKind, enabled, scenario }) => {
-      let dm: Awaited<ReturnType<typeof prepareTelegramDm>>;
+    { ownerKind: "custom", scenario: "models" },
+    { ownerKind: "official", scenario: "models" },
+    { ownerKind: "custom", scenario: "reply-anchors" },
+    { ownerKind: "official", scenario: "reply-anchors" },
+    { ownerKind: "custom", scenario: "pinned-replies" },
+    { ownerKind: "official", scenario: "pinned-replies" },
+  ] as const)("$ownerKind Telegram DM $scenario", ({ ownerKind, scenario }) => {
+    let dm: Awaited<ReturnType<typeof prepareTelegramDm>>;
 
-      beforeEach(async () => {
-        dm = await prepareTelegramDm(ownerKind, enabled);
-      });
+    beforeEach(async () => {
+      dm = await prepareTelegramDm(ownerKind);
+    });
 
-      it(`routes ${ownerKind} Telegram DM ${scenario} with scoped sessions enabled=${enabled}`, async () => {
-        const { sendDm, completeDm, main } = dm;
-        expect(main.claim.resumeSession).toBeNull();
-        if (scenario !== "models") {
-          const branch = await completeDm(
-            "start a reply chain",
+    it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {
+      const { sendDm, completeDm, main } = dm;
+      expect(main.claim.resumeSession).toBeNull();
+      if (scenario !== "models") {
+        const branch = await completeDm(
+          "start a reply chain",
+          3503,
+          3501,
+          "Long DM answer. ".repeat(350),
+        );
+        expect(branch.claim.resumeSession).toBeNull();
+        expect(branch.replyCount).toBeGreaterThan(1);
+        const branchFollowUp = await completeDm(
+          "continue the reply chain",
+          3504,
+          branch.botReplyId,
+        );
+        expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
+          branch.sessionId,
+        );
+        if (scenario === "reply-anchors") {
+          const earlierReply = await completeDm(
+            "reply to the earlier user message",
+            3505,
             3503,
-            3501,
-            "Long DM answer. ".repeat(350),
           );
-          expect(branch.claim.resumeSession).toBeNull();
-          expect(branch.replyCount).toBeGreaterThan(1);
-          const branchFollowUp = await completeDm(
-            "continue the reply chain",
-            3504,
-            branch.botReplyId,
-          );
-          expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
-            branch.sessionId,
-          );
-          if (scenario === "reply-anchors") {
-            const earlierReply = await completeDm(
-              "reply to the earlier user message",
-              3505,
-              3503,
-            );
-            expect(earlierReply.claim.resumeSession?.sessionId).toBe(
-              branchFollowUp.sessionId,
-            );
-            return;
-          }
-          await sendDm("/model claude-opus-4-8", 3506);
-          const pinnedReply = await completeDm(
-            "keep the reply chain model",
-            3508,
-            branch.botReplyId,
-          );
-          expect(pinnedReply.claim.modelUsageProvider).toBe("claude-sonnet-5");
-          expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
+          expect(earlierReply.claim.resumeSession?.sessionId).toBe(
             branchFollowUp.sessionId,
           );
           return;
         }
-
-        const followUp = await completeDm("continue the main DM", 3502);
-        expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
-
-        if (!enabled) {
-          const reply = await completeDm("continue the unsplit DM", 3503, 3501);
-          expect(reply.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
-          await sendDm("/model claude-opus-4-8", 3504);
-          const switched = await completeDm(
-            "change the unsplit DM model",
-            3505,
-          );
-          expect(switched.claim.modelUsageProvider).toBe("claude-opus-4-8");
-          expect(switched.claim.resumeSession?.sessionId).toBe(reply.sessionId);
-          return;
-        }
-
         await sendDm("/model claude-opus-4-8", 3506);
-        const alternate = await completeDm("use the alternate DM model", 3507);
-        expect(alternate.claim.modelUsageProvider).toBe("claude-opus-4-8");
-        expect(alternate.claim.resumeSession).toBeNull();
-        await sendDm("/model claude-sonnet-5", 3509);
-        const returned = await completeDm("return to the main model", 3510);
-        expect(returned.claim.resumeSession?.sessionId).toBe(
-          followUp.sessionId,
+        const pinnedReply = await completeDm(
+          "keep the reply chain model",
+          3508,
+          branch.botReplyId,
         );
-        expect(returned.claim.modelUsageProvider).toBe("claude-sonnet-5");
-      });
-    },
-  );
+        expect(pinnedReply.claim.modelUsageProvider).toBe("claude-sonnet-5");
+        expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
+          branchFollowUp.sessionId,
+        );
+        return;
+      }
+
+      const followUp = await completeDm("continue the main DM", 3502);
+      expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
+
+      await sendDm("/model claude-opus-4-8", 3506);
+      const alternate = await completeDm("use the alternate DM model", 3507);
+      expect(alternate.claim.modelUsageProvider).toBe("claude-opus-4-8");
+      expect(alternate.claim.resumeSession).toBeNull();
+      await sendDm("/model claude-sonnet-5", 3509);
+      const returned = await completeDm("return to the main model", 3510);
+      expect(returned.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
+      expect(returned.claim.modelUsageProvider).toBe("claude-sonnet-5");
+    });
+  });
 
   it("preserves group reply chains, forum delivery, fresh mentions, and callback idempotency", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();

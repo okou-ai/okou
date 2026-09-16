@@ -154,7 +154,9 @@ test("unavailable artifacts recover access with readable actions that follow the
   for (const palette of ["Blue horizon", "Golden hour"]) {
     for (const theme of ["Light", "Dark"]) {
       await page.setViewportSize({ width: 1440, height: 900 });
-      await page.goto(`${appUrl}/?settings=preference`);
+      // Open settings from a stable route: home redirects to chat, whose setup
+      // waits for the agents list before opening the dialog.
+      await page.goto(`${appUrl}/agents?settings=preference`);
       const settings = page.getByRole("dialog", { name: "Settings" });
       await expect(settings).toBeVisible();
       await settings.getByRole("button", { name: theme, exact: true }).click();

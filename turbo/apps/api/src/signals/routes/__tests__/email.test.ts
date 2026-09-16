@@ -216,6 +216,7 @@ describe("low-credit email delivery", () => {
           "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
       }),
+      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
     );
     const sent = resendMocks.send.mock.calls[0]?.[0];
     for (const content of [
@@ -294,6 +295,7 @@ describe("POST /api/email/inbound", () => {
     expect(resendMocks.send).toHaveBeenCalledTimes(1);
     expect(resendMocks.send).toHaveBeenCalledWith(
       expect.objectContaining({ to: controlActor.email }),
+      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
     );
     const sent = resendMocks.send.mock.calls[0]?.[0];
     if (!sent) {

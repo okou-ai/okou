@@ -273,6 +273,7 @@ async function createHostedArtifact(args: {
   readonly actor: ApiTestUser;
   readonly agentId: string;
   readonly runnerGroup: string;
+  readonly objectStore: ChatObjectStorage;
   readonly site: string;
   readonly artifactKind?: "hosted-site" | "presentation-html";
 }): Promise<{
@@ -291,14 +292,24 @@ async function createHostedArtifact(args: {
     run.runId,
   );
   const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+  const content = `<main>${args.site}</main>`;
   const prepared = await chat.prepareHostedSiteWithBearer(bearer, {
     site: args.site,
     artifactKind: args.artifactKind ?? "hosted-site",
     spaFallback: false,
-    files: [hostedTextFile("/index.html", `<main>${args.site}</main>`)],
+    files: [hostedTextFile("/index.html", content)],
   });
   if (!prepared.artifactUrl) {
     throw new Error("Expected a versioned hosted artifact URL");
+  }
+  if (parseArtifactReference(prepared.artifactUrl)) {
+    args.objectStore.addObject({
+      bucket: "test-hosted-sites",
+      key: `private-sites/okou/${prepared.deploymentId}/index.html`,
+      body: Buffer.from(content),
+      size: Buffer.byteLength(content),
+      contentType: "text/html",
+    });
   }
   await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
   await completeChatRunOk(run.runId, sandboxHeaders);
@@ -859,6 +870,7 @@ describe("hosted Artifact previews", () => {
         actor,
         agentId: owner.agentId,
         runnerGroup: owner.runnerGroup,
+        objectStore: owner.objectStore,
         site,
       });
       await flushWaitUntilForTest();
@@ -940,6 +952,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -983,6 +996,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -1075,6 +1089,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -1119,6 +1134,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site,
     });
     await flushWaitUntilForTest();
@@ -1150,6 +1166,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site: pageErrorSite,
     });
     await flushWaitUntilForTest();
@@ -1167,6 +1184,7 @@ describe("hosted Artifact previews", () => {
       actor: owner.actor,
       agentId: owner.agentId,
       runnerGroup: owner.runnerGroup,
+      objectStore: owner.objectStore,
       site: challengeSite,
     });
     await flushWaitUntilForTest();

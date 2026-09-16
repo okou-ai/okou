@@ -15,7 +15,6 @@ function preferences(timezone: string | null): UserPreferencesResponse {
   return {
     timezone,
     locale: "en-US",
-    translationLanguage: null,
     supportedLocales: ["en-US"],
     pinnedAgentIds: [],
     sendMode: "enter",

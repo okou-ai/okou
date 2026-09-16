@@ -1,3 +1,4 @@
+import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
 import { nowDate } from "../../lib/time";
 import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -159,7 +160,7 @@ function ownedShareTarget(
         id: deployment.id,
         siteId: deployment.siteId,
         deploymentVersion: deployment.deploymentVersion,
-        manifest: deployment.manifest,
+        manifest: hostedSiteDeliveryManifest(deployment.manifest),
       },
     };
   });
@@ -361,7 +362,15 @@ const snapshotTarget$ = command(
       }
       const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
       await get(
-        copyArtifactShareObject(file.bucket, target.key, key, false, signal),
+        copyArtifactShareObject(
+          {
+            bucket: file.bucket,
+            sourceKey: target.key,
+            targetKey: key,
+            hosted: false,
+          },
+          signal,
+        ),
       );
       signal.throwIfAborted();
       return { ...target, key };
@@ -374,10 +383,12 @@ const snapshotTarget$ = command(
         files.slice(start, start + 10).map((path) => {
           return get(
             copyArtifactShareObject(
-              policyBucket(),
-              `private-sites/${candidate.publicBrand}/${target.id}${path}`,
-              `${prefix}${path}`,
-              true,
+              {
+                bucket: policyBucket(),
+                sourceKey: `private-sites/${candidate.publicBrand}/${target.id}${path}`,
+                targetKey: `${prefix}${path}`,
+                hosted: true,
+              },
               signal,
             ),
           );

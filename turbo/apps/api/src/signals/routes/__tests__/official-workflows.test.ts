@@ -2578,6 +2578,83 @@ describe("Morning Brief preference", () => {
     ).resolves.toMatchObject([{ enabled: true }]);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
   });
+
+  it("adopts the remaining installation once the enrolled one is uninstalled", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    if (!actor.orgId) {
+      throw new Error("Expected organization-scoped actor");
+    }
+    const alternate = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, alternate.agentId);
+      await cleanupCatalog();
+    });
+    await connectBriefSource(actor);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+    const headers = authHeaders(actor);
+
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [enrolled] = await listMorningBriefInstallations(actor);
+    if (!enrolled) {
+      throw new Error("Expected a Preferences-managed installation");
+    }
+    await setOfficialWorkflowsEnabled(actor, true);
+    const onAlternateAgent = await installMorningBriefFromCatalog(
+      actor,
+      alternate.agentId,
+    );
+    await accept(
+      installationClient().uninstall({
+        headers,
+        params: { workflowId: enrolled.id },
+      }),
+      [204],
+    );
+
+    // The enrollment still records the uninstalled brief. Ownership falls back
+    // to the adoption rule instead of reporting that no brief exists, and the
+    // adopted brief has never delivered, so it owns no thread yet.
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+    await expect(
+      readMorningBriefAutomations(actor, onAlternateAgent),
+    ).resolves.toMatchObject([{ enabled: true, chatThreadId: null }]);
+
+    const paused = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
+    await expect(
+      readMorningBriefAutomations(actor, onAlternateAgent),
+    ).resolves.toMatchObject([{ enabled: false }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
+      { id: onAlternateAgent },
+    ]);
+  });
 });
 
 async function installMorningBriefFromCatalog(

@@ -6,7 +6,10 @@ import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
-import { sharedThreadArtifactLogicalKey } from "../../lib/shared-thread-artifact";
+import {
+  sharedThreadArtifactAuthorUserId,
+  sharedThreadArtifactLogicalKey,
+} from "../../lib/shared-thread-artifact";
 import { writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
@@ -97,8 +100,13 @@ export const initializeSharedThreadArtifacts$ = command(
   },
 );
 
-export const publishSharedThreadArtifacts$ = command(
-  async ({ get, set }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
+const changeSharedThreadArtifactPhase$ = command(
+  async (
+    { get, set },
+    plan: SharedThreadArtifactPlan,
+    phase: "copy" | "publish",
+    signal: AbortSignal,
+  ) => {
     await set(writeDb$).transaction(async (tx) => {
       // The same row lock serializes publication with owner/account deletion.
       const [row] = await tx
@@ -143,7 +151,10 @@ export const publishSharedThreadArtifacts$ = command(
       ) {
         throw new SharedThreadArtifactUnavailable();
       }
-      await set(copySharedThreadArtifacts$, plan, signal);
+      if (phase === "copy") {
+        await set(copySharedThreadArtifacts$, plan, signal);
+        return;
+      }
       signal.throwIfAborted();
       await get(
         writeArtifactSharePolicyObject(
@@ -154,7 +165,35 @@ export const publishSharedThreadArtifacts$ = command(
           signal,
         ),
       );
+      signal.throwIfAborted();
+      await tx.insert(artifacts).values({
+        orgId: current.policy.orgId,
+        authorUserId: sharedThreadArtifactAuthorUserId(row.userId),
+        kind: "file",
+        entityId: row.id,
+        logicalKey: sharedThreadArtifactLogicalKey(row.id),
+        projectionFileId: null,
+        projectionCreatedAt: row.createdAt,
+        title: row.title,
+        thumbnail: null,
+        createdAt: row.createdAt,
+        updatedAt: row.createdAt,
+      });
+      signal.throwIfAborted();
     });
+    signal.throwIfAborted();
+  },
+);
+
+export const prepareSharedThreadArtifactCopies$ = command(
+  ({ set }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
+    return set(changeSharedThreadArtifactPhase$, plan, "copy", signal);
+  },
+);
+
+export const publishSharedThreadArtifacts$ = command(
+  ({ set }, plan: SharedThreadArtifactPlan, signal: AbortSignal) => {
+    return set(changeSharedThreadArtifactPhase$, plan, "publish", signal);
   },
 );
 

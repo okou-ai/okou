@@ -45,6 +45,7 @@ export const CAPABILITIES = [
   "ssh:read",
   "ssh:write",
   "presentation-template:write",
+  "user-template:write",
 ] as const;
 
 /** Inferred union type of all Okou run capabilities. */
@@ -194,5 +195,9 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "presentation-template:write": {
     group: "Presentation Templates",
     label: "Publish a presentation template",
+  },
+  "user-template:write": {
+    group: "Custom Templates",
+    label: "Publish a custom template",
   },
 };

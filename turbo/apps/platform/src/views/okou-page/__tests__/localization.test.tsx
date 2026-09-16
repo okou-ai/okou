@@ -36,7 +36,6 @@ function preferences(
   return {
     timezone: "UTC",
     locale: "en-US",
-    translationLanguage: null,
     supportedLocales: [...SUPPORTED_USER_LOCALES],
     pinnedAgentIds: [],
     sendMode: "enter",

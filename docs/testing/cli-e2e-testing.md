@@ -136,6 +136,42 @@ before users. Runner records travel with their workflow attempt so successful
 reruns can clean earlier attempts without listing the whole Clerk instance.
 Failed runner shards retain their accounts for reruns. An uncertain organization
 creation keeps its owner user for the existing strict-marker stale sweep.
+
+PR closure does not start a separate Clerk directory scan. Normal finalizers
+clean their recorded resources immediately; runner preparation failures use
+their current generation's records and preserve the original setup error if
+cleanup also fails. Unknown organization creation outcomes retain the owner
+instead of starting a generation-wide scan. Cancelled jobs and lost or expired
+records are recovered by the existing serialized half-hour Clerk sweep.
+
+The sweep selects CI resources older than two hours and staging-browser
+resources older than eight hours. With a healthy provider and an inventory that
+fits the budget, recovery happens on the first successful pass after that age
+threshold, normally within another 30 minutes plus execution time. GitHub
+scheduling delays and provider outages can extend that interval. Records alone
+never prove ownership: recorded cleanup verifies current Clerk resources, and
+the sweep retains its strict markers, staging membership checks, and
+organization-before-user deletion order.
+
+Each cleanup invocation allows at most 500 actual HTTP attempts, including
+retries, over five minutes. Attempts are spaced by at least 500 ms, and each
+request and its response body have a ten-second deadline within that total
+budget. A 429 is not automatically retried. The scheduled job has a ten-minute
+outer timeout including dependency installation. Pacing is per invocation,
+roughly 20 attempts per ten seconds; it does not reserve the development
+instance's shared quota. Recorded finalizers and other CI can still contend.
+
+Inventory and ownership selection must finish before deletion starts. Budget
+exhaustion fails the invocation; it never reports an incomplete scan as clean.
+If deletion is interrupted, remaining resources are reconsidered on the next
+sweep and unresolved organization owners stay retained. The observed 19,119
+organizations and 87 users require approximately 40 list requests, leaving
+headroom within the budget. If inventory alone grows beyond the budget, no
+resources are deleted: investigate the failed workflow and directory growth,
+then explicitly adjust capacity or design resumable discovery. Repeated passes
+do not guarantee progress past that capacity limit. Do not delete skipped
+organizations or introduce blind retries to work around it.
+
 Playwright's setup project owns the feature account; unrelated lanes create no
 unused global account. Failed checkouts report HTTP status, request ID, and
 Retry-After, and product Playwright lanes retain traces on the first failure.
