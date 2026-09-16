@@ -111,10 +111,11 @@ One hairline serves the whole product. `--default-border-width` in the shared
 `divide-y`, and their siblings all read it, so a component asks for "a border"
 and the system decides how thick it is. Components must not hand-write a width:
 an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style`
-prop, is a second registry for a decision this token already owns. `border-0`
-and the deliberate emphasis widths such as `border-2` stay available, because
-they express a different decision rather than a competing value for the same
-one.
+prop, is a second registry for a decision this token already owns, and the two
+diverge wherever the device scale is odd: at scale 3 a hand-written `0.7px`
+paints two device pixels where the token paints one. `border-0` and the
+deliberate emphasis widths such as `border-2` stay available, because they
+express a different decision rather than a competing value for the same one.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
 device pixel where 1px paints two, so every bare border carries half the ink it
@@ -529,26 +530,6 @@ for this decision — the page-surface and badge tables above point at it — so
 these consumers take it rather than the raw `border-gray-400` ramp stop the
 horizontal rules kept. `border-border` would be wrong here: `--border` is
 `--gray-300`, one stop lighter.
-
-Thumbnails take the same pair. Their stroke was already the shared 0.5px, so
-adopting the token is exact at every device scale.
-
-The credit tiles were the last hand-written `0.7px`, and joining the shared
-hairline is a deliberate trade rather than an equivalence. Measured in Chromium,
-`0.7px` and `0.5px` resolve to the same used width at device scale 1 (`1px`) and
-2 (`0.5px`), but they part at scale 3: `0.666667px` against `0.333333px`, two
-device pixels of ink against one, and a box `0.666667px` taller. That is the
-hairline behaving as designed — it is the same trade `okou-border-t` and
-`okou-btn-morandi` made when they joined it — and it is why a component must not
-hand-write a width: a second value for this decision diverges from the first
-wherever the device scale is odd.
-
-The tile also carried a `hover:border-muted-foreground/30` that never painted,
-because the retired selector was unlayered and its `border` shorthand outranked
-the layered utility. Forcing `:hover` on the retired rule reports the resting
-`rgb(202, 199, 196)` unchanged. Adopting the token would have activated that
-hover for the first time, so the dead utility is deleted with the class and the
-tile keeps the appearance it has.
 
 ### Top-edge clearance
 
