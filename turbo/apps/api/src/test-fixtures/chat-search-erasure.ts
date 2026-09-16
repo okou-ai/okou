@@ -7,7 +7,6 @@ import {
 } from "@okouai/db/operations/account-erasure";
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { count, eq, inArray, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { z } from "zod";
@@ -179,24 +178,6 @@ export async function holdChatSearchAgentRowLockFixture(args: {
   };
 }
 
-/** Moves one thread to another user and Agent, the change a future ownership
- * transfer would persist. No production writer updates these columns today.
- */
-export async function transferChatSearchThreadFixture(args: {
-  readonly chatThreadId: string;
-  readonly userId: string;
-  readonly agentId: string;
-}): Promise<void> {
-  const updated = await db()
-    .update(chatThreads)
-    .set({ userId: args.userId, agentId: args.agentId })
-    .where(eq(chatThreads.id, args.chatThreadId))
-    .returning({ id: chatThreads.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one chat search thread to transfer");
-  }
-}
-
 function barrierQueryText(queryArgs: unknown[]): string {
   const parsed = z
     .union([z.string(), z.object({ text: z.string() })])
@@ -238,10 +219,12 @@ export async function withChatSearchProjectionCommitBarrierFixture<T>(
     readonly chatThreadId: string;
     readonly work: (barrier: {
       readonly entered: Promise<{
-        readonly pid: number;
         readonly lockTimeout: string;
         readonly statementTimeout: string;
       }>;
+      /** Backends currently blocked by the paused transaction, so a test never
+       * guesses at timing with a sleep. */
+      readonly blockedWaiterCount: () => Promise<number>;
       readonly release: () => void;
     }) => Promise<T>;
   },
@@ -254,6 +237,9 @@ export async function withChatSearchProjectionCommitBarrierFixture<T>(
     readonly lockTimeout: string;
     readonly statementTimeout: string;
   }>(signal);
+  const blocked = async () => {
+    return await blockedWaiterCount((await entered.promise).pid);
+  };
   const released = createDeferredPromise<void>(signal);
   const release = () => {
     if (!released.settled()) {
@@ -307,7 +293,11 @@ export async function withChatSearchProjectionCommitBarrierFixture<T>(
     },
   });
   const result = await settleIncludingAbort(
-    args.work({ entered: entered.promise, release }),
+    args.work({
+      entered: entered.promise,
+      blockedWaiterCount: blocked,
+      release,
+    }),
   );
   release();
   const closed = await settleIncludingAbort(closeDbPool());
@@ -319,13 +309,4 @@ export async function withChatSearchProjectionCommitBarrierFixture<T>(
     throw closed.error;
   }
   return result.value;
-}
-
-/** Observes whether a specific backend is currently blocked by the paused
- * projector transaction, so tests never guess at timing with a sleep.
- */
-export async function chatSearchBarrierBlockedWaiterCountFixture(
-  holderPid: number,
-): Promise<number> {
-  return await blockedWaiterCount(holderPid);
 }

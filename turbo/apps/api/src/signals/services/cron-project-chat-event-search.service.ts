@@ -694,18 +694,11 @@ function projectionWatermarkScope(
  * inside the transaction, so a closure committed after selection still stops
  * the write.
  */
-function openProjectionSubjectsCondition(
-  db: Pick<Db, "select"> | Tx,
-  columns: {
-    readonly userId: typeof chatThreads.userId;
-    readonly agentOwner: typeof agents.owner;
-    readonly orgId: typeof agents.orgId;
-  },
-) {
+function openProjectionSubjectsCondition(db: Pick<Db, "select">) {
   return erasureSubjectOpenCondition(db, [
-    { subjectKind: "user", subjectId: columns.userId },
-    { subjectKind: "user", subjectId: columns.agentOwner },
-    { subjectKind: "organization", subjectId: columns.orgId },
+    { subjectKind: "user", subjectId: chatThreads.userId },
+    { subjectKind: "user", subjectId: agents.owner },
+    { subjectKind: "organization", subjectId: agents.orgId },
   ]);
 }
 
@@ -790,11 +783,7 @@ async function loadCandidateThreads(
           chatThreads.lastChatEventSeqId,
           sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
         ),
-        openProjectionSubjectsCondition(db, {
-          userId: chatThreads.userId,
-          agentOwner: agents.owner,
-          orgId: agents.orgId,
-        }),
+        openProjectionSubjectsCondition(db),
       ),
     )
     .orderBy(asc(chatThreads.id))
@@ -818,11 +807,7 @@ async function projectionConvergence(
   const eligibleScope = and(
     projectionThreadScope(options.chatThreadIds),
     gt(chatThreads.lastChatEventSeqId, 0),
-    openProjectionSubjectsCondition(db, {
-      userId: chatThreads.userId,
-      agentOwner: agents.owner,
-      orgId: agents.orgId,
-    }),
+    openProjectionSubjectsCondition(db),
   );
   const [stats] = await db
     .select({

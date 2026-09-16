@@ -247,8 +247,10 @@ export async function removeChatSearchSourceEventsFixture(
 }
 
 /**
- * Changes source-thread ownership and agent metadata after projection so a
- * reader test can prove those fields are not reloaded from chat_threads.
+ * Moves one thread to another user and Agent. No production writer updates
+ * either column, so this models the change a future ownership transfer would
+ * persist: a reader test proves the stored labels are not reloaded from
+ * chat_threads, and a projector test proves authority is re-derived instead.
  */
 export async function updateChatSearchSourceThreadFixture(args: {
   readonly chatThreadId: string;

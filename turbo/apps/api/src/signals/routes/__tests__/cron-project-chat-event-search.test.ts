@@ -15,6 +15,7 @@ import {
   readChatEventSearchProjectionRowsFixture,
   removeChatEventSearchProjectionRowsFixture,
   rejectSearchablePromptFixture,
+  updateChatSearchSourceThreadFixture,
   writeChatEventSearchProjectionFixture,
 } from "../../../test-fixtures/chat-event-search";
 import {
@@ -24,12 +25,10 @@ import {
   holdChatThreadRowLockFixture,
 } from "../../../test-fixtures/chat-events";
 import {
-  chatSearchBarrierBlockedWaiterCountFixture,
   closeChatSearchErasureSubjectFixture,
   holdChatSearchAgentRowLockFixture,
   holdChatSearchErasureClosureFixture,
   removeChatSearchErasureSubjectsFixture,
-  transferChatSearchThreadFixture,
   withChatSearchProjectionCommitBarrierFixture,
 } from "../../../test-fixtures/chat-search-erasure";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
@@ -325,18 +324,14 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const projected = await withChatSearchProjectionCommitBarrierFixture(
       {
         chatThreadId: threadId,
-        work: async ({ entered, release }) => {
+        work: async ({ entered, blockedWaiterCount, release }) => {
           const tick = projectOwnedChatEventSearch([threadId]);
           const barrier = await entered;
           // The per-thread budget is finite and visible on the real connection.
           expect(barrier.lockTimeout).toBe("1s");
           expect(barrier.statementTimeout).toBe("5s");
           const deleting = chat.deleteThread(actor, threadId);
-          await expect
-            .poll(() => {
-              return chatSearchBarrierBlockedWaiterCountFixture(barrier.pid);
-            }, BLOCKED)
-            .toBeGreaterThan(0);
+          await expect.poll(blockedWaiterCount, BLOCKED).toBeGreaterThan(0);
           release();
           const result = await tick;
           await deleting;
@@ -367,18 +362,14 @@ describe("GET /api/cron/project-chat-event-search", () => {
     const projected = await withChatSearchProjectionCommitBarrierFixture(
       {
         chatThreadId: threadId,
-        work: async ({ entered, release }) => {
+        work: async ({ entered, blockedWaiterCount, release }) => {
           const tick = projectOwnedChatEventSearch([threadId]);
-          const barrier = await entered;
+          await entered;
           const closing = closeSubject({
             subjectKind: "user",
             subjectId: actor.userId,
           });
-          await expect
-            .poll(() => {
-              return chatSearchBarrierBlockedWaiterCountFixture(barrier.pid);
-            }, BLOCKED)
-            .toBeGreaterThan(0);
+          await expect.poll(blockedWaiterCount, BLOCKED).toBeGreaterThan(0);
           release();
           const result = await tick;
           await closing;
@@ -523,7 +514,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
       chatThreadId: previous.threadId,
       text: `${marker} transferred`,
     });
-    await transferChatSearchThreadFixture({
+    await updateChatSearchSourceThreadFixture({
       chatThreadId: previous.threadId,
       userId: next.actor.userId,
       agentId: next.agentId,
