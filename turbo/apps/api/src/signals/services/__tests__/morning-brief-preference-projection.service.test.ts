@@ -99,7 +99,10 @@ describe("Morning Brief installed preference projection persistence", () => {
         enabled: true,
         nextRunAt: new Date("2026-09-17T23:00:00.000Z"),
         officialBlueprintKey: "daily-delivery",
+        officialAppliedFingerprint: "f".repeat(64),
         officialReconciliationStatus: "current",
+        officialParameterBindings: [],
+        officialIntendedEnabled: true,
         officialResultEmailEnabled: true,
       })
       .returning({ id: workflowAutomations.id });
