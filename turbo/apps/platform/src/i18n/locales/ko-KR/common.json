@@ -3654,7 +3654,7 @@
       },
       "feishu": {
         "addBot": "봇 추가",
-        "addDialogDescription": "기업 맞춤 앱을 생성하고 봇을 활성화한 후 Feishu 개발자 콘솔에서 이 단계를 완료하세요.",
+        "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Feishu 개발자 콘솔에서 다음 단계를 완료하세요.",
         "addDialogTitle": "Feishu 봇 추가",
         "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
         "backToIntegrations": "통합으로 돌아가기",
@@ -3667,14 +3667,14 @@
         "copied": "{{label}} 복사됨",
         "copy": "복사",
         "create": {
-          "descriptionAfter": ", 원하는 이름과 아이콘으로 기업 맞춤 앱을 생성한 다음 봇 기능을 추가하세요.",
+          "descriptionAfter": ", 기업 앱을 만들고 Agent 유형을 선택하세요. 원하는 이름과 아이콘을 선택할 수 있으며, Agent 템플릿에는 Bot 기능이 포함되어 있습니다.",
           "descriptionBefore": "에서 ",
           "downloadIcon": "선택 사항인 {{brandName}} 아이콘 다운로드",
           "iconAlt": "선택 사항인 {{brandName}} 앱 아이콘",
           "iconHint": ", 또는 원하는 아이콘을 사용하세요.",
           "iconTitle": "선택 사항인 {{brandName}} 앱 아이콘",
           "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Feishu 앱 생성 양식",
-          "title": "기업 맞춤 앱 생성"
+          "title": "Agent 유형의 앱 만들기"
         },
         "credentials": {
           "appId": "앱 ID",
@@ -3704,6 +3704,9 @@
         "faq": {
           "approvalAnswer": "사용 가능 범위가 모든 구성원으로 설정된 경우 Feishu 관리자가 릴리스를 승인해야 합니다. Feishu는 관리자의 다이렉트 메시지로 승인 요청을 보내며, 관리자가 검토를 완료할 때까지 앱은 대기 상태로 유지됩니다.",
           "approvalQuestion": "앱 게시가 승인을 기다리는 이유는 무엇인가요?",
+          "botFeatureAnswer": "Feishu 개발자 콘솔에서 Features → Add Features를 여세요. By Feature에서 Bot 기능을 추가한 다음 이 가이드의 나머지 단계를 완료하고 앱을 게시하세요. Agent 유형의 앱에는 Bot 기능이 기본으로 포함되어 있습니다.",
+          "botFeatureImageAlt": "Add Features 아래의 Bot 기능을 보여주는 Lark 개발자 콘솔",
+          "botFeatureQuestion": "Agent 대신 Custom App을 선택했다면 어떻게 하나요?",
           "challengeAnswer": "이는 일반적으로 토큰 단계에서 저장한 암호화 키 또는 검증 토큰이 올바르지 않음을 의미합니다. 토큰 단계로 돌아가 이벤트 구성 → 암호화 전략에서 두 값을 다시 입력하고 저장한 후 요청 URL을 다시 시도하세요.",
           "challengeQuestion": "Feishu가 \"챌린지 코드에 응답이 없습니다\"를 표시하는 이유는 무엇인가요?",
           "title": "설정 FAQ"
@@ -3714,14 +3717,14 @@
         "moreOptions": "{{bot}}에 대한 추가 옵션",
         "pageDescription": "이 워크스페이스의 봇 라우팅 관리",
         "permissions": {
-          "description": "Feishu 개발자 콘솔에서 '권한 및 범위'를 열고 '일괄 가져오기/내보내기 > 가져오기'를 선택한 다음 아래 JSON을 붙여넣으세요. 관리형 커넥터에 필요한 모든 범위가 사용자 ID로 가져와집니다. 이는 연동이 작동하는 데 필요한 최소 권한입니다.",
-          "hint": "가져온 사용자 ID 권한을 모두 유지한 후 OAuth 동의 화면에서 권한을 부여할 수 있도록 새 앱 버전을 생성하고 게시하세요. 권한을 하나라도 제거하면 연동이 작동하지 않으며 Feishu 관리자의 승인이 필요할 수 있습니다.",
-          "label": "사용자 토큰 범위 JSON",
+          "description": "Feishu 개발자 콘솔에서 Permissions & Scopes를 열고 Batch Import/Export > Import를 선택한 다음 아래 JSON을 붙여 넣으세요. 봇의 앱 ID 권한과 연결된 계정의 사용자 ID 권한이 포함되어 있습니다.",
+          "hint": "두 ID에 대해 가져온 모든 권한을 유지한 다음 새 앱 버전을 만들고 게시하세요. Feishu 관리자의 승인이 필요할 수 있습니다.",
+          "label": "앱 및 사용자 범위 JSON",
           "menuAlt": "일괄 범위 가져오기/내보내기 메뉴가 강조 표시된 Feishu 권한 및 범위 페이지",
           "menuLabel": "일괄 범위 가져오기/내보내기 열기",
           "reviewAlt": "가져온 JSON과 검토 버튼이 강조 표시된 Feishu 일괄 범위 가져오기/내보내기 대화 상자",
           "reviewLabel": "JSON을 붙여넣고 새 범위 검토",
-          "title": "사용자 토큰 범위 가져오기"
+          "title": "앱 및 사용자 범위 가져오기"
         },
         "publish": {
           "allMembersAlt": "모든 구성원이 선택된 Feishu 사용 가능 설정",
@@ -3783,7 +3786,7 @@
       },
       "lark": {
         "addBot": "봇 추가",
-        "addDialogDescription": "기업 맞춤 앱을 생성하고 봇을 활성화한 후 Lark 개발자 콘솔에서 이 단계를 완료하세요.",
+        "addDialogDescription": "Agent 유형의 기업 앱을 만든 다음 Lark 개발자 콘솔에서 다음 단계를 완료하세요.",
         "addDialogTitle": "Lark 봇 추가",
         "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
         "backToIntegrations": "통합으로 돌아가기",
@@ -3796,14 +3799,14 @@
         "copied": "{{label}} 복사됨",
         "copy": "복사",
         "create": {
-          "descriptionAfter": ", 원하는 이름과 아이콘으로 기업 맞춤 앱을 생성한 다음 봇 기능을 추가하세요.",
+          "descriptionAfter": ", 기업 앱을 만들고 Agent 유형을 선택하세요. 원하는 이름과 아이콘을 선택할 수 있으며, Agent 템플릿에는 Bot 기능이 포함되어 있습니다.",
           "descriptionBefore": "에서 ",
           "downloadIcon": "선택 사항인 {{brandName}} 아이콘 다운로드",
           "iconAlt": "선택 사항인 {{brandName}} 앱 아이콘",
           "iconHint": ", 또는 원하는 아이콘을 사용하세요.",
           "iconTitle": "선택 사항인 {{brandName}} 앱 아이콘",
           "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Feishu 앱 생성 양식",
-          "title": "기업 맞춤 앱 생성"
+          "title": "Agent 유형의 앱 만들기"
         },
         "credentials": {
           "appId": "앱 ID",
@@ -3833,6 +3836,9 @@
         "faq": {
           "approvalAnswer": "사용 가능 범위가 모든 구성원으로 설정된 경우 Lark 관리자가 릴리스를 승인해야 합니다. Lark는 관리자의 다이렉트 메시지로 승인 요청을 보내며, 관리자가 검토를 완료할 때까지 앱은 대기 상태로 유지됩니다.",
           "approvalQuestion": "앱 게시가 승인을 기다리는 이유는 무엇인가요?",
+          "botFeatureAnswer": "Lark 개발자 콘솔에서 Features → Add Features를 여세요. By Feature에서 Bot 기능을 추가한 다음 이 가이드의 나머지 단계를 완료하고 앱을 게시하세요. Agent 유형의 앱에는 Bot 기능이 기본으로 포함되어 있습니다.",
+          "botFeatureImageAlt": "Add Features 아래의 Bot 기능을 보여주는 Lark 개발자 콘솔",
+          "botFeatureQuestion": "Agent 대신 Custom App을 선택했다면 어떻게 하나요?",
           "challengeAnswer": "이는 일반적으로 토큰 단계에서 저장한 암호화 키 또는 검증 토큰이 올바르지 않음을 의미합니다. 토큰 단계로 돌아가 이벤트 구성 → 암호화 전략에서 두 값을 다시 입력하고 저장한 후 요청 URL을 다시 시도하세요.",
           "challengeQuestion": "Lark가 \"챌린지 코드에 응답이 없습니다\"를 표시하는 이유는 무엇인가요?",
           "title": "설정 FAQ"
@@ -3844,14 +3850,14 @@
         "moreOptions": "{{bot}}에 대한 추가 옵션",
         "pageDescription": "이 워크스페이스의 봇 라우팅 관리",
         "permissions": {
-          "description": "Lark 개발자 콘솔에서 '권한 및 범위'를 열고 '일괄 가져오기/내보내기 > 가져오기'를 선택한 다음 아래 JSON을 붙여넣으세요. 관리형 커넥터에 필요한 모든 범위가 사용자 ID로 가져와집니다. 이는 연동이 작동하는 데 필요한 최소 권한입니다.",
-          "hint": "가져온 사용자 ID 권한을 모두 유지한 후 OAuth 동의 화면에서 권한을 부여할 수 있도록 새 앱 버전을 생성하고 게시하세요. 권한을 하나라도 제거하면 연동이 작동하지 않으며 Lark 관리자의 승인이 필요할 수 있습니다.",
-          "label": "사용자 토큰 범위 JSON",
+          "description": "Lark 개발자 콘솔에서 Permissions & Scopes를 열고 Batch Import/Export > Import를 선택한 다음 아래 JSON을 붙여 넣으세요. 봇의 앱 ID 권한과 연결된 계정의 사용자 ID 권한이 포함되어 있습니다.",
+          "hint": "두 ID에 대해 가져온 모든 권한을 유지한 다음 새 앱 버전을 만들고 게시하세요. Lark 관리자의 승인이 필요할 수 있습니다.",
+          "label": "앱 및 사용자 범위 JSON",
           "menuAlt": "일괄 범위 가져오기/내보내기 메뉴가 강조 표시된 Feishu 권한 및 범위 페이지",
           "menuLabel": "일괄 범위 가져오기/내보내기 열기",
           "reviewAlt": "가져온 JSON과 검토 버튼이 강조 표시된 Feishu 일괄 범위 가져오기/내보내기 대화 상자",
           "reviewLabel": "JSON을 붙여넣고 새 범위 검토",
-          "title": "사용자 토큰 범위 가져오기"
+          "title": "앱 및 사용자 범위 가져오기"
         },
         "publish": {
           "allMembersAlt": "모든 구성원이 선택된 Feishu 사용 가능 설정",

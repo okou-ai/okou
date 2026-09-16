@@ -8,6 +8,45 @@ import { feishuPlatformSchema } from "./feishu-platform";
 
 const c = initContract();
 
+// App identity permissions for both Feishu and Lark, including the Agent preset.
+// These belong in the console's tenant import, not the user OAuth request.
+export const FEISHU_TENANT_SCOPES = [
+  "application:app_slash_command:read",
+  "application:app_slash_command:write",
+  "application:application:self_manage",
+  "application:bot.menu:write",
+  "cardkit:card:read",
+  "cardkit:card:write",
+  "contact:contact.base:readonly",
+  "docs:document.comment:create",
+  "docs:document.comment:delete",
+  "docs:document.comment:read",
+  "docs:document.comment:update",
+  "docs:document.comment:write_only",
+  "docx:document.block:convert",
+  "docx:document:readonly",
+  "docx:document:write_only",
+  "drive:drive.metadata:readonly",
+  "im:chat.members:bot_access",
+  "im:chat:create",
+  "im:chat:read",
+  "im:chat:update",
+  "im:message.group_at_msg.include_bot:readonly",
+  "im:message.group_at_msg:readonly",
+  "im:message.p2p_msg:readonly",
+  "im:message.pins:read",
+  "im:message.pins:write_only",
+  "im:message.reactions:read",
+  "im:message.reactions:write_only",
+  "im:message:readonly",
+  "im:message:send_as_bot",
+  "im:message:send_multi_users",
+  "im:message:send_sys_msg",
+  "im:message:update",
+  "im:resource",
+  "wiki:node:read",
+] as const;
+
 export const FEISHU_OAUTH_SCOPES = [
   "offline_access",
   "contact:contact.base:readonly",

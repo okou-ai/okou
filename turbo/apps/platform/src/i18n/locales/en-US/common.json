@@ -3659,7 +3659,7 @@
       },
       "feishu": {
         "addBot": "Add bot",
-        "addDialogDescription": "Create an enterprise custom app, enable its bot, and complete these steps in the Feishu developer console.",
+        "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Feishu developer console.",
         "addDialogTitle": "Add a Feishu bot",
         "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
@@ -3672,14 +3672,14 @@
         "copied": "{{label}} copied",
         "copy": "Copy",
         "create": {
-          "descriptionAfter": ", create an enterprise custom app using the name and icon you want, then add the Bot capability.",
+          "descriptionAfter": ", create an enterprise app and select the Agent type. Choose the name and icon you want; the Agent template includes the Bot capability.",
           "descriptionBefore": "In the ",
           "downloadIcon": "Download the optional {{brandName}} icon",
           "iconAlt": "Optional {{brandName}} app icon",
           "iconHint": ", or use any icon you prefer.",
           "iconTitle": "Optional {{brandName}} app icon",
           "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
-          "title": "Create an enterprise custom app"
+          "title": "Create an Agent app"
         },
         "credentials": {
           "appId": "App ID",
@@ -3709,6 +3709,9 @@
         "faq": {
           "approvalAnswer": "If availability is set to All members, a Feishu administrator must approve the release. Feishu sends the approval request to an administrator in a direct message, and the app remains pending until an administrator completes the review.",
           "approvalQuestion": "Why is publishing the app waiting for approval?",
+          "botFeatureAnswer": "Open Features → Add Features in the Feishu developer console. Under By Feature, add the Bot capability, then continue this guide and publish the app. Agent apps include the Bot capability by default.",
+          "botFeatureImageAlt": "Lark developer console showing the Bot capability under Add Features",
+          "botFeatureQuestion": "What if I chose Custom App instead of Agent?",
           "challengeAnswer": "This usually means the Encrypt Key or Verification Token saved during the Tokens step is incorrect. Return to the Tokens step, enter both values from Event Configuration → Encryption Strategy again, save them, and retry the Request URL.",
           "challengeQuestion": "Why does Feishu show \"Challenge code didn't get a response\"?",
           "title": "Setup FAQ"
@@ -3719,14 +3722,14 @@
         "moreOptions": "More options for {{bot}}",
         "pageDescription": "Manage bot routing for this workspace",
         "permissions": {
-          "description": "In the Feishu developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It imports every managed connector scope under User identity. These are the minimum permissions required for the integration to work.",
-          "hint": "Keep every imported User identity permission, then create and publish a new app version so the OAuth consent screen can grant them. Removing any permission prevents the integration from working, and Feishu administrator approval may be required.",
-          "label": "User token scope JSON",
+          "description": "In the Feishu developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It includes App identity permissions for the bot and User identity permissions for your connected account.",
+          "hint": "Keep all imported permissions under both identities, then create and publish a new app version. Feishu administrator approval may be required.",
+          "label": "App and user scope JSON",
           "menuAlt": "Feishu Permissions & Scopes page with the Batch import/export scopes menu highlighted",
           "menuLabel": "Open Batch import/export scopes",
           "reviewAlt": "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
           "reviewLabel": "Paste the JSON and review new scopes",
-          "title": "Import user token scopes"
+          "title": "Import app and user scopes"
         },
         "publish": {
           "allMembersAlt": "Feishu availability settings with All members selected",
@@ -3788,7 +3791,7 @@
       },
       "lark": {
         "addBot": "Add bot",
-        "addDialogDescription": "Create an enterprise custom app, enable its bot, and complete these steps in the Lark developer console.",
+        "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Lark developer console.",
         "addDialogTitle": "Add a Lark bot",
         "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
@@ -3801,14 +3804,14 @@
         "copied": "{{label}} copied",
         "copy": "Copy",
         "create": {
-          "descriptionAfter": ", create an enterprise custom app using the name and icon you want, then add the Bot capability.",
+          "descriptionAfter": ", create an enterprise app and select the Agent type. Choose the name and icon you want; the Agent template includes the Bot capability.",
           "descriptionBefore": "In the ",
           "downloadIcon": "Download the optional {{brandName}} icon",
           "iconAlt": "Optional {{brandName}} app icon",
           "iconHint": ", or use any icon you prefer.",
           "iconTitle": "Optional {{brandName}} app icon",
           "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
-          "title": "Create an enterprise custom app"
+          "title": "Create an Agent app"
         },
         "credentials": {
           "appId": "App ID",
@@ -3838,6 +3841,9 @@
         "faq": {
           "approvalAnswer": "If availability is set to All members, a Lark administrator must approve the release. Lark sends the approval request to an administrator in a direct message, and the app remains pending until an administrator completes the review.",
           "approvalQuestion": "Why is publishing the app waiting for approval?",
+          "botFeatureAnswer": "Open Features → Add Features in the Lark developer console. Under By Feature, add the Bot capability, then continue this guide and publish the app. Agent apps include the Bot capability by default.",
+          "botFeatureImageAlt": "Lark developer console showing the Bot capability under Add Features",
+          "botFeatureQuestion": "What if I chose Custom App instead of Agent?",
           "challengeAnswer": "This usually means the Encrypt Key or Verification Token saved during the Tokens step is incorrect. Return to the Tokens step, enter both values from Event Configuration → Encryption Strategy again, save them, and retry the Request URL.",
           "challengeQuestion": "Why does Lark show \"Challenge code didn't get a response\"?",
           "title": "Setup FAQ"
@@ -3849,14 +3855,14 @@
         "moreOptions": "More options for {{bot}}",
         "pageDescription": "Manage bot routing for this workspace",
         "permissions": {
-          "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It imports every managed connector scope under User identity. These are the minimum permissions required for the integration to work.",
-          "hint": "Keep every imported User identity permission, then create and publish a new app version so the OAuth consent screen can grant them. Removing any permission prevents the integration from working, and Lark administrator approval may be required.",
-          "label": "User token scope JSON",
+          "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It includes App identity permissions for the bot and User identity permissions for your connected account.",
+          "hint": "Keep all imported permissions under both identities, then create and publish a new app version. Lark administrator approval may be required.",
+          "label": "App and user scope JSON",
           "menuAlt": "Feishu Permissions & Scopes page with the Batch import/export scopes menu highlighted",
           "menuLabel": "Open Batch import/export scopes",
           "reviewAlt": "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
           "reviewLabel": "Paste the JSON and review new scopes",
-          "title": "Import user token scopes"
+          "title": "Import app and user scopes"
         },
         "publish": {
           "allMembersAlt": "Feishu availability settings with All members selected",

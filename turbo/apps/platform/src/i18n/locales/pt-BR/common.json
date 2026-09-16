@@ -3721,7 +3721,7 @@
       },
       "feishu": {
         "addBot": "Adicionar bot",
-        "addDialogDescription": "Crie um app personalizado empresarial, ative o bot e conclua estas etapas no console de desenvolvedor do Feishu.",
+        "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Feishu.",
         "addDialogTitle": "Adicionar um bot do Feishu",
         "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
@@ -3734,14 +3734,14 @@
         "copied": "Copiado: {{label}}",
         "copy": "Copiar",
         "create": {
-          "descriptionAfter": ", crie um app personalizado empresarial com o nome e o ícone que preferir e adicione o recurso Bot.",
+          "descriptionAfter": ", crie um app empresarial e selecione o tipo Agent. Escolha o nome e o ícone que preferir; o modelo Agent inclui o recurso Bot.",
           "descriptionBefore": "No ",
           "downloadIcon": "Baixar o ícone opcional do {{brandName}}",
           "iconAlt": "Ícone opcional do app {{brandName}}",
           "iconHint": " ou use qualquer ícone de sua preferência.",
           "iconTitle": "Ícone opcional do app {{brandName}}",
           "imageAlt": "Formulário de criação de app do Feishu com o nome, o ícone e o botão Criar destacados",
-          "title": "Criar um app personalizado empresarial"
+          "title": "Criar um app do tipo Agent"
         },
         "credentials": {
           "appId": "ID do app",
@@ -3771,6 +3771,9 @@
         "faq": {
           "approvalAnswer": "Se a disponibilidade estiver definida como All members, um administrador do Feishu deverá aprovar a versão. O Feishu envia a solicitação de aprovação a um administrador por mensagem direta, e o app permanece pendente até a conclusão da revisão.",
           "approvalQuestion": "Por que a publicação do app está aguardando aprovação?",
+          "botFeatureAnswer": "Abra Features → Add Features no console de desenvolvedor do Feishu. Em By Feature, adicione o recurso Bot, depois continue este guia e publique o app. Apps do tipo Agent incluem o recurso Bot por padrão.",
+          "botFeatureImageAlt": "Console de desenvolvedor do Lark mostrando o recurso Bot em Add Features",
+          "botFeatureQuestion": "E se eu escolhi Custom App em vez de Agent?",
           "challengeAnswer": "Isso geralmente significa que o Encrypt Key ou o Verification Token salvo na etapa Tokens está incorreto. Volte à etapa Tokens, insira novamente os dois valores de Event Configuration → Encryption Strategy, salve-os e tente a Request URL outra vez.",
           "challengeQuestion": "Por que o Feishu mostra \"Challenge code didn't get a response\"?",
           "title": "Perguntas frequentes sobre a configuração"
@@ -3781,14 +3784,14 @@
         "moreOptions": "Mais opções para {{bot}}",
         "pageDescription": "Gerencie o encaminhamento dos bots neste workspace",
         "permissions": {
-          "description": "No console de desenvolvedor do Feishu, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Isso importa todos os escopos do conector gerenciado em User identity. Essas são as permissões mínimas necessárias para que a integração funcione.",
-          "hint": "Mantenha todas as permissões importadas de User identity e depois crie e publique uma nova versão do app para que a tela de consentimento OAuth possa concedê-las. Remover qualquer permissão impedirá o funcionamento da integração, e talvez seja necessária a aprovação de um administrador do Feishu.",
-          "label": "JSON de escopos do token de usuário",
+          "description": "No console de desenvolvedor do Feishu, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Ele inclui permissões de identidade do app para o bot e de identidade do usuário para sua conta conectada.",
+          "hint": "Mantenha todas as permissões importadas das duas identidades e crie e publique uma nova versão do app. A aprovação de um administrador do Feishu pode ser necessária.",
+          "label": "JSON de escopos do app e do usuário",
           "menuAlt": "Página Permissões e escopos do Feishu com o menu de importação/exportação em lote de escopos destacado",
           "menuLabel": "Abrir importação/exportação em lote de escopos",
           "reviewAlt": "Caixa de diálogo de importação/exportação em lote de escopos do Feishu com o JSON importado e o botão de revisão destacado",
           "reviewLabel": "Colar o JSON e revisar os novos escopos",
-          "title": "Importar escopos do token de usuário"
+          "title": "Importar escopos do app e do usuário"
         },
         "publish": {
           "allMembersAlt": "Configurações de disponibilidade do Feishu com All members selecionado",
@@ -3850,7 +3853,7 @@
       },
       "lark": {
         "addBot": "Adicionar bot",
-        "addDialogDescription": "Crie um app personalizado empresarial, ative o bot e conclua estas etapas no console de desenvolvedor do Lark.",
+        "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Lark.",
         "addDialogTitle": "Adicionar um bot do Lark",
         "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
@@ -3863,14 +3866,14 @@
         "copied": "Copiado: {{label}}",
         "copy": "Copiar",
         "create": {
-          "descriptionAfter": ", crie um app personalizado empresarial com o nome e o ícone que preferir e adicione o recurso Bot.",
+          "descriptionAfter": ", crie um app empresarial e selecione o tipo Agent. Escolha o nome e o ícone que preferir; o modelo Agent inclui o recurso Bot.",
           "descriptionBefore": "No ",
           "downloadIcon": "Baixar o ícone opcional do {{brandName}}",
           "iconAlt": "Ícone opcional do app {{brandName}}",
           "iconHint": " ou use qualquer ícone de sua preferência.",
           "iconTitle": "Ícone opcional do app {{brandName}}",
           "imageAlt": "Formulário de criação de app do Feishu com o nome, o ícone e o botão Criar destacados",
-          "title": "Criar um app personalizado empresarial"
+          "title": "Criar um app do tipo Agent"
         },
         "credentials": {
           "appId": "ID do app",
@@ -3900,6 +3903,9 @@
         "faq": {
           "approvalAnswer": "Se a disponibilidade estiver definida como All members, um administrador do Lark deverá aprovar a versão. O Lark envia a solicitação de aprovação a um administrador por mensagem direta, e o app permanece pendente até a conclusão da revisão.",
           "approvalQuestion": "Por que a publicação do app está aguardando aprovação?",
+          "botFeatureAnswer": "Abra Features → Add Features no console de desenvolvedor do Lark. Em By Feature, adicione o recurso Bot, depois continue este guia e publique o app. Apps do tipo Agent incluem o recurso Bot por padrão.",
+          "botFeatureImageAlt": "Console de desenvolvedor do Lark mostrando o recurso Bot em Add Features",
+          "botFeatureQuestion": "E se eu escolhi Custom App em vez de Agent?",
           "challengeAnswer": "Isso geralmente significa que o Encrypt Key ou o Verification Token salvo na etapa Tokens está incorreto. Volte à etapa Tokens, insira novamente os dois valores de Event Configuration → Encryption Strategy, salve-os e tente a Request URL outra vez.",
           "challengeQuestion": "Por que o Lark mostra \"Challenge code didn't get a response\"?",
           "title": "Perguntas frequentes sobre a configuração"
@@ -3911,14 +3917,14 @@
         "moreOptions": "Mais opções para {{bot}}",
         "pageDescription": "Gerencie o encaminhamento dos bots neste workspace",
         "permissions": {
-          "description": "No console de desenvolvedor do Lark, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Isso importa todos os escopos do conector gerenciado em User identity. Essas são as permissões mínimas necessárias para que a integração funcione.",
-          "hint": "Mantenha todas as permissões importadas de User identity e depois crie e publique uma nova versão do app para que a tela de consentimento OAuth possa concedê-las. Remover qualquer permissão impedirá o funcionamento da integração, e talvez seja necessária a aprovação de um administrador do Lark.",
-          "label": "JSON de escopos do token de usuário",
+          "description": "No console de desenvolvedor do Lark, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Ele inclui permissões de identidade do app para o bot e de identidade do usuário para sua conta conectada.",
+          "hint": "Mantenha todas as permissões importadas das duas identidades e crie e publique uma nova versão do app. A aprovação de um administrador do Lark pode ser necessária.",
+          "label": "JSON de escopos do app e do usuário",
           "menuAlt": "Página Permissões e escopos do Feishu com o menu de importação/exportação em lote de escopos destacado",
           "menuLabel": "Abrir importação/exportação em lote de escopos",
           "reviewAlt": "Caixa de diálogo de importação/exportação em lote de escopos do Feishu com o JSON importado e o botão de revisão destacado",
           "reviewLabel": "Colar o JSON e revisar os novos escopos",
-          "title": "Importar escopos do token de usuário"
+          "title": "Importar escopos do app e do usuário"
         },
         "publish": {
           "allMembersAlt": "Configurações de disponibilidade do Feishu com All members selecionado",
