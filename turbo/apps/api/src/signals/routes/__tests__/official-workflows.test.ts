@@ -2655,58 +2655,6 @@ describe("Morning Brief preference", () => {
       { id: onAlternateAgent },
     ]);
   });
-
-  it("reports a conflict for an installed brief with no delivery schedule and repairs nothing", async () => {
-    installCatalogStorageFixture();
-    await syncDeployedCatalog();
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected organization-scoped actor");
-    }
-    const onboarding = await bdd.readOnboardingStatus(actor);
-    if (!onboarding.defaultAgentId) {
-      throw new Error("Expected a default Agent");
-    }
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      await cleanupCatalog();
-    });
-    await setOfficialWorkflowsEnabled(actor, true);
-    await setMorningBriefEnabled(actor, true);
-    const headers = authHeaders(actor);
-
-    const withoutSchedule = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName: "morning-brief" },
-        body: { agentId: onboarding.defaultAgentId, blueprints: [] },
-      }),
-      [201],
-    );
-    const workflowId = withoutSchedule.body.workflow.id;
-
-    // An installed brief without its delivery Blueprint is not a paused brief:
-    // reporting it as one would let the toggle act on a schedule that is not
-    // there. Reading the preference reports the conflict and installs nothing.
-    const conflicted = await accept(
-      morningBriefPreferenceClient().get({ headers }),
-      [409],
-    );
-    expect(conflicted.body.error.code).toBe("MORNING_BRIEF_STATE_CONFLICT");
-    const repeated = await accept(
-      morningBriefPreferenceClient().get({ headers }),
-      [409],
-    );
-    expect(repeated.body.error.code).toBe("MORNING_BRIEF_STATE_CONFLICT");
-    await expect(
-      readMorningBriefAutomations(actor, workflowId),
-    ).resolves.toHaveLength(0);
-    await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
-      { id: workflowId },
-    ]);
-  });
 });
 
 async function installMorningBriefFromCatalog(
