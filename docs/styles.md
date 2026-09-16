@@ -802,6 +802,12 @@ gradient to the same box, so it is a stated rather than a load-bearing value.
 
 ### Chat message bubbles
 
+A Markdown frame inside a bubble asks for the bubble's block treatment by name:
+pass `chatBubble` to `MarkdownEventBody`. Do not respell the treatment at a call
+site, and do not drop an `!` from the class string below — every one of them is
+load-bearing, for the cascade reasons this section records. The bubbles
+themselves are ordinary utilities.
+
 The user bubble writes `bg-gray-200 text-foreground`; the assistant bubble
 writes `bg-transparent border-none border-current`. The color utility is there
 because `border: none` is a shorthand that also resets `border-color` to
@@ -857,11 +863,11 @@ The card slot is addressed through `data-slot="markdown-card"`, which carries no
 styles, and `data-slot="chat-user-message"` identifies the user bubble for the
 attachment-preview test.
 
-This narrows a contract on purpose, the way the nav chrome above does. The
-treatment applies to the three call sites that ask for it — the chat
+Asking by name narrows the contract on purpose, the way the nav chrome above
+does. The treatment reaches the three call sites that request it — the chat
 transcript's Agent message, and the shared thread's rendered and rich-content
-Agent messages — rather than to any Markdown frame that happens to sit inside a
-bubble. A future in-bubble frame asks for the treatment by name.
+Agent messages — rather than any Markdown frame that happens to sit inside a
+bubble.
 
 ### Chat thinking states
 
