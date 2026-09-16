@@ -4855,6 +4855,86 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     await removeFeishuInstallation(fixture);
   });
 
+  it("renders system message history and retains unreadable message placeholders", async () => {
+    const fixture = await setupFeishuRunFixture();
+    const { actor, runnerGroup, appId, callbackUrl } = fixture;
+    await connectFixtureUser(fixture);
+    const messages = [
+      {
+        content: JSON.stringify({
+          template: "{from_user} invited {to_chatters} to this chat.",
+          from_user: ["Ada"],
+          to_chatters: ["Sam", "John", "Mary"],
+        }),
+        expected: "Ada invited Sam, John, Mary to this chat.",
+      },
+      {
+        content: JSON.stringify({
+          template: "{from_user} invited {to_chatters}. Thanks, {from_user}.",
+          from_user: ["{to_chatters} $&"],
+          to_chatters: ["Sam"],
+        }),
+        expected: "{to_chatters} $& invited Sam. Thanks, {to_chatters} $&.",
+      },
+      {
+        content: JSON.stringify({
+          template: "{from_user}邀请{to_chatters}加入了群聊。",
+          from_user: ["小明"],
+          to_chatters: ["小红", "小李"],
+        }),
+        expected: "小明邀请小红, 小李加入了群聊。",
+      },
+      {
+        content: JSON.stringify({
+          template: "{from_user} updated {missing_field}.",
+          from_user: ["Ada"],
+        }),
+        expected: "Ada updated {missing_field}.",
+      },
+      {
+        content: JSON.stringify({ template: "Group settings changed." }),
+        expected: "Group settings changed.",
+      },
+      { content: "not JSON", expected: "[system message]" },
+      {
+        content: JSON.stringify({ template: "{from_user}", from_user: [123] }),
+        expected: "[system message]",
+      },
+      {
+        content: JSON.stringify({ template: "{from_user}", from_user: [] }),
+        expected: "[system message]",
+      },
+    ];
+    historyMessages = messages.map((message, index) => {
+      return {
+        message_id: `om_system_history_${index}`,
+        msg_type: "system",
+        create_time: String(index + 1),
+        body: { content: message.content },
+      };
+    });
+
+    const prompt = "Explain the recent chat membership changes";
+    await postEvent(callbackUrl, directMessage(appId, prompt), {
+      encrypted: true,
+    });
+    await flushWaitUntilForTest();
+    const run = await findRun(actor, prompt);
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.id);
+    const history = requireValue(
+      claim.appendSystemPrompt,
+      "Expected conversation history",
+    );
+    for (const message of messages) {
+      expect(history).toContain(message.expected);
+    }
+    expect(history.match(/\[system message\]/gu)).toHaveLength(3);
+    await runsApi.requestCancelRun(actor, run.id, [200]);
+    await flushWaitUntilForTest();
+    await removeFeishuInstallation(fixture);
+  });
+
   it("claims a Feishu message when conversation history loading fails", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, runnerGroup, appId, callbackUrl } = fixture;
@@ -6146,7 +6226,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
-  it("ignores unmentioned and app-authored group messages", async () => {
+  it("ignores unmentioned group messages, app messages and system notifications", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, appId, callbackUrl } = fixture;
     await connectFixtureUser(fixture);
@@ -6168,6 +6248,26 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       callbackUrl,
       groupMessage(appId, "ignore an app-authored message", {
         senderType: "app",
+      }),
+      { encrypted: true },
+    );
+    await postEvent(
+      callbackUrl,
+      v2Event(appId, "im.message.receive_v1", {
+        sender: {
+          sender_id: { open_id: "ou_feishu_user" },
+          sender_type: "user",
+        },
+        message: {
+          message_id: `om_${randomUUID()}`,
+          chat_id: "oc_feishu_dm",
+          chat_type: "p2p",
+          message_type: "system",
+          content: JSON.stringify({
+            template: "ignore the system notification from {from_user}",
+            from_user: ["Ada"],
+          }),
+        },
       }),
       { encrypted: true },
     );
