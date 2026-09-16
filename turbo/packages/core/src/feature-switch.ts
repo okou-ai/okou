@@ -485,6 +485,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.DeliveryFormatGuidance]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Replace the hosted-HTML-first delivery guidance with a rule that picks docx, xlsx, PDF, CSV, a hosted view or a chat reply from what the user will do with the result.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
 };
 
 interface ResolvedHashes {
