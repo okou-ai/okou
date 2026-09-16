@@ -38,8 +38,7 @@ function DiagramImage({ image }: { image: MermaidDiagramImage }) {
       //
       // github-markdown-css paints every image on an opaque canvas
       // colour from an unlayered rule, which a utility cannot outrank, so
-      // the transparent fill is important the way the retired rule's
-      // source order was.
+      // the transparent fill has to be important.
       className="absolute inset-2 w-[calc(100%-16px)] h-[calc(100%-16px)] object-contain bg-transparent!"
     />
   );
@@ -86,8 +85,8 @@ export function MermaidDiagramView({
         // narrows — hence the same three utilities on the tooltip trigger,
         // which wraps this button while the diagram is still rendering.
         //
-        // `border-[1px]` names the width on purpose: the retired rule drew a
-        // 1px edge, and the shared `border` hairline token is 0.5px.
+        // `border-[1px]` names the width on purpose: this edge is a 1px
+        // line, and the shared `border` hairline token is 0.5px.
         className="relative block w-full max-w-[420px] aspect-4/3 my-1 p-2 border-[1px] border-[hsl(var(--foreground)/0.1)] rounded-lg bg-[hsl(var(--muted)/0.3)] overflow-hidden cursor-zoom-in disabled:cursor-default"
         wrapperClassName="block w-full max-w-[420px]"
         disabled={image === null}
