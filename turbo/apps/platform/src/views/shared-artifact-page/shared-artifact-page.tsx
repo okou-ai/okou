@@ -13,9 +13,9 @@ import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
-import {
-  type SharedArtifactPreview,
-  type SharedArtifactViewerSignals,
+import type {
+  SharedArtifactPreview,
+  SharedArtifactViewerSignals,
 } from "../../signals/shared-artifact-page.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
@@ -52,6 +52,7 @@ function ArtifactViewerActions({
   return (
     <div className="flex shrink-0 items-center gap-1">
       <ArtifactShareMenu
+        surface="viewer"
         url={artifact.preview.url}
         copyUrl={window.location.href}
         iconSize={18}

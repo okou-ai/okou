@@ -217,13 +217,14 @@ test("failed permission saves retain the current audience and can be retried", a
     return respond(200, status);
   });
   context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-    if (fail)
+    if (fail) {
       return respond(500, {
         error: {
           code: "INTERNAL_SERVER_ERROR",
           message: "Unable to save sharing",
         },
       });
+    }
     status = sharingStatus(body.audience);
     return respond(200, status);
   });

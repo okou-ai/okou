@@ -30,8 +30,8 @@ const openPublicArtifact$ = command(
   async ({ get }, reference: string, signal: AbortSignal) => {
     const result = await accept(
       get(apiClient$)(artifactReferencesContract, {
-        getToken: async () => {
-          return null;
+        getToken: () => {
+          return Promise.resolve(null);
         },
       }).publicUrl({
         params: { reference },
@@ -41,7 +41,9 @@ const openPublicArtifact$ = command(
       [200, 400, 404],
       signal,
     );
-    if (result.status !== 200) return false;
+    if (result.status !== 200) {
+      return false;
+    }
     const contentUrl = new URL(result.body.url);
     contentUrl.hash = location.hash;
     window.location.replace(contentUrl.href);
@@ -64,7 +66,9 @@ export const setupSharedArtifact$ = command(
       return;
     }
     if (!clerk.user) {
-      if (await set(openPublicArtifact$, id, signal)) return;
+      if (await set(openPublicArtifact$, id, signal)) {
+        return;
+      }
       const returnUrl = new URL(
         `/artifacts/${encodeURIComponent(id)}`,
         location.origin,
@@ -85,8 +89,9 @@ export const setupSharedArtifact$ = command(
       [200, 400, 403, 404],
       signal,
     );
-    if (result.status !== 200 && (await set(openPublicArtifact$, id, signal)))
+    if (result.status !== 200 && (await set(openPublicArtifact$, id, signal))) {
       return;
+    }
     if (switches[FeatureSwitchKey.PrivateArtifacts] || result.status !== 200) {
       const referenceUrl = new URL(
         `/artifacts/${encodeURIComponent(id)}`,

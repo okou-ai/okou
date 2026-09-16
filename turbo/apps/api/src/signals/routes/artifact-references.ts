@@ -210,7 +210,9 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
         pathParamsOf(artifactReferencesContract.publicUrl),
       );
       const parsed = parseArtifactReference(`/artifacts/${reference}`);
-      if (!parsed) return notFound("Artifact unavailable");
+      if (!parsed) {
+        return notFound("Artifact unavailable");
+      }
       const record =
         parsed.id === null
           ? await get(artifactReferenceRecord(parsed.hash, signal))
@@ -222,7 +224,9 @@ export const artifactReferenceRoutes: readonly RouteEntry[] = [
           : record?.version === 1
             ? { id: record.shareId, kind: "share" as const }
             : record?.target;
-      if (!target) return notFound("Artifact unavailable");
+      if (!target) {
+        return notFound("Artifact unavailable");
+      }
       const result = await set(resolvePublicArtifactUrl$, target, signal);
       return result
         ? { status: 200 as const, body: result }

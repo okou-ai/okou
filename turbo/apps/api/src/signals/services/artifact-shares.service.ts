@@ -679,7 +679,7 @@ export const resolvePublicArtifactUrl$ = command(
             )
             .limit(1);
     signal.throwIfAborted();
-    let row = args.kind === "html" ? undefined : direct;
+    let row = direct;
     if (!row && (args.kind === undefined || args.kind === "html")) {
       const [deployment] = await get(db$)
         .select({ siteId: privateHostedDeployments.siteId })
@@ -701,7 +701,9 @@ export const resolvePublicArtifactUrl$ = command(
         : undefined;
       signal.throwIfAborted();
     }
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
     const stored = await get(policyFor(row, signal));
     signal.throwIfAborted();
     const policy = stored?.policy;

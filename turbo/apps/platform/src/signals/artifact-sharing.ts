@@ -19,8 +19,12 @@ import { resetSignal, withCleanup } from "./utils.ts";
 
 function artifactSharingTarget(url: string): ArtifactShareTarget | null {
   const id = privateHostedDeploymentId(url, resolveApiBase());
-  if (id) return { kind: "html", id };
-  if (!isAuthenticatedAttachmentUrl(url)) return null;
+  if (id) {
+    return { kind: "html", id };
+  }
+  if (!isAuthenticatedAttachmentUrl(url)) {
+    return null;
+  }
   const fileId = new URL(url).searchParams.get("file_id");
   return fileId ? { kind: "file", id: fileId } : null;
 }
@@ -48,7 +52,9 @@ export const artifactShareRequest$ = computed((get) => {
 export const artifactShareDetails$ = computed(async (get) => {
   const request = get(request$);
   get(reload$);
-  if (!request) return null;
+  if (!request) {
+    return null;
+  }
   const client = get(apiClient$);
   const reference = parseArtifactReference(request.url, location.origin);
   const target = reference
@@ -62,7 +68,9 @@ export const artifactShareDetails$ = computed(async (get) => {
         )
       ).body.target
     : artifactSharingTarget(request.url);
-  if (!target) return null;
+  if (!target) {
+    return null;
+  }
   // The owner-only status endpoint is the authority. A successful resolve grants
   // viewing, while 404 here means this viewer cannot manage the share.
   const result = await accept(
@@ -78,7 +86,9 @@ export const artifactShareDetails$ = computed(async (get) => {
       : (request.copyUrl ?? request.url),
     location.origin,
   );
-  if (status) copyUrl.hash = reference?.fragment ?? "";
+  if (status) {
+    copyUrl.hash = reference?.fragment ?? "";
+  }
   const audience =
     status?.selectedTarget && status.selectedTarget.id !== target.id
       ? "private"
@@ -137,13 +147,16 @@ export const changeArtifactAudience$ = command(
   ) => {
     const details = await get(artifactShareDetails$);
     signal.throwIfAborted();
-    if (!details?.status || get(request$) !== details.request) return;
+    if (!details?.status || get(request$) !== details.request) {
+      return;
+    }
     if (
       details.audience === audience &&
       (audience === "private" ||
         details.status.selectedVersion === details.status.candidateVersion)
-    )
+    ) {
       return;
+    }
     await withCleanup(
       accept(
         get(apiClient$)(artifactSharesContract).update({
