@@ -1,4 +1,6 @@
-import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command, computed } from "ccstate";
 import {
   userTemplatesContract,
   type UserTemplatePreviewAsset,
@@ -32,6 +34,7 @@ import {
   resolvePresentationTemplatePreviewPresignedUrls,
   type PresentationTemplatePreviewPresignedUrlRequest,
 } from "../services/system-storage-presigned-url-cache.service";
+import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
 const templateReadAuth = {
@@ -45,6 +48,31 @@ const templateWriteAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "agent:write",
 } as const;
+
+/**
+ * Every route is gated, not just the writes. While the switch is off the
+ * catalog must not exist for a caller rather than merely be unwritable, so a
+ * read answers the same way a missing feature does.
+ */
+const customTemplatesEnabled$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const context = await loadUserFeatureSwitchContext(
+    get(db$),
+    auth.orgId,
+    auth.userId,
+  );
+  return isFeatureEnabled(FeatureSwitchKey.CustomTemplates, context);
+});
+
+const customTemplatesDisabled = Object.freeze({
+  status: 403 as const,
+  body: Object.freeze({
+    error: Object.freeze({
+      message: "Custom templates are not enabled",
+      code: "FORBIDDEN" as const,
+    }),
+  }),
+});
 
 function templateNotFound(templateId: string) {
   return notFound(`User template not found: ${templateId}`);
@@ -166,6 +194,10 @@ const coverUrlFor$ = command(
 );
 
 const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await get(customTemplatesEnabled$))) {
+    return customTemplatesDisabled;
+  }
+  signal.throwIfAborted();
   const auth = get(organizationAuthContext$);
   const rows = await listAccessibleUserTemplates(get(db$), {
     orgId: auth.orgId,
@@ -206,6 +238,10 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const getParams$ = pathParamsOf(userTemplatesContract.get);
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await get(customTemplatesEnabled$))) {
+    return customTemplatesDisabled;
+  }
+  signal.throwIfAborted();
   const auth = get(organizationAuthContext$);
   const params = get(getParams$);
   const row = await loadAccessibleUserTemplate(get(db$), {
@@ -252,6 +288,10 @@ const resolvePreviewUrlsBody$ = bodyResultOf(
 );
 const resolvePreviewUrlsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    if (!(await get(customTemplatesEnabled$))) {
+      return customTemplatesDisabled;
+    }
+    signal.throwIfAborted();
     const auth = get(organizationAuthContext$);
     const bodyResult = await get(resolvePreviewUrlsBody$);
     signal.throwIfAborted();
@@ -289,6 +329,10 @@ const resolvePreviewUrlsInner$ = command(
 const updateParams$ = pathParamsOf(userTemplatesContract.update);
 const updateBody$ = bodyResultOf(userTemplatesContract.update);
 const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await get(customTemplatesEnabled$))) {
+    return customTemplatesDisabled;
+  }
+  signal.throwIfAborted();
   const auth = get(organizationAuthContext$);
   const params = get(updateParams$);
   const bodyResult = await get(updateBody$);
@@ -354,6 +398,10 @@ const updateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const deleteParams$ = pathParamsOf(userTemplatesContract.delete);
 const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await get(customTemplatesEnabled$))) {
+    return customTemplatesDisabled;
+  }
+  signal.throwIfAborted();
   const auth = get(organizationAuthContext$);
   const params = get(deleteParams$);
   const deleted = await set(
