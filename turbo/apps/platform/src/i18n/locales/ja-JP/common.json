@@ -589,8 +589,18 @@
       "videoLabel": "{{filename}} のビデオ プレビュー"
     },
     "sharing": {
-      "shareOrganization": "組織内で共有",
-      "sharePublic": "一般公開する"
+      "accessLabel": "",
+      "copyLink": "",
+      "loadFailed": "",
+      "onlyMe": "",
+      "onlyMeDescription": "",
+      "organization": "",
+      "organizationDescription": "",
+      "publicAccess": "",
+      "publicDescription": "",
+      "retry": "",
+      "savedAutomatically": "",
+      "saving": ""
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",
@@ -1017,8 +1027,7 @@
     "toasts": {
       "copyLinkFailed": "リンクのコピーに失敗しました",
       "downloadFailed": "ダウンロードに失敗しました",
-      "linkCopied": "リンクがコピーされました",
-      "sharing": "共有中…"
+      "linkCopied": "リンクがコピーされました"
     },
     "viewer": {
       "continuePrompt": "この成果物を使った作業を手伝ってください: {{url}}",

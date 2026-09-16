@@ -590,8 +590,18 @@
       "videoLabel": "{{filename}} के लिए वीडियो पूर्वावलोकन"
     },
     "sharing": {
-      "shareOrganization": "संगठन के साथ शेयर करें",
-      "sharePublic": "सार्वजनिक रूप से शेयर करें"
+      "accessLabel": "",
+      "copyLink": "",
+      "loadFailed": "",
+      "onlyMe": "",
+      "onlyMeDescription": "",
+      "organization": "",
+      "organizationDescription": "",
+      "publicAccess": "",
+      "publicDescription": "",
+      "retry": "",
+      "savedAutomatically": "",
+      "saving": ""
     },
     "sidebar": {
       "openSharedConversation": "साझा बातचीत खोलें",
@@ -1018,8 +1028,7 @@
     "toasts": {
       "copyLinkFailed": "लिंक कॉपी करने में विफल",
       "downloadFailed": "डाउनलोड विफल रहा",
-      "linkCopied": "लिंक कॉपी किया गया",
-      "sharing": "साझा किया जा रहा है…"
+      "linkCopied": "लिंक कॉपी किया गया"
     },
     "viewer": {
       "continuePrompt": "इस आर्टिफ़ैक्ट पर काम करने में मेरी मदद करें: {{url}}",

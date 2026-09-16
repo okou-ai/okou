@@ -590,18 +590,18 @@
       "videoLabel": "Video preview for {{filename}}"
     },
     "sharing": {
+      "accessLabel": "Who can access",
+      "copyLink": "Copy link",
+      "loadFailed": "Unable to load permissions",
       "onlyMe": "Only me",
       "onlyMeDescription": "Only you can view this artifact",
       "organization": "Organization",
       "organizationDescription": "Anyone in {{organization}} with the link",
       "publicAccess": "Public access",
       "publicDescription": "Anyone with the link can view",
-      "accessLabel": "Who can access",
-      "copyLink": "Copy link",
-      "saving": "Saving…",
+      "retry": "Retry",
       "savedAutomatically": "Changes saved automatically",
-      "loadFailed": "Unable to load permissions",
-      "retry": "Retry"
+      "saving": "Saving…"
     },
     "sidebar": {
       "openSharedConversation": "Open shared conversation",
@@ -1028,8 +1028,7 @@
     "toasts": {
       "copyLinkFailed": "Failed to copy link",
       "downloadFailed": "Download failed",
-      "linkCopied": "Link copied",
-      "sharing": "Sharing…"
+      "linkCopied": "Link copied"
     },
     "viewer": {
       "continuePrompt": "Help me work with this artifact: {{url}}",

@@ -106,7 +106,7 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
       }
       const shared = await set(
         resolveArtifactShare$,
-        { id: record.shareId, userId: auth.userId },
+        { id: record.shareId, userId: auth.userId, allowPrivateOwner: true },
         signal,
       );
       return shared
@@ -178,7 +178,7 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const shared = await set(
     resolveArtifactShare$,
-    { id, userId: auth.userId },
+    { id, userId: auth.userId, allowPrivateOwner: true },
     signal,
   );
   return shared

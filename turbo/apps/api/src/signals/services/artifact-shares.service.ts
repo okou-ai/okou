@@ -550,6 +550,7 @@ export const resolveArtifactShare$ = command(
       readonly id: string;
       readonly userId: string;
       readonly expectedTarget?: ArtifactShareTarget;
+      readonly allowPrivateOwner?: boolean;
     },
     signal: AbortSignal,
   ) => {
@@ -567,7 +568,8 @@ export const resolveArtifactShare$ = command(
     const policy = stored?.policy;
     if (
       !policy ||
-      (policy.status !== "active" && policy.ownerId !== args.userId) ||
+      (policy.status !== "active" &&
+        !(args.allowPrivateOwner && policy.ownerId === args.userId)) ||
       (args.expectedTarget &&
         (policy.target.kind !== args.expectedTarget.kind ||
           policy.target.id !== args.expectedTarget.id))

@@ -590,8 +590,18 @@
       "videoLabel": "Videovorschau für {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Mit der Organisation teilen",
-      "sharePublic": "Öffentlich teilen"
+      "accessLabel": "",
+      "copyLink": "",
+      "loadFailed": "",
+      "onlyMe": "",
+      "onlyMeDescription": "",
+      "organization": "",
+      "organizationDescription": "",
+      "publicAccess": "",
+      "publicDescription": "",
+      "retry": "",
+      "savedAutomatically": "",
+      "saving": ""
     },
     "sidebar": {
       "openSharedConversation": "Geteilte Unterhaltung öffnen",
@@ -1018,8 +1028,7 @@
     "toasts": {
       "copyLinkFailed": "Link konnte nicht kopiert werden",
       "downloadFailed": "Der Download ist fehlgeschlagen",
-      "linkCopied": "Link kopiert",
-      "sharing": "Wird geteilt…"
+      "linkCopied": "Link kopiert"
     },
     "viewer": {
       "continuePrompt": "Hilf mir, mit diesem Artefakt zu arbeiten: {{url}}",

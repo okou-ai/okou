@@ -589,8 +589,18 @@
       "videoLabel": "{{filename}} 비디오 미리보기"
     },
     "sharing": {
-      "shareOrganization": "조직에 공유",
-      "sharePublic": "공개적으로 공유"
+      "accessLabel": "",
+      "copyLink": "",
+      "loadFailed": "",
+      "onlyMe": "",
+      "onlyMeDescription": "",
+      "organization": "",
+      "organizationDescription": "",
+      "publicAccess": "",
+      "publicDescription": "",
+      "retry": "",
+      "savedAutomatically": "",
+      "saving": ""
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -1017,8 +1027,7 @@
     "toasts": {
       "copyLinkFailed": "링크 복사 실패",
       "downloadFailed": "다운로드 실패",
-      "linkCopied": "링크 복사됨",
-      "sharing": "공유 중…"
+      "linkCopied": "링크 복사됨"
     },
     "viewer": {
       "continuePrompt": "이 결과물로 작업할 수 있도록 도와주세요: {{url}}",

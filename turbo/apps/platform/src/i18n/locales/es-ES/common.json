@@ -608,8 +608,18 @@
       "videoLabel": "Vista previa de vídeo para {{filename}}"
     },
     "sharing": {
-      "shareOrganization": "Compartir con la organización",
-      "sharePublic": "Compartir públicamente"
+      "accessLabel": "",
+      "copyLink": "",
+      "loadFailed": "",
+      "onlyMe": "",
+      "onlyMeDescription": "",
+      "organization": "",
+      "organizationDescription": "",
+      "publicAccess": "",
+      "publicDescription": "",
+      "retry": "",
+      "savedAutomatically": "",
+      "saving": ""
     },
     "sidebar": {
       "openSharedConversation": "Abrir conversación compartida",
@@ -1037,8 +1047,7 @@
     "toasts": {
       "copyLinkFailed": "No se pudo copiar el enlace",
       "downloadFailed": "Descarga fallida",
-      "linkCopied": "Enlace copiado",
-      "sharing": "Compartiendo…"
+      "linkCopied": "Enlace copiado"
     },
     "viewer": {
       "continuePrompt": "Ayúdame a trabajar con este artefacto: {{url}}",

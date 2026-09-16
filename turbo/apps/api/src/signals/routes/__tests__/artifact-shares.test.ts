@@ -811,6 +811,13 @@ test.each(["short", "legacy", "legacy-short"] as const)(
       }),
       [200],
     );
+    await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference },
+      }),
+      [200],
+    );
     session(recipient, `org_${randomUUID()}`);
     await accept(
       api()(artifactReferencesContract).resolve({
@@ -1829,6 +1836,8 @@ test("canonical file links disclose a public URL only while explicitly public, w
 
 test("public HTML reference resolution preserves the selected version", async () => {
   const { owner, org } = await fixture();
+  const memberships =
+    context.mocks.clerk.organizations.getOrganizationMembershipList.getMockImplementation()!;
   const actor = createBddApi(context).user({ userId: owner, orgId: org });
   await createRunsApi(context).grantProEntitlement(actor);
   const host = createHostMapsBddApi(context);
@@ -1845,6 +1854,9 @@ test("public HTML reference resolution preserves the selected version", async ()
     files: [hostedTextFile("/index.html", "<h1>Second</h1>")],
   });
   await host.completeHostedSite(actor, second.deploymentId);
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    memberships,
+  );
   const published = await accept(
     api()(artifactSharesContract).update({
       headers,
