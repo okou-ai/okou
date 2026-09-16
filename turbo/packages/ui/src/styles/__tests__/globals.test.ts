@@ -212,12 +212,26 @@ describe("global focus colors", () => {
 });
 
 describe("stroke weights", () => {
+  /** The number a `@theme` width token declares, with any unit dropped. */
   function readThemeNumber(name: string): number {
-    const match = new RegExp(`--${name}:\\s*([\\d.]+)(px)?;`).exec(globalCss);
-    if (match === null) {
+    const declaration = globalCss
+      .split("\n")
+      .map((line) => {
+        return line.trim();
+      })
+      .find((line) => {
+        return line.startsWith(`--${name}:`);
+      });
+    if (declaration === undefined) {
       throw new Error(`Unable to locate --${name}`);
     }
-    return Number(match[1]);
+    const value = Number.parseFloat(
+      declaration.slice(`--${name}:`.length).trim(),
+    );
+    if (Number.isNaN(value)) {
+      throw new Error(`--${name} does not declare a number`);
+    }
+    return value;
   }
 
   it("draws an emphasized edge and an icon at one weight", () => {
