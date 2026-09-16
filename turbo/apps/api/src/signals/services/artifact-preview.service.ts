@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+
 import { command } from "ccstate";
 import { v5 as uuidv5 } from "uuid";
 import { eq } from "drizzle-orm";
@@ -272,6 +274,62 @@ function fetchArtifactSnapshot(
   );
 }
 
+/** Which of the two request profiles produced an observation. */
+type SnapshotAttempt = "primary" | "navigation-retry";
+
+type SnapshotAttemptResult =
+  | { readonly ok: true; readonly response: Response }
+  | { readonly ok: false; readonly status: number; readonly body: string };
+
+/**
+ * Browser Rendering answers a timeout with `6002` and a `detail` that names the
+ * stage, but nothing else distinguishes which of its independent timers fired.
+ * Record the code and detail as their own fields so a duration can be grouped
+ * by stage instead of read out of a message string.
+ */
+function snapshotFailureFields(body: string): {
+  readonly errorCode?: number;
+  readonly errorDetail?: string;
+} {
+  const parsed = browserSnapshotErrorSchema.safeParse(safeJsonParse(body));
+  const error = parsed.success ? parsed.data.errors[0] : undefined;
+  if (!error) {
+    return {};
+  }
+  return {
+    errorCode: error.code,
+    ...(error.detail === undefined ? {} : { errorDetail: error.detail }),
+  };
+}
+
+/**
+ * Cloudflare responds only once the render finishes, so this duration is the
+ * render itself rather than transport. Both outcomes are recorded because the
+ * failures alone have no denominator: without the successful attempts there is
+ * no way to tell a rare tail from a broken renderer.
+ */
+async function observeArtifactSnapshot(
+  args: FetchArtifactSnapshotArgs,
+  attempt: SnapshotAttempt,
+  signal: AbortSignal,
+): Promise<SnapshotAttemptResult> {
+  const startedAt = performance.now();
+  const response = await fetchArtifactSnapshot(args, signal);
+  // Reading the failure body here keeps it available to both the retry gate and
+  // the thrown error, which previously consumed the stream separately.
+  const body = response.ok ? null : await response.text();
+  log.info("Browser rendering snapshot attempt", {
+    attempt,
+    outcome: response.ok ? "ok" : "failed",
+    status: response.status,
+    elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    ...(body === null ? {} : snapshotFailureFields(body)),
+  });
+  return body === null
+    ? { ok: true, response }
+    : { ok: false, status: response.status, body };
+}
+
 async function renderArtifactSnapshot(
   token: string,
   wafSecret: string,
@@ -289,43 +347,33 @@ async function renderArtifactSnapshot(
     throw new Error("artifact preview URL must use a hosted-site domain");
   }
 
-  let response = await fetchArtifactSnapshot(
-    {
-      token,
-      wafSecret,
-      url,
-      previewUrl,
-      navigationOptions: PRIMARY_NAVIGATION_OPTIONS,
-    },
+  const requestArgs = { token, wafSecret, url, previewUrl } as const;
+  let attempt = await observeArtifactSnapshot(
+    { ...requestArgs, navigationOptions: PRIMARY_NAVIGATION_OPTIONS },
+    "primary",
     signal,
   );
-  if (!response.ok) {
-    const responseBody = await response.text();
+  if (!attempt.ok) {
     // Keep the extra Browser Rendering request exclusive to navigation: action
     // and request-stage timeouts need different fixes and should not double cost.
-    if (!isNavigationTimeoutResponse(response.status, responseBody)) {
+    if (!isNavigationTimeoutResponse(attempt.status, attempt.body)) {
       throw new Error(
-        `browser-rendering snapshot failed (${response.status}): ${responseBody}`,
+        `browser-rendering snapshot failed (${attempt.status}): ${attempt.body}`,
       );
     }
-    response = await fetchArtifactSnapshot(
-      {
-        token,
-        wafSecret,
-        url,
-        previewUrl,
-        navigationOptions: NAVIGATION_TIMEOUT_RETRY_OPTIONS,
-      },
+    attempt = await observeArtifactSnapshot(
+      { ...requestArgs, navigationOptions: NAVIGATION_TIMEOUT_RETRY_OPTIONS },
+      "navigation-retry",
       signal,
     );
   }
-  if (!response.ok) {
+  if (!attempt.ok) {
     throw new Error(
-      `browser-rendering snapshot failed (${response.status}): ${await response.text()}`,
+      `browser-rendering snapshot failed (${attempt.status}): ${attempt.body}`,
     );
   }
 
-  const responseBody: unknown = await response.json();
+  const responseBody: unknown = await attempt.response.json();
   const snapshot = browserSnapshotSchema.parse(responseBody);
   if (snapshot.meta.status !== undefined && snapshot.meta.status >= 400) {
     throw new Error(
