@@ -651,7 +651,7 @@ export function AccountDropdown({
 
   const handleAddAccount = () => {
     detach(
-      openClerkAddAccount(pageSignal),
+      openClerkAddAccount("/", pageSignal),
       Reason.DomCallback,
       "open Clerk add account dialog",
     );

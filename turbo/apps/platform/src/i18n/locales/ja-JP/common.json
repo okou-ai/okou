@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "{{brandName}} に戻る",
+      "description": "非公開か、利用できなくなった可能性があります。",
+      "help": "リンクを共有した人にアクセス権の確認を依頼してください。",
+      "signedInAs": "{{email}} としてログイン中",
+      "switchAccount": "アカウントを切り替える",
+      "switchAccountFailed": "アカウント切り替え画面を開けませんでした。もう一度お試しください。",
+      "title": "このアーティファクトを表示できません",
+      "tryAgain": "再試行"
+    },
     "actions": {
       "backToAll": "すべてのアーティファクトに戻る",
       "backToArtifacts": "アーティファクトに戻る",
@@ -580,8 +590,7 @@
     },
     "sharing": {
       "shareOrganization": "組織内で共有",
-      "sharePublic": "一般公開する",
-      "unavailable": "このアーティファクトは利用できないか、アクセス権がありません。"
+      "sharePublic": "一般公開する"
     },
     "sidebar": {
       "openSharedConversation": "共有された会話を開く",

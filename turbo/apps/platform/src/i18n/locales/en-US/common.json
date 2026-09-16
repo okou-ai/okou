@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Back to {{brandName}}",
+      "description": "It may be private or no longer available.",
+      "help": "Ask the person who shared this link to check access.",
+      "signedInAs": "Signed in as {{email}}",
+      "switchAccount": "Switch account",
+      "switchAccountFailed": "Could not open the account switcher. Please try again.",
+      "title": "You can’t view this artifact",
+      "tryAgain": "Try again"
+    },
     "actions": {
       "backToAll": "Back to all artifacts",
       "backToArtifacts": "Back to artifacts",
@@ -581,8 +591,7 @@
     },
     "sharing": {
       "shareOrganization": "Share to organization",
-      "sharePublic": "Share to Public",
-      "unavailable": "This artifact is unavailable or you do not have access."
+      "sharePublic": "Share to Public"
     },
     "sidebar": {
       "openSharedConversation": "Open shared conversation",

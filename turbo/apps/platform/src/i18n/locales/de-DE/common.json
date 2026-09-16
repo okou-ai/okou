@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Zurück zu {{brandName}}",
+      "description": "Es ist möglicherweise privat oder nicht mehr verfügbar.",
+      "help": "Bitte die Person, die diesen Link geteilt hat, den Zugriff zu prüfen.",
+      "signedInAs": "Angemeldet als {{email}}",
+      "switchAccount": "Konto wechseln",
+      "switchAccountFailed": "Die Kontoauswahl konnte nicht geöffnet werden. Bitte versuche es erneut.",
+      "title": "Du kannst dieses Artefakt nicht ansehen",
+      "tryAgain": "Erneut versuchen"
+    },
     "actions": {
       "backToAll": "Zurück zu allen Artefakten",
       "backToArtifacts": "Zurück zu den Artefakten",
@@ -581,8 +591,7 @@
     },
     "sharing": {
       "shareOrganization": "Mit der Organisation teilen",
-      "sharePublic": "Öffentlich teilen",
-      "unavailable": "Dieses Artefakt ist nicht verfügbar oder du hast keinen Zugriff."
+      "sharePublic": "Öffentlich teilen"
     },
     "sidebar": {
       "openSharedConversation": "Geteilte Unterhaltung öffnen",

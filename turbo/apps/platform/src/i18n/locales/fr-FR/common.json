@@ -453,6 +453,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Retour à {{brandName}}",
+      "description": "Il est peut-être privé ou n’est plus disponible.",
+      "help": "Demandez à la personne qui a partagé ce lien de vérifier l’accès.",
+      "signedInAs": "Connecté en tant que {{email}}",
+      "switchAccount": "Changer de compte",
+      "switchAccountFailed": "Impossible d’ouvrir le sélecteur de compte. Veuillez réessayer.",
+      "title": "Vous ne pouvez pas consulter cet artefact",
+      "tryAgain": "Réessayer"
+    },
     "actions": {
       "backToAll": "Retour à tous les artéfacts",
       "backToArtifacts": "Retour aux artéfacts",
@@ -599,8 +609,7 @@
     },
     "sharing": {
       "shareOrganization": "Partager avec l’organisation",
-      "sharePublic": "Partager publiquement",
-      "unavailable": "Cet artefact n’est pas disponible ou vous n’y avez pas accès."
+      "sharePublic": "Partager publiquement"
     },
     "sidebar": {
       "openSharedConversation": "Ouvrir la conversation partagée",
