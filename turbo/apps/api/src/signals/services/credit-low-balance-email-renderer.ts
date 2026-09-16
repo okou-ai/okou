@@ -1,5 +1,6 @@
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { convert } from "html-to-text";
+import { escapeHtml } from "markdown-it/lib/common/utils.mjs";
 
 // Brand artwork used by the published Okou Welcome and paid onboarding
 // templates in Resend (day-0-welcome / okou-paid-onboarding-session-1).
@@ -14,14 +15,6 @@ interface CreditLowBalanceEmailProps {
   readonly billingUrl: string;
   readonly websiteUrl: string;
   readonly unsubscribeUrl?: string;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
 
 export function renderCreditLowBalanceEmail(
