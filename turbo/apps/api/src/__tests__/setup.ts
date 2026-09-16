@@ -1,5 +1,6 @@
 import { syncBuiltinESMExports } from "node:module";
 import { resetApiTestMocks } from "./mocks";
+import { clerkUsersHandler } from "./clerk-users-handler";
 import { afterAll, afterEach, aroundEach, beforeAll, beforeEach } from "vitest";
 
 import { clearMockedEnv, mockEnv } from "../lib/env";
@@ -11,6 +12,7 @@ import {
 } from "../lib/secret-kms-client";
 import { clearMockNow } from "../lib/time";
 import { server } from "../mocks/server";
+import { handlers } from "../mocks/handlers/index";
 import { clearAllDetached } from "../signals/utils";
 import {
   installApiTestConnectorCatalog,
@@ -44,6 +46,7 @@ aroundEach(async (runTest) => {
 });
 
 beforeAll(async () => {
+  server.resetHandlers(clerkUsersHandler, ...handlers);
   mockApiTestConnectorProviderConfiguration();
   await installApiTestConnectorCatalog();
   server.listen({ onUnhandledRequest: "error" });
@@ -61,7 +64,7 @@ afterEach(async () => {
   clearMockNow();
   clearMockedEnv();
   resetApiTestMocks();
-  server.resetHandlers();
+  server.resetHandlers(clerkUsersHandler, ...handlers);
 });
 
 afterAll(() => {

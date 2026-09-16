@@ -6,7 +6,11 @@ import type {
 } from "@okouai/api-contracts/contracts/usage";
 import type { UsageRecordRange } from "@okouai/api-contracts/contracts/usage-record";
 import { userCache } from "@okouai/db/schema/user-cache";
-import { clerk$, type ClerkUser } from "../external/clerk";
+import {
+  clerk$,
+  createClerkReadContext,
+  type ClerkUser,
+} from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { getOrgBillingPeriod$ } from "./org-billing-period.service";
@@ -129,29 +133,35 @@ export async function resolveEmails(
     return emailMap;
   }
 
-  const clerkUsers = await client.users.getUserList({
-    userId: [...missingIds],
-    limit: missingIds.length,
-  });
-  signal.throwIfAborted();
   const now = nowDate();
-
-  for (const user of clerkUsers.data) {
-    const email = primaryEmail(user);
-    emailMap.set(user.id, email);
-    await db
-      .insert(userCache)
-      .values({
-        userId: user.id,
-        email,
-        imageUrl: user.imageUrl ?? null,
-        cachedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: userCache.userId,
-        set: { email, imageUrl: user.imageUrl ?? null, cachedAt: now },
-      });
+  const context = createClerkReadContext();
+  // Clerk accepts at most 100 IDs per filter; missing users may make a batch sparse.
+  const batchSize = 100;
+  for (let offset = 0; offset < missingIds.length; offset += batchSize) {
+    const batch = missingIds.slice(offset, offset + batchSize);
+    const clerkUsers = await client.users.getUserList(
+      { userId: batch, limit: batch.length },
+      context,
+      signal,
+    );
     signal.throwIfAborted();
+    for (const user of clerkUsers.data) {
+      const email = primaryEmail(user);
+      emailMap.set(user.id, email);
+      await db
+        .insert(userCache)
+        .values({
+          userId: user.id,
+          email,
+          imageUrl: user.imageUrl ?? null,
+          cachedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: userCache.userId,
+          set: { email, imageUrl: user.imageUrl ?? null, cachedAt: now },
+        });
+      signal.throwIfAborted();
+    }
   }
 
   return emailMap;

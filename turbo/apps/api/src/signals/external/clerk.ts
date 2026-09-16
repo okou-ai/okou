@@ -1,7 +1,10 @@
 import { computed, type Computed } from "ccstate";
 
 import { createClerkClient } from "@clerk/backend";
-import { isClerkAPIResponseError } from "@clerk/backend/errors";
+import {
+  ClerkAPIResponseError,
+  isClerkAPIResponseError,
+} from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
 import { z } from "zod";
@@ -78,6 +81,13 @@ export type ClerkOrganizationInvitationStatus =
   | "revoked"
   | "expired";
 
+export interface ClerkUserListParams {
+  readonly userId?: string[];
+  readonly emailAddress?: string[];
+  readonly limit?: number;
+  readonly offset?: number;
+}
+
 export interface ClerkUsersApi {
   getUser(
     userId: string,
@@ -85,15 +95,10 @@ export interface ClerkUsersApi {
     signal?: AbortSignal,
   ): Promise<ClerkUser>;
   getUserList(
-    params?: {
-      userId?: string[];
-      emailAddress?: string[];
-      limit?: number;
-      offset?: number;
-    },
+    params?: ClerkUserListParams,
     context?: ClerkReadContext,
     signal?: AbortSignal,
-  ): Promise<ClerkPaginated<ClerkUser>>;
+  ): Promise<{ readonly data: readonly ClerkUser[] }>;
   getOrganizationMembershipList(
     params: {
       userId: string;
@@ -286,7 +291,15 @@ interface ClerkReadRetry {
   readonly providerStatus: number | null;
 }
 
+class ClerkUserListTransportError extends Error {}
+
 function clerkReadRetry(error: unknown): ClerkReadRetry | null {
+  if (error instanceof ClerkUserListTransportError) {
+    return {
+      delayMs: CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS,
+      providerStatus: null,
+    };
+  }
   if (!isClerkAPIResponseError(error)) {
     return null;
   }
@@ -442,6 +455,96 @@ const clerkSdk = singleton(() => {
   });
 });
 
+const clerkUserResponse = z
+  .object({
+    id: z.string(),
+    email_addresses: z.array(
+      z.object({ id: z.string(), email_address: z.string() }),
+    ),
+    primary_email_address_id: z.string().nullable(),
+    first_name: z.string().nullable(),
+    last_name: z.string().nullable(),
+    username: z.string().nullable(),
+    image_url: z.string(),
+    private_metadata: z.record(z.string(), z.unknown()),
+  })
+  .transform((user): ClerkUser => {
+    return {
+      id: user.id,
+      emailAddresses: user.email_addresses.map((email) => {
+        return { id: email.id, emailAddress: email.email_address };
+      }),
+      primaryEmailAddressId: user.primary_email_address_id,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      username: user.username,
+      imageUrl: user.image_url,
+      privateMetadata: user.private_metadata,
+    };
+  });
+const clerkUserListResponse = z.array(clerkUserResponse);
+
+/** The SDK's list method also fetches /users/count, unused by every caller. */
+async function readClerkUserList(
+  params: ClerkUserListParams | undefined,
+  signal: AbortSignal,
+): Promise<{ readonly data: readonly ClerkUser[] }> {
+  const url = new URL("https://api.clerk.com/v1/users");
+  for (const userId of params?.userId ?? []) {
+    url.searchParams.append("user_id", userId);
+  }
+  for (const email of params?.emailAddress ?? []) {
+    url.searchParams.append("email_address", email);
+  }
+  if (params?.limit !== undefined) {
+    url.searchParams.set("limit", String(params.limit));
+  }
+  if (params?.offset !== undefined) {
+    url.searchParams.set("offset", String(params.offset));
+  }
+
+  const result = await settle(
+    fetch(url, {
+      headers: {
+        Authorization: `Bearer ${env("CLERK_SECRET_KEY")}`,
+        // Match the locked @clerk/backend 3.13.1 wire contract.
+        "Clerk-API-Version": "2026-05-12",
+      },
+      signal,
+    }),
+    signal,
+  );
+  if (!result.ok) {
+    const error = result.error;
+    if (
+      error instanceof TypeError &&
+      (error.message === "fetch failed" || error.message === "Failed to fetch")
+    ) {
+      throw new ClerkUserListTransportError("Clerk user lookup failed", {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+  const response = result.value;
+  if (!response.ok) {
+    await response.text();
+    const retryAfter = Number.parseInt(
+      response.headers.get("Retry-After") ?? "",
+      10,
+    );
+    throw new ClerkAPIResponseError("Clerk user lookup failed", {
+      status: response.status,
+      data: [],
+      clerkTraceId: response.headers.get("cf-ray") ?? undefined,
+      retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
+    });
+  }
+  // Parsing failures are not transport failures and must not be retried.
+  const body: unknown = await response.json();
+  return { data: clerkUserListResponse.parse(body) };
+}
+
 function clerkRead<T>(
   read: () => Promise<T>,
   context: ClerkReadContext | undefined,
@@ -467,10 +570,10 @@ const clerkClient = singleton((): ClerkClient => {
           signal,
         );
       },
-      getUserList: (params, context, signal) => {
+      getUserList: (params, context, signal = new AbortController().signal) => {
         return clerkRead(
           () => {
-            return sdk.users.getUserList(params);
+            return readClerkUserList(params, signal);
           },
           context,
           signal,
