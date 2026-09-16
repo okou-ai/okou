@@ -29,6 +29,7 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
+import { getSlackAppHomePrimaryEmail } from "./slack-app-home-email.service";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
 
@@ -157,21 +158,6 @@ async function getWorkspaceAgentName(
   return agent?.displayName ?? agent?.name;
 }
 
-async function getPrimaryUserEmail(
-  clerkClient: ReturnType<typeof clerk$.read>,
-  userId: string,
-): Promise<string | undefined> {
-  const users = await clerkClient.users.getUserList({ userId: [userId] });
-  const user = users.data.find((candidate) => {
-    return candidate.id === userId;
-  });
-  const primaryEmailAddressId = user?.primaryEmailAddressId;
-  const email = user?.emailAddresses.find((candidate) => {
-    return candidate.id === primaryEmailAddressId;
-  });
-  return email?.emailAddress;
-}
-
 function buildSlackConnectUrl(
   workspaceId: string,
   slackUserId: string,
@@ -180,13 +166,16 @@ function buildSlackConnectUrl(
   return `${env("APP_URL")}/settings/slack?${params.toString()}`;
 }
 
-async function refreshSlackAppHome(args: {
-  readonly db: Db;
-  readonly clerkClient: ReturnType<typeof clerk$.read>;
-  readonly client: SlackClient;
-  readonly installation: SlackInstallation;
-  readonly slackUserId: string;
-}): Promise<void> {
+async function refreshSlackAppHome(
+  args: {
+    readonly db: Db;
+    readonly clerkClient: ReturnType<typeof clerk$.read>;
+    readonly client: SlackClient;
+    readonly installation: SlackInstallation;
+    readonly slackUserId: string;
+  },
+  signal: AbortSignal,
+): Promise<void> {
   const [connection] = await args.db
     .select()
     .from(slackOrgConnections)
@@ -252,7 +241,11 @@ async function refreshSlackAppHome(args: {
       appUrl: env("APP_URL"),
       isLinked: true,
       userId: connection.userId,
-      userEmail: await getPrimaryUserEmail(args.clerkClient, connection.userId),
+      userEmail: await getSlackAppHomePrimaryEmail(
+        args.clerkClient,
+        connection.userId,
+        signal,
+      ),
       agentName,
       isOverrideActive,
       canSwitch,
@@ -564,13 +557,16 @@ export const notifySlackConnect$ = command(
       }
     }
 
-    await refreshSlackAppHome({
-      db: writeDb,
-      clerkClient: get(clerk$),
-      client,
-      installation: args.installation,
-      slackUserId: args.slackUserId,
-    });
+    await refreshSlackAppHome(
+      {
+        db: writeDb,
+        clerkClient: get(clerk$),
+        client,
+        installation: args.installation,
+        slackUserId: args.slackUserId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
   },
 );

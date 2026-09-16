@@ -6,13 +6,16 @@ import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integ
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
 import { http, HttpResponse } from "msw";
-import { beforeEach, expect, onTestFinished, test } from "vitest";
+import { aroundEach, beforeEach, expect, onTestFinished, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { withSlackAppHomeEmailCacheForTest } from "../../services/slack-app-home-email.service";
+import { createDeferredPromise } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { integrationsSlackRoutes } from "../integrations-slack";
@@ -20,6 +23,7 @@ import { slackConnectRoutes } from "../slack-connect";
 import { slackOauthRoutes } from "../slack-oauth";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
+import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 import {
   readGetStartedStatus,
   setGetStartedEnabled,
@@ -38,8 +42,14 @@ const routes = [
   ...connectorsSlugCallbackRoutes,
 ] as const;
 
-function clients() {
-  return setupApp({ context, routes, baseUrl: API_ORIGIN });
+aroundEach(async (runTest) => {
+  await withNowScopeForTest(async () => {
+    await withSlackAppHomeEmailCacheForTest(runTest);
+  });
+});
+
+function clients(signal?: AbortSignal) {
+  return setupApp({ context, routes, baseUrl: API_ORIGIN, signal });
 }
 
 interface Actor {
@@ -172,6 +182,7 @@ async function complete(
     readonly missingUserToken?: boolean;
     readonly userScopes?: string;
     readonly botScopes?: string;
+    readonly signal?: AbortSignal;
   } = {},
 ): Promise<URL> {
   const slackUserId = options.slackUserId ?? current.slackUserId;
@@ -207,7 +218,7 @@ async function complete(
   });
   return location(
     await accept(
-      clients()(slackOauthContract).callback({
+      clients(options.signal)(slackOauthContract).callback({
         query: { state: parameter(authorization, "state"), code: randomUUID() },
       }),
       [307],
@@ -240,6 +251,262 @@ beforeEach(() => {
       return HttpResponse.json({ ok: true });
     }),
   );
+});
+
+function clerkProfile(current: Actor, email: string) {
+  return {
+    id: current.userId,
+    primaryEmailAddressId: "primary",
+    emailAddresses: [
+      { id: "secondary", emailAddress: "secondary@example.com" },
+      { id: "primary", emailAddress: email },
+    ],
+  };
+}
+
+async function completeWithAppHome(
+  authorization: URL,
+  current: Actor,
+  account: string,
+): Promise<void> {
+  const publications = context.mocks.slack.views.publish.mock.calls.length;
+  expect(
+    (await complete(authorization, current)).searchParams.get("status"),
+  ).toBe("connected");
+  await flushWaitUntilForTest();
+  expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(
+    publications + 1,
+  );
+  const published = context.mocks.slack.views.publish.mock.calls.at(-1);
+  expect(published).toStrictEqual([
+    expect.objectContaining({ user_id: current.slackUserId }),
+  ]);
+  expect(JSON.stringify(published)).toContain(`Account: ${account}`);
+  expect(JSON.stringify(published)).not.toContain("secondary@example.com");
+}
+
+test("post-connect App Home reuses the primary email until its display TTL expires", async () => {
+  const current = actor();
+  const startedAt = now();
+  mockNow(startedAt);
+  context.mocks.clerk.users.getUserList.mockResolvedValue({
+    data: [
+      clerkProfile(
+        { ...current, userId: `other_${randomUUID()}` },
+        "other@example.com",
+      ),
+      clerkProfile(current, "primary@example.com"),
+    ],
+  });
+  await completeWithAppHome(
+    await startInstall(),
+    current,
+    "primary@example.com",
+  );
+  context.mocks.clerk.users.getUserList.mockResolvedValue({
+    data: [clerkProfile(current, "changed@example.com")],
+  });
+  mockNow(startedAt + 15 * 60 * 1000 - 1);
+  await completeWithAppHome(
+    await startConnect(current),
+    current,
+    "primary@example.com",
+  );
+  expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledExactlyOnceWith(
+    {
+      userId: [current.userId],
+    },
+  );
+
+  mockNow(startedAt + 15 * 60 * 1000);
+  await completeWithAppHome(
+    await startConnect(current),
+    current,
+    "changed@example.com",
+  );
+  expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(2);
+});
+
+test.each(["missing user", "missing primary"])(
+  "post-connect App Home caches a confirmed %s briefly without substituting another email",
+  async (missing) => {
+    const current = actor();
+    const startedAt = now();
+    mockNow(startedAt);
+    context.mocks.clerk.users.getUserList.mockResolvedValue({
+      data:
+        missing === "missing user"
+          ? []
+          : [
+              {
+                ...clerkProfile(current, "unselected@example.com"),
+                primaryEmailAddressId: null,
+              },
+            ],
+    });
+    await completeWithAppHome(await startInstall(), current, current.userId);
+    context.mocks.clerk.users.getUserList.mockResolvedValue({
+      data: [clerkProfile(current, "restored@example.com")],
+    });
+    mockNow(startedAt + 60_000 - 1);
+    await completeWithAppHome(
+      await startConnect(current),
+      current,
+      current.userId,
+    );
+    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledOnce();
+    mockNow(startedAt + 60_000);
+    await completeWithAppHome(
+      await startConnect(current),
+      current,
+      "restored@example.com",
+    );
+    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(2);
+  },
+);
+
+test("post-connect App Home does not cache provider failure or publish an expired email", async () => {
+  const current = actor();
+  const startedAt = now();
+  mockNow(startedAt);
+  context.mocks.clerk.users.getUserList.mockResolvedValue({
+    data: [clerkProfile(current, "before@example.com")],
+  });
+  await completeWithAppHome(
+    await startInstall(),
+    current,
+    "before@example.com",
+  );
+  mockNow(startedAt + 15 * 60 * 1000);
+  context.mocks.clerk.users.getUserList.mockRejectedValueOnce(
+    new ClerkTransportTestError(429),
+  );
+  expect(
+    (await complete(await startConnect(current), current)).searchParams.get(
+      "status",
+    ),
+  ).toBe("connected");
+  await flushWaitUntilForTest();
+  expect(context.mocks.slack.views.publish).toHaveBeenCalledOnce();
+  expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(2);
+  await expect(integrationStatus()).resolves.toMatchObject({
+    isConnected: true,
+  });
+
+  context.mocks.clerk.users.getUserList.mockResolvedValue({
+    data: [clerkProfile(current, "after@example.com")],
+  });
+  await completeWithAppHome(
+    await startConnect(current),
+    current,
+    "after@example.com",
+  );
+  expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(3);
+});
+
+test("post-connect App Home keeps primary email results isolated by user", async () => {
+  const first = actor();
+  context.mocks.clerk.users.getUserList.mockResolvedValue({
+    data: [clerkProfile(first, "first@example.com")],
+  });
+  await completeWithAppHome(await startInstall(), first, "first@example.com");
+  const second = actor();
+  context.mocks.clerk.users.getUserList.mockResolvedValue({
+    data: [clerkProfile(second, "second@example.com")],
+  });
+  await completeWithAppHome(await startInstall(), second, "second@example.com");
+  authenticate(first);
+  await completeWithAppHome(
+    await startConnect(first),
+    first,
+    "first@example.com",
+  );
+  expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(2);
+});
+
+test("post-connect App Home does not let an older profile response replace a newer email", async () => {
+  const current = actor();
+  mockNow(now());
+  const entered = createDeferredPromise<void>(context.signal);
+  const earlier = createDeferredPromise<{
+    data: ReturnType<typeof clerkProfile>[];
+  }>(context.signal);
+  const published = createDeferredPromise<unknown>(context.signal);
+  context.mocks.clerk.users.getUserList
+    .mockImplementationOnce(async () => {
+      entered.resolve();
+      return await earlier.promise;
+    })
+    .mockResolvedValue({ data: [clerkProfile(current, "newer@example.com")] });
+  context.mocks.slack.views.publish.mockImplementationOnce((view) => {
+    published.resolve(view);
+    return Promise.resolve({ ok: true });
+  });
+
+  try {
+    await complete(await startInstall(), current);
+    await entered.promise;
+    expect(
+      (await complete(await startConnect(current), current)).searchParams.get(
+        "status",
+      ),
+    ).toBe("connected");
+    expect(JSON.stringify(await published.promise)).toContain(
+      "Account: newer@example.com",
+    );
+  } finally {
+    earlier.resolve({ data: [clerkProfile(current, "older@example.com")] });
+    await flushWaitUntilForTest();
+  }
+  expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(2);
+  expect(
+    JSON.stringify(context.mocks.slack.views.publish.mock.calls),
+  ).not.toContain("older@example.com");
+  await completeWithAppHome(
+    await startConnect(current),
+    current,
+    "newer@example.com",
+  );
+  expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(2);
+});
+
+test("post-connect App Home does not retain a profile read cancelled by its owner", async () => {
+  const current = actor();
+  const controller = new AbortController();
+  onTestFinished(() => {
+    controller.abort();
+  });
+  const entered = createDeferredPromise<void>(context.signal);
+  const response = createDeferredPromise<{
+    data: ReturnType<typeof clerkProfile>[];
+  }>(context.signal);
+  context.mocks.clerk.users.getUserList
+    .mockImplementationOnce(async () => {
+      entered.resolve();
+      return await response.promise;
+    })
+    .mockResolvedValue({
+      data: [clerkProfile(current, "recovered@example.com")],
+    });
+  try {
+    await complete(await startInstall(), current, {
+      signal: controller.signal,
+    });
+    await entered.promise;
+    controller.abort();
+  } finally {
+    response.resolve({
+      data: [clerkProfile(current, "cancelled@example.com")],
+    });
+    await flushWaitUntilForTest();
+  }
+  expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
+  await completeWithAppHome(
+    await startConnect(current),
+    current,
+    "recovered@example.com",
+  );
+  expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(2);
 });
 
 test("installation grants bot and user scopes and connects the OAuth account", async () => {

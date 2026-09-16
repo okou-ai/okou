@@ -4929,6 +4929,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       slackUserId,
       channelId: "C_BDD_HOME",
     });
+    await flushWaitUntilForTest();
+    const profileReads =
+      context.mocks.clerk.users.getUserList.mock.calls.length;
     integrations.clearSlackCallHistory();
     const teamId = install.teamId;
 
@@ -4959,6 +4962,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
         JSON.stringify(context.mocks.slack.views.publish.mock.calls),
       ).toContain("Connected to Okou");
     });
+    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(
+      profileReads,
+    );
 
     await integrations.postSlackEvent(teamId, {
       type: "app_home_opened",
@@ -5020,6 +5026,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
         JSON.stringify(context.mocks.slack.views.publish.mock.calls),
       ).toContain("Account not connected");
     });
+    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(
+      profileReads,
+    );
     await integrations.postSlackEvent(teamId, {
       type: "app_home_opened",
       user: slackUserId,
