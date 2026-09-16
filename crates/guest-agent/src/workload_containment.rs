@@ -44,6 +44,7 @@ pub struct WorkloadContainment {
     workload_path: Arc<PathBuf>,
     tool_placement_endpoint: Arc<str>,
     evidence_stream: Arc<Mutex<Option<EvidenceStream>>>,
+    runtime_progress_at: Arc<std::sync::atomic::AtomicU64>,
 }
 
 /// Bootstrap completes before Tokio exists; register the socket on first capture.
@@ -85,6 +86,21 @@ pub struct WorkloadResourceDiagnostics {
 }
 
 impl WorkloadContainment {
+    /// Observe a validated native Pi message timestamp, never tool output or a
+    /// CLI exit code. The root owner compares it with retained incident times.
+    pub(crate) fn record_runtime_progress(&self, timestamp_ms: u64) {
+        // Reject future source timestamps at receipt, not only at a later
+        // sample, so buffered/API-first records cannot become survival proof
+        // merely because the guest clock eventually catches up.
+        if std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .is_ok_and(|now| u128::from(timestamp_ms) <= now.as_millis())
+        {
+            self.runtime_progress_at
+                .fetch_max(timestamp_ms, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
     /// Read root-owned evidence over the existing authenticated bootstrap.
     /// I/O failures and cancellation permanently close this exchange; cleanup
     /// retains its own root-owned capture path and execution outcomes are unaffected.
@@ -111,7 +127,15 @@ impl WorkloadContainment {
             CaptureReason::CliError => 2,
             _ => 1,
         };
-        tokio::time::timeout(EVIDENCE_IO_TIMEOUT, stream.write_all(&[request]))
+        let progress = self
+            .runtime_progress_at
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let mut request_bytes = vec![request];
+        if progress > 0 {
+            request_bytes[0] += 2;
+            request_bytes.extend_from_slice(&progress.to_be_bytes());
+        }
+        tokio::time::timeout(EVIDENCE_IO_TIMEOUT, stream.write_all(&request_bytes))
             .await
             .ok()?
             .ok()?;
@@ -276,6 +300,7 @@ impl WorkloadContainment {
             placement: Arc::new(placement),
             workload_path: Arc::new(workload_path),
             tool_placement_endpoint: Arc::from(tool_endpoint),
+            runtime_progress_at: Arc::default(),
             evidence_stream: Arc::new(Mutex::new(None)),
         })
     }
@@ -489,6 +514,7 @@ mod tests {
             placement: Arc::new(placement.as_file().try_clone().unwrap().into()),
             workload_path: Arc::new(PathBuf::from("/unused")),
             tool_placement_endpoint: Arc::from("test-tool-endpoint"),
+            runtime_progress_at: Arc::default(),
             evidence_stream: Arc::new(Mutex::new(None)),
         };
         let mut command = tokio::process::Command::new("/bin/sh");
@@ -531,6 +557,7 @@ done"#,
             placement: Arc::new(tempfile::tempfile().unwrap().into()),
             workload_path: Arc::new(PathBuf::from("/unused")),
             tool_placement_endpoint: Arc::from("runner-tool-endpoint"),
+            runtime_progress_at: Arc::default(),
             evidence_stream: Arc::new(Mutex::new(None)),
         };
 
@@ -610,6 +637,7 @@ done"#,
             placement: Arc::new(tempfile::tempfile().unwrap().into()),
             workload_path: Arc::new(directory.path().to_path_buf()),
             tool_placement_endpoint: Arc::from("test-tool-endpoint"),
+            runtime_progress_at: Arc::default(),
             evidence_stream: Arc::new(Mutex::new(None)),
         };
 
@@ -660,6 +688,7 @@ done"#,
             placement: Arc::new(tempfile::tempfile().unwrap().into()),
             workload_path: Arc::new(directory.path().to_path_buf()),
             tool_placement_endpoint: Arc::from("test-tool-endpoint"),
+            runtime_progress_at: Arc::default(),
             evidence_stream: Arc::new(Mutex::new(None)),
         };
 

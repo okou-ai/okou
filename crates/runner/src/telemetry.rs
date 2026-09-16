@@ -492,7 +492,7 @@ impl JobTelemetry {
     ) {
         let payload = serde_json::json!({
             "runId": self.run_id.to_string(), "sandboxId": sandbox_id,
-            "oomEvidence": evidence,
+            "oomEvidence": evidence.telemetry_evidence(),
         });
         let send = async {
             let mut response = match self
