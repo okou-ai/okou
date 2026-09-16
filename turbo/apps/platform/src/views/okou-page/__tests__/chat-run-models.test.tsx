@@ -1297,7 +1297,6 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
           content:
             "Maximum autonomous delegation depth reached. Send a new human message or confirm a permission request to continue.",
           error,
-          runId: null,
           seqId: 1,
           createdAt: "2026-08-01T10:00:01.000Z",
         },
@@ -1350,7 +1349,6 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
           content:
             "Maximum autonomous delegation depth reached. Send a new human message or confirm a permission request to continue.",
           error,
-          runId: null,
           seqId: 1,
           createdAt: "2026-08-01T10:00:01.000Z",
         },
