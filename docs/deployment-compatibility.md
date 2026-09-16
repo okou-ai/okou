@@ -1893,6 +1893,12 @@ the Settings GET answer from that copy. Turning it back off immediately restores
 the legacy read and write path and discards nothing: every user choice still
 lives in the legacy installation and its automation.
 
+Both schema directions are therefore closed. Old code after migration never
+names the new table. New code before migration cannot reach it either: every
+statement against `morning_brief_installed_preferences` sits behind that
+default-off switch, so the release's normal migration-before-promotion ordering
+is not the only thing standing between a new API artifact and a `42P01`.
+
 Mixed-version and old-writer behavior is the reason the reader validates instead
 of trusting the row:
 
