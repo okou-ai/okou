@@ -12,7 +12,11 @@ export async function lockCanonicalAgentMutation(
   );
 }
 
-/** Serialize the seven-public-Agent check, including an initially empty org. */
+/**
+ * Serialize the seven-public-Agent check, including an initially empty org.
+ * Keep this key compatible with deployed writers. The quota needs no locks on
+ * sibling Agent rows, whose KEY SHARE readers admit unrelated run content.
+ */
 export async function lockCanonicalAgentPublicLimit(
   tx: Pick<Tx, "execute">,
   orgId: string,

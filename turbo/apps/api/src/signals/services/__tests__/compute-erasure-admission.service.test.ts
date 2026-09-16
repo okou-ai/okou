@@ -58,6 +58,7 @@ import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import type { Tx } from "../../../lib/db-types";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
+import { createAuthOrgAgentsBddApi } from "../../routes/__tests__/helpers/api-bdd-auth-org";
 import { createChatCallbacksApi } from "../../routes/__tests__/helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import {
@@ -93,6 +94,7 @@ describe("actual compute transactions versus the B1 projector", () => {
   const context = testContext();
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
+  const agentsApi = createAuthOrgAgentsBddApi(context);
   const webhooks = createWebhookCallbackApi(context);
   const chat = createChatFilesBddApi(context);
   const callbackApi = createChatCallbacksApi(context);
@@ -1189,6 +1191,193 @@ describe("actual compute transactions versus the B1 projector", () => {
         [200],
       );
     }
+
+    describe("Agent mutation isolation", () => {
+      it.each(["updateAgent", "updateAgentMetadata"] as const)(
+        "completes a run while a sibling %s waits on its own resource",
+        async (operation) => {
+          const first = await outputFixture();
+          const second = await outputFixture(first.orgId);
+          // The old organization scan locks rows in UUID order. Choose the
+          // lower resource for the run, so its lock precedes the blocked row.
+          const [running, sibling] =
+            first.agentId < second.agentId ? [first, second] : [second, first];
+          mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+          const claimed = await api.claimRunnerJob(running.runId);
+          await sendOutput(running);
+          await flushWaitUntilForTest();
+
+          // Infrastructure-only exception: production APIs cannot retain a
+          // row lock. The mutation, completion and observations use real APIs.
+          const held = await holdResource(sibling.agentId);
+          const updating = settle(
+            bdd[operation](sibling.actor, sibling.agentId, {
+              displayName: "Updated sibling",
+            }),
+          );
+          onTestFinished(async () => {
+            await settle(held.release());
+            await updating;
+          });
+          await waitForBlockedBy(held.pid);
+
+          const completed = await webhooks.requestAgentComplete(
+            {
+              runId: running.runId,
+              exitCode: 0,
+              lastEventSequence: 3,
+              checkpoint: {
+                cliAgentType: "claude-code",
+                cliAgentSessionId: `synthetic-${running.runId}`,
+                cliAgentSessionHistoryHash: createHash("sha256")
+                  .update(`bdd session history ${running.runId}`)
+                  .digest("hex"),
+              },
+            },
+            { authorization: `Bearer ${claimed.sandboxToken}` },
+            [200],
+          );
+          await flushWaitUntilForTest();
+          const result = await chat.listThreadEvents(
+            running.actor,
+            running.threadId,
+          );
+          await held.release();
+          const updated = await updating;
+          expect(completed.body).toMatchObject({ status: "completed" });
+          expect(
+            result.events.filter((event) => {
+              return (
+                event.runId === running.runId &&
+                event.eventType === "run.completed"
+              );
+            }),
+          ).toHaveLength(1);
+          expect(updated).toMatchObject({
+            ok: true,
+            value: { displayName: "Updated sibling" },
+          });
+        },
+      );
+
+      it("creates an Agent while an unrelated resource row is held", async () => {
+        const f = await fixture();
+        const held = await holdResource(f.agentId);
+        let finished = false;
+        const creating = (async () => {
+          const result = await settle(
+            bdd.createAgent(f.actor, { displayName: "Independent Agent" }),
+          );
+          finished = true;
+          return result;
+        })();
+        onTestFinished(async () => {
+          await settle(held.release());
+          await creating;
+        });
+        // Observe either the response or this fixture's exact lock waiter;
+        // this makes the old broad scan fail without a guessed delay.
+        await expect
+          .poll(async () => {
+            const waiters = await executeRawRows(
+              db,
+              sql`SELECT pid FROM pg_stat_activity WHERE ${held.pid} = ANY(pg_blocking_pids(pid))`,
+              z.object({ pid: z.number() }),
+            );
+            return finished || waiters.length > 0;
+          })
+          .toBe(true);
+        const completedWhileHeld = finished;
+        await held.release();
+        const created = await creating;
+        expect(completedWhileHeld).toBeTruthy();
+        expect(created).toMatchObject({
+          ok: true,
+          value: { displayName: "Independent Agent", visibility: "public" },
+        });
+      });
+
+      it.each(["requestUpdateAgent", "requestUpdateAgentMetadata"] as const)(
+        "preserves the public quota across concurrent creation and %s",
+        async (operation) => {
+          const f = await fixture();
+          const existingPublic = (await bdd.listAgents(f.actor)).filter(
+            (agent) => {
+              return agent.visibility === "public";
+            },
+          ).length;
+          for (let index = existingPublic; index < 6; index++) {
+            await bdd.createAgent(f.actor, { displayName: `Public ${index}` });
+          }
+          const privateAgent = await bdd.createAgent(f.actor, {
+            displayName: "Private contender",
+            visibility: "private",
+          });
+          // Retain the exact quota key shared with previously deployed API
+          // writers, then release both real requests from this explicit gate.
+          const held = await holdBusinessRow(async (tx) => {
+            await tx.execute(
+              sql`SELECT pg_advisory_xact_lock(hashtextextended('canonical-agent-public-limit:' || ${f.orgId}::text, 0))`,
+            );
+          });
+          const requests = Promise.all([
+            settle(
+              bdd.requestCreateAgent(
+                f.actor,
+                { displayName: "New public" },
+                [201, 409],
+              ),
+            ),
+            settle(
+              agentsApi[operation](
+                f.actor,
+                privateAgent.agentId,
+                { visibility: "public" },
+                [200, 409],
+              ),
+            ),
+          ]);
+          onTestFinished(async () => {
+            await settle(held.release());
+            await requests;
+          });
+          await expect
+            .poll(async () => {
+              const waiters = await executeRawRows(
+                db,
+                sql`SELECT pid FROM pg_stat_activity WHERE ${held.pid} = ANY(pg_blocking_pids(pid))`,
+                z.object({ pid: z.number() }),
+              );
+              return waiters.length;
+            })
+            .toBe(2);
+          await held.release();
+          const results = await requests;
+          const responses = results.map((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            return result.value;
+          });
+          expect(
+            responses.map((response) => {
+              return response.status;
+            }),
+          ).toContain(409);
+          expect(
+            responses.filter((response) => {
+              return response.status !== 409;
+            }),
+          ).toHaveLength(1);
+          const listed = await bdd.listAgents(f.actor);
+          expect(
+            listed.filter((agent) => {
+              return agent.visibility === "public";
+            }),
+          ).toHaveLength(7);
+        },
+      );
+    });
 
     it("completes an independent chat run while another member retains normal admission", async () => {
       const holder = await outputFixture();
