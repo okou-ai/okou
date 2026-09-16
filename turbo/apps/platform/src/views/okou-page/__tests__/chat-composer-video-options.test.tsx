@@ -206,13 +206,15 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
 }
 
 test.each([false, true])(
-  "Keep video settings collapsed until requested with Create enabled: %s",
+  "Keep video settings collapsed until requested with the slash panel on: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
     await selectVideoTemplate();
     expect(
@@ -227,14 +229,16 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "Submit default video options with Create enabled: %s",
+  "Submit default video options with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
 
     const prompt = "Generate the first cinematic clip.";
@@ -291,14 +295,16 @@ test.each([false, true])(
 );
 
 test.each([false, true])(
-  "Submit a selected video ratio with Create enabled: %s",
+  "Submit a selected video ratio with the slash panel on: %s",
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
+      },
     });
 
     const prompt = "Generate the portrait cinematic clip.";
@@ -366,7 +372,7 @@ test.each(["task", "command"] as const)(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
-        [FeatureSwitchKey.ComposerCreateCommands]: entry === "command",
+        [FeatureSwitchKey.ComposerSlashTemplatePanel]: entry === "command",
         [FeatureSwitchKey.ComposerTaskChips]: entry === "task",
       },
     });
@@ -381,8 +387,11 @@ test.each(["task", "command"] as const)(
         ),
       );
     } else {
-      await fill(editor, "/create video");
-      await userEvent.setup({ delay: null }).keyboard("{Enter}");
+      await fill(editor, "/");
+      // Presentation leads the panel's Make rows, so Video is the third.
+      await userEvent
+        .setup({ delay: null })
+        .keyboard("{ArrowDown}{ArrowDown}{Enter}");
       await enterText(prompt);
     }
     click(await screen.findByRole("combobox", { name: "Video models" }));
@@ -529,7 +538,6 @@ async function restoreTemplateDraft(
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.IntroVideo]: true,
-      [FeatureSwitchKey.ComposerCreateCommands]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });

@@ -22,17 +22,6 @@ export type PresentationSlideCount = (typeof PRESENTATION_SLIDE_COUNTS)[number];
 export type ComposerCreateMode = (typeof COMPOSER_CREATE_MODES)[number];
 export type ComposerCreateCommand = ComposerCreateMode | "choose";
 
-export function composerCreateCommandLabel(
-  mode: ComposerCreateCommand,
-): string {
-  if (mode === "choose") {
-    return i18n.t(($) => {
-      return $.chat.composer.create.title;
-    });
-  }
-  return composerCreateModeLabel(mode);
-}
-
 export function composerCreateModeLabel(mode: ComposerCreateMode): string {
   switch (mode) {
     case "image": {
@@ -154,10 +143,16 @@ export function createComposerCreateSignals(
   const internalPickerOpen$ = state(false);
   const { presentationSlideCount$, setPresentationSlideCount$ } =
     createPresentationSlideCountSignals();
+  /**
+   * Create modes are infrastructure, not a surface: the two places that pick
+   * one are the slash panel and the task chips, and each owns its own switch.
+   * Reading both here keeps either surface from depending on the other's
+   * rollout, so turning the chips off cannot empty the slash panel.
+   */
   const enabled$ = computed((get) => {
     const features = get(featureSwitch$);
     return (
-      features[FeatureSwitchKey.ComposerCreateCommands] ||
+      features[FeatureSwitchKey.ComposerSlashTemplatePanel] ||
       features[FeatureSwitchKey.ComposerTaskChips]
     );
   });
