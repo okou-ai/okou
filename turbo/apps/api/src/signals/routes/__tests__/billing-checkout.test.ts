@@ -3087,16 +3087,55 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     );
   });
 
-  it("returns a non-cacheable 503 on the first Clerk rate limit", async () => {
+  it.each(["memberships", "invitations"] as const)(
+    "classifies checkout %s rate limits before creating payment state",
+    async (directory) => {
+      const fixture = createOrgFixture();
+      authenticateOrg(fixture);
+      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+        { data: [] },
+      );
+      context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+        { data: [] },
+      );
+      const directoryRead =
+        directory === "memberships"
+          ? context.mocks.clerk.organizations.getOrganizationMembershipList
+          : context.mocks.clerk.organizations.getOrganizationInvitationList;
+      directoryRead.mockRejectedValue(new ClerkApiResponseTestError(7));
+
+      const response = await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackCheckoutContract,
+        ).create({
+          body: usagePackCheckoutBody(fixture.userId),
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [503],
+      );
+
+      expect(response.body).toStrictEqual({
+        error: {
+          message: "Billing organization members are temporarily unavailable",
+          code: "BILLING_CHECKOUT_DIRECTORY_RATE_LIMITED",
+        },
+      });
+      expect(response.headers.get("Retry-After")).toBe("7");
+      expect(response.headers.get("Cache-Control")).toBe("no-store");
+      expect(directoryRead).toHaveBeenCalledTimes(1);
+      expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+      expect(context.mocks.stripe.customers.create).not.toHaveBeenCalled();
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps unconfigured billing distinct from checkout directory throttling", async () => {
+    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValue(
-      new ClerkApiResponseTestError(7),
-    );
-    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
-      { data: [] },
-    );
 
     const response = await accept(
       setupApp({ context, routes: billingCheckoutRoutes })(
@@ -3110,16 +3149,11 @@ describe("POST /api/billing/usage-pack-checkout", () => {
 
     expect(response.body).toStrictEqual({
       error: {
-        message: "Billing organization members are temporarily unavailable",
+        message: "Billing not configured",
         code: "PROVIDER_UNAVAILABLE",
       },
     });
-    expect(response.headers.get("Retry-After")).toBe("7");
-    expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(
-      context.mocks.clerk.organizations.getOrganizationMembershipList,
-    ).toHaveBeenCalledTimes(1);
-    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+    expect(response.headers.get("Retry-After")).toBeNull();
     expect(context.mocks.stripe.customers.create).not.toHaveBeenCalled();
     expect(
       context.mocks.stripe.checkout.sessions.create,

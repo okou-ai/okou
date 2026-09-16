@@ -25,13 +25,14 @@ import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import {
   badRequestMessage,
+  billingCheckoutDirectoryRateLimited,
   conflict,
   notFound,
   providerUnavailable,
 } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { requestSignal$ } from "../context/hono";
+import { requestSignal$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import {
   clerk$,
@@ -88,6 +89,7 @@ import {
 } from "../services/usage-pack-subscription-migration.service";
 import { usagePackInvitationPurchaseSchemaAvailable } from "../services/usage-pack-invitation-purchase.service";
 import {
+  BillingClerkReadRateLimitError,
   loadBillingOrganizationDirectory,
   loadBillingOrganizationMemberships,
 } from "../services/billing-clerk-directory.service";
@@ -875,15 +877,35 @@ const usagePackCheckoutAuthed$ = command(
     }
 
     const readSignal = AbortSignal.any([signal, get(requestSignal$)]);
-    const allocations = await loadUsagePackCheckoutAllocations(
-      {
-        clerk,
-        orgId: auth.orgId,
-        selections: body.memberUsagePacks,
-      },
+    const allocationsResult = await settle(
+      loadUsagePackCheckoutAllocations(
+        {
+          clerk,
+          orgId: auth.orgId,
+          selections: body.memberUsagePacks,
+        },
+        readSignal,
+      ),
       readSignal,
     );
     signal.throwIfAborted();
+    if (!allocationsResult.ok) {
+      if (
+        !(allocationsResult.error instanceof BillingClerkReadRateLimitError)
+      ) {
+        throw allocationsResult.error;
+      }
+      // This classification is confined to directory reads before purchase
+      // state or Stripe side effects. Do not wrap the payment operation in it.
+      set(
+        setResHeader$,
+        "Retry-After",
+        String(allocationsResult.error.retryAfterSeconds),
+      );
+      set(setResHeader$, "Cache-Control", "no-store");
+      return billingCheckoutDirectoryRateLimited();
+    }
+    const allocations = allocationsResult.value;
     if (!allocations) {
       return badRequestMessage(
         "Organization members changed; refresh billing and try again",
@@ -981,7 +1003,7 @@ const usagePackCheckout$ = command(async ({ set }, signal: AbortSignal) => {
   return await set(
     authRoute(
       { requireOrganization: true, missingOrganizationStatus: 401 },
-      withBillingClerkRateLimit(usagePackCheckoutAuthed$),
+      usagePackCheckoutAuthed$,
     ),
     signal,
   );

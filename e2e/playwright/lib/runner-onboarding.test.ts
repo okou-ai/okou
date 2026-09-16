@@ -66,36 +66,125 @@ test("runner setup completes free onboarding and creates checkout through public
   );
 });
 
-test("checkout failure reports its request ID and Retry-After without replaying the purchase", async () => {
-  let requests = 0;
-  let requestId: string | undefined;
-  await withApi(
-    (request, response) => {
-      requests += 1;
-      requestId = String(request.headers["x-client-request-id"]);
-      response.setHeader("retry-after", "10");
-      send(response, { error: { message: "Unavailable" } }, 503);
-    },
-    async (apiUrl) => {
-      await assert.rejects(
-        createRunnerCheckout({
-          apiUrl,
-          appUrl: "https://app.example.test",
-          memberId: "user_runner",
-          clerkSessionToken: "session-token",
-        }),
-        (error: unknown) => {
-          assert.ok(error instanceof Error);
-          assert.match(error.message, /HTTP 503/);
-          assert.ok(requestId && error.message.includes(requestId));
-          assert.match(error.message, /retry_after=10/);
-          return true;
-        },
-      );
-      assert.equal(requests, 1);
-    },
-  );
-});
+for (const code of [
+  "BILLING_CHECKOUT_DIRECTORY_RATE_LIMITED",
+  "PROVIDER_UNAVAILABLE",
+]) {
+  test(`checkout failure preserves ${code} without replaying the purchase or exposing its body`, async () => {
+    let requests = 0;
+    let requestId: string | undefined;
+    await withApi(
+      (request, response) => {
+        requests += 1;
+        requestId = String(request.headers["x-client-request-id"]);
+        response.setHeader("retry-after", "10");
+        send(
+          response,
+          {
+            error: { code, message: "secret-session-token" },
+            url: "https://checkout.stripe.com/secret-checkout",
+          },
+          503,
+        );
+      },
+      async (apiUrl) => {
+        await assert.rejects(
+          createRunnerCheckout({
+            apiUrl,
+            appUrl: "https://app.example.test",
+            memberId: "user_runner",
+            clerkSessionToken: "session-token",
+          }),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.match(error.message, /HTTP 503/);
+            assert.ok(requestId && error.message.includes(requestId));
+            assert.match(error.message, /retry_after=10/);
+            assert.ok(error.message.includes("error_code=" + code));
+            assert.doesNotMatch(
+              error.message,
+              /secret-session-token|secret-checkout/,
+            );
+            return true;
+          },
+        );
+        assert.equal(requests, 1);
+      },
+    );
+  });
+}
+
+for (const [name, body, contentType] of [
+  ["HTML", "<html>secret-body</html>", "text/html"],
+  ["malformed JSON", '{"error":secret-body', "application/json"],
+  ["missing code", '{"error":{"message":"secret-body"}}', "application/json"],
+  ["unknown code", '{"error":{"code":"SECRET_BODY"}}', "application/json"],
+  ["wrong shape", '{"error":["secret-body"]}', "application/json"],
+  [
+    "oversized body",
+    JSON.stringify({
+      error: { code: "BILLING_CHECKOUT_DIRECTORY_RATE_LIMITED" },
+      message: "secret-body".repeat(500),
+    }),
+    "application/json",
+  ],
+]) {
+  test(`checkout retains the HTTP failure for ${name} diagnostics without replay`, async () => {
+    let requests = 0;
+    await withApi(
+      (_request, response) => {
+        requests += 1;
+        response.writeHead(503, { "content-type": contentType });
+        response.end(body);
+      },
+      async (apiUrl) => {
+        await assert.rejects(
+          createRunnerCheckout({
+            apiUrl,
+            appUrl: "https://app.example.test",
+            memberId: "user_runner",
+            clerkSessionToken: "session-token",
+          }),
+          (error: unknown) => {
+            assert.ok(error instanceof Error);
+            assert.match(error.message, /HTTP 503/);
+            assert.match(error.message, /error_code=unavailable/);
+            assert.doesNotMatch(error.message, /secret-body|SECRET_BODY/);
+            return true;
+          },
+        );
+        assert.equal(requests, 1);
+      },
+    );
+  });
+}
+
+test(
+  "checkout stops reading an unfinished error body and retains the HTTP failure",
+  { timeout: 5000 },
+  async () => {
+    let requests = 0;
+    await withApi(
+      (_request, response) => {
+        requests += 1;
+        response.writeHead(503, { "content-type": "application/json" });
+        response.write('{"error":');
+      },
+      async (apiUrl) => {
+        await assert.rejects(
+          createRunnerCheckout({
+            apiUrl,
+            appUrl: "https://app.example.test",
+            memberId: "user_runner",
+            clerkSessionToken: "session-token",
+          }),
+          /HTTP 503; .*error_code=unavailable/,
+        );
+        assert.equal(requests, 1);
+      },
+    );
+  },
+);
 
 test("runner entitlement requires settled Pro, BYOK and unrestricted models", async () => {
   let state = {

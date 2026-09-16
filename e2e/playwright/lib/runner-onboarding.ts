@@ -3,6 +3,19 @@ import { randomUUID } from "node:crypto";
 import { apiFailureMessage } from "./api-response";
 import { authHeadersForToken } from "./onboarding";
 
+const RUNNER_API_ERROR_CODES = new Set([
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "CONFLICT",
+  "TOO_MANY_REQUESTS",
+  "INTERNAL_SERVER_ERROR",
+  "PROVIDER_UNAVAILABLE",
+  "BILLING_CHECKOUT_DIRECTORY_RATE_LIMITED",
+]);
+const ERROR_BODY_MAX_BYTES = 4096;
+const ERROR_BODY_TIMEOUT_MS = 1000;
+
 interface RunnerOnboardingOptions {
   readonly apiUrl: string;
   readonly clerkSessionToken: string;
@@ -89,17 +102,87 @@ async function requestRunnerApi(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   if (!response.ok) {
-    await response.body?.cancel();
+    const errorCode = await readRunnerApiErrorCode(response);
     throw new Error(
       apiFailureMessage(
         path,
         response.status,
         requestId,
         response.headers.get("retry-after"),
-      ),
+      ) +
+        "; error_code=" +
+        errorCode,
     );
   }
   return await response.json();
+}
+
+async function readRunnerApiErrorCode(response: Response): Promise<string> {
+  if (!response.body) {
+    return "unavailable";
+  }
+  const reader = response.body.getReader();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    if (
+      response.headers
+        .get("content-type")
+        ?.split(";")[0]
+        .trim()
+        .toLowerCase() !== "application/json"
+    ) {
+      return "unavailable";
+    }
+    return await Promise.race([
+      readBoundedErrorCode(reader),
+      new Promise<string>((resolve) => {
+        timeout = setTimeout(
+          () => resolve("unavailable"),
+          ERROR_BODY_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } catch {
+    // Diagnostics must retain the HTTP failure even when its body is unreadable.
+    return "unavailable";
+  } finally {
+    clearTimeout(timeout);
+    try {
+      await reader.cancel();
+    } catch {
+      // A broken response stream must not replace the original HTTP failure.
+    } finally {
+      reader.releaseLock();
+    }
+  }
+}
+
+async function readBoundedErrorCode(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    size += value.byteLength;
+    if (size > ERROR_BODY_MAX_BYTES) {
+      return "unavailable";
+    }
+    chunks.push(value);
+  }
+  const body: unknown = JSON.parse(Buffer.concat(chunks).toString());
+  if (
+    isObject(body) &&
+    isObject(body.error) &&
+    typeof body.error.code === "string" &&
+    RUNNER_API_ERROR_CODES.has(body.error.code)
+  ) {
+    return body.error.code;
+  }
+  return "unavailable";
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

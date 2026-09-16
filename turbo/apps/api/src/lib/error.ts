@@ -41,6 +41,14 @@ export function providerUnavailable(message: string) {
   return httpError(503, "PROVIDER_UNAVAILABLE", message);
 }
 
+export function billingCheckoutDirectoryRateLimited() {
+  return httpError(
+    503,
+    "BILLING_CHECKOUT_DIRECTORY_RATE_LIMITED",
+    "Billing organization members are temporarily unavailable",
+  );
+}
+
 export function modelProviderUnavailable(message: string) {
   return httpError(503, "MODEL_PROVIDER_UNAVAILABLE", message);
 }

@@ -90,6 +90,17 @@ the pull request's deployed API and app previews, and the preview runner fleet
 provisioned by the `cli-e2e-03-runner-*` jobs in `.github/workflows/turbo.yml`.
 There is no supported local setup for those credentials and services.
 
+Runner onboarding failures report the HTTP status, client request ID,
+Retry-After, and an allowlisted API error code. Checkout returns
+`BILLING_CHECKOUT_DIRECTORY_RATE_LIMITED` only when Clerk membership or
+invitation reads are throttled before purchase creation. Other billing 503s
+retain their own codes; status or Retry-After alone does not identify the cause.
+The helper inspects at most 4 KiB of an error body for up to one second, then
+releases it. Missing, unknown, malformed, or unreadable diagnostics report
+`error_code=unavailable`; raw error messages and response bodies are never logged.
+These diagnostics do not replay checkout or restore automatic Clerk 429 retries.
+Use the request ID to correlate a failure before deciding on a recovery policy.
+
 Push runner E2E changes to a branch and use the pull request pipeline to run
 and validate this suite. Do not treat a local `./e2e/run.sh` invocation as
 validation for `03-runner`; running the script without file arguments also
