@@ -77,6 +77,8 @@ const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
 const CONCURRENCY: usize = 4;
 /// Maximum number of cache-fill groups that may be active across the runner.
 const BACKGROUND_FILL_ACTIVE_LIMIT: usize = CONCURRENCY;
+/// Idle transport retention, independent of the per-object request deadline.
+const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Maximum number of unique cache-fill groups waiting for a worker across the runner.
 const BACKGROUND_FILL_QUEUE_CAPACITY: usize = 32;
 /// Maximum number of completed telemetry tasks reaped between scheduler polls.
@@ -269,16 +271,62 @@ impl FreshDeliveryScanSummary {
 /// permit follows the downloaded body through atomic cache publication and
 /// remains held until the guest staging attempt completes. This bounds
 /// retained runner-owned archive bodies across runs, not only active fetches.
+/// Clones also share one lazy same-origin HTTP pool with at most eight idle
+/// sockets and a 30-second idle timeout. Origin replacement releases the cached
+/// client; admitted fetches can retain its old pool until their owned tasks end.
 #[derive(Clone)]
 pub(crate) struct FreshArchiveDeliveryAdmission {
     permits: Arc<Semaphore>,
+    http: Arc<Mutex<Option<FreshArchiveHttpClient>>>,
+}
+
+struct FreshArchiveHttpClient {
+    origin: url::Origin,
+    client: Client,
 }
 
 impl FreshArchiveDeliveryAdmission {
     pub(crate) fn new() -> Self {
         Self {
             permits: Arc::new(Semaphore::new(FRESH_DELIVERY_RUNNER_LIMIT)),
+            http: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn client_for_archive(&self, archive_url: &str) -> RunnerResult<Client> {
+        // Only this origin may use the cached client: redirects are disabled,
+        // and changing origins replaces the idle pool instead of accumulating
+        // one for every host. Active fetches retain their own client clones.
+        // Invalid/unsupported URLs still fail in the owned fetch, as before.
+        let origin = reqwest::Url::parse(archive_url)
+            .ok()
+            .filter(|url| matches!(url.scheme(), "http" | "https"))
+            .map(|url| url.origin());
+        let mut cached = self.http.lock().map_err(|_| {
+            RunnerError::Internal("runner-owned archive client lock poisoned".into())
+        })?;
+        if let Some(cached) = cached.as_ref()
+            && origin.as_ref() == Some(&cached.origin)
+        {
+            return Ok(cached.client.clone());
+        }
+        // Construction remains lazy after admission and failures are not
+        // cached. There is no await while holding this initialization lock.
+        let client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .pool_max_idle_per_host(FRESH_DELIVERY_RUNNER_LIMIT)
+            .pool_idle_timeout(FRESH_DELIVERY_HTTP_IDLE_TIMEOUT)
+            .build()
+            .map_err(|error| {
+                RunnerError::Internal(format!("build runner-owned archive client: {error}"))
+            })?;
+        if let Some(origin) = origin {
+            *cached = Some(FreshArchiveHttpClient {
+                origin,
+                client: client.clone(),
+            });
+        }
+        Ok(client)
     }
 }
 
@@ -2169,7 +2217,8 @@ fn collect_targets(candidates: Vec<CacheArchiveCandidate>) -> Vec<CacheTarget> {
 /// case, the caller must keep it paired with this plan and either resolve it
 /// through `populate_cache_with_fresh_delivery` or call
 /// [`FreshArchiveDelivery::cancel_and_drain`] before abandoning the plan.
-/// A preparation builds at most one HTTP client, only for an admitted cache miss.
+/// Admitted cache misses reuse the Runner's bounded same-origin HTTP client.
+/// Plans without an admitted miss do not initialize a client or load CA roots.
 /// Select extracted files using the same source groups before archive admission;
 /// selected hits never start an archive request. A prepared plan keeps its pins
 /// and does not repeat the lookup during population.
@@ -2353,7 +2402,14 @@ async fn classify_fresh_archives(
             };
             match claim_fresh_archive(group, &home, &mut metrics).await? {
                 FreshArchiveClaim::Cold(writer) => {
-                    requests.start(group, writer, permit, &owner_cancel, &mut metrics)?;
+                    requests.start(
+                        group,
+                        writer,
+                        permit,
+                        &admission,
+                        &owner_cancel,
+                        &mut metrics,
+                    )?;
                 }
                 FreshArchiveClaim::Warm => {}
                 FreshArchiveClaim::Busy => ordinary_required = true,
@@ -2396,7 +2452,14 @@ async fn classify_fresh_archives(
         // No GET has started for these claims. A busy writer above releases all
         // locks and permits, leaving the complete expanded set on ordinary delivery.
         for (group, writer, permit) in claims {
-            requests.start(group, writer, permit, &owner_cancel, &mut metrics)?;
+            requests.start(
+                group,
+                writer,
+                permit,
+                &admission,
+                &owner_cancel,
+                &mut metrics,
+            )?;
         }
         Ok(())
     };
@@ -2478,7 +2541,6 @@ async fn claim_fresh_archive(
 
 #[derive(Default)]
 struct FreshArchiveRequests {
-    http: Option<Client>,
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
 }
@@ -2489,24 +2551,14 @@ impl FreshArchiveRequests {
         group: &CacheTargetGroup,
         writer: nix::fcntl::Flock<std::fs::File>,
         permit: OwnedSemaphorePermit,
+        admission: &FreshArchiveDeliveryAdmission,
         cancel: &CancellationToken,
         metrics: &mut CacheProcessMetrics,
     ) -> RunnerResult<()> {
         let target = group.targets.first().ok_or_else(|| {
             RunnerError::Internal("empty runner-owned archive target group".into())
         })?;
-        let http = match &mut self.http {
-            Some(http) => http,
-            slot @ None => slot.insert(
-                Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .map_err(|error| {
-                        RunnerError::Internal(format!("build runner-owned archive client: {error}"))
-                    })?,
-            ),
-        }
-        .clone();
+        let http = admission.client_for_archive(&target.archive_url)?;
         let archive_url = target.archive_url.clone();
         let group = group.clone();
         let cancel = cancel.clone();
@@ -3714,6 +3766,8 @@ fn rewrite_url(plan: &mut StoragePlan, target: &CacheTarget) {
 mod tests {
     use super::*;
 
+    mod http_reuse;
+
     use async_trait::async_trait;
     use httpmock::Method::{GET, HEAD};
     use httpmock::prelude::*;
@@ -4072,17 +4126,20 @@ mod tests {
     }
 
     fn tarball_bytes() -> Vec<u8> {
+        tarball_with_contents(b"storage cache test file\n")
+    }
+
+    fn tarball_with_contents(content: &[u8]) -> Vec<u8> {
         let mut bytes = Vec::new();
         {
             let encoder = flate2::write::GzEncoder::new(&mut bytes, flate2::Compression::default());
             let mut builder = tar::Builder::new(encoder);
-            let content = b"storage cache test file\n";
             let mut header = tar::Header::new_gnu();
             header.set_size(content.len() as u64);
             header.set_mode(0o644);
             header.set_cksum();
             builder
-                .append_data(&mut header, "file.txt", &content[..])
+                .append_data(&mut header, "file.txt", content)
                 .unwrap();
             let encoder = builder.into_inner().unwrap();
             encoder.finish().unwrap();
