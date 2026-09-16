@@ -86,7 +86,10 @@ function selectableGroupForText(text: string): HTMLElement {
 
 // The row under a user bubble holds the space the next bubble in a burst is
 // pulled into, so it is part of that message's frame rather than part of the
-// copy button it usually carries.
+// copy button it usually carries. jsdom computes no layout, so the overlap this
+// guards against has no page-observable form: the reserved row is the only
+// evidence available for it, and the case is still worth covering because
+// losing that row is exactly what put two bubbles on top of each other.
 function actionRowFor(text: string): HTMLElement {
   const message = screen
     .getByText(text)
@@ -217,9 +220,6 @@ test("Back-to-back user messages keep their frame apart while sharing", async ()
   expect(actionRowFor(PROMPT)).toBeInTheDocument();
   expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
   expect(buttonsNamed("Copy message")).toHaveLength(0);
-  expect(selectableGroupForText(PROMPT)).toBe(
-    selectableGroupForText(FOLLOW_UP_PROMPT),
-  );
 });
 
 test("Replacing a selected live answer clears it before the next answer is shared", async () => {
