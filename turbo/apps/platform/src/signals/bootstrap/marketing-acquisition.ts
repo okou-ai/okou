@@ -75,7 +75,9 @@ export const setupMarketingAcquisition$ = command(
         const pending = get(pendingMarketingEvents$)
           .filter((item) => {
             return (
-              item.userId === identity.userId && item.orgId === identity.orgId
+              item.userId === identity.userId &&
+              item.orgId === identity.orgId &&
+              item.event.at >= now() - 24 * 60 * 60_000
             );
           })
           .slice(0, 20);
