@@ -1516,13 +1516,13 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Open the app daily. Resets at 00:00 UTC.",
+          "description": "Once a day, every day",
           "name": "Check in daily",
           "unit": "a day"
         },
         "connector": {
           "action": "Connect",
-          "description": "Connect with OAuth.",
+          "description": "Gmail, Notion, and 100+ more",
           "name": "Connect a connector",
           "unit": "per connector"
         },
@@ -1530,7 +1530,7 @@
         "inReviewDescription": "Submitted, waiting on review",
         "invite": {
           "action": "Invite",
-          "description": "Earn when an invite is accepted, up to 15 members.",
+          "description": "Everyone you add counts",
           "name": "Invite your team",
           "unit": "per member"
         },
@@ -1555,7 +1555,7 @@
         },
         "slack": {
           "action": "Add",
-          "description": "Once per organization and workspace.",
+          "description": "Where your team already works",
           "name": "Add {{assistantName}} to Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
@@ -1563,7 +1563,7 @@
         "title": "Get started",
         "workflow": {
           "action": "Build",
-          "description": "Successfully run a workflow you created.",
+          "description": "Turn a repeat task into an automation",
           "name": "Build a workflow"
         }
       },

@@ -1515,13 +1515,13 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "毎日アプリを開くと獲得。00:00 UTC にリセット。",
+          "description": "1日1回、毎日",
           "name": "毎日チェックイン",
           "unit": "1日あたり"
         },
         "connector": {
           "action": "接続",
-          "description": "OAuth で接続。",
+          "description": "Gmail、Notion など100以上",
           "name": "コネクタを接続",
           "unit": "コネクタごと"
         },
@@ -1529,7 +1529,7 @@
         "inReviewDescription": "送信済み、確認待ち",
         "invite": {
           "action": "招待",
-          "description": "招待が承諾されると獲得。最大15人まで。",
+          "description": "追加した人数だけ加算されます",
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
@@ -1554,7 +1554,7 @@
         },
         "slack": {
           "action": "追加",
-          "description": "組織とワークスペースごとに1回。",
+          "description": "チームがすでに使っている場所へ",
           "name": "{{assistantName}} を Slack に追加"
         },
         "stepCount": "{{completed}}/{{total}}",
@@ -1562,7 +1562,7 @@
         "title": "はじめる",
         "workflow": {
           "action": "作成",
-          "description": "自分で作成したワークフローを正常に実行。",
+          "description": "繰り返しの作業を自動化に変える",
           "name": "ワークフローを作る"
         }
       },

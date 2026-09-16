@@ -1540,13 +1540,13 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Apri l’app ogni giorno. Il conteggio si azzera alle 00:00 UTC.",
+          "description": "Una volta al giorno, ogni giorno",
           "name": "Accedi ogni giorno",
           "unit": "al giorno"
         },
         "connector": {
           "action": "Collega",
-          "description": "Connettiti con OAuth.",
+          "description": "Gmail, Notion e altri 100+",
           "name": "Collega un connettore",
           "unit": "per connettore"
         },
@@ -1554,7 +1554,7 @@
         "inReviewDescription": "Inviato, in attesa di revisione",
         "invite": {
           "action": "Invita",
-          "description": "Guadagna quando un invito viene accettato, fino a 15 membri.",
+          "description": "Ogni persona che aggiungi conta",
           "name": "Invita il tuo team",
           "unit": "per membro"
         },
@@ -1579,7 +1579,7 @@
         },
         "slack": {
           "action": "Aggiungi",
-          "description": "Una volta per organizzazione e spazio di lavoro.",
+          "description": "Dove il tuo team lavora già",
           "name": "Aggiungi {{assistantName}} a Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
@@ -1587,7 +1587,7 @@
         "title": "Inizia",
         "workflow": {
           "action": "Crea",
-          "description": "Esegui con successo un workflow che hai creato.",
+          "description": "Trasforma un'attività ricorrente in un'automazione",
           "name": "Crea un workflow"
         }
       },

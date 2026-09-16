@@ -1515,13 +1515,13 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "매일 앱을 여세요. 00:00 UTC에 초기화돼요.",
+          "description": "하루에 한 번, 매일",
           "name": "매일 출석하기",
           "unit": "하루당"
         },
         "connector": {
           "action": "연결",
-          "description": "OAuth로 연결하세요.",
+          "description": "Gmail, Notion 등 100개 이상",
           "name": "커넥터 연결하기",
           "unit": "커넥터당"
         },
@@ -1529,7 +1529,7 @@
         "inReviewDescription": "제출됨, 검토 대기 중",
         "invite": {
           "action": "초대",
-          "description": "초대가 수락되면 지급돼요. 최대 15명까지 가능해요.",
+          "description": "추가하는 사람마다 적립됩니다",
           "name": "팀 초대하기",
           "unit": "멤버당"
         },
@@ -1554,7 +1554,7 @@
         },
         "slack": {
           "action": "추가",
-          "description": "조직 및 워크스페이스당 한 번이에요.",
+          "description": "팀이 이미 일하고 있는 곳으로",
           "name": "Slack에 {{assistantName}} 추가하기"
         },
         "stepCount": "{{completed}}/{{total}}",
@@ -1562,7 +1562,7 @@
         "title": "시작하기",
         "workflow": {
           "action": "만들기",
-          "description": "직접 만든 워크플로를 성공적으로 실행하세요.",
+          "description": "반복 작업을 자동화로 바꾸기",
           "name": "워크플로 만들기"
         }
       },

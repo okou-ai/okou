@@ -206,7 +206,7 @@ test("An admin sees every step and what each one pays", async () => {
   expect(workflow.getByText("Build a workflow")).toBeInTheDocument();
   // The reward leads the description line, so the two read as one sentence.
   expect(normalizedText(workflowRow)).toContain(
-    "+1,000 · Successfully run a workflow you created.",
+    "+1,000 · Turn a repeat task into an automation",
   );
   expect(workflow.getByText("+1,000")).toBeInTheDocument();
   // An unfinished quest names what pressing the row does.
@@ -544,7 +544,7 @@ test("Opening the app checks in and focus refresh uses the server UTC day", asyn
   await expect(within(panel).findByText("400")).resolves.toBeInTheDocument();
   const checkinRow = screen.getByTestId("get-started-quest-checkin");
   expect(normalizedText(checkinRow)).toContain(
-    "Open the app daily. Resets at 00:00 UTC.",
+    "+100 a day · Once a day, every day",
   );
   // Opening the app is the check-in, so this row offers nothing to press.
   expect(within(checkinRow).queryByText("Check in")).not.toBeInTheDocument();

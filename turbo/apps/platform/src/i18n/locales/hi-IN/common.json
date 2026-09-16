@@ -1516,13 +1516,13 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "रोज़ ऐप खोलें। रीसेट का समय 00:00 UTC है।",
+          "description": "दिन में एक बार, हर दिन",
           "name": "रोज़ चेक इन करें",
           "unit": "प्रति दिन"
         },
         "connector": {
           "action": "कनेक्ट करें",
-          "description": "OAuth से कनेक्ट करें।",
+          "description": "Gmail, Notion और 100+ अन्य",
           "name": "कनेक्टर जोड़ें",
           "unit": "प्रति कनेक्टर"
         },
@@ -1530,7 +1530,7 @@
         "inReviewDescription": "भेजा गया, समीक्षा बाकी है",
         "invite": {
           "action": "बुलाएँ",
-          "description": "निमंत्रण स्वीकार होने पर इनाम पाएँ, अधिकतम 15 सदस्यों के लिए।",
+          "description": "आप जिसे भी जोड़ेंगे वह गिना जाएगा",
           "name": "अपनी टीम को बुलाएँ",
           "unit": "प्रति सदस्य"
         },
@@ -1555,7 +1555,7 @@
         },
         "slack": {
           "action": "जोड़ें",
-          "description": "हर संगठन और वर्कस्पेस के लिए एक बार।",
+          "description": "जहाँ आपकी टीम पहले से काम करती है",
           "name": "{{assistantName}} को Slack में जोड़ें"
         },
         "stepCount": "{{completed}}/{{total}}",
@@ -1563,7 +1563,7 @@
         "title": "शुरू करें",
         "workflow": {
           "action": "बनाएँ",
-          "description": "अपने बनाए वर्कफ़्लो को सफलतापूर्वक चलाएँ।",
+          "description": "बार-बार होने वाले काम को ऑटोमेशन बनाएँ",
           "name": "वर्कफ़्लो बनाएँ"
         }
       },
