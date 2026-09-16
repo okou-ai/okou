@@ -218,8 +218,11 @@ const EXPECTED_FEISHU_OAUTH_SCOPES = [
   "board:whiteboard:node:read",
   "board:whiteboard:node:create",
   "calendar:calendar",
+  "calendar:calendar:read",
   "task:task:write",
   "task:tasklist:write",
+  "task:comment:write",
+  "task:section:write",
 ] as const;
 
 interface CapturedFeishuMessage {
