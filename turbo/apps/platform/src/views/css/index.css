@@ -247,7 +247,7 @@
      light ground. This is the light ramp's `gray-700` at the alpha the dots
      reach on the plain track, which is what keeps the scale at one weight
      either side of the reveal. */
-  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.75);
+  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.45);
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
     0.04px 5.55px,
