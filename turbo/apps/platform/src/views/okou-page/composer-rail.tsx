@@ -1,11 +1,9 @@
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
-import { useTranslation } from "react-i18next";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
-import { measureRail, pageRail } from "../../signals/okou-page/rail-travel.ts";
+import { measureRail } from "../../signals/okou-page/rail-travel.ts";
+import { ComposerRailPager } from "./rail-pager.tsx";
 
 /**
  * A row is a rail, not a set of equal pages. Items pack continuously, so the
@@ -83,50 +81,6 @@ const RAIL_FADE = {
 } as const;
 const RAIL_FADE_OFF =
   "focus-within:[-webkit-mask-image:none] focus-within:[mask-image:none]";
-/**
- * The pager floats over the edge it points at, the way a carousel control does,
- * so it costs the row no width and the faded item behind it reads as the reason
- * the control is there. It needs its own opaque surface to stay legible on top
- * of that item.
- */
-const RAIL_PAGER = cn(
-  "absolute z-10 size-7 rounded-full border border-border bg-background p-0 shadow-sm",
-  "hover:bg-state-hover-overlay",
-);
-function ComposerRailPager({ side }: { readonly side: "back" | "forward" }) {
-  const { t } = useTranslation();
-  const Icon = side === "back" ? ChevronLeft : ChevronRight;
-  return (
-    <Button
-      type="button"
-      variant="quiet"
-      className={cn(
-        RAIL_PAGER,
-        side === "back" ? "left-0" : "right-0",
-        // Centred on the rail's own content box, which for a cover row is the
-        // art plus its caption; the caption is short enough that the control
-        // still reads as centred on the picture.
-        "top-1/2 -translate-y-1/2",
-      )}
-      aria-label={t(($) => {
-        return side === "back"
-          ? $.chat.taskChips.shelf.previousPage
-          : $.chat.taskChips.shelf.nextPage;
-      })}
-      onClick={(event) => {
-        const root = event.currentTarget.closest("[data-rail-root]");
-        const rail = root?.querySelector<HTMLElement>("[data-rail]");
-        if (!rail) {
-          return;
-        }
-        pageRail(rail, side);
-      }}
-    >
-      <Icon className="size-4" aria-hidden />
-    </Button>
-  );
-}
-
 /**
  * One row of controls, rendered as a rail. Both pagers only exist while the
  * rail has somewhere to go in that direction, so the row never offers to move
