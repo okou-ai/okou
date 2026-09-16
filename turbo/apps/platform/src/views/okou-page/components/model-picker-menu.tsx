@@ -65,6 +65,19 @@ function MenuHeader({
   );
 }
 
+/**
+ * Menu rows run the full width of their card, so a button's default ring lands
+ * outside the row: 2px of ring plus its 2px offset. The options list is a
+ * scroller, and `overflow-y-auto` clips the other axis too, so that band
+ * disappears on the left and right and the focused row reads as two loose
+ * horizontal lines; in the type rail there is no scroller, but the same band
+ * covers the card's own `p-1` and paints over its hairline. Draw the ring
+ * inside the row instead, on the rounded rect the hover background already
+ * uses.
+ */
+const MENU_FOCUS_RING_CLASS =
+  "[&_button:focus-visible]:ring-inset [&_button:focus-visible]:ring-offset-0";
+
 function CurrentModelRow({
   model,
   category,
@@ -714,7 +727,7 @@ export function ModelPickerFlyoutContent({
   return (
     <div
       ref={rootRef}
-      className="relative"
+      className={cn("relative", MENU_FOCUS_RING_CLASS)}
       onKeyDown={(event) => {
         moveFlyoutFocus(event, types.length);
       }}
@@ -843,7 +856,7 @@ export function ModelPickerMenuContent(props: ModelPickerMenuContentProps) {
       ref={focusPanel}
       role="region"
       aria-label={label}
-      className="motion-safe:duration-150 [&_button:focus-visible]:ring-inset [&_button:focus-visible]:ring-offset-0"
+      className={cn("motion-safe:duration-150", MENU_FOCUS_RING_CLASS)}
       onKeyDown={(event) => {
         if (event.key === "Escape" && page.kind !== "overview") {
           event.preventDefault();
