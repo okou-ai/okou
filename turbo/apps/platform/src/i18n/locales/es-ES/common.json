@@ -1788,7 +1788,11 @@
       "upgradeToRun": "Actualizar a Pro para ejecutar {{assistantName}}",
       "upgradeWorkspace": "Actualizar el espacio de trabajo"
     },
+    "cards": {
+      "viewDetails": "Ver detalles"
+    },
     "composer": {
+      "add": "Añadir",
       "agentSuggestions": "Agentes",
       "configureModel": "Configurar modelo",
       "create": {
@@ -6087,7 +6091,6 @@
         "loading": "Cargando la configuración de Morning Brief...",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
-        "multipleInstallations": "Hay varias instalaciones de Morning Brief. Resuelve el conflicto antes de cambiar esta preferencia.",
         "nextBrief": "Próximo resumen {{date}} ({{timezone}})",
         "paused": "En pausa",
         "preparationFailed": "La configuración se reintentará automáticamente. También puedes reintentar ahora.",

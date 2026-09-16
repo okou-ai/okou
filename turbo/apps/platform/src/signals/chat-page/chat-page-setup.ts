@@ -51,9 +51,9 @@ const setupResolvedLeftThread$ = command(
     const resolution = await set(resolveLeftThreadMeta$, threadId, signal);
     signal.throwIfAborted();
     set(recordBootstrapThreadMetadataTiming$, {
-      localDurationMs: resolution.localDurationMs,
-      remoteDurationMs: resolution.remoteDurationMs,
-      source: resolution.source,
+      cacheHydrationWaitMs: resolution.cacheHydrationWaitMs,
+      cacheMissResolutionMs: resolution.cacheMissResolutionMs,
+      resolutionPath: resolution.resolutionPath,
     });
     const { meta } = resolution;
     if (meta) {

@@ -8,6 +8,34 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.607.1](https://github.com/vm0-ai/okou/compare/api-v1.607.0...api-v1.607.1) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.1
+    * @okouai/core bumped to 8.667.1
+    * @okouai/db bumped to 1.263.1
+    * @okouai/pi-agent-runtime bumped to 1.31.1
+
+## [1.607.0](https://github.com/vm0-ai/vm0/compare/api-v1.606.0...api-v1.607.0) (2026-09-15)
+
+
+### Features
+
+* **memory:** attribute stage 1 cost and define daily budget guardrails ([#34288](https://github.com/vm0-ai/vm0/issues/34288)) ([5ee718c](https://github.com/vm0-ai/vm0/commit/5ee718ca99c65f0bf8e59b2aed23b2fabaa5a2b2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.667.0
+    * @okouai/db bumped to 1.263.0
+    * @okouai/pi-agent-runtime bumped to 1.31.0
+
 ## [1.606.0](https://github.com/vm0-ai/vm0/compare/api-v1.605.1...api-v1.606.0) (2026-09-15)
 
 

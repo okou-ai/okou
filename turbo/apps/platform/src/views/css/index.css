@@ -189,6 +189,14 @@
      keeps the reference, so the media query still decides at use time. */
   --height-viewport: var(--okou-viewport-height);
 
+  /* The workspace canvas, so the pane reaches its fill and gradient through
+     `bg-workspace-canvas` / `bg-workspace-canvas-image` instead of four
+     selectors. The runtime values are keyed at `:root` further down; inline
+     keeps the reference, so the theme and palette attributes still decide at
+     use time. */
+  --color-workspace-canvas: var(--okou-workspace-canvas-fill);
+  --background-image-workspace-canvas-image: var(--okou-workspace-canvas-image);
+
   /* The thinking label's shimmer. Six stops, so the sweep reads as a band with
      a flat core rather than a point: the two inner stops hold the bright
      foreground across 48-52% while the outer pairs hold the muted colour flat
@@ -239,7 +247,7 @@
      light ground. This is the light ramp's `gray-700` at the alpha the dots
      reach on the plain track, which is what keeps the scale at one weight
      either side of the reveal. */
-  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.75);
+  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.45);
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
     0.04px 5.55px,
@@ -1096,38 +1104,42 @@ details > summary {
 
 /* Okou workspace: soft texture + gentle gradient — documents, records, thinking, meeting notes.
    Grid is on ::before with z-index: -1; container has z-index: 0 so the texture stays behind content only. */
-.okou-workspace-bg {
-  position: relative;
-  z-index: 0;
-}
-
-.okou-workspace-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-color: hsl(var(--background));
-  background-image: radial-gradient(
+/* The workspace canvas. Four variants — default and gradient palette, each in
+   Light and Dark — differ only in the fill and the gradient, so they are two
+   runtime values keyed at `:root` rather than four selectors. `signals/theme.ts`
+   writes `data-theme` and `data-gradient-color-themes` onto the document
+   element, which is what lets these key off `:root` alone. The retired gradient
+   rules reached the canvas through a descendant `.okou-app` carrying the
+   palette attribute, which only the sidebar and standalone shells do, so
+   `workspace-inset.tsx` is the one consumer they matched; the three consumers
+   that carry `okou-app` on the canvas element itself keep the default canvas
+   because their routes mount neither shell. Keying at `:root` widens that scope
+   on purpose — see "The workspace canvas" in docs/styles.md.
+   Each theme test is wrapped in `:where()` so it stays at the specificity of
+   the rule it refines and source order decides between them. The retired dark
+   rule also matched the paired `.dark` class; `applyTheme` always sets both,
+   and a class in the selector would register a first-party class-selector
+   declaration against the shrink-only baseline. */
+:root {
+  --okou-workspace-canvas-fill: hsl(var(--background));
+  --okou-workspace-canvas-image: radial-gradient(
     ellipse 120% 80% at 50% -20%,
     hsl(var(--background-50) / 0.5),
     transparent 50%
   );
-  background-size: 100% 100%;
 }
 
-.dark .okou-workspace-bg::before,
-[data-theme="dark"] .okou-workspace-bg::before {
-  background-image: radial-gradient(
+:root:where([data-theme="dark"]) {
+  --okou-workspace-canvas-image: radial-gradient(
     ellipse 100% 70% at 50% 0%,
     hsl(var(--background-50) / 0.4),
     transparent 48%
   );
-  background-size: 100% 100%;
 }
 
-.okou-app[data-gradient-color-themes] .okou-workspace-bg::before {
-  background-color: hsl(var(--card));
-  background-image:
+:root[data-gradient-color-themes] {
+  --okou-workspace-canvas-fill: hsl(var(--card));
+  --okou-workspace-canvas-image:
     radial-gradient(
       ellipse 58% 64% at 0% 0%,
       color-mix(in srgb, hsl(var(--card)) 88%, var(--okou-color-theme-anchor))
@@ -1146,11 +1158,9 @@ details > summary {
     );
 }
 
-:where([data-theme="dark"])
-  .okou-app[data-gradient-color-themes]
-  .okou-workspace-bg::before {
-  background-color: hsl(var(--card));
-  background-image:
+:root:where([data-theme="dark"])[data-gradient-color-themes] {
+  --okou-workspace-canvas-fill: hsl(var(--card));
+  --okou-workspace-canvas-image:
     radial-gradient(
       ellipse 58% 64% at 0% 0%,
       color-mix(in srgb, hsl(var(--card)) 92%, var(--okou-color-theme-anchor))

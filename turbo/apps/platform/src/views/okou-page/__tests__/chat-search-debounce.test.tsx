@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
 import {
@@ -61,7 +61,7 @@ test("Search messages only after the latest input settles", async () => {
     chatListRemoteGate: remoteChatList.promise,
   });
   const keywords = installMessageSearch(thread.id);
-  await setupPage({
+  await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
@@ -89,7 +89,7 @@ test("Clearing or closing search discards a pending message search", async () =>
     chatListRemoteGate: remoteChatList.promise,
   });
   const keywords = installMessageSearch(thread.id);
-  await setupPage({
+  await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,

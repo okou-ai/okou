@@ -1889,7 +1889,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
       const diagramCodes: string[] = [];
       embedMermaidSignals(tree, (code) => {
         diagramCodes.push(code);
-        return set(mermaidDiagrams.register$, code);
+        return mermaidDiagrams.register(code);
       });
       set(
         embedMarkdownArtifacts$,
@@ -1986,16 +1986,31 @@ function markPendingEventTreesFailed(
   return failed;
 }
 
-/**
- * Re-parse one failed rich body. Preparation is push-based, so the retry also
- * lays out the body's diagrams; nothing else visits this event until the
- * render window moves.
- */
+// Chat prewarms the same layout computeds that visible diagrams read, so
+// pagination and scroll restoration can wait for layout. It allocates no URLs.
+const prewarmMermaidDiagrams$ = command(
+  async (
+    { get },
+    registry: MermaidDiagramRegistry,
+    codes: readonly string[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    for (const code of new Set(codes)) {
+      // The view owns each diagram's error fallback. A failed layout must
+      // not stop prewarming other diagrams or fail chat synchronization.
+      await settle(get(registry.register(code).diagram$));
+      signal.throwIfAborted();
+    }
+  },
+);
+
+/** Re-parse one failed rich body and await its diagrams through the same graph. */
 function createRetryRichEventTree({
   internalEventTrees$,
   ensureEventTrees$,
   diagramCodesForEvents$,
-  ensureDiagrams$,
+  mermaidDiagrams,
 }: {
   readonly internalEventTrees$: State<ReadonlyMap<string, EventTree>>;
   readonly ensureEventTrees$: Command<
@@ -2006,7 +2021,7 @@ function createRetryRichEventTree({
     readonly string[],
     [readonly ChatEvent[]]
   >;
-  readonly ensureDiagrams$: MermaidDiagramRegistry["ensureDiagrams$"];
+  readonly mermaidDiagrams: MermaidDiagramRegistry;
 }): Command<Promise<void>, [ChatEvent, AbortSignal]> {
   return command(
     async ({ get, set }, event: ChatEvent, signal: AbortSignal) => {
@@ -2021,7 +2036,12 @@ function createRetryRichEventTree({
       set(internalEventTrees$, next);
       await set(ensureEventTrees$, [event], signal);
       signal.throwIfAborted();
-      await set(ensureDiagrams$, set(diagramCodesForEvents$, [event]), signal);
+      await set(
+        prewarmMermaidDiagrams$,
+        mermaidDiagrams,
+        set(diagramCodesForEvents$, [event]),
+        signal,
+      );
     },
   );
 }
@@ -2140,7 +2160,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
     internalEventTrees$,
     ensureEventTrees$,
     diagramCodesForEvents$,
-    ensureDiagrams$: mermaidDiagrams.ensureDiagrams$,
+    mermaidDiagrams,
   });
 
   return {
@@ -2264,7 +2284,7 @@ function createPagedEventResources({
     eventTreeErrors$,
     ensureEventTrees$,
     diagramCodesForEvents$,
-    ensureDiagrams$: mermaidDiagrams.ensureDiagrams$,
+    mermaidDiagrams,
     publicSignals: {
       runDetails$,
       browserSessionSignals,
@@ -2596,7 +2616,7 @@ function createChatThreadMessagePipeline({
     awayFromBottom$: position.awayFromBottom$,
     ensureEventTrees$: resources.ensureEventTrees$,
     diagramCodesForEvents$: resources.diagramCodesForEvents$,
-    ensureDiagrams$: resources.ensureDiagrams$,
+    mermaidDiagrams: resources.mermaidDiagrams,
     initialEventsReady$,
   });
   const syncVisibleEventTrees$ = command(
@@ -2722,10 +2742,9 @@ interface RunTrackingDeps {
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
-  subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
-  subscribeSessionOutput$: Command<Promise<void>, [AbortSignal]>;
+  subscribeBrowserSessions$: Command<void, [AbortSignal]>;
+  subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
-  thinkingSummarySubscription: ThreadActivitySummarySignals["subscription"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccounts$: Command<void, []>;
@@ -2832,10 +2851,7 @@ interface ChatRenderWindowOptions {
     readonly string[],
     [readonly ChatEvent[]]
   >;
-  readonly ensureDiagrams$: Command<
-    Promise<void>,
-    [readonly string[], AbortSignal]
-  >;
+  readonly mermaidDiagrams: MermaidDiagramRegistry;
   readonly initialEventsReady$: State<boolean>;
 }
 
@@ -2902,21 +2918,21 @@ function createPreloadPreviousRenderWindowForEvent({
 }
 
 /**
- * Prepare the rich content of everything the render window shows. Diagrams are
- * laid out here, for the events on screen, so their blob URLs are owned by this
- * run rather than by whichever view happens to read them.
+ * Parse visible rich content and prewarm its diagram layout before callers
+ * restore scroll positions. The view reads the same layout computeds; only
+ * mounted image refs allocate and own object URLs.
  */
 function createEnsureVisibleEventTrees({
   visibleRenderedChatGroups$,
   ensureEventTrees$,
   diagramCodesForEvents$,
-  ensureDiagrams$,
+  mermaidDiagrams,
   initialEventsReady$,
 }: {
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly ensureEventTrees$: ChatRenderWindowOptions["ensureEventTrees$"];
   readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
-  readonly ensureDiagrams$: ChatRenderWindowOptions["ensureDiagrams$"];
+  readonly mermaidDiagrams: MermaidDiagramRegistry;
   readonly initialEventsReady$: State<boolean>;
 }): Command<Promise<void>, [boolean, AbortSignal]> {
   return command(
@@ -2937,7 +2953,8 @@ function createEnsureVisibleEventTrees({
       await richContentReady;
       signal.throwIfAborted();
       await set(
-        ensureDiagrams$,
+        prewarmMermaidDiagrams$,
+        mermaidDiagrams,
         set(diagramCodesForEvents$, visibleEvents),
         signal,
       );
@@ -2952,7 +2969,7 @@ function createChatRenderWindow({
   awayFromBottom$,
   ensureEventTrees$,
   diagramCodesForEvents$,
-  ensureDiagrams$,
+  mermaidDiagrams,
   initialEventsReady$,
 }: ChatRenderWindowOptions) {
   const visibleRenderedChatGroups$ = computed(
@@ -2991,7 +3008,7 @@ function createChatRenderWindow({
     visibleRenderedChatGroups$,
     ensureEventTrees$,
     diagramCodesForEvents$,
-    ensureDiagrams$,
+    mermaidDiagrams,
     initialEventsReady$,
   });
 
@@ -3128,7 +3145,6 @@ function createRunTracking({
   subscribeBrowserSessions$,
   subscribeSessionOutput$,
   subscribeThinkingSummaries$,
-  thinkingSummarySubscription,
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccounts$,
@@ -3150,7 +3166,7 @@ function createRunTracking({
     await Promise.all([
       set(subscribeBrowserSessions$, signal),
       set(subscribeSessionOutput$, signal),
-      set(subscribeThinkingSummaries$, thinkingSummarySubscription, signal),
+      set(subscribeThinkingSummaries$, signal),
       set(
         subscribeChatThreadRealtime$,
         {
@@ -4105,7 +4121,6 @@ export function createChatPanelSignals(
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
     subscribeSessionOutput$: sessionOutput.subscribe$,
-    thinkingSummarySubscription: activity.subscription,
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccounts$: composer.connector.accounts.reload$,

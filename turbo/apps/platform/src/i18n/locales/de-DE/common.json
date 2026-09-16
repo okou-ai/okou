@@ -1759,7 +1759,11 @@
       "upgradeToRun": "Auf Pro upgraden, um {{assistantName}} auszuführen",
       "upgradeWorkspace": "Arbeitsbereich upgraden"
     },
+    "cards": {
+      "viewDetails": "Details ansehen"
+    },
     "composer": {
+      "add": "Hinzufügen",
       "agentSuggestions": "Agenten",
       "configureModel": "Modell konfigurieren",
       "create": {
@@ -6026,7 +6030,6 @@
         "loading": "Morning-Brief-Einstellungen werden geladen...",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
-        "multipleInstallations": "Es sind mehrere Morning-Brief-Installationen vorhanden. Beheben Sie den Konflikt, bevor Sie diese Einstellung ändern.",
         "nextBrief": "Nächstes Briefing {{date}} ({{timezone}})",
         "paused": "Pausiert",
         "preparationFailed": "Die Einrichtung wird automatisch erneut versucht. Sie können es auch jetzt erneut versuchen.",

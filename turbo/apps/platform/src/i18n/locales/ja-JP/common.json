@@ -1756,7 +1756,11 @@
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",
       "upgradeWorkspace": "ワークスペースをアップグレードする"
     },
+    "cards": {
+      "viewDetails": "詳細を表示"
+    },
     "composer": {
+      "add": "追加",
       "agentSuggestions": "エージェント",
       "configureModel": "モデルの構成",
       "create": {
@@ -6012,7 +6016,6 @@
         "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "multipleInstallations": "Morning Brief のインストールが複数あります。この設定を変更する前に競合を解決してください。",
         "nextBrief": "次のブリーフ {{date}}（{{timezone}}）",
         "paused": "一時停止中",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",

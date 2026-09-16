@@ -2,7 +2,7 @@ import {
   userPreferencesContract,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { HttpResponse } from "msw";
 
@@ -77,11 +77,9 @@ test("A stored organization timezone is not replaced on a later visit", async ()
     host: "app.okou.ai",
   });
 
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
   await expect(
-    screen.findByRole("heading", { name: "Agents" }),
-  ).resolves.toBeVisible();
-  await expect(
-    screen.findByText(/Pacific Time \(PT\)/u),
+    within(settings).findByText(/Pacific Time \(PT\)/u),
   ).resolves.toBeVisible();
 });
 

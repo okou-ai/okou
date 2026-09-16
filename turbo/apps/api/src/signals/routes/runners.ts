@@ -1430,11 +1430,16 @@ async function transitionClaimedJobToRunning(
         if (!current) {
           return { status: "run-not-found" as const };
         }
+        if (current.storageMounts === null) {
+          throw new Error(
+            "Deferred Pi ready job is missing captured Storage mounts",
+          );
+        }
         const validation = await settle(
           validateDeferredPiMaterialization(tx, {
             admission: args.deferredAdmission,
             run: { ...owner, sessionId: current.sessionId },
-            mounts: current.storageMounts ?? [],
+            mounts: current.storageMounts,
           }),
           signal,
         );

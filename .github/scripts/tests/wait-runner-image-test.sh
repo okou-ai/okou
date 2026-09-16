@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Each case owns REPO; the hosting CI repository must not override it.
+# Each case supplies its own REPO fixture instead of the calling workflow's repo.
 unset GITHUB_REPOSITORY
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -197,7 +197,8 @@ out=$(PATH="${TMPDIR}/bin:${PATH}" \
   GH_ARGS_LOG="${TMPDIR}/gh-args.log" \
   FAKE_MANIFEST="${TMPDIR}/manifest.json" \
   EXPECTED_ARTIFACT_NAME=runner-image-manifest-aarch64-unknown-linux-musl-build-sha-pr-123 \
-  REPO=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=example/runner-images \
+  REPO=example/ignored \
   HEAD_SHA=build-sha \
   LOOKUP_SHA=head-sha \
   JOB_REF=pr-123 \
@@ -208,7 +209,7 @@ out=$(PATH="${TMPDIR}/bin:${PATH}" \
   POLL_SECONDS=0 \
   "$WAIT")
 
-grep -q -- 'api repos/vm0-ai/vm0/actions/artifacts?name=runner-image-manifest-aarch64-unknown-linux-musl-build-sha-pr-123&per_page=100 --include' "${TMPDIR}/gh-args.log" || fail "expected artifact lookup by exact name"
+grep -q -- 'api repos/example/runner-images/actions/artifacts?name=runner-image-manifest-aarch64-unknown-linux-musl-build-sha-pr-123&per_page=100 --include' "${TMPDIR}/gh-args.log" || fail "expected artifact lookup by exact name in GITHUB_REPOSITORY"
 if grep -q -- '/actions/workflows/' "${TMPDIR}/gh-args.log"; then
   fail "expected artifact-first path to skip producer lookup after artifact is found"
 fi
@@ -221,7 +222,8 @@ out=$(PATH="${TMPDIR}/bin:${PATH}" \
   GH_ARGS_LOG="${TMPDIR}/gh-args.log" \
   FAKE_MANIFEST="${TMPDIR}/manifest-x86.json" \
   EXPECTED_ARTIFACT_NAME=runner-image-manifest-x86_64-unknown-linux-musl-build-sha-pr-123 \
-  REPO=vm0-ai/vm0 \
+  GITHUB_REPOSITORY= \
+  REPO=example/runner-images \
   HEAD_SHA=build-sha \
   LOOKUP_SHA=head-sha \
   JOB_REF=pr-123 \
@@ -231,7 +233,7 @@ out=$(PATH="${TMPDIR}/bin:${PATH}" \
   OUTPUT_DIR="${TMPDIR}/out-x86" \
   POLL_SECONDS=0 \
   "$WAIT")
-grep -q -- 'api repos/vm0-ai/vm0/actions/artifacts?name=runner-image-manifest-x86_64-unknown-linux-musl-build-sha-pr-123&per_page=100 --include' "${TMPDIR}/gh-args.log" || fail "expected x86 artifact lookup by exact name"
+grep -q -- 'api repos/example/runner-images/actions/artifacts?name=runner-image-manifest-x86_64-unknown-linux-musl-build-sha-pr-123&per_page=100 --include' "${TMPDIR}/gh-args.log" || fail "expected x86 artifact lookup by exact name in REPO"
 grep -q -- 'run download 42 -n runner-image-manifest-x86_64-unknown-linux-musl-build-sha-pr-123' "${TMPDIR}/gh-args.log" || fail "expected x86 artifact download by exact name"
 grep -qxF 'producer-run-id=42' <<<"$out" || fail "expected x86 producer-run-id output"
 
@@ -239,7 +241,7 @@ grep -qxF 'producer-run-id=42' <<<"$out" || fail "expected x86 producer-run-id o
 if PATH="${TMPDIR}/bin:${PATH}" \
   GH_ARGS_LOG="${TMPDIR}/gh-args.log" \
   FAKE_MANIFEST="${TMPDIR}/manifest.json" \
-  REPO=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=example/runner-images \
   HEAD_SHA=build-sha \
   LOOKUP_SHA=head-sha \
   JOB_REF=pr-123 \
@@ -259,7 +261,7 @@ if PATH="${TMPDIR}/bin:${PATH}" \
   GH_ARGS_LOG="${TMPDIR}/gh-args.log" \
   FAKE_MODE=failed-run \
   EXPECTED_ARTIFACT_NAME=runner-image-manifest-aarch64-unknown-linux-musl-build-sha-pr-123 \
-  REPO=vm0-ai/vm0 \
+  GITHUB_REPOSITORY=example/runner-images \
   HEAD_SHA=build-sha \
   LOOKUP_SHA=head-sha \
   JOB_REF=pr-123 \
@@ -282,7 +284,7 @@ run_wait() {
     GH_ARGS_LOG="${TMPDIR}/gh-args.log" \
     FAKE_MANIFEST="${TMPDIR}/manifest.json" \
     EXPECTED_ARTIFACT_NAME=runner-image-manifest-aarch64-unknown-linux-musl-build-sha-pr-123 \
-    REPO=vm0-ai/vm0 HEAD_SHA=build-sha LOOKUP_SHA=head-sha JOB_REF=pr-123 \
+    GITHUB_REPOSITORY=example/runner-images HEAD_SHA=build-sha LOOKUP_SHA=head-sha JOB_REF=pr-123 \
     METAL_HOSTS=dev-1 TARGET=aarch64-unknown-linux-musl PROFILE=vm0/default \
     OUTPUT_DIR="${TMPDIR}/out" "$@" "$WAIT" >"${TMPDIR}/case.out" 2>"${TMPDIR}/case.err"
 }

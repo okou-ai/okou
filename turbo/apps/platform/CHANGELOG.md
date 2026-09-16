@@ -11,6 +11,50 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.902.3](https://github.com/vm0-ai/okou/compare/app-v0.902.2...app-v0.902.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* **platform:** restore awaitable first page content boundary ([#34454](https://github.com/vm0-ai/okou/issues/34454)) ([abf0c90](https://github.com/vm0-ai/okou/commit/abf0c90d9a82dd9475bcb52fc03968ab87c4862c))
+
+
+### Refactoring
+
+* centralize mermaid rendering and remove fixed checkout paths ([#33878](https://github.com/vm0-ai/okou/issues/33878)) ([4e455ca](https://github.com/vm0-ai/okou/commit/4e455ca9e07705d9be5640e6b07c07fffe2ec5eb))
+* fold session output streaming into piloop ([#34445](https://github.com/vm0-ai/okou/issues/34445)) ([9a641d1](https://github.com/vm0-ai/okou/commit/9a641d19a9776261fd549d21fbe225e08d3ad3df))
+* **platform:** clarify chat thread event source semantics ([#34418](https://github.com/vm0-ai/okou/issues/34418)) ([fbededc](https://github.com/vm0-ai/okou/commit/fbededc38266747f4c75e01102b84815d4c7f0ec))
+* **platform:** separate background loop startup from completion ([#34399](https://github.com/vm0-ai/okou/issues/34399)) ([8bf690c](https://github.com/vm0-ai/okou/commit/8bf690c29c8488f6c4f3987b1885718ee68a28d2))
+* remove expired deployment compatibility ([#34452](https://github.com/vm0-ai/okou/issues/34452)) ([669012a](https://github.com/vm0-ai/okou/commit/669012a4802f76decbe32f881add2bad5bf07566))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.1
+    * @okouai/core bumped to 8.667.1
+
+## [0.902.2](https://github.com/vm0-ai/vm0/compare/app-v0.902.1...app-v0.902.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **app:** clear replaced replies from share selection ([#34406](https://github.com/vm0-ai/vm0/issues/34406)) ([cd3f756](https://github.com/vm0-ai/vm0/commit/cd3f756a99b03ce5f5ba88629e52b321fb7353d7))
+* keep mermaid diagrams white across app themes ([#34410](https://github.com/vm0-ai/vm0/issues/34410)) ([0d60752](https://github.com/vm0-ai/vm0/commit/0d6075230195f1e52804f6eaed37ecfd01552a81))
+
+
+### Refactoring
+
+* **app:** delete the dead desktop shell selection rules ([#34388](https://github.com/vm0-ai/vm0/issues/34388)) ([3f72de6](https://github.com/vm0-ai/vm0/commit/3f72de62f13ed4cdfb259502a97a787bcbdae5ef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.667.0
+
 ## [0.902.1](https://github.com/vm0-ai/vm0/compare/app-v0.902.0...app-v0.902.1) (2026-09-15)
 
 

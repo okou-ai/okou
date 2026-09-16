@@ -1,5 +1,6 @@
 /* eslint-disable no-restricted-imports, no-restricted-syntax -- #34243 intentionally ships no API producer. Immutable H1 publication, cross-process waiting, captured credentials, private maintenance expiry and locked-transaction races cannot be created through production endpoints until #34244. Fixtures own these infrastructure states; actual Runner poll/claim/chunk/release and legacy create/cancel endpoints verify external execution behavior. */
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
+import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { modelProviderSurfaces } from "@okouai/db/schema/model-provider-gateway";
@@ -455,7 +456,7 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     });
   }, 45_000);
 
-  it("rejects unadmitted demand and stale or ambiguous publication without preparing an environment", async () => {
+  it("rejects unadmitted untouched-H0 demand without preparing an environment", async () => {
     const f = await fixture({ publish: false });
     await db()
       .update(agentRunInference)
@@ -491,6 +492,70 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         .from(runnerJobQueue)
         .where(eq(runnerJobQueue.runId, f.runId)),
     ).resolves.toStrictEqual([]);
+  }, 45_000);
+
+  it("fences a blocked materializer after durable recovery publishes a newer generation", async () => {
+    const f = await fixture({ storage: true });
+    const mount = f.capturedMount;
+    if (!mount) {
+      throw new Error("Missing captured Storage");
+    }
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    let blocked = false;
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      async (_client: unknown, command: unknown) => {
+        if (
+          !blocked &&
+          command instanceof GetObjectCommand &&
+          command.input.Key?.includes(mount.storageId)
+        ) {
+          blocked = true;
+          entered.resolve();
+          await release.promise;
+        }
+        return apiTestS3PresignedUrl(command);
+      },
+    );
+    const previous = createStore().set(
+      consumeDeferredPiRun$,
+      f.runId,
+      context.signal,
+    );
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+      await previous;
+    });
+    await entered.promise;
+    await accept(claim(f.runId, true, randomUUID()), [404]);
+    // Expiry is an infrastructure fixture; the original worker is still alive
+    // outside the transaction, blocked at the real storage signing boundary.
+    await db()
+      .update(agentRunSandboxLease)
+      .set({ deadlineAt: new Date(0) })
+      .where(eq(agentRunSandboxLease.runId, f.runId));
+    await createStore().set(recoverDeferredPiRuns$, [f.runId], context.signal);
+    await expect(
+      createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
+    ).resolves.toBeTruthy();
+    release.resolve();
+    await expect(previous).resolves.toBeFalsy();
+    await expect(
+      createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
+    ).resolves.toBeFalsy();
+    const runnerId = randomUUID();
+    const result = await accept(claim(f.runId, true, runnerId), [200]);
+    expect(result.body.apiStartTime).toBe(f.apiStartedAt.getTime());
+    expect(result.body.piSessionId).toBe(f.threadId);
+    expect(result.body.piLaunchConfig?.apiFirstTurn).toMatchObject({
+      schemaVersion: 2,
+      ownerEpoch: 4,
+      generation: 2,
+      continuation: { mode: "pending-tools", pendingToolIds: ["tool-1"] },
+    });
+    await accept(claim(f.runId, true, runnerId), [404]);
   }, 45_000);
 
   it("serializes demand fairly, holds expired claimed capacity and releases only with the exact proof", async () => {
@@ -762,6 +827,44 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     );
     expect(wireMount?.writeback ?? false).toBeFalsy();
     expect(wireMount?.archiveUrl).toContain(mount.version);
+  }, 45_000);
+
+  it("rejects a missing captured Storage mount snapshot without consuming the ready job", async () => {
+    const f = await fixture({ storage: true });
+    const mount = f.capturedMount;
+    if (!mount) {
+      throw new Error("Missing captured Storage");
+    }
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (_client: unknown, command: unknown) => {
+        return Promise.resolve(apiTestS3PresignedUrl(command));
+      },
+    );
+    await createStore().set(consumeDeferredPiRun$, f.runId, context.signal);
+    const [published] = await db()
+      .select({ mounts: agentRuns.storageMounts })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, f.runId));
+    if (!published?.mounts) {
+      throw new Error("Missing published Storage mount snapshot");
+    }
+    // A ready v4 writer always stores an array. Only an infrastructure fixture
+    // can represent loss of this required captured authorization metadata.
+    await db()
+      .update(agentRuns)
+      .set({ storageMounts: null })
+      .where(eq(agentRuns.id, f.runId));
+    const runnerId = randomUUID();
+    await accept(claim(f.runId, true, runnerId), [500]);
+    await db()
+      .update(agentRuns)
+      .set({ storageMounts: published.mounts })
+      .where(eq(agentRuns.id, f.runId));
+    const result = await accept(claim(f.runId, true, runnerId), [200]);
+    expect(result.body.storageManifest?.storageMounts).toContainEqual(
+      expect.objectContaining({ mountPath: mount.mountPath }),
+    );
+    expect(result.body.apiStartTime).toBe(f.apiStartedAt.getTime());
   }, 45_000);
 
   it("rechecks the real private maintenance lease after the claim waits on its row", async () => {

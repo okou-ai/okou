@@ -90,6 +90,25 @@ cleanup_spoof_address() {
   SPOOF_IP=""
 }
 
+check_dns_isolation_peer() {
+  local family=$1 address=$2 output
+  if output=$(sudo ip netns exec "$DNS_ISOLATION_NS" \
+    ping "-$family" -c 1 -W 1 "$address" 2>&1); then
+    return
+  fi
+
+  # Preserve the failed probe and its network state before teardown removes the
+  # fixture. A later service stop is not evidence of the original failure.
+  printf '%s\n' "$output"
+  sudo ip -details address show dev "$DNS_ISOLATION_HOST_IF" || true
+  sudo ip -n "$DNS_ISOLATION_NS" -details address show || true
+  sudo ip -n "$DNS_ISOLATION_NS" "-$family" route get "$address" || true
+  sudo ip -n "$DNS_ISOLATION_NS" "-$family" neighbour show || true
+  sudo iptables-save -c -t filter || true
+  sudo ip6tables-save -c -t filter || true
+  fail "temporary non-runner veth cannot reach its IPv${family} host peer"
+}
+
 cleanup_pool_lock_guard() {
   if [ -n "$POOL_LOCK_PUBLISH_RELEASE" ]; then
     touch "$POOL_LOCK_PUBLISH_RELEASE" 2>/dev/null || true
@@ -2149,12 +2168,8 @@ sudo ip -n "$DNS_ISOLATION_NS" -6 address add \
   "${DNS_ISOLATION_PEER_IPV6}/64" dev "$DNS_ISOLATION_PEER_IF" nodad
 sudo ip -n "$DNS_ISOLATION_NS" link set lo up
 sudo ip -n "$DNS_ISOLATION_NS" link set "$DNS_ISOLATION_PEER_IF" up
-sudo ip netns exec "$DNS_ISOLATION_NS" \
-  ping -c 1 -W 1 "$DNS_ISOLATION_HOST_IP" >/dev/null \
-  || fail "temporary non-runner veth cannot reach its host peer"
-sudo ip netns exec "$DNS_ISOLATION_NS" \
-  ping -6 -c 1 -W 1 "$DNS_ISOLATION_HOST_IPV6" >/dev/null \
-  || fail "temporary non-runner veth cannot reach its IPv6 host peer"
+check_dns_isolation_peer 4 "$DNS_ISOLATION_HOST_IP"
+check_dns_isolation_peer 6 "$DNS_ISOLATION_HOST_IPV6"
 
 if ! sudo ip netns exec "$DNS_ISOLATION_NS" \
   python3 - "$DNS_ISOLATION_HOST_IP" "$DNS_ISOLATION_HOST_IPV6" "$DNS_PORT" <<'PY'

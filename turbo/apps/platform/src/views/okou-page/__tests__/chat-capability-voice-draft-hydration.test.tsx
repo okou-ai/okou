@@ -8,7 +8,7 @@ import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, startPage } from "../../../__tests__/page-helper.ts";
 import {
   draftPlainText,
   textContinuityDraft,
@@ -106,7 +106,7 @@ test.each([
       });
     });
 
-    await setupPage({
+    const page = await startPage({
       locale: "en-US",
       context,
       path,
@@ -132,6 +132,7 @@ test.each([
       click(await findEnabledButton("Retry"));
     }
     hydrationReady.resolve();
+    await page.ready;
     await findEnabledButton("Send");
     await waitFor(() => {
       const savedText = draftPlainText(persistedDraft.draftUserMessage);
