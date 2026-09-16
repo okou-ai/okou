@@ -32,6 +32,7 @@
  * - no-get-by-role-name: Avoid *ByRole(role, { name }) for text-content roles — causes ~300ms/call slowdown in happy-dom
  * - no-react-class-component: Disallow React class components — use function components with hooks
  * - prefer-ui-components: Disallow raw button/input/textarea styled like a @okouai/ui component
+ * - menu-row-height: Disallow caller-owned row height on shared menu/select rows
  */
 
 import signalDollarSuffix from "./rules/signal-dollar-suffix.ts";
@@ -73,6 +74,7 @@ import noDuplicateRouteParam from "./rules/no-duplicate-route-param.ts";
 import noMockApiRawAsync from "./rules/no-mockapi-raw-async.ts";
 import noReactClassComponent from "./rules/no-react-class-component.ts";
 import preferUiComponents from "./rules/prefer-ui-components.ts";
+import menuRowHeight from "./rules/menu-row-height.ts";
 
 const plugin = {
   meta: {
@@ -119,6 +121,7 @@ const plugin = {
     "no-mockapi-raw-async": noMockApiRawAsync,
     "no-react-class-component": noReactClassComponent,
     "prefer-ui-components": preferUiComponents,
+    "menu-row-height": menuRowHeight,
   },
 };
 

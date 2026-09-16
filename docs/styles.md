@@ -18,6 +18,7 @@ Building something:
 | Drawing a border, a rule or a separator                   | The hairline tokens in [Sources of truth](#sources-of-truth), then [Horizontal hairline rules](#horizontal-hairline-rules) or [The all-round hairline](#the-all-round-hairline) |
 | Building a card, panel or page surface                    | [Page surfaces](#page-surfaces)                                                                                                                                                 |
 | Building a badge, tag or chip                             | [Inline badges](#inline-badges)                                                                                                                                                 |
+| Building a dropdown, menu or select row                   | [Menu and select rows](#menu-and-select-rows)                                                                                                                                   |
 | Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
 | Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
 | Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
@@ -326,6 +327,34 @@ queue drawer's cards, the mail draft card, the onboarding pickers, and the
 composer variant. They are not a supported API for a new surface; reach for
 `surfaceVariants` instead. The chat transcript card reads its own
 `--okou-chat-card-*` siblings.
+
+### Menu and select rows
+
+Every popup list draws one row height: 36px, the same figure `Button` ships as
+its default size and `IconButton` ships as its square. `DropdownMenuItem`,
+`DropdownMenuSubTrigger` and `SelectItem` own it as `min-h-9 py-1.5 text-sm`. It
+is a floor rather than a fixed height so a row whose label wraps or whose child
+is taller than the line box grows instead of clipping, and a floor rather than
+padding alone because padding expresses the height only in terms of the line
+box: a caller passing `text-xs` would quietly draw a 32px row. A bespoke row
+built on `Button` inherits the same 36px from `size="default"`; the model
+picker's lists state it as `h-9` because each row is a fixed single line inside
+a scroller.
+
+Callers own the content, the icons and the horizontal rhythm — `px-*` and
+`gap-*` stay adjustable, and a wide menu with avatars legitimately runs `px-3`.
+Callers do not restate the height. `py-*` and `h-*` on one of those components
+fork the row, which is what left the composer's `+` menu at 32px, the account
+and workspace menus at 40px, the subscriptions reset action at 28px, and the
+model picker beside them at 36px. `ccstate/menu-row-height` fails the build on
+those utilities; `min-h-*` stays available to raise the floor for a deliberate
+touch target, and the chat thread header's actions keep `min-h-11` on that
+basis.
+
+Two-line rows are a different control, not a taller menu row. The model picker's
+type rail and its current-model rows pair a label with a summary line and state
+their own `h-11` and `h-12`; they sit outside this contract because they are not
+single-line list rows.
 
 ### Inline badges
 

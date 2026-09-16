@@ -65,7 +65,7 @@ function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {
     <>
       <DropdownMenuSeparator />
       <DropdownMenuModalItem
-        className="gap-3 px-3 py-2.5"
+        className="gap-3 px-3"
         onModalSelect={openCredits}
         data-testid="growth-credits"
       >
@@ -171,7 +171,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
 
       <DropdownMenuContent align="end" className="w-[268px]">
         <DropdownMenuItem
-          className="gap-3 px-3 py-2.5"
+          className="gap-3 px-3"
           onClick={openWorks}
           data-testid="growth-slack"
         >
@@ -202,7 +202,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
           )}
         </DropdownMenuItem>
 
-        <DropdownMenuItem className="gap-3 px-3 py-2.5" onClick={openWorks}>
+        <DropdownMenuItem className="gap-3 px-3" onClick={openWorks}>
           <img src={telegramIconImg} alt="" className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate">
             {t(($) => {
@@ -214,7 +214,7 @@ function GrowthEntry({ slackInstalled }: { slackInstalled: boolean }) {
         <DropdownMenuSeparator />
 
         <DropdownMenuModalItem
-          className="gap-3 px-3 py-2.5"
+          className="gap-3 px-3"
           onModalSelect={openInvite}
           data-testid="growth-invite"
         >

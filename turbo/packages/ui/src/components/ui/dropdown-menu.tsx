@@ -154,6 +154,20 @@ interface DropdownMenuItemProps extends Omit<
   onSelect?: (event: Event) => void;
 }
 
+/**
+ * The app's 36px row: the same height `Button` ships as its default size and
+ * `IconButton` ships as its square. Hand-rolling it at the call site is what
+ * left the composer's `+` menu at 32px, the account and workspace menus at
+ * 40px, and the model picker beside them at 36px.
+ *
+ * A floor rather than `h-9`, so a row whose label wraps or whose child is
+ * taller than the line box grows instead of clipping. A floor rather than
+ * padding alone, because padding sets the height only in terms of the line box:
+ * one caller passing `text-xs` would quietly draw a 32px row and the menu would
+ * fork again. `py-1.5` is what the row breathes by once it does exceed 36px.
+ */
+const MENU_ROW_HEIGHT_CLASS = "min-h-9 py-1.5 text-sm";
+
 const DropdownMenuItem = React.forwardRef<HTMLElement, DropdownMenuItemProps>(
   ({ className, onClick, onSelect, ...props }, ref) => {
     return (
@@ -161,7 +175,8 @@ const DropdownMenuItem = React.forwardRef<HTMLElement, DropdownMenuItemProps>(
         ref={ref}
         data-slot="dropdown-menu-item"
         className={cn(
-          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          "relative flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none transition-colors hover:bg-state-hover data-highlighted:bg-state-hover data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+          MENU_ROW_HEIGHT_CLASS,
           className,
         )}
         onClick={(event) => {
@@ -205,7 +220,8 @@ const DropdownMenuSubTrigger = React.forwardRef<
       ref={ref}
       data-slot="dropdown-menu-sub-trigger"
       className={cn(
-        "flex cursor-default select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm outline-none hover:bg-state-hover data-highlighted:bg-state-hover data-popup-open:bg-state-hover [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        "flex cursor-default select-none items-center gap-2 rounded-lg px-2 outline-none hover:bg-state-hover data-highlighted:bg-state-hover data-popup-open:bg-state-hover [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        MENU_ROW_HEIGHT_CLASS,
         className,
       )}
       {...props}

@@ -339,7 +339,9 @@ const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
         ref={ref}
         data-slot="select-item"
         className={cn(
-          "relative flex w-full cursor-pointer select-none items-center rounded-lg py-1.5 pl-2 pr-8 text-sm outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
+          // `min-h-9 py-1.5 text-sm` is the shared 36px popup row; the reasoning
+          // for the floor lives on `MENU_ROW_HEIGHT_CLASS` in dropdown-menu.tsx.
+          "relative flex min-h-9 w-full cursor-pointer select-none items-center rounded-lg py-1.5 pl-2 pr-8 text-sm outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
           className,
         )}
         {...props}
