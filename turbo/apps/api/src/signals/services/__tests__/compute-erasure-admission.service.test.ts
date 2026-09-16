@@ -831,6 +831,76 @@ describe("actual compute transactions versus the B1 projector", () => {
     ).resolves.toStrictEqual([{ status: "pending" }]);
   });
 
+  it("rechecks a changed session owner against closure before claiming", async () => {
+    const w = await writerFixture("claim");
+    if (!w.runId) {
+      throw new Error("Missing synthetic run");
+    }
+    const runId = w.runId;
+    const [run] = await db
+      .select({ sessionId: agentRuns.sessionId })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId));
+    if (!run) {
+      throw new Error("Missing synthetic session");
+    }
+    const nextOwner = `synthetic-session-owner-${randomUUID()}`;
+    await close(decision(nextOwner));
+    const held = await holdBusinessRow(
+      (tx) => {
+        return tx
+          .select({ id: agentSessions.id })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, run.sessionId))
+          .for("update");
+      },
+      (tx) => {
+        return tx
+          .update(agentSessions)
+          .set({ userId: nextOwner })
+          .where(eq(agentSessions.id, run.sessionId));
+      },
+    );
+    const writing = settle(w.invoke());
+    await waitForBlockedBy(held.pid);
+    await held.release();
+    await expect(writing).resolves.toMatchObject({
+      ok: true,
+      value: { status: 404 },
+    });
+    await expect(
+      db
+        .select({ status: agentRuns.status, error: agentRuns.error })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runId)),
+    ).resolves.toStrictEqual([
+      { status: "cancelled", error: COMPUTE_CLOSURE_ERROR },
+    ]);
+  });
+
+  it("does not claim a resource deleted after its initial ownership read", async () => {
+    const w = await writerFixture("claim");
+    const held = await holdBusinessRow(
+      (tx) => {
+        return tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, w.f.agentId))
+          .for("update");
+      },
+      (tx) => {
+        return tx.delete(agents).where(eq(agents.id, w.f.agentId));
+      },
+    );
+    const writing = settle(w.invoke());
+    await waitForBlockedBy(held.pid);
+    await held.release();
+    await expect(writing).resolves.toMatchObject({
+      ok: true,
+      value: { status: 404 },
+    });
+  });
+
   it("preserves subject domains and does not require the optional users registry", async () => {
     const f = await fixture();
     await db.delete(users).where(eq(users.id, f.actor.userId));
