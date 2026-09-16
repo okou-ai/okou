@@ -119,9 +119,16 @@ test("unavailable artifacts recover access with readable actions that follow the
     await expect(control).toBeChecked();
     await expect(control).toBeEnabled();
   }
-  await expect(page.locator("html")).toHaveAttribute(
+  // Enabling the capability does not tint the document on its own: a workspace
+  // starts on the default palette, which is the absence of both palette
+  // attributes. The loop below asserts each preset's attributes once selected.
+  await expect(page.locator("html")).not.toHaveAttribute(
     "data-gradient-color-themes",
     "",
+  );
+  await expect(page.locator("html")).not.toHaveAttribute(
+    "data-color-theme",
+    /.*/u,
   );
 
   // A fresh, valid reference exercises the resolver's real unavailable response
