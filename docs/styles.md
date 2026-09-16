@@ -280,6 +280,41 @@ Business code must import the shared dialog rather than Base UI's dialog
 primitives; ESLint enforces this boundary. Preserve Base UI's focus, nested
 portal, outside-press, and animation-completion ownership when changing it.
 
+### Chat transcript cards
+
+`ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
+owns the surface shared by transcript notice cards, action cards and media
+frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
+element with `render` and gets no wrapper. It is App-owned rather than shared,
+because its radius and shadow read the App-only `--okou-chat-card-*` variables,
+which the App stylesheet declares at `:root`.
+
+The border is deliberately `border-[1px] border-gray-400` rather than the shared
+`border` hairline and a semantic border token. A fractional border visibly
+repaints when card contents resolve, so a card would flicker at its edge as an
+image or an iframe lands; a whole pixel does not. Unifying the transcript's
+border width and colour with the rest of the product is a separate visual
+decision.
+
+`cn()` merges the base with the caller's `className`, so a conflicting base
+utility is dropped rather than outranked and no layer ordering is involved. The
+browser session card's hover and selected borders rely on this.
+
+The radius and shadow use `rounded-[var(…)]` and `shadow-[var(…)]`, matching the
+call sites that read the page-level `--okou-card-*` siblings the same way.
+Tailwind's shadow utility composes `--tw-shadow`, so the serialized `box-shadow`
+carries four fully transparent placeholders; the painted result is unaffected,
+and a comparison should normalize them away rather than treat the string as the
+contract. One consequence is that `tailwind-merge` cannot classify an arbitrary
+`shadow-[var(…)]` as a box-shadow and so will not drop it for a caller's own
+`shadow-*`. No consumer overrides the shadow today. Registering `@theme` tokens
+and a named `shadow-*` scale in `cn()` would restore that, and is the documented
+route if a consumer ever needs it.
+
+Giving the artifact preview a card surface is a separate visual decision: its
+container currently has no card treatment, and adopting the shared base there
+would change its appearance substantially.
+
 ## Cross-cutting rules
 
 These apply wherever the situation comes up, not only to the surface that first
@@ -900,41 +935,6 @@ The check has three layers:
 CI runs this as the independent required `lint-style` job. The pre-commit hook runs the fast repository policy so the most actionable boundary failures are returned before push. Both policy diagnostics and the full lint command's failure output direct contributors to `docs/styles.md` for the style guide. The full command keeps a failing exit status for policy, CSS, Tailwind, or test failures.
 
 When a style check fails, read this guide and replace business styling with the appropriate Tailwind utilities and registered tokens. Prune the baseline when legacy code has been removed. Do not suppress the check or add a business styling exception to make it pass.
-
-### Chat transcript cards
-
-`ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
-owns the surface shared by transcript notice cards, action cards and media
-frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
-element with `render` and gets no wrapper. It is App-owned rather than shared,
-because its radius and shadow read the App-only `--okou-chat-card-*` variables,
-which the App stylesheet declares at `:root`.
-
-The border is deliberately `border-[1px] border-gray-400` rather than the shared
-`border` hairline and a semantic border token. A fractional border visibly
-repaints when card contents resolve, so a card would flicker at its edge as an
-image or an iframe lands; a whole pixel does not. Unifying the transcript's
-border width and colour with the rest of the product is a separate visual
-decision.
-
-`cn()` merges the base with the caller's `className`, so a conflicting base
-utility is dropped rather than outranked and no layer ordering is involved. The
-browser session card's hover and selected borders rely on this.
-
-The radius and shadow use `rounded-[var(…)]` and `shadow-[var(…)]`, matching the
-call sites that read the page-level `--okou-card-*` siblings the same way.
-Tailwind's shadow utility composes `--tw-shadow`, so the serialized `box-shadow`
-carries four fully transparent placeholders; the painted result is unaffected,
-and a comparison should normalize them away rather than treat the string as the
-contract. One consequence is that `tailwind-merge` cannot classify an arbitrary
-`shadow-[var(…)]` as a box-shadow and so will not drop it for a caller's own
-`shadow-*`. No consumer overrides the shadow today. Registering `@theme` tokens
-and a named `shadow-*` scale in `cn()` would restore that, and is the documented
-route if a consumer ever needs it.
-
-Giving the artifact preview a card surface is a separate visual decision: its
-container currently has no card treatment, and adopting the shared base there
-would change its appearance substantially.
 
 ## App palette previews
 
