@@ -18,19 +18,14 @@ import {
   PopoverClose,
   PopoverContent,
   PopoverTrigger,
+  Skeleton,
   cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
-  artifactShareDetails$,
-  artifactShareRequest$,
-  changeArtifactAudience$,
-  closeArtifactShare$,
-  copyArtifactShare$,
-  openArtifactShare$,
-  refreshArtifactShare$,
+  getArtifactShareScope,
+  type ArtifactShareSession,
 } from "../../signals/artifact-sharing.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 function navigatePermissions(event: KeyboardEvent<HTMLDivElement>) {
@@ -74,12 +69,12 @@ function navigatePermissions(event: KeyboardEvent<HTMLDivElement>) {
 function PermissionChoices({
   selected,
   organizationName,
-  disabled,
+  saving,
   onChange,
 }: {
   readonly selected: ArtifactShareStatus["audience"] | undefined;
   readonly organizationName: string;
-  readonly disabled: boolean;
+  readonly saving: boolean;
   readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
 }) {
   const { t } = useTranslation();
@@ -137,9 +132,9 @@ function PermissionChoices({
             role="radio"
             aria-checked={selected === audience}
             tabIndex={selected === audience ? 0 : -1}
-            disabled={disabled}
+            aria-busy={selected === audience && saving}
             className={cn(
-              "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-state-hover disabled:pointer-events-none disabled:opacity-60",
+              "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-state-hover",
               selected === audience && "bg-state-hover",
             )}
             onClick={() => {
@@ -153,7 +148,12 @@ function PermissionChoices({
                 {description}
               </span>
             </span>
-            {selected === audience && <Check size={16} className="shrink-0" />}
+            {selected === audience &&
+              (saving ? (
+                <Loader2 size={16} className="shrink-0 animate-spin" />
+              ) : (
+                <Check size={16} className="shrink-0" />
+              ))}
           </button>
         );
       })}
@@ -164,14 +164,14 @@ function PermissionChoices({
 function ShareFooter({
   saving,
   failed,
-  busy,
+  copying,
   ready,
   onRetry,
   onCopy,
 }: {
   readonly saving: boolean;
   readonly failed: boolean;
-  readonly busy: boolean;
+  readonly copying: boolean;
   readonly ready: boolean;
   readonly onRetry: () => void;
   readonly onCopy: () => void;
@@ -195,7 +195,6 @@ function ShareFooter({
       {failed ? (
         <Button
           size="sm"
-          disabled={busy}
           onClick={() => {
             return onRetry();
           }}
@@ -207,12 +206,16 @@ function ShareFooter({
       ) : (
         <Button
           size="sm"
-          disabled={busy || !ready}
+          disabled={copying || !ready}
           onClick={() => {
             return onCopy();
           }}
         >
-          <Copy size={14} />
+          {copying ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Copy size={14} />
+          )}
           {t(($) => {
             return $.artifacts.sharing.copyLink;
           })}
@@ -222,66 +225,78 @@ function ShareFooter({
   );
 }
 
-export function ArtifactShareMenu({
-  url,
-  surface,
-  copyUrl,
-  className,
-  iconSize = 16,
-  ariaLabel,
-}: {
-  readonly url: string;
-  readonly surface: "dialog" | "sidebar" | "viewer";
-  readonly copyUrl?: string;
+function ShareSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.artifacts.sharing.loadingPermissions;
+      })}
+      className="space-y-1"
+    >
+      {[0, 1, 2].map((index) => {
+        return (
+          <div key={index} className="flex items-center gap-3 px-3 py-3">
+            <Skeleton className="size-[18px] rounded" />
+            <div className="flex-1 space-y-2">
+              <Skeleton className="h-4 w-24 rounded" />
+              <Skeleton className="h-3 w-48 rounded" />
+            </div>
+          </div>
+        );
+      })}
+      <div className="flex justify-end border-t border-divider px-3 pb-2 pt-4">
+        <Skeleton className="h-8 w-28 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+interface ShareButtonProps {
   readonly className?: string;
   readonly iconSize?: number;
   readonly ariaLabel?: string;
-}) {
+}
+
+function ShareSessionMenu({
+  session,
+  className,
+  iconSize = 16,
+  ariaLabel,
+}: ShareButtonProps & { readonly session: ArtifactShareSession }) {
   const { t } = useTranslation();
-  // Each surface has one share action; distinguish the sidebar and its dialog.
-  const key = `${surface}:${url}`;
-  const signal = useGet(pageSignal$);
-  const request = useGet(artifactShareRequest$);
-  const loadable = useLoadable(artifactShareDetails$);
-  const last = useLastResolved(artifactShareDetails$);
-  const details =
-    last?.request === request && request?.key === key ? last : null;
-  const [opening, open] = useLoadableSet(openArtifactShare$);
-  const [saving, change] = useLoadableSet(changeArtifactAudience$);
-  const [copying, copy] = useLoadableSet(copyArtifactShare$);
-  const [refreshing, refresh] = useLoadableSet(refreshArtifactShare$);
-  const close = useSet(closeArtifactShare$);
-  const busy =
-    saving.state === "loading" ||
-    copying.state === "loading" ||
-    refreshing.state === "loading";
-  const ready = loadable.state === "hasData";
-  const status = details?.status;
+  // Subscribing as soon as the preview mounts preloads permissions before Share.
+  const loadable = useLoadable(session.details$);
+  const details = useLastResolved(session.details$);
+  const draft = useGet(session.draft$);
+  const requestedOpen = useGet(session.open$);
+  const signal = useGet(session.signal$);
+  const open = useSet(session.show$);
+  const close = useSet(session.close$);
+  const change = useSet(session.change$);
+  const refresh = useSet(session.refresh$);
+  const [copying, copy] = useLoadableSet(session.copy$);
   const title = t(($) => {
     return $.artifacts.actions.share;
   });
+  const recipient = loadable.state === "hasData" && !loadable.data?.status;
   return (
     <Popover
-      open={Boolean(status)}
+      open={requestedOpen && !recipient}
       onOpenChange={(next) => {
         if (next) {
-          detach(open({ key, url, copyUrl }, signal), Reason.DomCallback);
-        } else if (!busy) {
+          detach(open(signal), Reason.DomCallback);
+        } else {
           close();
         }
       }}
     >
       <PopoverTrigger
-        disabled={opening.state === "loading"}
-        aria-busy={opening.state === "loading"}
         aria-label={ariaLabel ?? title}
         render={<Button variant="quiet" size="icon-sm" className={className} />}
       >
-        {opening.state === "loading" ? (
-          <Loader2 size={iconSize} className="animate-spin" />
-        ) : (
-          <Share2 size={iconSize} />
-        )}
+        <Share2 size={iconSize} />
       </PopoverTrigger>
       <PopoverContent
         aria-label={title}
@@ -291,7 +306,6 @@ export function ArtifactShareMenu({
         <div className="flex items-center justify-between px-3 pb-2 pt-2">
           <h2 className="text-sm font-semibold">{title}</h2>
           <PopoverClose
-            disabled={busy}
             aria-label={t(($) => {
               return $.artifacts.actions.close;
             })}
@@ -300,27 +314,78 @@ export function ArtifactShareMenu({
             <X size={16} />
           </PopoverClose>
         </div>
-        <PermissionChoices
-          selected={details?.audience}
-          organizationName={status?.organization.name ?? ""}
-          disabled={busy || !ready}
-          onChange={(audience) => {
-            return detach(change(audience, signal), Reason.DomCallback);
-          }}
-        />
-        <ShareFooter
-          saving={saving.state === "loading"}
-          failed={loadable.state === "hasError"}
-          busy={busy}
-          ready={ready}
-          onRetry={() => {
-            return detach(refresh(signal), Reason.DomCallback);
-          }}
-          onCopy={() => {
-            return detach(copy(signal), Reason.DomCallback);
-          }}
-        />
+        {!details && loadable.state === "loading" ? (
+          <ShareSkeleton />
+        ) : (
+          <>
+            {details?.status && (
+              <PermissionChoices
+                selected={draft?.audience ?? details.audience}
+                organizationName={details.status.organization.name}
+                saving={draft !== null}
+                onChange={(audience) => {
+                  return detach(change(audience, signal), Reason.DomCallback);
+                }}
+              />
+            )}
+            <ShareFooter
+              saving={draft !== null}
+              failed={loadable.state === "hasError"}
+              copying={copying.state === "loading"}
+              ready={Boolean(details?.status)}
+              onRetry={() => {
+                return detach(refresh(signal), Reason.DomCallback);
+              }}
+              onCopy={() => {
+                return detach(copy(signal), Reason.DomCallback);
+              }}
+            />
+          </>
+        )}
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function ArtifactShareMenu({
+  url,
+  surface,
+  copyUrl,
+  ...buttonProps
+}: ShareButtonProps & {
+  readonly url: string;
+  readonly surface: "dialog" | "sidebar" | "viewer";
+  readonly copyUrl?: string;
+}) {
+  const { t } = useTranslation();
+  const scope = getArtifactShareScope(surface);
+  const session = useGet(scope.session$);
+  const mountRef = useSet(scope.mountRef$);
+  return (
+    <span
+      key={`${url}:${copyUrl ?? ""}`}
+      ref={mountRef}
+      data-share-url={url}
+      data-copy-url={copyUrl}
+      className="inline-flex"
+    >
+      {session ? (
+        <ShareSessionMenu session={session} {...buttonProps} />
+      ) : (
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          className={buttonProps.className}
+          aria-label={
+            buttonProps.ariaLabel ??
+            t(($) => {
+              return $.artifacts.actions.share;
+            })
+          }
+        >
+          <Share2 size={buttonProps.iconSize ?? 16} />
+        </Button>
+      )}
+    </span>
   );
 }

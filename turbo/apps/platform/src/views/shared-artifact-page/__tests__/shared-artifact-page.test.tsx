@@ -216,7 +216,8 @@ test.each([
     await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
       "original image bytes",
     );
-    expect(resolutions).toStrictEqual([reference, reference]);
+    // Preview, share-permission prefetch, and the explicit download each resolve.
+    expect(resolutions).toStrictEqual([reference, reference, reference]);
   },
 );
 

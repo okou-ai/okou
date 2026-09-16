@@ -96,6 +96,7 @@ function sharingStatus(
   audience: ArtifactShareStatus["audience"] = "private",
 ): ArtifactShareStatus {
   return {
+    ownerUrl: new URL(canonical, location.origin).href,
     shareId: audience === "private" ? null : shareId,
     audience,
     organization: { id: "org_test", name: "Acme" },
@@ -147,6 +148,8 @@ test("owners can change three access levels separately from copying the stable a
     "true",
   );
   expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([]);
   for (const [audience, name] of [
     ["organization", /Organization/],
     ["public", /Public access/],
@@ -157,6 +160,12 @@ test("owners can change three access levels separately from copying the stable a
       return expect(screen.getByRole("radio", { name })).toHaveAttribute(
         "aria-checked",
         "true",
+      );
+    });
+    await waitFor(() => {
+      return expect(screen.getByRole("radio", { name })).toHaveAttribute(
+        "aria-busy",
+        "false",
       );
     });
     expect(clipboard.writes).toHaveLength(changes.length - 1);
@@ -193,6 +202,7 @@ test("a recipient's share button copies directly without a permissions menu or m
   });
   expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   expect(screen.queryByText("Copy link")).not.toBeInTheDocument();
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
 });
 
 test("copying Only me does not create a share", async () => {
@@ -208,6 +218,45 @@ test("copying Only me does not create a share", async () => {
       new URL(canonical, location.origin).href,
     ]);
   });
+});
+
+test("owner copying uses the canonical version reference returned by the API", async () => {
+  const ownerUrl = "https://app.okou.ai/artifacts/a1b2c3d4e5.html";
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, {
+      ...sharingStatus("organization"),
+      ownerUrl,
+      shortUrl: organizationUrl,
+    });
+  });
+  await openArtifact();
+  await openShareMenu();
+  click(action("button", "Copy link"));
+  await waitFor(() => {
+    return expect(clipboard.writes).toStrictEqual([ownerUrl]);
+  });
+});
+
+test("an owner clipboard failure shows an error without changing access or claiming success", async () => {
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+    new DOMException("Clipboard denied", "NotAllowedError"),
+  );
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, sharingStatus("organization"));
+  });
+  await openArtifact();
+  await openShareMenu();
+  click(action("button", "Copy link"));
+  await expect(
+    screen.findByText("Failed to copy link"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: /Organization/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
 });
 
 test("failed permission saves retain the current audience and can be retried", async () => {
@@ -232,6 +281,7 @@ test("failed permission saves retain the current audience and can be retried", a
   await openShareMenu();
   click(screen.getByRole("radio", { name: /Only me/ }));
   await screen.findByText("Unable to save sharing");
+  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
   await waitFor(() => {
     return expect(
       screen.getByRole("radio", { name: /Organization/ }),
@@ -250,41 +300,170 @@ test("failed permission saves retain the current audience and can be retried", a
   });
 });
 
-test("pending status and saves cannot copy or show unsaved permissions", async () => {
+test("permissions prefetch on lightbox open and pending reads use an in-menu skeleton", async () => {
   const initial = context.mocks.deferred<ArtifactShareStatus>();
+  let reads = 0;
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
+    reads++;
+    return respond(200, await initial.promise);
+  });
+  await openArtifact();
+  await waitFor(() => {
+    return expect(reads).toBe(1);
+  });
+  expect(
+    screen.queryByRole("status", { name: "Loading permissions" }),
+  ).not.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([]);
+  click(action("button", "Share"));
+  await expect(
+    screen.findByRole("status", { name: "Loading permissions" }),
+  ).resolves.toBeInTheDocument();
+  expect(action("button", "Share")).not.toBeDisabled();
+  expect(action("button", "Share")).not.toHaveAttribute("aria-busy", "true");
+  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+  initial.resolve(sharingStatus());
+  await screen.findByRole("radio", { name: /Only me/ });
+  expect(reads).toBe(1);
+  expect(
+    screen.queryByRole("status", { name: "Loading permissions" }),
+  ).not.toBeInTheDocument();
+  click(action("button", "Copy link"));
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+});
+
+test("closing a pending share cancels copying and reopening reuses the prefetched permissions", async () => {
+  const initial = context.mocks.deferred<void>();
+  let reads = 0;
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
+    reads++;
+    await initial.promise;
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Artifact not found" },
+    });
+  });
+  await openArtifact();
+  click(action("button", "Share"));
+  await screen.findByRole("status", { name: "Loading permissions" });
+  const menu = screen.getByRole("dialog", { name: "Share" });
+  const close = queryAllByRoleFast("button", menu).find((button) => {
+    return button.getAttribute("aria-label") === "Close";
+  });
+  if (!close) {
+    throw new Error("Missing menu close action");
+  }
+  click(close);
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("dialog", { name: "Share" }),
+    ).not.toBeInTheDocument();
+  });
+  initial.resolve();
+  // Opening again explicitly copies; the cancelled click must not also copy.
+  click(action("button", "Share"));
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([
+    new URL(canonical, location.origin).href,
+  ]);
+  expect(reads).toBe(1);
+  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+});
+
+test("saving marks only the selected choice and reports success after the write", async () => {
   const saved = context.mocks.deferred<ArtifactShareStatus>();
   let status = sharingStatus();
-  let waiting = true;
-  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
-    return respond(200, waiting ? await initial.promise : status);
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, status);
   });
   context.mocks.api(artifactSharesContract.update, async ({ respond }) => {
     status = await saved.promise;
     return respond(200, status);
   });
   await openArtifact();
-  click(action("button", "Share"));
-  await waitFor(() => {
-    return expect(action("button", "Share")).toBeDisabled();
-  });
-  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-  waiting = false;
-  initial.resolve(status);
-  await screen.findByRole("radio", { name: /Only me/ });
+  await openShareMenu();
   click(screen.getByRole("radio", { name: /Public access/ }));
   await waitFor(() => {
-    return expect(action("button", "Copy link")).toBeDisabled();
+    return expect(
+      screen.getByRole("radio", { name: /Public access/ }),
+    ).toHaveAttribute("aria-busy", "true");
+  });
+  expect(screen.getByRole("radio", { name: /Public access/ })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  for (const choice of screen.getAllByRole("radio")) {
+    expect(choice).not.toBeDisabled();
+  }
+  expect(action("button", "Copy link")).not.toBeDisabled();
+  for (const close of queryAllByRoleFast("button").filter((button) => {
+    return button.getAttribute("aria-label") === "Close";
+  })) {
+    expect(close).not.toBeDisabled();
+  }
+  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
+  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+  saved.resolve(sharingStatus("public"));
+  await expect(
+    screen.findByText("Access updated"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: /Public access/ })).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+});
+
+test("rapid permission changes serialize writes and preserve the latest selection", async () => {
+  const first = context.mocks.deferred<void>();
+  const second = context.mocks.deferred<void>();
+  let status = sharingStatus();
+  const writes: string[] = [];
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(
+    artifactSharesContract.update,
+    async ({ body, respond }) => {
+      writes.push(body.audience);
+      await (writes.length === 1 ? first.promise : second.promise);
+      status = sharingStatus(body.audience);
+      return respond(200, status);
+    },
+  );
+  await openArtifact();
+  await openShareMenu();
+  click(screen.getByRole("radio", { name: /Public access/ }));
+  await waitFor(() => {
+    return expect(writes).toStrictEqual(["public"]);
+  });
+  click(screen.getByRole("radio", { name: /Organization/ }));
+  click(screen.getByRole("radio", { name: /Only me/ }));
+  await waitFor(() => {
+    return expect(
+      screen.getByRole("radio", { name: /Only me/ }),
+    ).toHaveAttribute("aria-busy", "true");
+  });
+  expect(writes).toStrictEqual(["public"]);
+  first.resolve();
+  await waitFor(() => {
+    return expect(writes).toStrictEqual(["public", "private"]);
   });
   expect(screen.getByRole("radio", { name: /Only me/ })).toHaveAttribute(
     "aria-checked",
     "true",
   );
-  saved.resolve(sharingStatus("public"));
-  await waitFor(() => {
-    return expect(
-      screen.getByRole("radio", { name: /Public access/ }),
-    ).toHaveAttribute("aria-checked", "true");
-  });
+  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
+  second.resolve();
+  await expect(
+    screen.findByText("Access updated"),
+  ).resolves.toBeInTheDocument();
+  expect(status.audience).toBe("private");
+  expect(screen.getByRole("radio", { name: /Only me/ })).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
 });
 
 test("status errors do not treat an owner as a recipient, and the action can be retried", async () => {
@@ -302,14 +481,17 @@ test("status errors do not treat an owner as a recipient, and the action can be 
   });
   await openArtifact();
   click(action("button", "Share"));
-  await screen.findByText("Permissions unavailable");
+  await screen.findByText("Unable to load permissions");
   await waitFor(() => {
     return expect(action("button", "Share")).not.toBeDisabled();
   });
   expect(clipboard.writes).toStrictEqual([]);
   expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   fail = false;
-  await openShareMenu();
+  click(action("button", "Retry"));
+  await expect(
+    screen.findByRole("radio", { name: /Only me/ }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("the shared rollout switch keeps the private share menu hidden", async () => {
