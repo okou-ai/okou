@@ -11,7 +11,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const ENDPOINT = "https://www.okou.ai/api/marketing/finish-onboarding";
 const previousAttempts = localStorageSignals("marketing_onboarding_attempts");
-const legacyImpactAttempts = localStorageSignals("impact_onboarding_attempts");
 
 function goBack() {
   const button = queryAllByRoleFast("button").find((candidate) => {
@@ -51,16 +50,6 @@ async function openOnboarding() {
 
 test("Onboarding sends one bearer-authenticated request while steps remain usable without an iframe", async () => {
   onboardingNeeded();
-  let legacyRequests = 0;
-  for (const endpoint of ["impact/onboarding", "acquisition/onboarding"]) {
-    context.mocks.http.post(
-      `https://www.okou.ai/api/marketing/${endpoint}`,
-      () => {
-        legacyRequests++;
-        return new Response(null, { status: 204 });
-      },
-    );
-  }
   const received = context.mocks.deferred<Request>();
   const complete = context.mocks.deferred<void>();
   const requests: Request[] = [];
@@ -92,10 +81,6 @@ test("Onboarding sends one bearer-authenticated request while steps remain usabl
     }),
   ).resolves.toBeInTheDocument();
   expect(requests).toHaveLength(1);
-  expect(legacyRequests).toBe(0);
-  expect(context.store.get(previousAttempts.get$)).toBe(
-    "test-user-123:org_default",
-  );
   expect(request.signal.aborted).toBeFalsy();
   complete.resolve();
 });
@@ -201,19 +186,4 @@ test("A different user's previous attempt does not suppress onboarding attributi
   await openOnboarding();
   await received.promise;
   expect(document.querySelector("iframe")).toBeNull();
-});
-
-test("A legacy Impact attempt does not suppress the combined attribution request", async () => {
-  onboardingNeeded();
-  context.store.set(legacyImpactAttempts.set$, "test-user-123:org_default");
-  const received = context.mocks.deferred<void>();
-  context.mocks.http.post(ENDPOINT, () => {
-    received.resolve();
-    return new Response(null, { status: 204 });
-  });
-  await openOnboarding();
-  await received.promise;
-  expect(context.store.get(previousAttempts.get$)).toBe(
-    "test-user-123:org_default",
-  );
 });

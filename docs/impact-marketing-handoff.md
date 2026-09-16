@@ -50,8 +50,9 @@ legacy admin requirement. New Apps send only finish-onboarding and no longer hav
 an acquisition Feature Switch. The shared `marketing_onboarding_attempts` marker
 replaces the previous Impact-only marker, which must not suppress storage for the
 additional consented categories. Marketing deduplicates repeated captures/events.
-Retire the legacy URL only after its browser and rollback clients leave the
-supported boundary.
+The owner confirmed Impact has not launched. Retire the legacy URL in the next
+Marketing release after both deployments are verified; cached Impact-only clients
+are outside that removal boundary.
 
 The earlier iframe cutover retired `/finish-onboarding`, the config endpoint,
 signed handoff APIs, identity proofs and nonce handling. Those older iframe clients
