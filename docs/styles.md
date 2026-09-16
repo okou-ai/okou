@@ -1,38 +1,86 @@
 # App style guide
 
-The App design system has one component-facing styling API: Tailwind utilities. Business components in `turbo/apps/platform` and shared components in `turbo/packages/ui` must compose utilities directly, normally through `className`, `cn()`, or `cva()`.
+The App design system has one component-facing styling API: Tailwind utilities.
+Business components in `turbo/apps/platform` and shared components in
+`turbo/packages/ui` must compose utilities directly, normally through
+`className`, `cn()`, or `cva()`.
 
-First-party CSS class selectors are not a second component API. New CSS modules, `<style>` elements, runtime stylesheet injection, and CSS-in-JS are subject to the same boundary because they otherwise bypass Tailwind and the token system.
+First-party CSS class selectors are not a second component API. New CSS modules,
+`<style>` elements, runtime stylesheet injection, and CSS-in-JS are subject to
+the same boundary because they otherwise bypass Tailwind and the token system.
 
 ## Where to look
 
-| You are doing this                              | Read                                                                                                                                                                            |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Drawing a border, a rule or a separator         | The hairline tokens in [Sources of truth](#sources-of-truth), then [Horizontal hairline rules](#horizontal-hairline-rules) or [The all-round hairline](#the-all-round-hairline) |
-| Building a card, panel or page surface          | [Page surfaces](#page-surfaces)                                                                                                                                                 |
-| Building a badge, tag or chip                   | [Inline badges](#inline-badges)                                                                                                                                                 |
-| Building a button or a select                   | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
-| Building a dialog, sheet or scrolling body      | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
-| Adding motion, or handling reduced motion       | [Animated layers](#animated-layers)                                                                                                                                             |
-| Styling on an ancestor's hover or focus         | [Ancestor state without the hover media query](#ancestor-state-without-the-hover-media-query)                                                                                   |
-| Reproducing an exact colour or gradient         | [Literal colours and gradients](#literal-colours-and-gradients)                                                                                                                 |
-| Drawing artwork rather than chrome              | [Illustration strokes](#illustration-strokes)                                                                                                                                   |
-| Choosing a page layout or covering the viewport | [Page layouts](#page-layouts)                                                                                                                                                   |
-| Adding a token or a variant                     | [Token and variant governance](#token-and-variant-governance)                                                                                                                   |
-| Adapting third-party or generated DOM           | [Exception boundary](#exception-boundary)                                                                                                                                       |
-| A style check failed                            | [Enforcement and feedback](#enforcement-and-feedback)                                                                                                                           |
+Building something:
+
+| You are doing this                                        | Read                                                                                                                                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Drawing a border, a rule or a separator                   | The hairline tokens in [Sources of truth](#sources-of-truth), then [Horizontal hairline rules](#horizontal-hairline-rules) or [The all-round hairline](#the-all-round-hairline) |
+| Building a card, panel or page surface                    | [Page surfaces](#page-surfaces)                                                                                                                                                 |
+| Building a badge, tag or chip                             | [Inline badges](#inline-badges)                                                                                                                                                 |
+| Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
+| Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
+| Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
+| Building the composer, or a surface that stands in for it | [The composer card surface](#the-composer-card-surface)                                                                                                                         |
+| Adding a scroll area                                      | [Chat scrollbars](#chat-scrollbars)                                                                                                                                             |
+| Adding motion, or handling reduced motion                 | [Animated layers](#animated-layers)                                                                                                                                             |
+| Styling on an ancestor's hover or focus                   | [Ancestor state without the hover media query](#ancestor-state-without-the-hover-media-query)                                                                                   |
+| Reproducing an exact color or gradient                    | [Literal colors and gradients](#literal-colors-and-gradients)                                                                                                                   |
+| Spacing a control against the top edge of its surface     | [Top-edge clearance](#top-edge-clearance)                                                                                                                                       |
+| Drawing artwork rather than chrome                        | [Illustration strokes](#illustration-strokes)                                                                                                                                   |
+| Choosing a page layout or covering the viewport           | [Page layouts](#page-layouts)                                                                                                                                                   |
+| Adding a token or a variant                               | [Token and variant governance](#token-and-variant-governance)                                                                                                                   |
+| Adapting third-party or generated DOM                     | [Exception boundary](#exception-boundary), [Third-party attribution of borrowed class names](#third-party-attribution-of-borrowed-class-names)                                  |
+| A style check failed                                      | [Enforcement and feedback](#enforcement-and-feedback)                                                                                                                           |
+
+Changing one of these surfaces — read its note first, because each one records a
+cascade or environment constraint that is not obvious from the markup:
+
+| Surface                                                   | Note                                                                                                                        |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Chat message bubble, or a Markdown frame inside one       | [Chat message bubbles](#chat-message-bubbles)                                                                               |
+| Chat thinking indicator, skeleton or shimmer              | [Chat thinking states](#chat-thinking-states)                                                                               |
+| Markdown card slot                                        | [Markdown card block spacing](#markdown-card-block-spacing)                                                                 |
+| Markdown code fence copy control                          | [The Markdown code-fence copy control](#the-markdown-code-fence-copy-control)                                               |
+| Mermaid diagram fallback                                  | [The Mermaid fallback fence](#the-mermaid-fallback-fence)                                                                   |
+| Toast                                                     | [Toast styling under an unlayered stylesheet](#toast-styling-under-an-unlayered-stylesheet)                                 |
+| Table header                                              | [Table header rules and the global scrollbar treatment](#table-header-rules-and-the-global-scrollbar-treatment)             |
+| Sidebar copy, nav rail or expanded drawer                 | [Sidebar copy and nav chrome under the gradient color themes](#sidebar-copy-and-nav-chrome-under-the-gradient-color-themes) |
+| Workspace pane background                                 | [The workspace canvas](#the-workspace-canvas)                                                                               |
+| Any card radius or shadow token                           | [Card geometry at the document root](#card-geometry-at-the-document-root)                                                   |
+| Mobile drawer, scrim or a fixed cover in a standalone PWA | [The standalone PWA fixed cover](#the-standalone-pwa-fixed-cover)                                                           |
+| Onboarding workflow diagram                               | [The onboarding workflow diagram canvas](#the-onboarding-workflow-diagram-canvas)                                           |
+| Color-theme preview swatch                                | [App palette previews](#app-palette-previews)                                                                               |
 
 ## Final state
 
-The goal is zero first-party CSS class selectors for business styling. Preventing growth is an interim guardrail, not completion of this goal.
+The goal is zero first-party CSS class selectors for business styling.
+Preventing growth is an interim guardrail, not completion of this goal.
 
-- Business and shared UI components use Tailwind utilities and semantic component variants. They neither define nor depend on first-party styling classes, including classes that wrap `@apply`.
-- First-party selectors, their class dependencies, and component-owned inline or injected styles are eliminated.
-- Runtime behavior and tests use semantic roles, accessible names, refs, `data-*` hooks, or documented component slots instead of querying styling classes.
-- Remaining handwritten CSS is limited to centrally managed design variables and tokens, explicitly allowlisted global environment rules, and explicitly allowlisted third-party DOM adapters. These exceptions do not authorize business styling.
-- Every environment or adapter exception has an exact scope, owner, rationale, and removal condition. Third-party entries also identify the upstream DOM owner; vendored stylesheets are pinned to their exact content hash. Directory-wide ignores and class-prefix exemptions are not allowed.
-- The design system has a documented ownership chain from primitive variables to semantic tokens, Tailwind utilities, and component variants, including naming, theme mapping, introduction, change, deprecation, and review. Components reuse that contract instead of creating a parallel variable or token registry.
-- Lint and agent instructions enforce the same boundary. Failures direct contributors to this guide and the underlying fix; business selectors cannot be authorized by disabling lint, expanding a baseline, or adding an allowlist entry.
+- Business and shared UI components use Tailwind utilities and semantic
+  component variants. They neither define nor depend on first-party styling
+  classes, including classes that wrap `@apply`.
+- First-party selectors, their class dependencies, and component-owned inline or
+  injected styles are eliminated.
+- Runtime behavior and tests use semantic roles, accessible names, refs,
+  `data-*` hooks, or documented component slots instead of querying styling
+  classes.
+- Remaining handwritten CSS is limited to centrally managed design variables and
+  tokens, explicitly allowlisted global environment rules, and explicitly
+  allowlisted third-party DOM adapters. These exceptions do not authorize
+  business styling.
+- Every environment or adapter exception has an exact scope, owner, rationale,
+  and removal condition. Third-party entries also identify the upstream DOM
+  owner; vendored stylesheets are pinned to their exact content hash.
+  Directory-wide ignores and class-prefix exemptions are not allowed.
+- The design system has a documented ownership chain from primitive variables to
+  semantic tokens, Tailwind utilities, and component variants, including naming,
+  theme mapping, introduction, change, deprecation, and review. Components reuse
+  that contract instead of creating a parallel variable or token registry.
+- Lint and agent instructions enforce the same boundary. Failures direct
+  contributors to this guide and the underlying fix; business selectors cannot
+  be authorized by disabling lint, expanding a baseline, or adding an allowlist
+  entry.
 
 Passing the current lint establishes compliance with the guardrail.
 
@@ -46,41 +94,122 @@ Passing the current lint establishes compliance with the guardrail.
 | Component variants                              | TypeScript component APIs and `cva()` definitions                                  | A bounded set of semantic props and Tailwind utility combinations            |
 | Global environment and generated DOM adaptation | `turbo/style-allowlist.json`                                                       | Infrastructure-only exception with exact selector or injection fingerprint   |
 
-Token names describe meaning rather than a page or component. A reusable interaction state, surface, foreground, border, radius, or typography decision belongs in the shared token layer. A product-specific data visualization category may remain App-only until another product consumes it. Theme differences are assigned at the primitive/runtime variable layer; components continue to use the same semantic utility in both themes.
+Token names describe meaning rather than a page or component. A reusable
+interaction state, surface, foreground, border, radius, or typography decision
+belongs in the shared token layer. A product-specific data visualization
+category may remain App-only until another product consumes it. Theme
+differences are assigned at the primitive/runtime variable layer; components
+continue to use the same semantic utility in both themes.
 
-Components must not introduce local CSS variables as an alternate token registry. A runtime value that is genuinely computed by the component may use a narrowly named custom property as data, while its visual semantics still come from Tailwind utilities and registered tokens.
+Components must not introduce local CSS variables as an alternate token
+registry. A runtime value that is genuinely computed by the component may use a
+narrowly named custom property as data, while its visual semantics still come
+from Tailwind utilities and registered tokens.
 
-One hairline serves the whole product. `--default-border-width` in the shared `@theme` is 0.5px, and Tailwind's bare `border`, `border-t`, `border-x`, `divide-y`, and their siblings all read it, so a component asks for "a border" and the system decides how thick it is. Components must not hand-write a width: an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style` prop, is a second registry for a decision this token already owns. `border-0` and the deliberate emphasis widths such as `border-2` stay available, because they express a different decision rather than a competing value for the same one.
+One hairline serves the whole product. `--default-border-width` in the shared
+`@theme` is 0.5px, and Tailwind's bare `border`, `border-t`, `border-x`,
+`divide-y`, and their siblings all read it, so a component asks for "a border"
+and the system decides how thick it is. Components must not hand-write a width:
+an arbitrary width such as `border-[0.7px]`, or a literal width inside a `style`
+prop, is a second registry for a decision this token already owns. `border-0`
+and the deliberate emphasis widths such as `border-2` stay available, because
+they express a different decision rather than a competing value for the same
+one.
 
-This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one device pixel where 1px paints two, so every bare border carries half the ink it used to; layout is unaffected, because the used value is still rounded to whole pixels. Colour has to carry what the width no longer does, which is why `--border` sits one stop darker than the surface ramp's lightest step: `gray-200` was calibrated for a 1px line and stops reading on a near-white card at half the thickness.
+This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
+device pixel where 1px paints two, so every bare border carries half the ink it
+used to; layout is unaffected, because the used value is still rounded to whole
+pixels. Colour has to carry what the width no longer does, which is why
+`--border` sits one stop darker than the surface ramp's lightest step:
+`gray-200` was calibrated for a 1px line and stops reading on a near-white card
+at half the thickness.
 
-A third token covers the case neither of those can. `--border` and `--divider` are both measured against the page canvas, and `--divider` is pinned to `gray-200` in every theme; the gradient color presets also keep `gray-200` for `--border`. The filled surfaces that carry their own rules are `gray-200` themselves, so under those presets a rule reading either neutral token resolves to its own background and disappears. `--border-on-fill` is one step off that fill rather than off the canvas. Use `border-border-on-fill` for a border or rule drawn on a filled surface, and keep `border-border` for one drawn on the canvas or a card. It equals `--border` in the neutral themes, so adopting it changes nothing there.
+A third token covers the case neither of those can. `--border` and `--divider`
+are both measured against the page canvas, and `--divider` is pinned to
+`gray-200` in every theme; the gradient color presets also keep `gray-200` for
+`--border`. The filled surfaces that carry their own rules are `gray-200`
+themselves, so under those presets a rule reading either neutral token resolves
+to its own background and disappears. `--border-on-fill` is one step off that
+fill rather than off the canvas. Use `border-border-on-fill` for a border or
+rule drawn on a filled surface, and keep `border-border` for one drawn on the
+canvas or a card. It equals `--border` in the neutral themes, so adopting it
+changes nothing there.
 
-Borders and rules are separate decisions with separate tokens. `--border` is for real borders, which follow `--default-border-width`. `--divider` is the lightest neutral rule — separators, `h-px` / `w-px` hairlines painted as backgrounds, and resting rail ticks. Those are sized explicitly, so they never lost thickness to the border hairline and must not inherit its compensating darkening. Use `bg-divider` for a painted rule and `border-border` for an actual border; do not reach for a raw ramp stop such as `border-gray-200` for either, because that bypasses both decisions.
+Borders and rules are separate decisions with separate tokens. `--border` is for
+real borders, which follow `--default-border-width`. `--divider` is the lightest
+neutral rule — separators, `h-px` / `w-px` hairlines painted as backgrounds, and
+resting rail ticks. Those are sized explicitly, so they never lost thickness to
+the border hairline and must not inherit its compensating darkening. Use
+`bg-divider` for a painted rule and `border-border` for an actual border; do not
+reach for a raw ramp stop such as `border-gray-200` for either, because that
+bypasses both decisions.
 
-Color-theme presets in the App stylesheet share their anchor and companion colors between picker swatches and workspace ambience. Daydream uses cool blue and violet, while Cotton sky uses pastel pink and blue. Each preset's hue and ring values keep semantic surfaces, selected states, and focus indicators aligned with that palette in Light/Dark.
+Color-theme presets in the App stylesheet share their anchor and companion
+colors between picker swatches and workspace ambience. Daydream uses cool blue
+and violet, while Cotton sky uses pastel pink and blue. Each preset's hue and
+ring values keep semantic surfaces, selected states, and focus indicators
+aligned with that palette in Light/Dark.
 
-When `GradientColorThemes` is enabled on the document, each preset's HSL primary value supplies both its anchor color and the shared `--primary` token. Primary actions, including portaled dialog buttons, immediately use that fill and the preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and pressed fills blend the anchor toward its companion using the existing filled-state alpha tokens. Disabled buttons retain the shared opacity treatment. Removing the document's color-theme attributes restores the shared Amber primary tokens.
+When `GradientColorThemes` is enabled on the document, each preset's HSL primary
+value supplies both its anchor color and the shared `--primary` token. Primary
+actions, including portaled dialog buttons, immediately use that fill and the
+preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and
+pressed fills blend the anchor toward its companion using the existing
+filled-state alpha tokens. Disabled buttons retain the shared opacity treatment.
+Removing the document's color-theme attributes restores the shared Amber primary
+tokens.
 
 Auxiliary controls and previews revealed by hover or keyboard focus change
-opacity immediately. Do not add opacity transitions to message actions,
-sidebar controls, card overlays, or similar contextual affordances; temporary
-compositing layers can cause nearby content to flicker in Safari. Preserve
-their layout, focus visibility, touch behavior, and pointer-event rules. When
-other properties still animate, name those properties instead of using
+opacity immediately. Do not add opacity transitions to message actions, sidebar
+controls, card overlays, or similar contextual affordances; temporary
+compositing layers can cause nearby content to flicker in Safari. Preserve their
+layout, focus visibility, touch behavior, and pointer-event rules. When other
+properties still animate, name those properties instead of using
 `transition-all`. This does not remove loading or popup lifecycle animations.
 
 ## Token and variant governance
 
-New tokens must represent a reusable semantic decision, have a documented consumer contract, and define their light and dark theme behavior in the canonical stylesheet. Shared tokens and variants belong to `@okouai/ui`; App-only tokens belong to the App token layer. A new alias for one component's hard-coded values is not a token contract.
+New tokens must represent a reusable semantic decision, have a documented
+consumer contract, and define their light and dark theme behavior in the
+canonical stylesheet. Shared tokens and variants belong to `@okouai/ui`;
+App-only tokens belong to the App token layer. A new alias for one component's
+hard-coded values is not a token contract.
 
-Token and variant changes are reviewed at their owning layer together with affected consumers and theme behavior. A rename or semantic change must update those consumers; deprecated names are removed when their consumers have migrated, rather than being copied into component-local registries. A change to ownership, naming, or theme mapping must update this guide in the same PR.
+Token and variant changes are reviewed at their owning layer together with
+affected consumers and theme behavior. A rename or semantic change must update
+those consumers; deprecated names are removed when their consumers have
+migrated, rather than being copied into component-local registries. A change to
+ownership, naming, or theme mapping must update this guide in the same PR.
 
-Large editable surfaces use `border-surface-focus` to emphasize their existing border on focus: neutral gray in light themes and muted amber in dark themes. Keep the border width constant across interaction states. A shadow-only focus overlay may fade through opacity, but must not duplicate the surface border or depend on a negative inset to align its edge. The chat composer uses the default `border` width for its surface and connector circles; intentional badge overlap remains independent of border geometry. `data-slot="chat-composer-card"` identifies the editable card for keyboard positioning and page tests.
+Large editable surfaces use `border-surface-focus` to emphasize their existing
+border on focus: neutral gray in light themes and muted amber in dark themes.
+Keep the border width constant across interaction states. A shadow-only focus
+overlay may fade through opacity, but must not duplicate the surface border or
+depend on a negative inset to align its edge. The chat composer uses the default
+`border` width for its surface and connector circles; intentional badge overlap
+remains independent of border geometry. `data-slot="chat-composer-card"`
+identifies the editable card for keyboard positioning and page tests.
 
-The composer's focus overlay is `--okou-composer-focus-veil`. It is a runtime theme value, so it is owned at `:root`: `signals/theme.ts` writes the theme attributes onto the document element, and document scope keeps the token available to any surface that needs it, including portaled ones. Light carries a neutral veil, dark carries none, and the gradient themes tint it with the canonical state layer. Each override keys off `[data-theme="dark"]` and `[data-gradient-color-themes]` alone and wraps the theme test in `:where()`, so it stays at the specificity of the rule it refines and source order decides between them. Do not reach for the paired `.dark` class here: a class in the selector registers a new first-party class-selector declaration and fails the shrink-only baseline. The two document-level theme selectors that do spell it are `global-environment` entries in `turbo/style-allowlist.json`, not a precedent for a new rule.
+The composer's focus overlay is `--okou-composer-focus-veil`. It is a runtime
+theme value, so it is owned at `:root`: `signals/theme.ts` writes the theme
+attributes onto the document element, and document scope keeps the token
+available to any surface that needs it, including portaled ones. Light carries a
+neutral veil, dark carries none, and the gradient themes tint it with the
+canonical state layer. Each override keys off `[data-theme="dark"]` and
+`[data-gradient-color-themes]` alone and wraps the theme test in `:where()`, so
+it stays at the specificity of the rule it refines and source order decides
+between them. Do not reach for the paired `.dark` class here: a class in the
+selector registers a new first-party class-selector declaration and fails the
+shrink-only baseline. The two document-level theme selectors that do spell it
+are `global-environment` entries in `turbo/style-allowlist.json`, not a
+precedent for a new rule.
 
-A focus overlay is also sized to the space its surface actually has. The composer sits 16px above the workspace pane's bottom edge, so the veil's offset and blur must bring its falloff back to the surface inside that gap. An overlay still painting when it meets a clipping ancestor or the pane edge ends in a visible straight seam instead of fading out, and the gap is not a place to absorb an arbitrarily wide shadow.
+A focus overlay is also sized to the space its surface actually has. The
+composer sits 16px above the workspace pane's bottom edge, so the veil's offset
+and blur must bring its falloff back to the surface inside that gap. An overlay
+still painting when it meets a clipping ancestor or the pane edge ends in a
+visible straight seam instead of fading out, and the gap is not a place to
+absorb an arbitrarily wide shadow.
 
 Standalone selectable controls use the shared `ToggleButton` and its required
 `selected` prop. Its default `inline` layout keeps compact icon/text choices;
@@ -99,9 +228,9 @@ state. Both render through the internal `ButtonBase` in `button-base.tsx`, which
 owns the Base UI button primitive, ref forwarding, render/asChild composition,
 native-title handling and optional tooltip. Their typography, radius and focus
 styles also share one base definition. Dimensions, icon sizing, transitions and
-disabled appearance remain owned by each styled control. `ToggleButton` keeps the
-native button and `onClick` contract; it does not manage state or change group
-keyboard behavior. Single-value settings keep a selection when the active
+disabled appearance remain owned by each styled control. `ToggleButton` keeps
+the native button and `onClick` contract; it does not manage state or change
+group keyboard behavior. Single-value settings keep a selection when the active
 choice is activated again. Use the existing `SegmentControl` for a new radio
 group that needs group-level keyboard navigation.
 
@@ -113,13 +242,14 @@ remain available without hovering.
 
 ## Component contracts
 
-A component owns its own utilities. Reach for the component rather than restating
-its treatment, and keep layout, stacking and container context at the call site.
+A component owns its own utilities. Reach for the component rather than
+restating its treatment, and keep layout, stacking and container context at the
+call site.
 
 ### The composer card surface
 
-`Card` from `@okouai/ui` takes `surface="composer"` for the composer card and the
-two surfaces that sit in its place: the service-status notice and the shared
+`Card` from `@okouai/ui` takes `surface="composer"` for the composer card and
+the two surfaces that sit in its place: the service-status notice and the shared
 thread's claim prompt. The variant carries the fill, radius, border, shadow, the
 focus border transition and the `after` veil layer; callers keep layout,
 stacking and container context, which is why the composer still spells
@@ -134,7 +264,13 @@ package, the way `DialogContent` reads `--okou-viewport-height`.
 
 ### Page surfaces
 
-`surfaceVariants` from `@okouai/ui` owns the shared page-surface treatment. Use it on the existing native element, or pass its classes to `Card`; it does not add a wrapper or change button, form, link, scroll, or overflow semantics. Its `className` option composes layout utilities. `radius` is `standard` by default or `compact`; `interactive` opts a whole surface into the pointer hover overlay and defaults to `false`. A surface containing separate interactive children can keep the default treatment.
+`surfaceVariants` from `@okouai/ui` owns the shared page-surface treatment. Use
+it on the existing native element, or pass its classes to `Card`; it does not
+add a wrapper or change button, form, link, scroll, or overflow semantics. Its
+`className` option composes layout utilities. `radius` is `standard` by default
+or `compact`; `interactive` opts a whole surface into the pointer hover overlay
+and defaults to `false`. A surface containing separate interactive children can
+keep the default treatment.
 
 | Decision        | Shared token / utility                                    | Theme contract                                                                                       |
 | --------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -145,17 +281,39 @@ package, the way `DialogContent` reads `--okou-viewport-height`.
 | Pointer overlay | `bg-state-hover-overlay`                                  | The shared interaction-state overlay painted above the opaque card fill                              |
 | Transition      | `transition-[background-color] duration-150 ease-surface` | Background color only, 150ms, CSS `ease`                                                             |
 
-The variant uses `border-(length:--border-width-surface)` so class merging recognizes the border width independently of its color. Shared `cn()` registers the custom radius and shadow scales with `tailwind-merge`, keeping composition with existing UI primitives consistent with Tailwind generation. Register new named scales there when the class merger cannot otherwise identify their property group.
+The variant uses `border-(length:--border-width-surface)` so class merging
+recognizes the border width independently of its color. Shared `cn()` registers
+the custom radius and shadow scales with `tailwind-merge`, keeping composition
+with existing UI primitives consistent with Tailwind generation. Register new
+named scales there when the class merger cannot otherwise identify their
+property group.
 
-The pointer overlay reuses the shared `bg-state-hover-overlay` token rather than declaring a surface-specific one, so one interaction-state decision keeps one owner. Like the choice variant, it applies through `[&:hover]` to preserve the existing touch-browser hover contract as well as pointer hover, and it does not replace the card fill with a translucent background. Radius, border, shadow, and transition decisions belong to this variant; use layout utilities for padding, size, alignment, and overflow.
+The pointer overlay reuses the shared `bg-state-hover-overlay` token rather than
+declaring a surface-specific one, so one interaction-state decision keeps one
+owner. Like the choice variant, it applies through `[&:hover]` to preserve the
+existing touch-browser hover contract as well as pointer hover, and it does not
+replace the card fill with a translucent background. Radius, border, shadow, and
+transition decisions belong to this variant; use layout utilities for padding,
+size, alignment, and overflow.
 
-Integration and connector tests scope controls through the documented `data-slot="integration-card"`, `data-slot="connector-card"`, `data-slot="badge"`, and `data-slot="sidebar-thread-title"` component boundaries. These slots carry no styles; tests must not locate surfaces through utility or legacy class names.
+Integration and connector tests scope controls through the documented
+`data-slot="integration-card"`, `data-slot="connector-card"`,
+`data-slot="badge"`, and `data-slot="sidebar-thread-title"` component
+boundaries. These slots carry no styles; tests must not locate surfaces through
+utility or legacy class names.
 
-The `--okou-card-*` variables are read directly by page-level surfaces — the queue drawer's cards, the mail draft card, the onboarding pickers, and the composer variant. They are not a supported API for a new surface; reach for `surfaceVariants` instead. The chat transcript card reads its own `--okou-chat-card-*` siblings.
+The `--okou-card-*` variables are read directly by page-level surfaces — the
+queue drawer's cards, the mail draft card, the onboarding pickers, and the
+composer variant. They are not a supported API for a new surface; reach for
+`surfaceVariants` instead. The chat transcript card reads its own
+`--okou-chat-card-*` siblings.
 
 ### Inline badges
 
-`Badge` from `@okouai/ui` owns the shared inline badge and tag treatment: role labels, status pills, version chips, and diagnostic key/value chips. It renders a `span`; pass `render={<code />}` for another host element. It adds no wrapper and takes no size or tone props.
+`Badge` from `@okouai/ui` owns the shared inline badge and tag treatment: role
+labels, status pills, version chips, and diagnostic key/value chips. It renders
+a `span`; pass `render={<code />}` for another host element. It adds no wrapper
+and takes no size or tone props.
 
 | Decision    | Shared token / utility                        | Contract                                                                                  |
 | ----------- | --------------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -167,31 +325,57 @@ The `--okou-card-*` variables are read directly by page-level surfaces — the q
 | Layout      | `inline-flex items-center gap-1 align-middle` | Icon and label share one row; `align-middle` applies where the badge is a real inline box |
 | Icon        | `[&>svg]:size-3`                              | A direct child icon is 12px; call sites pass no size                                      |
 
-The badge owns geometry and nothing else. Typography and foreground stay with the caller, because a badge reads as secondary beside body text in one place and as the value itself in another; pass `text-xs font-medium text-muted-foreground` or let the badge inherit its context. Width constraints and flex behaviour (`max-w-full`, `break-all`, `min-w-0`, `shrink-0`) also stay with the caller.
+The badge owns geometry and nothing else. Typography and foreground stay with
+the caller, because a badge reads as secondary beside body text in one place and
+as the value itself in another; pass `text-xs font-medium text-muted-foreground`
+or let the badge inherit its context. Width constraints and flex behaviour
+(`max-w-full`, `break-all`, `min-w-0`, `shrink-0`) also stay with the caller.
 
-Tests scope badges through `data-slot="badge"`, which carries no styles. The icon rule and that slot follow shadcn's badge, which this package's components come from; the rest of shadcn's badge does not fit, because it bakes in `text-xs font-medium` that the diagnostic chips inherit from their row instead, and `whitespace-nowrap overflow-hidden` that would stop the long key/value chips from wrapping.
+Tests scope badges through `data-slot="badge"`, which carries no styles. The
+icon rule and that slot follow shadcn's badge, which this package's components
+come from; the rest of shadcn's badge does not fit, because it bakes in
+`text-xs font-medium` that the diagnostic chips inherit from their row instead,
+and `whitespace-nowrap overflow-hidden` that would stop the long key/value chips
+from wrapping.
 
-Line height belongs to the badge because a font-size utility with an arbitrary value carries no paired line height. A badge declaring only `text-[11px]` takes its box from whatever `line-height` an ancestor happens to set, which varies by tens of pixels across ancestors. It reuses the page-surface border tokens rather than declaring badge-specific aliases, so one hairline decision keeps one owner.
+Line height belongs to the badge because a font-size utility with an arbitrary
+value carries no paired line height. A badge declaring only `text-[11px]` takes
+its box from whatever `line-height` an ancestor happens to set, which varies by
+tens of pixels across ancestors. It reuses the page-surface border tokens rather
+than declaring badge-specific aliases, so one hairline decision keeps one owner.
 
-Merge the badge's line height **after** caller classes. `tailwind-merge` removes an earlier line-height utility when a later font-size utility appears: `text-xs` replaces it with its paired line height, while `text-[10px]` leaves line height inherited. The badge keeps `leading-snug` last so both named and arbitrary font sizes retain the same unitless ratio. Callers choose the font size, not a separate line height.
+Merge the badge's line height **after** caller classes. `tailwind-merge` removes
+an earlier line-height utility when a later font-size utility appears: `text-xs`
+replaces it with its paired line height, while `text-[10px]` leaves line height
+inherited. The badge keeps `leading-snug` last so both named and arbitrary font
+sizes retain the same unitless ratio. Callers choose the font size, not a
+separate line height.
 
-Control typography is a joint decision about font size, line height, height, and padding. Keep that decision in the shared component; fixed-height buttons and segments retain their own size scales. A line-height ratio is not a promise to center every label's ink: capitals, descenders, and fallback fonts have different extents. Verify stable baselines, descender clearance, icon alignment, and long-label wrapping in a browser across representative Latin and Chinese labels. Do not shift individual labels or impose a font-metric threshold on every control to make one word look centered.
+Control typography is a joint decision about font size, line height, height, and
+padding. Keep that decision in the shared component; fixed-height buttons and
+segments retain their own size scales. A line-height ratio is not a promise to
+center every label's ink: capitals, descenders, and fallback fonts have
+different extents. Verify stable baselines, descender clearance, icon alignment,
+and long-label wrapping in a browser across representative Latin and Chinese
+labels. Do not shift individual labels or impose a font-metric threshold on
+every control to make one word look centered.
 
 ### Neutral button and select variants
 
 Use `Button variant="neutral"` for neutral actions and
 `SelectTrigger variant="neutral"` for neutral select controls. Each component
-owns its utilities; their public API does not export class strings.
-Use `Button asChild variant="neutral"` around a router `Link` for navigation
-styled as a button, and compose `Button` with `DialogTrigger` for dialog
-actions. The existing components own the interaction contract; `neutral` is
-only a visual variant. Link composition preserves the native anchor, ref,
-and navigation behavior without adding a wrapper.
+owns its utilities; their public API does not export class strings. Use
+`Button asChild variant="neutral"` around a router `Link` for navigation styled
+as a button, and compose `Button` with `DialogTrigger` for dialog actions. The
+existing components own the interaction contract; `neutral` is only a visual
+variant. Link composition preserves the native anchor, ref, and navigation
+behavior without adding a wrapper.
 
-The components compose `border border-control-border bg-control-surface
-text-foreground [&:hover]:bg-state-hover-overlay` internally. Language,
-timezone, and voice-input settings all use the select variant. Dimensions,
-padding, and radius remain with the existing component and caller.
+The components compose
+`border border-control-border bg-control-surface text-foreground [&:hover]:bg-state-hover-overlay`
+internally. Language, timezone, and voice-input settings all use the select
+variant. Dimensions, padding, and radius remain with the existing component and
+caller.
 
 State both interactions as overlays above the surface
 (`[&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay`), not as
@@ -202,11 +386,11 @@ neutral, so a replacing fill drops the warm cast the resting fill carries, while
 an overlay stays in the same family.
 
 `text-foreground` is stated explicitly even where every current consumer already
-inherits it, so a control moved onto a differently coloured surface keeps this
+inherits it, so a control moved onto a differently colored surface keeps this
 treatment.
 
-Preserve consumer-specific interaction colors when extracting shared styles.
-The official workflow Configure button, for example, retains its existing
+Preserve consumer-specific interaction colors when extracting shared styles. The
+official workflow Configure button, for example, retains its existing
 `hover:bg-primary-hover active:bg-primary-pressed` overrides.
 
 ### Chat scrollbars
@@ -256,18 +440,17 @@ Mermaid diagram box passes its own `wrapperClassName` into that slot.
 centered inside the four safe-area insets plus a 24 px gutter. Fullscreen
 dialogs paint to the viewport edges while their content and close control stay
 inside the safe-area insets. The environment values come from the existing
-`--sat`, `--sar`, `--sab`, `--sal`, and `--okou-viewport-height` properties;
-the shared primitive also works with native `env()` insets outside Platform.
+`--sat`, `--sar`, `--sab`, `--sal`, and `--okou-viewport-height` properties; the
+shared primitive also works with native `env()` insets outside Platform.
 
 Callers select `maxWidth`, `smMaxWidth`, `height`, and `mode`. The popup fills
 the available safe width and is capped by `maxWidth` (default `lg`);
 `smMaxWidth` changes that upper bound only from the shared `sm` breakpoint.
 Width caps never set a fixed width or determine height. Preserve existing
 breakpoints and units when migrating: `sm:max-w-[480px]` becomes
-`smMaxWidth={480}`, and `max-w-[25rem]` becomes `maxWidth="25rem"`.
-The artifact preview uses `maxWidth={1440} height={1000}`. Every variant is
-capped by the available viewport, so increasing a cap cannot increase the
-safe boundary.
+`smMaxWidth={480}`, and `max-w-[25rem]` becomes `maxWidth="25rem"`. The artifact
+preview uses `maxWidth={1440} height={1000}`. Every variant is capped by the
+available viewport, so increasing a cap cannot increase the safe boundary.
 
 The popup does not accept `className`, `style`, or `render`. Use
 `contentClassName` for the inner layout and `DialogBody` for a scrolling body
@@ -293,7 +476,7 @@ The border is deliberately `border-[1px] border-gray-400` rather than the shared
 `border` hairline and a semantic border token. A fractional border visibly
 repaints when card contents resolve, so a card would flicker at its edge as an
 image or an iframe lands; a whole pixel does not. Unifying the transcript's
-border width and colour with the rest of the product is a separate visual
+border width and color with the rest of the product is a separate visual
 decision.
 
 `cn()` merges the base with the caller's `className`, so a conflicting base
@@ -328,7 +511,7 @@ reads `--default-border-width` rather than naming a value — so these rules are
 not a second registry for a decision that token already owns.
 
 These are rules rather than real borders, so the `bg-divider` guidance above
-would suit them. Adopting it would change their colour, which is a visual
+would suit them. Adopting it would change their color, which is a visual
 decision and belongs to a separately reviewed change.
 
 The shared `Select` and `DropdownMenu` separators compose these utilities
@@ -355,10 +538,10 @@ Draining `okou-border` is a visual decision rather than an equivalence.
 `buy-credits-section.tsx` reaches for it from a function that returns a class
 string rather than from a `className` attribute, so neither the legacy baseline
 nor `no-unknown-classes` counts that consumer. The selector is unlayered, so its
-`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on the
-same element and that hover colour never paints; replacing the class activates
-it. Deciding between keeping a hover the tile has never had and deleting a
-utility the consumer spells is reviewed separately.
+`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on
+the same element and that hover color never paints; replacing the class
+activates it. Deciding between keeping a hover the tile has never had and
+deleting a utility the consumer spells is reviewed separately.
 
 ### Top-edge clearance
 
@@ -406,11 +589,11 @@ the same specificity, so a `motion-reduce:` override would depend on Tailwind's
 emission order to win; `motion-safe:` simply does not apply, and the registered
 initial value is what reduced motion resolves to anyway.
 
-### Literal colours and gradients
+### Literal colors and gradients
 
-Tailwind's colour and gradient utilities interpolate in oklab, so they do not
+Tailwind's color and gradient utilities interpolate in oklab, so they do not
 reproduce a literal `rgb()` fill or a plain `linear-gradient()`. Reach for the
-ergonomic utilities when a token supplies the colour, and for an exact arbitrary
+ergonomic utilities when a token supplies the color, and for an exact arbitrary
 value such as `bg-[rgb(255_255_255_/_0.18)]` or
 `bg-[linear-gradient(to_top,#bdf9ff,#ffffff)]` when a specific value is part of
 the design.
@@ -443,8 +626,8 @@ in the source and therefore generates no CSS at all.
 The sidebar thread title keeps its `@property --okou-nav-title-shift`
 registration in the App stylesheet. A registration is an at-rule rather than a
 class selector, and it is what lets a transition interpolate the length and
-`inherits: true` carry the animated value to the text span; the mask, the
-travel and the delayed hover transition are Tailwind utilities on the component.
+`inherits: true` carry the animated value to the text span; the mask, the travel
+and the delayed hover transition are Tailwind utilities on the component.
 `data-slot="sidebar-thread-title"` identifies the clipping box for page tests
 and carries no styles.
 
@@ -453,24 +636,23 @@ and carries no styles.
 `--border-width-illustration` (1px) and `--border-width-illustration-marker`
 (1.5px) are App-layer tokens for artwork that is drawn rather than chrome. They
 are a different decision from `--default-border-width`, not a competing value
-for it, in the same way `border-2` is: the hairline decides how thick _a
-border_ is, while an illustration owns the weight of its own outlines. Both are
+for it, in the same way `border-2` is: the hairline decides how thick _a border_
+is, while an illustration owns the weight of its own outlines. Both are
 identical in Light and Dark, because a stroke weight is not a theme value.
 Consumers read them through `border-(length:--border-width-illustration*)`
-beside `border-solid`, the same shape `Card` uses for
-`--border-width-surface`.
+beside `border-solid`, the same shape `Card` uses for `--border-width-surface`.
 
 Their scope is artwork, and nothing else. A control, surface, card, input,
 divider or any other piece of product chrome takes the shared hairline; reach
-for these only for a drawing whose strokes are part of the picture. They live
-in the App token layer because the onboarding diagram is their only consumer
-today, and they promote to `@okouai/ui` when a second product surface draws
-with them. Adding a third weight is a token change, not a call-site decision.
+for these only for a drawing whose strokes are part of the picture. They live in
+the App token layer because the onboarding diagram is their only consumer today,
+and they promote to `@okouai/ui` when a second product surface draws with them.
+Adding a third weight is a token change, not a call-site decision.
 
 The first consumers are the onboarding diagram's tiles: the icon box, the
 connector stack items, the overflow badge and the two action cards take
-`--border-width-illustration`, and the six waypoint dots take the marker
-weight. Those tiles otherwise use the semantic `bg-card` fill and `border-border`
+`--border-width-illustration`, and the six waypoint dots take the marker weight.
+Those tiles otherwise use the semantic `bg-card` fill and `border-border`
 stroke, `rounded-surface` for the action cards and the artwork's own
 `shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]` lift.
 
@@ -481,8 +663,8 @@ against Dark before reaching for `border-white`.
 
 ## Surface notes
 
-Decisions that belong to one surface. Read the relevant note before changing that
-surface; none of them generalizes on its own.
+Decisions that belong to one surface. Read the relevant note before changing
+that surface; none of them generalizes on its own.
 
 ### Page layouts
 
@@ -569,7 +751,7 @@ the foreground or surface it already had, so both sides keep their appearance
 without a conditional selector. Consumers whose value matches a registered
 fallback use `text-nav-copy`, `text-nav-copy-muted`, `border-nav-border` or
 `bg-nav-rail`; the rest carry their own fallback in the utility, including
-`var(--nav-copy, inherit)` where the consumer inherits its colour from an
+`var(--nav-copy, inherit)` where the consumer inherits its color from an
 ancestor `Link` or `button` and must keep inheriting that ancestor's hover.
 
 This narrows the contract on purpose. A scoped rule overriding an _inherited_
@@ -605,14 +787,14 @@ through `bg-workspace-canvas` and `bg-workspace-canvas-image`, registered as
 palette attributes decide at use time.
 
 The four variants — default and gradient palette, each in Light and Dark —
-differ only in a fill colour and a gradient, so they are two runtime values keyed
-at `:root` rather than four selectors. `signals/theme.ts` writes `data-theme`
-and `data-gradient-color-themes` onto the document element; each theme test
-wraps in `:where()` so it stays at the specificity of the rule it refines and
-source order decides between them. Do not add the paired `.dark` class: a class
-in the selector registers a first-party class-selector declaration against the
-shrink-only baseline, and the document-level selectors that spell it are
-allowlisted rather than exemplary.
+differ only in a fill color and a gradient, so they are two runtime values
+keyed at `:root` rather than four selectors. `signals/theme.ts` writes
+`data-theme` and `data-gradient-color-themes` onto the document element; each
+theme test wraps in `:where()` so it stays at the specificity of the rule it
+refines and source order decides between them. Do not add the paired `.dark`
+class: a class in the selector registers a first-party class-selector
+declaration against the shrink-only baseline, and the document-level selectors
+that spell it are allowlisted rather than exemplary.
 
 Consumers spell `before:bg-[length:100%_100%]` beside the two background
 utilities. `background-size: 100% 100%` and the initial `auto auto` size a
@@ -621,7 +803,7 @@ gradient to the same box, so it is a stated rather than a load-bearing value.
 ### Chat message bubbles
 
 The user bubble writes `bg-gray-200 text-foreground`; the assistant bubble
-writes `bg-transparent border-none border-current`. The colour utility is there
+writes `bg-transparent border-none border-current`. The color utility is there
 because `border: none` is a shorthand that also resets `border-color` to
 `currentcolor`, while `border-none` sets only the style. The width is 0 either
 way, so this is invisible today; it is stated so an assistant body that later
@@ -640,10 +822,10 @@ onto the frame it already owns:
 
 Every margin there is important, and the four resets exist only because of it.
 The competitor for the paragraphs is the App's own unlayered `.wmde-markdown p`
-rule, which a utility in `@layer utilities` cannot outrank without one; a layered
-important declaration does. The card slot carries a `my-1.5` utility of its own,
-which the important declaration outranks from inside the same layer, so both
-halves land on the bubble's 8px. The vendored
+rule, which a utility in `@layer utilities` cannot outrank without one; a
+layered important declaration does. The card slot carries a `my-1.5` utility of
+its own, which the important declaration outranks from inside the same layer, so
+both halves land on the bubble's 8px. The vendored
 `.wmde-markdown > *:first-child` / `> *:last-child` resets carry `!important`
 and therefore beat every unlayered rule whatever the source order is, so
 restating them at the same tier is what keeps the frame's own edge paragraphs
@@ -660,10 +842,9 @@ or last child's block margin has no block padding or border to stop it and
 collapses straight out through the quote's own edges — as leaked space at the
 bubble's top and bottom rather than as spacing inside the quote.
 `[&_blockquote]:py-2!` gives the quote the bubble's 8px as block padding, where
-it is both visible and contained, and
-`[&_blockquote>*:first-child]:mt-0!` with its `mb-0!` sibling keeps the inner
-margins from adding a second, escaping copy. Resolves
-[#34278](https://github.com/vm0-ai/vm0/issues/34278).
+it is both visible and contained, and `[&_blockquote>*:first-child]:mt-0!` with
+its `mb-0!` sibling keeps the inner margins from adding a second, escaping copy.
+Resolves [#34278](https://github.com/vm0-ai/vm0/issues/34278).
 
 The padding needs its important for a sharper reason than the margins do:
 `.wmde-markdown blockquote` declares `padding: 0 1em` unlayered, and an
@@ -686,8 +867,8 @@ bubble. A future in-bubble frame asks for the treatment by name.
 
 The thinking and skeleton motions are registered `--animate-*` entries, so
 consumers reach them through `animate-thinking-in` and
-`animate-chat-skeleton-reveal`. The spinner keeps `animate-spin` and
-overrides only its duration, through `[animation-duration:1.4s]` beside
+`animate-chat-skeleton-reveal`. The spinner keeps `animate-spin` and overrides
+only its duration, through `[animation-duration:1.4s]` beside
 `will-change-transform`. Keyframes stay in the stylesheet, because keyframes are
 not class selectors.
 
@@ -696,7 +877,7 @@ not class selectors.
 `bg-shimmer-text` emits the gradient with its `--muted-foreground` and
 `--foreground` references intact and each theme resolves them on the element;
 Tailwind's own gradient utilities interpolate in oklab and compose from three
-positions, so no `bg-*` utility can express its six colour stops.
+positions, so no `bg-*` utility can express its six color stops.
 `--animate-shimmer` joins the `--animate-*` entries beside it on the same
 contract.
 
@@ -793,30 +974,30 @@ has no vertical writing mode, so the two resolve the same way.
 
 `.wmde-markdown > :first-child` and `> :last-child` are unlayered, so they zero
 the outer margin of a first or last card and the utility applies everywhere
-else. The `.wmde-markdown p` selector is a `third-party-dom-adapter` entry, one of the
-seven `.wmde-markdown` rules that declare a margin.
+else. The `.wmde-markdown p` selector is a `third-party-dom-adapter` entry, one
+of the seven `.wmde-markdown` rules that declare a margin.
 
-### Toast styling is decided by cascade layers, not specificity
+### Toast styling under an unlayered stylesheet
 
 Sonner injects its stylesheet into `document.head` at module load, unlayered.
-Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
-`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
-That is why the toast class string carries `!` on most of its utilities, and it
-is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
-and `shadow-lg` — have never applied: a dark toast computes white on
-`rgb(23, 23, 23)` while `--color-popover` is `hsl(20 2.9% 20.2%)`, so the panel
-stays light in Dark. The component also passes no `theme` prop, so Sonner itself
-is permanently in its `light` palette. The `description`, `actionButton` and
-`cancelButton` entries are inert for the same reason.
+Unlayered rules outrank every layer, so a `@layer utilities` declaration loses
+to `[data-sonner-toast][data-styled="true"]` no matter how specific the variant
+is. That is why the toast class string carries `!` on most of its utilities, and
+it is why the four that lack it — `bg-popover`, `text-foreground`,
+`border-border` and `shadow-lg` — have never applied: a dark toast computes
+white on `rgb(23, 23, 23)` while `--color-popover` is `hsl(20 2.9% 20.2%)`, so
+the panel stays light in Dark. The component also passes no `theme` prop, so
+Sonner itself is permanently in its `light` palette. The `description`,
+`actionButton` and `cancelButton` entries are inert for the same reason.
 
-Restoring those declarations is a visual decision, not an equivalence repair, and
-it is tracked separately. Marking the four important does fix Dark, but it also
-moves the Light foreground, border and shadow, and — because `!important` beats
-Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
-with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
-Sonner's palette rather than the App's popover tokens. Draining `toaster` is
-blocked behind that choice, because whichever repair wins rewrites the same class
-string.
+Restoring those declarations is a visual decision, not an equivalence repair,
+and it is tracked separately. Marking the four important does fix Dark, but it
+also moves the Light foreground, border and shadow, and — because `!important`
+beats Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus
+ring with the resting shadow. Adopting Sonner's supported `theme` prop instead
+takes Sonner's palette rather than the App's popover tokens. Draining `toaster`
+is blocked behind that choice, because whichever repair wins rewrites the same
+class string.
 
 ### The standalone PWA fixed cover
 
@@ -838,7 +1019,7 @@ The mobile drawer `aside` carries the same utility, plus `max-md:p-safe` for its
 four-value padding. Its `::before` layer exists for one case: the `aside`
 already carries `bg-sidebar`, so that fill is invisible wherever the element's
 own box is, and the layer's only visible work is the standalone extension below,
-which paints the sidebar colour into the home-indicator area. `isolate` keeps
+which paints the sidebar color into the home-indicator area. `isolate` keeps
 the `-z-1` layer inside this element instead of letting it fall behind the page.
 
 `max-md` is not an exact restatement of `max-width: 767px`. Tailwind emits
@@ -849,8 +1030,8 @@ agrees, and the element already gates its whole fixed-drawer geometry on
 
 ### The onboarding workflow diagram canvas
 
-The diagram is a fixed 614x470 illustration scaled to 0.6. Its geometry,
-motion, typography and coordinates are Tailwind utilities on the component.
+The diagram is a fixed 614x470 illustration scaled to 0.6. Its geometry, motion,
+typography and coordinates are Tailwind utilities on the component.
 
 The beam registers `--animate-owf-beam-flow` as an `--animate-*` theme entry,
 the same form the thinking states use, and its keyframes stay in the stylesheet.
@@ -879,14 +1060,20 @@ Page tests select the source node and source dot through
 
 Only two exception kinds exist:
 
-- `global-environment` covers document-level browser or theme state that cannot be represented by a component utility.
-- `third-party-dom-adapter` covers DOM or isolated documents whose element classes are owned outside the business component.
+- `global-environment` covers document-level browser or theme state that cannot
+  be represented by a component utility.
+- `third-party-dom-adapter` covers DOM or isolated documents whose element
+  classes are owned outside the business component.
 
 Hosted Clerk authentication does not use a third-party DOM adapter. It stays on
 Clerk's public appearance API under the narrower rules in
 [Clerk customization](./clerk-customize.md).
 
-Every exception identifies the exact file and selector or injected-style fingerprint, its owner, rationale, and removal condition. Third-party adapters also identify their upstream DOM owner. A styling convenience, missing utility, or existing first-party convention is not an exception. Vendored CSS is pinned by exact path and SHA-256 rather than by a directory-wide ignore.
+Every exception identifies the exact file and selector or injected-style
+fingerprint, its owner, rationale, and removal condition. Third-party adapters
+also identify their upstream DOM owner. A styling convenience, missing utility,
+or existing first-party convention is not an exception. Vendored CSS is pinned
+by exact path and SHA-256 rather than by a directory-wide ignore.
 
 ### Third-party attribution of borrowed class names
 
@@ -907,22 +1094,41 @@ including the allowlisted `svg.lucide-ellipsis circle` entry.
 
 `toaster` in `components/ui/sonner.tsx` is the mirror case. It is one of the two
 legacy class dependencies left in Platform and UI, beside `wmde-markdown` in
-`markdown-frame.tsx`. Sonner neither defines nor requires that
-class; the component invents it, hands it to Sonner's `className` prop, and then
-anchors its own `group-[.toaster]:` variants on it. Sonner's actual contract is
-the `[data-sonner-toaster]` attribute it puts on its own list element. There is
-also no mechanism to authorize this kind of dependency: `turbo/style-allowlist.json`
-holds CSS selectors, style injections and vendored files, so a legacy class named
-in a component's `className` can only be drained or left in the shrink-only
-baseline — never allowlisted.
+`markdown-frame.tsx`. Sonner neither defines nor requires that class; the
+component invents it, hands it to Sonner's `className` prop, and then anchors
+its own `group-[.toaster]:` variants on it. Sonner's actual contract is the
+`[data-sonner-toaster]` attribute it puts on its own list element. There is also
+no mechanism to authorize this kind of dependency: `turbo/style-allowlist.json`
+holds CSS selectors, style injections and vendored files, so a legacy class
+named in a component's `className` can only be drained or left in the
+shrink-only baseline — never allowlisted.
 
 ## Shrink-only legacy state
 
-`turbo/style-legacy-baseline.json` records current first-party selector declarations as normalized CSS AST atoms, including nested selector ancestry, conditional at-rules, `@scope` roots and limits, and `@apply` contents. A class-qualified scope also freezes its `:scope`, `&`, and element-selector declarations; scope boundaries participate in exact baseline and adapter matching. Legacy class dependencies are counted at their consuming attributes or calls, resolving local constants, imported aliases, and re-exports. Reusing an existing constant in another consumer is a new dependency. The baseline also fingerprints existing inline or injected styles that are not permanent adapters.
+`turbo/style-legacy-baseline.json` records current first-party selector
+declarations as normalized CSS AST atoms, including nested selector ancestry,
+conditional at-rules, `@scope` roots and limits, and `@apply` contents. A
+class-qualified scope also freezes its `:scope`, `&`, and element-selector
+declarations; scope boundaries participate in exact baseline and adapter
+matching. Legacy class dependencies are counted at their consuming attributes or
+calls, resolving local constants, imported aliases, and re-exports. Reusing an
+existing constant in another consumer is a new dependency. The baseline also
+fingerprints existing inline or injected styles that are not permanent adapters.
 
-The baseline is not an allowlist and has no command that expands it. A new selector, a changed declaration, a new use of an existing legacy class, or a new style injection fails lint. Removing legacy state intentionally makes the baseline stale; `pnpm lint:style:prune` only intersects the baseline with current source and refuses to authorize growth. Pre-commit compares the baseline with `HEAD`, while CI compares it with the pull request or merge-queue base SHA, so manually editing source and baseline together cannot bypass the ratchet.
+The baseline is not an allowlist and has no command that expands it. A new
+selector, a changed declaration, a new use of an existing legacy class, or a new
+style injection fails lint. Removing legacy state intentionally makes the
+baseline stale; `pnpm lint:style:prune` only intersects the baseline with
+current source and refuses to authorize growth. Pre-commit compares the baseline
+with `HEAD`, while CI compares it with the pull request or merge-queue base SHA,
+so manually editing source and baseline together cannot bypass the ratchet.
 
-Commands run from `turbo`. An invalid Git reference, unreadable baseline, or malformed JSON fails with a nonzero exit status and a pointer to this guide. Only a reference commit genuinely predating the baseline file permits its initial introduction. That bootstrap case applies to local/CI repository history, not production version compatibility; once the target base contains the baseline, the ratchet is mandatory.
+Commands run from `turbo`. An invalid Git reference, unreadable baseline, or
+malformed JSON fails with a nonzero exit status and a pointer to this guide.
+Only a reference commit genuinely predating the baseline file permits its
+initial introduction. That bootstrap case applies to local/CI repository
+history, not production version compatibility; once the target base contains the
+baseline, the ratchet is mandatory.
 
 ## Enforcement and feedback
 
@@ -934,13 +1140,25 @@ pnpm lint:style
 
 The check has three layers:
 
-1. The repository policy compares CSS AST atoms, legacy class dependency counts, injected-style fingerprints, exact adapter entries, and vendored file hashes.
-2. `@eslint/css` parses first-party CSS with Tailwind v4 syntax and disallows inline ESLint configuration for this check.
-3. `eslint-plugin-better-tailwindcss/no-unknown-classes` validates component class strings against the real App Tailwind entry point while accepting only the recorded legacy tokens.
+1. The repository policy compares CSS AST atoms, legacy class dependency counts,
+   injected-style fingerprints, exact adapter entries, and vendored file hashes.
+2. `@eslint/css` parses first-party CSS with Tailwind v4 syntax and disallows
+   inline ESLint configuration for this check.
+3. `eslint-plugin-better-tailwindcss/no-unknown-classes` validates component
+   class strings against the real App Tailwind entry point while accepting only
+   the recorded legacy tokens.
 
-CI runs this as the independent required `lint-style` job. The pre-commit hook runs the fast repository policy so the most actionable boundary failures are returned before push. Both policy diagnostics and the full lint command's failure output direct contributors to `docs/styles.md` for the style guide. The full command keeps a failing exit status for policy, CSS, Tailwind, or test failures.
+CI runs this as the independent required `lint-style` job. The pre-commit hook
+runs the fast repository policy so the most actionable boundary failures are
+returned before push. Both policy diagnostics and the full lint command's
+failure output direct contributors to `docs/styles.md` for the style guide. The
+full command keeps a failing exit status for policy, CSS, Tailwind, or test
+failures.
 
-When a style check fails, read this guide and replace business styling with the appropriate Tailwind utilities and registered tokens. Prune the baseline when legacy code has been removed. Do not suppress the check or add a business styling exception to make it pass.
+When a style check fails, read this guide and replace business styling with the
+appropriate Tailwind utilities and registered tokens. Prune the baseline when
+legacy code has been removed. Do not suppress the check or add a business
+styling exception to make it pass.
 
 ## App palette previews
 
