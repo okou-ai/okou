@@ -798,10 +798,13 @@ function retainedActionLabel(tokens: readonly Token[]): string {
           token.raw.slice(start + token.text.length)
         );
       }
-      // A URL used as a link label must remain text after removing its link,
-      // especially when the action was rejected for another agent or thread.
+      // Link labels are already tokenized in a link's context. Their text must
+      // not turn into headings, reference links or autolinks when moved out.
       return token.type === "text"
-        ? token.raw.replace(/(https?):\/\//giu, String.raw`$1\://`)
+        ? token.raw.replace(/[\\`*_[\]{}()#+\-.!<>~|:@$=]/gu, (character) => {
+            // Entities avoid creating backslash-delimited chat math syntax.
+            return `&#${character.charCodeAt(0)};`;
+          })
         : token.raw;
     })
     .join("");
@@ -825,18 +828,27 @@ function actionLinksFromTokens(
           offset + (token.raw.startsWith("<") ? 1 : 0),
         ))
     ) {
-      const url = trimPreviewUrl(token.href);
-      const block = createActionBlockFromUrl(url, chatActionContext);
-      if (block) {
-        const trailing = token.href.slice(url.length);
-        const suffix = token.raw.endsWith(trailing) ? trailing : "";
-        matches.push({
-          source: token.raw.slice(0, token.raw.length - suffix.length),
-          block,
-        });
-        retained =
-          (token.raw.startsWith("[") ? retainedActionLabel(token.tokens) : "") +
-          suffix;
+      const isBareLink =
+        !token.raw.startsWith("[") && !token.raw.startsWith("<");
+      // GFM autolinks can include adjacent Chinese punctuation and prose.
+      // Keep the established URL boundary when extracting a bare action.
+      const candidate = isBareLink
+        ? new RegExp(`^${URL_TOKEN_PATTERN}`).exec(token.raw)?.[0]
+        : token.href;
+      if (candidate !== undefined) {
+        const url = trimPreviewUrl(candidate);
+        const block = createActionBlockFromUrl(url, chatActionContext);
+        if (block) {
+          const suffix = isBareLink ? token.raw.slice(url.length) : "";
+          matches.push({
+            source: token.raw.slice(0, token.raw.length - suffix.length),
+            block,
+          });
+          retained =
+            (token.raw.startsWith("[")
+              ? retainedActionLabel(token.tokens)
+              : "") + suffix;
+        }
       }
     } else if (isEmphasisToken(token)) {
       const inner = actionLinksFromTokens(
@@ -887,7 +899,7 @@ function actionLinksFromLine(
   line: string,
   chatActionContext: ChatActionContext | undefined,
 ): ActionLine {
-  if (/^(?: {4}|\t)/u.test(line) || !new RegExp(URL_TOKEN_PATTERN).test(line)) {
+  if (!new RegExp(URL_TOKEN_PATTERN).test(line)) {
     return { markdown: line, matches: [] };
   }
   // Use original defaults: Tiptap adds editor tokenizers to global Marked.
@@ -913,6 +925,50 @@ function retainedActionMarkdown(
   }
 
   return actionLine.markdown;
+}
+
+function isMarkdownContainer(
+  token: Token,
+): token is Tokens.List | Tokens.Blockquote {
+  return token.type === "list" || token.type === "blockquote";
+}
+
+function markdownCodeRowIndexes(content: string): Set<number> {
+  const rows = new Set<number>();
+  if (
+    !/^(?: {4}| {0,3}[\t>])/mu.test(content) ||
+    !new RegExp(URL_TOKEN_PATTERN).test(content)
+  ) {
+    return rows;
+  }
+
+  // Indentation alone cannot distinguish nested list prose from code. Block
+  // tokens retain line breaks even when a container removes its line prefixes.
+  const visit = (tokens: readonly Token[], firstRow: number): void => {
+    let row = firstRow;
+    for (const token of tokens) {
+      const lineBreaks = token.raw.split("\n").length - 1;
+      if (token.type === "code") {
+        const count = lineBreaks + (token.raw.endsWith("\n") ? 0 : 1);
+        for (let index = 0; index < count; index += 1) {
+          rows.add(row + index);
+        }
+      } else if (isMarkdownContainer(token)) {
+        if (token.type === "list") {
+          let itemRow = row;
+          for (const item of token.items) {
+            visit(item.tokens, itemRow);
+            itemRow += item.raw.split("\n").length - 1;
+          }
+        } else {
+          visit(token.tokens, row);
+        }
+      }
+      row += lineBreaks;
+    }
+  };
+  visit(Lexer.lex(content, getDefaults()), 0);
+  return rows;
 }
 
 function splitMarkdownTableRow(line: string): string[] | null {
@@ -1011,8 +1067,10 @@ function parseBodyBlocks(
   const blocks: ParsedBodyBlock[] = [];
   const lines = content.split("\n");
   const tableRowIndexes = markdownTableRowIndexes(lines);
+  const codeRowIndexes = markdownCodeRowIndexes(content);
   const keptLines: string[] = [];
   const markdownBuffer: string[] = [];
+  let firstMarkdownLineIsCode: boolean | null = null;
   let blockSequence = 0;
   let openFence: OpenMarkdownFence | null = null;
   const nextMarkdownBlockId = () => {
@@ -1021,7 +1079,12 @@ function parseBodyBlocks(
   };
 
   const flushMarkdownBuffer = () => {
-    const joined = markdownBuffer.join("\n").trim();
+    const source = markdownBuffer.join("\n");
+    // Code must keep its indentation. Retained list prose starts a new
+    // Markdown fragment after a card and keeps the existing dedenting behavior.
+    const joined = firstMarkdownLineIsCode
+      ? source.replace(/^(?:[ \t]*\r?\n)+/u, "").trimEnd()
+      : source.trim();
     if (joined) {
       blocks.push({
         type: "markdown",
@@ -1030,14 +1093,27 @@ function parseBodyBlocks(
       });
     }
     markdownBuffer.length = 0;
+    firstMarkdownLineIsCode = null;
   };
 
-  const pushMarkdownLines = (nextLines: readonly string[]) => {
+  const pushMarkdownLines = (nextLines: readonly string[], isCode = false) => {
+    if (
+      firstMarkdownLineIsCode === null &&
+      nextLines.some((line) => {
+        return /\S/u.test(line);
+      })
+    ) {
+      firstMarkdownLineIsCode = isCode;
+    }
     markdownBuffer.push(...nextLines);
     keptLines.push(...nextLines);
   };
 
   for (const [lineIndex, line] of lines.entries()) {
+    if (codeRowIndexes.has(lineIndex)) {
+      pushMarkdownLines([line], true);
+      continue;
+    }
     const nextFence = nextMarkdownFence(line, openFence);
     if (openFence !== null || nextFence !== null) {
       openFence = nextFence;
@@ -1046,8 +1122,7 @@ function parseBodyBlocks(
     }
 
     if (tableRowIndexes.has(lineIndex)) {
-      markdownBuffer.push(line);
-      keptLines.push(line);
+      pushMarkdownLines([line]);
       continue;
     }
 

@@ -231,6 +231,10 @@ renders only its card. Raw action destinations are removed from retained prose,
 including invalid actions that render as unavailable. Code spans, fenced and
 indented code, image destinations, and Markdown table rows remain content.
 Every action retains its own origin and chat-context validation.
+Bare action URLs stop before adjacent prose punctuation, and retained labels
+stay literal text or keep their original inline formatting. For indented or
+quoted content, Markdown block tokens distinguish code from nested list prose;
+indentation by itself does not disable an action.
 
 Artifact recognition does not choose its presentation. After Markdown parsing,
 each supported artifact `<a>` or `<img>` node registers its URL in the owning

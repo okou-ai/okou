@@ -231,6 +231,51 @@ test("A bare relative permission beside another link keeps punctuation and prose
   expectNodeBefore(reference!, card);
 });
 
+test("A bare action stops before adjacent Chinese punctuation and prose", async () => {
+  await setupChat(`Please connect ${CONNECTOR_URL}。然后继续查看说明。`);
+
+  const sentence = await screen.findByText(
+    "Please connect 。然后继续查看说明。",
+  );
+  const card = await screen.findByTestId("connector-action-card");
+  expectNodeBefore(sentence, card);
+  expect(screen.queryByTestId("unavailable-action-card")).toBeNull();
+});
+
+test("Action labels stay literal instead of becoming new Markdown links or headings", async () => {
+  const wrongAgentUrl = CONNECTOR_URL.replace(
+    AGENT_ID,
+    "c0000000-0000-4000-a000-000000000099",
+  );
+  await setupChat(
+    [
+      `[\\[reference\\]](${wrongAgentUrl}) remains literal.`,
+      "",
+      `[# Review](${CONNECTOR_URL}) before continuing.`,
+      "",
+      `[www.example.com](${wrongAgentUrl}) stays unavailable.`,
+      "",
+      "[reference]: https://example.com/reference",
+    ].join("\n"),
+  );
+
+  await screen.findByTestId("connector-action-card");
+  expect(screen.getAllByTestId("unavailable-action-card")).toHaveLength(2);
+  expect(screen.getByText("[reference] remains literal.")).toBeInTheDocument();
+  expect(screen.getByText("# Review before continuing.").tagName).toBe("P");
+  expect(
+    screen.getByText("www.example.com stays unavailable."),
+  ).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("link").filter((link) => {
+      return (
+        link.getAttribute("href")?.startsWith("https://example.com") ||
+        link.getAttribute("href") === "http://www.example.com"
+      );
+    }),
+  ).toHaveLength(0);
+});
+
 test("Code, images and table links stay content beside real actions", async () => {
   await setupChat(
     [
@@ -269,6 +314,69 @@ test("Code, images and table links stay content beside real actions", async () =
   );
   expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
   expect(screen.queryByTestId("permission-action-card")).toBeNull();
+});
+
+test("Nested list actions remain available while indented code stays content", async () => {
+  await setupChat(
+    [
+      "- Connection choices",
+      `    - Please [connect GitHub](${CONNECTOR_URL}).`,
+      `    - Please [allow file reads](${PERMISSION_URL}).`,
+      "",
+      "> Quoted example",
+      ">",
+      `>     ${CONNECTOR_URL}`,
+      "",
+      `    ${PERMISSION_URL}`,
+      "",
+      "- Nested code example",
+      "    - Copy this example:",
+      "",
+      `          ${CONNECTOR_URL}`,
+    ].join("\n"),
+  );
+
+  await screen.findByTestId("permission-action-card");
+  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
+  expect(screen.getAllByTestId("permission-action-card")).toHaveLength(1);
+  expect(screen.getByText("Please connect GitHub.")).toBeInTheDocument();
+  expect(
+    screen.getByText("Please allow file reads.").closest("li"),
+  ).not.toBeNull();
+  const codeExamples = Array.from(
+    document.querySelectorAll("pre code"),
+    (code) => {
+      return code.textContent?.trim();
+    },
+  );
+  expect(codeExamples).toStrictEqual([
+    CONNECTOR_URL,
+    PERMISSION_URL,
+    CONNECTOR_URL,
+  ]);
+});
+
+test("Indented code keeps its formatting at message and action boundaries", async () => {
+  await setupChat(
+    [
+      `    ${PERMISSION_URL}`,
+      "",
+      `Please [connect GitHub](${CONNECTOR_URL}).`,
+      "",
+      `    ${CONNECTOR_URL}`,
+    ].join("\n"),
+  );
+
+  await screen.findByText("Please connect GitHub.");
+  expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
+  expect(screen.queryByTestId("permission-action-card")).toBeNull();
+  const codeExamples = Array.from(
+    document.querySelectorAll("pre code"),
+    (code) => {
+      return code.textContent?.trim();
+    },
+  );
+  expect(codeExamples).toStrictEqual([PERMISSION_URL, CONNECTOR_URL]);
 });
 
 test("Keep the connector slot when delayed metadata is unavailable", async () => {
