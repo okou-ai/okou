@@ -23,6 +23,13 @@ import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
+import {
+  holdMorningBriefMembershipRemoval,
+  holdMorningBriefProjectionWrite,
+  readActiveStatement,
+  startMorningBriefMembershipRemoval,
+  waitForBlockingPid,
+} from "../../../test-fixtures/morning-brief-projection";
 import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
 import { loadMorningBriefMigrationState } from "../morning-brief-migration-state.service";
 import {
@@ -33,9 +40,14 @@ import {
 // The Settings routes own every externally constructible case and are covered
 // in `routes/__tests__/official-workflows.test.ts`. This suite exists for the
 // persisted boundary that has no HTTP ingress: the composite membership fence
-// and its two commit orders, the foreign-key cascades that invalidate a copy,
-// and erasure admission, whose closure path has no production endpoint. It
-// asserts real rows and real concurrent transactions, never helper call counts.
+// and its two overlapping commit orders, the foreign-key cascades that
+// invalidate a copy, erasure admission, whose closure path has no production
+// endpoint, and the refresh outcome itself, which no response body exposes.
+// Only the outcome distinction — a failed copy is not a healthy skip and not a
+// cleared copy — can be checked here, because a projection may serve a read
+// only while it still equals the legacy state, so a fresh copy and a missing
+// one are deliberately indistinguishable through the API. It asserts real rows
+// and real suspended transactions, never helper call counts.
 describe("Morning Brief installed preference projection persistence", () => {
   const context = testContext();
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 8 });
@@ -179,6 +191,19 @@ describe("Morning Brief installed preference projection persistence", () => {
       );
   }
 
+  async function readMembershipParent(brief: InstalledBrief) {
+    const [parent] = await db
+      .select({ orgId: orgMembersCache.orgId })
+      .from(orgMembersCache)
+      .where(
+        and(
+          eq(orgMembersCache.orgId, brief.owner.orgId),
+          eq(orgMembersCache.userId, brief.owner.userId),
+        ),
+      );
+    return parent;
+  }
+
   function decision(subjectId: string): ErasureDecision {
     return {
       subjectId,
@@ -278,53 +303,124 @@ describe("Morning Brief installed preference projection persistence", () => {
       reason: "membership-unavailable",
     });
     await expect(readProjectionRow(brief)).resolves.toBeUndefined();
-    const [parent] = await db
-      .select({ orgId: orgMembersCache.orgId })
-      .from(orgMembersCache)
-      .where(
-        and(
-          eq(orgMembersCache.orgId, brief.owner.orgId),
-          eq(orgMembersCache.userId, brief.owner.userId),
-        ),
-      );
-    expect(parent).toBeUndefined();
+    await expect(readMembershipParent(brief)).resolves.toBeUndefined();
   });
 
-  it("resolves a membership cleanup racing a refresh in either commit order", async () => {
+  it("suspends a refresh on the exact parent an uncommitted cleanup holds, then skips it", async () => {
     const cleanupFirst = await seedInstalledBrief();
     const survivor = await seedInstalledBrief();
     await refresh(cleanupFirst);
     await refresh(survivor);
 
-    // Commit order one: the cleanup holds the parent row while the refresh
-    // asks for it, so the refresh waits and then finds nothing to hang from.
-    const blocker = await pool.connect();
-    await blocker.query("BEGIN");
-    await blocker.query(
-      "DELETE FROM org_members_cache WHERE org_id = $1 AND user_id = $2",
-      [cleanupFirst.owner.orgId, cleanupFirst.owner.userId],
+    // The cleanup owns this owner's parent row and has not committed, so the
+    // refresh cannot pass its membership recheck.
+    const cleanup = await holdMorningBriefMembershipRemoval(
+      cleanupFirst.owner,
+      context.signal,
     );
     const refreshing = refresh(cleanupFirst);
-    await blocker.query("COMMIT");
-    blocker.release();
+
+    // Arrival, not a sleep: PostgreSQL reports a session waiting on the lock
+    // this cleanup holds, and that session is running the writer's own
+    // `for key share` recheck of `org_members_cache`. The refresh is therefore
+    // inside its transaction, past erasure admission, with the copy unwritten.
+    const blockedPid = await cleanup.waitForBlocked();
+    const blockedStatement = await readActiveStatement(blockedPid);
+    expect(blockedStatement).toContain("org_members_cache");
+    expect(blockedStatement).toContain("key share");
+    await expect(readProjectionRow(cleanupFirst)).resolves.toMatchObject({
+      workflowId: cleanupFirst.workflowId,
+    });
+
+    await cleanup.release();
     await expect(refreshing).resolves.toStrictEqual({
       outcome: "skipped",
       reason: "membership-unavailable",
     });
+    // Neither the parent nor the copy comes back, and the writer never
+    // recreates the membership row it just failed to find.
     await expect(readProjectionRow(cleanupFirst)).resolves.toBeUndefined();
-
-    // Commit order two: the refresh commits first and the later cleanup takes
-    // its copy with it. Neither order touches the other owner's row.
-    const refreshFirst = await seedInstalledBrief();
-    await expect(refresh(refreshFirst)).resolves.toStrictEqual({
-      outcome: "refreshed",
-    });
-    await expect(readProjectionRow(refreshFirst)).resolves.toBeDefined();
-    await deleteMembershipParent(refreshFirst);
-    await expect(readProjectionRow(refreshFirst)).resolves.toBeUndefined();
+    await expect(readMembershipParent(cleanupFirst)).resolves.toBeUndefined();
     await expect(readProjectionRow(survivor)).resolves.toMatchObject({
       workflowId: survivor.workflowId,
       enabled: true,
+    });
+  });
+
+  it("holds an uncommitted copy while a membership cleanup waits, then loses it to the cascade", async () => {
+    const refreshFirst = await seedInstalledBrief();
+    const survivor = await seedInstalledBrief();
+    await refresh(survivor);
+
+    // Suspend this owner's projection write after the row is written and
+    // before COMMIT, while the writer still holds `for key share` on the
+    // parent it just rechecked.
+    const heldWrite = await holdMorningBriefProjectionWrite(
+      refreshFirst.owner,
+      {},
+      context.signal,
+    );
+    const refreshing = refresh(refreshFirst);
+    const writerPid = await heldWrite.waitForArrival();
+    await expect(readProjectionRow(refreshFirst)).resolves.toBeUndefined();
+
+    // The conflicting cleanup really queues behind that transaction: the
+    // waiting backend is the suspended writer, not a guess about timing.
+    const cleanup = await startMorningBriefMembershipRemoval(
+      refreshFirst.owner,
+      context.signal,
+    );
+    await waitForBlockingPid(cleanup.pid, writerPid);
+
+    await heldWrite.release();
+    await expect(refreshing).resolves.toStrictEqual({ outcome: "refreshed" });
+    await cleanup.committed;
+
+    // The copy committed first and the cleanup then took it away through the
+    // membership cascade; nothing refills either row.
+    await expect(readProjectionRow(refreshFirst)).resolves.toBeUndefined();
+    await expect(readMembershipParent(refreshFirst)).resolves.toBeUndefined();
+    await expect(readProjectionRow(survivor)).resolves.toMatchObject({
+      workflowId: survivor.workflowId,
+      enabled: true,
+    });
+  });
+
+  it("reports a failed copy when its write fails, and refreshes once the fault is gone", async () => {
+    const brief = await seedInstalledBrief();
+    await refresh(brief);
+    const projected = await readProjectionRow(brief);
+    if (!projected) {
+      throw new Error("Expected a projected row");
+    }
+
+    // A real write failure inside the copy's own transaction, observed at the
+    // boundary before it is released into that failure.
+    const fault = await holdMorningBriefProjectionWrite(
+      brief.owner,
+      { failAfterGate: true },
+      context.signal,
+    );
+    await db
+      .update(workflowAutomations)
+      .set({ enabled: false, nextRunAt: null })
+      .where(eq(workflowAutomations.id, brief.automationId));
+    const failing = refresh(brief);
+    await fault.waitForArrival();
+    await fault.release();
+
+    // A failure is neither a healthy skip nor a cleared copy: the outcome is
+    // distinct and the stale row is left exactly as the last writer left it.
+    await expect(failing).resolves.toStrictEqual({ outcome: "failed" });
+    await expect(readProjectionRow(brief)).resolves.toStrictEqual(projected);
+
+    await fault.remove();
+    await expect(refresh(brief)).resolves.toStrictEqual({
+      outcome: "refreshed",
+    });
+    await expect(readProjectionRow(brief)).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
     });
   });
 

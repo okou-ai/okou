@@ -151,6 +151,41 @@ leave a detached write behind.
 When the state is not `installed`, the refresh deletes the row instead of
 copying, so no description of a state the reader cannot reproduce survives.
 
+### What the concurrency evidence actually proves
+
+Those claims are held up by forced interleavings rather than by ordering two
+requests and reading the final state ([#34711](https://github.com/vm0-ai/okou/issues/34711)).
+Test-only fixtures suspend or fail exactly one owner's write, and every
+rendezvous is an observed arrival — `pg_blocking_pids`, or a committed public
+response — never a sleep:
+
+- **Membership cleanup versus refresh.** With the cleanup's `DELETE` held
+  uncommitted, the refresher is observed waiting on that exact parent row while
+  running its own `for key share` recheck; after the cleanup commits, the
+  refresh skips and recreates neither row. In the opposite order the copy is
+  held written-but-uncommitted while the cleanup queues behind that
+  transaction, and the committed copy then leaves with the parent's cascade.
+- **Toggle versus timezone.** Each ownership order suspends the lock holder at
+  its projection write and issues the other request while it is held. The
+  timezone request's own preference write commits and is publicly readable,
+  which is the arrival evidence available for the preference lock: it uses
+  `pg_try_advisory_xact_lock` with a retry delay, so a contender never waits on
+  a PostgreSQL lock and never appears in `pg_blocking_pids`. A toggle performs
+  no write before taking that lock, so its overlap rests on being issued while
+  the holder is proven suspended, plus the reads showing it committed nothing
+  until the holder released.
+- **A failed copy after a committed choice.** A real Settings mutation is
+  observed suspended at its projection write with its legacy choice already
+  visible, then released into a real database error. The request still returns
+  that choice, later reads keep it, the legacy automation is not replayed, and
+  an ordinary later write succeeds once the fault is removed.
+
+The limit is equally explicit: because a copy may answer a read only while it
+still equals the legacy state, a fresh copy and a missing one are
+indistinguishable through the API. Whether a refresh was `refreshed`, `failed`,
+`skipped` or `cleared` is therefore asserted where that outcome exists, in the
+projection service suite, not inferred from a response body.
+
 ### The deletion fence is a cache lifetime, not erasure authority
 
 The row's lifetime is deliberately evictable:

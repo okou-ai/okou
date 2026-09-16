@@ -69,6 +69,7 @@ import { verifyOkouToken } from "../../auth/tokens";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -3054,7 +3055,261 @@ describe("Morning Brief native preference projection", () => {
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
+
+  it("returns the committed choice when its projection write fails after that commit", async () => {
+    const { actor, owner, headers } = await prepareProjectedBrief();
+
+    // Fail exactly this owner's projection write. Nothing the Settings
+    // endpoints accept can reject one copy after its legacy choice committed,
+    // so this narrow infrastructure fault owns that boundary and no other.
+    const fault = await holdMorningBriefProjectionWrite(
+      owner,
+      { failAfterGate: true },
+      context.signal,
+    );
+    const pausing = accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+
+    // Observed, not assumed: the mutation is suspended inside its copy, and
+    // the choice it already committed is visible through the public read while
+    // that copy is still uncommitted.
+    await fault.waitForArrival();
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+
+    // Release the held write into a real database failure.
+    await fault.release();
+    const paused = await pausing;
+    expect(paused.body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      nextRunAt: null,
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+    // The failed copy never became the user's answer, never turned a committed
+    // choice into an error, and never replayed the legacy mutation.
+    expect((await readBriefPreference(actor)).body).toStrictEqual(paused.body);
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected the Morning Brief installation");
+    }
+    await expect(
+      readMorningBriefAutomations(actor, installation.id),
+    ).resolves.toMatchObject([{ enabled: false }]);
+
+    // A later ordinary write, and then a no-op repeat of the same choice, both
+    // complete once the fault is gone. Whether a healthy copy served the read
+    // is deliberately invisible here: the projection may only answer while it
+    // equals the legacy state it was copied from.
+    await fault.remove();
+    const reenabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(reenabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    expect((await readBriefPreference(actor)).body).toStrictEqual(
+      reenabled.body,
+    );
+    const repeated = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(repeated.body).toStrictEqual(reenabled.body);
+  });
+
+  it("keeps the last choice when a toggle owns the projection write before a timezone change", async () => {
+    const { actor, owner, headers } = await prepareProjectedBrief();
+
+    const held = await holdMorningBriefProjectionWrite(
+      owner,
+      {},
+      context.signal,
+    );
+    const pausing = accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+
+    // Ownership order one. The toggle holds the preference advisory lock and
+    // is suspended at its projection write, so its legacy choice is already
+    // committed and readable.
+    await held.waitForArrival();
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+
+    // The timezone change is the contender. Its own preference write commits
+    // first and becomes publicly visible, which is the arrival evidence a
+    // `pg_try_advisory_xact_lock` retry loop can give: from here the request
+    // is inside Morning Brief synchronization and cannot finish until the
+    // suspended toggle commits. It never waits on a PostgreSQL lock, so
+    // `pg_blocking_pids` cannot see it and is not claimed here.
+    const synchronizing = bdd.updateUserTimezone(actor, "America/New_York");
+    await expect
+      .poll(
+        async () => {
+          return await readUserTimezone(actor);
+        },
+        { timeout: RENDEZVOUS_TIMEOUT_MS },
+      )
+      .toBe("America/New_York");
+    expect((await readBriefPreference(actor)).body.timezone).toBe(
+      "Asia/Shanghai",
+    );
+
+    await held.release();
+    const [paused] = await Promise.all([pausing, synchronizing]);
+    await flushWaitUntilForTest();
+
+    // The toggle answered from inside its own lock ownership, before the
+    // timezone change could commit over it.
+    expect(paused.body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      nextRunAt: null,
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+    const settled = await readBriefPreference(actor);
+    expect(settled.body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      nextRunAt: null,
+      timezone: "America/New_York",
+      unavailableReason: null,
+    });
+    await expectChoiceSurvivesImplementationSwitch(actor, settled.body);
+  });
+
+  it("keeps the last choice when a timezone change owns the projection write before a toggle", async () => {
+    const { actor, owner, headers } = await prepareProjectedBrief();
+
+    const held = await holdMorningBriefProjectionWrite(
+      owner,
+      {},
+      context.signal,
+    );
+    const synchronizing = bdd.updateUserTimezone(actor, "America/New_York");
+
+    // Ownership order two. Timezone synchronization holds the preference
+    // advisory lock and is suspended at its projection write, with the new
+    // schedule already committed.
+    await held.waitForArrival();
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "America/New_York",
+    });
+
+    // The toggle is the contender here. It performs no write before taking the
+    // same lock, so there is no earlier public effect to observe: its overlap
+    // is that it is issued while the synchronization above is proven suspended
+    // holding that lock, and the read below shows it has committed nothing.
+    const pausing = accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+    });
+
+    await held.release();
+    const [paused] = await Promise.all([pausing, synchronizing]);
+    await flushWaitUntilForTest();
+
+    // The toggle ran after the committed timezone, so it keeps that timezone
+    // and still owns the enabled state.
+    expect(paused.body).toStrictEqual({
+      status: "paused",
+      enabled: false,
+      nextRunAt: null,
+      timezone: "America/New_York",
+      unavailableReason: null,
+    });
+    const settled = await readBriefPreference(actor);
+    expect(settled.body).toStrictEqual(paused.body);
+    await expectChoiceSurvivesImplementationSwitch(actor, settled.body);
+  });
 });
+
+/** Bounds every rendezvous wait; arrival is observed, never slept through. */
+const RENDEZVOUS_TIMEOUT_MS = 10_000;
+
+async function prepareProjectedBrief() {
+  installCatalogStorageFixture();
+  await syncDeployedCatalog();
+  const { actor } = await workflowBdd.setupWorkflowOrg({
+    timezone: "Asia/Shanghai",
+  });
+  const orgId = actor.orgId;
+  if (!orgId) {
+    throw new Error("Expected organization-scoped actor");
+  }
+  onTestFinished(async () => {
+    installCatalogStorageFixture();
+    await cleanupCatalog();
+  });
+  const headers = authHeaders(actor);
+  await setOfficialWorkflowsEnabled(actor, false);
+  await setMorningBriefEnabled(actor, true);
+  await setSimpleMorningBriefEnabled(actor, true);
+  const enabled = await accept(
+    morningBriefPreferenceClient().update({ headers, body: { enabled: true } }),
+    [200],
+  );
+  expect(enabled.body).toMatchObject({
+    enabled: true,
+    status: "enabled",
+    timezone: "Asia/Shanghai",
+  });
+  return { actor, owner: { orgId, userId: actor.userId }, headers };
+}
+
+async function readUserTimezone(actor: ApiTestUser): Promise<string | null> {
+  const response = await accept(
+    setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    ).get({ headers: authHeaders(actor) }),
+    [200],
+  );
+  return response.body.timezone;
+}
+
+/**
+ * Turning the implementation switch off and on again must answer with the same
+ * choice, so no copy written during the race can outlive the state it copied.
+ */
+async function expectChoiceSurvivesImplementationSwitch(
+  actor: ApiTestUser,
+  expected: Awaited<ReturnType<typeof readBriefPreference>>["body"],
+): Promise<void> {
+  await setSimpleMorningBriefEnabled(actor, false);
+  expect((await readBriefPreference(actor)).body).toStrictEqual(expected);
+  await setSimpleMorningBriefEnabled(actor, true);
+  expect((await readBriefPreference(actor)).body).toStrictEqual(expected);
+}
 
 async function installMorningBriefFromCatalog(
   actor: ApiTestUser,
