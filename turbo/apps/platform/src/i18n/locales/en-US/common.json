@@ -761,11 +761,6 @@
           "shortDescription": "File the worst Sentry errors as GitHub issues.",
           "title": "File Sentry crashes as GitHub issues"
         },
-        "flag-figma-designs-no-task": {
-          "description": "Flag Figma designs that have no linked Linear task yet.",
-          "shortDescription": "Flag Figma designs with no Linear task.",
-          "title": "Flag Figma designs without a task"
-        },
         "flagged-gmail-todoist-tasks": {
           "description": "Turn the emails you flag into Todoist tasks automatically.",
           "shortDescription": "Turn flagged emails into Todoist tasks.",
@@ -791,11 +786,6 @@
           "shortDescription": "Surface the emails that need your attention.",
           "title": "Highlight key emails in Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Assemble metrics and highlights into an investor update in Docs.",
-          "shortDescription": "Assemble metrics into an investor update.",
-          "title": "Draft the investor update in Google Docs"
-        },
         "morning-brief": {
           "description": "Turn Gmail, Calendar, and Notion updates into a short daily plan in Slack.",
           "shortDescription": "Turn mail and meetings into a short daily plan.",
@@ -805,11 +795,6 @@
           "description": "Add and enrich unknown email senders as HubSpot contacts.",
           "shortDescription": "Add unknown email senders to HubSpot.",
           "title": "Add new Gmail contacts to HubSpot"
-        },
-        "onboard-new-hires-asana": {
-          "description": "Create the onboarding task checklist for each new hire in Asana.",
-          "shortDescription": "Create an onboarding checklist per new hire.",
-          "title": "Onboard new hires in Asana"
         },
         "personal-weekly-digest": {
           "description": "Summarize GitHub, Gmail, and Calendar activity into one weekly Slack update.",
@@ -870,11 +855,6 @@
           "description": "Surface the biggest weekly shifts in feature usage from PostHog.",
           "shortDescription": "Surface the week's biggest usage shifts.",
           "title": "Track feature usage with PostHog"
-        },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Track keyword rankings in Ahrefs and report the movers in Notion.",
-          "shortDescription": "Report the week's keyword rank movers.",
-          "title": "Track keyword ranks with Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Monitor Vercel deployments, link them to GitHub commits, and alert Slack on failures.",

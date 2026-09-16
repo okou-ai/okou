@@ -780,11 +780,6 @@
           "shortDescription": "Ouvre des issues GitHub pour les pires erreurs Sentry.",
           "title": "Créer des issues GitHub à partir des erreurs Sentry"
         },
-        "flag-figma-designs-no-task": {
-          "description": "Marquer les designs Figma qui n'ont pas encore de tâche Linear liée.",
-          "shortDescription": "Repère les designs Figma sans tâche Linear.",
-          "title": "Marquer les conceptions Figma sans tâche"
-        },
         "flagged-gmail-todoist-tasks": {
           "description": "Transformez automatiquement les e-mails que vous marquez en tâches Todoist.",
           "shortDescription": "Transforme les e-mails suivis en tâches Todoist.",
@@ -810,11 +805,6 @@
           "shortDescription": "Fait remonter les e-mails qui vous attendent.",
           "title": "Met en évidence les emails clés dans Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Assemble les métriques et les points forts dans une mise à jour pour les investisseurs dans Docs.",
-          "shortDescription": "Réunit les métriques en un update investisseurs.",
-          "title": "Rédiger la mise à jour pour les investisseurs dans Google Docs"
-        },
         "morning-brief": {
           "description": "Transformez les nouveautés Gmail, Agenda et Notion en un court plan de journée dans Slack.",
           "shortDescription": "Transforme e-mails et réunions en plan de journée.",
@@ -824,11 +814,6 @@
           "description": "Ajoutez et enrichissez les expéditeurs de courriels inconnus en tant que contacts HubSpot.",
           "shortDescription": "Ajoute les expéditeurs inconnus à HubSpot.",
           "title": "Ajouter de nouveaux contacts Gmail à HubSpot"
-        },
-        "onboard-new-hires-asana": {
-          "description": "Créer la liste de contrôle des tâches d'intégration pour chaque nouvelle embauche dans Asana.",
-          "shortDescription": "Crée une checklist d'intégration par arrivée.",
-          "title": "Intégrer les nouvelles embauches dans Asana"
         },
         "personal-weekly-digest": {
           "description": "Résumez votre activité GitHub, Gmail et Agenda dans une mise à jour hebdomadaire Slack.",
@@ -889,11 +874,6 @@
           "description": "Mettre en évidence les plus grands changements hebdomadaires dans l'utilisation des fonctionnalités depuis PostHog.",
           "shortDescription": "Montre les plus gros écarts d'usage de la semaine.",
           "title": "Suivre l'utilisation des fonctionnalités avec PostHog"
-        },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Suivez les positions de vos mots-clés dans Ahrefs et consignez les plus gros mouvements dans Notion.",
-          "shortDescription": "Rapporte les mouvements de positions de la semaine.",
-          "title": "Suivre les classements des mots-clés avec Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Surveillez les déploiements Vercel, reliez-les aux commits GitHub et signalez les échecs dans Slack.",

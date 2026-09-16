@@ -760,11 +760,6 @@
           "shortDescription": "深刻な Sentry エラーを GitHub の課題にします。",
           "title": "SentryのクラッシュをGitHub Issueとして登録"
         },
-        "flag-figma-designs-no-task": {
-          "description": "Linear タスクがまだリンクされていない Figma デザインにフラグを立てます。",
-          "shortDescription": "Linear のタスクがない Figma デザインを洗い出します。",
-          "title": "タスクのない Figma デザインにフラグを立てる"
-        },
         "flagged-gmail-todoist-tasks": {
           "description": "フラグを付けたメールは自動的に Todoist タスクに変換されます。",
           "shortDescription": "スター付きのメールを Todoist のタスクにします。",
@@ -790,11 +785,6 @@
           "shortDescription": "対応が必要なメールを拾い上げます。",
           "title": "Gmail で重要なメールを強調表示する"
         },
-        "investor-update-google-docs": {
-          "description": "指標とハイライトをドキュメント内の投資家向け最新情報にまとめます。",
-          "shortDescription": "指標をまとめて投資家向けの報告にします。",
-          "title": "Google ドキュメントで投資家向け最新情報の草案を作成する"
-        },
         "morning-brief": {
           "description": "Gmail、カレンダー、Notion の更新を短い一日の計画にして Slack に送ります。",
           "shortDescription": "メールと予定を短い一日の計画にします。",
@@ -804,11 +794,6 @@
           "description": "不明なメール送信者を HubSpot 連絡先として追加して強化します。",
           "shortDescription": "未登録の送信者を HubSpot に追加します。",
           "title": "新しい Gmail 連絡先を HubSpot に追加します"
-        },
-        "onboard-new-hires-asana": {
-          "description": "Asana で各新入社員のオンボーディング タスク チェックリストを作成します。",
-          "shortDescription": "新しい仲間ごとに受け入れ用のチェックリストを作ります。",
-          "title": "Asana での新入社員のオンボーディング"
         },
         "personal-weekly-digest": {
           "description": "GitHub、Gmail、カレンダーの動きを週次でまとめて Slack に送ります。",
@@ -869,11 +854,6 @@
           "description": "PostHog からの機能使用量の週ごとの最大の変化を明らかにします。",
           "shortDescription": "今週いちばん動いた利用状況を知らせます。",
           "title": "PostHog を使用して機能の使用状況を追跡する"
-        },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Ahrefs でキーワード順位を追跡し、変動の大きいものを Notion にまとめます。",
-          "shortDescription": "今週の検索順位の変動をまとめます。",
-          "title": "Ahrefs でキーワード ランクを追跡する"
         },
         "vercel-deploy-digest": {
           "description": "Vercel のデプロイを監視して GitHub のコミットと紐づけ、失敗したら Slack に通知します。",

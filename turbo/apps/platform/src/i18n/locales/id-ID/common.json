@@ -760,11 +760,6 @@
           "shortDescription": "Catat error Sentry terparah sebagai isu GitHub.",
           "title": "Ubah crash Sentry menjadi issue GitHub"
         },
-        "flag-figma-designs-no-task": {
-          "description": "Tandai desain Figma yang belum memiliki tugas Linear terhubung.",
-          "shortDescription": "Tandai desain Figma yang belum punya tugas Linear.",
-          "title": "Tandai desain Figma tanpa tugas"
-        },
         "flagged-gmail-todoist-tasks": {
           "description": "Ubah email yang Anda tandai menjadi tugas Todoist secara otomatis.",
           "shortDescription": "Ubah email bertanda jadi tugas Todoist.",
@@ -790,11 +785,6 @@
           "shortDescription": "Angkat email yang butuh perhatian Anda.",
           "title": "Sorot email penting di Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Kumpulkan metrik dan sorotan menjadi update investor di Docs.",
-          "shortDescription": "Rangkai metrik jadi update untuk investor.",
-          "title": "Susun update investor di Google Docs"
-        },
         "morning-brief": {
           "description": "Ubah update Gmail, Calendar, dan Notion jadi rencana harian singkat di Slack.",
           "shortDescription": "Ubah email dan rapat jadi rencana harian singkat.",
@@ -804,11 +794,6 @@
           "description": "Tambahkan dan lengkapi pengirim email yang belum dikenal sebagai kontak HubSpot.",
           "shortDescription": "Tambahkan pengirim email tak dikenal ke HubSpot.",
           "title": "Tambahkan kontak Gmail baru ke HubSpot"
-        },
-        "onboard-new-hires-asana": {
-          "description": "Buat checklist tugas onboarding untuk setiap karyawan baru di Asana.",
-          "shortDescription": "Buat checklist onboarding untuk tiap karyawan baru.",
-          "title": "Onboard karyawan baru di Asana"
         },
         "personal-weekly-digest": {
           "description": "Rangkum aktivitas GitHub, Gmail, dan Calendar jadi satu update mingguan di Slack.",
@@ -869,11 +854,6 @@
           "description": "Tampilkan pergeseran mingguan terbesar dalam penggunaan fitur dari PostHog.",
           "shortDescription": "Tampilkan perubahan penggunaan terbesar minggu ini.",
           "title": "Lacak penggunaan fitur dengan PostHog"
-        },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Lacak peringkat kata kunci di Ahrefs dan catat perubahan terbesarnya di Notion.",
-          "shortDescription": "Laporkan pergerakan peringkat kata kunci minggu ini.",
-          "title": "Lacak peringkat kata kunci dengan Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Pantau deploy Vercel, hubungkan dengan commit GitHub, dan beri tahu Slack saat gagal.",

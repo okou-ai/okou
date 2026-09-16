@@ -761,11 +761,6 @@
           "shortDescription": "सबसे गंभीर Sentry त्रुटियाँ GitHub इश्यू बनाएँ।",
           "title": "सेंट्री क्रैश को GitHub इश्यू के रूप में फ़ाइल करें"
         },
-        "flag-figma-designs-no-task": {
-          "description": "फिग्मा डिज़ाइनों को फ़्लैग करें जिनमें अभी तक कोई रैखिक कार्य नहीं जुड़ा है।",
-          "shortDescription": "बिना Linear टास्क वाले Figma डिज़ाइन बताएँ।",
-          "title": "बिना किसी कार्य के फिग्मा डिज़ाइन को फ़्लैग करें"
-        },
         "flagged-gmail-todoist-tasks": {
           "description": "आपके द्वारा फ़्लैग किए गए ईमेल को स्वचालित रूप से टोडोइस्ट कार्यों में बदल दें।",
           "shortDescription": "चिह्नित ईमेल को Todoist टास्क बनाएँ।",
@@ -791,11 +786,6 @@
           "shortDescription": "जिन ईमेल पर ध्यान चाहिए, उन्हें सामने लाएँ।",
           "title": "Gmail में प्रमुख ईमेल हाइलाइट करें"
         },
-        "investor-update-google-docs": {
-          "description": "डॉक्स में निवेशक अपडेट में मेट्रिक्स और हाइलाइट्स को इकट्ठा करें।",
-          "shortDescription": "आंकड़े जोड़कर निवेशक अपडेट तैयार करें।",
-          "title": "Google डॉक्स में निवेशक अपडेट ड्राफ्ट करें"
-        },
         "morning-brief": {
           "description": "Gmail, कैलेंडर और Notion के अपडेट को Slack पर दिन की छोटी योजना में बदलें।",
           "shortDescription": "मेल और मीटिंग से दिन की छोटी योजना बनाएँ।",
@@ -805,11 +795,6 @@
           "description": "अज्ञात ईमेल प्रेषकों को HubSpot संपर्कों के रूप में जोड़ें और समृद्ध करें।",
           "shortDescription": "अनजान ईमेल भेजने वालों को HubSpot में जोड़ें।",
           "title": "HubSpot में नए Gmail संपर्क जोड़ें"
-        },
-        "onboard-new-hires-asana": {
-          "description": "आसन में प्रत्येक नए कर्मचारी के लिए ऑनबोर्डिंग कार्य चेकलिस्ट बनाएं।",
-          "shortDescription": "हर नई भर्ती के लिए ऑनबोर्डिंग चेकलिस्ट बनाएँ।",
-          "title": "Asana में नए कर्मचारियों को शामिल करें"
         },
         "personal-weekly-digest": {
           "description": "GitHub, Gmail और कैलेंडर की गतिविधि को एक साप्ताहिक Slack अपडेट में समेटें।",
@@ -870,11 +855,6 @@
           "description": "PostHog से फीचर उपयोग में सबसे बड़ा साप्ताहिक बदलाव सामने आया।",
           "shortDescription": "इस हफ़्ते उपयोग में सबसे बड़े बदलाव दिखाएँ।",
           "title": "PostHog के साथ फीचर उपयोग को ट्रैक करें"
-        },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Ahrefs में कीवर्ड रैंकिंग ट्रैक करें और सबसे बड़े बदलाव Notion में दर्ज करें।",
-          "shortDescription": "इस हफ़्ते की कीवर्ड रैंक हलचल बताएँ।",
-          "title": "Ahrefs के साथ कीवर्ड रैंक ट्रैक करें"
         },
         "vercel-deploy-digest": {
           "description": "Vercel डिप्लॉयमेंट पर नज़र रखें, उन्हें GitHub कमिट से जोड़ें और विफलता पर Slack में सूचित करें।",

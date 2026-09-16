@@ -13,8 +13,12 @@ export interface WorkflowTemplateItem {
   readonly category: string;
   // Connector slugs shown as icons on the card. The catalog is curated by hand;
   // the picker filters these to entries with an icon. Every slug listed here
-  // must expose an OAuth auth method: a template is a one-click start, and a
-  // connector that can only be set up by pasting an API key is not.
+  // must offer an OAuth auth method: a template is a one-click start, and a
+  // connector that can only be set up by pasting an API key is not. Check that
+  // against the live catalog (GET /api/connector-catalog/:slug), not the
+  // connector's source YAML — the runtime drops an OAuth method whose static
+  // client credentials are unconfigured, so a connector can declare OAuth and
+  // still offer nothing but an API token.
   readonly connectorSlugs: readonly ConnectorSlug[];
   readonly promptGuidance: string;
 }
@@ -231,14 +235,14 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     description:
       "Expand a labeled GitHub issue into a structured product spec in Notion.",
     shortDescription: "Expand a GitHub issue into a Notion spec.",
-    connectorSlugs: ["github", "notion", "figma"],
+    connectorSlugs: ["github", "notion"],
     behavior: [
       "An issue is labeled needs-spec",
       "Expand it into a PRD",
       "Saved to Notion",
     ],
     missingInfo:
-      "Connectors: github, notion required; figma optional.\nSuggested trigger: Add a github-pull-request event trigger with the labeled action on the needs-spec label.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
+      "Connectors: github, notion required.\nSuggested trigger: Add a github-pull-request event trigger with the labeled action on the needs-spec label.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:post-release-notes-slack",
@@ -288,21 +292,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: posthog required; slack optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly). PostHog has no native event trigger, so poll on a cadence.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
-    id: "workflow-template:flag-figma-designs-no-task",
-    category: "Product",
-    title: "Flag Figma designs without a task",
-    description: "Flag Figma designs that have no linked Linear task yet.",
-    shortDescription: "Flag Figma designs with no Linear task.",
-    connectorSlugs: ["figma", "linear", "slack"],
-    behavior: [
-      "Scan Figma frames",
-      "Finds frames without a task",
-      "Gaps posted to Slack",
-    ],
-    missingInfo:
-      "Connectors: figma required; linear, slack optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Figma has no native event trigger, so poll on a cadence.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
     id: "workflow-template:check-posthog-signup-funnel",
     category: "Data",
     title: "Check the PostHog signup funnel",
@@ -334,22 +323,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: x, notion required; slack optional.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask only for the next missing detail among the keywords or accounts, cadence, Notion database, Slack channel, and alert thresholds.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:track-keyword-ranks-ahrefs",
-    category: "Marketing",
-    title: "Track keyword ranks with Ahrefs",
-    description:
-      "Track keyword rankings in Ahrefs and report the movers in Notion.",
-    shortDescription: "Report the week's keyword rank movers.",
-    connectorSlugs: ["ahrefs", "notion"],
-    behavior: [
-      "Read keyword positions",
-      "Movers identified",
-      "Reported in Notion",
-    ],
-    missingInfo:
-      "Connectors: ahrefs required; notion optional.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:draft-newsletter-mailchimp",
@@ -475,18 +448,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
       "Connectors: gmail, slack required.\nSuggested trigger: Add a gmail-new-message event trigger, or a schedule trigger that runs a few times a day.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
-    id: "workflow-template:investor-update-google-docs",
-    category: "CEO",
-    title: "Draft the investor update in Google Docs",
-    description:
-      "Assemble metrics and highlights into an investor update in Docs.",
-    shortDescription: "Assemble metrics into an investor update.",
-    connectorSlugs: ["stripe", "google-docs", "google-sheets"],
-    behavior: ["Gather KPIs", "Update drafted", "Editable in Google Docs"],
-    missingInfo:
-      "Connectors: stripe, google-docs required; google-sheets optional.\nSuggested trigger: Add a schedule trigger (e.g. monthly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
     id: "workflow-template:gmail-reconnect-reminders",
     category: "CEO",
     title: "Get Gmail reconnect reminders",
@@ -526,22 +487,6 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     ],
     missingInfo:
       "Connectors: gmail, google-drive required; google-sheets optional.\nSuggested trigger: Add a gmail-label-applied event trigger on the label you use for invoices.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
-  }),
-  defineWorkflowTemplate({
-    id: "workflow-template:onboard-new-hires-asana",
-    category: "Operations",
-    title: "Onboard new hires in Asana",
-    description:
-      "Create the onboarding task checklist for each new hire in Asana.",
-    shortDescription: "Create an onboarding checklist per new hire.",
-    connectorSlugs: ["deel", "asana", "google-drive"],
-    behavior: [
-      "A new hire is added",
-      "Checklist created in Asana",
-      "Docs provisioned",
-    ],
-    missingInfo:
-      "Connectors: deel, asana required; google-drive optional.\nSuggested trigger: Add a schedule trigger (e.g. daily). Deel has no native event trigger, so poll for new hires.\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing trigger or safety detail. Do not inspect connector setup until the workflow or trigger command reports that it is required.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:chase-overdue-asana-tasks",

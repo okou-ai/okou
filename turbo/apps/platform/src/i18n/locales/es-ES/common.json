@@ -780,11 +780,6 @@
           "shortDescription": "Crea issues de GitHub con los peores errores de Sentry.",
           "title": "Registrar fallos de Sentry como incidencias de GitHub"
         },
-        "flag-figma-designs-no-task": {
-          "description": "Marca los diseños de Figma que todavía no tienen una tarea de Linear vinculada.",
-          "shortDescription": "Señala los diseños de Figma sin tarea en Linear.",
-          "title": "Marcar diseños de Figma sin tarea"
-        },
         "flagged-gmail-todoist-tasks": {
           "description": "Convierte automáticamente los correos que marcas en tareas Todoist.",
           "shortDescription": "Convierte los correos marcados en tareas de Todoist.",
@@ -810,11 +805,6 @@
           "shortDescription": "Muestra los correos que necesitan tu atención.",
           "title": "Resalta los correos clave en Gmail"
         },
-        "investor-update-google-docs": {
-          "description": "Reúne métricas y destacados en una actualización para inversores en Docs.",
-          "shortDescription": "Reúne las métricas en un informe para inversores.",
-          "title": "Redacta la actualización para inversores en Google Docs"
-        },
         "morning-brief": {
           "description": "Convierte las novedades de Gmail, Calendar y Notion en un plan diario breve en Slack.",
           "shortDescription": "Convierte correo y reuniones en un plan diario.",
@@ -824,11 +814,6 @@
           "description": "Añade como contactos de HubSpot a remitentes desconocidos y completa sus datos.",
           "shortDescription": "Añade a HubSpot los remitentes desconocidos.",
           "title": "Añadir nuevos contactos de Gmail a HubSpot"
-        },
-        "onboard-new-hires-asana": {
-          "description": "Crea la lista de tareas de incorporación para cada nuevo empleado en Asana.",
-          "shortDescription": "Crea una checklist de alta por cada incorporación.",
-          "title": "Incorporar a nuevos empleados en Asana"
         },
         "personal-weekly-digest": {
           "description": "Resume la actividad de GitHub, Gmail y Calendar en una actualización semanal en Slack.",
@@ -889,11 +874,6 @@
           "description": "Destaca los mayores cambios semanales en el uso de funciones según PostHog.",
           "shortDescription": "Muestra los mayores cambios de uso de la semana.",
           "title": "Seguir el uso de funciones con PostHog"
-        },
-        "track-keyword-ranks-ahrefs": {
-          "description": "Sigue las posiciones de tus palabras clave en Ahrefs y anota los mayores cambios en Notion.",
-          "shortDescription": "Informa de los cambios de posición de la semana.",
-          "title": "Seguir posiciones de palabras clave con Ahrefs"
         },
         "vercel-deploy-digest": {
           "description": "Vigila los despliegues de Vercel, enlázalos con los commits de GitHub y avisa en Slack de los fallos.",
