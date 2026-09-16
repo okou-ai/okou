@@ -12,7 +12,10 @@ import type {
 } from "ably";
 import { delay } from "signal-timers";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
-import type { SharedDatabaseRealtimeScope } from "../shared-database/protocol.ts";
+import type {
+  SharedDatabaseRealtimeScope,
+  SharedDatabaseRealtimeSubscription,
+} from "../shared-database/protocol.ts";
 import { IN_VITEST } from "../env.ts";
 import { createAblyRealtime, type AblyRealtime } from "../lib/ably-realtime.ts";
 import { now } from "../lib/time.ts";
@@ -252,6 +255,16 @@ interface RealtimePayloadLoopArgs {
   >;
   readonly options?: RealtimeSubscribeOptions;
 }
+
+type AppRealtimeSubscription =
+  | {
+      readonly scope?: "user";
+      readonly topic: Extract<
+        SharedDatabaseRealtimeSubscription,
+        { scope: "user" }
+      >["topic"];
+    }
+  | Exclude<SharedDatabaseRealtimeSubscription, { scope: "user" }>;
 
 interface SetAblyLoopArgs {
   readonly scope?: RealtimeChannelScope;
@@ -1369,8 +1382,8 @@ async function observeAblySubscription(
   }
 }
 
-/** Start a subscription owned by signal and return immediately. */
-export const setAblyLoop$ = command(
+/** Worker-owned Ably subscriptions can include topics unavailable to tabs. */
+export const setWorkerAblyLoop$ = command(
   ({ set }, args: SetAblyLoopArgs, signal: AbortSignal): void => {
     setDaemon((ownerSignal) => {
       return observeAblySubscription(
@@ -1382,16 +1395,30 @@ export const setAblyLoop$ = command(
   },
 );
 
+/** App topics are checked against the Worker protocol before code can ship. */
+export const setAblyLoop$: Command<
+  void,
+  [SetAblyLoopArgs & AppRealtimeSubscription, AbortSignal]
+> = setWorkerAblyLoop$;
+
 /** Wait until the subscription finishes, fails, or is cancelled. */
 export const waitAblyLoopUntil$ = command(
-  ({ set }, args: SetAblyLoopArgs, signal: AbortSignal): Promise<void> => {
+  (
+    { set },
+    args: SetAblyLoopArgs & AppRealtimeSubscription,
+    signal: AbortSignal,
+  ): Promise<void> => {
     return set(internalSetAblyLoop$, args, signal);
   },
 );
 
 /** Start a subscription owned by signal and return immediately. */
 export const setAblyInvalidationLoop$ = command(
-  ({ set }, args: SetAblyInvalidationLoopArgs, signal: AbortSignal): void => {
+  (
+    { set },
+    args: SetAblyInvalidationLoopArgs & AppRealtimeSubscription,
+    signal: AbortSignal,
+  ): void => {
     setDaemon((ownerSignal) => {
       return observeAblySubscription(
         set(internalSetAblyInvalidationLoop$, args, ownerSignal),
@@ -1406,15 +1433,15 @@ export const setAblyInvalidationLoop$ = command(
 export const waitAblyInvalidationLoopUntil$ = command(
   (
     { set },
-    args: SetAblyInvalidationLoopArgs,
+    args: SetAblyInvalidationLoopArgs & AppRealtimeSubscription,
     signal: AbortSignal,
   ): Promise<void> => {
     return set(internalSetAblyInvalidationLoop$, args, signal);
   },
 );
 
-/** Start a subscription owned by signal and return immediately. */
-export const setAblyPayloadLoop$ = command(
+/** Worker-owned Ably subscriptions can include topics unavailable to tabs. */
+export const setWorkerAblyPayloadLoop$ = command(
   ({ set }, args: SetAblyPayloadLoopArgs, signal: AbortSignal): void => {
     setDaemon((ownerSignal) => {
       return observeAblySubscription(
@@ -1426,11 +1453,17 @@ export const setAblyPayloadLoop$ = command(
   },
 );
 
+/** App subscriptions cannot use Worker-only topics or channel-wide listeners. */
+export const setAblyPayloadLoop$: Command<
+  void,
+  [SetAblyPayloadLoopArgs & AppRealtimeSubscription, AbortSignal]
+> = setWorkerAblyPayloadLoop$;
+
 /** Wait until the subscription finishes, fails, or is cancelled. */
 export const waitAblyPayloadLoopUntil$ = command(
   (
     { set },
-    args: SetAblyPayloadLoopArgs,
+    args: SetAblyPayloadLoopArgs & AppRealtimeSubscription,
     signal: AbortSignal,
   ): Promise<void> => {
     return set(internalSetAblyPayloadLoop$, args, signal);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { ApiError } from "../lib/api-error.ts";
 import { SharedDatabaseHttpError } from "./http-error.ts";
 import { computedKeySchema } from "./computed-key.ts";
@@ -100,6 +101,7 @@ const userRealtimeTopicSchema = z.union([
   z.literal("connectorPermissionUpdated"),
   z.literal("customConnectorListChanged"),
   z.literal("feishu:changed"),
+  z.literal(GET_STARTED_REWARDS_CHANGED_EVENT),
   z.literal("github:changed"),
   z.literal("modelPoliciesChanged"),
   z.literal("presentationTemplatesChanged"),
@@ -107,25 +109,42 @@ const userRealtimeTopicSchema = z.union([
   z.literal("teams:changed"),
   z.literal("telegram:changed"),
   z.literal("userPreferenceChanged"),
-  z
-    .string()
-    .regex(
-      /^chatThread(?:Artifacts|Automations|Detail|Workflows)Changed:[^:]+$/u,
-    ),
+  z.templateLiteral([
+    z.enum([
+      "chatThreadArtifactsChanged",
+      "chatThreadAutomationsChanged",
+      "chatThreadDetailChanged",
+      "chatThreadWorkflowsChanged",
+    ]),
+    ":",
+    z.string().regex(/^[^:]+$/u),
+  ]),
 ]);
+
+const realtimeTopicSchemas = {
+  credential: z.literal("morningBriefChanged"),
+  org: z.enum(["presentationTemplatesChanged", "modelPoliciesChanged"]),
+  user: userRealtimeTopicSchema,
+  "run-output": z.uuid(),
+};
+
+export type SharedDatabaseRealtimeTopic<
+  TScope extends SharedDatabaseRealtimeScope,
+> = z.infer<(typeof realtimeTopicSchemas)[TScope]>;
+
+/** Keep scope and topic correlated; run-output IDs must not widen user topics. */
+export type SharedDatabaseRealtimeSubscription = {
+  [TScope in SharedDatabaseRealtimeScope]: {
+    readonly scope: TScope;
+    readonly topic: SharedDatabaseRealtimeTopic<TScope>;
+  };
+}[SharedDatabaseRealtimeScope];
 
 function isSharedDatabaseAppRealtimeSubscription(
   scope: SharedDatabaseRealtimeScope,
   topic: string,
 ): boolean {
-  return (
-    (scope === "run-output" && z.uuid().safeParse(topic).success) ||
-    (scope === "user" && userRealtimeTopicSchema.safeParse(topic).success) ||
-    (scope === "credential" && topic === "morningBriefChanged") ||
-    (scope === "org" &&
-      (topic === "presentationTemplatesChanged" ||
-        topic === "modelPoliciesChanged"))
-  );
+  return realtimeTopicSchemas[scope].safeParse(topic).success;
 }
 
 const realtimeSubscribeRequestSchema = z

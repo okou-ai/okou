@@ -267,7 +267,7 @@ test("Route app subscriptions through the SharedWorker without an App Ably clien
 
 test("A pending live-update listener starts after realtime connects", async () => {
   mockSignedInUser();
-  const topic = "test:pending-resolve";
+  const topic = "connectorPermissionUpdated";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -298,7 +298,7 @@ test("A pending live-update listener starts after realtime connects", async () =
 
 test("Workspace live updates stay in the active workspace", async () => {
   mockSignedInUser();
-  const topic = "test:org-pending-resolve";
+  const topic = "modelPoliciesChanged";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -341,7 +341,7 @@ test("Realtime authentication failure does not leave stale live updates", async 
     });
   });
 
-  const topic = "test:auth-failure";
+  const topic = "connectorPermissionUpdated";
   const loopPromise = context.store.set(
     waitAblyLoopUntil$,
     {
@@ -358,7 +358,7 @@ test("Realtime authentication failure does not leave stale live updates", async 
   await expect(
     context.store.set(
       waitAblyLoopUntil$,
-      { topic: "test:late-auth-failure", loopCommand$: finishLoop$ },
+      { topic: "customConnectorListChanged", loopCommand$: finishLoop$ },
       context.signal,
     ),
   ).rejects.toThrow(/Ably connection failed/);
@@ -377,7 +377,7 @@ test.each(["subscriber", "parent"])(
     mockSignedInUser();
     await setupAuthAndRealtime();
     context.mocks.ably.triggerConnectionState("suspended");
-    const topic = "test:cancel-attach";
+    const topic = "connectorPermissionUpdated";
     const operation = context.store.set(
       waitAblyInvalidationLoopUntil$,
       { topic, invalidations: [noopInvalidation$] },
@@ -399,7 +399,7 @@ test.each(["subscriber", "parent"])(
 test("A channel that fails during registration rejects the subsequent attach wait", async () => {
   mockSignedInUser();
   await setupAuthAndRealtime();
-  const topic = "test:failed-before-attach-wait";
+  const topic = "connectorPermissionUpdated";
   const registration = context.mocks.ably.deferSubscribeOnChannel(
     "user:test-user-123",
     topic,
@@ -418,7 +418,7 @@ test("A channel that fails during registration rejects the subsequent attach wai
 
 test("Live updates remain usable after the transport reconnects", async () => {
   mockSignedInUser();
-  const topic = "test:reconnect";
+  const topic = "connectorPermissionUpdated";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -452,7 +452,7 @@ test("Live updates remain usable after the transport reconnects", async () => {
 
 test("A subscription created while the connection is suspended still starts", async () => {
   mockSignedInUser();
-  const topic = "test:subscribe-while-suspended";
+  const topic = "connectorPermissionUpdated";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -490,7 +490,7 @@ test("A suspended connection keeps the listener instead of failing", async () =>
   const resetSubscriber$ = resetSignal();
   const subscriberSignal = context.store.set(resetSubscriber$, context.signal);
   mockSignedInUser();
-  const topic = "test:suspended-no-failure";
+  const topic = "connectorPermissionUpdated";
 
   await setupAuthAndRealtime();
   context.mocks.ably.triggerConnectionState("suspended", {
@@ -523,7 +523,7 @@ test("A suspended connection keeps the listener instead of failing", async () =>
 
 test("Subscription initialization runs only after the channel attaches", async () => {
   mockSignedInUser();
-  const topic = "test:initialize-after-attach";
+  const topic = "connectorPermissionUpdated";
   let reconnected = false;
   const initializeOrder: string[] = [];
   const initialize$ = command((_ctx, _signal: AbortSignal) => {
@@ -563,7 +563,7 @@ test("Subscription initialization runs only after the channel attaches", async (
 
 test("A background subscription reports a terminal channel failure after returning", async () => {
   mockSignedInUser();
-  const topic = "test:terminal-channel-failure";
+  const topic = "connectorPermissionUpdated";
   const failed = context.mocks.deferred<unknown>();
   await setupAuthAndRealtime();
   context.mocks.ably.triggerConnectionState("suspended");
@@ -588,7 +588,7 @@ test("A background subscription reports a terminal channel failure after returni
 
 test("A continuity gap re-reads the subscription baseline", async () => {
   mockSignedInUser();
-  const topic = "test:continuity-gap";
+  const topic = "connectorPermissionUpdated";
   let baselineReads = 0;
   const initialize$ = command((_ctx, _signal: AbortSignal) => {
     baselineReads += 1;
@@ -624,7 +624,7 @@ test("A continuity gap re-reads the subscription baseline", async () => {
 
 test("A replayed reattach does not re-read the subscription baseline", async () => {
   mockSignedInUser();
-  const topic = "test:continuity-preserved";
+  const topic = "connectorPermissionUpdated";
   let baselineReads = 0;
   const initialize$ = command((_ctx, _signal: AbortSignal) => {
     baselineReads += 1;
@@ -656,7 +656,7 @@ test("A replayed reattach does not re-read the subscription baseline", async () 
 
 test("A continuity gap pokes a topic loop", async () => {
   mockSignedInUser();
-  const topic = "test:continuity-gap-topic";
+  const topic = "connectorPermissionUpdated";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -686,7 +686,7 @@ test("A continuity gap pokes a topic loop", async () => {
 
 test("An update arriving during processing is not lost", async () => {
   mockSignedInUser();
-  const topic = "test:in-flight-notification";
+  const topic = "connectorPermissionUpdated";
   const firstRunCanFinish = context.mocks.deferred<void>();
   let runs = 0;
   const loop$ = command(async (_ctx, signal: AbortSignal) => {
@@ -726,7 +726,7 @@ test("An update arriving during processing is not lost", async () => {
 
 test("A transient live-update error is retried", async () => {
   mockSignedInUser();
-  const topic = "test:transient-loop-error";
+  const topic = "connectorPermissionUpdated";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -757,7 +757,7 @@ test("A transient live-update error is retried", async () => {
 
 test("Payload updates received during subscription initialization are applied", async () => {
   mockSignedInUser();
-  const topic = "test:payload-initialization";
+  const topic = "connectorPermissionUpdated";
   const payloads: unknown[] = [];
   const initializationStarted = context.mocks.deferred<void>();
   const initializationFinished = context.mocks.deferred<void>();
@@ -797,7 +797,7 @@ test("Payload updates received during subscription initialization are applied", 
 
 test("A permanently bad live update does not block later updates", async () => {
   mockSignedInUser();
-  const topic = "test:poison-payload";
+  const topic = "connectorPermissionUpdated";
   const toastError = vi.spyOn(toast, "error").mockReturnValue("toast-id");
   const handled: unknown[] = [];
   let poisonAttempts = 0;
@@ -839,7 +839,7 @@ test("A permanently bad live update does not block later updates", async () => {
 
 test("A persistent refresh error pauses until a new update", async () => {
   mockSignedInUser();
-  const topic = "test:poison-notification";
+  const topic = "connectorPermissionUpdated";
   const toastError = vi.spyOn(toast, "error").mockReturnValue("toast-id");
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
