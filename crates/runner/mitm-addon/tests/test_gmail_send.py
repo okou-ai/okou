@@ -77,6 +77,48 @@ async def test_send_is_blocked_even_with_allow_grant(
 
 
 @pytest.mark.parametrize(
+    ("path", "blocked"),
+    [
+        ("/gmail/v1/users/me/messages/send", True),
+        ("/./gmail/v1/users/me/messages/send", True),
+        ("/%67mail/v1/users/me/messages/../messages/send", True),
+        ("/%67mail/v1/users/me/messages/%2e%2e/messages/send", True),
+        ("//gmail/v1/users/me/messages/../messages/send", True),
+        ("/other/../gmail/v1/users/me/drafts/send", True),
+        ("/./batch/gmail/v1", True),
+        ("/./drive/v3/files", False),
+        ("/drive/v3/files/gmail/../file", False),
+        ("/drive/%ff/files", False),
+        ("/gmail/v1/users/me/drafts", False),
+    ],
+)
+async def test_shared_host_restriction_without_a_matching_firewall(
+    registry_file, real_flow, mitm_ctx, path, blocked
+):
+    flow = real_flow(
+        with_response=False,
+        host="www.googleapis.com",
+        method="POST",
+        path=path,
+    )
+    with mitm_ctx(registry_path=str(registry_file)):
+        header_result = mitm_addon.requestheaders(flow)
+        if header_result is not None:
+            await header_result
+        await mitm_addon.request(flow)
+
+    if blocked:
+        assert flow.response is not None
+        assert flow.response.status_code == 403
+        assert json.loads(flow.response.content)["error"]["errors"] == [
+            {"domain": "okou", "reason": "gmail_send_blocked"}
+        ]
+    else:
+        assert flow.response is None
+        assert flow.request.path == path
+
+
+@pytest.mark.parametrize(
     "body_headers",
     [
         [("Content-Length", "20")],

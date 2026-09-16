@@ -19,6 +19,9 @@ and resumable-upload paths, including upload PUTs, explicit mailbox IDs, and
 encoded endpoint spellings. Gmail-host batch paths and the shared Google
 `/batch/gmail/v1` path are rejected wholesale. Use individual calls for reads and
 draft edits. Unrelated Google API paths retain their existing policy.
+Shared-host paths are also checked after bounded decoding and dot-segment
+removal, even when no configurable firewall matches. This normalization is only
+for classification; it does not rewrite the forwarded request path.
 
 Rejected requests receive a local `403` with reason `gmail_send_blocked` and a
 Gmail-compatible `error.message` so SDK callers see the actionable handoff:

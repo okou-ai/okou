@@ -1,8 +1,9 @@
 """Fixed Gmail send restriction for the non-browser request path."""
 
+from posixpath import normpath
 from urllib.parse import unquote
 
-from path_security import has_unsafe_path
+from path_security import MAX_PATH_VALIDATION_CHARACTERS, has_unsafe_path
 
 _GMAIL_HOST = "gmail.googleapis.com"
 _GOOGLE_API_HOSTS = frozenset((_GMAIL_HOST, "www.googleapis.com"))
@@ -24,15 +25,25 @@ def blocks_gmail_send(host: str, request_path: str) -> bool:
     if has_unsafe_path(path):
         # Preserve fail-closed handling for malformed Gmail API paths without
         # imposing Gmail policy on unrelated shared-host Google APIs.
-        return host == _GMAIL_HOST or path.startswith(_GMAIL_PREFIXES)
+        if host == _GMAIL_HOST or path.startswith(_GMAIL_PREFIXES):
+            return True
+        if len(path) > MAX_PATH_VALIDATION_CHARACTERS:
+            return False
+        # A shared-host path can still resolve to Gmail after decoding and dot
+        # removal. Do not rely on a matching configurable firewall to reject it.
 
     for _ in range(_MAX_DECODE_PASSES):
-        decoded = unquote(path, errors="strict")
+        try:
+            decoded = unquote(path, errors="strict")
+        except UnicodeDecodeError:
+            # Invalid UTF-8 cannot identify a Gmail endpoint. Retain ordinary
+            # shared-host path policy instead of failing the request hook.
+            return False
         if decoded == path:
             break
         path = decoded
 
-    segments = [segment for segment in path.split("/") if segment]
+    segments = [segment for segment in normpath(path).split("/") if segment]
     if host == _GMAIL_HOST and segments[:1] == ["batch"]:
         return True
     if segments[:3] == ["batch", "gmail", "v1"]:
