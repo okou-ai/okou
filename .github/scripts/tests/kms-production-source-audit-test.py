@@ -153,6 +153,18 @@ class SourceAuditCliTest(unittest.TestCase):
                 result, _, report = self.invoke(scenario)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(report["totals"][category], 1)
+                event = report["events"][0]
+                self.assertEqual(
+                    event["eventId"], "11111111-2222-3333-4444-555555555555"
+                )
+                name = (
+                    "Decrypt"
+                    if scenario == "crypto"
+                    else "synthetic-provider-secret-must-not-leak"
+                )
+                self.assertEqual(
+                    event["eventNameSha256"], hashlib.sha256(name.encode()).hexdigest()
+                )
 
     def test_denied_or_incomplete_pages_never_report_a_complete_window(self):
         for scenario in [

@@ -609,7 +609,9 @@ def source_audit():
                     seen[event_id] = digest
                     report["events"].append(
                         {
+                            "eventId": event_id,
                             "eventTime": occurred.isoformat(),
+                            "eventNameSha256": hashlib.sha256(name.encode()).hexdigest(),
                             "eventName": name
                             if name in crypto | management
                             else "other_kms_event",
