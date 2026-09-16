@@ -359,7 +359,7 @@ async function observeArtifactSnapshot(
     failure: {
       attempt,
       status: response.status,
-      elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      elapsedMs: Math.round(performance.now() - startedAt),
       body,
     },
   };
