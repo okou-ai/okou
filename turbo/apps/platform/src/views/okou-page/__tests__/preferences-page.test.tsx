@@ -295,21 +295,21 @@ test("Cookie theme and account-backed color theme are restored and saved", async
   expectSelected(getFastRole("button", selectedAppearance));
   expect(document.documentElement).toHaveAttribute("data-theme", resolvedTheme);
 
-  click(getFastRole("button", "Limelight", colorTheme));
+  click(getFastRole("button", "Deep lagoon", colorTheme));
 
   await waitFor(() => {
-    expect(updates).toContainEqual({ colorTheme: "limelight" });
-    expectSelected(getFastRole("button", "Limelight", colorTheme));
+    expect(updates).toContainEqual({ colorTheme: "deep-lagoon" });
+    expectSelected(getFastRole("button", "Deep lagoon", colorTheme));
   });
   expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   expect(document.documentElement).toHaveAttribute(
     "data-color-theme",
-    "limelight",
+    "deep-lagoon",
   );
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.dark; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
-  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|limelight/u);
+  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
 });
 
 test("A user can select a gradient color theme when available", async () => {
@@ -333,6 +333,54 @@ test("A user can select a gradient color theme when available", async () => {
   expect(document.documentElement).toHaveAttribute(
     "data-color-theme",
     "golden-hour",
+  );
+});
+
+test("A user can return to the default palette from a gradient color theme", async () => {
+  const updates = mockPreferences({ colorTheme: "blue-horizon" });
+
+  await setupPage({
+    context,
+    path: "/settings",
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
+  });
+
+  const colorTheme = await screen.findByRole("group", { name: "Color theme" });
+  expect(document.documentElement).toHaveAttribute(
+    "data-color-theme",
+    "blue-horizon",
+  );
+  click(getFastRole("button", "Default", colorTheme));
+
+  await waitFor(() => {
+    expect(updates).toContainEqual({ colorTheme: "default" });
+    expectSelected(getFastRole("button", "Default", colorTheme));
+  });
+  expect(document.documentElement).not.toHaveAttribute("data-color-theme");
+  expect(document.documentElement).not.toHaveAttribute(
+    "data-gradient-color-themes",
+  );
+});
+
+test("A workspace without a saved color theme starts on the default palette", async () => {
+  const updates = mockPreferences({ colorTheme: null });
+
+  await setupPage({
+    context,
+    path: "/settings",
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
+  });
+
+  const colorTheme = await screen.findByRole("group", { name: "Color theme" });
+  expectSelected(getFastRole("button", "Default", colorTheme));
+  await waitFor(() => {
+    expect(updates).toContainEqual({ colorTheme: "default" });
+  });
+  expect(document.documentElement).not.toHaveAttribute("data-color-theme");
+  expect(document.documentElement).not.toHaveAttribute(
+    "data-gradient-color-themes",
   );
 });
 

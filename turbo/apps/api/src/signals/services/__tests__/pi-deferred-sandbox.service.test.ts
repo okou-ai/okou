@@ -606,6 +606,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       }),
       [200],
     );
+    // Finish the cancel-triggered queue drain while the claimed lease still
+    // holds capacity, so it cannot race the explicit consumer after release.
+    await flushWaitUntilForTest();
     await expect(
       createStore().set(consumeDeferredPiRun$, second.runId, context.signal),
     ).resolves.toBeFalsy();
@@ -633,11 +636,9 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       );
       expect(release.body.released).toBeTruthy();
     }
-    await createStore().set(
-      consumeDeferredPiRun$,
-      second.runId,
-      context.signal,
-    );
+    await expect(
+      createStore().set(consumeDeferredPiRun$, second.runId, context.signal),
+    ).resolves.toBeTruthy();
     await accept(claim(second.runId, true, randomUUID()), [200]);
   }, 60_000);
 

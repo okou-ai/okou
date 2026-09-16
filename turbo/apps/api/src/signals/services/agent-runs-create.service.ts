@@ -339,6 +339,7 @@ function buildIntegrationToolsPrompt(
   triggerSource: TriggerSource,
   feishuPlatform: FeishuPlatform | undefined,
   larkEnabled: boolean,
+  deliveryFormatGuidanceEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
@@ -348,8 +349,16 @@ function buildIntegrationToolsPrompt(
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
     "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open; for HTML presentations, include `--artifact-kind presentation-html`.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
-    "For static HTML or site artifacts, a hosted URL is the user-accessible artifact view; the local `index.html` is an implementation file inside the authored bundle.",
-    "`upload-file` commands provide file delivery, which is different from publishing a user-accessible artifact view. File delivery is useful when the user asks for the file itself, an artifact cannot be hosted, or no hosted, email, cloud document, or other destination already gives the user access.",
+    ...(deliveryFormatGuidanceEnabled
+      ? [
+          "Hosting and file delivery are two channels and neither is the default: `okou host` publishes a view the user browses, while `upload-file` hands the user a file they keep. Choose from what the user will do with the result, not from what is easiest to produce.",
+          "Pick the delivery format before authoring, taking the first rule that matches: honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
+          "Producing docx, xlsx, or PDF requires the `office-files` skill, which carries the toolchain install and the exact command for each format.",
+        ]
+      : [
+          "For static HTML or site artifacts, a hosted URL is the user-accessible artifact view; the local `index.html` is an implementation file inside the authored bundle.",
+          "`upload-file` commands provide file delivery, which is different from publishing a user-accessible artifact view. File delivery is useful when the user asks for the file itself, an artifact cannot be hosted, or no hosted, email, cloud document, or other destination already gives the user access.",
+        ]),
     "Duplicate delivery channels give the user multiple copies of the same artifact; they are useful when they serve different user needs, such as sharing both a live view and a source file.",
   ];
   const localFileContextLines = localFileContext.map((line) => {
@@ -428,6 +437,7 @@ function buildAgentToolsPrompt(args: {
   readonly socialStatusEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
+  readonly deliveryFormatGuidanceEnabled: boolean;
 }): string {
   const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou`;
   return [
@@ -501,6 +511,7 @@ function buildAgentToolsPrompt(args: {
       args.triggerSource,
       args.feishuPlatform,
       args.larkEnabled,
+      args.deliveryFormatGuidanceEnabled,
     ),
     "- Maps, geocoding, directions, and places: use `okou maps --help`.",
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
@@ -593,6 +604,7 @@ function buildAppendSystemPrompt(args: {
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
+  readonly deliveryFormatGuidanceEnabled: boolean;
 }): string {
   const identity = buildAgentIdentityPrompt(args.agent);
   return [
@@ -607,6 +619,7 @@ function buildAppendSystemPrompt(args: {
       bankingEnabled: args.bankingEnabled,
       larkEnabled: args.larkEnabled,
       introVideoEnabled: args.introVideoEnabled,
+      deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
     }),
     buildCurrentUserPrompt(args.userInfo),
   ]
@@ -783,6 +796,7 @@ function createRunBody(args: {
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
+  readonly deliveryFormatGuidanceEnabled: boolean;
 }) {
   const triggerSource = args.triggerSource ?? "web";
   const baseAppendSystemPrompt = buildAppendSystemPrompt({
@@ -795,6 +809,7 @@ function createRunBody(args: {
     bankingEnabled: args.bankingEnabled,
     larkEnabled: args.larkEnabled,
     introVideoEnabled: args.introVideoEnabled,
+    deliveryFormatGuidanceEnabled: args.deliveryFormatGuidanceEnabled,
   });
   return {
     prompt: args.body.prompt,
@@ -1007,6 +1022,10 @@ function buildCreateAgentRunArgs(args: {
       ),
       socialStatusEnabled: isFeatureEnabled(
         FeatureSwitchKey.SocialStatus,
+        args.featureSwitchContext,
+      ),
+      deliveryFormatGuidanceEnabled: isFeatureEnabled(
+        FeatureSwitchKey.DeliveryFormatGuidance,
         args.featureSwitchContext,
       ),
       introVideoEnabled,

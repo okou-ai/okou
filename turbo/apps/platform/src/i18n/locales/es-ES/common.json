@@ -1549,19 +1549,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Abre la app a diario. Se reinicia a las 00:00 UTC.",
+          "description": "Una vez al día, todos los días",
           "name": "Entrar cada día",
           "unit": "al día"
         },
         "connector": {
-          "description": "Conecta con OAuth. Una recompensa por conector.",
+          "action": "Conectar",
+          "description": "Gmail, Notion y más de 100",
           "name": "Conectar un conector",
           "unit": "por conector"
         },
         "inReview": "En revisión",
         "inReviewDescription": "Enviado, pendiente de revisión",
         "invite": {
-          "description": "Gana cuando acepten la invitación, hasta 15 miembros.",
+          "action": "Invitar",
+          "description": "Cada persona que añadas cuenta",
           "name": "Invita a tu equipo",
           "unit": "por miembro"
         },
@@ -1572,6 +1574,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Conectores recompensados: {{amount}}",
         "share": {
+          "action": "Compartir",
           "description": "Publícalo y pega el enlace",
           "name": "Comparte {{assistantName}} en X"
         },
@@ -1584,14 +1587,16 @@
           "title": "Comparte {{assistantName}} en X"
         },
         "slack": {
-          "description": "Gana 2.000 créditos de organización, una vez por organización y espacio de trabajo.",
+          "action": "Añadir",
+          "description": "Donde tu equipo ya trabaja",
           "name": "Añadir {{assistantName}} a Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Prueba una tarea y gana créditos.",
         "title": "Primeros pasos",
         "workflow": {
-          "description": "Ejecuta con éxito un flujo de trabajo que hayas creado.",
+          "action": "Crear",
+          "description": "Convierte una tarea repetida en una habilidad reutilizable",
           "name": "Crea un workflow"
         }
       },
@@ -5939,8 +5944,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Predeterminado",
+            "goldenHour": "Golden hour"
           },
           "title": "Tema de color"
         },
@@ -6444,6 +6449,10 @@
     "resetHelp": "Restablece la clave solo después de verificar de forma independiente la nueva identidad del servidor. La siguiente conexión confiará en una nueva clave del host y la guardará.",
     "retry": "Reintentar",
     "save": "Guardar",
+    "saveRecovery": {
+      "resourceIdConflict": "No se puede usar este ID de recurso. Cierra y vuelve a abrir el formulario para intentarlo de nuevo.",
+      "uncertain": "No pudimos confirmar si se guardaron los cambios. Reintenta el mismo guardado, o cierra y revisa la lista antes de añadirlos de nuevo."
+    },
     "summary_one": "{{count}} host configurado",
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",

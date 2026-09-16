@@ -15,6 +15,11 @@ export const themePreferenceSchema = z.enum(["light", "dark", "system"]);
 export type ThemePreference = z.infer<typeof themePreferenceSchema>;
 
 export const COLOR_THEMES = [
+  // The product's own palette. It is the absence of a preset rather than
+  // another one: the App clears both palette attributes while it is selected,
+  // so every token resolves to the shared values the interface carried before
+  // the gradient color themes shipped.
+  "default",
   "golden-hour",
   "citrus-spark",
   "berry-blush",
@@ -22,7 +27,6 @@ export const COLOR_THEMES = [
   "blue-horizon",
   "daydream",
   "deep-lagoon",
-  "limelight",
 ] as const;
 export const colorThemeSchema = z.enum(COLOR_THEMES);
 export type ColorTheme = z.infer<typeof colorThemeSchema>;

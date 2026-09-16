@@ -1525,19 +1525,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Open the app daily. Resets at 00:00 UTC.",
+          "description": "Once a day, every day",
           "name": "Check in daily",
           "unit": "a day"
         },
         "connector": {
-          "description": "Connect with OAuth. Earn once per connector.",
+          "action": "Connect",
+          "description": "Gmail, Notion, and 100+ more",
           "name": "Connect a connector",
           "unit": "per connector"
         },
         "inReview": "In review",
         "inReviewDescription": "Submitted, waiting on review",
         "invite": {
-          "description": "Earn when an invite is accepted, up to 15 members.",
+          "action": "Invite",
+          "description": "Everyone you add counts",
           "name": "Invite your team",
           "unit": "per member"
         },
@@ -1548,6 +1550,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Rewarded connectors: {{amount}}",
         "share": {
+          "action": "Share",
           "description": "Post it, then paste the link",
           "name": "Share {{assistantName}} on X"
         },
@@ -1560,14 +1563,16 @@
           "title": "Share {{assistantName}} on X"
         },
         "slack": {
-          "description": "Earn 2,000 organization credits, once per organization and workspace.",
+          "action": "Add",
+          "description": "Where your team already works",
           "name": "Add {{assistantName}} to Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Try a task, earn credits.",
         "title": "Get started",
         "workflow": {
-          "description": "Successfully run a workflow you created.",
+          "action": "Build",
+          "description": "Turn a repeat task into a reusable skill",
           "name": "Build a workflow"
         }
       },
@@ -5871,8 +5876,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Default",
+            "goldenHour": "Golden hour"
           },
           "title": "Color theme"
         },
@@ -6370,6 +6375,10 @@
     "resetHelp": "Only reset after independently verifying the new server identity. The next connection will trust and learn a new host key.",
     "retry": "Retry",
     "save": "Save",
+    "saveRecovery": {
+      "resourceIdConflict": "This resource ID cannot be used. Close and reopen the form to try again.",
+      "uncertain": "We couldn't confirm whether your changes were saved. Retry the same save, or close and check the list before adding again."
+    },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
     "title": "SSH hosts",

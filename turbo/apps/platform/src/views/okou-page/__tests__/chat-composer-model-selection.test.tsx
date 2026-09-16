@@ -24,7 +24,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, it, test } from "vitest";
 
 import { triggerAblyEvent } from "../../../mocks/ably.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -246,33 +246,42 @@ async function openMixedProviderFastMenu() {
     },
   });
   await readyComposer();
-  await user.click(await modelPicker("GPT 6 Astra"));
+  click(await modelPicker("GPT 6 Astra"));
+  await screen.findByRole("option", { name: "GPT 6 Astra Fast" });
   return user;
 }
 
-test("Show and dismiss Fast Codex ChatGPT usage guidance on hover", async () => {
-  const user = await openMixedProviderFastMenu();
-  const fastOption = await screen.findByRole("option", {
-    name: "GPT 6 Astra Fast",
-  });
-  await user.hover(fastOption);
-  await expect(
-    screen.findByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
-  ).resolves.toBeVisible();
-  await user.unhover(fastOption);
-  await waitFor(() => {
-    expect(
-      screen.queryByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
-    ).not.toBeInTheDocument();
-  });
-});
+describe("mixed-provider Fast guidance", () => {
+  let user: ReturnType<typeof userEvent.setup>;
 
-test("Show Fast Codex Okou credit guidance on hover", async () => {
-  const user = await openMixedProviderFastMenu();
-  await user.hover(screen.getByRole("option", { name: "GPT 5.6 Sol Fast" }));
-  await expect(
-    screen.findByText("Fast · Up to 2.5× model speed · 2× Okou model credits"),
-  ).resolves.toBeVisible();
+  beforeEach(async () => {
+    user = await openMixedProviderFastMenu();
+  });
+
+  it("show and dismiss Fast Codex ChatGPT usage guidance on hover", async () => {
+    const fastOption = await screen.findByRole("option", {
+      name: "GPT 6 Astra Fast",
+    });
+    await user.hover(fastOption);
+    await expect(
+      screen.findByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
+    ).resolves.toBeVisible();
+    await user.unhover(fastOption);
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("show Fast Codex Okou credit guidance on hover", async () => {
+    await user.hover(screen.getByRole("option", { name: "GPT 5.6 Sol Fast" }));
+    await expect(
+      screen.findByText(
+        "Fast · Up to 2.5× model speed · 2× Okou model credits",
+      ),
+    ).resolves.toBeVisible();
+  });
 });
 
 test.each([

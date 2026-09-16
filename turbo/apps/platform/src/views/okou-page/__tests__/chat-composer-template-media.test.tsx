@@ -4,9 +4,10 @@ import type {
   AvatarVideoAvatar,
   AvatarVideoVoice,
 } from "@okouai/api-contracts/contracts/avatar-video";
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, it, test } from "vitest";
 
 import {
+  click,
   holdElementAnimations,
   queryAllByRoleFast,
   setupPage,
@@ -132,21 +133,18 @@ async function openAvatarCatalog(
 }
 
 async function filterProfessionalAvatars(
-  user: ReturnType<typeof userEvent.setup>,
   dialog: HTMLElement,
 ): Promise<HTMLElement> {
   const filterControl = buttonNamed("Filters", dialog);
-  await user.click(filterControl);
+  click(filterControl);
   const filters = await waitFor(() => {
     expect(filterControl).toHaveAttribute("aria-expanded", "true");
     const surface = controlledSurface(filterControl);
     expect(surface).toBeVisible();
     return surface;
   });
-  await user.click(
-    within(filters).getByRole("combobox", { name: "Style: All" }),
-  );
-  await user.click(screen.getByRole("option", { name: "Professional" }));
+  click(within(filters).getByRole("combobox", { name: "Style: All" }));
+  click(await screen.findByRole("option", { name: "Professional" }));
   await waitFor(() => {
     expect(
       within(dialog).getByLabelText("Select template Motion Maya"),
@@ -158,33 +156,38 @@ async function filterProfessionalAvatars(
   return filters;
 }
 
-test("Hovering a video avatar plays its preview within the selected style", async () => {
-  const { user, dialog, media } = await openAvatarCatalog();
-  await filterProfessionalAvatars(user, dialog);
-  await user.hover(
-    within(dialog).getByLabelText("Select template Motion Maya"),
-  );
-  expect(media.play).toHaveBeenCalledWith();
-});
+describe("professional avatar style", () => {
+  let catalog: Awaited<ReturnType<typeof openAvatarCatalog>>;
+  let filters: HTMLElement;
 
-test("A still avatar preview remains visible within the selected style", async () => {
-  const { user, dialog } = await openAvatarCatalog();
-  await filterProfessionalAvatars(user, dialog);
-  expect(within(dialog).getByAltText("Still Sara")).toBeVisible();
-});
+  beforeEach(async () => {
+    catalog = await openAvatarCatalog();
+    filters = await filterProfessionalAvatars(catalog.dialog);
+  });
 
-test("Clearing an avatar style restores the full catalog", async () => {
-  const { user, dialog } = await openAvatarCatalog();
-  const filters = await filterProfessionalAvatars(user, dialog);
-  await user.click(buttonNamed("Clear", filters));
-  await expect(
-    within(dialog).findByLabelText("Select template Social Sam"),
-  ).resolves.toBeVisible();
+  it("hovering a video avatar plays its preview within the selected style", async () => {
+    const { user, dialog, media } = catalog;
+    await user.hover(
+      within(dialog).getByLabelText("Select template Motion Maya"),
+    );
+    expect(media.play).toHaveBeenCalledWith();
+  });
+
+  it("a still avatar preview remains visible within the selected style", () => {
+    expect(within(catalog.dialog).getByAltText("Still Sara")).toBeVisible();
+  });
+
+  it("clearing an avatar style restores the full catalog", async () => {
+    click(buttonNamed("Clear", filters));
+    await expect(
+      within(catalog.dialog).findByLabelText("Select template Social Sam"),
+    ).resolves.toBeVisible();
+  });
 });
 
 test("Choose a paginated avatar and voice after clearing its style filter", async () => {
   const { user, dialog } = await openAvatarCatalog({ paginate: true });
-  const filters = await filterProfessionalAvatars(user, dialog);
+  const filters = await filterProfessionalAvatars(dialog);
   await user.click(buttonNamed("Clear", filters));
   await expect(
     within(dialog).findByLabelText("Select template Social Sam"),

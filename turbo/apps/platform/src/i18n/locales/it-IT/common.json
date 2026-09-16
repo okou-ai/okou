@@ -1549,19 +1549,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Apri l’app ogni giorno. Il conteggio si azzera alle 00:00 UTC.",
+          "description": "Una volta al giorno, ogni giorno",
           "name": "Accedi ogni giorno",
           "unit": "al giorno"
         },
         "connector": {
-          "description": "Connettiti con OAuth. Un premio per connettore.",
+          "action": "Collega",
+          "description": "Gmail, Notion e altri 100+",
           "name": "Collega un connettore",
           "unit": "per connettore"
         },
         "inReview": "In revisione",
         "inReviewDescription": "Inviato, in attesa di revisione",
         "invite": {
-          "description": "Guadagna quando un invito viene accettato, fino a 15 membri.",
+          "action": "Invita",
+          "description": "Ogni persona che aggiungi conta",
           "name": "Invita il tuo team",
           "unit": "per membro"
         },
@@ -1572,6 +1574,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Connettori premiati: {{amount}}",
         "share": {
+          "action": "Condividi",
           "description": "Pubblica, poi incolla il link",
           "name": "Condividi {{assistantName}} su X"
         },
@@ -1584,14 +1587,16 @@
           "title": "Condividi {{assistantName}} su X"
         },
         "slack": {
-          "description": "Ottieni 2.000 crediti dell’organizzazione, una volta per organizzazione e spazio di lavoro.",
+          "action": "Aggiungi",
+          "description": "Dove il tuo team lavora già",
           "name": "Aggiungi {{assistantName}} a Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Prova un’attività e guadagna crediti.",
         "title": "Inizia",
         "workflow": {
-          "description": "Esegui con successo un workflow che hai creato.",
+          "action": "Crea",
+          "description": "Trasforma un'attività ricorrente in una competenza riutilizzabile",
           "name": "Crea un workflow"
         }
       },
@@ -5939,8 +5944,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Predefinito",
+            "goldenHour": "Golden hour"
           },
           "title": "Tema colore"
         },
@@ -6444,6 +6449,10 @@
     "resetHelp": "Reimposta solo dopo aver verificato indipendentemente la nuova identità del server. La prossima connessione considererà attendibile e memorizzerà una nuova chiave host.",
     "retry": "Riprova",
     "save": "Salva",
+    "saveRecovery": {
+      "resourceIdConflict": "Questo ID risorsa non può essere utilizzato. Chiudi e riapri il modulo per riprovare.",
+      "uncertain": "Non abbiamo potuto confermare se le modifiche sono state salvate. Riprova lo stesso salvataggio, oppure chiudi e controlla l’elenco prima di aggiungerle di nuovo."
+    },
     "summary_one": "{{count}} host configurato",
     "summary_many": "{{count}} host configurati",
     "summary_other": "{{count}} host configurati",

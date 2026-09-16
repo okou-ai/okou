@@ -1524,19 +1524,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Buka aplikasi setiap hari. Reset pukul 00:00 UTC.",
+          "description": "Sekali sehari, setiap hari",
           "name": "Check in setiap hari",
           "unit": "per hari"
         },
         "connector": {
-          "description": "Hubungkan melalui OAuth. Satu hadiah per konektor.",
+          "action": "Hubungkan",
+          "description": "Gmail, Notion, dan 100+ lainnya",
           "name": "Hubungkan konektor",
           "unit": "per konektor"
         },
         "inReview": "Sedang ditinjau",
         "inReviewDescription": "Terkirim, menunggu ditinjau",
         "invite": {
-          "description": "Dapatkan hadiah saat undangan diterima, hingga 15 anggota.",
+          "action": "Undang",
+          "description": "Setiap orang yang kamu tambahkan dihitung",
           "name": "Undang tim kamu",
           "unit": "per anggota"
         },
@@ -1547,6 +1549,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Konektor yang diberi hadiah: {{amount}}",
         "share": {
+          "action": "Bagikan",
           "description": "Posting, lalu tempel tautannya",
           "name": "Bagikan {{assistantName}} di X"
         },
@@ -1559,14 +1562,16 @@
           "title": "Bagikan {{assistantName}} di X"
         },
         "slack": {
-          "description": "Dapatkan 2.000 kredit organisasi, sekali per organisasi dan ruang kerja.",
+          "action": "Tambahkan",
+          "description": "Tempat tim kamu sudah bekerja",
           "name": "Tambahkan {{assistantName}} ke Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Coba tugas dan dapatkan kredit.",
         "title": "Mulai",
         "workflow": {
-          "description": "Jalankan workflow buatan Anda hingga berhasil.",
+          "action": "Buat",
+          "description": "Ubah tugas berulang jadi skill yang bisa dipakai ulang",
           "name": "Buat workflow"
         }
       },
@@ -5865,8 +5870,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Default",
+            "goldenHour": "Golden hour"
           },
           "title": "Tema warna"
         },
@@ -6359,6 +6364,10 @@
     "resetHelp": "Reset hanya setelah memverifikasi identitas server baru secara independen. Koneksi berikutnya akan memercayai dan menyimpan kunci host baru.",
     "retry": "Coba lagi",
     "save": "Simpan",
+    "saveRecovery": {
+      "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
+      "uncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Coba simpan ulang isian yang sama, atau tutup dan periksa daftar sebelum menambahkannya lagi."
+    },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
     "title": "Host SSH",
