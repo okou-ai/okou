@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { cronProjectChatEventSearchResponseSchema } from "@okouai/api-contracts/contracts/cron";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,11 +11,11 @@ import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import {
   insertChatSearchProjectionCoverageFixture,
   insertSearchablePromptFixture,
+  removeChatSearchParentThreadsFixture,
   removeChatSearchSourceEventsFixture,
   renameChatSearchAgentFixture,
   updateChatSearchSourceThreadFixture,
 } from "../../../test-fixtures/chat-event-search";
-import { holdChatThreadDeleteTransactionFixture } from "../../../test-fixtures/chat-events";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -284,38 +284,14 @@ describe("GET /api/chat/search durable reader", () => {
       }
     });
 
-    // Each DELETE has already fired the compatibility trigger but remains
-    // uncommitted while the lock-free projector reads the old MVCC row. The
-    // projector can therefore write after the trigger and leave the expected
-    // eventual-consistency orphan for reader filtering and cron repair.
-    const heldDeletions = await Promise.all(
-      orphanThreadIds.map(async (threadId) => {
-        return await holdChatThreadDeleteTransactionFixture({
-          threadId,
-          signal: context.signal,
-        });
-      }),
-    );
-    onTestFinished(async () => {
-      for (const heldDeletion of heldDeletions) {
-        heldDeletion.release();
-      }
-      await Promise.all(
-        heldDeletions.map((heldDeletion) => {
-          return heldDeletion.done;
-        }),
-      );
-    });
-
     await projectChatSearchMessages([visible.threadId, ...orphanThreadIds]);
-    for (const heldDeletion of heldDeletions) {
-      heldDeletion.release();
-    }
-    await Promise.all(
-      heldDeletions.map((heldDeletion) => {
-        return heldDeletion.done;
-      }),
-    );
+
+    // The projector now conflicts with the product deletion path, so these
+    // orphans are reconstructed the only way they still occur: a canonical
+    // parent removed without its derived rows, as rows written before that
+    // fence or by an older producer already are. The reader must skip them and
+    // the bounded repair must still remove them.
+    await removeChatSearchParentThreadsFixture(orphanThreadIds);
 
     const search = await chat.searchChat(owner, keyword);
     expect(search.results).toHaveLength(1);

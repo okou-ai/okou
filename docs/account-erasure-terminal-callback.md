@@ -174,7 +174,10 @@ not production throughput or an isolated incremental latency measurement.
 B2b2-R still owns summaries/followups/automation-result writers, notification/
 LLM/provider/Ably egress, already-created delivery execution/status, terminal run
 and checkpoint/active-input/runtime metadata, queued input/marker/admission-error/
-title writers, generic sidebar/search/archive paths and final ingress wiring.
+title writers, generic sidebar/archive paths and final ingress wiring. The
+durable chat search producer has its own fence in
+[B2b2-R2](account-erasure-chat-search.md), which covers new projection writes
+only.
 The scheduler's active-input notification, user queue and workflow queue remain
 independent families; this slice preserves their entry, not a universal fence.
 Managed-browser idle-lease extension and Slack/Feishu status cleanup retain their

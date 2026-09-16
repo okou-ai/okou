@@ -895,10 +895,12 @@ export const deleteChatThread$ = command(
       );
 
       // Search rows are an eventually consistent derived projection without a
-      // parent FK. Remove the normal-path rows synchronously; the projection
-      // cron repairs only writes that race this transaction. Delete the
-      // watermark first so any later projector write also restores the cleanup
-      // anchor.
+      // parent FK. Remove them synchronously under the thread lock taken above:
+      // the projector now takes a conflicting KEY SHARE on this same row and
+      // revalidates the thread inside its transaction, so it either commits
+      // before this delete removes its rows or finds the thread gone and writes
+      // nothing. Delete the watermark first so the bounded orphan repair, which
+      // still covers pre-fence rows and older producers, keeps its anchor.
       await tx
         .delete(chatEventSearchMessageWatermarks)
         .where(

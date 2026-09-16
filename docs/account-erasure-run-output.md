@@ -141,7 +141,10 @@ Terminal lifecycle/error markers, integration completion placeholders and
 transactionally coupled delivery/sidebar writes are covered by
 [B2b2-T](account-erasure-terminal-callback.md). Summaries, followups and automation
 results remain B2b2-R. The lifecycle-owned `insertIntegrationCompletionFallback`
-is outside this B2b2-O assistant history/result projection. Chat input/creation/editing, activity/search/
+is outside this B2b2-O assistant history/result projection. The durable chat
+search producer is fenced separately by
+[B2b2-R2](account-erasure-chat-search.md); its already durable rows remain
+historical data. Chat input/creation/editing, activity/
 sidebar/archive copies and previously admitted optional consumers also remain
 outside this slice. Files/sites,
 credentials, remote sessions, transient Ably/provider egress and existing
