@@ -95,6 +95,7 @@ import {
   cleanupExpiredQueueEntries$,
 } from "../run-queue.service";
 import { COMPUTE_CLOSURE_ERROR } from "../agent-run-terminal-transition.service";
+import { admitNewComputeRun } from "../compute-erasure-admission.service";
 
 import { generateSandboxToken } from "../../auth/tokens";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
@@ -404,6 +405,8 @@ describe("actual compute transactions versus the B1 projector", () => {
     "pending-create",
     "queued-create",
     "failed-create",
+    "existing-session-create",
+    "failed-existing-session-create",
     "promotion",
     "claim",
     "invalid-context",
@@ -414,28 +417,81 @@ describe("actual compute transactions versus the B1 projector", () => {
   async function writerFixture(kind: WriterKind): Promise<{
     readonly f: Fixture;
     readonly runId: string | undefined;
+    readonly sessionId?: string;
     readonly invoke: () => Promise<unknown>;
   }> {
     const f = await fixture();
-    if (kind === "failed-create") {
+    if (kind === "failed-create" || kind === "failed-existing-session-create") {
+      const agentName = `synthetic-${randomUUID().slice(0, 8)}`;
       const agent = await api.createDirectAgent(f.actor, {
         version: "1",
         agents: {
-          [`synthetic-${randomUUID().slice(0, 8)}`]: {
+          [agentName]: {
             framework: "claude-code",
             environment: { ANTHROPIC_API_KEY: "synthetic-key" },
-            experimental_runner: { group: "other/synthetic" },
+            experimental_runner: {
+              group:
+                kind === "failed-existing-session-create"
+                  ? f.runnerGroup
+                  : "other/synthetic",
+            },
           },
         },
       });
       f.agentId = agent.agentId;
+      const initial =
+        kind === "failed-existing-session-create"
+          ? await api.createDirectRun(f.actor, {
+              agentId: f.agentId,
+              prompt: "Synthetic initial session",
+            })
+          : undefined;
+      if (initial) {
+        // A failed first preparation has no canonical session Storage mounts.
+        // Create a usable session, then make its continuation fail preparation.
+        await api.createDirectAgent(f.actor, {
+          version: "1",
+          agents: {
+            [agentName]: {
+              framework: "claude-code",
+              environment: { ANTHROPIC_API_KEY: "synthetic-key" },
+              experimental_runner: { group: "other/synthetic" },
+            },
+          },
+        });
+      }
       return {
         f,
         runId: undefined,
+        sessionId: initial?.sessionId,
         invoke: () => {
           return api.requestDirectRun(
             f.actor,
-            { agentId: f.agentId, prompt: "Synthetic failed preparation" },
+            {
+              agentId: f.agentId,
+              sessionId: initial?.sessionId,
+              prompt: "Synthetic failed preparation",
+            },
+            [201, 409],
+          );
+        },
+      };
+    }
+    if (kind === "existing-session-create") {
+      const initial = await pending(f);
+      return {
+        f,
+        runId: undefined,
+        sessionId: initial.sessionId,
+        invoke: () => {
+          return api.requestCreateRun(
+            f.actor,
+            {
+              agentId: f.agentId,
+              sessionId: initial.sessionId,
+              prompt: "Synthetic session continuation",
+              modelProvider: "anthropic-api-key",
+            },
             [201, 409],
           );
         },
@@ -814,7 +870,12 @@ describe("actual compute transactions versus the B1 projector", () => {
     await expect(counts(w.f)).resolves.toStrictEqual(before);
   });
 
-  it.each(["pending-create", "claim"] as const)(
+  it.each([
+    "pending-create",
+    "existing-session-create",
+    "failed-existing-session-create",
+    "claim",
+  ] as const)(
     "rejects stale %s after agent ownership transfers under the business lock",
     async (kind) => {
       const w = await writerFixture(kind);
@@ -839,6 +900,140 @@ describe("actual compute transactions versus the B1 projector", () => {
       }
     },
   );
+
+  it.each([
+    "existing-session-create",
+    "failed-existing-session-create",
+  ] as const)(
+    "rejects %s when the session organization changes before its locked reread",
+    async (kind) => {
+      const w = await writerFixture(kind);
+      const sessionId = w.sessionId;
+      if (!sessionId) {
+        throw new Error("Missing synthetic existing session");
+      }
+      const before = await counts(w.f);
+      // Ownership transfer during admission has no production test control.
+      const held = await holdBusinessRow(
+        (tx) => {
+          return tx
+            .select({ id: agentSessions.id })
+            .from(agentSessions)
+            .where(eq(agentSessions.id, sessionId))
+            .for("update");
+        },
+        (tx) => {
+          return tx
+            .update(agentSessions)
+            .set({ orgId: `synthetic-session-org-${randomUUID()}` })
+            .where(eq(agentSessions.id, sessionId));
+        },
+      );
+      const writing = settle(w.invoke());
+      await waitForBlockedBy(held.pid);
+      await held.release();
+      await expect(writing).resolves.toMatchObject({
+        ok: true,
+        value: { status: 409 },
+      });
+      await expect(counts(w.f)).resolves.toStrictEqual(before);
+    },
+  );
+
+  it.each([
+    { resource: false, session: true, unbound: false },
+    { resource: true, session: false, unbound: false },
+    { resource: false, session: false, unbound: false },
+    { resource: true, session: true, unbound: true },
+  ])(
+    "locks surviving admission subjects before rejecting $resource/$session/$unbound observations",
+    async ({ resource, session, unbound }) => {
+      const resourceFixture = await fixture();
+      const sessionFixture = await fixture();
+      const initial = await pending(sessionFixture);
+      if (unbound) {
+        await db
+          .update(agentSessions)
+          .set({ agentId: null })
+          .where(eq(agentSessions.id, initial.sessionId));
+      }
+      const caller = bdd.user();
+      if (!caller.orgId) {
+        throw new Error("Synthetic caller requires an organization");
+      }
+      const callerOrgId = caller.orgId;
+      const expectedOwner = `synthetic-expected-owner-${randomUUID()}`;
+      const closedSubject = session
+        ? sessionFixture.actor.userId
+        : resource
+          ? resourceFixture.actor.userId
+          : expectedOwner;
+      const held = await holdClosure(decision(closedSubject));
+      // Production prechecks reject missing/mismatched IDs before persistence;
+      // no endpoint can pause between preparation and this first observation.
+      // Exercise that infrastructure race directly with real DB locks. Distinct
+      // expected/actual owners prove surviving rows still contribute subjects.
+      const writing = settle(
+        db.transaction((tx) => {
+          return admitNewComputeRun(tx, {
+            userId: caller.userId,
+            orgId: callerOrgId,
+            agentId: resource ? resourceFixture.agentId : randomUUID(),
+            ownerUserId: expectedOwner,
+            agentOrgId: resourceFixture.orgId,
+            existingSessionId: session ? initial.sessionId : randomUUID(),
+          });
+        }),
+      );
+      await waitForBlockedBy(held.pid);
+      await held.release();
+      await expect(writing).resolves.toStrictEqual({ ok: true, value: false });
+    },
+  );
+
+  it("fences an existing session when its distinct shared Agent owner closes", async () => {
+    const f = await fixture();
+    const member = bdd.user({ orgId: f.orgId });
+    const initial = await api.createRun(member, {
+      agentId: f.agentId,
+      prompt: "Synthetic shared session",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.requestCancelRun(member, initial.runId, [200]);
+    const continued = await api.createRun(member, {
+      agentId: f.agentId,
+      sessionId: initial.sessionId,
+      prompt: "Synthetic writable shared continuation",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(continued).toMatchObject({
+      status: "pending",
+      sessionId: initial.sessionId,
+    });
+    const before = await counts({ ...f, actor: member });
+    const held = await holdClosure(decision(f.actor.userId));
+    const writing = settle(
+      api.requestCreateRun(
+        member,
+        {
+          agentId: f.agentId,
+          sessionId: initial.sessionId,
+          prompt: "Synthetic shared continuation",
+          modelProvider: "anthropic-api-key",
+        },
+        [409],
+      ),
+    );
+    await waitForBlockedBy(held.pid);
+    await held.release();
+    await expect(writing).resolves.toMatchObject({
+      ok: true,
+      value: { status: 409 },
+    });
+    await expect(counts({ ...f, actor: member })).resolves.toStrictEqual(
+      before,
+    );
+  });
 
   it("resolves a changed run owner in a fresh transaction without releasing prepared credentials", async () => {
     const w = await writerFixture("claim");
@@ -1072,6 +1267,15 @@ describe("actual compute transactions versus the B1 projector", () => {
         expect(written.value).toMatchObject({
           status: kind.endsWith("create") ? 201 : kind === "claim" ? 200 : 400,
         });
+        if (kind === "failed-existing-session-create") {
+          expect(written.value).toMatchObject({
+            body: { status: "failed", sessionId: w.sessionId },
+          });
+        } else if (kind === "existing-session-create") {
+          expect(written.value).toMatchObject({
+            body: { status: "pending", sessionId: w.sessionId },
+          });
+        }
       }
     }
   });

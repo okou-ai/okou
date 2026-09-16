@@ -211,6 +211,55 @@ promotion and user/org/Agent changes committed while admission waits on the
 session lock, both with and without a concurrent conversation change. Query
 capture stays outside runtime and CI assertions; no timing threshold is added.
 
+### New-run ownership observation (#34721)
+
+Ordinary new-run persistence with an existing session observes the Agent and
+session in one statement. A singleton `SELECT 1` independently LEFT JOINs their
+requested primary keys, so either missing row still preserves the other owner
+and its subjects. Structured schema-column selections decode each missing
+object as null; a present session with a null Agent binding remains present.
+New-session admission retains its one resource read. Null-Agent maintenance
+retains its independent Storage/session reads and lease authority.
+
+The observation only discovers subjects. Actual and expected owners still
+contribute domain-separated user/organization locks, acquired individually in
+sorted order. The closure query remains a separate READ COMMITTED statement
+after all locks. Resource KEY SHARE rereads, bounded fresh-transaction retries,
+prepared-owner rejection and the later session FOR UPDATE validation are
+unchanged in both successful and failed-launch persistence. No schema, protocol,
+cache, lock identity, concurrency or fairness change is involved.
+
+For a writable ordinary Agent and existing session, admission changes from
+`5 + S` to `4 + S` statements, where `S` is the distinct subject count. With two
+subjects this is **7 to 6**. New-session admission stays at **6**. These counts
+exclude BEGIN/COMMIT and subsequent launch persistence, including the later
+session validation; they are not counts for the complete create-run request.
+
+A finite local PostgreSQL 18.6 experiment on 2026-09-16 compared baseline
+`d1312dca7973bcd5615ca7a55123e4e5ee4906da` with the candidate using identical
+synthetic Agent/session fixtures, three warmups per variant/path and twenty
+alternating samples. All samples confirmed the counts above. Existing-session
+transaction medians were 5.352 ms baseline and 4.651 ms candidate; no-session
+medians were 1.869 and 2.215 ms. These include local transaction/driver overhead
+and are not a production percentile or a reliable savings estimate.
+
+The generated candidate SQL bound Agent ID first and session ID second. Runtime
+probes verified all four present/missing combinations and a present unbound
+session. `EXPLAIN (ANALYZE, BUFFERS)` retained the Agent owner index and session
+primary-key index, with five shared buffer hits versus three plus two for the
+separate reads. The join adds two singleton LEFT nested loops. Single execution
+samples were 0.144 ms combined versus 0.014 and 0.019 ms separately; fewer
+statements do not mean identical planning/execution costs. No latency threshold
+or experiment instrumentation is added to production or CI.
+
+Behavioral coverage extends closure-first/writer-first and Agent-transfer races
+to both existing-session persistence consumers, and checks the later session
+ownership reread. Narrow infrastructure cases additionally prove that missing
+and unbound observations still wait for closure on the surviving actual or
+expected subjects. Preparation prechecks cannot expose those intermediate
+missing/mismatched pairs through an endpoint; these cases use the existing
+real-database admission exception rather than mocking the query or locks.
+
 ## Remaining boundaries and activation gates
 
 - Preparation may already write provider/storage artifacts before the guarded

@@ -7,7 +7,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
@@ -143,6 +143,54 @@ async function lockResource(tx: Tx, observed: ResourceOwner): Promise<void> {
   }
 }
 
+async function readNewComputeOwners(
+  tx: Tx,
+  identity: Pick<ResourceOwner, "kind" | "id">,
+  existingSessionId: string | undefined,
+) {
+  if (identity.kind === "agent" && existingSessionId !== undefined) {
+    const [observed] = await tx
+      .select({
+        resource: {
+          id: agents.id,
+          userId: agents.owner,
+          orgId: agents.orgId,
+        },
+        session: {
+          userId: agentSessions.userId,
+          orgId: agentSessions.orgId,
+          agentId: agentSessions.agentId,
+        },
+      })
+      // Each observation survives independently, even if the other row is gone.
+      .from(sql`(SELECT 1) AS admission`)
+      .leftJoin(agents, eq(agents.id, identity.id))
+      .leftJoin(agentSessions, eq(agentSessions.id, existingSessionId));
+    if (!observed) {
+      throw new Error("Missing new-run ownership observation");
+    }
+    return {
+      resource: observed.resource
+        ? { ...observed.resource, kind: identity.kind }
+        : undefined,
+      session: observed.session ?? undefined,
+    };
+  }
+  const resource = await readResource(tx, identity, false);
+  const [session] =
+    existingSessionId === undefined
+      ? []
+      : await tx
+          .select({
+            userId: agentSessions.userId,
+            orgId: agentSessions.orgId,
+            agentId: agentSessions.agentId,
+          })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, existingSessionId));
+  return { resource, session };
+}
+
 /** First operation in each new-run persistence transaction, including failures. */
 export async function admitNewComputeRun(
   tx: Tx,
@@ -162,18 +210,11 @@ export async function admitNewComputeRun(
   if (!identity) {
     return false;
   }
-  const resource = await readResource(tx, identity, false);
-  const [session] =
-    args.existingSessionId === undefined
-      ? []
-      : await tx
-          .select({
-            userId: agentSessions.userId,
-            orgId: agentSessions.orgId,
-            agentId: agentSessions.agentId,
-          })
-          .from(agentSessions)
-          .where(eq(agentSessions.id, args.existingSessionId));
+  const { resource, session } = await readNewComputeOwners(
+    tx,
+    identity,
+    args.existingSessionId,
+  );
   const expected = { userId: args.ownerUserId, orgId: args.agentOrgId };
   const allowed = await writable(tx, [
     args,
