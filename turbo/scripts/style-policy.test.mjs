@@ -563,3 +563,47 @@ test("class resolution respects lexical scopes, repeated expressions, and cycles
   );
   assertRejected(runPolicy(root), /allowlisted for another file/);
 });
+
+test("a malformed or invalid allowlist fails visibly instead of passing", (t) => {
+  const file = "apps/platform/src/view.tsx";
+  const root = createCommandWorkspace(
+    t,
+    { [file]: 'export const View = () => <div className="adapter" />;' },
+    allowlistWith(file, "adapter"),
+  );
+  assert.equal(runPolicy(root).status, 0);
+  const entry = allowlistWith(file, "adapter").classDependencies[0];
+
+  function writeAllowlist(contents) {
+    writeFileSync(join(root, "style-allowlist.json"), contents);
+  }
+
+  // Unparseable JSON never reaches a policy rule, so the command has to stop
+  // rather than report a clean run over an allowlist it could not read.
+  writeAllowlist("{ not json");
+  assertRejected(runPolicy(root), /style-policy\/configuration/);
+
+  // A file that parses but whose entries do not hold up: an entry the command
+  // cannot validate must not end up authorizing anything.
+  writeAllowlist(
+    JSON.stringify({
+      ...EMPTY_ALLOWLIST,
+      classDependencies: [{ ...entry, token: " ", count: 0 }],
+    }),
+  );
+  assertRejected(
+    runPolicy(root),
+    /must have exact file, token, and a positive integer count/,
+  );
+
+  writeAllowlist(
+    JSON.stringify({
+      ...EMPTY_ALLOWLIST,
+      classDependencies: [{ ...entry, rationale: "" }],
+    }),
+  );
+  assertRejected(runPolicy(root), /must have a non-empty rationale/);
+
+  writeAllowlist(JSON.stringify({ ...EMPTY_ALLOWLIST, version: 2 }));
+  assertRejected(runPolicy(root), /style-allowlist\.json version must be 1/);
+});

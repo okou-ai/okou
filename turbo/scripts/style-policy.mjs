@@ -90,10 +90,6 @@ function metadataErrors(entry, label) {
   return errors;
 }
 
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 export function validatePolicyFiles(allowlist) {
   const errors = [];
   if (allowlist.version !== STYLE_POLICY_VERSION) {
@@ -453,15 +449,6 @@ function collectStyleInjections(file, text) {
   }
   visit(sourceFile);
   return records;
-}
-
-function countBy(records, key) {
-  const counts = new Map();
-  for (const record of records) {
-    const recordKey = key(record);
-    counts.set(recordKey, (counts.get(recordKey) ?? 0) + 1);
-  }
-  return counts;
 }
 
 // Anything the allowlist did not claim is a violation. There is no grandfathered
