@@ -17,7 +17,7 @@ import {
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   sshCloudflareConfigs$,
-  sshCloudflareEnabled$,
+  sshEnabled$,
   sshTransportEditor$,
   chooseSshAccessConfig$,
   openSshAccessStep$,
@@ -245,7 +245,7 @@ export function AccessSelection({
   readonly active: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = useGet(sshCloudflareEnabled$);
+  const enabled = useGet(sshEnabled$);
   const configs = useLoadable(sshCloudflareConfigs$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshAccessConfig$);

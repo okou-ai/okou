@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -40,6 +41,7 @@ import { validateOfficialAutomationResultEmailSchema } from "./test-official-aut
 import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-model-cooldown-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
+import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -1378,7 +1380,7 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "7fa1f4813c3bcfb4d16269639d9640a3",
+    bodyHash: "b002912b7bba9df6783801b84490bada",
     functionName: "capture_usage_billing_attribution",
     identityArguments: "",
     kind: "f",
@@ -3338,12 +3340,14 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
+    await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentArtifactTriggerBehavior(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
     await validatePermanentSlackPublicBrandState(dbUrl1);
+    await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateOfficialAutomationResultEmailSchema(dbUrl1);
@@ -3368,6 +3372,7 @@ async function main(): Promise<void> {
     await validatePermanentBuiltInModelCooldownState(dbUrl2);
     await validatePermanentBuiltInModelKeyState(dbUrl2);
     await validatePermanentSlackPublicBrandState(dbUrl2);
+    await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateOfficialAutomationResultEmailSchema(dbUrl2);

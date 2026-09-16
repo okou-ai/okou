@@ -7,9 +7,12 @@ const THUMB_WIDTH = "18px";
 const THUMB_INSET = "9px";
 
 /**
- * One dot per interior step. The track's two ends already read as the lowest
- * and highest step, so a mark drawn on top of them says the same thing twice;
- * the dots that remain divide the whole track evenly.
+ * One dot per step, sitting where the handle sits for that step: the scale
+ * marks the stops a user can land on, so a dot belongs at the lowest and the
+ * highest too, not only between them. That is also why they are placed on the
+ * handle's own travel rather than across the full track -- a dot half a handle
+ * in from each end lines up with where the handle comes to rest, and the earlier
+ * objection was to rules drawn *on* the track's ends, which these are not.
  *
  * `bg-divider` is the usual token for a painted rule, but it resolves to the
  * same value as `--gray-200`, which is this track's own fill -- a mark drawn in
@@ -21,32 +24,39 @@ const THUMB_INSET = "9px";
  * little more weight, because they sit on the heavier fill rather than on the
  * bare track.
  */
-function InteriorTicks({
+function ScaleDots({
   count,
   passed,
 }: {
   count: number;
   passed?: number | undefined;
 }) {
+  if (count < 2) {
+    return null;
+  }
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-      {Array.from({ length: Math.max(count - 2, 0) }, (_, index) => {
-        const step = index + 1;
+      {Array.from({ length: count }, (_, step) => {
         return (
           <span
-            key={index}
+            key={step}
             className={cn(
               // A dot rather than a rule: it marks the stop without drawing a
               // line through the bar, which is what Claude and ChatGPT do.
               "absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-200",
               passed === undefined
-                ? "bg-gray-400/45"
+                ? // The top step wipes the plain track away, taking the heavier
+                  // marks with it, so the layer that survives carries the weight
+                  // itself against the texture underneath.
+                  "bg-gray-400/60 group-data-[at-max=true]/effort:bg-[color:var(--okou-effort-dot-on-texture)]"
                 : step <= passed
-                  ? "bg-gray-500/40"
+                  ? "bg-gray-500/55"
                   : "bg-transparent",
             )}
             style={{
-              insetInlineStart: `${String((step / (count - 1)) * 100)}%`,
+              insetInlineStart: `calc(${THUMB_INSET} + ${String(
+                step / (count - 1),
+              )} * (100% - ${THUMB_WIDTH}))`,
             }}
           />
         );
@@ -151,9 +161,9 @@ export function ChatEffortSlider({
             className="absolute inset-y-0 left-0 bg-gray-400/60 transition-[width] duration-200 ease-[cubic-bezier(0.34,1.32,0.58,1)] motion-reduce:transition-none"
             style={{ width: fillWidth }}
           />
-          <InteriorTicks count={steps} passed={value} />
+          <ScaleDots count={steps} passed={value} />
         </div>
-        <InteriorTicks count={steps} />
+        <ScaleDots count={steps} />
 
         {/* The handle travels inside the track rather than across its centre
             line: at the lowest step its left edge sits on the track's left

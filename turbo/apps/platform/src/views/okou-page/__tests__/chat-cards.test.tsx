@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { expect, test } from "vitest";
 
 import {
@@ -104,6 +105,28 @@ test("Incomplete action links are shown as unavailable", async () => {
       );
     }),
   ).toBeFalsy();
+});
+
+test("Keep the connector slot when delayed metadata is unavailable", async () => {
+  const gate = context.mocks.deferred<void>();
+  context.mocks.api(
+    connectorCatalogContract.get,
+    async ({ respond, withSignal }) => {
+      await withSignal(gate.promise);
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Connector unavailable" },
+      });
+    },
+  );
+  await setupChat(
+    `Authorization request\n\n${CONNECTOR_URL}\n\nAfter the request`,
+  );
+  const loading = await screen.findByTestId("connector-action-card-loading");
+  expectNodeBefore(loading, screen.getByText("After the request"));
+  gate.resolve();
+  const unavailable = await screen.findByTestId("unavailable-action-card");
+  expect(unavailable).toHaveTextContent("Action unavailable");
+  expectNodeBefore(unavailable, screen.getByText("After the request"));
 });
 
 test("Ordinary or code links remain message content", async () => {

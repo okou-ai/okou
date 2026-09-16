@@ -27,9 +27,10 @@ import {
 } from "./connection-diagnostics.ts";
 import {
   createDeferredPromise,
+  setDaemon,
   onRejection,
   settle,
-  setLoop,
+  waitLoopUntil,
   throwIfAbort,
   waitForOperation,
   withCleanup,
@@ -208,6 +209,8 @@ const pendingAblySubscriptions$ = state<readonly PendingAblySubscription[]>([]);
 
 interface RealtimeSubscribeOptions {
   readonly onSubscribed?: () => void;
+  /** Handle a background subscription failure in its owning feature. */
+  readonly onError?: (error: unknown) => void;
   /** Observe a continuity gap in addition to the loop's own recovery. */
   readonly onResync?: () => void;
   readonly runOnSubscribe?: boolean;
@@ -427,7 +430,7 @@ const runWithChannel$ = command(
           }
           L.debug("subscribed to topic: " + topic);
 
-          await setLoop(
+          await waitLoopUntil(
             async (loopSignal) => {
               await deferred.promise;
               loopSignal.throwIfAborted();
@@ -641,7 +644,7 @@ const runWithChannelPayload$ = command(
           signal.throwIfAborted();
           L.debug("subscribed to payload topic: " + subscriptionLabel);
 
-          await setLoop(
+          await waitLoopUntil(
             async (loopSignal) => {
               return await set(
                 runPayloadLoopIteration$,
@@ -1268,7 +1271,7 @@ const realtimeChannel$ = command(
   },
 );
 
-export const setAblyLoop$ = command(
+const internalSetAblyLoop$ = command(
   async (
     { set },
     { scope = "user", topic, loopCommand$, options }: SetAblyLoopArgs,
@@ -1291,7 +1294,7 @@ export const setAblyLoop$ = command(
 );
 
 /** Run existing synchronous invalidation commands for every notification. */
-export const setAblyInvalidationLoop$ = command(
+const internalSetAblyInvalidationLoop$ = command(
   async (
     { set },
     {
@@ -1318,7 +1321,7 @@ export const setAblyInvalidationLoop$ = command(
   },
 );
 
-export const setAblyPayloadLoop$ = command(
+const internalSetAblyPayloadLoop$ = command(
   async (
     { set },
     {
@@ -1346,5 +1349,90 @@ export const setAblyPayloadLoop$ = command(
       signal,
     );
     signal.throwIfAborted();
+  },
+);
+
+/** The daemon owns transport failures after the starting command has returned. */
+async function observeAblySubscription(
+  subscription: Promise<void>,
+  options: RealtimeSubscribeOptions | undefined,
+  signal: AbortSignal,
+): Promise<void> {
+  const result = await settle(subscription, signal);
+  signal.throwIfAborted();
+  if (!result.ok) {
+    if (options?.onError) {
+      options.onError(result.error);
+    } else {
+      throw result.error;
+    }
+  }
+}
+
+/** Start a subscription owned by signal and return immediately. */
+export const setAblyLoop$ = command(
+  ({ set }, args: SetAblyLoopArgs, signal: AbortSignal): void => {
+    setDaemon((ownerSignal) => {
+      return observeAblySubscription(
+        set(internalSetAblyLoop$, args, ownerSignal),
+        args.options,
+        ownerSignal,
+      );
+    }, signal);
+  },
+);
+
+/** Wait until the subscription finishes, fails, or is cancelled. */
+export const waitAblyLoopUntil$ = command(
+  ({ set }, args: SetAblyLoopArgs, signal: AbortSignal): Promise<void> => {
+    return set(internalSetAblyLoop$, args, signal);
+  },
+);
+
+/** Start a subscription owned by signal and return immediately. */
+export const setAblyInvalidationLoop$ = command(
+  ({ set }, args: SetAblyInvalidationLoopArgs, signal: AbortSignal): void => {
+    setDaemon((ownerSignal) => {
+      return observeAblySubscription(
+        set(internalSetAblyInvalidationLoop$, args, ownerSignal),
+        args.options,
+        ownerSignal,
+      );
+    }, signal);
+  },
+);
+
+/** Wait until the subscription finishes, fails, or is cancelled. */
+export const waitAblyInvalidationLoopUntil$ = command(
+  (
+    { set },
+    args: SetAblyInvalidationLoopArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    return set(internalSetAblyInvalidationLoop$, args, signal);
+  },
+);
+
+/** Start a subscription owned by signal and return immediately. */
+export const setAblyPayloadLoop$ = command(
+  ({ set }, args: SetAblyPayloadLoopArgs, signal: AbortSignal): void => {
+    setDaemon((ownerSignal) => {
+      return observeAblySubscription(
+        set(internalSetAblyPayloadLoop$, args, ownerSignal),
+        args.options,
+        ownerSignal,
+      );
+    }, signal);
+  },
+);
+
+/** Wait until the subscription finishes, fails, or is cancelled. */
+export const waitAblyPayloadLoopUntil$ = command(
+  (
+    { set },
+    args: SetAblyPayloadLoopArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    return set(internalSetAblyPayloadLoop$, args, signal);
   },
 );

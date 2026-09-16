@@ -714,6 +714,52 @@ index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9
          this.rawChunks = [];
      }
  }
+diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
+index d4f306ea3918aa07a981f948c8a3cb4f687f5708..f874ee59271e50a75194810fc8fc89b911bfa497 100644
+--- a/dist/modes/json-event.d.ts
++++ b/dist/modes/json-event.d.ts
+@@ -9,6 +9,11 @@ type ToJsonAssistantMessageEvent<T> = T extends {
+ } ? WithoutPartial<T> & {
+     id: string;
+     toolName: string;
++} : T extends {
++    type: "text_start";
++    partial: unknown;
++} ? WithoutPartial<T> & {
++    initialText?: string;
+ } : WithoutPartial<T>;
+ type MessageUpdateEvent = Extract<AgentSessionEvent, {
+     type: "message_update";
+@@ -24,9 +29,10 @@ export type JsonAgentSessionEvent = Exclude<AgentSessionEvent, {
+ }> | JsonMessageUpdateEvent;
+ /**
+  * Remove cumulative assistant snapshots from streaming wire events.
+- * `message_start` provides the initial message, deltas build it, and
+- * `message_end` provides the final authoritative message. Cumulative usage,
+- * tool-call ids, and tool names remain available because their size is constant.
++ * Deltas build the message and `message_end` provides the final authoritative
++ * value. Anthropic `text_start` retains initial block text because it may not
++ * be repeated as a delta. Cumulative usage, tool-call ids, and tool names remain
++ * available because their size is constant.
+  */
+ export declare function toJsonEvent(event: MessageUpdateEvent): JsonMessageUpdateEvent;
+ export declare function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent;
+diff --git a/dist/modes/json-event.js b/dist/modes/json-event.js
+index b2671b8e69be943b5c2918a972082eac84b38948..c593764e8391c533a1d2f23f22522c3e554111be 100644
+--- a/dist/modes/json-event.js
++++ b/dist/modes/json-event.js
+@@ -7,6 +7,11 @@ function toJsonAssistantMessageEvent(event) {
+         const { partial: _partial, ...deltaEvent } = event;
+         return { ...deltaEvent, id: toolCall.id, toolName: toolCall.name };
+     }
++    if (event.type === "text_start" && event.partial.api === "anthropic-messages") {
++        const text = event.partial.content[event.contentIndex];
++        const { partial: _partial, ...deltaEvent } = event;
++        return text?.type === "text" && text.text ? { ...deltaEvent, initialText: text.text } : deltaEvent;
++    }
+     if (!("partial" in event)) {
+         return event;
+     }
 diff --git a/dist/utils/child-process.d.ts b/dist/utils/child-process.d.ts
 index c75b42d9d43a0ef9000277b4ef5426443eab9a3e..a554d3e4ef12363dc903f366abb0143d68d7c950 100644
 --- a/dist/utils/child-process.d.ts

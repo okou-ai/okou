@@ -104,18 +104,12 @@ export const setupAgentChatPage$ = command(
     }
     if (desktopRecordingHandoff) {
       const targetDraft = agentDraft?.draft ?? get(talkDraft$);
-      const restored = await set(
+      await set(
         applyDesktopRecordingHandoff$,
         targetDraft,
         get(searchParams$),
         signal,
       );
-      if (restored) {
-        set(get(agentChatComposerSignals$).template.openTemplatePicker$, {
-          kind: "insert",
-          category: "intro-video",
-        });
-      }
     }
     if (templatePicker) {
       const composerSignals = get(agentChatComposerSignals$);

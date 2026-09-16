@@ -537,6 +537,71 @@ try {
       "CREATE TABLE ssh_connection_credentials (connection_id text PRIMARY KEY, encrypted_private_key text, encrypted_passphrase text)",
     );
   }
+  // Cloudflare Access was introduced after the retained recovery snapshot.
+  // A current database must verify both encrypted fields without changing them.
+  await db.query(
+    "CREATE TABLE cloudflare_access_configs (id uuid PRIMARY KEY, encrypted_client_id text NOT NULL, encrypted_client_secret text NOT NULL)",
+  );
+  const accessId = randomUUID();
+  await db.query("INSERT INTO cloudflare_access_configs VALUES ($1, $2, $2)", [
+    accessId,
+    sshTarget,
+  ]);
+  try {
+    const before: unknown[] = (
+      await db.query("SELECT * FROM cloudflare_access_configs")
+    ).rows;
+    const accessRecovery = await cli("recovery-cloudflare-access", [
+      "--verify",
+      "--recovery-schema",
+    ]);
+    assert.equal(accessRecovery.databaseVerifiedOnTarget, true);
+    assert.equal(object(accessRecovery.totals).verified, 2);
+    assert.equal(object(accessRecovery.totals).updated, 0);
+    assert.deepEqual(
+      (await db.query("SELECT * FROM cloudflare_access_configs")).rows,
+      before,
+    );
+    for (const column of ["encrypted_client_id", "encrypted_client_secret"]) {
+      await db.query(
+        `UPDATE cloudflare_access_configs SET "${column}" = $1 WHERE id = $2`,
+        [sshSource, accessId],
+      );
+      const oldAccess = await cli("recovery-source-access-" + column, [
+        "--verify",
+        "--recovery-schema",
+      ]);
+      assert.equal(oldAccess.databaseVerifiedOnTarget, false);
+      assert.equal(object(oldAccess.totals).source, 1);
+      assert.equal(object(oldAccess.totals).updated, 0);
+      await db.query(
+        `UPDATE cloudflare_access_configs SET "${column}" = $1 WHERE id = $2`,
+        [sshTarget, accessId],
+      );
+      await db.query(
+        `ALTER TABLE cloudflare_access_configs RENAME COLUMN "${column}" TO fixture_missing_column`,
+      );
+      try {
+        const malformed = await cli(
+          "recovery-missing-access-" + column,
+          ["--verify", "--recovery-schema"],
+          false,
+          true,
+        );
+        assert.equal(malformed.complete, false);
+        assert.deepEqual(malformed.failureDetails, {
+          stage: "storage_manifest",
+          code: "storage_manifest_mismatch",
+        });
+      } finally {
+        await db.query(
+          `ALTER TABLE cloudflare_access_configs RENAME COLUMN fixture_missing_column TO "${column}"`,
+        );
+      }
+    }
+  } finally {
+    await db.query("DROP TABLE cloudflare_access_configs");
+  }
   for (const [index, modeArgs] of [[], ["--migrate"]].entries()) {
     const rejectedReport = join(
       directory,

@@ -155,11 +155,11 @@ the accepted Run-lifetime cache window.
 
 The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
 Token configurations as SSH connection settings, independently of SSH login
-credentials. It remains default-off
-behind `cloudflareAccess` and requires `sshAccess`. #34080 adds the native Runner
-carrier; #34081 adds management inside the SSH page and owns integrated real-Run
-acceptance.
-Neither merged code nor local tests establish real-provider acceptance or enable rollout.
+credentials. Direct and Cloudflare Access share the existing staff-only
+`sshAccess` switch; there is no separate Access rollout switch. #34080 adds the
+native Runner carrier and #34081 adds management inside the SSH page. #34370
+records the completed integrated acceptance and owner-approved evidence boundaries.
+Removing the separate switch does not enable SSH for users outside its existing cohort.
 
 The carrier uses a customer-managed published SSH hostname on WSS/443 and a
 Service Token allowed by the application's **Service Auth** policy. The token's
@@ -185,7 +185,7 @@ updates/deletion require the expected edit revision, and referenced deletion is
 rejected. Names may change without invalidating Runs. Token replacement advances
 a separate authority generation and all referencing SSH host generations.
 Configurations have no separate enabled state; the saved host binding selects
-Access, the existing SSH Agent grant authorizes use, and the feature switch
+Access, the existing SSH Agent grant authorizes use, and `sshAccess`
 controls rollout. Switching to Direct is not a way to disable a protected host.
 
 An SSH host explicitly selects a same-owner configuration, published DNS hostname
@@ -198,7 +198,7 @@ remains unchanged, and later Agents can use bound configurations once authorized
 for SSH. SSH username/key/password and server host-key trust remain independent
 of the Service Token.
 
-When Access is available, `/connectors/ssh` adds a **Cloudflare Access** view beside
+When SSH is available, `/connectors/ssh` includes a **Cloudflare Access** view beside
 **Hosts** and **Credentials**. It lists the configuration count and affected hosts,
 and supports adding, renaming, replacing a Service Token and deleting unused
 configurations. Referenced configurations cannot be deleted until their hosts are
@@ -222,8 +222,8 @@ saving against the new revision. A further concurrent change still fails the
 revision check. Load failures offer **Retry** and remain distinct from feature
 unavailability and translated business errors. A protected host remains visibly
 protected when Access is unavailable; it is never silently converted to Direct.
-Protected host edits, key resets and deletion are unavailable until Access
-eligibility is restored; unrelated Direct hosts remain manageable.
+Losing `sshAccess` disables management and fresh runtime authorization for both
+Direct and protected hosts. It does not remove saved configurations or bindings.
 
 Configuration mutations reuse the owner's `ssh:changed` notification to refresh
 metadata without clearing open drafts. There is no independent connector card,
@@ -234,9 +234,8 @@ SSH management uses one canonical contract. Protected metadata includes
 `transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
 An omitted transport on edit preserves the current binding. The Platform submits
 the selected transport explicitly, including when retrying after reviewing a
-concurrent change. Switching to Direct requires Access eligibility and the current
-host generation. Unrelated Direct hosts
-remain manageable when Access is off.
+concurrent change. Switching to Direct requires SSH eligibility and the current
+host generation.
 
 See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
 and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
@@ -376,8 +375,12 @@ Input/signal submission and closing SSH do not prove the remote process stopped
 or its effects completed. Never automatically replay uncertain starts or input.
 This staff-gated session-read contract replaces the earlier defaults and payload
 without an old-reader compatibility path or automatic conversion into independent
-exec calls. Observed authorization-notification disconnects cancel
-managed sessions and prevent new starts until the subscription recovers.
+exec calls. Ably notification disconnects, reconnects and prolonged unavailability
+do not stop healthy SSH work or prevent new Sessions/file transfers. First use and
+cache misses still require API authorization. Delivered authority/configuration
+invalidation and Run/sandbox end retire affected Sessions and transports; missed
+notices can leave previously authorized access usable until the Run ends. There
+is no fixed revocation deadline or automatic replay of uncertain work.
 
 ### File upload and download
 

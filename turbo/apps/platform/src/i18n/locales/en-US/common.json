@@ -1514,6 +1514,51 @@
       "title": "Action unavailable"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "Once a day, every day",
+          "name": "Check in daily",
+          "unit": "a day"
+        },
+        "connector": {
+          "description": "Gmail, Notion, and 100+ more",
+          "name": "Connect a connector",
+          "unit": "per connector"
+        },
+        "inReview": "In review",
+        "inReviewDescription": "Submitted, waiting on review",
+        "invite": {
+          "description": "Everyone you add counts",
+          "name": "Invite your team",
+          "unit": "per member"
+        },
+        "personalBalanceNote": "Credits go to your personal balance.",
+        "progressLabel": "Get started progress",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "Post it, then paste the link",
+          "name": "Share {{assistantName}} on X"
+        },
+        "shareDialog": {
+          "description": "Post about something you built, then paste the link. You get one submission.",
+          "helper": "The post has to be public and mention {{assistantName}}.",
+          "inputLabel": "Post link",
+          "placeholder": "https://x.com/...",
+          "submit": "Submit",
+          "title": "Share {{assistantName}} on X"
+        },
+        "slack": {
+          "description": "Where your team already works",
+          "name": "Add {{assistantName}} to Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "Finish a step, keep the credits.",
+        "title": "Get started",
+        "workflow": {
+          "description": "Turn a repeat task into an automation",
+          "name": "Build a workflow"
+        }
+      },
       "growth": {
         "addInSlack": "Add {{assistantName}} in Slack",
         "connect": "Connect",
@@ -1714,7 +1759,11 @@
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",
       "upgradeWorkspace": "Upgrade your workspace"
     },
+    "cards": {
+      "viewDetails": "View details"
+    },
     "composer": {
+      "add": "Add",
       "agentSuggestions": "Agents",
       "configureModel": "Configure model",
       "create": {
@@ -2272,6 +2321,40 @@
             "prompt": "Create a main image for my website. Help me match the image to the business, audience, page layout, and main message."
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Write a proposal for a client",
+            "prompt": "Create a client proposal deck. Ask me about the client, the work I am proposing, the timeline, and the price."
+          },
+          "companyOverview": {
+            "label": "Explain what my company does",
+            "prompt": "Create a company overview deck. Ask me what we do, who we serve, and what the audience should remember."
+          },
+          "eventTalk": {
+            "label": "Prepare a talk for an event",
+            "prompt": "Build a deck for a talk I am giving. Ask me about the event, the audience, and the one idea I want to land."
+          },
+          "pitchDeck": {
+            "label": "Pitch my business to investors",
+            "prompt": "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising."
+          },
+          "productIntro": {
+            "label": "Introduce a new product",
+            "prompt": "Create a deck introducing a new product. Ask me what it does, who it is for, and what makes it different."
+          },
+          "resultsReadout": {
+            "label": "Present my results",
+            "prompt": "Turn my results into a readout deck. Ask me for the numbers, the period they cover, and the decision they support."
+          },
+          "teamUpdate": {
+            "label": "Put together a team update",
+            "prompt": "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room."
+          },
+          "training": {
+            "label": "Teach something to my team",
+            "prompt": "Build a training deck on a topic I choose. Ask me who is being trained and what they should be able to do afterwards."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Turn a photo into a video",
@@ -2477,7 +2560,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -5940,7 +6022,6 @@
         "loading": "Loading Morning Brief settings...",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
-        "multipleInstallations": "Multiple Morning Brief installations exist. Resolve the conflict before changing this preference.",
         "nextBrief": "Next brief {{date}} ({{timezone}})",
         "paused": "Paused",
         "preparationFailed": "Morning Brief setup will retry automatically. You can also retry now.",
@@ -6211,7 +6292,7 @@
       "summary_other": "{{count}} Access configurations",
       "title": "Cloudflare Access",
       "tokenHelp": "Use a Service Token allowed by your SSH application's Service Auth policy. This is separate from your SSH login.",
-      "unavailable": "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
+      "unavailable": "Cloudflare Access is not available for this account.",
       "usedBy_one": "Used by {{count}} host:",
       "usedBy_other": "Used by {{count}} hosts:"
     },

@@ -1,4 +1,4 @@
-export interface ObjectUrlResource {
+interface ObjectUrlResource {
   readonly url: string;
   readonly release: () => void;
 }
@@ -10,9 +10,9 @@ export interface ObjectUrlResource {
  */
 export function createObjectUrlResource(
   blob: Blob,
-  ownerSignal: AbortSignal,
+  signal: AbortSignal,
 ): ObjectUrlResource {
-  ownerSignal.throwIfAborted();
+  signal.throwIfAborted();
   const url = URL.createObjectURL(blob);
   let released = false;
   const release = () => {
@@ -20,9 +20,9 @@ export function createObjectUrlResource(
       return;
     }
     released = true;
-    ownerSignal.removeEventListener("abort", release);
+    signal.removeEventListener("abort", release);
     URL.revokeObjectURL(url);
   };
-  ownerSignal.addEventListener("abort", release, { once: true });
+  signal.addEventListener("abort", release, { once: true });
   return { url, release };
 }

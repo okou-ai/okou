@@ -22,6 +22,8 @@ surface; the index does not replace their detailed rules.
   requirements for independently deployed components and persisted state.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and activation gates.
+- [Subscription decryption experiment](./subscription-decryption-experiment.md):
+  bounded KMS concurrency, provider-lock measurements and failure trade-offs.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.
@@ -83,6 +85,8 @@ surface; the index does not replace their detailed rules.
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
+- [Guest memory policy](./runner-memory-policy.md): shared workload capacity,
+  control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,

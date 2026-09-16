@@ -3,6 +3,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { piAgentStreamForConfig } from "./model";
+import { piModelFailureReason } from "./model-request-diagnostics";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -88,11 +89,10 @@ export function projectPiApiAssistantMessage(
 ): PiApiAssistantMessage {
   const projection = projectAssistantContent(message, eventIdPrefix);
   const failureReason =
-    message.stopReason === "error" &&
-    message.api === "openai-codex-responses" &&
-    message.provider === "openai-codex"
-      ? classifyPiApiProviderFailure(message.errorMessage)
-      : undefined;
+    piModelFailureReason(message) ??
+    (message.stopReason === "error"
+      ? classifyPiApiProviderFailure(message.errorMessage, responseStatus)
+      : undefined);
   const projected = {
     content: projection.content,
     ...(projection.memoryCitation

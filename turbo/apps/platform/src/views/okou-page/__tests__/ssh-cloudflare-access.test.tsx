@@ -77,7 +77,7 @@ beforeEach(() => {
   });
 });
 
-async function page(add = false, enabled = true) {
+async function page(add = false) {
   await setupPage({
     context,
     path: `/connectors/ssh${add ? "?add=1" : ""}`,
@@ -90,7 +90,6 @@ async function page(add = false, enabled = true) {
     },
     featureSwitches: {
       [FeatureSwitchKey.SshAccess]: true,
-      [FeatureSwitchKey.CloudflareAccess]: enabled,
     },
   });
 }
@@ -449,79 +448,74 @@ test("A referenced deletion race explains the new affected host without removing
   ).toBeDisabled();
 });
 
-test.each(["switch", "api"])(
-  "Access unavailable via %s blocks protected mutations but preserves Direct management",
-  async (reason) => {
-    const direct = {
-      ...directHost,
-      id: "c0000000-0000-4000-8000-000000000002",
-      displayName: "Direct host",
-    };
-    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-      return respond(200, {
-        connections: [
-          {
-            ...host,
-            learnedHostKey: {
-              algorithm: "ssh-ed25519",
-              fingerprint: "SHA256:test",
-            },
+test("Access API unavailability blocks protected mutations without silently changing transport", async () => {
+  const direct = {
+    ...directHost,
+    id: "c0000000-0000-4000-8000-000000000002",
+    displayName: "Direct host",
+  };
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, {
+      connections: [
+        {
+          ...host,
+          learnedHostKey: {
+            algorithm: "ssh-ed25519",
+            fingerprint: "SHA256:test",
           },
-          direct,
-        ],
-      });
-    });
-    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-      return respond(404, {
-        error: {
-          code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
-          message: "not user copy",
         },
-      });
+        direct,
+      ],
     });
-    const requests: unknown[] = [];
-    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
-      requests.push(body);
-      return respond(200, direct);
-    });
-    await page(false, reason !== "switch");
-    const protectedCard = (await screen.findByText(host.displayName)).closest(
-      "article",
-    );
-    expect(protectedCard).not.toBeNull();
-    await within(protectedCard!).findByText(
-      "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
-    );
-    expect(getAction("button", "Edit host", protectedCard!)).toBeDisabled();
-    expect(
-      getAction("button", "Reset host key", protectedCard!),
-    ).toBeDisabled();
-    expect(getAction("button", "Delete host", protectedCard!)).toBeDisabled();
-    const directCard = (await screen.findByText(direct.displayName)).closest(
-      "article",
-    );
-    click(getAction("button", "Edit host", directCard!));
-    const dialog = await screen.findByRole("dialog");
-    expect(
-      within(dialog).getByLabelText("Public hostname or IP address"),
-    ).toHaveValue(direct.host);
-    expect(within(dialog).getByLabelText("Port")).toHaveValue(443);
-    click(getAction("button", "Save", dialog));
-    await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
-    expect(requests).toStrictEqual([
-      {
-        expectedGeneration: 1,
-        displayName: direct.displayName,
-        host: direct.host,
-        port: 443,
-        credential: { id: credential.id },
-        transport: { type: "direct" },
+  });
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
+        message: "not user copy",
       },
-    ]);
-  },
-);
+    });
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, direct);
+  });
+  await page();
+  const protectedCard = (await screen.findByText(host.displayName)).closest(
+    "article",
+  );
+  expect(protectedCard).not.toBeNull();
+  await within(protectedCard!).findByText(
+    "Cloudflare Access is not available for this account.",
+  );
+  expect(getAction("button", "Edit host", protectedCard!)).toBeDisabled();
+  expect(getAction("button", "Reset host key", protectedCard!)).toBeDisabled();
+  expect(getAction("button", "Delete host", protectedCard!)).toBeDisabled();
+  const directCard = (await screen.findByText(direct.displayName)).closest(
+    "article",
+  );
+  click(getAction("button", "Edit host", directCard!));
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    within(dialog).getByLabelText("Public hostname or IP address"),
+  ).toHaveValue(direct.host);
+  expect(within(dialog).getByLabelText("Port")).toHaveValue(443);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(requests).toStrictEqual([
+    {
+      expectedGeneration: 1,
+      displayName: direct.displayName,
+      host: direct.host,
+      port: 443,
+      credential: { id: credential.id },
+      transport: { type: "direct" },
+    },
+  ]);
+});
 
 test("An eligible protected host can explicitly change to Direct", async () => {
   let current = host;
@@ -681,7 +675,7 @@ test("A new host can be explicitly saved as Direct after Access becomes unavaila
   await selectConfig(dialog);
   click(getAction("button", "Save", dialog));
   await within(dialog).findAllByText(
-    "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
+    "Cloudflare Access is not available for this account.",
   );
   click(getAction("radio", "Direct", dialog));
   await waitFor(() => {
@@ -919,7 +913,7 @@ test.each(["navigation", "owner", "feature"])(
         // infrastructure-owned snapshot to exercise in-place feature loss.
         context.store.set(applyFeatureSwitches$, {
           ...context.store.get(featureSwitch$),
-          [FeatureSwitchKey.CloudflareAccess]: false,
+          [FeatureSwitchKey.SshAccess]: false,
         });
       }
     });
@@ -961,7 +955,7 @@ test("Access load failure offers retry while feature unavailability remains dist
   unavailable = true;
   click(getAction("button", "Retry"));
   await screen.findByText(
-    "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
+    "Cloudflare Access is not available for this account.",
   );
   expect(document.body.textContent).not.toContain("private provider detail");
 });

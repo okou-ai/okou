@@ -67,7 +67,10 @@ export interface PiMemoryStage1ProviderResult {
 }
 
 export class PiMemoryStage1ProviderError extends Error {
-  constructor(readonly status?: number) {
+  constructor(
+    readonly status?: number,
+    readonly result?: PiMemoryStage1ProviderResult,
+  ) {
     super("Pi memory Stage 1 provider request failed");
     this.name = "PiMemoryStage1ProviderError";
   }
@@ -462,17 +465,7 @@ export async function runPiMemoryStage1Extraction(
   // The SDK folds onPayload exceptions into terminal stream messages.
   if (budgetError) throw budgetError;
   if (preparationError) throw preparationError.error;
-  if (message.stopReason !== "stop") {
-    throw new PiMemoryStage1ProviderError(responseStatus);
-  }
-  if (
-    message.content.some((item) => {
-      return item.type === "toolCall";
-    })
-  ) {
-    throw new PiMemoryStage1ProviderError();
-  }
-  return {
+  const result: PiMemoryStage1ProviderResult = {
     responseText: message.content
       .flatMap((item) => {
         return item.type === "text" ? [item.text] : [];
@@ -486,4 +479,21 @@ export async function runPiMemoryStage1Extraction(
       cacheWrite: message.usage.cacheWrite,
     },
   };
+  if (
+    message.stopReason !== "stop" ||
+    message.content.some((item) => {
+      return item.type === "toolCall";
+    })
+  ) {
+    // SDK-generated admission/error sentinels have zero usage. Only an actual
+    // usage-bearing terminal response can carry consumption through failure.
+    const hasUsage = Object.values(result.usage).some((value) => {
+      return value !== 0;
+    });
+    throw new PiMemoryStage1ProviderError(
+      responseStatus,
+      hasUsage ? result : undefined,
+    );
+  }
+  return result;
 }

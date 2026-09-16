@@ -3,7 +3,9 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import type { ChatEventGroup } from "./chat-event.ts";
 import type { ChatThreadScrollSignals } from "./chat-thread-scroll.ts";
+import { buildRunWorkFolding } from "./run-work-folding.ts";
 
 const SHARED_THREAD_SELECTION_TEXT_LIMIT_BYTES = 1.5 * 1024 * 1024;
 
@@ -48,18 +50,84 @@ function groupBytes(events: readonly ShareableChatEvent[]): number {
   }, 0);
 }
 
+export function chatGroupForSharing(group: ChatEventGroup): ChatEventGroup {
+  return group.role === "assistant"
+    ? {
+        ...group,
+        events: group.events
+          .filter((event) => {
+            return event.eventType === "output.message";
+          })
+          .slice(-1),
+      }
+    : group;
+}
+
+function shareableEventIds(
+  groups: readonly ChatEventGroup[],
+): ReadonlySet<string> {
+  const activeGroups = groups.flatMap((group) => {
+    const events = group.events.filter((event) => {
+      return !event.isQueued;
+    });
+    return events.length === 0 ? [] : [{ ...group, events }];
+  });
+  return new Set(
+    buildRunWorkFolding(activeGroups).visibleGroups.flatMap((group) => {
+      return chatGroupForSharing(group).events.map((event) => {
+        return event.id;
+      });
+    }),
+  );
+}
+
+function filterSelectedGroups(
+  selected: ReadonlyMap<string, SelectedGroup>,
+  sharingEventIds: ReadonlySet<string>,
+): ReadonlyMap<string, SelectedGroup> {
+  const next = new Map<string, SelectedGroup>();
+  let changed = false;
+  for (const [key, group] of selected) {
+    const events = group.events.filter((event) => {
+      return sharingEventIds.has(event.id);
+    });
+    if (events.length === group.events.length) {
+      next.set(key, group);
+      continue;
+    }
+    changed = true;
+    if (events.length > 0) {
+      next.set(key, { events, bytes: groupBytes(events) });
+    }
+  }
+  return changed ? next : selected;
+}
+
 export function createChatThreadSharingSignals(
   threadId: string,
   scroll: Pick<
     ChatThreadScrollSignals,
     "autoScroll$" | "readRenderedThreadScrollPosition$"
   >,
+  allChatGroups$: Computed<ChatEventGroup[]>,
 ): ChatThreadSharingSignals {
   const internalPhase$ = state<SharedThreadSelectionPhase>("idle");
   const internalSelectedGroups$ = state<ReadonlyMap<string, SelectedGroup>>(
     new Map(),
   );
   const internalCreatedSharedThreadId$ = state<string | null>(null);
+  const sharingEventIds$ = computed((get) => {
+    // Use the complete transcript: scrolling a selected row out of the render
+    // window must not remove it from the share.
+    return shareableEventIds(get(allChatGroups$));
+  });
+  const selectedGroups$ = computed((get) => {
+    const selected = get(internalSelectedGroups$);
+    if (selected.size === 0) {
+      return selected;
+    }
+    return filterSelectedGroups(selected, get(sharingEventIds$));
+  });
 
   const start$ = command(({ set }, signal: AbortSignal) => {
     // History and status-tail messages disappear in the sharing projection.
@@ -88,7 +156,7 @@ export function createChatThreadSharingSignals(
       groupKey: string,
       events: readonly ShareableChatEvent[],
     ): ToggleSharedThreadSelectionResult => {
-      const selected = get(internalSelectedGroups$);
+      const selected = get(selectedGroups$);
       const stored = selected.get(groupKey);
       // A group that grew while it was selected reads as partially selected,
       // so ticking it again covers the new messages instead of clearing it.
@@ -124,13 +192,14 @@ export function createChatThreadSharingSignals(
 
   const create$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const eventIds = [...get(internalSelectedGroups$).values()].flatMap(
-        (group) => {
-          return group.events.map((event) => {
-            return event.id;
-          });
-        },
-      );
+      const eventIds = [...get(selectedGroups$).values()].flatMap((group) => {
+        return group.events.map((event) => {
+          return event.id;
+        });
+      });
+      if (eventIds.length === 0) {
+        return;
+      }
       const client = get(apiClient$)(sharedThreadsContract);
       const result = await accept(
         client.create({
@@ -155,7 +224,7 @@ export function createChatThreadSharingSignals(
     }),
     selectedEventIds$: computed((get) => {
       const ids = new Set<string>();
-      for (const group of get(internalSelectedGroups$).values()) {
+      for (const group of get(selectedGroups$).values()) {
         for (const event of group.events) {
           ids.add(event.id);
         }
@@ -163,7 +232,7 @@ export function createChatThreadSharingSignals(
       return ids;
     }),
     selectedCount$: computed((get) => {
-      return get(internalSelectedGroups$).size;
+      return get(selectedGroups$).size;
     }),
     createdSharedThreadId$: computed((get) => {
       return get(internalCreatedSharedThreadId$);

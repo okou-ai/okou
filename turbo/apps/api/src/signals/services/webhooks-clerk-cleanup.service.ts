@@ -115,7 +115,11 @@ async function cancelOrgRuns(
 ): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
-      values: { status: "cancelled", completedAt: nowDate() },
+      values: {
+        status: "cancelled",
+        completedAt: nowDate(),
+        runnerCancellationMode: "hard",
+      },
       conditions: [
         cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, {
@@ -186,7 +190,11 @@ async function cancelUserRuns(
 ): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
-      values: { status: "cancelled", completedAt: nowDate() },
+      values: {
+        status: "cancelled",
+        completedAt: nowDate(),
+        runnerCancellationMode: "hard",
+      },
       conditions: [
         cascadeOwnedAgents
           ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })

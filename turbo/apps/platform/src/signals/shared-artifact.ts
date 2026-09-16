@@ -69,7 +69,7 @@ export const setupSharedArtifact$ = command(
       referenceUrl.hash = location.hash;
       const artifact =
         result.status === 200
-          ? createSharedArtifactPreview(result.body, referenceUrl.href, signal)
+          ? createSharedArtifactPreview(result.body, referenceUrl.href)
           : null;
       set(
         updateDocumentTitle$,

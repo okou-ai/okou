@@ -140,13 +140,13 @@ function facts(current: Exclude<Phase, "done">, filter: string) {
     ? "OR (t.billing_anchor_at IS NOT NULL AND a.run_started_at IS DISTINCT FROM t.billing_anchor_at)"
     : "";
   return `SELECT t.id, ${identity} AS billing_run_id, '${current}' AS phase,
-    (${context} IN ('run', 'runless') AND (${context} = 'runless' OR a.run_id IS NOT NULL)) AS populated,
-    (${context} NOT IN ('run', 'runless') AND (a.run_id IS NOT NULL OR r.id IS NOT NULL)) AS eligible,
-    (${context} NOT IN ('run', 'runless') AND a.run_id IS NULL AND r.id IS NULL) AS missing_source,
+    (${context} IN ('run', 'runless', 'pi_memory_stage1') AND (${context} IN ('runless', 'pi_memory_stage1') OR a.run_id IS NOT NULL)) AS populated,
+    (${context} NOT IN ('run', 'runless', 'pi_memory_stage1') AND (a.run_id IS NOT NULL OR r.id IS NOT NULL)) AS eligible,
+    (${context} NOT IN ('run', 'runless', 'pi_memory_stage1') AND a.run_id IS NULL AND r.id IS NULL) AS missing_source,
     ((a.run_id IS NOT NULL AND (a.org_id <> t.org_id OR a.user_id <> t.user_id ${anchorConflict}
       OR (r.id IS NOT NULL AND (a.run_started_at <> r.created_at OR a.source <> billing_usage_source(r.trigger_source)))))
       OR (r.id IS NOT NULL AND (r.org_id <> t.org_id OR r.user_id <> t.user_id))) AS conflict,
-    ${current === "raw" ? "(t.status <> 'processed' AND (t.billing_anchor_at IS NULL OR t.billing_context NOT IN ('run', 'runless')))" : "false"} AS pending_anchor_gap,
+    ${current === "raw" ? "(t.status <> 'processed' AND (t.billing_anchor_at IS NULL OR t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')))" : "false"} AS pending_anchor_gap,
     ${current === "raw" ? "($7::timestamp IS NOT NULL AND t.created_at >= $7::timestamp AND t.billing_context IN ('legacy_unknown', 'missing_run'))" : "false"} AS new_writer_gap,
     ${current === "jobs" ? "(t.status IN ('queued', 'running') AND t.billing_context = 'legacy_unknown' AND t.run_id IS NULL)" : "false"} AS pending_generation_gap
     FROM ${tables[current]} t
@@ -301,7 +301,7 @@ try {
                 )
               : await client.query(
                   `UPDATE ${tables[current]} t SET billing_run_id = COALESCE(t.billing_run_id, t.run_id), billing_context = 'run'
-                WHERE t.id = ANY($1::uuid[]) AND t.billing_context NOT IN ('run', 'runless')
+                WHERE t.id = ANY($1::uuid[]) AND t.billing_context NOT IN ('run', 'runless', 'pi_memory_stage1')
                   AND EXISTS (SELECT 1 FROM billing_run_attribution a WHERE a.run_id = COALESCE(t.billing_run_id, t.run_id)
                     AND a.org_id = t.org_id AND a.user_id = t.user_id)
                   AND NOT EXISTS (SELECT 1 FROM agent_runs r JOIN billing_run_attribution a ON a.run_id = r.id

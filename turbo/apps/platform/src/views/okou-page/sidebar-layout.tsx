@@ -394,7 +394,8 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   return withChatScrollLayout(
     <div
       ref={shellDocumentAttributesRef}
-      className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0 md:bg-sidebar"
+      data-slot="app-shell"
+      className="box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0 md:bg-sidebar"
       data-gradient-color-themes={gradientColorThemesEnabled || undefined}
       data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
     >

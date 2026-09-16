@@ -1,4 +1,12 @@
 import {
+  usagePricingResolution$,
+  type UsagePricingResolution,
+} from "../context/usage-pricing-resolution";
+import {
+  observePiMemoryStage1Cost,
+  observePiMemoryStage1MissingUsage,
+} from "./pi-memory-stage1-cost.service";
+import {
   checkPiMemoryQuota,
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
@@ -852,12 +860,55 @@ async function validatePreparedWork(
   }
 }
 
+function classifyProviderFailure(error: unknown): unknown {
+  if (!(error instanceof PiMemoryStage1ProviderError)) {
+    return error;
+  }
+  return error.status === 401 || error.status === 403
+    ? new PiMemoryStage1CredentialError("credential_unavailable")
+    : new RetryableWorkError("provider_failure");
+}
+
+async function recordObservedUsage(
+  db: Db,
+  prepared: RoutedWork,
+  observedResult: PiMemoryStage1ProviderResult,
+  requestId: string,
+  pricingResolution: UsagePricingResolution,
+) {
+  const usageArgs = {
+    memoryStorageId: prepared.work.memoryStorageId,
+    piSessionId: prepared.work.piSessionId,
+    sourceHistoryHash: prepared.work.sourceHistoryHash,
+    billing: prepared.credential.billing,
+    responseSourceId: observedResult.responseId ?? `request:${requestId}`,
+    usage: observedResult.usage,
+  };
+  const recordedUsage = await settleIncludingAbort(
+    recordPiMemoryStage1Usage(db, usageArgs),
+  );
+  await observePiMemoryStage1Cost(
+    db,
+    usageArgs,
+    recordedUsage.ok ? recordedUsage.value : null,
+    pricingResolution,
+  );
+  return recordedUsage;
+}
+
+interface ProcessPreparedWorkArgs {
+  readonly db: Db;
+  readonly prepared: RoutedWork;
+  readonly pricingResolution: UsagePricingResolution;
+}
+
 async function processPreparedWork(
-  args: { readonly db: Db; readonly prepared: RoutedWork },
+  args: ProcessPreparedWorkArgs,
   signal: AbortSignal,
 ): Promise<WorkOutcome> {
   const startedAt = performance.now();
   const requestId = randomUUID();
+  let requestPrepared = false;
   const provider = await settleIncludingAbort(
     runPiMemoryStage1Extraction(
       {
@@ -890,11 +941,44 @@ async function processPreparedWork(
             args.prepared.work,
             requestSignal,
           );
+          requestPrepared = true;
         },
       },
       signal,
     ),
   );
+  const observedResult = provider.ok
+    ? provider.value
+    : provider.error instanceof PiMemoryStage1ProviderError
+      ? provider.error.result
+      : undefined;
+  if (observedResult) {
+    const recordedUsage = await recordObservedUsage(
+      args.db,
+      args.prepared,
+      observedResult,
+      requestId,
+      args.pricingResolution,
+    );
+    if (!recordedUsage.ok) {
+      return await failWork(
+        args.db,
+        args.prepared.work,
+        new RetryableWorkError(
+          recordedUsage.error instanceof Error &&
+            recordedUsage.error.message ===
+              "Pi memory Stage 1 usage identity collision"
+            ? "usage_identity_collision"
+            : "usage_persistence_failure",
+        ),
+        startedAt,
+      );
+    }
+  } else if (requestPrepared) {
+    await observePiMemoryStage1MissingUsage(
+      args.prepared.credential.billing.mode,
+    );
+  }
   if (!provider.ok) {
     if (provider.error instanceof StaleWorkError) {
       logOutcome({
@@ -908,40 +992,11 @@ async function processPreparedWork(
     return await failWork(
       args.db,
       args.prepared.work,
-      provider.error instanceof PiMemoryStage1ProviderError
-        ? provider.error.status === 401 || provider.error.status === 403
-          ? new PiMemoryStage1CredentialError("credential_unavailable")
-          : new RetryableWorkError("provider_failure")
-        : provider.error,
+      classifyProviderFailure(provider.error),
       startedAt,
     );
   }
-  const providerResult: PiMemoryStage1ProviderResult = provider.value;
-
-  const recordedUsage = await settleIncludingAbort(
-    recordPiMemoryStage1Usage(args.db, {
-      memoryStorageId: args.prepared.work.memoryStorageId,
-      piSessionId: args.prepared.work.piSessionId,
-      sourceHistoryHash: args.prepared.work.sourceHistoryHash,
-      billing: args.prepared.credential.billing,
-      responseSourceId: providerResult.responseId ?? `request:${requestId}`,
-      usage: providerResult.usage,
-    }),
-  );
-  if (!recordedUsage.ok) {
-    return await failWork(
-      args.db,
-      args.prepared.work,
-      new RetryableWorkError(
-        recordedUsage.error instanceof Error &&
-          recordedUsage.error.message ===
-            "Pi memory Stage 1 usage identity collision"
-          ? "usage_identity_collision"
-          : "usage_persistence_failure",
-      ),
-      startedAt,
-    );
-  }
+  const providerResult = provider.value;
 
   const parsed = safeSync(() => {
     return parseProviderOutput(providerResult.responseText);
@@ -1020,7 +1075,7 @@ function logBatchResult(
 
 export const executePiMemoryStage1Work$ = command(
   async (
-    { set },
+    { get, set },
     input: PiMemoryStage1WorkerInput,
     signal: AbortSignal,
   ): Promise<PiMemoryStage1WorkerResult> => {
@@ -1112,6 +1167,7 @@ export const executePiMemoryStage1Work$ = command(
             {
               db,
               prepared: item,
+              pricingResolution: get(usagePricingResolution$),
             },
             signal,
           );

@@ -8,6 +8,48 @@ import jsonl_writer
 from tests.thread_helpers import ThreadUnderTest
 
 
+def test_control_prefix_excludes_later_writes_and_survives_path_pruning(tmp_path):
+    path = str(tmp_path / "network.jsonl")
+    first_started = threading.Event()
+    second_started = threading.Event()
+    release_first = threading.Event()
+    release_second = threading.Event()
+    original = jsonl_writer.os.writev
+
+    def writev(fd, buffers):
+        if not first_started.is_set():
+            first_started.set()
+            assert release_first.wait(3)
+        else:
+            second_started.set()
+            assert release_second.wait(3)
+        return original(fd, buffers)
+
+    with patch.object(jsonl_writer.os, "writev", side_effect=writev):
+        try:
+            jsonl_writer.write_jsonl_line(path, b"first\n", "network")
+            assert first_started.wait(1)
+            boundary = jsonl_writer.capture_flush_boundary(path)
+            assert boundary is not None
+            assert boundary.pending_count() == 1
+            jsonl_writer.write_jsonl_line(path, b"second\n", "network")
+            release_first.set()
+            assert second_started.wait(1)
+            assert boundary.pending_count() == 0
+            assert (tmp_path / "network.jsonl").read_bytes() == b"first\n"
+            assert not jsonl_writer.flush_log_path(path, timeout=0)
+        finally:
+            release_first.set()
+            release_second.set()
+            assert jsonl_writer.flush_log_path(path, timeout=2)
+    # Once accounting prunes the quiescent path, the completed ticket remains
+    # a stable result, not a lookup into a new path sequence epoch.
+    assert boundary.pending_count() == 0
+    jsonl_writer.write_jsonl_line(path, b"third\n", "network")
+    assert jsonl_writer.flush_log_path(path, timeout=1)
+    assert boundary.pending_count() == 0
+
+
 def test_worker_start_failure_does_not_publish_or_consume_retry_capacity(tmp_path, mitm_ctx):
     log_path = tmp_path / "proxy.jsonl"
     line = b'{"message":"retry"}\n'

@@ -132,94 +132,178 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(screen.queryByLabelText("Default agent")).not.toBeInTheDocument();
   });
 
-  it("an admin can complete all seven setup steps", async () => {
-    mockBot();
-    let status: FeishuConnectStatus | undefined;
-    let submitted: unknown;
-    let completed: unknown;
-    context.mocks.api(connectContract.setup, ({ body, respond }) => {
-      submitted = body;
-      const installation = completedInstallation({
-        isConnected: false,
-        setupCompleted: false,
-        appId: body.appId,
-        defaultAgentId: body.defaultAgentId,
-        callbackVerified: false,
-        messageReceived: false,
-        oauthRedirectUrl: `https://app.okou.test${provider.callbackPath}`,
+  it.each([false, true])(
+    "setup connects if needed (%s)",
+    async (isConnected) => {
+      mockBot();
+      const connectUrl = `https://api.okou.test/api/${platform}/oauth/connect?state=new-bot`;
+      const completion = createDeferredPromise<void>(context.signal);
+      let status: FeishuConnectStatus | undefined;
+      let submitted: unknown;
+      let completed: unknown;
+      context.mocks.api(connectContract.setup, ({ body, respond }) => {
+        submitted = body;
+        const installation = completedInstallation({
+          isConnected: false,
+          setupCompleted: false,
+          appId: body.appId,
+          defaultAgentId: body.defaultAgentId,
+          callbackVerified: false,
+          messageReceived: false,
+          oauthRedirectUrl: `https://app.okou.test${provider.callbackPath}`,
+        });
+        status = {
+          ...installation,
+          isAdmin: true,
+          isInstalled: true,
+          installationId: INSTALLATION_ID,
+          installations: [installation],
+        };
+        mockBot(status);
+        return respond(200, status);
       });
-      status = {
-        ...installation,
-        isAdmin: true,
-        isInstalled: true,
+      context.mocks.api(
+        connectContract.updateInstallation,
+        async ({ body, params, respond, withSignal }) => {
+          completed = { body, installationId: params.installationId };
+          await withSignal(completion.promise);
+          return respond(
+            200,
+            completedInstallation({
+              isConnected,
+              defaultAgentId: body.defaultAgentId,
+              connectUrl,
+            }),
+          );
+        },
+      );
+      await setupFeishuSettingsPage(context, platform);
+      const expectedUrl = isConnected
+        ? window.location.href
+        : `${connectUrl}&callbackTarget=app`;
+      click(await screen.findByText("Add bot"));
+      click(getAction("button", "Next"));
+      await fill(await screen.findByLabelText("App ID"), "cli_new_bot");
+      await fill(screen.getByLabelText("App Secret"), "app-secret");
+      click(getAction("button", "Next"));
+      await fill(
+        await screen.findByLabelText("Verification Token"),
+        "verification-token",
+      );
+      await fill(screen.getByLabelText("Encrypt Key"), "encrypt-key");
+      click(getAction("button", "Verify and continue"));
+      await expect(
+        screen.findByText("Configure the OAuth redirect URL"),
+      ).resolves.toBeVisible();
+      expect(submitted).toStrictEqual({
+        appId: "cli_new_bot",
+        appSecret: "app-secret",
+        verificationToken: "verification-token",
+        encryptKey: "encrypt-key",
+        defaultAgentId: HOME_AGENT_ID,
+        createNew: true,
+      });
+      expect(
+        screen.getByDisplayValue(
+          `https://app.okou.test${provider.callbackPath}`,
+        ),
+      ).toBeVisible();
+      click(getAction("button", "Next"));
+      expect(screen.getByText("Import user token scopes")).toBeVisible();
+      click(getAction("button", "Next"));
+      expect(screen.getByText("Configure event delivery")).toBeVisible();
+      expect(getAction("button", "Waiting for callback")).toBeDisabled();
+      if (!status) {
+        throw new Error("Expected configured installation");
+      }
+      mockBot({
+        ...status,
+        callbackVerified: true,
+        installations: status.installations?.map((installation) => {
+          return { ...installation, callbackVerified: true };
+        }),
+      });
+      context.mocks.ably.trigger("feishu:changed");
+      await expect(
+        screen.findByText("Callback verified"),
+      ).resolves.toBeVisible();
+      click(getAction("button", "Next"));
+      expect(screen.getByText("Publish the app")).toBeVisible();
+      click(getAction("button", "Done"));
+      await waitFor(() => {
+        expect(getAction("button", "Back")).toBeDisabled();
+      });
+      expect(pathname()).toBe(provider.settingsPath);
+      completion.resolve();
+      await expect(
+        screen.findByText(`${provider.name} bot installed successfully`),
+      ).resolves.toBeVisible();
+      await waitFor(() => {
+        expect(screen.queryByText("Publish the app")).not.toBeInTheDocument();
+      });
+      expect(window.location.href).toBe(expectedUrl);
+      expect(completed).toStrictEqual({
         installationId: INSTALLATION_ID,
-        installations: [installation],
-      };
-      mockBot(status);
-      return respond(200, status);
+        body: { defaultAgentId: HOME_AGENT_ID, setupCompleted: true },
+      });
+    },
+  );
+
+  it("a failed setup completion stays in the guide and connects after a successful retry", async () => {
+    const connectUrl = `https://api.okou.test/api/${platform}/oauth/connect?state=resumed-bot`;
+    const installation = completedInstallation({
+      isConnected: false,
+      setupCompleted: false,
+      tenantName: "Pending bot",
+      oauthRedirectUrl: `https://app.okou.test${provider.callbackPath}`,
     });
-    context.mocks.api(
-      connectContract.updateInstallation,
-      ({ body, params, respond }) => {
-        completed = { body, installationId: params.installationId };
-        return respond(
-          200,
-          completedInstallation({ defaultAgentId: body.defaultAgentId }),
-        );
-      },
-    );
-    await setupFeishuSettingsPage(context, platform);
-    click(await screen.findByText("Add bot"));
-    click(getAction("button", "Next"));
-    await fill(await screen.findByLabelText("App ID"), "cli_new_bot");
-    await fill(screen.getByLabelText("App Secret"), "app-secret");
-    click(getAction("button", "Next"));
-    await fill(
-      await screen.findByLabelText("Verification Token"),
-      "verification-token",
-    );
-    await fill(screen.getByLabelText("Encrypt Key"), "encrypt-key");
-    click(getAction("button", "Verify and continue"));
-    await expect(
-      screen.findByText("Configure the OAuth redirect URL"),
-    ).resolves.toBeVisible();
-    expect(submitted).toStrictEqual({
-      appId: "cli_new_bot",
-      appSecret: "app-secret",
-      verificationToken: "verification-token",
-      encryptKey: "encrypt-key",
-      defaultAgentId: HOME_AGENT_ID,
-      createNew: true,
-    });
-    expect(
-      screen.getByDisplayValue(`https://app.okou.test${provider.callbackPath}`),
-    ).toBeVisible();
-    click(getAction("button", "Next"));
-    expect(screen.getByText("Import user token scopes")).toBeVisible();
-    click(getAction("button", "Next"));
-    expect(screen.getByText("Configure event delivery")).toBeVisible();
-    expect(getAction("button", "Waiting for callback")).toBeDisabled();
-    if (!status) {
-      throw new Error("Expected configured installation");
-    }
     mockBot({
-      ...status,
-      callbackVerified: true,
-      installations: status.installations?.map((installation) => {
-        return { ...installation, callbackVerified: true };
-      }),
+      isInstalled: true,
+      installations: [installation],
     });
-    context.mocks.ably.trigger("feishu:changed");
-    await expect(screen.findByText("Callback verified")).resolves.toBeVisible();
+    context.mocks.api(connectContract.updateInstallation, ({ respond }) => {
+      return respond(400, {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Select an agent from this organization",
+        },
+      });
+    });
+    await setupFeishuSettingsPage(context, platform);
+    await expect(screen.findByText("Pending bot")).resolves.toBeInTheDocument();
+    click(getAction("button", "More options for Pending bot"));
+    click(getAction("button", "Manage"));
+    expect(
+      screen.getByText("Configure the OAuth redirect URL"),
+    ).toBeInTheDocument();
+    expect(getAction("button", "Next")).toBeEnabled();
     click(getAction("button", "Next"));
-    expect(screen.getByText("Publish the app")).toBeVisible();
+    expect(screen.getByText("Import user token scopes")).toBeInTheDocument();
+    click(getAction("button", "Next"));
+    expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
+    click(getAction("button", "Next"));
+    expect(screen.getByText("Publish the app")).toBeInTheDocument();
     click(getAction("button", "Done"));
+
     await expect(
-      screen.findByText(`${provider.name} bot installed successfully`),
-    ).resolves.toBeVisible();
-    expect(completed).toStrictEqual({
-      installationId: INSTALLATION_ID,
-      body: { defaultAgentId: HOME_AGENT_ID, setupCompleted: true },
+      screen.findByText("Select an agent from this organization"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(getAction("button", "Back")).toBeEnabled();
+    });
+    expect(screen.getByText("Publish the app")).toBeInTheDocument();
+    expect(pathname()).toBe(provider.settingsPath);
+
+    context.mocks.api(connectContract.updateInstallation, ({ respond }) => {
+      return respond(200, {
+        ...installation,
+        setupCompleted: true,
+        connectUrl,
+      });
+    });
+    click(getAction("button", "Done"));
+    await waitFor(() => {
+      expect(window.location.href).toBe(`${connectUrl}&callbackTarget=app`);
     });
   });
 
@@ -274,9 +358,10 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(within(options).queryByText("Manage")).not.toBeInTheDocument();
   });
 
-  it(`An admin can review the setup guide for a completed ${provider.name} bot`, async () => {
+  it.each([true, false])("review never connects (%s)", async (isConnected) => {
+    const browserOpen = context.mocks.browser.open();
     mockBot({
-      isConnected: true,
+      isConnected,
       isInstalled: true,
       isAdmin: true,
       installationId: INSTALLATION_ID,
@@ -290,6 +375,8 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       defaultAgentName: "Okou",
       installations: [
         completedInstallation({
+          isConnected,
+          connectUrl: `https://api.okou.test/api/${platform}/oauth/connect?state=review-guide`,
           appId: "cli_completed_admin",
           tenantKey: "tenant-admin",
           tenantName: "Completed admin bot",
@@ -345,9 +432,13 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     click(getAction("button", "Done"));
 
     expect(
-      screen.queryByRole("heading", { name: `${provider.name} review guide` }),
+      screen.queryByRole("heading", {
+        name: `${provider.name} review guide`,
+      }),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Completed admin bot")).toBeInTheDocument();
+    expect(pathname()).toBe(provider.settingsPath);
+    expect(browserOpen.calls).toStrictEqual([]);
   });
 
   it(`A connected ${provider.name} user can disconnect only their own account`, async () => {

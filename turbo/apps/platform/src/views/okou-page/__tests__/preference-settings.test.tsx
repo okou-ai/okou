@@ -247,7 +247,7 @@ describe("unified preference settings", () => {
       if (conflicted) {
         return respond(409, {
           error: {
-            code: "MORNING_BRIEF_MULTIPLE_INSTALLATIONS",
+            code: "MORNING_BRIEF_STATE_CONFLICT",
             message: "conflict",
           },
         });
@@ -262,7 +262,7 @@ describe("unified preference settings", () => {
           conflicted = true;
           return respond(409, {
             error: {
-              code: "MORNING_BRIEF_MULTIPLE_INSTALLATIONS",
+              code: "MORNING_BRIEF_STATE_CONFLICT",
               message: "conflict",
             },
           });
@@ -298,7 +298,7 @@ describe("unified preference settings", () => {
     click(toggle);
     await waitFor(() => {
       expect(
-        screen.getByText(/Multiple Morning Brief installations exist/u),
+        screen.getByText(/Morning Brief is temporarily unavailable/u),
       ).toBeInTheDocument();
       expect(toggle).toHaveAttribute("aria-disabled", "true");
       const retry = queryAllByRoleFast("button").find((button) => {

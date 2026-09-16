@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.23.90](https://github.com/vm0-ai/okou/compare/guest-storage-apply-v0.23.89...guest-storage-apply-v0.23.90) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** clean skills beneath cached instruction homes ([#34429](https://github.com/vm0-ai/okou/issues/34429)) ([24f4fea](https://github.com/vm0-ai/okou/commit/24f4fea3f60e92686b1771ba9a77ae0100d8d7af))
+
+## [0.23.89](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.88...guest-storage-apply-v0.23.89) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** admit decoded skills beside staged instructions ([#34425](https://github.com/vm0-ai/vm0/issues/34425)) ([a889f9e](https://github.com/vm0-ai/vm0/commit/a889f9e9156c7c3f073e1cdedf313bb37bc1d7e3))
+
+## [0.23.88](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.87...guest-storage-apply-v0.23.88) (2026-09-15)
+
+## [0.23.87](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.86...guest-storage-apply-v0.23.87) (2026-09-15)
+
 ## [0.23.86](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.85...guest-storage-apply-v0.23.86) (2026-09-15)
 
 

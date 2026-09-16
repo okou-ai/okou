@@ -27,6 +27,140 @@ state creation inside React render. Artifact resources use the same registration
 boundary while preserving the Markdown link or image syntax that chooses their
 presentation.
 
+## Fixed Height and Stable Layout
+
+Every card in the chat transcript must keep a fixed outer height at a given
+available width. This includes action, failure recovery, billing, unavailable,
+and resource-preview cards. Different card types may use different dimensions,
+and responsive breakpoints may select a different fixed height. Asynchronous
+data and status changes must not select the card's height.
+
+### Keep the frame mounted
+
+Choose the geometry before the first asynchronous read completes and keep one
+outer DOM frame mounted for the lifetime of that card occurrence. Loading,
+ready, refreshing, error, unavailable, completed, and retry states replace only
+the frame's contents. Do not return `null` for a missing or failed resource after
+reserving its card slot; show an inert unavailable or retry state inside the
+same frame. Transcript insertion, removal, and folding remain owned by the
+transcript, rather than by a card's resource-loading state.
+
+Equal heights before and after loading are insufficient if React replaces the
+entire sized element. The intermediate removal can temporarily collapse the
+transcript and make WebKit clamp its scroll position. A persistent parent frame
+prevents that collapse even while its children are replaced.
+
+Use `ConnectorAccountActionCard` in
+`turbo/apps/platform/src/views/okou-page/connector-account-action-card.tsx` as
+the reference for asynchronous action cards. Its outer frame stays mounted
+while the content component handles every loading and action state:
+
+```tsx
+return (
+  <ChatCard className="h-[136px] w-full sm:h-[88px]">
+    <ConnectorAccountActionCardContent signals={signals} />
+  </ChatCard>
+);
+```
+
+`ChatCard` supplies the shared surface styling; it does not currently enforce
+height or retain a frame across conditional component branches. Each card owner
+must satisfy those layout requirements. `min-height`, equal-sized skeletons in
+separate branches, and retaining the last resolved data do not establish this
+contract by themselves.
+
+### Reserve the contents and preview geometry
+
+- Allocate bounded title, summary, status, and action areas within the frame.
+  Showing a spinner, an account label, a reset time, a new action, or a terminal
+  status must not add height or remove the reserved action area.
+- Permission requests share the connector action card dimensions: 88px high
+  when the chat container is at least 640px wide, and 136px otherwise. Keep
+  permission scope and controls in that frame, with one compact line for an
+  error or expiry when present. Do not reserve extra blank status rows or grow
+  the frame; full explanations and expiry details remain in the details dialog.
+- Keep long text and translated copy within their allocated rows. Do not let
+  overflowing descendants enlarge the transcript's scrollable area. Full
+  descriptions and diagnostics belong in an accessible dialog, popover, or
+  detail sidebar. Required action controls, account identity, permission scope,
+  and confirmation information must remain readable and reachable; clipping
+  them is not a valid way to achieve fixed height.
+- Forms, account lists, raw error details, and expanded document content open
+  outside the transcript card. Do not expand the card inline for these details.
+- Media cards may derive their height from a reserved width and aspect ratio.
+  The frame, including any fixed header, must exist before a thumbnail, image,
+  video metadata, or iframe loads. Loading and error content occupies that same
+  frame; natural resource dimensions must not resize it.
+
+For preview geometry, follow `AttachmentCardArtwork` and
+`HtmlSitePreviewCard` in
+`turbo/apps/platform/src/views/okou-page/attachment-preview.tsx`. They reserve
+the artwork or preview area and place changing content inside it. Reading the
+full document or interacting with a page happens in the existing viewer.
+
+`ChatCardDetails` provides the shared dialog for recovery diagnostics, banking
+account selection and confirmation, permission explanations, and credit
+checkout options. Recovery keeps the original account and current-settings
+notice beside the reset/retry controls in that dialog. Banking keeps its
+connection polling owned by the card even when the dialog is closed. Preserve
+those action and lifecycle owners when adding another state.
+
+Current frame owners are `AssistantErrorContent` (including billing),
+`ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,
+`MailDraftCard`, and `BrowserSessionCard`. Their asynchronous subscriptions live
+inside the sized parent. Browser cards reserve both the 40px header and 16:10
+preview in the parent, independently of the replaceable preview content.
+
+### No content-size observation or compensating scroll
+
+Do not introduce `ResizeObserver`, DOM-mutation observers, or timer/frame loops
+to watch card or transcript content dimensions and repair scrolling afterward.
+Do not fix a card's asynchronous height changes by adding
+`withChatScrollLayout` or calling `restoreScrollPosition$` after each update.
+The card must preserve its geometry and mounted frame directly.
+
+The transcript continues to own scrolling for new messages, navigation,
+explicit folding, and viewport or composer layout changes. Those existing
+layout causes do not relax the fixed-height contract for cards. A user already
+following the latest message must stay at the bottom, and a user reading
+history must retain their position, without card-specific scroll correction.
+
+### Verify state transitions
+
+Exercise delayed resource responses, errors and retries, unavailable resources,
+action completion, and background refresh. At each supported layout width,
+verify that the same outer DOM frame remains mounted, its height is unchanged,
+and its contents and actions stay within the reserved geometry.
+
+Browser verification must also check the observable scroll result: the bottom
+gap and bottom-arrow control for a reader following the tail, and the visible
+message position for a reader reviewing history. Cover cold and warm thread
+navigation, long text, narrow layouts, and WebKit as well as Chromium. Checking
+only CSS classes or final dimensions misses the transient-collapse failure.
+The manual preview regression in
+`e2e/playwright/regressions/connector-card-scroll.ts` provides an existing
+example of browser scroll verification for the persistent-frame pattern.
+
+`e2e/playwright/regressions/chat-card-scroll.ts` covers recovery, connector,
+mail, browser, banking, and permission cards in both engines, at desktop and
+mobile widths, at the bottom and while reading history. Run it against a
+prepared preview thread using private authenticated storage state:
+
+```sh
+cd e2e
+pnpm exec tsx playwright/regressions/chat-card-scroll.ts \
+  <app-origin> <api-origin> <thread-id> <storage-state.json> <output-dir> \
+  recovery 1
+```
+
+The thread must overflow by at least 240px. Choose the appropriate card-family
+argument and count, and use fixtures with ready or unavailable resources as
+needed. The script holds matching GET responses, preserves them unchanged,
+then checks card geometry and reading position after release. It
+saves geometry only. Exercise action dialogs and their completed/error states
+in the page integration tests and in preview acceptance as well; this read-only
+loading regression does not authorize or execute those actions.
+
 ## Failure Recovery Classification
 
 The authoritative error category for a failed run is its optional
@@ -485,10 +619,12 @@ When adding a new link-backed card:
 5. Create an independent, thread-scoped registry for that card type.
 6. Add the registration and resolution cases to the body-block dispatcher.
 7. Add the React component case and pass only the typed signals object.
-8. Cover absolute, relative, and Markdown link forms that the card accepts.
-9. Test repeated-resource sharing, persistent and optimistic message paths,
-   loading and mutation behavior. Define explicitly whether invalid recognized
-   links remain Markdown or render inertly; mutating actions must fail closed.
+8. Define and retain the card's outer geometry across every asynchronous and
+   action state, following [Fixed Height and Stable Layout](#fixed-height-and-stable-layout).
+9. Cover absolute, relative, and Markdown link forms that the card accepts.
+10. Test repeated-resource sharing, persistent and optimistic message paths,
+    loading and mutation behavior. Define explicitly whether invalid recognized
+    links remain Markdown or render inertly; mutating actions must fail closed.
 
 Do not create signals in the parser, transcript computed, or React component.
 Do not use a root-lifetime URL cache. Do not add a card to a shared aggregate

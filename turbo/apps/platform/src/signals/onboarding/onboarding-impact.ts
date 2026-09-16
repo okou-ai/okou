@@ -7,6 +7,7 @@ import { localStorageSignals } from "../external/local-storage.ts";
 import {
   bestEffort,
   createDeferredPromise,
+  setDaemon,
   type DeferredPromise,
 } from "../utils.ts";
 
@@ -38,14 +39,10 @@ const sendOnboardingImpact$ = command(
     // Record the attempt before sending. Navigation, reloads and failures do
     // not retry this optional onboarding attribution request.
     set(attempts.set$, [...previous, key].join("\n"));
-    const requestSignal = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(10_000),
-    ]);
     // Use the same session-token provider as the canonical App API client.
     // Marketing cookies carry attribution, not the authenticated identity.
-    const token = await get(apiClientRuntime$).getToken(requestSignal);
-    requestSignal.throwIfAborted();
+    const token = await get(apiClientRuntime$).getToken(signal);
+    signal.throwIfAborted();
     if (!token) {
       return;
     }
@@ -57,19 +54,28 @@ const sendOnboardingImpact$ = command(
       fetchOptions: {
         credentials: "include",
         keepalive: true,
-        signal: requestSignal,
+        signal,
       },
     });
   },
 );
 
 /** The root owns the request so onboarding navigation never waits for it. */
-export const runOnboardingImpact$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
+export const setupOnboardingImpact$ = command(
+  ({ set }, signal: AbortSignal): void => {
     const entry = createDeferredPromise<OnboardingIdentity>(signal);
     set(entry$, entry);
-    const identity = await entry.promise;
-    signal.throwIfAborted();
-    await bestEffort(set(sendOnboardingImpact$, identity, signal), signal);
+    setDaemon(async (ownerSignal) => {
+      const identity = await entry.promise;
+      ownerSignal.throwIfAborted();
+      const requestSignal = AbortSignal.any([
+        ownerSignal,
+        AbortSignal.timeout(10_000),
+      ]);
+      await bestEffort(
+        set(sendOnboardingImpact$, identity, requestSignal),
+        ownerSignal,
+      );
+    }, signal);
   },
 );

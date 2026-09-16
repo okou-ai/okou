@@ -10,7 +10,7 @@ import {
   watchOrgSwitch$,
 } from "./auth.ts";
 import {
-  runAuthenticatedRealtime$,
+  setupAuthenticatedRealtime$,
   setupAuthenticatedBootstrapData$,
 } from "./authenticated-daemons.ts";
 import { initTheme$, syncColorThemePreference$ } from "./theme.ts";
@@ -33,7 +33,7 @@ import {
   type RouterPathParams,
 } from "./route.ts";
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
-import { onDomEventFn } from "./utils.ts";
+import { bestEffort, onDomEventFn } from "./utils.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
 
@@ -73,7 +73,7 @@ import {
   setupOnboardingWorkflowRunPage$,
 } from "./onboarding/onboarding-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
-import { runOnboardingImpact$ } from "./onboarding/onboarding-impact.ts";
+import { setupOnboardingImpact$ } from "./onboarding/onboarding-impact.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
@@ -608,21 +608,13 @@ const completeBootstrap$ = command(
   },
 );
 
-interface BootstrapRuntime {
-  readonly onboardingAttribution: Promise<void>;
-  readonly authenticatedRealtimeDaemon: Promise<void>;
-  readonly clerkIdentityDaemon: Promise<void>;
-  readonly ready: Promise<void>;
-  readonly sharedDatabaseDaemon: Promise<void>;
-}
-
 export const bootstrap$ = command(
-  (
+  async (
     { get, set },
     appVersion: string,
     render: () => void,
     signal: AbortSignal,
-  ): BootstrapRuntime => {
+  ): Promise<void> => {
     set(initializeAppVersion$, appVersion);
     set(initBootstrapPhaseTiming$);
     set(captureInvitationRedirect$);
@@ -630,7 +622,7 @@ export const bootstrap$ = command(
     set(setRootSignal$, signal);
     // Claims `clerkUser$` in this synchronous pass. The daemons and route
     // setups below read it, and without an owner it never settles.
-    const clerkIdentityDaemon = set(setupClerkUser$, signal);
+    const clerkIdentitySetup = set(setupClerkUser$, signal);
     const apiBaseUrl = resolveApiBaseForTarget("api");
     const vercelProtectionBypass =
       getCapturedPreviewBypassForTarget(apiBaseUrl);
@@ -659,23 +651,20 @@ export const bootstrap$ = command(
 
     // Keep failures that happen before the first React render observable.
     set(listenSharedWorkerFailure$, signal);
-    const sharedDatabaseDaemon = isDesktopAuthFlow()
+    const sharedDatabaseSetup = isDesktopAuthFlow()
       ? Promise.resolve()
       : set(setupSharedDatabaseBridge$, signal);
-    const authenticatedRealtimeDaemon = isDesktopAuthFlow()
-      ? Promise.resolve()
-      : set(runAuthenticatedRealtime$, signal);
-    const onboardingAttribution = isDesktopAuthFlow()
-      ? Promise.resolve()
-      : set(runOnboardingImpact$, signal);
+    if (!isDesktopAuthFlow()) {
+      set(setupAuthenticatedRealtime$, signal);
+      set(setupOnboardingImpact$, signal);
+    }
     const ready = set(completeBootstrap$, render, signal);
 
-    return {
-      onboardingAttribution,
-      authenticatedRealtimeDaemon,
-      clerkIdentityDaemon,
+    await Promise.all([
+      bestEffort(clerkIdentitySetup, signal),
+      bestEffort(sharedDatabaseSetup, signal),
       ready,
-      sharedDatabaseDaemon,
-    };
+    ]);
+    signal.throwIfAborted();
   },
 );

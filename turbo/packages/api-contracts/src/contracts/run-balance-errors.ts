@@ -39,6 +39,8 @@ const BILLING_CODES = new Set([
   "billing_error",
   "insufficient_quota",
   "payment_required",
+  "billing_hard_limit_reached",
+  "insufficient_credits",
 ]);
 
 /** A provider error object, never a local vm0 `error: "insufficient_credits"` envelope. */

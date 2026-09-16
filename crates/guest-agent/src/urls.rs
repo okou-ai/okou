@@ -6,6 +6,10 @@ pub(crate) fn events_url(base_url: &str) -> String {
     routes::webhooks::agent::events::SEND.url(base_url)
 }
 
+pub(crate) fn session_output_url(base_url: &str) -> String {
+    routes::webhooks::agent::session_output::SEND.url(base_url)
+}
+
 pub(crate) fn complete_url(base_url: &str) -> String {
     routes::webhooks::agent::complete::COMPLETE.url(base_url)
 }

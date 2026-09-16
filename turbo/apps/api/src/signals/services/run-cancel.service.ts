@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, eq } from "drizzle-orm";
@@ -7,7 +8,6 @@ import { writeDb$, type Db } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishChatThreadDetailChangedSafely,
-  type RunnerCancellationMode,
 } from "../external/realtime";
 import { logger } from "../../lib/log";
 import { notFound, runNotCancellable } from "../../lib/error";
@@ -40,7 +40,8 @@ export interface CancelRunResult {
   readonly runnerGroup: string | null;
   readonly chatThreadId: string | null;
   readonly cancellationRecoveryCompleted: boolean | null;
-  readonly runnerCancellationMode: RunnerCancellationMode;
+  readonly runnerCancellationMode: RunnerCancellationMode | null;
+  readonly runnerCancellationChanged: boolean;
   readonly alreadyCancelled: boolean;
 }
 
@@ -73,7 +74,9 @@ function isActiveStatus(status: string): status is ActiveStatus {
 /**
  * Cancel a run. Idempotent for already-cancelled runs. Recovery-capable
  * cancellations may redrive only their retry-safe callback and thread-drain
- * side effects; legacy cancellations return success without side effects.
+ * side effects. A genuine hard request can upgrade a committed cooperative
+ * cancellation and publish the stronger intent; legacy retries otherwise
+ * return success without side effects.
  * Returns notFound if the run doesn't exist or is owned by another (org,
  * user) tuple. Returns runNotCancellable for non-cancellable terminal
  * statuses.
@@ -90,6 +93,8 @@ export const cancelRun$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly runnerCancellationMode: RunnerCancellationMode;
+      /** Cleanup retries must not turn an already-cancelled Run into a new hard request. */
+      readonly preserveExistingCancellation?: true;
       readonly apiStartTime?: number;
       /** Keep exact live Phase 2 maintenance leases out of generic cleanup. */
       readonly protectActivePiMemoryPhase2Maintenance?: true;
@@ -111,6 +116,7 @@ export const cancelRun$ = command(
           orgId: agentRuns.orgId,
           sandboxId: agentRuns.sandboxId,
           runnerGroup: agentRuns.runnerGroup,
+          runnerCancellationMode: agentRuns.runnerCancellationMode,
           chatThreadId: agentRuns.chatThreadId,
           cancellationRecoveryCompleted:
             agentRuns.cancellationRecoveryCompleted,
@@ -129,6 +135,16 @@ export const cancelRun$ = command(
       }
 
       if (run.status === "cancelled") {
+        const runnerCancellationChanged =
+          !args.preserveExistingCancellation &&
+          args.runnerCancellationMode === "hard" &&
+          run.runnerCancellationMode !== "hard";
+        if (runnerCancellationChanged) {
+          await tx
+            .update(agentRuns)
+            .set({ runnerCancellationMode: "hard" })
+            .where(eq(agentRuns.id, run.id));
+        }
         return {
           apiStartTime,
           runId: args.runId,
@@ -139,7 +155,10 @@ export const cancelRun$ = command(
           runnerGroup: run.runnerGroup,
           chatThreadId: run.chatThreadId,
           cancellationRecoveryCompleted: run.cancellationRecoveryCompleted,
-          runnerCancellationMode: args.runnerCancellationMode,
+          runnerCancellationMode: runnerCancellationChanged
+            ? ("hard" as const)
+            : run.runnerCancellationMode,
+          runnerCancellationChanged,
           alreadyCancelled: true,
         };
       }
@@ -164,10 +183,16 @@ export const cancelRun$ = command(
         }
       }
 
+      // Persist exactly the effective mode that the Runner notification carries.
+      const runnerCancellationMode =
+        run.cancellationRecoveryCompleted === null
+          ? "hard"
+          : args.runnerCancellationMode;
       await cancelLockedRun(tx, {
         runId: args.runId,
         status: run.status,
         completedAt: new Date(apiStartTime),
+        runnerCancellationMode,
       });
 
       return {
@@ -180,7 +205,8 @@ export const cancelRun$ = command(
         runnerGroup: run.runnerGroup,
         chatThreadId: run.chatThreadId,
         cancellationRecoveryCompleted: run.cancellationRecoveryCompleted,
-        runnerCancellationMode: args.runnerCancellationMode,
+        runnerCancellationMode,
+        runnerCancellationChanged: true,
         alreadyCancelled: false,
       };
     });
@@ -195,7 +221,9 @@ export function shouldDispatchCancelSideEffects(
   result: CancelRunResult,
 ): boolean {
   return (
-    !result.alreadyCancelled || result.cancellationRecoveryCompleted !== null
+    !result.alreadyCancelled ||
+    result.cancellationRecoveryCompleted !== null ||
+    result.runnerCancellationChanged
   );
 }
 
@@ -239,20 +267,19 @@ async function publishRunnerCancellation(
   signal: AbortSignal,
 ): Promise<void> {
   if (
-    result.alreadyCancelled ||
-    result.previousStatus !== "running" ||
-    !result.runnerGroup
+    !result.runnerCancellationChanged ||
+    (!result.alreadyCancelled && result.previousStatus !== "running") ||
+    !result.runnerGroup ||
+    result.runnerCancellationMode === null
   ) {
     return;
   }
-  // A null marker identifies a historical claim without the API recovery
-  // barrier, so cooperative cancellation is unsafe even when requested.
-  const mode =
-    result.cancellationRecoveryCompleted === null
-      ? "hard"
-      : result.runnerCancellationMode;
   await tapError(
-    publishCancelToRunnerGroup(result.runnerGroup, result.runId, mode),
+    publishCancelToRunnerGroup(
+      result.runnerGroup,
+      result.runId,
+      result.runnerCancellationMode,
+    ),
     (error) => {
       L.error("Failed to publish cancel to runner group", {
         runId: result.runId,
@@ -296,6 +323,14 @@ export const dispatchCancelSideEffects$ = command(
     const db = set(writeDb$);
     await publishCancellationRecoveryEntered(result, signal);
     await publishRunnerCancellation(result, signal);
+
+    // A hard upgrade must not revive legacy terminal effects that were already suppressed.
+    if (
+      result.alreadyCancelled &&
+      result.cancellationRecoveryCompleted === null
+    ) {
+      return;
+    }
 
     const chatCallbackId = await chatCallbackIdForRun(db, result.runId);
     signal.throwIfAborted();

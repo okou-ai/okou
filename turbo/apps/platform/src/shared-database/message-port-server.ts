@@ -4,9 +4,7 @@ import { captureSentryLogError } from "../lib/sentry-config.ts";
 import { logger } from "../signals/log.ts";
 import {
   createDeferredPromise,
-  detach,
   onDomEventFn,
-  Reason,
   settle,
 } from "../signals/utils.ts";
 import type {
@@ -250,15 +248,12 @@ export class SharedDatabaseMessagePortServer {
     message: RealtimeSubscribeMessage,
     signal: AbortSignal,
   ): void {
-    const daemon = this.store.set(
+    this.store.set(
       startWorkerRealtimeSubscription$,
       this.connectionId,
       message,
       signal,
     );
-    if (daemon) {
-      detach(daemon, Reason.Daemon, "shared database realtime subscription");
-    }
   }
 
   private stopRealtimeSubscription(message: RealtimeUnsubscribeMessage): void {
@@ -342,10 +337,7 @@ export class SharedDatabaseMessagePortServer {
         this.store.set(recordConnectionHeartbeat$, this.connectionId);
         // Token routing only considers tabs that have sent a heartbeat, so the
         // first heartbeat must be visible before realtime setup requests one.
-        const daemon = this.store.set(startSharedDatabaseWorkerDaemons$);
-        if (daemon) {
-          detach(daemon, Reason.Daemon, "shared database Worker daemons");
-        }
+        this.store.set(startSharedDatabaseWorkerDaemons$);
         return;
       }
       if (message.type === "realtime-subscribe") {

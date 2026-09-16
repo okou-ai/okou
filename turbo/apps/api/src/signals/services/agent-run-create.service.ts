@@ -5,7 +5,7 @@ import {
   measurePiPreparationSync,
   startPiPreparationObservation,
 } from "@okouai/pi-agent-runtime/api";
-import { isPiNativeModel } from "@okouai/core/pi-execution";
+import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
   assertPiNativeCredential,
@@ -294,11 +294,10 @@ import {
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
-import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
-  coordinatePersonalSubscriptionCredentials,
+  readCoordinatedPersonalSubscriptionAccount,
   preparePersonalSubscriptionAdmission,
   validatePersonalSubscriptionAdmission,
   type PreparedPersonalSubscriptionAdmission,
@@ -2444,6 +2443,11 @@ function resolveMultiAuthRuntimeModel(
   return runtimeModel;
 }
 
+interface ModelProviderEnvironmentSecret {
+  readonly name: string;
+  readonly encryptedValue: string | null;
+}
+
 async function multiAuthModelProviderEnvironment(
   db: Db,
   args: {
@@ -2457,6 +2461,7 @@ async function multiAuthModelProviderEnvironment(
     readonly piExecution?: boolean;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly accountId?: string;
+    readonly secretRows?: readonly ModelProviderEnvironmentSecret[];
   },
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (!args.authMethod) {
@@ -2469,36 +2474,38 @@ async function multiAuthModelProviderEnvironment(
 
   const firewall = getModelProviderFirewall(args.type);
   const hasFirewallAuth = firewall !== undefined;
-  const secretRows = args.accountId
-    ? await db
-        .select({
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: hasFirewallAuth
-            ? sql`NULL`.mapWith(pgNullDecoder)
-            : modelProviderAccountSecrets.encryptedValue,
-        })
-        .from(modelProviderAccountSecrets)
-        .where(
-          eq(
-            modelProviderAccountSecrets.modelProviderAccountId,
-            args.accountId,
-          ),
-        )
-    : await db
-        .select({
-          name: secretsTable.name,
-          encryptedValue: hasFirewallAuth
-            ? sql`NULL`.mapWith(pgNullDecoder)
-            : secretsTable.encryptedValue,
-        })
-        .from(secretsTable)
-        .where(
-          and(
-            eq(secretsTable.orgId, args.orgId),
-            eq(secretsTable.userId, args.userId),
-            eq(secretsTable.type, "model-provider"),
-          ),
-        );
+  const secretRows =
+    args.secretRows ??
+    (args.accountId
+      ? await db
+          .select({
+            name: modelProviderAccountSecrets.name,
+            encryptedValue: hasFirewallAuth
+              ? sql`NULL`.mapWith(pgNullDecoder)
+              : modelProviderAccountSecrets.encryptedValue,
+          })
+          .from(modelProviderAccountSecrets)
+          .where(
+            eq(
+              modelProviderAccountSecrets.modelProviderAccountId,
+              args.accountId,
+            ),
+          )
+      : await db
+          .select({
+            name: secretsTable.name,
+            encryptedValue: hasFirewallAuth
+              ? sql`NULL`.mapWith(pgNullDecoder)
+              : secretsTable.encryptedValue,
+          })
+          .from(secretsTable)
+          .where(
+            and(
+              eq(secretsTable.orgId, args.orgId),
+              eq(secretsTable.userId, args.userId),
+              eq(secretsTable.type, "model-provider"),
+            ),
+          ));
   const storedSecrets: Record<string, string> = {};
   if (hasFirewallAuth) {
     for (const row of secretRows) {
@@ -2806,6 +2813,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
   args: ResolveModelProviderEnvironmentArgs,
   account: PersonalModelProviderAccountRow,
   selectedModel: string | null,
+  secretRows?: readonly ModelProviderEnvironmentSecret[],
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (
     !isPersonalSubscriptionProviderType(account.type) ||
@@ -2826,6 +2834,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
       selectedModel: args.selectedModelOverride ?? selectedModel,
       featureSwitchContext: args.featureSwitchContext,
       accountId: account.id,
+      secretRows,
     });
   }
 
@@ -2833,17 +2842,28 @@ async function resolvePersonalModelProviderAccountEnvironment(
   if (!isSingleSecretModelProviderConfig(config)) {
     return null;
   }
-  const [secret] = await db
-    .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
-    .from(modelProviderAccountSecrets)
-    .where(
-      and(
-        eq(modelProviderAccountSecrets.modelProviderAccountId, account.id),
-        eq(modelProviderAccountSecrets.name, config.secretName),
-      ),
-    )
-    .limit(1);
-  if (!secret) {
+  const secret = secretRows
+    ? secretRows.find((row) => {
+        return row.name === config.secretName;
+      })
+    : (
+        await db
+          .select({
+            encryptedValue: modelProviderAccountSecrets.encryptedValue,
+          })
+          .from(modelProviderAccountSecrets)
+          .where(
+            and(
+              eq(
+                modelProviderAccountSecrets.modelProviderAccountId,
+                account.id,
+              ),
+              eq(modelProviderAccountSecrets.name, config.secretName),
+            ),
+          )
+          .limit(1)
+      )[0];
+  if (!secret || secret.encryptedValue === null) {
     return null;
   }
 
@@ -2884,42 +2904,26 @@ async function resolveExactPersonalModelProviderAccount(
     orgId: args.orgId,
     userId: args.userId,
   });
-  if (
-    !account ||
-    !isPersonalSubscriptionProviderType(account.type) ||
-    !(await coordinatePersonalSubscriptionCredentials({
-      db,
-      orgId: args.orgId,
-      userId: args.userId,
-      type: account.type,
-      sourceId: account.id,
-      featureSwitchContext: args.featureSwitchContext,
-    }))
-  ) {
+  if (!account || !isPersonalSubscriptionProviderType(account.type)) {
     return null;
   }
-  const currentAccount = await personalModelProviderAccountById({
+  const coordinated = await readCoordinatedPersonalSubscriptionAccount({
     db,
-    id: account.id,
     orgId: args.orgId,
     userId: args.userId,
+    type: account.type,
+    sourceId: account.id,
+    featureSwitchContext: args.featureSwitchContext,
   });
-  if (!currentAccount) {
-    return null;
-  }
-  const [provider] = await db
-    .select({ selectedModel: modelProviders.selectedModel })
-    .from(modelProviders)
-    .where(eq(modelProviders.id, currentAccount.modelProviderId))
-    .limit(1);
-  if (!provider) {
+  if (!coordinated) {
     return null;
   }
   return await resolvePersonalModelProviderAccountEnvironment(
     db,
     args,
-    currentAccount,
-    provider.selectedModel,
+    coordinated.account,
+    coordinated.selectedModel,
+    coordinated.secrets,
   );
 }
 
@@ -3071,7 +3075,7 @@ async function resolveCandidateModelProviderEnvironment(
   const captureSecret =
     args.piExecution &&
     (isPiNativeModel(args.selectedModelOverride) ||
-      args.selectedModelOverride?.startsWith("deepseek-v4-"));
+      isPiDeepSeekModel(args.selectedModelOverride));
   if (getModelProviderFirewall(row.type) !== undefined && !captureSecret) {
     return modelProviderEnvironment({
       id: row.id,
@@ -8709,32 +8713,26 @@ async function validateCapturedSubscriptionAccount(
         .where(eq(agentSessions.id, args.identity.sessionId))
         .for("key share");
     }
-    await lockModelProviderState(tx, {
-      orgId: args.createArgs.orgId,
-      userId: args.createArgs.userId,
-      type: provider.type,
-    });
-    const coherent = await validatePersonalSubscriptionAdmission(
-      {
-        db: tx,
-        orgId: args.createArgs.orgId,
-        userId: args.createArgs.userId,
-        type: provider.type,
-        sourceId: provider.id ?? undefined,
-        featureSwitchContext: args.context.featureSwitchContext,
-      },
-      args.subscriptionAdmission,
-    );
-    const account =
-      coherent && provider.id
-        ? await personalModelProviderAccountById({
+    const type = provider.type;
+    const account = await args.timing.measure(
+      "api_dispatch_subscription_validate_admission",
+      "nested",
+      async () => {
+        return await validatePersonalSubscriptionAdmission(
+          {
             db: tx,
             orgId: args.createArgs.orgId,
             userId: args.createArgs.userId,
-            id: provider.id,
-          })
-        : null;
-    if (!account || account.type !== provider.type) {
+            type,
+            sourceId: provider.id ?? undefined,
+            featureSwitchContext: args.context.featureSwitchContext,
+          },
+          args.subscriptionAdmission,
+        );
+      },
+      { subscription_provider_type: type },
+    );
+    if (!account) {
       return conflict(
         "The selected subscription account was disconnected. Reconnect it before starting another run.",
       );
@@ -9106,6 +9104,26 @@ interface FinalizedPreparedRunContext extends PreparedRunContext {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
 }
 
+function assertCurrentPiCliArtifact(): void {
+  // The writer and CLI reader are built from the same commit. A mutable or
+  // differently pinned package cannot consume a newly captured model.
+  const commit = env("GIT_COMMIT_SHA");
+  const cliUrl = new URL(env("CLI_PKG_URL"));
+  if (
+    !/^[0-9a-f]{40}$/u.test(commit) ||
+    cliUrl.origin !== "https://static.okou.io" ||
+    cliUrl.username ||
+    cliUrl.password ||
+    cliUrl.search ||
+    cliUrl.hash ||
+    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
+  ) {
+    throw new PiNativeConfigurationError(
+      "Pi requires the current commit-addressed CLI reader artifact",
+    );
+  }
+}
+
 async function materializePreparedPiProvider(
   createArgs: CreateAgentRunArgs,
   provider: ResolvedModelProviderEnvironment | null,
@@ -9123,11 +9141,14 @@ async function materializePreparedPiProvider(
       "Selected Pi execution requires a supported model provider configuration",
     );
   }
+  if (provider.selectedModel === "deepseek-v4.1-flash") {
+    assertCurrentPiCliArtifact();
+  }
   if (!("schemaVersion" in config) || config.schemaVersion !== 4) {
     if (
       !("schemaVersion" in config) &&
       (provider.type === "deepseek" || provider.type === "openrouter-codex") &&
-      provider.selectedModel?.startsWith("deepseek-v4-")
+      isPiDeepSeekModel(provider.selectedModel)
     ) {
       const credential = safeSync(() => {
         return assertPiNativeCredential(
@@ -9148,23 +9169,7 @@ async function materializePreparedPiProvider(
     }
     return { ...provider, piModelConfig: config };
   }
-  // The writer and CLI reader are built from the same commit. A mutable or
-  // differently pinned package cannot consume a newly captured native route.
-  const commit = env("GIT_COMMIT_SHA");
-  const cliUrl = new URL(env("CLI_PKG_URL"));
-  if (
-    !/^[0-9a-f]{40}$/u.test(commit) ||
-    cliUrl.origin !== "https://static.okou.io" ||
-    cliUrl.username ||
-    cliUrl.password ||
-    cliUrl.search ||
-    cliUrl.hash ||
-    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
-  ) {
-    throw new PiNativeConfigurationError(
-      "Native Pi requires the current commit-addressed CLI reader artifact",
-    );
-  }
+  assertCurrentPiCliArtifact();
   const secrets: Record<string, string> = {};
   const route = normalizePiExecutionRoute(config);
   await materializePiExecutionRoute({
@@ -10831,6 +10836,7 @@ const commitAndActivateAtomicLaunch$ = command(
               type: provider.type,
               sourceId: provider.id,
               featureSwitchContext: input.context.featureSwitchContext,
+              timing: input.timing,
             },
             signal,
           )

@@ -243,12 +243,15 @@ async function fetchSocialKit(
           request.input.requireViews === true,
       },
     );
-    L.warn("Managed SocialKit request failed", {
-      tool: tool.name,
-      path: tool.path,
-      failureKind: "http_error",
-      ...normalized.evidence,
-    });
+    // Structured provider codes can override an HTTP 400's input classification.
+    if (normalized.error.reason === "invalid_input") {
+      L.warn("Managed SocialKit request failed", {
+        tool: tool.name,
+        path: tool.path,
+        failureKind: "http_error",
+        ...normalized.evidence,
+      });
+    }
     return errorResult({
       status: normalized.status,
       body: { error: normalized.error },

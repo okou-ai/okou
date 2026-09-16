@@ -1,5 +1,8 @@
 # Artifact sharing
 
+For private site screenshots, protected Public thumbnails and ten-character
+Public file names, see [behavior and required deployment order](artifact-preview-rollout.md).
+
 New-policy private artifacts use the existing `privateArtifacts` switch. Its
 code default remains `false`. The API resolves the owner/original-org switch
 for new grants and audience/version changes; the app uses the same switch for

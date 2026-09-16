@@ -6,7 +6,7 @@ use api_contracts::generated::types::{
             CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigApiFirstTurn,
             PiLaunchConfigApiFirstTurnBaseSession, PiLaunchConfigMemoryRecall, PiModelConfig,
             PiModelConfigApiKeyEnv, PiModelConfigProvider, PiModelConfigServiceTier,
-            PiModelConfigV2, PiModelConfigV3, model_provider_failures,
+            PiModelConfigV2, PiModelConfigV3, cancellation, model_provider_failures,
         },
         storage as runner_storage,
     },
@@ -17,6 +17,40 @@ use api_contracts::generated::types::{
     },
 };
 use serde_json::json;
+
+#[test]
+fn generated_run_cancellation_response_preserves_absence_and_nullable_intent() {
+    for state in [
+        json!({ "state": "present", "mode": null }),
+        json!({ "state": "present", "mode": "cooperative" }),
+        json!({ "state": "present", "mode": "hard" }),
+        json!({ "state": "gone" }),
+        json!({ "state": "unavailable" }),
+    ] {
+        let mut value = state;
+        value["protocolVersion"] = json!(1);
+        value["runId"] = json!("00000000-0000-4000-8000-000000000001");
+        let response: cancellation::Response = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(response).unwrap(), value);
+    }
+
+    assert!(
+        serde_json::from_value::<cancellation::Response>(json!({
+            "protocolVersion": 1,
+            "runId": "00000000-0000-4000-8000-000000000001",
+            "state": "present",
+            "mode": "unknown-mode",
+        }))
+        .is_err()
+    );
+    assert!(
+        serde_json::from_value::<cancellation::Response>(json!({
+            "protocolVersion": 1,
+            "state": "gone",
+        }))
+        .is_err()
+    );
+}
 
 #[test]
 fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {

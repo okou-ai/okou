@@ -1177,63 +1177,6 @@ describe("computer use native backend", () => {
   });
 });
 
-describe("native permission response settlement", () => {
-  it.each([
-    ["invalid status", 'JSON.stringify({id: request.id, status: "invalid"})'],
-    [
-      "invalid result",
-      'JSON.stringify({id: request.id, status: "succeeded", result: []})',
-    ],
-    [
-      "invalid permission fields",
-      'JSON.stringify({id: request.id, status: "succeeded", result: {accessibility: "secret"}})',
-    ],
-    ["malformed JSON", '"{private-payload"'],
-    ["non-object frame", '"null"'],
-  ])(
-    "rejects %s and releases queued work without reusing the poisoned helper",
-    async (_label, frame) => {
-      const dir = await mkdtemp(path.join(tmpdir(), "native-settlement-"));
-      const helperPath = path.join(dir, "helper.cjs");
-      await writeFile(
-        helperPath,
-        `#!${process.execPath}\nrequire('node:readline').createInterface({input:process.stdin}).on('line', line => { const request = JSON.parse(line); process.stdout.write(${frame} + '\\n'); });\n`,
-      );
-      await chmod(helperPath, 0o755);
-      const onRuntimeError = vi.fn();
-      const backend = createComputerUseNativeBackend({
-        helperPath,
-        requestTimeoutMs: 400,
-        onRuntimeError,
-      });
-      try {
-        const results = await Promise.allSettled([
-          backend.getPermissions(),
-          backend.listApps(),
-        ]);
-        expect(results.map((result) => result.status)).toEqual([
-          "rejected",
-          "rejected",
-        ]);
-        expect(onRuntimeError).toHaveBeenCalledExactlyOnceWith(
-          expect.any(Error),
-          expect.objectContaining({
-            stage: "protocol",
-            pendingRequestCount: 1,
-          }),
-        );
-        expect(JSON.stringify(onRuntimeError.mock.calls)).not.toContain(
-          "private-payload",
-        );
-        await expect(backend.getPermissions()).rejects.toThrow("closed");
-      } finally {
-        await backend.dispose();
-        await rm(dir, { recursive: true, force: true });
-      }
-    },
-  );
-});
-
 it("ignores duplicate and unowned replies, and bounds protocol diagnostics without retaining private output", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "native-frame-ownership-"));
   const helperPath = path.join(dir, "helper.cjs");

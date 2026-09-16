@@ -70,6 +70,7 @@ import model_provider_failure
 import model_websocket_usage
 import platform_api
 import registry
+import registry_control
 import request_classification
 import request_streaming
 import response_encoding_negotiation
@@ -265,17 +266,21 @@ def configure(updated: set[str]) -> None:
 
 
 _runner_control: runner_control.ControlServer | None = None
+_registry_control: registry_control.RegistryControl | None = None
 
 
 def running() -> None:
-    global _runner_control
+    global _runner_control, _registry_control
 
     control_dir = ctx.options.okou_control_socket_dir
     usage_state_id = ctx.options.okou_usage_state_id
     if control_dir and usage_state_id:
-        runner_flush_lifecycle.start_runner_jsonl_flush_worker()
-        control = runner_control.ControlServer(Path(control_dir), usage_state_id)
+        registry_owner = registry_control.RegistryControl(
+            asyncio.get_running_loop(), get_registry_path()
+        )
+        control = runner_control.ControlServer(Path(control_dir), usage_state_id, registry_owner)
         control.start()
+        _registry_control = registry_owner
         _runner_control = control
 
 
@@ -2012,8 +2017,8 @@ def done():
     The runner flush lifecycle waits for any active SIGUSR1 delivery worker,
     retries buffered usage and retained diagnostic reports, drains accepted
     requests, and closes admission before this hook shuts down the usage
-    executor. It also performs a final JSONL marker observation and joins the
-    marker watcher before the JSONL writer stops. Any retryable usage outcome
+    executor. Control admission is already closed; pending log prefixes remain
+    owned by the JSONL writer. Any retryable usage outcome
     retained by completed workers is then retried synchronously.
     Auth.base forwarding does not need to finish running work during shutdown.
     Its `wait=False` worker shutdown closes admission, wakes or terminates
@@ -2027,9 +2032,12 @@ def done():
     Catalog validation and SigV4 hashing close admission and join their bounded
     off-loop work.
     """
-    global _runner_control
+    global _runner_control, _registry_control
 
     try:
+        if _registry_control is not None:
+            _registry_control.close()
+            _registry_control = None
         if _runner_control is not None:
             _runner_control.stop()
             _runner_control = None

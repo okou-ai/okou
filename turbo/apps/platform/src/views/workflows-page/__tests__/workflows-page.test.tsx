@@ -2601,7 +2601,7 @@ test.each(["Cancel", "Close", "Escape", "backdrop"] as const)(
 );
 
 test.each(["Install", "Reconfigure"] as const)(
-  "Keep a pending Official Workflow %s submission disabled after reopening",
+  "Keep an Official Workflow %s submission disabled until failure and allow retry",
   async (operation) => {
     const workflow = officialSalesResearch();
     const definition = officialCatalogDetail();
@@ -2616,8 +2616,8 @@ test.each(["Install", "Reconfigure"] as const)(
     });
     context.mocks.api(
       officialWorkflowsContract.install,
-      async ({ respond }) => {
-        await response.promise;
+      async ({ respond, withSignal }) => {
+        await withSignal(response.promise);
         return respond(500, {
           error: { code: "INTERNAL_SERVER_ERROR", message: "Install failed" },
         });
@@ -2639,8 +2639,8 @@ test.each(["Install", "Reconfigure"] as const)(
     );
     context.mocks.api(
       officialWorkflowInstallationsContract.reconfigure,
-      async ({ respond }) => {
-        await response.promise;
+      async ({ respond, withSignal }) => {
+        await withSignal(response.promise);
         return respond(500, {
           error: {
             code: "INTERNAL_SERVER_ERROR",
@@ -2665,16 +2665,13 @@ test.each(["Install", "Reconfigure"] as const)(
     await waitFor(() => {
       expect(buttonByText(operation, dialog)).toBeDisabled();
     });
-    await dismissOfficialWorkflowDialog(dialog, "Close");
-    click(openButton);
-    const reopened = await screen.findByRole("dialog");
-    expect(buttonByText(operation, reopened)).toBeDisabled();
-
     response.resolve();
-    await waitFor(() => {
-      expect(buttonByText(operation, reopened)).toBeEnabled();
-    });
-    expect(within(reopened).queryByRole("alert")).not.toBeInTheDocument();
+    await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+      installing
+        ? "Official Workflow could not be installed"
+        : "Official Workflow could not be reconfigured",
+    );
+    expect(buttonByText(operation, dialog)).toBeEnabled();
   },
 );
 

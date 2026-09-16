@@ -1538,6 +1538,51 @@
       "title": "Ação indisponível"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "Uma vez por dia, todo dia",
+          "name": "Entrar todo dia",
+          "unit": "por dia"
+        },
+        "connector": {
+          "description": "Gmail, Notion e mais de 100",
+          "name": "Conectar um conector",
+          "unit": "por conector"
+        },
+        "inReview": "Em análise",
+        "inReviewDescription": "Enviado, aguardando análise",
+        "invite": {
+          "description": "Cada pessoa que você adiciona conta",
+          "name": "Convide seu time",
+          "unit": "por membro"
+        },
+        "personalBalanceNote": "Os créditos vão para o seu saldo pessoal.",
+        "progressLabel": "Progresso dos primeiros passos",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "Publique e cole o link aqui",
+          "name": "Compartilhe o {{assistantName}} no X"
+        },
+        "shareDialog": {
+          "description": "Publique algo que você criou e cole o link. Você tem um envio.",
+          "helper": "A publicação precisa ser pública e mencionar o {{assistantName}}.",
+          "inputLabel": "Link da publicação",
+          "placeholder": "https://x.com/...",
+          "submit": "Enviar",
+          "title": "Compartilhe o {{assistantName}} no X"
+        },
+        "slack": {
+          "description": "Onde seu time já trabalha",
+          "name": "Adicionar o {{assistantName}} ao Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "Conclua uma etapa e fique com os créditos.",
+        "title": "Primeiros passos",
+        "workflow": {
+          "description": "Transforme uma tarefa repetida em automação",
+          "name": "Criar um workflow"
+        }
+      },
       "growth": {
         "addInSlack": "Adicionar {{assistantName}} no Slack",
         "connect": "Conectar",
@@ -1743,7 +1788,11 @@
       "upgradeToRun": "Faça upgrade para o Pro para executar o {{assistantName}}",
       "upgradeWorkspace": "Faça upgrade do seu workspace"
     },
+    "cards": {
+      "viewDetails": "Ver detalhes"
+    },
     "composer": {
+      "add": "Adicionar",
       "agentSuggestions": "Agentes",
       "configureModel": "Configurar modelo",
       "create": {
@@ -2318,6 +2367,40 @@
             "prompt": "Criar uma imagem para meu site"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Escrever uma proposta para um cliente",
+            "prompt": "Crie uma apresentação de proposta para cliente. Pergunte sobre o cliente, o trabalho proposto, o prazo e o preço."
+          },
+          "companyOverview": {
+            "label": "Explicar o que minha empresa faz",
+            "prompt": "Crie uma apresentação institucional. Pergunte o que fazemos, quem atendemos e o que o público deve lembrar."
+          },
+          "eventTalk": {
+            "label": "Preparar uma palestra para um evento",
+            "prompt": "Crie uma apresentação para uma palestra. Pergunte sobre o evento, o público e a ideia central que quero transmitir."
+          },
+          "pitchDeck": {
+            "label": "Apresentar meu negócio a investidores",
+            "prompt": "Crie um pitch deck para investidores sobre meu negócio. Pergunte sobre o problema, o produto, a tração até agora e quanto quero captar."
+          },
+          "productIntro": {
+            "label": "Apresentar um produto novo",
+            "prompt": "Crie uma apresentação introduzindo um produto novo. Pergunte o que ele faz, para quem é e o que o diferencia."
+          },
+          "resultsReadout": {
+            "label": "Apresentar meus resultados",
+            "prompt": "Transforme meus resultados em uma apresentação de relatório. Pergunte os números, o período coberto e a decisão que sustentam."
+          },
+          "teamUpdate": {
+            "label": "Montar uma atualização para o time",
+            "prompt": "Crie uma apresentação para a atualização do meu time. Pergunte o que aconteceu no período, o que vem a seguir e quem estará presente."
+          },
+          "training": {
+            "label": "Ensinar algo ao meu time",
+            "prompt": "Crie uma apresentação de treinamento sobre um tema que eu escolher. Pergunte quem será treinado e o que deverão saber fazer depois."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Transformar uma foto em vídeo",
@@ -2523,7 +2606,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -6009,7 +6091,6 @@
         "loading": "Carregando as configurações do Morning Brief...",
         "missingDefaultAgent": "Escolha um Agent padrão utilizável antes de ativar o Morning Brief.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
-        "multipleInstallations": "Existem várias instalações do Morning Brief. Resolva o conflito antes de alterar esta preferência.",
         "nextBrief": "Próximo resumo {{date}} ({{timezone}})",
         "paused": "Pausado",
         "preparationFailed": "A configuração será tentada novamente automaticamente. Você também pode tentar agora.",
@@ -6281,7 +6362,7 @@
       "summary_other": "{{count}} configurações do Access",
       "title": "Cloudflare Access",
       "tokenHelp": "Use um Service Token permitido pela política Service Auth do aplicativo SSH. Ele é separado das suas credenciais SSH.",
-      "unavailable": "Cloudflare Access não está disponível para esta conta. Os hosts protegidos não podem se conectar; os diretos não são afetados.",
+      "unavailable": "Cloudflare Access não está disponível para esta conta.",
       "usedBy_one": "Usada por {{count}} host:",
       "usedBy_many": "Usada por {{count}} hosts:",
       "usedBy_other": "Usada por {{count}} hosts:"

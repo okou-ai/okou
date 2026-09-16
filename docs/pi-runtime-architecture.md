@@ -122,13 +122,15 @@ existing trust boundaries.
    the original response/category idempotency, but cannot publish output,
    checkpoint, or a second terminal event.
 
-## Codex model failure diagnostics
+## Model failure diagnostics
 
-The owned Codex Responses fetch boundary records only the last transport
-attempt's observed HTTP status and the number of fetch attempts for that model
-call. Failed native assistant messages carry these numeric fields in the SDK's
-`okou_model_request` diagnostic; provider text and session retry policy remain
-unchanged. Both stream iteration and `result()` expose the same diagnostic.
+The owned OpenAI Responses, Codex Responses and Anthropic Messages fetch
+boundaries record the last transport attempt's observed HTTP status, attempt
+count and optional allowlisted failure reason. A bounded non-success body is
+classified before the SDK rewrites it; successful response bodies keep their
+native streaming path. Failed native assistant messages carry this evidence in
+`okou_model_request`. Both stream iteration and `result()` expose the same
+diagnostic. Bedrock keeps its native SDK transport without fetch diagnostics.
 
 Guest projects this evidence into the failed terminal result and optional
 `FailureDiagnostic.modelRequest`. A failed retry records the attempt number and
@@ -138,11 +140,34 @@ settlement clear pending retry state; queued input and compaction do not inherit
 an earlier retry budget. Aborted messages and tool results cannot supply model
 HTTP evidence. Historical messages without this diagnostic remain supported.
 
-Observed HTTP 429 supplies `provider_rate_limited` after existing explicit
-usage-limit/reconnect classification. Runner uses its existing INFO rule and
-records the numeric request/retry fields. Completion keeps the established
-failure reason and user-owned-provider warning suppression. This does not
-change displayed error copy, API-first recovery policy, or terminal ownership.
+Structured provider codes precede recognized terminal text and HTTP status.
+The original body distinguishes ordinary HTTP 429 rate limits from provider
+account balance failures (`provider_insufficient_credits`) and subscription
+usage limits (`usage_limit`), even when the SDK renders all three as a usage
+limit. Platform credit admission retains `insufficient_credits`. Provider
+billing classification requires an observed response, a typed provider event,
+or a native API error prefix; bare billing JSON in terminal text is insufficient.
+Public balance messages use the existing provider ownership contract, keeping
+built-in provider billing details private.
+HTTP 529 means overload; other 5xx statuses mean provider server failure.
+Known streaming error text can classify an overload after HTTP 200. Unknown
+formats remain unclassified, and bare HTTP 401/403 does not establish a specific
+credential error. Shared fixtures keep these rules aligned with Codex and
+Claude Code terminal classification; framework-specific states retain their
+native classifiers.
+
+API-first and Guest use the allowlisted reason from the selected terminal
+message before its display text. The Guest's public result carries it separately
+from `modelRequest`, whose shape is unchanged. Older Guests ignore the additive
+runtime field; newer Guests still accept messages without it. All reasons
+already exist in the API/Runner taxonomy, so no database migration is needed.
+
+A settled final Pi `length` response fails with `output_token_limit`; partial
+assistant text stays in its event. API-first still transfers a pending tool
+continuation instead of treating it as a final truncated answer. Transient
+API-first failures retain the existing sandbox recovery and ownership guards.
+Retry budgets, cancellation, Runner logging rules and user-owned-provider
+warning suppression are unchanged.
 
 ## Shared bootstrap, distinct session policies
 

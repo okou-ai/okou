@@ -129,34 +129,32 @@ const retryMorningBriefAfterConnectorChange$ = command(
   },
 );
 export const setupMorningBriefRealtime$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    await Promise.all([
-      set(
-        setAblyPayloadLoop$,
-        {
-          scope: "credential",
-          topic: "morningBriefChanged",
-          loopCommand$: reloadMorningBriefFromPush$,
-          initializeCommand$: reloadMorningBriefFromPush$,
-        },
-        signal,
-      ),
-      set(
-        setAblyPayloadLoop$,
-        {
-          topic: "connector:changed",
-          loopCommand$: retryMorningBriefAfterConnectorChange$,
-        },
-        signal,
-      ),
-      set(
-        setAblyPayloadLoop$,
-        {
-          topic: "slack:changed",
-          loopCommand$: retryMorningBriefAfterConnectorChange$,
-        },
-        signal,
-      ),
-    ]);
+  ({ set }, signal: AbortSignal): void => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        scope: "credential",
+        topic: "morningBriefChanged",
+        loopCommand$: reloadMorningBriefFromPush$,
+        initializeCommand$: reloadMorningBriefFromPush$,
+      },
+      signal,
+    );
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "connector:changed",
+        loopCommand$: retryMorningBriefAfterConnectorChange$,
+      },
+      signal,
+    );
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "slack:changed",
+        loopCommand$: retryMorningBriefAfterConnectorChange$,
+      },
+      signal,
+    );
   },
 );

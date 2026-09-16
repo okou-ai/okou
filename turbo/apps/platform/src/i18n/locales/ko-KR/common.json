@@ -1513,6 +1513,51 @@
       "title": "작업을 사용할 수 없음"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "하루에 한 번, 매일",
+          "name": "매일 출석하기",
+          "unit": "하루당"
+        },
+        "connector": {
+          "description": "Gmail, Notion 등 100개 이상",
+          "name": "커넥터 연결하기",
+          "unit": "커넥터당"
+        },
+        "inReview": "검토 중",
+        "inReviewDescription": "제출됨, 검토 대기 중",
+        "invite": {
+          "description": "추가하는 사람마다 적립됩니다",
+          "name": "팀 초대하기",
+          "unit": "멤버당"
+        },
+        "personalBalanceNote": "크레딧은 개인 잔액으로 들어갑니다.",
+        "progressLabel": "시작하기 진행 상황",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "게시한 뒤 링크를 붙여넣기",
+          "name": "X에 {{assistantName}} 공유하기"
+        },
+        "shareDialog": {
+          "description": "만든 것을 게시하고 링크를 붙여넣으세요. 제출은 한 번만 가능합니다.",
+          "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
+          "inputLabel": "게시물 링크",
+          "placeholder": "https://x.com/...",
+          "submit": "제출",
+          "title": "X에 {{assistantName}} 공유하기"
+        },
+        "slack": {
+          "description": "팀이 이미 일하고 있는 곳으로",
+          "name": "Slack에 {{assistantName}} 추가하기"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "한 단계를 끝내면 크레딧은 그대로 내 것.",
+        "title": "시작하기",
+        "workflow": {
+          "description": "반복 작업을 자동화로 바꾸기",
+          "name": "워크플로 만들기"
+        }
+      },
       "growth": {
         "addInSlack": "Slack에 {{assistantName}} 추가",
         "connect": "연결",
@@ -1711,7 +1756,11 @@
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
+    "cards": {
+      "viewDetails": "세부 정보 보기"
+    },
     "composer": {
+      "add": "추가",
       "agentSuggestions": "에이전트",
       "configureModel": "모델 구성",
       "create": {
@@ -2263,6 +2312,40 @@
             "prompt": "웹사이트 이미지 만들기"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "고객사 제안서 작성하기",
+            "prompt": "고객 제안 덱을 만들어 주세요. 고객, 제안하는 업무, 일정, 가격을 물어봐 주세요."
+          },
+          "companyOverview": {
+            "label": "회사가 하는 일 설명하기",
+            "prompt": "회사 소개 덱을 만들어 주세요. 하는 일, 대상 고객, 청중이 기억했으면 하는 점을 물어봐 주세요."
+          },
+          "eventTalk": {
+            "label": "행사 발표 준비하기",
+            "prompt": "발표용 덱을 만들어 주세요. 행사, 청중, 전하고 싶은 핵심 메시지를 물어봐 주세요."
+          },
+          "pitchDeck": {
+            "label": "투자자에게 사업을 소개하기",
+            "prompt": "사업의 투자 유치용 피치덱을 만들어 주세요. 문제, 제품, 지금까지의 성과, 조달 규모를 물어봐 주세요."
+          },
+          "productIntro": {
+            "label": "새 제품 소개하기",
+            "prompt": "새 제품을 소개하는 덱을 만들어 주세요. 무엇을 하는지, 누구를 위한 것인지, 무엇이 다른지 물어봐 주세요."
+          },
+          "resultsReadout": {
+            "label": "성과 발표하기",
+            "prompt": "성과를 보고용 덱으로 만들어 주세요. 수치, 해당 기간, 뒷받침하는 의사결정을 물어봐 주세요."
+          },
+          "teamUpdate": {
+            "label": "팀 업데이트 자료 만들기",
+            "prompt": "팀 업데이트용 덱을 만들어 주세요. 이번 기간에 있었던 일, 다음 계획, 청중이 누구인지 물어봐 주세요."
+          },
+          "training": {
+            "label": "팀에게 무언가 가르치기",
+            "prompt": "제가 정한 주제로 교육용 덱을 만들어 주세요. 교육 대상과 교육 후 할 수 있어야 하는 일을 물어봐 주세요."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "사진을 동영상으로 만들기",
@@ -2468,7 +2551,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -5934,7 +6016,6 @@
         "loading": "Morning Brief 설정을 불러오는 중...",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
-        "multipleInstallations": "Morning Brief 설치가 여러 개 있습니다. 이 환경설정을 변경하기 전에 충돌을 해결하세요.",
         "nextBrief": "다음 브리핑 {{date}} ({{timezone}})",
         "paused": "일시 중지됨",
         "preparationFailed": "설정을 자동으로 다시 시도합니다. 지금 다시 시도할 수도 있습니다.",
@@ -6204,7 +6285,7 @@
       "summary_other": "Access 구성 {{count}}개",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH 애플리케이션의 Service Auth 정책에서 허용하는 Service Token을 사용하세요. SSH 로그인 정보와는 별개입니다.",
-      "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다. 보호된 호스트는 연결할 수 없으며 직접 연결 호스트에는 영향이 없습니다.",
+      "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
       "usedBy_other": "호스트 {{count}}개에서 사용:"
     },
     "connectionStatus": {

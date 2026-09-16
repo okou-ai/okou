@@ -63,6 +63,14 @@ The bare `vm7.ai:8443` host redirects to Marketing. See the
 [Caddy configuration](turbo/packages/proxy/Caddyfile) for routing and the
 [Desktop guide](turbo/apps/desktop/README.md) for packaged macOS development.
 
+The standalone API (`pnpm -F api dev` / `pnpm -F api start`) stops accepting
+connections and cancels application work on `SIGTERM` or `SIGINT`. Requests
+arriving on existing connections during shutdown receive 503, including health
+checks. It lets cancellation cleanup drain naturally, with a four-second limit
+before a nonzero forced exit closes remaining handles. This deadline stays in
+effect even after HTTP connections close, and does not keep a drained process
+alive. Vercel owns its separate function lifecycle; this policy does not change it.
+
 ## Verification and Pull Requests
 
 1. Branch from current `main`, implement a focused change, and inspect its diff.

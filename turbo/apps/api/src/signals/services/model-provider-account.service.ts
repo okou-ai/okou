@@ -36,6 +36,7 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   decryptStoredSecretValue,
@@ -316,7 +317,10 @@ async function hydrateSeededCodexIdentity(args: {
     .where(eq(modelProviderAccounts.id, args.account.id));
 }
 
-/** Lazily seed the first account from the actual legacy singleton. Removal is
+/** Connection preparation needs seed-only behavior, not active-mirror import:
+ * supplied reconnect credentials must still be able to repair an unavailable
+ * old bundle. Capture/settings initialize inside their coordination instead.
+ * Lazily seed the first account from the actual legacy singleton. Removal is
  * owned by #34010 after seeding is complete and observed serving-writer,
  * persisted-context and rollback gates close; elapsed deployment time alone
  * cannot establish that boundary. Retained-only parents are not empty seeds.
@@ -1360,22 +1364,24 @@ export async function captureActivePersonalModelProviderAccount(
       userId: args.userId,
     });
     if (exactAccount) {
-      if (
-        exactAccount.type !== args.type ||
-        !(await coordinatePersonalSubscriptionCredentials(
-          {
-            ...args,
-            sourceId: exactAccount.id,
-          },
-          signal,
-        ))
-      ) {
+      if (exactAccount.type !== args.type) {
         return null;
       }
-      return await personalModelProviderAccountById({
-        ...args,
-        id: exactAccount.id,
-      });
+      const accounts = await coordinatePersonalSubscriptionAccounts(
+        { ...args, sourceId: exactAccount.id },
+        signal,
+      );
+      return (
+        accounts?.find((account) => {
+          return (
+            account.id === exactAccount.id &&
+            account.orgId === args.orgId &&
+            account.userId === args.userId &&
+            account.type === args.type &&
+            account.disconnectedAt === null
+          );
+        }) ?? null
+      );
     }
   }
 
@@ -1396,24 +1402,22 @@ export async function captureActivePersonalModelProviderAccount(
   if (!provider) {
     return null;
   }
-  const ready = await ensurePersonalModelProviderAccount(
-    {
-      db: args.db,
-      provider,
-      featureSwitchContext: args.featureSwitchContext,
-    },
+  const accounts = await coordinatePersonalSubscriptionAccounts(
+    { ...args, initializeProviderId: provider.id },
     signal,
   );
-  if (!ready) {
-    return null;
-  }
-  const account = await activePersonalModelProviderAccount({
-    db: args.db,
-    modelProviderId: provider.id,
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  return account?.type === args.type ? account : null;
+  return (
+    accounts?.find((account) => {
+      return (
+        account.modelProviderId === provider.id &&
+        account.orgId === args.orgId &&
+        account.userId === args.userId &&
+        account.type === args.type &&
+        account.isActive &&
+        account.disconnectedAt === null
+      );
+    }) ?? null
+  );
 }
 
 export async function personalModelProviderAccountById(args: {
@@ -1755,11 +1759,27 @@ async function credentialValues(
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<ReadonlyMap<string, string>> {
   const values = new Map<string, string>();
-  for (const row of rows) {
-    values.set(
-      row.name,
-      await decryptStoredSecretValue(row.encryptedValue, featureSwitchContext),
+  // Keep the locked snapshot and its connection until every started decrypt
+  // settles, including on failure/abort. Small batches bound KMS fan-out per
+  // bundle without a cross-request queue or plaintext cache.
+  for (let offset = 0; offset < rows.length; offset += 2) {
+    const batch = await Promise.allSettled(
+      rows.slice(offset, offset + 2).map(async (row) => {
+        return [
+          row.name,
+          await decryptStoredSecretValue(
+            row.encryptedValue,
+            featureSwitchContext,
+          ),
+        ] as const;
+      }),
     );
+    for (const result of batch) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      values.set(...result.value);
+    }
   }
   return values;
 }
@@ -1844,7 +1864,7 @@ async function reconcileCodexRefreshMetadata(
   }
   // Old Codex failure writes change only provider state under this same lock.
   // Claude's uncoordinated late metadata has no such authority.
-  await db
+  const [updated] = await db
     .update(modelProviderAccounts)
     .set({
       tokenExpiresAt: provider.tokenExpiresAt,
@@ -1852,7 +1872,12 @@ async function reconcileCodexRefreshMetadata(
       lastRefreshErrorCode: provider.lastRefreshErrorCode,
       updatedAt: nowDate(),
     })
-    .where(eq(modelProviderAccounts.id, active.id));
+    .where(eq(modelProviderAccounts.id, active.id))
+    .returning();
+  if (!updated) {
+    throw new Error("Expected locked Codex account metadata update to return");
+  }
+  return updated;
 }
 
 async function importLegacySubscriptionBundle(
@@ -1960,16 +1985,26 @@ async function importLegacySubscriptionBundle(
 async function reconcileLockedSubscriptionSnapshot(
   args: SubscriptionCredentialOwner,
   snapshot: SubscriptionCredentialSnapshot,
-): Promise<boolean> {
+  readCompletedSnapshot = false,
+) {
   if (!snapshotNeedsCoordination(snapshot, args.sourceId)) {
-    return true;
+    return { accounts: snapshot.accounts, snapshot };
   }
   if (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext)) {
-    await reconcileCodexRefreshMetadata(args.db, snapshot);
-    return true;
+    const updated = await reconcileCodexRefreshMetadata(args.db, snapshot);
+    const completed = updated
+      ? {
+          ...snapshot,
+          active: updated,
+          accounts: snapshot.accounts.map((account) => {
+            return account.id === updated.id ? updated : account;
+          }),
+        }
+      : snapshot;
+    return { accounts: completed.accounts, snapshot: completed };
   }
   if (args.type !== CODEX_TYPE) {
-    return false;
+    return null;
   }
   const values = await credentialValues(
     snapshot.mirror,
@@ -1983,9 +2018,9 @@ async function reconcileLockedSubscriptionSnapshot(
   );
   const oldAccountId = oldValues.get(CODEX_ACCOUNT_ID_SECRET);
   if (snapshot.active && !oldAccountId) {
-    return false;
+    return null;
   }
-  return await importLegacySubscriptionBundle(
+  const imported = await importLegacySubscriptionBundle(
     args,
     snapshot,
     {
@@ -2007,6 +2042,35 @@ async function reconcileLockedSubscriptionSnapshot(
         }
       : undefined,
   );
+  return imported
+    ? await readImportedSubscriptionState(
+        args,
+        snapshot.provider.id,
+        readCompletedSnapshot,
+      )
+    : null;
+}
+
+/** Import callers already own the provider and credential locks. Capture and
+ * readiness retain their account-only reread; environment preparation needs
+ * the complete post-import inventory instead, never the observed old secrets. */
+async function readImportedSubscriptionState(
+  args: SubscriptionCredentialOwner,
+  providerId: string,
+  readCompletedSnapshot: boolean,
+) {
+  if (readCompletedSnapshot) {
+    const snapshot = await lockSubscriptionCredentialSnapshot(args);
+    if (!snapshot) {
+      throw new Error("Expected imported personal model provider snapshot");
+    }
+    return { accounts: snapshot.accounts, snapshot };
+  }
+  const accounts = await args.db
+    .select()
+    .from(modelProviderAccounts)
+    .where(eq(modelProviderAccounts.modelProviderId, providerId));
+  return { accounts, snapshot: null };
 }
 
 /** Refresh and settings mutations own their provider transaction. This helper
@@ -2017,7 +2081,7 @@ export async function reconcileLockedPersonalSubscriptionCredentials(
   const snapshot = await lockSubscriptionCredentialSnapshot(args);
   return (
     snapshot !== null &&
-    (await reconcileLockedSubscriptionSnapshot(args, snapshot))
+    (await reconcileLockedSubscriptionSnapshot(args, snapshot)) !== null
   );
 }
 
@@ -2032,19 +2096,38 @@ export interface PreparedPersonalSubscriptionAdmission {
  * owns legacy identity import; a mismatch here rejects that fixed capture.
  * This proof is operation-local and never enters a persisted run/queue payload. */
 export async function preparePersonalSubscriptionAdmission(
-  args: SubscriptionCredentialOwner & { readonly sourceId: string },
+  args: SubscriptionCredentialOwner & {
+    readonly sourceId: string;
+    readonly timing: ApiDispatchTimingCollector;
+  },
   signal: AbortSignal,
 ): Promise<PreparedPersonalSubscriptionAdmission | null> {
-  const snapshot = await args.db.transaction(async (tx) => {
-    return await lockSubscriptionCredentialSnapshot({ ...args, db: tx });
-  });
+  const dimensions = { subscription_provider_type: args.type };
+  const snapshot = await args.timing.measure(
+    "api_dispatch_subscription_prepare_snapshot",
+    "nested",
+    async () => {
+      return await args.db.transaction(async (tx) => {
+        return await lockSubscriptionCredentialSnapshot({ ...args, db: tx });
+      });
+    },
+    dimensions,
+  );
   signal.throwIfAborted();
   if (!snapshot) {
     return null;
   }
-  const coherent =
-    !snapshotNeedsCoordination(snapshot, args.sourceId) ||
-    (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext));
+  const coherent = await args.timing.measure(
+    "api_dispatch_subscription_prepare_bundle_proof",
+    "nested",
+    async () => {
+      return (
+        !snapshotNeedsCoordination(snapshot, args.sourceId) ||
+        (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext))
+      );
+    },
+    dimensions,
+  );
   signal.throwIfAborted();
   return coherent
     ? { sourceId: args.sourceId, snapshot: JSON.stringify(snapshot) }
@@ -2059,18 +2142,30 @@ export async function preparePersonalSubscriptionAdmission(
 export async function validatePersonalSubscriptionAdmission(
   args: SubscriptionCredentialOwner,
   prepared: PreparedPersonalSubscriptionAdmission | null,
-): Promise<boolean> {
+): Promise<AccountRow | null> {
   if (!prepared || prepared.sourceId !== args.sourceId) {
-    return false;
+    return null;
   }
   const snapshot = await lockSubscriptionCredentialSnapshot(args);
   if (!snapshot || JSON.stringify(snapshot) !== prepared.snapshot) {
-    return false;
+    return null;
   }
   if (snapshotNeedsCoordination(snapshot, args.sourceId)) {
     await reconcileCodexRefreshMetadata(args.db, snapshot);
   }
-  return true;
+  // The snapshot locks these rows through run insertion. Return the exact
+  // connected source for recovery identity without another SELECT or reselection.
+  return (
+    snapshot.accounts.find((account) => {
+      return (
+        account.id === args.sourceId &&
+        account.orgId === args.orgId &&
+        account.userId === args.userId &&
+        account.type === args.type &&
+        account.disconnectedAt === null
+      );
+    }) ?? null
+  );
 }
 
 function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {
@@ -2100,25 +2195,108 @@ async function previousClaudeIdentityProof(
  * rollback floor have closed the documented compatibility window. */
 export async function coordinatePersonalSubscriptionCredentials(
   args: SubscriptionCredentialOwner,
-  signal: AbortSignal = AbortSignal.timeout(10_000),
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  return (await coordinatePersonalSubscriptionAccounts(args, signal)) !== null;
+}
+
+/** Return completed account state while the coordination owner still holds its
+ * locks. Empty inventories can be ready; null means coordination is unavailable.
+ * Only logical selection/settings may initialize the exact previously read parent. */
+async function coordinatePersonalSubscriptionAccounts(
+  args: SubscriptionCredentialOwner & {
+    readonly initializeProviderId?: string;
+  },
+  signal?: AbortSignal,
+): Promise<readonly AccountRow[] | null> {
+  const completed = await coordinateSubscriptionSnapshot(args, false, signal);
+  return completed?.accounts ?? null;
+}
+
+/** Environment preparation may reuse the completed encrypted observation, but
+ * it is never an admission proof or a runtime credential cache. */
+export async function readCoordinatedPersonalSubscriptionAccount(
+  args: SubscriptionCredentialOwner & { readonly sourceId: string },
+  signal?: AbortSignal,
+) {
+  const completed = await coordinateSubscriptionSnapshot(args, true, signal);
+  const snapshot = completed?.snapshot;
+  if (!snapshot) {
+    return null;
+  }
+  const account = snapshot.accounts.find((candidate) => {
+    return (
+      candidate.id === args.sourceId &&
+      candidate.orgId === args.orgId &&
+      candidate.userId === args.userId &&
+      candidate.type === args.type &&
+      candidate.disconnectedAt === null
+    );
+  });
+  return account
+    ? {
+        account,
+        selectedModel: snapshot.provider.selectedModel,
+        secrets: snapshot.accountSecrets.filter((secret) => {
+          return secret.modelProviderAccountId === account.id;
+        }),
+      }
+    : null;
+}
+
+async function coordinateSubscriptionSnapshot(
+  args: SubscriptionCredentialOwner & {
+    readonly initializeProviderId?: string;
+  },
+  readCompletedSnapshot: boolean,
+  signal: AbortSignal = AbortSignal.timeout(10_000),
+) {
   const observed = await args.db.transaction(async (tx) => {
-    const snapshot = await lockSubscriptionCredentialSnapshot({
+    let snapshot = await lockSubscriptionCredentialSnapshot({
       ...args,
       db: tx,
     });
-    if (!snapshot) {
-      return { ready: false, snapshot: null };
+    if (
+      !snapshot ||
+      (args.initializeProviderId !== undefined &&
+        snapshot.provider.id !== args.initializeProviderId)
+    ) {
+      return { completed: null, snapshot: null };
     }
-    const ready = await reconcileLockedSubscriptionSnapshot(
+    // Keep the actual historical singleton seed until #34010 closes its writer,
+    // persisted-context and rollback gates. Retained-only parents are not empty.
+    if (
+      args.initializeProviderId !== undefined &&
+      snapshot.accounts.length === 0
+    ) {
+      const account = await seedLegacyAccount(tx, snapshot.provider);
+      if (account) {
+        await hydrateSeededCodexIdentity({ ...args, db: tx, account });
+        snapshot = await lockSubscriptionCredentialSnapshot({
+          ...args,
+          db: tx,
+        });
+        if (!snapshot) {
+          throw new Error(
+            "Expected initialized personal model provider snapshot",
+          );
+        }
+      }
+    }
+    const completed = await reconcileLockedSubscriptionSnapshot(
       { ...args, db: tx },
       snapshot,
+      readCompletedSnapshot,
     );
-    return { ready, snapshot };
+    return { completed, snapshot };
   });
   signal.throwIfAborted();
-  if (observed.ready || !observed.snapshot || args.type !== CLAUDE_CODE_TYPE) {
-    return observed.ready;
+  if (
+    observed.completed !== null ||
+    !observed.snapshot ||
+    args.type !== CLAUDE_CODE_TYPE
+  ) {
+    return observed.completed;
   }
   const snapshot = observed.snapshot;
   const active = snapshot.active;
@@ -2132,7 +2310,7 @@ export async function coordinatePersonalSubscriptionCredentials(
     );
   });
   if (!legacy || (active && !previous) || snapshot.mirror.length !== 1) {
-    return false;
+    return null;
   }
   const token = await decryptStoredSecretValue(
     legacy.encryptedValue,
@@ -2156,7 +2334,7 @@ export async function coordinatePersonalSubscriptionCredentials(
     !oldProof.ok ||
     (active && (!oldProof.value || !hasClaudeIdentity(oldProof.value)))
   ) {
-    return false;
+    return null;
   }
   return await args.db.transaction(async (tx) => {
     const current = await lockSubscriptionCredentialSnapshot({
@@ -2167,14 +2345,21 @@ export async function coordinatePersonalSubscriptionCredentials(
     // Includes row IDs, complete ciphertext bundles, active selection, provider
     // pointer/state and stored identity. Timestamps are equality fences only.
     if (JSON.stringify(current) !== JSON.stringify(snapshot)) {
-      return false;
+      return null;
     }
-    return await importLegacySubscriptionBundle(
+    const imported = await importLegacySubscriptionBundle(
       { ...args, db: tx },
       snapshot,
       currentProof.value,
       oldProof.value,
     );
+    return imported
+      ? await readImportedSubscriptionState(
+          { ...args, db: tx },
+          snapshot.provider.id,
+          readCompletedSnapshot,
+        )
+      : null;
   });
 }
 
@@ -2186,13 +2371,19 @@ export async function ensurePersonalModelProviderAccount(
   },
   signal?: AbortSignal,
 ): Promise<boolean> {
-  await seedPersonalModelProviderAccount(args);
   if (!isPersonalSubscriptionProviderType(args.provider.type)) {
     return true;
   }
-  return await coordinatePersonalSubscriptionCredentials(
-    { ...args, ...args.provider, type: args.provider.type },
-    signal,
+  return (
+    (await coordinatePersonalSubscriptionAccounts(
+      {
+        ...args,
+        ...args.provider,
+        type: args.provider.type,
+        initializeProviderId: args.provider.id,
+      },
+      signal,
+    )) !== null
   );
 }
 
@@ -2264,10 +2455,10 @@ async function readLockedPersonalSubscriptionBundle(
         };
       }
     } else if (
-      !(await reconcileLockedSubscriptionSnapshot(
+      (await reconcileLockedSubscriptionSnapshot(
         { ...args, db: tx },
         snapshot,
-      ))
+      )) === null
     ) {
       return false as const;
     }

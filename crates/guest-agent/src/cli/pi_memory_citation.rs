@@ -93,6 +93,9 @@ impl CitationParser {
     }
 
     pub(super) fn push(&mut self, chunk: &str, source: usize) {
+        if source >= self.visible_segments.len() {
+            self.visible_segments.resize(source + 1, String::new());
+        }
         // Preserve the allocation-free ordinary-text path from #32348. Code
         // recognition adds work only when the chunk can change Markdown state.
         if self.literals.bypass_plain_chunk(chunk) {
@@ -108,6 +111,18 @@ impl CitationParser {
             });
         }
         self.literals = literals;
+    }
+
+    /// Drain text that is safe to expose while retaining partial delimiters.
+    ///
+    /// Source slots stay allocated so later characters released from a
+    /// cross-chunk delimiter candidate preserve their native content index.
+    pub(super) fn take_visible_segments(&mut self) -> Vec<(usize, String)> {
+        self.visible_segments
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(source, text)| (!text.is_empty()).then(|| (source, std::mem::take(text))))
+            .collect()
     }
 
     fn push_literal_character(&mut self, item: SourcedChar, escape: bool) {

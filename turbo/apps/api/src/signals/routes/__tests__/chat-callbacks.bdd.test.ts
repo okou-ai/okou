@@ -4133,6 +4133,29 @@ describe("CHAT-02: failed chat callbacks", () => {
           sequenceNumber: 9,
           eventData: { is_error: false, result: raw },
         },
+        {
+          type: "result",
+          sequenceNumber: 10,
+          is_error: true,
+          result: "You have hit your ChatGPT usage limit.",
+          failureReason: "provider_insufficient_credits",
+        },
+        {
+          type: "result",
+          sequenceNumber: 11,
+          eventData: {
+            is_error: true,
+            result: "You have hit your ChatGPT usage limit.",
+            failureReason: "provider_insufficient_credits",
+          },
+        },
+        {
+          type: "result",
+          sequenceNumber: 12,
+          is_error: true,
+          result: "Insufficient vm0 credits",
+          failureReason: "insufficient_credits",
+        },
       ];
       await webhooks.requestAgentEvents(
         { runId: run.runId, events },
@@ -4287,6 +4310,21 @@ describe("CHAT-02: failed chat callbacks", () => {
           : events[7],
         { ...events[8], eventData: { is_error: true, result: visible } },
         events[9],
+        builtIn
+          ? {
+              type: "result",
+              sequenceNumber: 10,
+              is_error: true,
+              result: visible,
+            }
+          : events[10],
+        builtIn
+          ? {
+              ...events[11],
+              eventData: { is_error: true, result: visible },
+            }
+          : events[11],
+        events[12],
       ]);
       const exported = await reads.requestAgentRunNetworkLogs(
         actor,

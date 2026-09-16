@@ -13,7 +13,6 @@ use super::{
 #[tokio::test]
 async fn quiet_wait_expires_normally_and_immediate_read_preserves_the_shell() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"shell"}), false).await;
     state(&h, &id, "running").await;
@@ -41,7 +40,6 @@ async fn quiet_wait_expires_normally_and_immediate_read_preserves_the_shell() {
 #[tokio::test]
 async fn all_waiting_readers_wake_on_output_while_saturated_waits_leave_control_available() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"shell"}), false).await;
     state(&h, &id, "running").await;
@@ -89,16 +87,9 @@ async fn terminal_and_retirement_wake_quiet_readers() {
         Exit,
         Close,
         Invalidate,
-        Disconnect,
     }
-    for action in [
-        Action::Exit,
-        Action::Close,
-        Action::Invalidate,
-        Action::Disconnect,
-    ] {
+    for action in [Action::Exit, Action::Close, Action::Invalidate] {
         let mut h = Harness::new(Reply::Process).await;
-        h.runtime.ably_connected(true);
         let _resolve = h.resolve(h.credential(true)).await;
         let id = start(&h, json!({"type":"shell"}), false).await;
         state(&h, &id, "running").await;
@@ -135,7 +126,6 @@ async fn terminal_and_retirement_wake_quiet_readers() {
                     timestamp: None,
                 });
             }
-            Action::Disconnect => h.runtime.ably_connected(false),
         }
         for _ in 0..2 {
             let read = timeout(Duration::from_secs(5), readers.next())
@@ -166,7 +156,6 @@ async fn byte_and_chunk_budgets_preserve_terminal_output_and_exact_continuation(
         signal: None,
     })
     .await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"exec","command":"binary"}), false).await;
     state(&h, &id, "finished").await;
@@ -216,7 +205,6 @@ async fn invalid_read_limits_are_rejected_without_resolving_a_host() {
 #[tokio::test]
 async fn abandoned_wait_releases_its_guest_reservation_without_stopping_the_shell() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"shell"}), false).await;
     state(&h, &id, "running").await;

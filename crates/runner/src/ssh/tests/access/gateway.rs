@@ -33,6 +33,7 @@ pub(super) const SECRET: &str = "cfast_test-secret-canary-opaque";
 pub(super) enum Mode {
     Proxy,
     Fragmented,
+    BoundedOrigin,
     Response(String),
     StallTls,
     StallUpgrade,
@@ -244,7 +245,17 @@ async fn serve(
     loop {
         tokio::select! {
             message = ws.next() => match message {
-                Some(Ok(Message::Binary(bytes))) => if upstream.write_all(&bytes).await.is_err() { break; },
+                Some(Ok(Message::Binary(bytes))) => {
+                    // cloudflared's origin Conn.Read consumes a whole message but
+                    // discards bytes beyond its caller's buffer. Model the observed
+                    // 16 KiB read boundary independently of the Runner write limit.
+                    let bytes = if matches!(mode, Mode::BoundedOrigin) {
+                        &bytes[..bytes.len().min(16 * 1024)]
+                    } else {
+                        &bytes[..]
+                    };
+                    if upstream.write_all(bytes).await.is_err() { break; }
+                },
                 Some(Ok(Message::Pong(bytes))) => { assert_eq!(bytes.as_ref(), b"test-ping"); observed.pongs.fetch_add(1, Ordering::SeqCst); }
                 Some(Ok(Message::Ping(_))) => if ws.flush().await.is_err() { break; },
                 _ => break,

@@ -1,4 +1,5 @@
 import { retireImpactMetadata } from "../../lib/impact-marketing";
+import type { UsagePackDeferredSchedule } from "@okouai/db/jsonb-contracts/usage-pack-deferred-schedule";
 import type {
   MemberUsagePack,
   UsagePackChangeConfirmResponse,
@@ -52,10 +53,12 @@ import {
   failScheduledUsagePackAllocationChangesForSchedule,
   fulfillUsagePackSubscriptionChangeInvoice,
   reconcileUsagePackAllocationChangeSubscription,
+  usagePackInvoiceFulfillmentExists,
   type UsagePackChangeInvoiceInput,
 } from "./usage-pack-allocation-change.service";
 import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
+import { deferredScheduleMatchesRequest } from "./usage-pack-deferred-schedule.service";
 import {
   setStripeSubscriptionPaymentMethod,
   type BillingPurchasePaymentMethod,
@@ -1903,6 +1906,17 @@ async function persistDeferredSubscriptionChangeSchedule(
   );
   await db.transaction(async (tx) => {
     await lockUsagePackBillingOrg(tx, stored.root.orgId);
+    const [root] = await tx
+      .select()
+      .from(usagePackSubscriptionChanges)
+      .where(eq(usagePackSubscriptionChanges.id, stored.root.id))
+      .limit(1);
+    if (!root || root.status === "failed") {
+      throw new Error("Deferred subscription change is no longer applicable");
+    }
+    if (root.status === "completed") {
+      return;
+    }
     const planReplacementScheduleId = await pendingPlanReplacementScheduleId(
       tx,
       stored.root,
@@ -1991,13 +2005,75 @@ async function persistDeferredSubscriptionChangeSchedule(
   });
 }
 
-async function scheduleDeferredSubscriptionChange(
+async function storeDeferredScheduleRequest(
   db: Db,
-  stored: NonNullable<Awaited<ReturnType<typeof loadStoredSubscriptionChange>>>,
-  subscription: StripeSubscription,
+  stored: StoredSubscriptionChange,
+  request: UsagePackDeferredSchedule,
+): Promise<UsagePackSubscriptionChangeRow> {
+  return await db.transaction(async (tx) => {
+    await lockUsagePackBillingOrg(tx, stored.root.orgId);
+    const [root] = await tx
+      .select()
+      .from(usagePackSubscriptionChanges)
+      .where(eq(usagePackSubscriptionChanges.id, stored.root.id))
+      .limit(1);
+    if (!root || root.status === "failed") {
+      throw new Error("Deferred subscription change is no longer applicable");
+    }
+    if (root.status === "completed" || root.deferredSchedule) {
+      return root;
+    }
+    const [updated] = await tx
+      .update(usagePackSubscriptionChanges)
+      .set({ deferredSchedule: request })
+      .where(eq(usagePackSubscriptionChanges.id, root.id))
+      .returning();
+    if (!updated) {
+      throw new Error("Deferred subscription change disappeared");
+    }
+    return updated;
+  });
+}
+
+async function completeDeferredScheduleRequest(
+  db: Db,
+  stored: StoredSubscriptionChange,
+  request: UsagePackDeferredSchedule,
+  schedule: StripeSubscriptionSchedule | null,
   signal: AbortSignal | undefined,
 ): Promise<Date> {
-  const period = usagePackPeriod(subscription);
+  // A replay after an unknown Stripe result can finish the local transaction
+  // from current provider state without resubmitting the schedule update.
+  if (!schedule || !deferredScheduleMatchesRequest(schedule, request)) {
+    if (request.effectiveAt <= Math.floor(nowDate().getTime() / 1000)) {
+      throw new Error(
+        "Deferred subscription change passed its billing boundary",
+      );
+    }
+    await getStripeClient().subscriptionSchedules.update(
+      request.scheduleId,
+      request.params,
+      {
+        idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:schedule-update`,
+      },
+    );
+    signal?.throwIfAborted();
+  }
+  const effectiveAt = new Date(request.effectiveAt * 1000);
+  await persistDeferredSubscriptionChangeSchedule(
+    db,
+    stored,
+    request.scheduleId,
+    effectiveAt,
+  );
+  return effectiveAt;
+}
+
+function deferredSubscriptionChangeTarget(stored: StoredSubscriptionChange): {
+  readonly targetPlanPriceId: string;
+  readonly quantities: ReadonlyMap<string, number>;
+  readonly effectiveAt: number;
+} {
   const targetPlanPriceId =
     stored.root.sourceTier === stored.root.targetTier
       ? stored.subscription.stripePlanPriceId
@@ -2014,12 +2090,61 @@ async function scheduleDeferredSubscriptionChange(
       return true;
     },
   );
+  // Deferred allocation dates are immutable preview intent. In a mixed change
+  // the root's effectiveAt may instead describe the immediate upgrade.
+  const deferredAllocation = stored.allocationChanges.find((change) => {
+    return change.kind === "downgrade" || change.kind === "removal";
+  });
+  const effectiveAt = Math.floor(
+    (deferredAllocation?.effectiveAt ?? stored.root.effectiveAt).getTime() /
+      1000,
+  );
+  return { targetPlanPriceId, quantities, effectiveAt };
+}
+
+async function scheduleDeferredSubscriptionChange(
+  db: Db,
+  original: StoredSubscriptionChange,
+  subscription: StripeSubscription,
+  signal: AbortSignal | undefined,
+): Promise<Date> {
+  const stored = await loadStoredSubscriptionChange(db, original.root.id);
+  if (!stored || stored.root.status === "failed") {
+    throw new Error("Deferred subscription change is no longer applicable");
+  }
+  if (stored.root.status === "completed") {
+    return stored.root.effectiveAt;
+  }
+  const period = usagePackPeriod(subscription);
   const stripe = getStripeClient();
   const existingScheduleId = stripeObjectId(subscription.schedule);
+  if (
+    stored.root.deferredSchedule &&
+    existingScheduleId !== stored.root.deferredSchedule.scheduleId
+  ) {
+    throw new Error("Deferred subscription schedule is no longer attached");
+  }
   const existingSchedule = existingScheduleId
     ? await stripe.subscriptionSchedules.retrieve(existingScheduleId)
     : null;
   signal?.throwIfAborted();
+  if (stored.root.deferredSchedule) {
+    return await completeDeferredScheduleRequest(
+      db,
+      stored,
+      stored.root.deferredSchedule,
+      existingSchedule,
+      signal,
+    );
+  }
+  const { targetPlanPriceId, quantities, effectiveAt } =
+    deferredSubscriptionChangeTarget(stored);
+  if (
+    !existingSchedule &&
+    effectiveAt <= Math.floor(nowDate().getTime() / 1000)
+  ) {
+    throw new Error("Deferred subscription change passed its billing boundary");
+  }
   const createdSchedule = existingScheduleId
     ? null
     : await stripe.subscriptionSchedules.create(
@@ -2037,28 +2162,37 @@ async function scheduleDeferredSubscriptionChange(
     ? deferredUsagePackChangeScheduleParams({
         subscription,
         schedule: existingSchedule,
-        effectiveAt: period.end,
+        effectiveAt,
         targetPlanPriceId,
         quantities,
       })
     : newUsagePackChangeScheduleParams({
         subscription,
-        period,
+        period: { start: period.start, end: effectiveAt },
         targetPlanPriceId,
         quantities,
       });
-  await stripe.subscriptionSchedules.update(scheduleId, scheduleParams, {
-    idempotencyKey: `usage-pack-subscription-change:${stored.root.id}:schedule-update`,
-  });
-  signal?.throwIfAborted();
-  const effectiveAt = new Date(period.end * 1000);
-  await persistDeferredSubscriptionChangeSchedule(
-    db,
-    stored,
+  const root = await storeDeferredScheduleRequest(db, stored, {
     scheduleId,
     effectiveAt,
+    params: scheduleParams,
+  });
+  signal?.throwIfAborted();
+  if (root.status === "completed") {
+    return root.effectiveAt;
+  }
+  if (!root.deferredSchedule) {
+    throw new Error(
+      "Deferred subscription change has no stored Stripe request",
+    );
+  }
+  return await completeDeferredScheduleRequest(
+    db,
+    stored,
+    root.deferredSchedule,
+    existingSchedule,
+    signal,
   );
-  return effectiveAt;
 }
 
 function expandedLatestInvoice(
@@ -3286,6 +3420,31 @@ export async function handleUsagePackSubscriptionChangeInvoicePaid(
     subscriptionId,
     { expand: ["latest_invoice"] },
   );
+  // Completed invoices can be replayed after renewal, restoration, or a later
+  // plan change. Return current Stripe truth without applying the old intent.
+  if (stored.root.status === "completed") {
+    return { handled: true, orgId: root.orgId, subscription };
+  }
+  if (stored.root.status === "failed") {
+    throw new Error(`Subscription change ${root.id} is no longer applicable`);
+  }
+  // A saved schedule alone does not prove this invoice's credits were fulfilled.
+  if (
+    stored.root.deferredSchedule &&
+    (await usagePackInvoiceFulfillmentExists(
+      db,
+      invoice.id,
+      stored.subscription.id,
+    ))
+  ) {
+    await scheduleDeferredSubscriptionChange(
+      db,
+      stored,
+      subscription,
+      undefined,
+    );
+    return { handled: true, orgId: root.orgId, subscription };
+  }
   const expectedImmediateTier = planIsUpgrade(root.sourceTier, root.targetTier)
     ? root.targetTier
     : root.sourceTier;

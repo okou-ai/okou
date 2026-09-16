@@ -66,8 +66,8 @@ That authorized snapshot is an
 in-flight handoff: revocation cannot retract a response already authorized.
 Every later resolve checks again and sees committed rotation/deletion/revocation.
 The Runner can reuse a successfully resolved snapshot and parsed key for the
-current Run while Ably is connected; it does not resolve on every command. This
-explicit application-owned retention is not HTTP/proxy caching.
+current Run independently of Ably connectivity; it does not resolve on every
+command. This explicit application-owned retention is not HTTP/proxy caching.
 KMS decryption runs outside transactions and row locks, so slow KMS does not
 block owner edits or revocation. Resolve never writes a learned host key.
 
@@ -95,14 +95,21 @@ actual resolve/pin calls; the accepted cache lifetime below remains unchanged.
 Notices are sent after commit and before the request observes cancellation. A
 failed publish is logged, not reported as failure of the already-committed edit.
 The Runner only evicts local authority; it obtains any replacement from the API.
-Before Ably readiness and during disconnect/failure it resolves per command,
-clears cached entries on observed connection loss, and refills lazily after recovery.
+Ably readiness, disconnects, reconnects and subscription errors do not change
+SSH authority. Existing Sessions/transports remain usable, and new Session/SFTP
+admission does not require notification availability. First use and cache misses
+still resolve through the API; denied authority or API failures never grant access.
+Delivered targeted/Run-wide invalidation, authentication/trust/configuration-failure
+eviction, exact Run replacement and Run/sandbox teardown retain their cleanup behavior.
+Cache-overflow operations remain tracked for invalidation without owning cache cells.
 
 There is no fixed TTL or periodic authorization poll. Missed publication or a
-dropped subscriber message may leave previous configuration/credentials/grants
+dropped subscriber message, including during an observed outage, may leave previous
+configuration/credentials/grants
 usable for the remainder of the Run, including after deletion/revocation. This
 Run-lifetime stale-authority window is explicitly accepted; Ably is not a reliable
-revocation protocol. Cached parsed keys remain bounded in process memory and are
+revocation protocol. Reconnection neither requires reauthorization nor revives
+invalidated authority. Cached parsed keys remain bounded in process memory and are
 retired on invalidation or Run teardown. Per-connection public-destination and
 cryptographic proof/pin checks remain mandatory, and invalidation never authorizes
 command replay or guarantees termination of a remote command already started.
@@ -183,16 +190,17 @@ are unchanged.
 
 ### Cloudflare Access authority preparation
 
-#34077 prepares the backend of #31996. It does not provide the native carrier or
-Access management UI. `cloudflareAccess` is default-off, including for staff, and
-requires `sshAccess`. Each protected host binds one same-owner `(orgId, userId)`
+#34077 prepares the backend of #31996; #34080 and #34081 provide the native
+carrier and management UI. Direct and Cloudflare Access share the staff-only
+`sshAccess` switch, with no separate Access rollout switch.
+Each protected host binds one same-owner `(orgId, userId)`
 Access configuration. The saved DNS hostname is the exact approved token recipient;
 its port is 443, while the origin SSH port is configured in Cloudflare. No guest
 URL, wildcard, alternate recipient list or Direct fallback exists.
 
 SSH has one canonical contract, without a version/profile selector or duplicate
-legacy DTO. Protected authority requires the existing SSH checks plus the current
-Access feature and bound same-owner configuration. The existing SSH grant is
+legacy DTO. Protected authority requires the existing SSH checks, including
+`sshAccess`, plus a bound same-owner configuration. The existing SSH grant is
 the only Agent permission for either transport; configuration creation or edits
 never grant SSH. Direct handoffs retain their actual key/password variants.
 

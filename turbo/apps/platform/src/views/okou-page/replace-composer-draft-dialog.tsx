@@ -25,7 +25,7 @@ export function ReplaceComposerDraftDialog({
   const pageSignal = useGet(pageSignal$);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth="sm" contentClassName="okou-app">
+      <DialogContent smMaxWidth="sm">
         <DialogHeader>
           <DialogTitle>
             {t(($) => {

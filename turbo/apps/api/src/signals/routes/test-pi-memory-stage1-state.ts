@@ -1,3 +1,5 @@
+import { observePiMemoryStage1Cost } from "../services/pi-memory-stage1-cost.service";
+import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
 import { agents } from "@okouai/db/schema/agent";
@@ -159,6 +161,18 @@ const workerResultSchema = z.object({
 });
 const responseSchema = z.object({
   ok: z.literal(true),
+  receipt: z
+    .object({
+      disposition: z.enum([
+        "new",
+        "replay",
+        "legacy_replay",
+        "zero_usage",
+        "byok",
+      ]),
+      accountingAt: z.iso.datetime().nullable(),
+    })
+    .optional(),
   object_key: z.string().optional(),
   state: candidateStateSchema.nullable().optional(),
   worker: workerResultSchema.optional(),
@@ -660,7 +674,7 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
       return await mutateSource(db, body, signal);
     }
     case "record-usage": {
-      await recordPiMemoryStage1Usage(db, {
+      const args = {
         memoryStorageId: body.memory_storage_id,
         piSessionId: body.pi_session_id,
         sourceHistoryHash: body.source_history_hash,
@@ -671,9 +685,17 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
           userId: body.user_id,
         },
         usage: body.usage,
-      });
+      };
+      const receipt = await recordPiMemoryStage1Usage(db, args);
       signal.throwIfAborted();
-      return actionOk();
+      await observePiMemoryStage1Cost(
+        db,
+        args,
+        receipt,
+        get(usagePricingResolution$),
+      );
+      signal.throwIfAborted();
+      return actionOk({ receipt });
     }
     case "seed": {
       return await seedCandidate(db, body, signal);

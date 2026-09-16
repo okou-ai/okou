@@ -1513,6 +1513,51 @@
       "title": "アクションを利用できません"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "1日1回、毎日",
+          "name": "毎日チェックイン",
+          "unit": "1日あたり"
+        },
+        "connector": {
+          "description": "Gmail、Notion など100以上",
+          "name": "コネクタを接続",
+          "unit": "コネクタごと"
+        },
+        "inReview": "確認中",
+        "inReviewDescription": "送信済み、確認待ち",
+        "invite": {
+          "description": "追加した人数だけ加算されます",
+          "name": "チームを招待",
+          "unit": "メンバーごと"
+        },
+        "personalBalanceNote": "クレジットはあなた個人の残高に入ります。",
+        "progressLabel": "セットアップの進捗",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "投稿して、リンクを貼り付け",
+          "name": "{{assistantName}} を X でシェア"
+        },
+        "shareDialog": {
+          "description": "作ったものについて投稿し、リンクを貼り付けてください。提出は1回だけです。",
+          "helper": "投稿は公開で、{{assistantName}} に触れている必要があります。",
+          "inputLabel": "投稿のリンク",
+          "placeholder": "https://x.com/...",
+          "submit": "送信",
+          "title": "{{assistantName}} を X でシェア"
+        },
+        "slack": {
+          "description": "チームがすでに使っている場所へ",
+          "name": "{{assistantName}} を Slack に追加"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "ステップを終えると、クレジットがもらえます。",
+        "title": "はじめる",
+        "workflow": {
+          "description": "繰り返しの作業を自動化に変える",
+          "name": "ワークフローを作る"
+        }
+      },
       "growth": {
         "addInSlack": "Slack に {{assistantName}} を追加",
         "connect": "接続",
@@ -1711,7 +1756,11 @@
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",
       "upgradeWorkspace": "ワークスペースをアップグレードする"
     },
+    "cards": {
+      "viewDetails": "詳細を表示"
+    },
     "composer": {
+      "add": "追加",
       "agentSuggestions": "エージェント",
       "configureModel": "モデルの構成",
       "create": {
@@ -2263,6 +2312,40 @@
             "prompt": "ウェブサイトの画像を作る"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "クライアント向けの提案書を作る",
+            "prompt": "クライアント提案デッキを作成してください。クライアント、提案する業務、スケジュール、価格を質問してください。"
+          },
+          "companyOverview": {
+            "label": "自社の事業を説明する",
+            "prompt": "会社概要デッキを作成してください。事業内容、顧客層、聞き手に残したい印象を質問してください。"
+          },
+          "eventTalk": {
+            "label": "イベントの講演を準備する",
+            "prompt": "講演用のデッキを作成してください。イベント、聴衆、伝えたい中心的な考えを質問してください。"
+          },
+          "pitchDeck": {
+            "label": "投資家向けにピッチする",
+            "prompt": "事業の投資家向けピッチデッキを作成してください。課題、プロダクト、これまでの実績、調達額について質問してください。"
+          },
+          "productIntro": {
+            "label": "新しいプロダクトを紹介する",
+            "prompt": "新しいプロダクトを紹介するデッキを作成してください。機能、対象ユーザー、差別化要因を質問してください。"
+          },
+          "resultsReadout": {
+            "label": "成果を発表する",
+            "prompt": "成果を報告デッキにまとめてください。数値、対象期間、支える判断について質問してください。"
+          },
+          "teamUpdate": {
+            "label": "チーム向けの進捗報告をまとめる",
+            "prompt": "チームの進捗報告用デッキを作成してください。今期の出来事、次の予定、聞き手が誰かを質問してください。"
+          },
+          "training": {
+            "label": "チームに何かを教える",
+            "prompt": "指定したテーマの研修デッキを作成してください。受講者と、受講後にできるようになることを質問してください。"
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "写真を動画にする",
@@ -2468,7 +2551,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -5934,7 +6016,6 @@
         "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "multipleInstallations": "Morning Brief のインストールが複数あります。この設定を変更する前に競合を解決してください。",
         "nextBrief": "次のブリーフ {{date}}（{{timezone}}）",
         "paused": "一時停止中",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
@@ -6204,7 +6285,7 @@
       "summary_other": "Access 設定 {{count}} 件",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH アプリケーションの Service Auth ポリシーで許可された Service Token を使用してください。SSH ログインとは別のものです。",
-      "unavailable": "このアカウントでは Cloudflare Access を利用できません。保護されたホストには接続できませんが、直接接続のホストには影響しません。",
+      "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
       "usedBy_other": "{{count}} 台のホストが使用："
     },
     "connectionStatus": {

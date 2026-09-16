@@ -66,10 +66,15 @@ function publicBalanceEventBody(
     eventType === "result" &&
     (event.is_error === true || event.subtype === "error") &&
     typeof event.result === "string" &&
-    isLegacyProviderBalanceError(event.result, "claude-code")
+    (event.failureReason === "provider_insufficient_credits" ||
+      isLegacyProviderBalanceError(event.result, "claude-code"))
   ) {
+    const visible = { ...event };
+    if (visible.failureReason === "provider_insufficient_credits") {
+      delete visible.failureReason;
+    }
     return {
-      ...event,
+      ...visible,
       result: MODEL_UNAVAILABLE_MESSAGE,
       ...(Array.isArray(event.errors)
         ? { errors: [MODEL_UNAVAILABLE_MESSAGE] }

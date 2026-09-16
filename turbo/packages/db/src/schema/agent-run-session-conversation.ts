@@ -65,6 +65,10 @@ export const agentRuns = pgTable(
         sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 10`,
       ),
       check(
+        "agent_runs_runner_cancellation_mode_check",
+        sql`${table.runnerCancellationMode} IN ('cooperative', 'hard')`,
+      ),
+      check(
         "agent_runs_metadata_presence_check",
         sql`(
           (

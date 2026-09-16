@@ -33,7 +33,7 @@ function startApplication(rootSignal: AbortSignal): void {
       return store.set(resetViewportSettleSignal$, rootSignal);
     });
 
-    const runtime = store.set(
+    await store.set(
       bootstrap$,
       __OKOU_APP_VERSION__,
       () => {
@@ -51,23 +51,6 @@ function startApplication(rootSignal: AbortSignal): void {
       },
       rootSignal,
     );
-    detach(
-      runtime.sharedDatabaseDaemon,
-      Reason.Daemon,
-      "shared database bridge",
-    );
-    detach(
-      runtime.authenticatedRealtimeDaemon,
-      Reason.Daemon,
-      "app realtime subscriptions",
-    );
-    detach(runtime.clerkIdentityDaemon, Reason.Daemon, "clerk identity");
-    detach(
-      runtime.onboardingAttribution,
-      Reason.Entrance,
-      "onboarding attribution",
-    );
-    await runtime.ready;
   }
 
   detach(main(), Reason.Entrance, "main");

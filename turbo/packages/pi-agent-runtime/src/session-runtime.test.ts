@@ -1255,11 +1255,11 @@ describe("official Pi AgentSession runtime", () => {
 
   it.each(
     CUSTOM_GATEWAY_CREDENTIAL_CASES.flatMap((credential) => {
-      return (["deepseek-v4-flash", ...GPT_MODELS] as const).map(
-        (selectedModel) => {
-          return { ...credential, selectedModel };
-        },
-      );
+      return (
+        ["deepseek-v4-flash", "deepseek-v4.1-flash", ...GPT_MODELS] as const
+      ).map((selectedModel) => {
+        return { ...credential, selectedModel };
+      });
     }),
   )(
     "uses the stable Pi identity with the custom gateway request model and $name credential header for $selectedModel",
@@ -1291,7 +1291,7 @@ describe("official Pi AgentSession runtime", () => {
           timestamp: 2,
         }),
         api: "openai-responses",
-        provider: selectedModel === "deepseek-v4-flash" ? "deepseek" : "openai",
+        provider: selectedModel.startsWith("deepseek-") ? "deepseek" : "openai",
         model: `company-${selectedModel}-production`,
       });
       const created = await createPiAgentSessionForRuntime({
@@ -1299,13 +1299,14 @@ describe("official Pi AgentSession runtime", () => {
         agentDir: join(cwd, ".pi"),
         sessionManager,
         model: {
-          provider:
-            selectedModel === "deepseek-v4-flash" ? "deepseek" : "openai",
+          provider: selectedModel.startsWith("deepseek-")
+            ? "deepseek"
+            : "openai",
           baseUrl: provider.baseUrl,
           apiKey: "unused",
           model: `company-${selectedModel}-production`,
           catalogModel: selectedModel,
-          ...(selectedModel === "deepseek-v4-flash"
+          ...(selectedModel.startsWith("deepseek-")
             ? {}
             : { thinkingLevel: "max" as const }),
           dialect: "openai-responses",
@@ -1334,7 +1335,7 @@ describe("official Pi AgentSession runtime", () => {
           "custom gateway tool result",
         );
         expect(provider.requests[0]?.body).not.toHaveProperty("service_tier");
-        if (selectedModel !== "deepseek-v4-flash") {
+        if (!selectedModel.startsWith("deepseek-")) {
           expect(provider.requests[0]?.body).toMatchObject({
             reasoning: { effort: "max" },
           });

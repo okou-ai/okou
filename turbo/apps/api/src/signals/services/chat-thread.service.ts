@@ -799,35 +799,6 @@ export const createChatThread$ = command(
   },
 );
 
-export async function chatThreadForRunFromDb(
-  db: Pick<Db, "select">,
-  runId: string,
-): Promise<{
-  readonly chatThreadId: string;
-  readonly userId: string;
-  readonly orgId: string;
-} | null> {
-  const [row] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      userId: chatThreads.userId,
-      orgId: agentRuns.orgId,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-
-  if (!row?.chatThreadId) {
-    return null;
-  }
-  return {
-    chatThreadId: row.chatThreadId,
-    userId: row.userId,
-    orgId: row.orgId,
-  };
-}
-
 interface ThreadRunToCancel {
   readonly runId: string;
   readonly orgId: string;

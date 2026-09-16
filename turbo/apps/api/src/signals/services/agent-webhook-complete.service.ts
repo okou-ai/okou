@@ -582,6 +582,9 @@ async function applyTerminalCompletion(
     values: {
       status: prepared.status,
       completedAt,
+      ...(input.executionOwner === "api-first"
+        ? { runnerCancellationMode: "hard" as const }
+        : {}),
       ...(prepared.error !== undefined ? { error: prepared.error } : {}),
       failureReason: prepared.failureReason ?? null,
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),

@@ -46,12 +46,12 @@ import {
 } from "../../api-client.ts";
 import {
   resetSignal,
-  setLoop,
+  waitLoopUntil,
   settle,
   tapError,
   withCleanup,
 } from "../../utils.ts";
-import { setAblyPayloadLoop$ } from "../../realtime.ts";
+import { waitAblyPayloadLoopUntil$ } from "../../realtime.ts";
 import { agents$ } from "../../agent.ts";
 import { reloadAgentConnectorAuthorizations$ } from "../agent-connector-authorizations.ts";
 import { reloadConnectorAccountSummaries$ } from "../connector-accounts.ts";
@@ -1582,7 +1582,7 @@ const pollConnectorOAuthDeviceAuth$ = command(
     let connectionId: string | null = null;
     let expired = false;
 
-    await setLoop(
+    await waitLoopUntil(
       async (sig) => {
         const outcome = await set(
           pollConnectorOAuthDeviceAuthOnce$,
@@ -2181,7 +2181,7 @@ async function waitForOAuthAuthCodePopupClosed(
   signal.throwIfAborted();
 
   let closed = false;
-  await setLoop(
+  await waitLoopUntil(
     () => {
       if (authWindow.closed) {
         closed = true;
@@ -2497,7 +2497,7 @@ const completeConnectorOAuthAuthCodeFlow$ = command(
     const waitSignal = set(resetOAuthAuthCodeWaitSignal$, signal);
     const changedPromise = (async () => {
       await set(
-        setAblyPayloadLoop$,
+        waitAblyPayloadLoopUntil$,
         {
           topic: "connector:changed",
           loopCommand$: onActiveConnectorChanged$,
