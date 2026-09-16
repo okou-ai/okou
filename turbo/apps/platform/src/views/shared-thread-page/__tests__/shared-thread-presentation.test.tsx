@@ -256,7 +256,9 @@ test("A public conversation carries the signed-in viewer's color theme", async (
     featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
   });
 
-  expect(await screen.findByText("The plan is ready.")).toBeInTheDocument();
+  await expect(
+    screen.findByText("The plan is ready."),
+  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute(
       "data-color-theme",
