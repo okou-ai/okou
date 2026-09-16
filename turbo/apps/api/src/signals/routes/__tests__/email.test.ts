@@ -109,7 +109,7 @@ beforeEach(() => {
 });
 
 describe("low-credit email delivery", () => {
-  it("uses the configured sender domain for low-credit alerts", async () => {
+  it("sends branded low-credit alerts with billing and unsubscribe links", async () => {
     const actor = bdd.user();
     const billing = createBillingMediaApi(context);
     bdd.acceptAgentStorageWrites();
@@ -209,6 +209,7 @@ describe("low-credit email delivery", () => {
         to: actor.email,
         subject: "Your credit balance is running low",
         html: expect.stringContaining("https://app.okou.ai/"),
+        text: expect.stringContaining("Sent by Okou Team"),
         headers: {
           "List-Unsubscribe": expect.stringContaining(
             "<https://api.okou.ai/api/email/unsubscribe?token=",
@@ -217,6 +218,23 @@ describe("low-credit email delivery", () => {
         },
       }),
     );
+    const sent = resendMocks.send.mock.calls[0]?.[0];
+    for (const content of [
+      "4,999 credits",
+      "Manage billing",
+      "Sent by Okou Team",
+      "https://app.okou.ai/email/unsubscribe?token=",
+    ]) {
+      expect(sent).toMatchObject({
+        html: expect.stringContaining(content),
+        text: expect.stringContaining(content),
+      });
+    }
+    expect(sent).toMatchObject({
+      text: expect.stringContaining(
+        "https://app.okou.ai/?settings=billing&billingView=credits",
+      ),
+    });
   });
 });
 
@@ -282,7 +300,19 @@ describe("POST /api/email/inbound", () => {
     expect(sent).toMatchObject({
       from: "Okou <okou@okou.io>",
       html: expect.stringContaining("https://app.okou.ai/email/unsubscribe"),
+      text: expect.stringContaining("https://app.okou.ai/email/unsubscribe"),
     });
+    for (const content of [
+      "Download export",
+      "artifacts. Expires",
+      "https://r2.example.com/",
+      "Sent by Okou",
+    ]) {
+      expect(sent).toMatchObject({
+        html: expect.stringContaining(content),
+        text: expect.stringContaining(content),
+      });
+    }
     if (
       typeof sent !== "object" ||
       sent === null ||

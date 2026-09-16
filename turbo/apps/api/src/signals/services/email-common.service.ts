@@ -22,6 +22,11 @@ import type { ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
+import {
+  escapeEmailHtml,
+  plainTextFromEmailHtml,
+  renderEmailLayout,
+} from "./email-layout";
 
 type Transaction = Tx;
 
@@ -242,37 +247,9 @@ export function buildUnsubscribeHeaders(url: string): Record<string, string> {
   };
 }
 
-function escapeHtml(value: string): string {
-  let escaped = "";
-  for (const char of value) {
-    switch (char) {
-      case "&": {
-        escaped += "&amp;";
-        break;
-      }
-      case "<": {
-        escaped += "&lt;";
-        break;
-      }
-      case ">": {
-        escaped += "&gt;";
-        break;
-      }
-      case '"': {
-        escaped += "&quot;";
-        break;
-      }
-      default: {
-        escaped += char;
-      }
-    }
-  }
-  return escaped;
-}
-
 interface RenderedEmailTemplate {
   readonly html: string;
-  readonly text?: string;
+  readonly text: string;
 }
 
 function renderTemplate(
@@ -281,40 +258,37 @@ function renderTemplate(
 ): RenderedEmailTemplate {
   switch (template.template) {
     case "data-export-ready": {
-      const unsubscribe = template.props.unsubscribeUrl
-        ? `<p><a href="${escapeHtml(
-            template.props.unsubscribeUrl,
-          )}">Unsubscribe</a></p>`
-        : "";
-      return {
-        html: `<main><h1>Your data export is ready</h1><p>${template.props.artifactCount} artifacts. Expires ${escapeHtml(
-          template.props.expiresAt,
-        )}.</p><p><a href="${escapeHtml(
-          template.props.downloadUrl,
-        )}">Download export</a></p>${unsubscribe}</main>`,
-      };
+      const title = "Your data export is ready";
+      const html = renderEmailLayout({
+        title,
+        bodyHtml: `<h1 style="margin:0 0 24px;font-size:24px;line-height:1.3;letter-spacing:-0.025em">${title}</h1><p style="margin:0 0 20px">${template.props.artifactCount} artifacts. Expires ${escapeEmailHtml(template.props.expiresAt)}.</p>`,
+        action: { label: "Download export", url: template.props.downloadUrl },
+        footer: {
+          text: `Sent by ${PUBLIC_BRAND_PRESENTATION.brandName}`,
+          links: template.props.unsubscribeUrl
+            ? [{ label: "Unsubscribe", url: template.props.unsubscribeUrl }]
+            : [],
+        },
+      });
+      return { html, text: plainTextFromEmailHtml(html) };
     }
     case "credit-low-balance": {
       const remainingCredits =
         template.props.remainingCredits.toLocaleString("en-US");
       const thresholdCredits =
         template.props.thresholdCredits.toLocaleString("en-US");
-      const unsubscribe = template.props.unsubscribeUrl
-        ? `<p><a href="${escapeHtml(
-            template.props.unsubscribeUrl,
-          )}">Unsubscribe</a></p>`
-        : "";
-      return {
-        html: `<main><h1>${CREDIT_LOW_BALANCE_EMAIL_SUBJECT}</h1><p>${escapeHtml(
-          template.props.orgName,
-        )} has ${escapeHtml(
-          remainingCredits,
-        )} credits remaining.</p><p>This alert is sent when an org reaches ${escapeHtml(
-          thresholdCredits,
-        )} credits or less.</p><p><a href="${escapeHtml(
-          template.props.billingUrl,
-        )}">Manage billing</a></p>${unsubscribe}</main>`,
-      };
+      const html = renderEmailLayout({
+        title: CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
+        bodyHtml: `<h1 style="margin:0 0 24px;font-size:24px;line-height:1.3;letter-spacing:-0.025em">${CREDIT_LOW_BALANCE_EMAIL_SUBJECT}</h1><p style="margin:0 0 20px"><strong>${escapeEmailHtml(template.props.orgName)}</strong> has <strong>${escapeEmailHtml(remainingCredits)} credits</strong> remaining.</p><p style="margin:0 0 20px">This alert is sent when an org reaches ${escapeEmailHtml(thresholdCredits)} credits or less.</p>`,
+        action: { label: "Manage billing", url: template.props.billingUrl },
+        footer: {
+          text: `Sent by ${PUBLIC_BRAND_PRESENTATION.brandName} Team`,
+          links: template.props.unsubscribeUrl
+            ? [{ label: "Unsubscribe", url: template.props.unsubscribeUrl }]
+            : [],
+        },
+      });
+      return { html, text: plainTextFromEmailHtml(html) };
     }
     case "official-automation-result": {
       const rendered = renderOfficialAutomationResultEmail(
