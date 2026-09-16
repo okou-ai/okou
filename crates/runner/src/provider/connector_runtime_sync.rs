@@ -4079,9 +4079,10 @@ mod tests {
                     }],
                 }));
         });
-        core.notify_connector_runtime_sync(run_id, target.clone())
-            .await;
-        let request = recv_sync_request(&mut requests).await;
+        let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .expect("unresolved target should retry before timeout")
+            .expect("runtime sync queue should stay open");
         let (keep_run, events) =
             capture_sync_events(core.sync_connector_runtime_batch_now(run_id, &request.targets))
                 .await;
@@ -4657,6 +4658,9 @@ mod tests {
         );
 
         available_sync.delete_async().await;
+        core.notify_connector_runtime_sync(run_id, target.clone())
+            .await;
+        let request = recv_sync_request(&mut requests).await;
         for (index, (reason, diagnostic_reason)) in [
             ("runtime-configuration-unavailable", "RuntimeConfiguration"),
             ("permission-bundle-unavailable", "PermissionBundle"),
@@ -4685,9 +4689,6 @@ mod tests {
                         }],
                     }));
             });
-            core.notify_connector_runtime_sync(run_id, target.clone())
-                .await;
-            let request = recv_sync_request(&mut requests).await;
             let (keep_run, events) = capture_sync_events(
                 core.sync_connector_runtime_batch_now(run_id, &request.targets),
             )
