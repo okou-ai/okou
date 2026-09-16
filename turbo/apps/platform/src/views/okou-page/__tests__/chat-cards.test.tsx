@@ -122,6 +122,26 @@ test("Multiple actions on one line keep their order and formatted prose", async 
   expectNodeBefore(permission, connectors[1]!);
 });
 
+test("Removing formatted bare actions leaves readable prose without empty markers", async () => {
+  await setupChat(
+    [
+      `Before **${CONNECTOR_URL}** and __${PERMISSION_URL}__, continue.`,
+      "",
+      `Review **${CONNECTOR_URL} and ${PERMISSION_URL}** before continuing.`,
+    ].join("\n"),
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(2);
+    expect(screen.getAllByTestId("permission-action-card")).toHaveLength(2);
+  });
+  expect(screen.getByText("Before and , continue.")).toBeInTheDocument();
+  const emphasis = screen.getByText("and", { selector: "strong" });
+  expect(emphasis.closest("p")).toHaveTextContent(
+    "Review and before continuing.",
+  );
+});
+
 test("Incomplete action links are shown as unavailable", async () => {
   const connectorWithoutAgent =
     "https://app.okou.ai/connectors/github/authorize";

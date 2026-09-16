@@ -768,10 +768,13 @@ function createActionBlockFromUrl(
 }
 
 interface ActionLinkMatch {
-  readonly start: number;
-  readonly end: number;
-  readonly label: string;
+  readonly source: string;
   readonly block: CardDescriptorBlock;
+}
+
+interface ActionLine {
+  readonly markdown: string;
+  readonly matches: readonly ActionLinkMatch[];
 }
 
 function isLinkToken(token: Token): token is Tokens.Link {
@@ -807,109 +810,109 @@ function retainedActionLabel(tokens: readonly Token[]): string {
 function actionLinksFromTokens(
   source: string,
   tokens: readonly Token[],
-  start: number,
   chatActionContext: ChatActionContext | undefined,
-): ActionLinkMatch[] {
+): ActionLine {
   const matches: ActionLinkMatch[] = [];
-  let offset = start;
+  const parts: string[] = [];
+  let offset = 0;
   for (const token of tokens) {
+    let retained = token.raw;
     if (
       isLinkToken(token) &&
       (token.raw.startsWith("[") ||
         hasUrlTokenBoundary(
           source,
-          offset - start + (token.raw.startsWith("<") ? 1 : 0),
+          offset + (token.raw.startsWith("<") ? 1 : 0),
         ))
     ) {
       const url = trimPreviewUrl(token.href);
       const block = createActionBlockFromUrl(url, chatActionContext);
       if (block) {
         const trailing = token.href.slice(url.length);
+        const suffix = token.raw.endsWith(trailing) ? trailing : "";
         matches.push({
-          start: offset,
-          end:
-            offset +
-            token.raw.length -
-            (token.raw.endsWith(trailing) ? trailing.length : 0),
-          label: token.raw.startsWith("[")
-            ? retainedActionLabel(token.tokens)
-            : "",
+          source: token.raw.slice(0, token.raw.length - suffix.length),
           block,
         });
+        retained =
+          (token.raw.startsWith("[") ? retainedActionLabel(token.tokens) : "") +
+          suffix;
       }
     } else if (isEmphasisToken(token)) {
-      matches.push(
-        ...actionLinksFromTokens(
-          token.text,
-          token.tokens,
-          offset + token.raw.indexOf(token.text),
-          chatActionContext,
-        ),
+      const inner = actionLinksFromTokens(
+        token.text,
+        token.tokens,
+        chatActionContext,
       );
+      matches.push(...inner.matches);
+      if (inner.matches.length > 0) {
+        const text = inner.markdown.trim();
+        const start = token.raw.indexOf(token.text);
+        // Removing a bare URL can empty the emphasis or leave whitespace at
+        // its edges. Keep the remaining prose formatted, without orphan marks.
+        retained = text
+          ? inner.markdown.slice(0, inner.markdown.indexOf(text)) +
+            token.raw.slice(0, start) +
+            text +
+            token.raw.slice(start + token.text.length) +
+            inner.markdown.slice(inner.markdown.indexOf(text) + text.length)
+          : inner.markdown;
+      }
     } else if (token.type === "text") {
       // Bare relative platform paths are text to Markdown, but remain valid
       // action candidates. Never scan code spans, images, or ordinary links.
-      for (const match of token.raw.matchAll(
+      retained = token.raw.replace(
         new RegExp(URL_TOKEN_PATTERN, "g"),
-      )) {
-        if (!hasUrlTokenBoundary(source, offset - start + match.index)) {
-          continue;
-        }
-        const url = trimPreviewUrl(match[0]);
-        const block = createActionBlockFromUrl(url, chatActionContext);
-        if (block) {
-          matches.push({
-            start: offset + match.index,
-            end: offset + match.index + url.length,
-            label: "",
-            block,
-          });
-        }
-      }
+        (match: string, index: number) => {
+          if (!hasUrlTokenBoundary(source, offset + index)) {
+            return match;
+          }
+          const url = trimPreviewUrl(match);
+          const block = createActionBlockFromUrl(url, chatActionContext);
+          if (!block) {
+            return match;
+          }
+          matches.push({ source: url, block });
+          return match.slice(url.length);
+        },
+      );
     }
+    parts.push(retained);
     offset += token.raw.length;
   }
-  return matches;
+  return { markdown: parts.join(""), matches };
 }
 
 function actionLinksFromLine(
   line: string,
   chatActionContext: ChatActionContext | undefined,
-): ActionLinkMatch[] {
+): ActionLine {
   if (/^(?: {4}|\t)/u.test(line) || !new RegExp(URL_TOKEN_PATTERN).test(line)) {
-    return [];
+    return { markdown: line, matches: [] };
   }
   // Use original defaults: Tiptap adds editor tokenizers to global Marked.
   return actionLinksFromTokens(
     line,
     Lexer.lexInline(line, getDefaults()),
-    0,
     chatActionContext,
   );
 }
 
 function retainedActionMarkdown(
   line: string,
-  matches: readonly ActionLinkMatch[],
+  actionLine: ActionLine,
 ): string | null {
-  const first = matches[0];
+  const first = actionLine.matches[0];
   if (
-    matches.length === 1 &&
+    actionLine.matches.length === 1 &&
     first &&
     stripMarkdownLineDecorations(line) ===
-      stripMarkdownLineDecorations(line.slice(first.start, first.end))
+      stripMarkdownLineDecorations(first.source)
   ) {
     return null;
   }
 
-  const parts: string[] = [];
-  let offset = 0;
-  for (const match of matches) {
-    parts.push(line.slice(offset, match.start), match.label);
-    offset = match.end;
-  }
-  parts.push(line.slice(offset));
-  return parts.join("");
+  return actionLine.markdown;
 }
 
 function splitMarkdownTableRow(line: string): string[] | null {
@@ -1048,17 +1051,17 @@ function parseBodyBlocks(
       continue;
     }
 
-    const actionLinks = previews
+    const actionLine = previews
       ? actionLinksFromLine(line, options.chatActionContext)
-      : [];
-    if (actionLinks.length > 0) {
-      const retainedMarkdown = retainedActionMarkdown(line, actionLinks);
+      : null;
+    if (actionLine && actionLine.matches.length > 0) {
+      const retainedMarkdown = retainedActionMarkdown(line, actionLine);
       if (retainedMarkdown) {
         pushMarkdownLines([retainedMarkdown]);
       }
       flushMarkdownBuffer();
       blocks.push(
-        ...actionLinks.map((match) => {
+        ...actionLine.matches.map((match) => {
           return match.block;
         }),
       );
