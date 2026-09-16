@@ -235,6 +235,9 @@ Bare action URLs stop before adjacent prose punctuation, and retained labels
 stay literal text or keep their original inline formatting. For indented or
 quoted content, Markdown block tokens distinguish code from nested list prose;
 indentation by itself does not disable an action.
+Blocks containing a multiline code span are recognized together, so URLs inside
+the span remain code while real actions beside it follow the intact block.
+Existing character references in retained link labels keep their displayed text.
 
 Artifact recognition does not choose its presentation. After Markdown parsing,
 each supported artifact `<a>` or `<img>` node registers its URL in the owning

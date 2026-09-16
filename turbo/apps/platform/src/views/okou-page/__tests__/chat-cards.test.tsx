@@ -269,7 +269,7 @@ test("Action labels stay literal instead of becoming new Markdown links or headi
   expect(
     queryAllByRoleFast("link").filter((link) => {
       return (
-        link.getAttribute("href")?.startsWith("https://example.com") ||
+        link.getAttribute("href") === "https://example.com/reference" ||
         link.getAttribute("href") === "http://www.example.com"
       );
     }),
@@ -314,6 +314,66 @@ test("Code, images and table links stay content beside real actions", async () =
   );
   expect(screen.getAllByTestId("connector-action-card")).toHaveLength(1);
   expect(screen.queryByTestId("permission-action-card")).toBeNull();
+});
+
+test("Retained action labels preserve numeric character references", async () => {
+  await setupChat(
+    `Read [&#35; Review &#x26; approve](${CONNECTOR_URL}) before continuing.`,
+  );
+
+  await screen.findByTestId("connector-action-card");
+  expect(
+    screen.getByText("Read # Review & approve before continuing."),
+  ).toBeInTheDocument();
+});
+
+test("Multiline inline code stays literal beside a real action", async () => {
+  await setupChat(
+    [
+      "Keep `example",
+      `${CONNECTOR_URL} https://example.com`,
+      "end` as code.",
+      "",
+      `Please [allow file reads](${PERMISSION_URL}).`,
+    ].join("\n"),
+  );
+
+  await screen.findByTestId("permission-action-card");
+  expect(screen.queryByTestId("connector-action-card")).toBeNull();
+  expect(
+    screen.getByText(`example ${CONNECTOR_URL} https://example.com end`)
+      .tagName,
+  ).toBe("CODE");
+});
+
+test("Actions around multiline code remain available in paragraphs, quotes and lists", async () => {
+  await setupChat(
+    [
+      `Please [allow file reads](${PERMISSION_URL}) and keep \`plain`,
+      `${CONNECTOR_URL} https://example.com`,
+      "end` as code.",
+      "",
+      "> Keep **`quoted",
+      `> ${CONNECTOR_URL} https://example.com`,
+      `> end\`** and [allow file reads](${PERMISSION_URL}).`,
+      "",
+      "- Examples",
+      "    - Keep `nested",
+      `      ${CONNECTOR_URL} https://example.com`,
+      `      end\` and [allow file reads](${PERMISSION_URL}).`,
+    ].join("\n"),
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByTestId("permission-action-card")).toHaveLength(3);
+  });
+  expect(screen.queryByTestId("connector-action-card")).toBeNull();
+  for (const label of ["plain", "quoted", "nested"]) {
+    expect(
+      screen.getByText(`${label} ${CONNECTOR_URL} https://example.com end`)
+        .tagName,
+    ).toBe("CODE");
+  }
 });
 
 test("Nested list actions remain available while indented code stays content", async () => {

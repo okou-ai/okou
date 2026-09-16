@@ -772,7 +772,7 @@ interface ActionLinkMatch {
   readonly block: CardDescriptorBlock;
 }
 
-interface ActionLine {
+interface ActionText {
   readonly markdown: string;
   readonly matches: readonly ActionLinkMatch[];
 }
@@ -801,10 +801,16 @@ function retainedActionLabel(tokens: readonly Token[]): string {
       // Link labels are already tokenized in a link's context. Their text must
       // not turn into headings, reference links or autolinks when moved out.
       return token.type === "text"
-        ? token.raw.replace(/[\\`*_[\]{}()#+\-.!<>~|:@$=]/gu, (character) => {
-            // Entities avoid creating backslash-delimited chat math syntax.
-            return `&#${character.charCodeAt(0)};`;
-          })
+        ? token.raw.replace(
+            /&#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6});|[\\`*_[\]{}()#+\-.!<>~|:@$=]/gu,
+            (character) => {
+              // Preserve existing entities; newly encoded punctuation must not
+              // create backslash-delimited chat math syntax.
+              return character.startsWith("&")
+                ? character
+                : `&#${character.charCodeAt(0)};`;
+            },
+          )
         : token.raw;
     })
     .join("");
@@ -814,7 +820,7 @@ function actionLinksFromTokens(
   source: string,
   tokens: readonly Token[],
   chatActionContext: ChatActionContext | undefined,
-): ActionLine {
+): ActionText {
   const matches: ActionLinkMatch[] = [];
   const parts: string[] = [];
   let offset = 0;
@@ -895,24 +901,24 @@ function actionLinksFromTokens(
   return { markdown: parts.join(""), matches };
 }
 
-function actionLinksFromLine(
-  line: string,
+function actionLinksFromMarkdown(
+  source: string,
   chatActionContext: ChatActionContext | undefined,
-): ActionLine {
-  if (!new RegExp(URL_TOKEN_PATTERN).test(line)) {
-    return { markdown: line, matches: [] };
+): ActionText {
+  if (!new RegExp(URL_TOKEN_PATTERN).test(source)) {
+    return { markdown: source, matches: [] };
   }
   // Use original defaults: Tiptap adds editor tokenizers to global Marked.
   return actionLinksFromTokens(
-    line,
-    Lexer.lexInline(line, getDefaults()),
+    source,
+    Lexer.lexInline(source, getDefaults()),
     chatActionContext,
   );
 }
 
 function retainedActionMarkdown(
   line: string,
-  actionLine: ActionLine,
+  actionLine: ActionText,
 ): string | null {
   const first = actionLine.matches[0];
   if (
@@ -933,13 +939,40 @@ function isMarkdownContainer(
   return token.type === "list" || token.type === "blockquote";
 }
 
-function markdownCodeRowIndexes(content: string): Set<number> {
+function isInlineBlockToken(
+  token: Token,
+): token is Tokens.Paragraph | Tokens.Heading | Tokens.Text {
+  return (
+    token.type === "paragraph" ||
+    token.type === "heading" ||
+    token.type === "text"
+  );
+}
+
+function hasMultilineCodeSpan(tokens: readonly Token[]): boolean {
+  return tokens.some((token) => {
+    if (token.type === "codespan") {
+      return token.raw.includes("\n");
+    }
+    return (
+      (isEmphasisToken(token) || isLinkToken(token)) &&
+      hasMultilineCodeSpan(token.tokens)
+    );
+  });
+}
+
+function markdownCodeBoundaries(content: string): {
+  readonly rows: ReadonlySet<number>;
+  readonly inlineBlockEndRows: ReadonlyMap<number, number>;
+} {
   const rows = new Set<number>();
+  const inlineBlockEndRows = new Map<number, number>();
   if (
-    !/^(?: {4}| {0,3}[\t>])/mu.test(content) ||
+    (!/^(?: {4}| {0,3}[\t>])/mu.test(content) &&
+      !(content.includes("`") && content.includes("\n"))) ||
     !new RegExp(URL_TOKEN_PATTERN).test(content)
   ) {
-    return rows;
+    return { rows, inlineBlockEndRows };
   }
 
   // Indentation alone cannot distinguish nested list prose from code. Block
@@ -963,12 +996,24 @@ function markdownCodeRowIndexes(content: string): Set<number> {
         } else {
           visit(token.tokens, row);
         }
+      } else if (
+        isInlineBlockToken(token) &&
+        token.tokens &&
+        hasMultilineCodeSpan(token.tokens)
+      ) {
+        // Keep the containing inline block together so the line scanner cannot
+        // turn a URL inside a multiline code span into an action. Real actions
+        // before or after the span are still recognized within the same block.
+        inlineBlockEndRows.set(
+          row,
+          row + lineBreaks - (token.raw.endsWith("\n") ? 1 : 0),
+        );
       }
       row += lineBreaks;
     }
   };
   visit(Lexer.lex(content, getDefaults()), 0);
-  return rows;
+  return { rows, inlineBlockEndRows };
 }
 
 function splitMarkdownTableRow(line: string): string[] | null {
@@ -1067,7 +1112,7 @@ function parseBodyBlocks(
   const blocks: ParsedBodyBlock[] = [];
   const lines = content.split("\n");
   const tableRowIndexes = markdownTableRowIndexes(lines);
-  const codeRowIndexes = markdownCodeRowIndexes(content);
+  const codeBoundaries = markdownCodeBoundaries(content);
   const keptLines: string[] = [];
   const markdownBuffer: string[] = [];
   let firstMarkdownLineIsCode: boolean | null = null;
@@ -1109,8 +1154,9 @@ function parseBodyBlocks(
     keptLines.push(...nextLines);
   };
 
-  for (const [lineIndex, line] of lines.entries()) {
-    if (codeRowIndexes.has(lineIndex)) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]!;
+    if (codeBoundaries.rows.has(lineIndex)) {
       pushMarkdownLines([line], true);
       continue;
     }
@@ -1121,16 +1167,24 @@ function parseBodyBlocks(
       continue;
     }
 
-    if (tableRowIndexes.has(lineIndex)) {
+    const inlineBlockEnd = codeBoundaries.inlineBlockEndRows.get(lineIndex);
+    if (inlineBlockEnd === undefined && tableRowIndexes.has(lineIndex)) {
       pushMarkdownLines([line]);
       continue;
     }
 
+    const actionSource =
+      inlineBlockEnd === undefined
+        ? line
+        : lines.slice(lineIndex, inlineBlockEnd + 1).join("\n");
+    if (inlineBlockEnd !== undefined) {
+      lineIndex = inlineBlockEnd;
+    }
     const actionLine = previews
-      ? actionLinksFromLine(line, options.chatActionContext)
+      ? actionLinksFromMarkdown(actionSource, options.chatActionContext)
       : null;
     if (actionLine && actionLine.matches.length > 0) {
-      const retainedMarkdown = retainedActionMarkdown(line, actionLine);
+      const retainedMarkdown = retainedActionMarkdown(actionSource, actionLine);
       if (retainedMarkdown) {
         pushMarkdownLines([retainedMarkdown]);
       }
@@ -1143,7 +1197,7 @@ function parseBodyBlocks(
       continue;
     }
 
-    pushMarkdownLines([line]);
+    pushMarkdownLines([actionSource]);
   }
 
   flushMarkdownBuffer();
