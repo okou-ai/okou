@@ -82,7 +82,9 @@ test("unavailable artifacts recover access and keep readable actions across them
   await page.goto(`${appUrl}/_/lab`);
   for (const name of [/gradientColorThemes/, /privateArtifacts/]) {
     const control = page.getByRole("switch", { name });
-    await control.setChecked(true);
+    if (!(await control.isChecked())) {
+      await control.click();
+    }
     await expect(control).toBeChecked();
     await expect(control).toBeEnabled();
   }
