@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 
-# Real Luna smoke and built-in usage attribution through public APIs.
+# Real Codex smoke and built-in usage attribution through public APIs.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
-    local credentials="/tmp/e2e-api-credentials-runner-real-claude.json"
+    local credentials="/tmp/e2e-api-credentials-runner-real-codex-built-in.json"
     export E2E_API_TOKEN E2E_API_URL
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
@@ -19,21 +19,20 @@ teardown() {
     runner_e2e_teardown_test
 }
 
-@test "real luna reports built-in model usage" {
-    run create_runner_agent "e2e-real-luna-${TEST_ID}"
+@test "real codex reports built-in model usage" {
+    run create_runner_agent "e2e-real-codex-${TEST_ID}"
     echo "$output"
     assert_success
     AGENT_ID="$output"
 
     run set_runner_agent_instructions \
         "$AGENT_ID" \
-        "Real Luna billing smoke test instructions."
+        "Real Codex billing smoke test instructions."
     echo "$output"
     assert_success
 
-    # The Codex account uses Luna for BYOK steering. The real Claude/Pi
-    # account keeps Luna built-in, so billing and steering can run concurrently
-    # without changing either organization's model policies.
+    # The dedicated built-in Codex account keeps Luna independent of the
+    # BYOK steering account without changing either runtime or model policy.
     run runner_api_curl "/api/model-policies"
     echo "$output"
     assert_success
@@ -48,7 +47,7 @@ teardown() {
     echo "$output"
     assert_success
 
-    local prompt="Briefly confirm that the real Luna model is responding."
+    local prompt="Briefly confirm that the real Codex runner is responding."
     run runner_chat_send "$AGENT_ID" "$prompt" "" "gpt-5.6-luna"
     echo "$output"
     assert_success

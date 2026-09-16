@@ -442,7 +442,7 @@ unless stale_steps.length == 1
   raise "stale Clerk cleanup must use one inventory pass"
 end
 stale_step = stale_steps.fetch(0)
-expected_roles = "browser,playwright,paid-onboarding,runner,runner-real-codex,runner-real-claude,runner-mock-claude"
+expected_roles = "browser,playwright,paid-onboarding,runner,runner-real-codex,runner-real-claude,runner-mock-claude,runner-real-codex-built-in"
 unless stale_step.fetch("run").include?(
     "cleanup-stale #{expected_roles} --ci-older-than-hours 2 --staging-browser-older-than-hours 8",
   ) && stale_step.dig("env", "CLERK_SECRET_KEY") == "${{ secrets.CLERK_SECRET_KEY }}" &&

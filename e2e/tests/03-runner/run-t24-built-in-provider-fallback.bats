@@ -10,7 +10,7 @@ BATS_TEST_TIMEOUT=600
 BUILT_IN_FALLBACK_MODEL="gpt-5.6-luna"
 
 setup() {
-    local credentials="/tmp/e2e-api-credentials-runner-real-claude.json"
+    local credentials="/tmp/e2e-api-credentials-runner-real-codex-built-in.json"
     export E2E_API_TOKEN E2E_API_URL
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
@@ -21,8 +21,7 @@ setup() {
     local feature_switches
     feature_switches="$(runner_api_curl "/api/feature-switches")"
     jq -e '
-        .effectiveSwitches._realAgentInPreview == true and
-        .effectiveSwitches.piLoop == true
+        .effectiveSwitches._realAgentInPreview == true
     ' <<<"$feature_switches" >/dev/null
 }
 
@@ -102,7 +101,7 @@ report_built_in_model_failure() {
     assert_success
     primary_context="$output"
     run jq -e --arg model "$BUILT_IN_FALLBACK_MODEL" '
-        .cliAgentType == "pi" and
+        .cliAgentType == "codex" and
         .environment.OPENAI_MODEL == $model and
         (.environment | has("OPENAI_BASE_URL") | not) and
         any(.firewalls[]?;
@@ -136,7 +135,7 @@ report_built_in_model_failure() {
     assert_success
     fallback_context="$output"
     run jq -e --arg model "openai/${BUILT_IN_FALLBACK_MODEL}" '
-        .cliAgentType == "pi" and
+        .cliAgentType == "codex" and
         .environment.OPENAI_BASE_URL == "https://openrouter.ai/api/v1" and
         .environment.OPENAI_MODEL == $model and
         any(.firewalls[]?;

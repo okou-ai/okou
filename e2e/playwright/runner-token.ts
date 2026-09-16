@@ -80,6 +80,14 @@ async function main(): Promise<void> {
       ),
       upgradeToPro: true,
     },
+    {
+      email: accounts.codexBuiltIn,
+      fileName: "e2e-api-credentials-runner-real-codex-built-in.json",
+      organizationId: requiredEnvironmentVariable(
+        "E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID",
+      ),
+      upgradeToPro: true,
+    },
   ];
   const vercelAutomationBypassSecret =
     process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
