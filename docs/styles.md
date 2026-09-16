@@ -1134,7 +1134,7 @@ fallen — lower it in the allowlist, or delete the entry. Uses are counted at t
 consuming attribute or call, resolving local constants, imported aliases, and
 re-exports, so passing an already-authorized constant to a second component is a
 new dependency rather than a free one. A class a first-party element invents for
-itself is not this kind of exception and takes a utility instead — the
+itself is not this kind of exception, however vendor-like the name reads — the
 borrowed-name rule above is what separates the two.
 
 ## Enforcement and feedback
