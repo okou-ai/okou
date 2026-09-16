@@ -94,3 +94,39 @@ test("Attachment-only prompts remain visible and active content is a file link",
   expect(link).toHaveAttribute("target", "_blank");
   expect(within(link).queryByRole("img")).not.toBeInTheDocument();
 });
+
+test("A site the answer embeds presents itself instead of a broken image", async () => {
+  const siteUrl = "https://launch-plan-review.okou.app/";
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          {
+            messageIndex: 0,
+            role: "assistant",
+            content: `The site is ready.\n\n![Launch plan review](<${siteUrl}>)`,
+            runIndex: 0,
+          },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const card = await screen.findByTestId("markdown-site-preview");
+  expect(card).toHaveAttribute("href", siteUrl);
+  expect(card).toHaveAttribute("target", "_blank");
+  expect(card).toHaveAttribute("rel", "noopener noreferrer");
+  expect(within(card).getByText("Launch plan review")).toBeInTheDocument();
+  expect(
+    within(card).getByTitle("Site preview for Launch plan review"),
+  ).toHaveAttribute("src", siteUrl);
+  expect(within(card).queryByRole("img")).not.toBeInTheDocument();
+  expect(
+    screen.queryByTestId("markdown-image-preview-loading"),
+  ).not.toBeInTheDocument();
+  // A card is a block, so its paragraph may not stay a <p>.
+  expect(card.closest("p")).toBeNull();
+});

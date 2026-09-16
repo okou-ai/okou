@@ -25,7 +25,6 @@ use std::path::Path;
 use crate::error::{RunnerError, RunnerResult};
 
 pub(crate) const PROXY_REGISTRY_MAX_BYTES: u64 = 16 * 1024 * 1024;
-pub(crate) const USAGE_PENDING_MAX_BYTES: u64 = 64 * 1024;
 pub(crate) const WORKSPACE_METADATA_MAX_BYTES: u64 = 1024 * 1024;
 
 /// Ownership and write-trust policy for reading a runner state file.

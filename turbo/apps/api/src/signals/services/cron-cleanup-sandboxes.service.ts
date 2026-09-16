@@ -1,3 +1,5 @@
+import { recoverDeferredPiRuns$ } from "./pi-deferred-sandbox.service";
+import { reclaimPiInferenceObjects } from "./pi-inference-object.service";
 import {
   isPiInferenceRun,
   readPiInferenceLifecycle,
@@ -788,6 +790,10 @@ export const cleanupSandboxes$ = command(
   ): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const runIds = scope.kind === "global" ? null : scope.runIds;
+    await set(recoverDeferredPiRuns$, runIds, signal);
+    if (runIds === null) {
+      await reclaimPiInferenceObjects(db);
+    }
     const orgIds = scope.kind === "global" ? null : scope.orgIds;
     const currentTime = now();
     const cutoffs = {

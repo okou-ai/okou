@@ -28,7 +28,7 @@ from tests.model_provider_sse_usage_helpers import (
     run_error,
     run_response,
 )
-from tests.pending_helpers import assert_current_pending, assert_pending
+from tests.pending_helpers import assert_pending
 from tests.thread_helpers import ThreadUnderTest, wait_for_event
 from tests.usage_buffer_helpers import event as usage_event
 from tests.usage_helpers import (
@@ -38,7 +38,6 @@ from tests.usage_helpers import (
 )
 from tests.webhook_test_helpers import (
     QueuedUsageExecutor,
-    install_runner_usage_flush_request,
     request_runner_usage_flush,
 )
 
@@ -226,7 +225,7 @@ class TestAnthropicMessagesSseUsage:
         usage_webhook_server: UsageWebhookServer,
     ) -> None:
         flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
-        pending_path = install_runner_usage_flush_request(tmp_path)
+        control_root = tmp_path
 
         with mitm_ctx(api_url=usage_webhook_server.api_url):
             _feed_incomplete_anthropic_sse_without_recoverable_usage(flow)
@@ -234,8 +233,8 @@ class TestAnthropicMessagesSseUsage:
             response_streaming.finalize_model_sse_usage(flow)
 
             assert _anthropic_accounting_requests(usage_webhook_server) == []
-            assert_current_pending(
-                pending_path,
+            assert_pending(
+                control_root,
                 flows=0,
                 buffered=0,
                 reports=0,
@@ -245,11 +244,10 @@ class TestAnthropicMessagesSseUsage:
 
             assert _anthropic_accounting_requests(usage_webhook_server) == []
             assert_pending(
-                pending_path,
+                control_root,
                 flows=0,
                 buffered=0,
                 reports=0,
-                flush_request_id="request-1",
             )
 
     @pytest.mark.parametrize(
@@ -270,7 +268,7 @@ class TestAnthropicMessagesSseUsage:
     ) -> None:
         flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
         flow.metadata[metadata_keys.SANDBOX_AUTH_KEY] = sandbox_token
-        pending_path = install_runner_usage_flush_request(tmp_path)
+        control_root = tmp_path
         api_url = usage_webhook_server.api_url if has_api_url else ""
 
         with mitm_ctx(api_url=api_url):
@@ -278,8 +276,8 @@ class TestAnthropicMessagesSseUsage:
             mitm_addon.response(flow)
 
             assert _anthropic_accounting_requests(usage_webhook_server) == []
-            assert_current_pending(
-                pending_path,
+            assert_pending(
+                control_root,
                 flows=0,
                 buffered=0,
                 reports=0,
@@ -289,11 +287,10 @@ class TestAnthropicMessagesSseUsage:
 
             assert _anthropic_accounting_requests(usage_webhook_server) == []
             assert_pending(
-                pending_path,
+                control_root,
                 flows=0,
                 buffered=0,
                 reports=0,
-                flush_request_id="request-1",
             )
 
     def test_saturated_incomplete_anthropic_accounting_retries_through_runner_flush(
@@ -305,7 +302,7 @@ class TestAnthropicMessagesSseUsage:
     ) -> None:
         flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
         executor = QueuedUsageExecutor()
-        pending_path = install_runner_usage_flush_request(tmp_path)
+        control_root = tmp_path
 
         with (
             mitm_ctx(api_url=usage_webhook_server.api_url),
@@ -325,8 +322,8 @@ class TestAnthropicMessagesSseUsage:
             retained_at = datetime.now(UTC)
 
             assert _anthropic_accounting_requests(usage_webhook_server) == []
-            assert_current_pending(
-                pending_path,
+            assert_pending(
+                control_root,
                 flows=0,
                 buffered=1,
                 reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
@@ -344,41 +341,37 @@ class TestAnthropicMessagesSseUsage:
             )
             request_runner_usage_flush()
             assert_pending(
-                pending_path,
+                control_root,
                 flows=0,
                 buffered=2,
                 reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-                flush_request_id="request-1",
             )
 
             executor.run_next()
             request_runner_usage_flush()
             assert_pending(
-                pending_path,
+                control_root,
                 flows=0,
                 buffered=2,
                 reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-                flush_request_id="request-1",
             )
 
             executor.run_last()
             request_runner_usage_flush()
             assert_pending(
-                pending_path,
+                control_root,
                 flows=0,
                 buffered=0,
                 reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-                flush_request_id="request-1",
             )
 
             executor.run_all()
             request_runner_usage_flush()
             assert_pending(
-                pending_path,
+                control_root,
                 flows=0,
                 buffered=0,
                 reports=0,
-                flush_request_id="request-1",
             )
             request_runner_usage_flush()
 
@@ -402,11 +395,10 @@ class TestAnthropicMessagesSseUsage:
         usage_webhook_server: UsageWebhookServer,
     ) -> None:
         flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
-        pending_path = tmp_path / "usage-pending"
+        control_root = tmp_path / "delivery-control"
         filler_log_path = tmp_path / "filler.jsonl"
         release_fillers = threading.Event()
         executor_shutdown_started = threading.Event()
-        usage.set_pending_path(str(pending_path))
 
         for _ in range(usage.webhook.USAGE_WEBHOOK_WORKERS):
             usage_webhook_server.queue_response(204, release_event=release_fillers)
@@ -444,8 +436,8 @@ class TestAnthropicMessagesSseUsage:
                     _feed_incomplete_anthropic_sse_without_recoverable_usage(flow)
                     mitm_addon.response(flow)
                     assert _anthropic_accounting_requests(usage_webhook_server) == []
-                    assert_current_pending(
-                        pending_path,
+                    assert_pending(
+                        control_root,
                         flows=0,
                         buffered=1,
                         reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
@@ -470,8 +462,8 @@ class TestAnthropicMessagesSseUsage:
         [operation] = _anthropic_accounting_operations(usage_webhook_server)
         assert operation["action_type"] == "anthropic_sse_incomplete_no_recoverable_usage"
         assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
@@ -489,8 +481,7 @@ class TestAnthropicMessagesSseUsage:
         overflow_flow = _anthropic_messages_sse_flow(tmp_path, real_flow)
         overflow_flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-overflow"
         executor = QueuedUsageExecutor()
-        pending_path = tmp_path / "usage-pending"
-        usage.set_pending_path(str(pending_path))
+        control_root = tmp_path / "delivery-control"
 
         with (
             mitm_ctx(api_url=usage_webhook_server.api_url),
@@ -511,8 +502,8 @@ class TestAnthropicMessagesSseUsage:
             _feed_incomplete_anthropic_sse_without_recoverable_usage(overflow_flow)
             mitm_addon.response(overflow_flow)
 
-            assert_current_pending(
-                pending_path,
+            assert_pending(
+                control_root,
                 flows=0,
                 buffered=1,
                 reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
@@ -536,16 +527,16 @@ class TestAnthropicMessagesSseUsage:
             assert "tok-xyz" not in json.dumps(overflow_entry)
 
             anthropic_accounting.reset_for_tests()
-            assert_current_pending(
-                pending_path,
+            assert_pending(
+                control_root,
                 flows=0,
                 buffered=0,
                 reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
             )
             executor.run_all()
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=0,
             reports=0,

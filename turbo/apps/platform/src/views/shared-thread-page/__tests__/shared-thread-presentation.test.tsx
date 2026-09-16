@@ -1,4 +1,5 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
   fireEvent,
@@ -232,4 +233,60 @@ test("An intact public Goal archive displays its original literal text", async (
     /Before <oai-mem-citation>literal objective/,
   );
   expect(message.textContent).toBe(content);
+});
+
+test("A public conversation carries the signed-in viewer's color theme", async () => {
+  context.mocks.data.userPreferences({ colorTheme: "golden-hour" });
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          { messageIndex: 0, role: "assistant", content: "The plan is ready." },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: {
+      user: { id: "user_shared_thread_theme", fullName: "Shared Viewer" },
+    },
+    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
+  });
+
+  await expect(
+    screen.findByText("The plan is ready."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(document.documentElement).toHaveAttribute(
+      "data-color-theme",
+      "golden-hour",
+    );
+    expect(document.documentElement).toHaveAttribute(
+      "data-gradient-color-themes",
+    );
+  });
+});
+
+test("A public conversation reads inside the app's workspace sheet", async () => {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          { messageIndex: 0, role: "assistant", content: "The plan is ready." },
+        ],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+
+  const sheet = await screen.findByTestId("workspace-inset");
+  expect(within(sheet).getByText("The plan is ready.")).toBeInTheDocument();
+  expect(
+    within(sheet).getByText("Make this conversation yours"),
+  ).toBeInTheDocument();
 });

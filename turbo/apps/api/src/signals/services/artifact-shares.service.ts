@@ -1,10 +1,7 @@
 import { nowDate } from "../../lib/time";
 import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
-import {
-  artifactReferencePath,
-  artifactShareReferencePath,
-} from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { command, computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { artifactShares } from "@okouai/db/schema/artifact-share";
@@ -266,6 +263,7 @@ const shareStatus$ = command(
       signal,
     );
     const policy = args.policy;
+    const shortUrl = shortShareUrl(policy);
     return {
       shareId: policy?.shareId ?? null,
       audience: policy?.audience ?? "private",
@@ -276,21 +274,13 @@ const shareStatus$ = command(
         : null,
       selectedVersion:
         policy?.target.kind === "html" ? policy.target.deploymentVersion : null,
-      shortUrl: shortShareUrl(policy),
+      shortUrl,
       url:
         !policy || policy.status === "revoked"
           ? null
           : policy.audience === "public"
             ? publicShareUrl(policy)
-            : new URL(
-                artifactReferencePath(
-                  policy.shareId,
-                  policy.target.kind === "file"
-                    ? policy.target.filename
-                    : "index.html",
-                ),
-                env("APP_URL"),
-              ).href,
+            : shortUrl,
     };
   },
 );
@@ -534,6 +524,7 @@ export const resolveArtifactShare$ = command(
     args: {
       readonly id: string;
       readonly userId: string;
+      readonly expectedTarget?: ArtifactShareTarget;
     },
     signal: AbortSignal,
   ) => {
@@ -549,7 +540,13 @@ export const resolveArtifactShare$ = command(
     const stored = await get(policyFor(row, signal));
     signal.throwIfAborted();
     const policy = stored?.policy;
-    if (!policy || policy.status !== "active") {
+    if (
+      !policy ||
+      policy.status !== "active" ||
+      (args.expectedTarget &&
+        (policy.target.kind !== args.expectedTarget.kind ||
+          policy.target.id !== args.expectedTarget.id))
+    ) {
       return null;
     }
     // No active-org assumption and no membership cache: removal is observed at
@@ -601,5 +598,28 @@ export const resolveArtifactShare$ = command(
       contentType: file.contentType,
       target: { kind: "file" as const, id: policy.target.id },
     };
+  },
+);
+
+/** A version reference must never follow a site's share to a different version. */
+export const resolveArtifactTargetShare$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly target: ArtifactShareTarget;
+      readonly targetId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const row = await get(shareIdentity(args.target.kind, args.targetId));
+    signal.throwIfAborted();
+    return row
+      ? await set(
+          resolveArtifactShare$,
+          { id: row.id, userId: args.userId, expectedTarget: args.target },
+          signal,
+        )
+      : null;
   },
 );

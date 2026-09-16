@@ -25,6 +25,8 @@ interface Owner {
 export interface ComputeRunOwner extends Owner {
   readonly agentId: string | null;
   readonly resourceOwner?: Owner;
+  /** Cleanup retains the captured B1 subjects even after resource transfer. */
+  readonly capturedCleanupOwner?: Owner;
 }
 
 interface ResourceOwner extends Owner {
@@ -226,9 +228,15 @@ export async function prepareComputeRunAdmission(
         userId: agentSessions.userId,
         orgId: agentSessions.orgId,
       },
+      agentOwner: {
+        id: agents.id,
+        userId: agents.owner,
+        orgId: agents.orgId,
+      },
     })
     .from(agentRuns)
     .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
     .where(eq(agentRuns.id, runId));
   if (!owner) {
     return undefined;
@@ -245,18 +253,22 @@ export async function prepareComputeRunAdmission(
           .where(eq(piMemoryPhase2Jobs.maintenanceRunId, runId))
           .limit(1)
       : [];
-  const identity =
-    owner.agentId !== null
-      ? { kind: "agent" as const, id: owner.agentId }
-      : maintenance
-        ? { kind: "maintenance" as const, id: maintenance.id }
-        : undefined;
-  const resource = identity
-    ? await readResource(tx, identity, false)
-    : undefined;
+  // This join only discovers subjects. The resource still needs its locked
+  // reread below, and maintenance keeps its independent job/Storage authority.
+  const resource = owner.agentOwner
+    ? { ...owner.agentOwner, kind: "agent" as const }
+    : maintenance
+      ? await readResource(
+          tx,
+          { kind: "maintenance", id: maintenance.id },
+          false,
+        )
+      : undefined;
   const allowed = await writable(tx, [
     owner,
     owner.sessionOwner,
+    ...(expected.resourceOwner ? [expected.resourceOwner] : []),
+    ...(expected.capturedCleanupOwner ? [expected.capturedCleanupOwner] : []),
     ...(resource ? [resource] : []),
     ...(maintenance ? [maintenance] : []),
   ]);
@@ -289,7 +301,7 @@ export async function prepareComputeRunAdmission(
 }
 
 /** Keep existing thread -> run -> provider ordering; caller owns earlier locks. */
-export async function validateComputeRunAdmission(
+export async function validateComputeRunCleanupOwnership(
   tx: Tx,
   admission: ComputeRunAdmission,
 ): Promise<boolean> {
@@ -325,12 +337,21 @@ export async function validateComputeRunAdmission(
   ) {
     throw new ComputeOwnershipChangedError();
   }
+  return true;
+}
+
+export async function validateComputeRunAdmission(
+  tx: Tx,
+  admission: ComputeRunAdmission,
+): Promise<boolean> {
   return (
-    session.agentId !== null ||
-    (await lockPiMemoryPhase2MaintenanceCleanupProtection(tx, {
-      runId: admission.runId,
-      ...current,
-    }))
+    (await validateComputeRunCleanupOwnership(tx, admission)) &&
+    (admission.owner.agentId !== null ||
+      (await lockPiMemoryPhase2MaintenanceCleanupProtection(tx, {
+        runId: admission.runId,
+        orgId: admission.owner.orgId,
+        userId: admission.owner.userId,
+      })))
   );
 }
 

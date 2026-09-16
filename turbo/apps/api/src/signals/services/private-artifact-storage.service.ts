@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   artifactReferencePath,
+  artifactShareReferencePath,
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command, computed } from "ccstate";
@@ -19,12 +20,20 @@ import { apiBackendUrl } from "../../lib/api-backend-url";
 import { db$, writeDb$ } from "../external/db";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { safeUrlParse } from "../utils";
+import {
+  allocateArtifactReference$,
+  artifactReferenceRecord,
+} from "./artifact-reference.service";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
 const privateMetadataSchema = z.object({
   storage: z.literal(PRIVATE_STORAGE),
   bucket: z.string().min(1),
   publicBrand: z.enum(["vm0", "okou"]),
+  artifactReference: z
+    .string()
+    .regex(/^[a-z0-9]{10}$/u)
+    .optional(),
 });
 
 export function privateArtifactCreationEnabled(orgId: string, userId: string) {
@@ -36,10 +45,10 @@ export function privateArtifactCreationEnabled(orgId: string, userId: string) {
 
 export function artifactFileReference(
   value: string,
-): { readonly id: string } | null {
+): { readonly id: string; readonly hash?: string } | null {
   const reference = parseArtifactReference(value, env("APP_URL"));
   if (reference) {
-    return { id: reference.id ?? "" };
+    return { id: reference.id ?? "", hash: reference.hash };
   }
   if (value.startsWith("/artifacts/")) {
     return { id: "" };
@@ -61,7 +70,38 @@ export function artifactFileReference(
   return { id: url.searchParams.get("file_id") ?? "" };
 }
 
-export function privateArtifactUrl(id: string, filename: string): string {
+export function resolveArtifactFileReference(
+  value: string,
+  signal: AbortSignal,
+) {
+  return computed(async (get) => {
+    const reference = artifactFileReference(value);
+    if (!reference || reference.id || !reference.hash) {
+      return reference;
+    }
+    const record = await get(artifactReferenceRecord(reference.hash, signal));
+    // Share aliases grant viewing only. Provider input still requires ownership.
+    return {
+      id:
+        record?.version === 2 && record.target.kind === "file"
+          ? record.target.id
+          : "",
+    };
+  });
+}
+
+export function privateArtifactUrl(
+  id: string,
+  filename: string,
+  metadata: RunUploadedFileMetadata,
+): string {
+  if (metadata.artifactReference !== undefined) {
+    return artifactShareReferencePath(
+      z.string().parse(metadata.artifactReference),
+      filename,
+    );
+  }
+  // Persisted private files created before short references retain their URL.
   return artifactReferencePath(id, filename);
 }
 
@@ -74,22 +114,40 @@ export function privateArtifactsBucket(): string {
 }
 
 /** Persist this location with the owning record before starting the upload. */
-export function privateArtifactLocation(
-  id: string,
-  filename: string,
-  publicBrand: PublicBrand,
-) {
-  const bucket = privateArtifactsBucket();
-  return {
-    id,
-    key: `private-artifacts/${id}/${sanitizeArtifactFilename(filename)}`,
-    bucket,
-    url: privateArtifactUrl(id, filename),
-    publicBrand,
-    metadata: { "artifact-id": id },
-    storageMetadata: { storage: PRIVATE_STORAGE, bucket, publicBrand },
-  };
-}
+export const allocatePrivateArtifactLocation$ = command(
+  async (
+    { set },
+    args: {
+      readonly id: string;
+      readonly filename: string;
+      readonly publicBrand: PublicBrand;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { id, filename, publicBrand } = args;
+    const bucket = privateArtifactsBucket();
+    const artifactReference = await set(
+      allocateArtifactReference$,
+      { kind: "file", id },
+      signal,
+    );
+    const storageMetadata = {
+      storage: PRIVATE_STORAGE,
+      bucket,
+      publicBrand,
+      artifactReference,
+    };
+    return {
+      id,
+      key: `private-artifacts/${id}/${sanitizeArtifactFilename(filename)}`,
+      bucket,
+      url: privateArtifactUrl(id, filename, storageMetadata),
+      publicBrand,
+      metadata: { "artifact-id": id },
+      storageMetadata,
+    };
+  },
+);
 
 /** Historical accessLevel="private" records still address public objects. */
 export function artifactStorageBucket(
@@ -131,10 +189,10 @@ export const allocatePrivateArtifact$ = command(
     signal: AbortSignal,
   ) => {
     const id = args.id ?? randomUUID();
-    const location = privateArtifactLocation(
-      id,
-      args.filename,
-      args.publicBrand,
+    const location = await set(
+      allocatePrivateArtifactLocation$,
+      { id, filename: args.filename, publicBrand: args.publicBrand },
+      signal,
     );
     const { bucket, key } = location;
     const db = set(writeDb$);

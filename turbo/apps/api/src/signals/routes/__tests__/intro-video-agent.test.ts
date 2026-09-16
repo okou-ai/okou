@@ -1,4 +1,5 @@
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -70,6 +71,11 @@ const PRICING_ROWS = [
     unitSize: 60,
   },
 ] as const satisfies readonly UsagePricingRow[];
+// A gateway answers with its own page rather than HeyGen's error envelope.
+const GATEWAY_ERROR_PAGE = `<html>
+  <head><title>502 Bad Gateway</title></head>
+  <body>upstream connect error or disconnect/reset before headers</body>
+</html>`;
 
 interface Fixture {
   readonly orgId: string;
@@ -525,6 +531,17 @@ describe("Managed Intro Video Agent", () => {
   it("signs owned private references for Video Agent after rollback and rejects another owner's files", async () => {
     const f = await fixture();
     const provider = mockProvider();
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof HeadObjectCommand) {
+        expect(command.input.Bucket).toBe("test-private-artifacts");
+        return Promise.resolve({
+          ContentType: "application/pdf",
+          ContentLength: 128,
+        });
+      }
+      return Promise.resolve({});
+    });
+    installArtifactReferenceStorage(context);
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.PrivateArtifacts]: true,
     });
@@ -544,16 +561,6 @@ describe("Managed Intro Video Agent", () => {
     );
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.PrivateArtifacts]: false,
-    });
-    context.mocks.s3.send.mockImplementation((command) => {
-      if (command instanceof HeadObjectCommand) {
-        expect(command.input.Bucket).toBe("test-private-artifacts");
-        return Promise.resolve({
-          ContentType: "application/pdf",
-          ContentLength: 128,
-        });
-      }
-      return Promise.resolve({});
     });
     const input = request({ fileUrls: [prepared.body.url] });
     expect((await submit(f, input)).status).toBe(202);
@@ -736,6 +743,39 @@ describe("Managed Intro Video Agent", () => {
     expect(provider.videoRequests).toBe(1);
     expect(provider.submissions).toHaveLength(1);
     await expect(credits(f)).resolves.toBe(9390);
+  });
+
+  it("retains an unknown submission when the gateway answers with an error page", async () => {
+    const f = await fixture();
+    const provider = mockProvider();
+    // A gateway 5xx carries no JSON error envelope, unlike every other failure
+    // this suite exercises, so it reaches the provider reader as plain text.
+    server.use(
+      http.post(HEYGEN_CREATE_URL, async ({ request: providerRequest }) => {
+        provider.submissions.push(record(await providerRequest.json()));
+        return new HttpResponse(GATEWAY_ERROR_PAGE, {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        });
+      }),
+    );
+
+    const body = request();
+    expect((await submit(f, body)).status).toBe(202);
+    await expect(status(f, body.requestId)).resolves.toMatchObject({
+      generationId: body.requestId,
+      status: "running",
+      providerStatus: "submission_unknown",
+      sessionId: null,
+      videoId: null,
+      notice: expect.stringContaining("do not submit another paid generation"),
+    });
+
+    // An ambiguous gateway failure must not license a second paid submission.
+    const retried = await submit(f, body);
+    expect([200, 202]).toContain(retried.status);
+    expect(provider.submissions).toHaveLength(1);
+    await expect(credits(f)).resolves.toBe(10_000);
   });
 
   it("rejects conflicting request IDs and hides another user's generation", async () => {
@@ -1071,7 +1111,7 @@ describe("Managed Intro Video Agent", () => {
       });
       expect(completed.url).toBeDefined();
       if (privateArtifacts) {
-        expect(completed.url).toMatch(/^\/artifacts\/[a-f0-9]{32}\.mp4$/u);
+        expect(completed.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.mp4$/u);
       }
       expect(completed.url).not.toBe(VIDEO_URL);
       expect(

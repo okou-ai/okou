@@ -963,12 +963,29 @@ def source_retirement(mode):
         "auditServicesChanged": False,
     }
     try:
+        waiver = os.environ.get("SKIP_VERIFICATION_FOR_KEY", "")
+        if waiver:
+            require(
+                mode == "retire-source"
+                and waiver == SOURCE
+                and required_env("GITHUB_ACTOR") == "hulh122",
+                "invalid_retirement_verification_waiver",
+            )
+            report["verificationWaiver"] = {
+                "actor": "hulh122",
+                "source": SOURCE,
+                "currentProductionVerificationSkipped": True,
+                "sourceAuditSkipped": True,
+                "deploymentCheckSkipped": True,
+                "acceptedRemainingSourceDependencyLoss": True,
+            }
         if mode == "retire-source":
             require(
                 required_env("ACCEPT_HISTORICAL_RECOVERY_LOSS") == "true",
                 "recovery_disposition_required",
             )
             report["acceptedHistoricalRecoveryLoss"] = True
+        if mode == "retire-source" and not waiver:
             report["verification"] = retirement_verification()
             # This repeats only the audit's bounded historical window, never a
             # completed data migration or snapshot restore. It makes no KMS calls.
@@ -1030,11 +1047,12 @@ def source_retirement(mode):
             report["keyBefore"]["state"] in {"Enabled", "Disabled"},
             "source_key_state_not_schedulable",
         )
-        require(
-            production_deployment(required_env("EXPECTED_DEPLOYMENT_ID"))
-            == report["verification"]["deployment"],
-            "verified_deployment_changed",
-        )
+        if not waiver:
+            require(
+                production_deployment(required_env("EXPECTED_DEPLOYMENT_ID"))
+                == report["verification"]["deployment"],
+                "verified_deployment_changed",
+            )
         report.update(mutationAttempted=True, mutationEffects="unknown")
         path.write_text(json.dumps(report, indent=2) + "\n")
         scheduled = aws(

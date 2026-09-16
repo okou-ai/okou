@@ -115,6 +115,17 @@ The suite also applies a builtin registry/catalog, verifies their returned
 identities and the subsequent HTTP denial, then verifies unavailable-registry
 enforcement after a rejected application.
 
+`test_delivery_control.py` covers real blocked API delivery, short status/log
+progress, registry enforcement, wake coalescing, drain overload/deadlines,
+disconnect ownership, failed delivery outcomes and shutdown handoff. Existing
+usage/timing suites now observe pending state through `delivery.status` instead
+of files. Rust delivery tests include a locked-Python round trip and verify
+bounded job-end wakes and no automatic replay after a lost reply.
+The packaged suite sends a synthetic provider request through production hooks
+to a fixture-owned loopback API, holds its usage response, verifies independent
+control progress, and distinguishes permanent delivery failure from quiescence.
+Only synthetic credentials and the existing test-endpoint bypass are used.
+
 ### Flow metadata key contract check
 
 Run the flow metadata key linter when adding or renaming shared metadata keys,
@@ -209,9 +220,8 @@ suites before committing the upgrade.
 | `test_response_handler_cleanup.py`                      | Response-hook terminal request/response stream-state cleanup                                                         |
 | `test_error_handler.py`                                 | Error hook logging and usage cleanup                                                                                 |
 | `test_done_hook.py`                                     | Shutdown hook delivery, runner flush coordination, and executor cleanup                                              |
-| `test_runner_flush_request.py`                          | Runner-triggered usage flush marker contracts                                                                        |
+| `test_delivery_control.py`                              | Delivery admission, known outcomes, independent progress and shutdown ownership                                      |
 | `test_runner_log_flush.py`                              | Runner-triggered `logs.flush` control requests, bounded prefixes, cancellation, and target validation                |
-| `test_runner_usage_flush_signal.py`                     | Runner-triggered usage signal, worker, retry, and timer coordination                                                 |
 | `test_tls_clienthello_hook.py`                          | TLS clienthello admission behavior                                                                                   |
 | `test_tcp_hooks.py`                                     | TCP start, logging, message drain, end, and error hooks                                                              |
 | `test_state_file.py`                                    | Shared safe-open, descriptor identity, bounded-read, and cleanup contracts                                           |

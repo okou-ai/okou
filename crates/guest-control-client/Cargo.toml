@@ -1,6 +1,6 @@
 [package]
 name = "guest-control-client"
-version = "0.20.16"
+version = "0.20.19"
 edition.workspace = true
 description = "Runner-side client for controlling guest operations"
 

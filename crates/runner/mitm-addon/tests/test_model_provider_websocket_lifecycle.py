@@ -114,8 +114,7 @@ class TestModelProviderWebSocketLifecycle:
         response_headers: http.Headers,
     ):
         """The HTTP 101 response hook must not complete the WebSocket usage lifecycle."""
-        pending_path = tmp_path / "usage-pending"
-        usage.set_pending_path(str(pending_path), usage_state_id="test-usage-state-id")
+        control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
 
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -125,13 +124,11 @@ class TestModelProviderWebSocketLifecycle:
             fake_firewall_headers(),
         ):
             await mitm_addon.request(flow)
-            usage.write_pending_snapshot(flush_request_id="before-response")
             assert_pending(
-                pending_path,
+                control_root,
                 flows=1,
                 buffered=0,
                 reports=0,
-                flush_request_id="before-response",
             )
 
             flow.response = tutils.tresp(
@@ -140,13 +137,11 @@ class TestModelProviderWebSocketLifecycle:
             )
             mitm_addon.responseheaders(flow)
             mitm_addon.response(flow)
-            usage.write_pending_snapshot(flush_request_id="after-response")
             assert_pending(
-                pending_path,
+                control_root,
                 flows=1,
                 buffered=0,
                 reports=0,
-                flush_request_id="after-response",
             )
 
             feed_websocket_server_message(
@@ -177,13 +172,11 @@ class TestModelProviderWebSocketLifecycle:
             "tokens.output": 20,
             "tokens.cache_read": 10,
         }
-        usage.write_pending_snapshot(flush_request_id="after-websocket-end")
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="after-websocket-end",
         )
 
     async def test_non_websocket_switching_protocols_response_releases_usage_flow(
@@ -194,8 +187,7 @@ class TestModelProviderWebSocketLifecycle:
         fake_firewall_headers,
     ):
         """A non-WebSocket 101 response is terminal and must not wait for websocket_end()."""
-        pending_path = tmp_path / "usage-pending"
-        usage.set_pending_path(str(pending_path), usage_state_id="test-usage-state-id")
+        control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
 
         flow = real_flow(
@@ -211,13 +203,11 @@ class TestModelProviderWebSocketLifecycle:
             fake_firewall_headers(),
         ):
             await mitm_addon.request(flow)
-            usage.write_pending_snapshot(flush_request_id="before-response")
             assert_pending(
-                pending_path,
+                control_root,
                 flows=1,
                 buffered=0,
                 reports=0,
-                flush_request_id="before-response",
             )
 
             flow.response = tutils.tresp(
@@ -226,14 +216,12 @@ class TestModelProviderWebSocketLifecycle:
             )
             mitm_addon.responseheaders(flow)
             mitm_addon.response(flow)
-            usage.write_pending_snapshot(flush_request_id="after-response")
 
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="after-response",
         )
 
     @pytest.mark.parametrize(
@@ -311,8 +299,7 @@ class TestModelProviderWebSocketLifecycle:
         response_headers: http.Headers,
     ):
         """A malformed 101 WebSocket response must not wait for websocket_end()."""
-        pending_path = tmp_path / "usage-pending"
-        usage.set_pending_path(str(pending_path), usage_state_id="test-usage-state-id")
+        control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
 
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -322,26 +309,22 @@ class TestModelProviderWebSocketLifecycle:
             fake_firewall_headers(),
         ):
             await mitm_addon.request(flow)
-            usage.write_pending_snapshot(flush_request_id="before-response")
             assert_pending(
-                pending_path,
+                control_root,
                 flows=1,
                 buffered=0,
                 reports=0,
-                flush_request_id="before-response",
             )
 
             flow.response = tutils.tresp(status_code=101, headers=response_headers)
             mitm_addon.responseheaders(flow)
             mitm_addon.response(flow)
-            usage.write_pending_snapshot(flush_request_id="after-response")
 
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="after-response",
         )
 
     @pytest.mark.parametrize(
@@ -369,18 +352,14 @@ class TestModelProviderWebSocketLifecycle:
         request_keys: tuple[bytes, ...],
         response_accept: bytes,
     ) -> None:
-        pending_path = tmp_path / "usage-pending"
-        usage.set_pending_path(str(pending_path), usage_state_id="test-usage-state-id")
+        control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
         flow = make_openai_responses_websocket_request_flow(real_flow)
 
         with mitm_ctx(registry_path=str(reg_path)), fake_firewall_headers():
             await mitm_addon.request(flow)
             assert flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] is True
-            usage.write_pending_snapshot(flush_request_id="before-response")
-            assert_pending(
-                pending_path, flows=1, buffered=0, reports=0, flush_request_id="before-response"
-            )
+            assert_pending(control_root, flows=1, buffered=0, reports=0)
 
             # Response confirmation owns its raw-key boundary even after the
             # request was classified; do not trust an earlier metadata marker.
@@ -394,11 +373,8 @@ class TestModelProviderWebSocketLifecycle:
             flow.response = tutils.tresp(status_code=101, headers=response_headers)
             mitm_addon.responseheaders(flow)
             mitm_addon.response(flow)
-            usage.write_pending_snapshot(flush_request_id="after-response")
 
-        assert_pending(
-            pending_path, flows=0, buffered=0, reports=0, flush_request_id="after-response"
-        )
+        assert_pending(control_root, flows=0, buffered=0, reports=0)
 
     async def test_model_websocket_error_releases_usage_flow_after_upgrade(
         self,
@@ -410,8 +386,7 @@ class TestModelProviderWebSocketLifecycle:
         sync_usage_executor,
     ):
         """A WebSocket connection error after HTTP 101 is terminal for usage tracking."""
-        pending_path = tmp_path / "usage-pending"
-        usage.set_pending_path(str(pending_path), usage_state_id="test-usage-state-id")
+        control_root = tmp_path / "delivery-control"
         reg_path = _write_openai_model_websocket_registry(tmp_path)
 
         flow = make_openai_responses_websocket_request_flow(real_flow)
@@ -427,13 +402,11 @@ class TestModelProviderWebSocketLifecycle:
             )
             mitm_addon.responseheaders(flow)
             mitm_addon.response(flow)
-            usage.write_pending_snapshot(flush_request_id="after-response")
             assert_pending(
-                pending_path,
+                control_root,
                 flows=1,
                 buffered=0,
                 reports=0,
-                flush_request_id="after-response",
             )
 
             feed_websocket_server_message(
@@ -463,11 +436,9 @@ class TestModelProviderWebSocketLifecycle:
             "tokens.input": 10,
             "tokens.output": 4,
         }
-        usage.write_pending_snapshot(flush_request_id="after-error")
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="after-error",
         )

@@ -482,7 +482,7 @@ function hostedSitePublicSlug(hostname: string): string | null {
   return null;
 }
 
-function isHostedSiteUrl(url: string): boolean {
+export function isHostedSiteUrl(url: string): boolean {
   if (!hasExplicitUrlOrigin(url)) {
     return false;
   }

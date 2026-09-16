@@ -1,5 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { Buffer } from "node:buffer";
 import { createHmac, randomUUID } from "node:crypto";
 
@@ -391,6 +392,7 @@ describe("JoggAI built-in avatar video routes", () => {
     "stores talking-avatar catalog output with its recorded policy (private=%s)",
     async (privateArtifacts) => {
       const fixture = await seedAvatarVideoFixture();
+      installArtifactReferenceStorage(context);
       await updateFeatureSwitchesForUser(context, fixture, {
         [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
       });
@@ -528,7 +530,7 @@ describe("JoggAI built-in avatar video routes", () => {
       expect(statusBody.status).toBe("completed");
       expect(statusBody.result).toMatchObject({
         url: privateArtifacts
-          ? expect.stringMatching(/^\/artifacts\/[a-f0-9]{32}\.mp4$/u)
+          ? expect.stringMatching(/^\/artifacts\/[a-z0-9]{10}\.mp4$/u)
           : expect.stringMatching(
               /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.mp4$/u,
             ),

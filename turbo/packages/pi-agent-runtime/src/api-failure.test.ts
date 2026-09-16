@@ -7,6 +7,21 @@ import {
 import { projectPiApiAssistantMessage } from "./api-turn";
 
 describe("Pi API model failure diagnostics", () => {
+  it.each([undefined, 200, 503])(
+    "preserves queue expiry at the thrown request boundary with status %s",
+    (status) => {
+      const error = new PiApiModelRequestError(
+        new Error(
+          "We were unable to start processing your request within the 900-second timeout limit. Please try again later.",
+        ),
+        "deepseek",
+        status,
+      );
+      expect(error.failureReason).toBe("provider_queue_timeout");
+      expect(error.diagnostic.httpStatus).toBe(status);
+      expect(error.message).toBe("Pi API model request failed");
+    },
+  );
   it("classifies a truncated final answer but never successful or aborted answer text", () => {
     const message = fauxAssistantMessage("Partial answer");
     expect(

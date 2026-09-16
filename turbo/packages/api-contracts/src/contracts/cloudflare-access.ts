@@ -18,6 +18,9 @@ export const cloudflareAccessCredentialsSchema = z
   .strict();
 const revision = z.int().positive().max(2_147_483_647);
 const name = z.string().trim().min(1).max(128);
+export const createCloudflareAccessRequestSchema = z
+  .object({ name, credentials: cloudflareAccessCredentialsSchema })
+  .strict();
 export const cloudflareAccessConfigSchema = z
   .object({
     id: z.uuid(),
@@ -57,9 +60,7 @@ export const cloudflareAccessContract = c.router({
     method: "POST",
     path: "/api/ssh/cloudflare-access/configs",
     headers: authHeadersSchema,
-    body: z
-      .object({ name, credentials: cloudflareAccessCredentialsSchema })
-      .strict(),
+    body: createCloudflareAccessRequestSchema,
     responses: { 201: cloudflareAccessConfigSchema, ...errors },
   },
   update: {

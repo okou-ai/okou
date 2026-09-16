@@ -34,6 +34,12 @@ const expectedBindings = [
   },
   {
     method: "POST",
+    path: "/api/runners/jobs/:id/release",
+    rustModulePath: ["runners", "jobs", "by_id", "release"],
+    rustConstName: "RELEASE",
+  },
+  {
+    method: "POST",
     path: "/api/runners/jobs/:id/claim",
     rustModulePath: ["runners", "jobs", "by_id", "claim"],
     rustConstName: "CLAIM",

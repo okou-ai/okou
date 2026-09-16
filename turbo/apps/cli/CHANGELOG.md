@@ -1,5 +1,48 @@
 # Changelog
 
+## [9.336.0](https://github.com/vm0-ai/okou/compare/cli-v9.335.7...cli-v9.336.0) (2026-09-16)
+
+
+### Features
+
+* add durable deferred pi sandbox consumer ([#34412](https://github.com/vm0-ai/okou/issues/34412)) ([7462236](https://github.com/vm0-ai/okou/commit/74622367fb4d6fb3ad6f12fc71ea1e526efe406b))
+
+
+### Bug Fixes
+
+* **cli:** close direct help guidance gaps ([#34578](https://github.com/vm0-ai/okou/issues/34578)) ([567b7d6](https://github.com/vm0-ai/okou/commit/567b7d6fc7596daaf4f0f9a6af75751cb70b8570))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.449.0
+    * @okouai/core bumped to 8.670.1
+    * @okouai/pi-agent-runtime bumped to 1.32.0
+
+## [9.335.7](https://github.com/vm0-ai/okou/compare/cli-v9.335.6...cli-v9.335.7) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.448.0
+    * @okouai/core bumped to 8.670.0
+    * @okouai/pi-agent-runtime bumped to 1.31.5
+
+## [9.335.6](https://github.com/vm0-ai/okou/compare/cli-v9.335.5...cli-v9.335.6) (2026-09-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.447.0
+    * @okouai/core bumped to 8.669.0
+    * @okouai/pi-agent-runtime bumped to 1.31.4
+
 ## [9.335.5](https://github.com/vm0-ai/okou/compare/cli-v9.335.4...cli-v9.335.5) (2026-09-16)
 
 

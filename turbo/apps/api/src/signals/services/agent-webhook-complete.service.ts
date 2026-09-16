@@ -225,6 +225,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   provider_rate_limited: "suppress-byok",
   provider_overloaded: "suppress-byok",
   provider_stream_timeout: "suppress-byok",
+  provider_queue_timeout: "suppress-byok",
   provider_server_error: "suppress-byok",
   response_connection_lost: "suppress-byok",
   reconnect_required: "suppress-byok",
@@ -501,7 +502,20 @@ async function lockCompletionRun(
     input.body.runId,
     run.launchSnapshot,
   );
-  assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  const sandboxFence = input.auth.piSandbox;
+  if (sandboxFence) {
+    if (
+      lifecycle?.lease?.claimedOwnerEpoch !== sandboxFence.ownerEpoch ||
+      lifecycle.lease.claimedGeneration !== sandboxFence.generation
+    ) {
+      throw new Error("Stale Pi Sandbox completion");
+    }
+    if (lifecycle.inference.phase !== "terminal") {
+      assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
+    }
+  } else {
+    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  }
 
   return { ...run, status: runStatusSchema.parse(run.status) };
 }

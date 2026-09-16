@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { createCloudflareAccessRequestSchema } from "./cloudflare-access";
 import { sshConnectionObservationSchema } from "./ssh-connection-observations";
 import {
   SSH_DISPLAY_NAME_MAX_LENGTH,
@@ -28,9 +29,15 @@ const portSchema = z.int().min(1).max(65_535);
 const accessTransportSchema = z
   .object({ type: z.literal("cloudflare_access"), configId: z.uuid() })
   .strict();
-const transportSchema = z.discriminatedUnion("type", [
+const transportSchema = z.union([
   z.object({ type: z.literal("direct") }).strict(),
   accessTransportSchema,
+  z
+    .object({
+      type: z.literal("cloudflare_access"),
+      create: createCloudflareAccessRequestSchema,
+    })
+    .strict(),
 ]);
 export const createSshConnectionRequestSchema = z
   .object({

@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.195.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.10...runner-rs-v0.195.0) (2026-09-16)
+
+
+### Features
+
+* add durable deferred pi sandbox consumer ([#34412](https://github.com/vm0-ai/okou/issues/34412)) ([7462236](https://github.com/vm0-ai/okou/commit/74622367fb4d6fb3ad6f12fc71ea1e526efe406b))
+
+## [0.194.10](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.9...runner-rs-v0.194.10) (2026-09-16)
+
+
+### Documentation
+
+* correct connector diagnostic metadata lifecycle ([#34533](https://github.com/vm0-ai/okou/issues/34533)) ([82c8379](https://github.com/vm0-ai/okou/commit/82c83791c62380f25d2179a985805dee7c3c46d4))
+
+## [0.194.9](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.8...runner-rs-v0.194.9) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** revalidate orphan mitmdump identity ([#34540](https://github.com/vm0-ai/okou/issues/34540)) ([da059b5](https://github.com/vm0-ai/okou/commit/da059b51cbf068790482b632efee5366b60229c0))
+
 ## [0.194.8](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.7...runner-rs-v0.194.8) (2026-09-16)
 
 

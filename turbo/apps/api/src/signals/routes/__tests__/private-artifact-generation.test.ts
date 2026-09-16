@@ -1,4 +1,3 @@
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -285,16 +284,23 @@ describe("managed artifact privacy", () => {
         const object = objects.get(
           `${command.input.Bucket}/${command.input.Key}`,
         );
-        if (!object || !(object.Body instanceof Uint8Array)) {
+        if (
+          !object ||
+          !(
+            object.Body instanceof Uint8Array || typeof object.Body === "string"
+          )
+        ) {
           return Promise.reject(
             Object.assign(new Error("Missing object"), { name: "NotFound" }),
           );
         }
+        const body = Buffer.from(object.Body);
         return Promise.resolve({
-          ContentLength: object.Body.byteLength,
+          ETag: '"stored-object"',
+          ContentLength: body.byteLength,
           ContentType: object.ContentType,
           Metadata: object.Metadata,
-          Body: Readable.from([object.Body]),
+          Body: Readable.from([body]),
         });
       }
       return Promise.resolve({});
@@ -336,9 +342,7 @@ describe("managed artifact privacy", () => {
       });
       expect(stored?.Bucket).toBe(enabled ? privateBucket : publicBucket);
       if (enabled) {
-        expect(result.url).toBe(
-          artifactReferencePath(result.id, result.filename),
-        );
+        expect(result.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.jpg$/u);
         expect(result.sourceUrl).toBeUndefined();
         expect(result.embedUrl).toBeUndefined();
         const serializedEvents = JSON.stringify(

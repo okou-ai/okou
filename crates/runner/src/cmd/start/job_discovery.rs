@@ -841,6 +841,13 @@ pub(super) async fn build_spawn_job_request(
         .record_resource_budget_occupancy(&ctx.budget);
     let run_id = setup.claimed.context().run_id;
     let sandbox_id = activation.sandbox_id;
+    ctx.provider
+        .bind_claimed_sandbox(run_id, sandbox_id)
+        .await
+        .map_err(|source| StatusPersistenceError::Write {
+            path: std::path::PathBuf::from("deferred-claim-journal"),
+            source,
+        })?;
     #[cfg(test)]
     maybe_panic_outer_job(
         ctx.outer_job_panic,
@@ -1016,6 +1023,7 @@ async fn recover_claimed_activation_failure(
         drop(active_lease);
         true
     };
+    ctx.provider.claimed_actor_gone(run_id).await;
     if cleanup_completed {
         remove_failed_activation_status(&ctx.status, run_id, sandbox_id).await;
     } else {
@@ -1543,7 +1551,7 @@ async fn acquire_local_admission_resource(
             profile_name,
             device_rate_limits,
             history_generation_run_id: None,
-            allow_compatible_blank: !workspace_cache_possible,
+            allow_compatible_blank: !candidate.deferred_sandbox() && !workspace_cache_possible,
             vcpu: job_vcpu,
             memory_mb: job_memory,
             context: "candidate_admission_oldest",
@@ -2578,6 +2586,7 @@ async fn complete_claimed_failure(
             completion_auth,
         )
         .await;
+    ctx.spawn_ctx.provider.claimed_actor_gone(run_id).await;
     cancellation.unregister().await;
     run_id
 }
@@ -2606,6 +2615,26 @@ async fn try_reuse_from_pool(
         context,
         job_lease,
     } = request;
+
+    if context
+        .pi_launch_config
+        .as_ref()
+        .and_then(|launch| launch.get("apiFirstTurn"))
+        .and_then(|handoff| handoff.get("schemaVersion"))
+        .and_then(serde_json::Value::as_u64)
+        == Some(2)
+    {
+        // v4 is demand-only. A blank pool entry is already activated before
+        // the normal spawn binding, so it cannot provide our release proof.
+        return Ok((
+            None,
+            job_lease,
+            SandboxReuseResult::NoReuseKey,
+            None,
+            false,
+            None,
+        ));
+    }
 
     let reuse_key = context.reuse_key();
     let miss_result = if reuse_key.is_some() {

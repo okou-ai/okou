@@ -1,5 +1,6 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { installArtifactReferenceStorage } from "./helpers/artifact-reference-storage";
 import { randomUUID } from "node:crypto";
 
 import { testBrowserReconcileContract } from "@okouai/api-contracts/contracts/test-browser-reconcile";
@@ -2276,6 +2277,7 @@ describe("okou browser route", () => {
         }
         return Promise.resolve({});
       });
+      installArtifactReferenceStorage(context);
       let captureCount = 0;
       let failNextCapture = false;
       context.mocks.browserUseCdp.command.mockImplementation((command) => {

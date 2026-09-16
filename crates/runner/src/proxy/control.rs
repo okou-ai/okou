@@ -88,6 +88,23 @@ enum ErrorCode {
     InternalError,
 }
 
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "addon control request rejected: {self:?}")
+    }
+}
+
+impl std::error::Error for ErrorCode {}
+
+pub(super) fn is_busy(error: &io::Error) -> bool {
+    matches!(
+        error
+            .get_ref()
+            .and_then(|error| error.downcast_ref::<ErrorCode>()),
+        Some(ErrorCode::Busy)
+    )
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Status {
@@ -177,9 +194,9 @@ pub(super) async fn exchange<P: Serialize, T: serde::de::DeserializeOwned>(
                 request_id: Some(actual_id),
                 generation: actual_generation,
                 code,
-            } if actual_id == request_id && actual_generation == generation => Err(
-                io::Error::other(format!("addon control request rejected: {code:?}")),
-            ),
+            } if actual_id == request_id && actual_generation == generation => {
+                Err(io::Error::other(code))
+            }
             _ => Err(invalid("addon control response identity mismatch")),
         }
     })

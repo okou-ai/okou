@@ -61,7 +61,7 @@ export const setupSharedArtifact$ = command(
       [200, 400, 403, 404],
       signal,
     );
-    if (switches[FeatureSwitchKey.PrivateArtifacts]) {
+    if (switches[FeatureSwitchKey.PrivateArtifacts] || result.status !== 200) {
       const referenceUrl = new URL(
         `/artifacts/${encodeURIComponent(id)}`,
         location.origin,
@@ -89,22 +89,8 @@ export const setupSharedArtifact$ = command(
       await set(hideAppSkeleton$, signal);
       return;
     }
-    if (result.status === 200) {
-      const contentUrl = new URL(result.body.url);
-      contentUrl.hash = location.hash;
-      window.location.replace(contentUrl.href);
-      return;
-    }
-    set(
-      updatePage$,
-      createElement(
-        "p",
-        { className: "p-8 text-muted-foreground" },
-        i18n.t(($) => {
-          return $.artifacts.sharing.unavailable;
-        }),
-      ),
-    );
-    await set(hideAppSkeleton$, signal);
+    const contentUrl = new URL(result.body.url);
+    contentUrl.hash = location.hash;
+    window.location.replace(contentUrl.href);
   },
 );

@@ -962,12 +962,9 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
  * carries slightly less alpha. Replaces Tailwind `shadow-sm`, whose hard black
  * tint reads muddy on white.
  *
- * The picker renders through a Base UI portal on `document.body`, which used to
- * force the literal because the token was scoped to `.okou-app`. That scope is
- * gone — `--okou-card-shadow` is declared at `:root` and would resolve here —
- * so keeping the literal is now a colour decision rather than a constraint.
- * Adopting the token would also pick up its gradient-palette override, which
- * this surface has never had.
+ * `--okou-card-shadow` is declared at `:root` and would resolve here, so this
+ * is a colour decision rather than a constraint. Adopting the token would also
+ * pick up its gradient-palette override, which this surface has never had.
  */
 const TEMPLATE_CARD_SHADOW =
   "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";

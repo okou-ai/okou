@@ -9,8 +9,8 @@ import { localStorageSignals } from "../../../signals/external/local-storage.ts"
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const ENDPOINT = "https://www.okou.ai/api/marketing/impact/onboarding";
-const previousAttempts = localStorageSignals("impact_onboarding_attempts");
+const ENDPOINT = "https://www.okou.ai/api/marketing/finish-onboarding";
+const previousAttempts = localStorageSignals("marketing_onboarding_attempts");
 
 function goBack() {
   const button = queryAllByRoleFast("button").find((candidate) => {
@@ -72,6 +72,8 @@ test("Onboarding sends one bearer-authenticated request while steps remain usabl
   await expect(
     screen.findByRole("heading", { name: "What do you work on?" }),
   ).resolves.toBeInTheDocument();
+  window.dispatchEvent(new Event("focus"));
+  window.dispatchEvent(new Event("online"));
   goBack();
   await expect(
     screen.findByRole("heading", {
@@ -104,6 +106,8 @@ test.each(["http", "unauthorized", "network"])(
     await expect(
       screen.findByRole("heading", { name: "What do you work on?" }),
     ).resolves.toBeInTheDocument();
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
     goBack();
     await expect(
       screen.findByRole("heading", {

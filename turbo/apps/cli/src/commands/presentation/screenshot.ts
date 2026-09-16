@@ -859,6 +859,12 @@ export const presentationScreenshotCommand = new Command()
     ".deck > .slide",
   )
   .option("--json", "Print the result as JSON")
+  .addHelpText(
+    "after",
+    `
+Writes only local ordered page-001.png files at one fixed size; it uploads and publishes nothing. PPT/PPTX/PDF use LibreOffice and Poppler, while HTML files, layout directories, and URLs are painted in a browser, one image per slide.
+Use this command for page images needed by review, analysis, deck-to-video, or presentation-template preparation. It is independent of okou presentation-template publish. Prefer it over direct pdftoppm/soffice or hand-driven browser screenshots so pages are fully painted before capture.`,
+  )
   .action(
     withErrorHandler(async (options: Options) => {
       const outDir = operatorPath(options.out);

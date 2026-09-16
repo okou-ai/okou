@@ -243,7 +243,21 @@ export async function runPiSandboxAgentLoop(args: {
     sessionId: args.config.sessionId,
   });
   await writePiApiFirstTurnBoundaryControl(handoff.boundaryControl);
+  const startedAt = Date.now();
+  const deferred =
+    args.config.launchPayload.launchConfig.apiFirstTurn.schemaVersion === 2;
+  const recordBoundary = (boundary: "start" | "first-tool") => {
+    if (deferred) {
+      process.stderr.write(
+        `${JSON.stringify({ type: "pi_deferred_sandbox_timing", runId: args.config.runId, boundary, at: Date.now(), elapsedSinceStartMs: Date.now() - startedAt, apiStartedAt: process.env.OKOU_API_START_TIME })}\n`,
+      );
+    }
+  };
+  recordBoundary("start");
   return await runPiOfficialRpcMode({
+    onFirstTool: () => {
+      recordBoundary("first-tool");
+    },
     sessionId: args.config.sessionId,
     sessionDir,
     cwd: args.cwd ?? process.cwd(),
@@ -251,6 +265,9 @@ export async function runPiSandboxAgentLoop(args: {
     model: args.config.model,
     appendSystemPrompt: args.config.launchPayload.appendSystemPrompt,
     memoryRecall: args.config.launchPayload.launchConfig.memoryRecall,
+    ...(args.config.launchPayload.launchConfig.apiFirstTurn.schemaVersion === 2
+      ? { resourceSnapshot: handoff.resourceSnapshot }
+      : {}),
     onMemoryRecallOutcome(outcome) {
       recordPiMemoryRecallOutcome(args.config.runId, outcome);
     },

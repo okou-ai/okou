@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "{{brandName}}(으)로 돌아가기",
+      "description": "비공개이거나 더 이상 사용할 수 없을 수 있습니다.",
+      "help": "링크를 공유한 사람에게 접근 권한을 확인해 달라고 요청하세요.",
+      "signedInAs": "{{email}} 계정으로 로그인됨",
+      "switchAccount": "계정 전환",
+      "switchAccountFailed": "계정 전환 화면을 열 수 없습니다. 다시 시도해 주세요.",
+      "title": "이 아티팩트를 볼 수 없습니다",
+      "tryAgain": "다시 시도"
+    },
     "actions": {
       "backToAll": "모든 아티팩트로 돌아가기",
       "backToArtifacts": "아티팩트로 돌아가기",
@@ -580,8 +590,7 @@
     },
     "sharing": {
       "shareOrganization": "조직에 공유",
-      "sharePublic": "공개적으로 공유",
-      "unavailable": "이 아티팩트를 사용할 수 없거나 액세스 권한이 없습니다."
+      "sharePublic": "공개적으로 공유"
     },
     "sidebar": {
       "openSharedConversation": "공유된 대화 열기",
@@ -1769,7 +1778,6 @@
       "create": {
         "addStyle": "스타일 추가",
         "addTemplate": "템플릿 추가",
-        "chooseScene": "만들 항목 선택",
         "chooseType": "유형 선택",
         "exit": "만들기 모드 종료",
         "image": "이미지 만들기",
@@ -1778,12 +1786,10 @@
         "presentation": "프레젠테이션 만들기",
         "presentationDescription": "이야기를 담은 슬라이드",
         "presentationPlaceholder": "프레젠테이션의 주제는 무엇인가요?",
-        "question": "무엇을 실현하고 싶으신가요?",
         "settingsAdjusted": "이 모델에 맞게 일부 동영상 설정을 조정했습니다",
         "slideCount": "슬라이드 수",
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장",
-        "title": "만들기",
         "video": "동영상 만들기",
         "videoDescription": "아이디어를 영상으로 표현",
         "videoPlaceholder": "만들고 싶은 동영상을 설명하세요…"
@@ -1875,11 +1881,13 @@
         "matchCount_other": "{{count}}개 일치",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "확인 필요",
+        "nextCategories": "다음 카테고리",
         "noResultsBody": "제품 이름으로 검색하거나 API 또는 MCP 서버로 직접 만들어 보세요.",
         "noResultsTitle": "“{{query}}”와 일치하는 커넥터가 없습니다",
         "openDetailAria": "{{connector}} 세부 정보 열기",
         "otherCategory": "기타",
         "permissionCount_other": "권한 {{count}}개",
+        "previousCategories": "이전 카테고리",
         "showAll_other": "전체 {{count}}개 보기",
         "tabCustom": "커스텀",
         "tabDiscover": "탐색"
@@ -6264,17 +6272,16 @@
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "cloudflare": {
       "add": "Access 구성 추가",
-      "back": "호스트로 돌아가기",
       "changed": "편집 중 이 Access 구성이 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
       "clientId": "Service Token 클라이언트 ID",
       "clientSecret": "Service Token 클라이언트 시크릿",
       "configuration": "Access 구성",
-      "createNew": "Access 구성 만들기",
+      "createNew": "새 구성 만들기",
       "delete": "구성 삭제",
       "deleteHelp": "사용하지 않는 이 Access 구성을 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
       "direct": "직접 연결",
+      "edit": "Access 구성 편집",
       "empty": "아직 Access 구성이 없습니다. Service Token을 추가하여 Cloudflare Access로 보호된 SSH 호스트에 연결하세요.",
-      "gatewayHelp": "포트 443에서 암호화된 WebSocket으로 연결합니다. 비공개 SSH 주소와 포트는 Cloudflare에서 설정하세요.",
       "inUse": "호스트가 이 Access 구성을 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
       "inUseHelp": "이 구성을 삭제하기 전에 해당 호스트에 다른 Access 구성을 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
       "keepChanges": "이 버전에 내 변경 사항 적용",
@@ -6286,11 +6293,10 @@
       "name": "구성 이름",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "공개 호스트 이름",
-      "rename": "구성 이름 변경",
       "replace": "Service Token 교체",
       "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
       "select": "구성 선택",
-      "summary_other": "Access 구성 {{count}}개",
+      "summary_other": "Access 구성 {{count}}개 설정됨",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH 애플리케이션의 Service Auth 정책에서 허용하는 Service Token을 사용하세요. SSH 로그인 정보와는 별개입니다.",
       "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
@@ -6328,6 +6334,7 @@
       "name": "자격 증명 이름",
       "password": "비밀번호",
       "replaceAuthentication": "인증 정보 교체",
+      "select": "인증 정보 선택",
       "sharedHelp_other": "로그인 변경 사항은 사용하는 모든 호스트 {{count}}개에 적용됩니다:",
       "summary_other": "자격 증명 {{count}}개 구성됨",
       "unused": "사용 중인 호스트 없음"
@@ -6343,8 +6350,8 @@
     "empty": "구성된 SSH 호스트가 없습니다. 호스트를 추가하면 SSH 접근 권한이 있는 Agent가 사용할 수 있습니다.",
     "errors": {
       "agentUnavailable": "이 에이전트는 더 이상 사용할 수 없습니다. 다른 에이전트를 선택하세요.",
-      "configurationChanged": "편집 중에 이 호스트가 변경되었습니다. 목록이 업데이트되었습니다. 호스트를 다시 열어 현재 설정을 확인한 후 저장하세요.",
-      "credentialChanged": "이 자격 증명이 변경되었습니다. 다시 열어 현재 설정과 영향을 받는 호스트를 확인한 후 저장하세요.",
+      "configurationChanged": "편집 중에 이 호스트가 변경되었습니다. 입력 내용은 유지됩니다. 변경 사항을 적용하기 전에 최신 설정을 검토하세요.",
+      "credentialChanged": "편집하는 동안 이 인증 정보가 변경되었습니다. 입력 내용은 유지됩니다. 저장하기 전에 최신 설정과 영향을 받는 호스트를 확인하세요.",
       "credentialInUse": "이 자격 증명은 사용 중입니다. 호스트에 다른 자격 증명을 지정하거나 먼저 호스트를 삭제하세요.",
       "credentialUnavailable": "이 SSH 자격 증명을 더 이상 사용할 수 없습니다. 다른 자격 증명을 선택하거나 새로 만드세요.",
       "failed": "SSH 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",

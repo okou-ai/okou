@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Kembali ke {{brandName}}",
+      "description": "Artefak ini mungkin bersifat pribadi atau sudah tidak tersedia.",
+      "help": "Minta orang yang membagikan tautan ini untuk memeriksa akses.",
+      "signedInAs": "Masuk sebagai {{email}}",
+      "switchAccount": "Ganti akun",
+      "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",
+      "title": "Anda tidak dapat melihat artefak ini",
+      "tryAgain": "Coba lagi"
+    },
     "actions": {
       "backToAll": "Kembali ke semua artefak",
       "backToArtifacts": "Kembali ke artefak",
@@ -580,8 +590,7 @@
     },
     "sharing": {
       "shareOrganization": "Bagikan ke organisasi",
-      "sharePublic": "Bagikan ke publik",
-      "unavailable": "Artefak ini tidak tersedia atau Anda tidak memiliki akses."
+      "sharePublic": "Bagikan ke publik"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",
@@ -1769,7 +1778,6 @@
       "create": {
         "addStyle": "Tambahkan gaya",
         "addTemplate": "Tambahkan templat",
-        "chooseScene": "Pilih yang ingin dibuat",
         "chooseType": "Pilih jenis",
         "exit": "Keluar dari mode pembuatan",
         "image": "Buat gambar",
@@ -1778,12 +1786,10 @@
         "presentation": "Buat presentasi",
         "presentationDescription": "Slide untuk cerita Anda",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
-        "question": "Apa yang ingin Anda wujudkan?",
         "settingsAdjusted": "Beberapa pengaturan video disesuaikan untuk model ini",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide",
-        "title": "Buat",
         "video": "Buat video",
         "videoDescription": "Hidupkan ide Anda dengan gerakan",
         "videoPlaceholder": "Jelaskan video yang ingin Anda buat…"
@@ -1875,11 +1881,13 @@
         "matchCount_other": "{{count}} hasil",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Perlu perhatian",
+        "nextCategories": "Kategori berikutnya",
         "noResultsBody": "Coba nama produk, atau buat sendiri dari API atau server MCP.",
         "noResultsTitle": "Tidak ada konektor yang cocok dengan “{{query}}”",
         "openDetailAria": "Buka detail {{connector}}",
         "otherCategory": "Lainnya",
         "permissionCount_other": "{{count}} izin",
+        "previousCategories": "Kategori sebelumnya",
         "showAll_other": "Lihat semua {{count}}",
         "tabCustom": "Kustom",
         "tabDiscover": "Temukan"
@@ -6264,17 +6272,16 @@
     "choosePrivateKeyFile": "Pilih file kunci privat",
     "cloudflare": {
       "add": "Tambah konfigurasi Access",
-      "back": "Kembali ke host",
       "changed": "Konfigurasi Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
       "clientId": "ID klien Service Token",
       "clientSecret": "Rahasia klien Service Token",
       "configuration": "Konfigurasi Access",
-      "createNew": "Buat konfigurasi Access",
+      "createNew": "Buat konfigurasi baru",
       "delete": "Hapus konfigurasi",
       "deleteHelp": "Hapus konfigurasi Access yang tidak digunakan ini? Service Token yang tersimpan tidak dapat dipulihkan.",
       "direct": "Langsung",
+      "edit": "Edit konfigurasi Access",
       "empty": "Belum ada konfigurasi Access. Tambahkan Service Token untuk menghubungkan host SSH yang dilindungi Cloudflare Access.",
-      "gatewayHelp": "Terhubung melalui WebSocket terenkripsi di port 443. Atur alamat dan port SSH privat di Cloudflare.",
       "inUse": "Konfigurasi Access ini digunakan oleh host. Tinjau host terkait dan ubah konfigurasinya atau hapus terlebih dahulu.",
       "inUseHelp": "Pilih konfigurasi Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus konfigurasi ini.",
       "keepChanges": "Terapkan perubahan saya ke versi ini",
@@ -6286,11 +6293,10 @@
       "name": "Nama konfigurasi",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nama host yang dipublikasikan",
-      "rename": "Ganti nama konfigurasi",
       "replace": "Ganti Service Token",
       "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
       "select": "Pilih konfigurasi",
-      "summary_other": "{{count}} konfigurasi Access",
+      "summary_other": "{{count}} konfigurasi Access telah diatur",
       "title": "Cloudflare Access",
       "tokenHelp": "Gunakan Service Token yang diizinkan kebijakan Service Auth aplikasi SSH Anda. Ini terpisah dari login SSH.",
       "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",
@@ -6328,6 +6334,7 @@
       "name": "Nama kredensial",
       "password": "Kata sandi",
       "replaceAuthentication": "Ganti autentikasi",
+      "select": "Pilih kredensial",
       "sharedHelp_other": "Perubahan login berlaku untuk seluruh {{count}} host:",
       "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host mana pun"
@@ -6343,8 +6350,8 @@
     "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host agar tersedia bagi Agent dengan akses SSH.",
     "errors": {
       "agentUnavailable": "Agen ini tidak lagi tersedia. Pilih Agen lain.",
-      "configurationChanged": "Host ini berubah saat Anda mengeditnya. Daftar telah diperbarui. Buka kembali host dan tinjau pengaturan saat ini sebelum menyimpan.",
-      "credentialChanged": "Kredensial ini telah berubah. Buka kembali dan periksa pengaturan serta host yang terpengaruh sebelum menyimpan.",
+      "configurationChanged": "Host ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbarunya sebelum menerapkan perubahan Anda.",
+      "credentialChanged": "Kredensial ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbaru dan host yang terpengaruh sebelum menyimpan.",
       "credentialInUse": "Kredensial ini sedang digunakan. Pilih kredensial lain untuk host terkait atau hapus host tersebut terlebih dahulu.",
       "credentialUnavailable": "Kredensial SSH ini tidak lagi tersedia. Pilih yang lain atau buat kredensial baru.",
       "failed": "Tidak dapat menyimpan perubahan SSH. Coba lagi.",

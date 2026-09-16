@@ -102,7 +102,8 @@ Notes:
   - First run okou connector account list <slug> --json and use an exact returned connectionId
   - This changes only future runs in the current web chat thread, not the current run or global default
   - Callback prompts are included in the URL; keep them concise and do not include secrets
-  - After sharing the generated link, end the current turn`,
+  - Use this callback flow only when account switching is this turn's single access action
+  - Return the generated URL verbatim with all query parameters, then end the current turn`,
   )
   .action(
     withErrorHandler(

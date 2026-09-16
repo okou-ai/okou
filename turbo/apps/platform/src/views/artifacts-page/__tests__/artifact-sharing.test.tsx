@@ -441,7 +441,7 @@ test("denied links display no artifact metadata or content", async () => {
     host: "app.okou.ai",
   });
   expect(
-    screen.getByText("This artifact is unavailable or you do not have access."),
+    screen.getByRole("heading", { name: "You can’t view this artifact" }),
   ).toBeInTheDocument();
   expect(document.querySelector("iframe[src], iframe[srcdoc]")).toBeNull();
 });

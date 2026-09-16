@@ -63,6 +63,7 @@ async function expectRetained(f: PiInferenceFixture) {
     history: [{ count: 1 }],
     blob: [{ references: 1 }],
     usage: [{ runId: f.runId, quantity: 1 }],
+    objects: [{ count: f.launchSnapshot.schemaVersion === 4 ? 1 : 0 }],
   });
 }
 
@@ -72,6 +73,7 @@ async function expectErased(f: PiInferenceFixture) {
     history: [{ count: 0 }],
     blob: [{ references: 0 }],
     usage: [{ runId: null, quantity: 1 }],
+    objects: [{ count: 0 }],
   });
 }
 
@@ -101,6 +103,8 @@ describe("Pi inference erasure parameter boundary", () => {
     expect(erased.preflightParameters).toHaveLength(1);
     expect(erased.preflightParameters[0]).toHaveLength(5);
     expect(erased.preflightParameters[0]?.[0]).toStrictEqual(ids);
+    expect(erased.objectReferenceParameters).toHaveLength(1);
+    expect(erased.objectReferenceParameters[0]).toStrictEqual([ids]);
     await expectErased(first);
     await expectErased(last);
   });
@@ -129,6 +133,7 @@ describe("Pi inference erasure parameter boundary", () => {
         },
       });
       expect(blocked.deletionStatements).toBe(0);
+      expect(blocked.objectReferenceParameters).toStrictEqual([]);
       await expectRetained(first);
       await expectRetained(last);
       await expect(readPiInferenceFixture(last)).resolves.toStrictEqual(before);
@@ -174,6 +179,7 @@ describe("Pi inference erasure parameter boundary", () => {
         },
       },
       preflightParameters: [],
+      objectReferenceParameters: [],
       deletionStatements: 0,
     });
   });

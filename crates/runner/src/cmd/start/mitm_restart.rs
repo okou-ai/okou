@@ -345,6 +345,7 @@ mod tests {
             .unwrap();
 
         assert!(retry.handle.is_none());
+        mitm.set_control_directory_for_test(_dir.path().to_path_buf());
         assert!(
             mitm.usage_flush_target().is_some(),
             "completed restart child should remain owned for shutdown flush"

@@ -205,7 +205,7 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
             let identity =
                 crate::runner_process_identity::RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1)
                     .unwrap();
-            config.ssh = crate::ssh::SshRuntime::official(
+            config.guest_rpc = crate::ssh::SshRuntime::official(
                 config.http.clone(),
                 if enabled {
                     "vm0_official_test"
@@ -214,8 +214,9 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
                 },
                 identity,
             )
-            .unwrap();
-            assert_eq!(config.ssh.is_some(), enabled);
+            .unwrap()
+            .map(|ssh| crate::guest_rpc::Runtime { ssh: Some(ssh) });
+            assert_eq!(config.guest_rpc.is_some(), enabled);
             let ctx = minimal_context();
             let (pending, incoming) = tokio::sync::mpsc::channel(2);
             let acceptor = Arc::new(Acceptor {

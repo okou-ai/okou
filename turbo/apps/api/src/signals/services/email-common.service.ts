@@ -22,6 +22,7 @@ import type { ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
+import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 
 type Transaction = Tx;
 
@@ -295,26 +296,11 @@ function renderTemplate(
       };
     }
     case "credit-low-balance": {
-      const remainingCredits =
-        template.props.remainingCredits.toLocaleString("en-US");
-      const thresholdCredits =
-        template.props.thresholdCredits.toLocaleString("en-US");
-      const unsubscribe = template.props.unsubscribeUrl
-        ? `<p><a href="${escapeHtml(
-            template.props.unsubscribeUrl,
-          )}">Unsubscribe</a></p>`
-        : "";
-      return {
-        html: `<main><h1>${CREDIT_LOW_BALANCE_EMAIL_SUBJECT}</h1><p>${escapeHtml(
-          template.props.orgName,
-        )} has ${escapeHtml(
-          remainingCredits,
-        )} credits remaining.</p><p>This alert is sent when an org reaches ${escapeHtml(
-          thresholdCredits,
-        )} credits or less.</p><p><a href="${escapeHtml(
-          template.props.billingUrl,
-        )}">Manage billing</a></p>${unsubscribe}</main>`,
-      };
+      return renderCreditLowBalanceEmail({
+        ...template.props,
+        title: CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
+        websiteUrl: webUrl(),
+      });
     }
     case "official-automation-result": {
       const rendered = renderOfficialAutomationResultEmail(

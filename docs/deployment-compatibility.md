@@ -80,12 +80,13 @@ active, or introduce a versioned/new endpoint and migrate the frontend first.
 
 #### Artifact share names and short references
 
-Share status adds optional `shortUrl`; `url` continues returning the legacy
-32-character organization reference for already-open App bundles. New Apps
-prefer `shortUrl` and fall back to `url` when talking to an older API. An explicit
-share action allocates the new alias when a current API reports `shortUrl: null`;
-opening the menu does not mutate a share. Both organization reference formats
-resolve through the same membership and policy checks.
+Organization share status returns the same short reference in `url` and
+`shortUrl`; it no longer produces a 32-character share-level URL. The `url` field
+remains available to clients that consume only that field. New Apps prefer
+`shortUrl` and fall back to `url` when talking to an older API. An older policy
+without a short reference returns null for both fields until an explicit share
+action allocates the alias; opening the menu does not mutate a share. Previously
+copied organization references retain their membership and policy checks.
 
 The R2 policy fields `organizationReference` and `publicSlug` are optional, so
 old policies remain readable. The immutable reference index and public alias
@@ -94,19 +95,17 @@ reuse the same organization index and retain the legacy public-token registry
 entry. Named public sites use the existing generic Worker publication reader;
 they require no database migration or new Worker routing format. Current APIs
 must serve short-reference resolution before Apps begin copying those links.
-Rolling the API back removes short-reference support until it is restored;
-existing legacy organization URLs remain available in the `url` response.
+Serving and rollback APIs must support the reference formats emitted by the
+enabled writer.
 
 The compatibility scope preserves the explicitly requested existing links;
 `privateArtifacts` being non-GA does not independently require a rollback bridge.
 Issue [#32492](https://github.com/vm0-ai/vm0/issues/32492) owns later retirement:
 the optional response reader can be removed once older APIs leave serving and
-supported rollback targets. The legacy organization `url` projection can be
-removed only after the short-reference App is live and an App minimum version
-excludes earlier bundles. Open pages have no passive expiry. Neither gate is
-closed in this PR. Durable-link readers and aliases remain until a separate
-retirement decision accounts for the stored references; a deployment or App
-floor alone cannot invalidate links already copied by users.
+supported rollback targets. The long organization URL writer is retired by
+the explicit short-reference change. Durable-link readers and aliases remain
+until a separate retirement decision accounts for the stored references; a
+deployment or App floor alone cannot invalidate links already copied by users.
 
 The iframe loading correction spans the App's explicit first-party iframe
 referrer policy and the host Worker's same-origin resource policy. Both must be
@@ -114,6 +113,29 @@ deployed to verify full HTML resource loading against the hosted-domain WAF.
 The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
 #### Private attachment uploads
+
+New private artifact creation allocates a ten-character version-2 R2 reference
+index and stores the reference in file metadata or the hosted deployment URL.
+Organization sharing reuses that version reference. Readers retain the existing
+32-character owner URLs and version-1 organization indexes. These are durable
+links, not a rollout cache; #32492 owns retirement only after accounting for
+stored and previously copied links. Files without `metadata.artifactReference`
+retain their original long URL, and no bulk rewrite or database migration runs.
+
+CLI owner resolution adds optional `kind=file|html` to the existing reference
+endpoint. Each mode requires its existing read capability and denies recipient
+access; the browser resolver retains its sharing authorization. Deploy the
+matching API and CLI before relying on short references in clone/download or
+generation-input commands. Existing file IDs and deployment IDs remain valid.
+An older API cannot resolve new version-2 indexes; keep capable readers in
+serving and rollback targets once the new writer is enabled.
+
+Thread resource records and policies accept both new ten-character tokens and
+persisted 24-character tokens. New registry records also bind `targetId` before
+publication; old records continue to resolve through their parent policy. Deploy
+the host Worker with the tolerant schemas before the API emits short snapshot
+links. An older Worker rejects the new records, failing closed. Original files,
+snapshot bytes, revocation policies, and rollout-switch defaults are unchanged.
 
 The API accepts the previous attachment prepare request without `purpose`, and
 selects private storage from the existing `privateArtifacts` switch. The current
@@ -930,6 +952,22 @@ built-in/BYOK production samples, Axiom monitor configuration and delivered-aler
 verification. Runner INFO events are below the Axiom upload threshold, and the
 investigation token could not read monitor configuration.
 
+Pi queue expiry adds `provider_queue_timeout` under the same open-token
+contract. Prefer API/App readers and terminal policy before the patched CLI;
+Guest and Runner typed contracts ship as a supported pair. An old API's
+transient allowlist excludes the new token. Old Guests may ignore the optional
+runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
+generic server/overload evidence from exact terminal text. It cannot undo
+retries already performed by an old SDK. No new protocol, database column or
+session format is introduced, and local-deadline handoff is unchanged.
+
+Queued or active commit-addressed contexts can retain the old CLI. Release
+acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
+the controlled fixture against that artifact, and observe a fixed 24-hour
+window for unique affected runs, actual statuses/attempts and built-in warning
+visibility. No occurrence means no observed exposure, not proven recovery.
+Rollback can restore old retry behavior; retained reason tokens stay readable.
+
 Avoid one-shot protocol flips:
 
 - Do not require a new request field from frontend or runner in the same PR that
@@ -1281,7 +1319,7 @@ stale browser clients and API rollback windows have closed.
 ### Retired Limelight color theme
 
 `limelight` is removed from `COLOR_THEMES`, so the API no longer parses it in
-either direction. Migration `1145_retire_limelight_color_theme` moves stored
+either direction. Migration `1147_retire_limelight_color_theme` moves stored
 selections to `citrus-spark`, which declares the same two colours; it must run
 before the API that rejects the value, which is the normal migrate-then-promote
 order. The App is promoted after the API, so between the two an already-open
@@ -1485,7 +1523,15 @@ Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
 The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. With SSH enabled, Access management and
+schema or private Runner contract. Unified host forms also accept inline Access
+creation in the host write request. Existing `configId` selections remain valid;
+responses still return only the resolved binding. Deploy API support before the
+App uses inline creation. An older API rejects that write alternative; staff
+clients should refresh after the current API/App deployment, without a second
+save path or automatic fallback. Existing rows and older App requests remain
+valid, and Runner versions do not need a new decoder for this management change.
+
+With SSH enabled, Access management and
 protected host creation are available without an additional opt-in. With SSH off,
 both transports' management, guest inventory and fresh authority are unavailable.
 Already-bound hosts are never silently converted to Direct. Removing a binding
@@ -1761,3 +1807,14 @@ the additive column.
 Deploy the API across the serving fleet before enabling the Runner consumer in
 #34384. Unsupported endpoints and other inconclusive reads must not become
 disappearance decisions. This API slice alone adds no new stop-delay bound.
+
+## Deferred Pi Sandbox reader floor
+
+Before a v4 API-inference producer can emit Sandbox demand, deploy the
+[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
+Its optional Runner header is ignored by older APIs; older Runners remain
+excluded from v4 jobs. The outer Pi launch-config v2 contains a new versioned
+continuation slot, so enablement requires both the capable Runner and the
+commit-addressed co-built CLI. Drain existing v4 intents/leases and release
+receipts before rolling the API back below that floor. No switch is enabled by
+the consumer implementation.

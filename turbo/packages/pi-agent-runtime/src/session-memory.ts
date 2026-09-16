@@ -214,7 +214,7 @@ export class MemoryPiSession {
     return this.#activeBranch();
   }
 
-  hasPendingToolCalls(): boolean {
+  pendingToolIds(): string[] {
     const messages = this.buildSessionContext().messages;
     const resolvedIds = new Set(
       messages.flatMap((message) => {
@@ -226,11 +226,17 @@ export class MemoryPiSession {
       if (message?.role !== "assistant") {
         continue;
       }
-      return message.content.some((content) => {
-        return content.type === "toolCall" && !resolvedIds.has(content.id);
+      return message.content.flatMap((content) => {
+        return content.type === "toolCall" && !resolvedIds.has(content.id)
+          ? [content.id]
+          : [];
       });
     }
-    return false;
+    return [];
+  }
+
+  hasPendingToolCalls(): boolean {
+    return this.pendingToolIds().length > 0;
   }
 
   isSettledCheckpoint(): boolean {

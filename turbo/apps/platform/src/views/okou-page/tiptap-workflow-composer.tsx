@@ -44,7 +44,7 @@ import type { ComposerPasteEvent } from "./composer-input-types.ts";
 
 import {
   composerCreatePlaceholder,
-  type ComposerCreateCommand,
+  type ComposerCreateMode,
 } from "../../signals/okou-page/composer-create.ts";
 
 function isMacKeyboard(): boolean {
@@ -161,9 +161,8 @@ function WorkflowComposerPlaceholder({
   composer: ComposerSignals;
   sending: boolean | undefined;
 }) {
-  const { t } = useTranslation();
+  useTranslation();
   const createMode = useGet(composer.create.mode$);
-  const choosing = useGet(composer.create.choosing$);
   const hasInput = useGet(composer.editor.hasInput$);
   const hasEditorContent = useEditorState({
     editor: composer.editor.editor,
@@ -184,13 +183,9 @@ function WorkflowComposerPlaceholder({
       }`}
       aria-hidden="true"
     >
-      {choosing
-        ? t(($) => {
-            return $.chat.composer.create.question;
-          })
-        : createMode
-          ? composerCreatePlaceholder(createMode)
-          : workflowComposerPlaceholder(sending)}
+      {createMode
+        ? composerCreatePlaceholder(createMode)
+        : workflowComposerPlaceholder(sending)}
     </div>
   );
 }
@@ -347,13 +342,11 @@ const SLASH_TEMPLATE_CATEGORY_CREATE_MODE = {
   slides: "presentation",
   illustration: "image",
   video: "video",
-} as const satisfies Partial<
-  Record<SlashTemplateCategory, ComposerCreateCommand>
->;
+} as const satisfies Partial<Record<SlashTemplateCategory, ComposerCreateMode>>;
 
 function createModeForCategory(
   category: SlashTemplateCategory,
-): ComposerCreateCommand | undefined {
+): ComposerCreateMode | undefined {
   return category in SLASH_TEMPLATE_CATEGORY_CREATE_MODE
     ? SLASH_TEMPLATE_CATEGORY_CREATE_MODE[
         category as keyof typeof SLASH_TEMPLATE_CATEGORY_CREATE_MODE
@@ -563,8 +556,6 @@ function useComposerSuggestionMenu({
   readonly composer: ComposerSignals;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }): ComposerSuggestionMenuState {
-  const setCreateMode = useSet(composer.create.setMode$);
-  const choosing = useGet(composer.create.choosing$);
   const slashRange = useGet(composer.suggestion.activeSlashRange$);
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
@@ -629,11 +620,6 @@ function useComposerSuggestionMenu({
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
-    if (event.key === "Escape" && choosing && !open) {
-      event.preventDefault();
-      setCreateMode(null);
-      return true;
-    }
     return handleComposerKeyDownCapture(event, {
       composer,
       selectedTask,

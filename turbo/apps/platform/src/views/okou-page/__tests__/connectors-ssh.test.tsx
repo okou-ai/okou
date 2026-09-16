@@ -1,5 +1,6 @@
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
@@ -345,6 +346,9 @@ test.each([0, 1, 2])(
   async (count) => {
     mockCatalog();
     context.mocks.data.agents([]);
+    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+      return respond(200, { credentials: [] });
+    });
     context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
       return respond(200, { configuredCount: count });
     });
@@ -389,7 +393,8 @@ test.each([0, 1, 2])(
       click(getConnectorAction("button", "Add host"));
     }
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByLabelText("Private key")).toHaveValue("");
+    const key = await within(dialog).findByLabelText("Private key");
+    expect(key).toHaveValue("");
     expect(within(dialog).queryByText("OAuth")).not.toBeInTheDocument();
   },
 );

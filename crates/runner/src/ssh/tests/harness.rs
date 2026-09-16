@@ -25,7 +25,8 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use super::super::{SshRun, SshRuntime, network::Network};
+use super::super::{SshRuntime, network::Network};
+use crate::guest_rpc::{Run as RpcRun, Runtime as RpcRuntime};
 use crate::{
     http::{HttpClient, HttpClientConfig},
     ids::RunId,
@@ -175,7 +176,7 @@ pub(super) struct Harness {
     pub(super) lifecycle: CancellationToken,
     pub(super) control: guest_control_client::GuestControlClient,
     _control_peer: tokio::net::UnixStream,
-    dispatcher: Option<SshRun>,
+    dispatcher: Option<RpcRun>,
     incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
     peer: JoinHandle<()>,
 }
@@ -187,14 +188,17 @@ pub(super) struct AdditionalRun {
     observed: Arc<Observed>,
     lifecycle: CancellationToken,
     incoming: mpsc::Sender<sandbox::AcceptedGuestRpc>,
-    dispatcher: SshRun,
+    dispatcher: RpcRun,
 }
 
 impl AdditionalRun {
     pub(super) async fn new(runtime: &Arc<SshRuntime>, sandbox: &str) -> Self {
         let (control, control_peer) = control_connection().await;
         let (incoming, receiver) = mpsc::channel(32);
-        let dispatcher = runtime.start(
+        let dispatcher = RpcRuntime {
+            ssh: Some(Arc::clone(runtime)),
+        }
+        .start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             sandbox.into(),
             RunId::new_v4(),
@@ -302,7 +306,10 @@ impl Harness {
         let (incoming, receiver) = mpsc::channel(32);
         let cancel = CancellationToken::new();
         let lifecycle = CancellationToken::new();
-        let dispatcher = runtime.start(
+        let dispatcher = RpcRuntime {
+            ssh: Some(Arc::clone(&runtime)),
+        }
+        .start(
             Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
             "sandbox-authoritative".into(),
             run,
@@ -419,7 +426,7 @@ impl Harness {
         super::wait_for(|| self.observed.closed.load(Ordering::SeqCst) > closed).await;
     }
 
-    pub(super) fn take_dispatcher(&mut self) -> SshRun {
+    pub(super) fn take_dispatcher(&mut self) -> RpcRun {
         self.dispatcher.take().unwrap()
     }
 
@@ -428,12 +435,17 @@ impl Harness {
         self.run = run;
         let (incoming, receiver) = mpsc::channel(32);
         self.incoming = incoming;
-        self.dispatcher = Some(self.runtime.start(
-            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
-            "sandbox-authoritative".into(),
-            run,
-            &self.cancel,
-        ));
+        self.dispatcher = Some(
+            RpcRuntime {
+                ssh: Some(Arc::clone(&self.runtime)),
+            }
+            .start(
+                Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+                "sandbox-authoritative".into(),
+                run,
+                &self.cancel,
+            ),
+        );
     }
 }
 impl Drop for Harness {

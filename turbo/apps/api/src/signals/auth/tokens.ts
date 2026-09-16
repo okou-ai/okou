@@ -51,6 +51,12 @@ const jwtBaseSchema = z.object({
 });
 
 const sandboxTokenPayloadSchema = jwtBaseSchema.extend({
+  piSandbox: z
+    .object({
+      ownerEpoch: z.number().int().positive(),
+      generation: z.number().int().positive(),
+    })
+    .optional(),
   scope: z.literal("sandbox"),
   runId: z.string().min(1),
   orgId: z.string().min(1),
@@ -243,6 +249,7 @@ export function verifySandboxToken(token: string): SandboxAuth | null {
   }
 
   return {
+    ...(parsed.data.piSandbox ? { piSandbox: parsed.data.piSandbox } : {}),
     userId: parsed.data.userId,
     runId: parsed.data.runId,
     orgId: parsed.data.orgId,
@@ -310,10 +317,12 @@ export function generateSandboxToken(
   userId: string,
   runId: string,
   orgId: string,
+  piSandbox?: SandboxAuth["piSandbox"],
 ): string {
   const nowSeconds = Math.floor(now() / 1000);
   const payload: z.infer<typeof sandboxTokenPayloadSchema> = {
     scope: "sandbox",
+    ...(piSandbox ? { piSandbox } : {}),
     userId,
     runId,
     orgId,

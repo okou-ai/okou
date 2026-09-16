@@ -3,6 +3,7 @@ import { computed, type Computed } from "ccstate";
 import type { Root } from "hast";
 
 import { parseMarkdownTree } from "../../lib/markdown/pipeline.ts";
+import { embedHostedSiteCards } from "../hosted-site-card.ts";
 import {
   createImageLoadSignals,
   embedImageLoadSignals,
@@ -49,6 +50,7 @@ export function createSharedThreadRichContentSignals(
         mermaid: true,
       });
       embedMermaidSignals(tree, diagrams.register);
+      embedHostedSiteCards(tree);
       embedImageLoadSignals(tree, resolveImageLoad);
       trees.set(message.messageIndex, tree);
     }
