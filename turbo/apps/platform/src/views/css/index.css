@@ -1278,6 +1278,17 @@ details > summary {
     var(--okou-color-theme-companion) var(--state-on-filled-pressed-alpha)
   );
 
+  /* The checked switch track is the one filled control that reads a raw stop
+     of the Amber ramp instead of `--primary`: 400 sits one step darker than
+     the brand stop, and a 44x24 track needs that step to read as a fill on a
+     near-white card. A preset supplies a single anchor rather than a ramp, so
+     the stop resolves to that anchor while the preset is active and the track
+     lands on the same fill the checkbox, the radio and every filled button
+     already take from `--primary`. Without this the toggle stayed Amber under
+     all eight palettes. The `--brand-*` stops deliberately keep reading the
+     Amber ramp: the brand mark is not palette-driven. */
+  --primary-400: var(--okou-color-theme-primary);
+
   --gray-0: var(--okou-color-theme-hue) 24% 98.3%;
   --gray-50: var(--okou-color-theme-hue) 22% 97.7%;
   --gray-100: var(--okou-color-theme-hue) 20% 96.7%;
