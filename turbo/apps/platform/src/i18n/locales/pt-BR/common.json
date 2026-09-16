@@ -3009,27 +3009,6 @@
       "copied": "Copiado",
       "deleted": "Conversa excluída"
     },
-    "translation": {
-      "action": "Traduzir",
-      "close": "Fechar tradução",
-      "copy": "Copiar tradução",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Tradução",
-      "targetLanguage": "Idioma da tradução"
-    },
     "voice": {
       "checkingLimit": "Verificando limite da entrada de voz",
       "cleanupFailed": "O texto foi adicionado, mas não foi possível remover a gravação salva.",

@@ -2963,27 +2963,6 @@
       "copied": "Kopiert",
       "deleted": "Chat gelöscht"
     },
-    "translation": {
-      "action": "Übersetzen",
-      "close": "Übersetzung schließen",
-      "copy": "Übersetzung kopieren",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Übersetzung",
-      "targetLanguage": "Übersetzungssprache"
-    },
     "voice": {
       "checkingLimit": "Überprüfung des Spracheingabelimits",
       "cleanupFailed": "Der Text wurde eingefügt, aber die gespeicherte Aufnahme konnte nicht entfernt werden.",

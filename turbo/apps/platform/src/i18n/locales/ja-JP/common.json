@@ -2954,27 +2954,6 @@
       "copied": "コピーされました",
       "deleted": "チャットが削除されました"
     },
-    "translation": {
-      "action": "翻訳",
-      "close": "翻訳を閉じる",
-      "copy": "翻訳をコピー",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "翻訳",
-      "targetLanguage": "翻訳先の言語"
-    },
     "voice": {
       "checkingLimit": "音声入力制限を確認する",
       "cleanupFailed": "テキストは追加されましたが、保存済みの録音を削除できませんでした。",

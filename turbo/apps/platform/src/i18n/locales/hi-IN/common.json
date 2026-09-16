@@ -2963,27 +2963,6 @@
       "copied": "कॉपी किया गया",
       "deleted": "चैट हटा दी गई"
     },
-    "translation": {
-      "action": "अनुवाद करें",
-      "close": "अनुवाद बंद करें",
-      "copy": "अनुवाद कॉपी करें",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "अनुवाद",
-      "targetLanguage": "अनुवाद की भाषा"
-    },
     "voice": {
       "checkingLimit": "ध्वनि इनपुट सीमा की जाँच की जा रही है",
       "cleanupFailed": "टेक्स्ट जोड़ दिया गया, लेकिन सहेजी गई रिकॉर्डिंग हटाई नहीं जा सकी।",

@@ -91,7 +91,6 @@ function defaultPreferences(): UserPreferencesResponse {
   return {
     timezone: "Etc/UTC",
     locale: "en-US",
-    translationLanguage: null,
     supportedLocales: ["en-US", "pt-BR"],
     pinnedAgentIds: [],
     sendMode: "enter",

@@ -351,12 +351,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatTranslation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Translate selected assistant text into a remembered target language.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:

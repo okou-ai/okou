@@ -3009,27 +3009,6 @@
       "copied": "Copiato",
       "deleted": "Chat eliminata"
     },
-    "translation": {
-      "action": "Traduci",
-      "close": "Chiudi traduzione",
-      "copy": "Copia traduzione",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Traduzione",
-      "targetLanguage": "Lingua di traduzione"
-    },
     "voice": {
       "checkingLimit": "Controllo del limite di input vocale",
       "cleanupFailed": "Il testo è stato aggiunto, ma non è stato possibile rimuovere la registrazione salvata.",

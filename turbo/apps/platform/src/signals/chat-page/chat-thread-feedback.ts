@@ -10,11 +10,8 @@ import {
 import { animationFrame, delay } from "signal-timers";
 import { isEditableTarget, matchShortcut } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import type { ChatTranslationLanguage } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
 import { debounceCommand } from "../command-scheduling.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import type {
   ComposerFeedbackSignals,
   FeedbackRange,
@@ -28,11 +25,6 @@ import type {
   ChatForwardContext,
   ChatForwardSelection,
 } from "./chat-forward.ts";
-import {
-  persistChatTranslationLanguage$,
-  requestChatTranslation$,
-  savedChatTranslationLanguage$,
-} from "./chat-translation.ts";
 
 // Assistant messages and other agent-produced content, such as linked email
 // drafts, opt into the shared Copy / Quote interaction.
@@ -62,11 +54,6 @@ export interface ChatThreadFeedbackSelection {
   readonly eventId?: string;
   readonly range?: FeedbackRange;
   readonly source?: FeedbackSource;
-}
-
-export interface ChatThreadTranslationResult {
-  readonly text: string;
-  readonly targetLanguage: ChatTranslationLanguage;
 }
 
 interface CapturedFeedbackSelection {
@@ -118,15 +105,6 @@ export interface ChatThreadFeedbackSignals {
   readonly start$: Command<void, []>;
   readonly close$: Command<void, []>;
   readonly copy$: Command<Promise<void>, [AbortSignal]>;
-  readonly translationLanguage$: Computed<Promise<ChatTranslationLanguage>>;
-  readonly translationPromise$: Computed<Promise<void> | null>;
-  readonly translationResult$: Computed<ChatThreadTranslationResult | null>;
-  readonly setTranslationLanguage$: Command<
-    Promise<void>,
-    [ChatTranslationLanguage, AbortSignal]
-  >;
-  readonly translate$: Command<Promise<void>, [AbortSignal]>;
-  readonly copyTranslation$: Command<Promise<void>, [AbortSignal]>;
   readonly forwardSelection$: Computed<ChatForwardSelection | null>;
   readonly forwardTarget$: Computed<ChatForwardTarget | null>;
   readonly prepareForwardComposer$: ReturnType<
@@ -369,12 +347,7 @@ function isSelectionInteractionTarget(target: EventTarget | null): boolean {
 
 function createSelectionState(threadId: string) {
   const internalSelection$ = state<CapturedFeedbackSelection | null>(null);
-  const internalTranslationPromise$ = state<Promise<void> | null>(null);
-  const internalTranslationResult$ = state<ChatThreadTranslationResult | null>(
-    null,
-  );
   const resetToolbarSignal$ = resetSignal();
-  const resetTranslationSignal$ = resetSignal();
   const selection$ = computed((get): ChatThreadFeedbackSelection | null => {
     const selection = get(internalSelection$);
     return selection
@@ -392,10 +365,7 @@ function createSelectionState(threadId: string) {
   });
   const close$ = command(({ set }) => {
     set(resetToolbarSignal$);
-    set(resetTranslationSignal$);
     set(internalSelection$, null);
-    set(internalTranslationPromise$, null);
-    set(internalTranslationResult$, null);
   });
   const capture$ = command(({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
@@ -411,9 +381,6 @@ function createSelectionState(threadId: string) {
     ) {
       return;
     }
-    set(resetTranslationSignal$);
-    set(internalTranslationPromise$, null);
-    set(internalTranslationResult$, null);
     set(internalSelection$, selection);
   });
   const reconcileAfterScroll$ = command(({ get, set }) => {
@@ -472,113 +439,12 @@ function createSelectionState(threadId: string) {
   });
   return {
     internalSelection$,
-    internalTranslationPromise$,
-    internalTranslationResult$,
     resetToolbarSignal$,
-    resetTranslationSignal$,
     selection$,
     close$,
     capture$,
     reconcileAfterScroll$,
     copy$,
-  };
-}
-
-function createTranslationState({
-  selection$,
-  promise$,
-  result$,
-  resetTranslationSignal$,
-}: {
-  selection$: State<CapturedFeedbackSelection | null>;
-  promise$: State<Promise<void> | null>;
-  result$: State<ChatThreadTranslationResult | null>;
-  resetTranslationSignal$: ReturnType<typeof resetSignal>;
-}) {
-  const internalLanguage$ = state<ChatTranslationLanguage | null>(null);
-  const translationLanguage$ = computed(
-    async (get): Promise<ChatTranslationLanguage> => {
-      return (
-        get(internalLanguage$) ?? (await get(savedChatTranslationLanguage$))
-      );
-    },
-  );
-  const translationResult$ = computed((get) => {
-    return get(result$);
-  });
-  const translationPromise$ = computed((get) => {
-    return get(promise$);
-  });
-  const setTranslationLanguage$ = command(
-    async (
-      { set },
-      language: ChatTranslationLanguage,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      set(resetTranslationSignal$);
-      set(internalLanguage$, language);
-      await set(persistChatTranslationLanguage$, language, signal);
-      signal.throwIfAborted();
-    },
-  );
-  const performTranslation$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      const selection = get(selection$);
-      if (!selection) {
-        return;
-      }
-      const requestSignal = set(resetTranslationSignal$, signal);
-      const targetLanguage = await get(translationLanguage$);
-      signal.throwIfAborted();
-      requestSignal.throwIfAborted();
-      const response = await set(
-        requestChatTranslation$,
-        selection.text,
-        targetLanguage,
-        requestSignal,
-      );
-      signal.throwIfAborted();
-      requestSignal.throwIfAborted();
-      const currentSelection = get(selection$);
-      if (
-        !currentSelection ||
-        !isSameFeedbackSelection(currentSelection, selection)
-      ) {
-        return;
-      }
-      set(result$, { text: response.text, targetLanguage });
-    },
-  );
-  const translate$ = command(({ set }, signal: AbortSignal): Promise<void> => {
-    const promise = set(performTranslation$, signal);
-    set(promise$, promise);
-    return promise;
-  });
-  const copyTranslation$ = command(
-    async ({ get }, signal: AbortSignal): Promise<void> => {
-      const result = get(result$);
-      if (!result) {
-        return;
-      }
-      signal.throwIfAborted();
-      const copied = await writeToClipboard(result.text);
-      signal.throwIfAborted();
-      if (copied) {
-        toast.success(
-          i18n.t(($) => {
-            return $.chat.toasts.copied;
-          }),
-        );
-      }
-    },
-  );
-  return {
-    translationLanguage$,
-    translationPromise$,
-    translationResult$,
-    setTranslationLanguage$,
-    translate$,
-    copyTranslation$,
   };
 }
 
@@ -706,17 +572,15 @@ function createToolbarRef({
   copy$,
   start$,
   startForward$,
-  translate$,
 }: {
   resetToolbarSignal$: ReturnType<typeof resetSignal>;
   close$: Command<void, []>;
   copy$: Command<Promise<void>, [AbortSignal]>;
   start$: Command<void, []>;
   startForward$: Command<boolean, []>;
-  translate$: Command<Promise<void>, [AbortSignal]>;
 }) {
   return onRef(
-    command(({ get, set }, el: HTMLElement, signal: AbortSignal) => {
+    command(({ set }, el: HTMLElement, signal: AbortSignal) => {
       const toolbarSignal = set(resetToolbarSignal$, signal);
       el.ownerDocument.addEventListener(
         "keydown",
@@ -753,13 +617,6 @@ function createToolbarRef({
           if (matchShortcut("f", event) && set(startForward$)) {
             event.preventDefault();
             return;
-          }
-          if (
-            get(featureSwitch$)[FeatureSwitchKey.ChatTranslation] &&
-            matchShortcut("t", event)
-          ) {
-            event.preventDefault();
-            await set(translate$, signal);
           }
         }),
         { signal: toolbarSignal },
@@ -898,12 +755,6 @@ export function createChatThreadFeedbackSignals(
   isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>,
 ): ChatThreadFeedbackSignals {
   const selection = createSelectionState(threadId);
-  const translation = createTranslationState({
-    selection$: selection.internalSelection$,
-    promise$: selection.internalTranslationPromise$,
-    result$: selection.internalTranslationResult$,
-    resetTranslationSignal$: selection.resetTranslationSignal$,
-  });
   const forward = createForwardState(selection.close$);
   const start$ = createStartFeedback(
     selection.internalSelection$,
@@ -920,7 +771,6 @@ export function createChatThreadFeedbackSignals(
     copy$: selection.copy$,
     start$,
     startForward$,
-    translate$: translation.translate$,
   });
   const setListenersRef$ = createListenersRef({
     selection$: selection.internalSelection$,
@@ -934,12 +784,6 @@ export function createChatThreadFeedbackSignals(
     start$,
     close$: selection.close$,
     copy$: selection.copy$,
-    translationLanguage$: translation.translationLanguage$,
-    translationPromise$: translation.translationPromise$,
-    translationResult$: translation.translationResult$,
-    setTranslationLanguage$: translation.setTranslationLanguage$,
-    translate$: translation.translate$,
-    copyTranslation$: translation.copyTranslation$,
     forwardSelection$: forward.forwardSelection$,
     forwardTarget$: forward.forwardTarget$,
     prepareForwardComposer$: forward.prepareForwardComposer$,

@@ -2954,27 +2954,6 @@
       "copied": "Disalin",
       "deleted": "Chat dihapus"
     },
-    "translation": {
-      "action": "Terjemahkan",
-      "close": "Tutup terjemahan",
-      "copy": "Salin terjemahan",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Terjemahan",
-      "targetLanguage": "Bahasa terjemahan"
-    },
     "voice": {
       "checkingLimit": "Memeriksa batas input suara",
       "cleanupFailed": "Teks ditambahkan, tetapi rekaman yang tersimpan tidak dapat dihapus.",
