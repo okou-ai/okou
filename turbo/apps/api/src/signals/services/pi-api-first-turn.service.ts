@@ -111,6 +111,7 @@ import {
   dispatchOptionalAgentEventConsumers$,
   receiveAgentEvents$,
 } from "./agent-webhook-events.service";
+import type { RunOutputInferenceFence } from "./agent-event-consumer-run-output.service";
 import { decryptPersistentSecretsMap } from "./crypto.utils";
 import { reservePendingPiApiFirstTurnInput } from "./active-input-delivery.service";
 import {
@@ -548,6 +549,7 @@ const publishEvents$ = command(async function publishEvents(
   args: {
     readonly auth: SandboxAuth;
     readonly events: readonly AgentEvent[];
+    readonly inferenceFence?: RunOutputInferenceFence;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -556,6 +558,7 @@ const publishEvents$ = command(async function publishEvents(
     {
       auth: args.auth,
       body: { runId: args.auth.runId, events: args.events },
+      ...(args.inferenceFence ? { inferenceFence: args.inferenceFence } : {}),
     },
     signal,
   );
@@ -2568,7 +2571,20 @@ const finalizeDurableApiFirstTurn$ = command(
               now(),
             ),
           ];
-    await set(publishEvents$, { auth: prepared.auth, events }, signal);
+    await set(
+      publishEvents$,
+      {
+        auth: prepared.auth,
+        events,
+        inferenceFence: {
+          ownerEpoch: args.activation.inference.ownerEpoch,
+          phase: "publishing",
+          providerAttemptId: args.activation.inference.providerAttemptId,
+          providerAttemptState: "settled",
+        },
+      },
+      signal,
+    );
     signal.throwIfAborted();
     await args.db
       .update(agentRunInference)
@@ -2699,69 +2715,87 @@ const finalizeCompleteTurn$ = command(async function finalizeCompleteTurn(
   return completion.sideEffects;
 });
 
-export const recoverDurablePiPublication$ = command(
+type DurableRecoveryActivation = Extract<
+  PiApiFirstTurnActivation,
+  { readonly executionMode: "durable-inference" }
+>;
+
+async function readDurableRecoveryTurn(
+  db: Db,
+  activation: DurableRecoveryActivation,
+  publication: DurablePiPublicationReceipt,
+  signal: AbortSignal,
+): Promise<PreparedApiFirstTurn> {
+  const h1 = await readPiInferenceObject(
+    db,
+    {
+      runId: activation.runId,
+      userId: activation.userId,
+      orgId: activation.orgId,
+      kind: "h1",
+      hash: publication.h1Hash,
+    },
+    piDeferredH1Schema,
+  );
+  signal.throwIfAborted();
+  if (
+    !h1.producer ||
+    h1.manifestGeneration !== publication.manifestGeneration ||
+    h1.lastEventSequence !== publication.lastEventSequence
+  ) {
+    throw new Error("Durable Pi publication receipt is not recoverable");
+  }
+  const validated = validateApiFirstTurnH1(
+    {
+      assistantMessage: h1.producer.assistantMessage,
+      handoffRequired: h1.producer.handoffRequired,
+      observedServiceTier: h1.producer.observedServiceTier,
+      sessionJsonl: h1.sessionHistory,
+    },
+    activation.executionContext.piSessionId,
+  );
+  if (validated.sessionHash !== h1.historyHash) {
+    throw new Error("Durable Pi publication history hash changed");
+  }
+  return {
+    apiStartTime: activation.executionContext.apiStartTime,
+    auth: {
+      userId: activation.userId,
+      orgId: activation.orgId,
+      runId: activation.runId,
+    },
+    baseSession:
+      activation.executionContext.piLaunchConfig.apiFirstTurn.baseSession,
+    commitIdentity: apiFirstTurnCommitIdentity({ db, activation }),
+    sessionBytes: validated.sessionBytes,
+    sessionHash: validated.sessionHash,
+    sessionId: activation.executionContext.piSessionId,
+    startedAt: h1.producer.startedAt,
+    turn: {
+      assistantMessage: h1.producer.assistantMessage,
+      handoffRequired: h1.producer.handoffRequired,
+      observedServiceTier: h1.producer.observedServiceTier,
+      sessionJsonl: h1.sessionHistory,
+    },
+  };
+}
+
+/** Accounting-only recovery is legal after terminal cancellation. It never
+ * publishes output, a checkpoint, demand, or another provider request. */
+export const recoverDurablePiUsage$ = command(
   async (
     { set },
-    activation: Extract<
-      PiApiFirstTurnActivation,
-      { readonly executionMode: "durable-inference" }
-    >,
+    activation: DurableRecoveryActivation,
     publication: DurablePiPublicationReceipt,
     signal: AbortSignal,
-  ): Promise<DispatchCompleteSideEffectsInput | undefined> => {
+  ): Promise<void> => {
     const db = set(writeDb$);
-    const h1 = await readPiInferenceObject(
+    const prepared = await readDurableRecoveryTurn(
       db,
-      {
-        runId: activation.runId,
-        userId: activation.userId,
-        orgId: activation.orgId,
-        kind: "h1",
-        hash: publication.h1Hash,
-      },
-      piDeferredH1Schema,
+      activation,
+      publication,
+      signal,
     );
-    signal.throwIfAborted();
-    if (
-      !h1.producer ||
-      h1.manifestGeneration !== publication.manifestGeneration ||
-      h1.lastEventSequence !== publication.lastEventSequence
-    ) {
-      throw new Error("Durable Pi publication receipt is not recoverable");
-    }
-    const validated = validateApiFirstTurnH1(
-      {
-        assistantMessage: h1.producer.assistantMessage,
-        handoffRequired: h1.producer.handoffRequired,
-        observedServiceTier: h1.producer.observedServiceTier,
-        sessionJsonl: h1.sessionHistory,
-      },
-      activation.executionContext.piSessionId,
-    );
-    if (validated.sessionHash !== h1.historyHash) {
-      throw new Error("Durable Pi publication history hash changed");
-    }
-    const prepared: PreparedApiFirstTurn = {
-      apiStartTime: activation.executionContext.apiStartTime,
-      auth: {
-        userId: activation.userId,
-        orgId: activation.orgId,
-        runId: activation.runId,
-      },
-      baseSession:
-        activation.executionContext.piLaunchConfig.apiFirstTurn.baseSession,
-      commitIdentity: apiFirstTurnCommitIdentity({ db, activation }),
-      sessionBytes: validated.sessionBytes,
-      sessionHash: validated.sessionHash,
-      sessionId: activation.executionContext.piSessionId,
-      startedAt: h1.producer.startedAt,
-      turn: {
-        assistantMessage: h1.producer.assistantMessage,
-        handoffRequired: h1.producer.handoffRequired,
-        observedServiceTier: h1.producer.observedServiceTier,
-        sessionJsonl: h1.sessionHistory,
-      },
-    };
     await recordApiFirstTurnUsage(
       {
         db,
@@ -2772,6 +2806,25 @@ export const recoverDurablePiPublication$ = command(
       },
       prepared.turn,
     );
+    signal.throwIfAborted();
+  },
+);
+
+export const recoverDurablePiPublication$ = command(
+  async (
+    { set },
+    activation: DurableRecoveryActivation,
+    publication: DurablePiPublicationReceipt,
+    signal: AbortSignal,
+  ): Promise<DispatchCompleteSideEffectsInput | undefined> => {
+    const db = set(writeDb$);
+    const prepared = await readDurableRecoveryTurn(
+      db,
+      activation,
+      publication,
+      signal,
+    );
+    await set(recoverDurablePiUsage$, activation, publication, signal);
     signal.throwIfAborted();
     const result = await set(
       finalizeDurableApiFirstTurn$,
@@ -3064,14 +3117,19 @@ const executeApiFirstTurn$ = command(async function executeApiFirstTurn(
     readonly commitProgress: ApiFirstTurnCommitProgress;
     readonly preparation: PiApiFirstTurnPreparation;
   },
-  signal: AbortSignal,
+  executionSignal: AbortSignal,
 ): Promise<ApiFirstTurnExecutionResult> {
   const { ownership, commitProgress, preparation } = attempt;
-  const inputs = await preparation.take(args.activation, signal);
-  signal.throwIfAborted();
+  const inputs = await preparation.take(args.activation, executionSignal);
+  executionSignal.throwIfAborted();
   if (inputs.kind === "large-history") {
-    await set(publishLargeHistoryTransfer$, args, commitProgress, signal);
-    signal.throwIfAborted();
+    await set(
+      publishLargeHistoryTransfer$,
+      args,
+      commitProgress,
+      executionSignal,
+    );
+    executionSignal.throwIfAborted();
     return { outcome: "transferred" };
   }
   const prepared = await set(
@@ -3079,14 +3137,20 @@ const executeApiFirstTurn$ = command(async function executeApiFirstTurn(
     args,
     ownership,
     inputs,
-    signal,
+    executionSignal,
   ).finally(() => {
     inputs.runtime.dispose();
   });
+  const durable = isDurablePiApiFirstTurnActivation(args.activation);
+  // Once a durable provider result exists, accounting keeps a bounded owner
+  // even when canonical cancellation no longer permits output publication.
+  const signal = durable
+    ? AbortSignal.timeout(FAILURE_COMMIT_TIMEOUT_MS)
+    : executionSignal;
   signal.throwIfAborted();
   const committed = await settle(
     onRejection(
-      isDurablePiApiFirstTurnActivation(args.activation)
+      durable
         ? set(
             commitDurableApiFirstTurn$,
             args,
@@ -3101,6 +3165,7 @@ const executeApiFirstTurn$ = command(async function executeApiFirstTurn(
     ),
     signal,
   );
+  signal.throwIfAborted();
   if (!committed.ok) {
     const error =
       committed.error instanceof PiApiFirstTurnError ||

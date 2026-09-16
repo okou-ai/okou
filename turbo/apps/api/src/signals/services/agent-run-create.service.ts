@@ -11603,23 +11603,26 @@ function captureDurablePiInference(
       ),
     );
     signal.throwIfAborted();
-    const parsedContext = piDeferredContextSchema.safeParse({
+    const storageMounts = piDeferredContextSchema.shape.storageMounts.safeParse(
+      persistedStorageMounts,
+    );
+    if (!storageMounts.success) {
+      // Historical Storage shapes remain fully supported by the legacy launch.
+      return null;
+    }
+    const context = piDeferredContextSchema.parse({
       schemaVersion: 1,
       baseSession: h0.baseSession,
       resourceSnapshot: resource.snapshot,
       resourceSnapshotDigest: resource.digest,
-      storageMounts: persistedStorageMounts,
+      storageMounts: storageMounts.data,
       ...(memoryRecall ? { memoryRecall } : {}),
       h0SessionHistory: h0.h0SessionHistory,
     });
-    if (!parsedContext.success) {
-      // A historical Storage shape remains fully supported by the legacy launch.
-      return null;
-    }
     return {
       callbackRows,
       configuration,
-      context: parsedContext.data,
+      context,
       h0,
       identity,
       persistedStorageMounts,
@@ -13104,7 +13107,7 @@ export const createAgentRun$ = command(
 
 /** Post-reservation materializer. This never inserts a Run, promotes the legacy
  * queue, or invokes the API first turn. Publication owns a fresh admission. */
-export interface DeferredPiMaterializationInput {
+interface DeferredPiMaterializationInput {
   readonly run: {
     readonly id: string;
     readonly sessionId: string;
@@ -13238,7 +13241,7 @@ export const materializeDeferredPiRun$ = command(
   },
 );
 
-export interface PreparedDeferredPiLaunch extends PreparedRunnerLaunch {
+interface PreparedDeferredPiLaunch extends PreparedRunnerLaunch {
   readonly admission: DeferredPiMaterializationAdmission;
 }
 export interface DeferredPiMaterializationAdmission {

@@ -24,7 +24,7 @@ type PiApiFirstTurnLaunchConfig = Pick<
 /** Only model-visible inputs and the selected credential namespace cross the
  * direct-inference boundary. The durable variant never manufactures a Runner
  * environment, signed URL, executable job, or Sandbox notification. */
-export interface PiApiFirstTurnExecutionContext {
+interface PiApiFirstTurnExecutionContext {
   readonly apiStartTime: number;
   readonly billableFirewalls: readonly string[];
   readonly encryptedSecrets: StoredExecutionContext["encryptedSecrets"];

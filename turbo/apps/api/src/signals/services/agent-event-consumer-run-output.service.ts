@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { publicAssistantBalanceError } from "./run-balance-presentation";
@@ -27,6 +28,7 @@ import { historicalRunGroupId } from "./run-event-provenance.service";
 import {
   withRunContentWrite,
   prepareRunOutputOwnership,
+  RunContentOwnershipChangedError,
   type RunOutputDiagnostics,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
@@ -62,10 +64,18 @@ type RunOutputMaterializationResult =
     }
   | { readonly outcome: "ignored-timeout" | "ignored-closure" };
 
+export interface RunOutputInferenceFence {
+  readonly ownerEpoch: number;
+  readonly phase: "publishing";
+  readonly providerAttemptId: string;
+  readonly providerAttemptState: "settled";
+}
+
 interface RunOutputEventAdmission {
   readonly diagnostics: RunOutputDiagnostics;
   readonly payload: EventConsumerPayload;
   readonly suppliedCitations: readonly EventCitation[];
+  readonly inferenceFence?: RunOutputInferenceFence;
 }
 
 function recordOf(value: unknown): Record<string, unknown> | null {
@@ -459,6 +469,31 @@ async function materializeRunOutputEvents(
     ): Promise<RunOutputMaterializationResult> => {
       if (status === "timeout") {
         return { outcome: "ignored-timeout" };
+      }
+      if (admission.inferenceFence) {
+        const [inference] = await tx
+          .select({
+            ownerEpoch: agentRunInference.ownerEpoch,
+            phase: agentRunInference.phase,
+            providerAttemptId: agentRunInference.providerAttemptId,
+            providerAttemptState: agentRunInference.providerAttemptState,
+          })
+          .from(agentRunInference)
+          .where(eq(agentRunInference.runId, payload.runId))
+          .for("update")
+          .limit(1);
+        if (
+          status !== "pending" ||
+          !inference ||
+          inference.ownerEpoch !== admission.inferenceFence.ownerEpoch ||
+          inference.phase !== admission.inferenceFence.phase ||
+          inference.providerAttemptId !==
+            admission.inferenceFence.providerAttemptId ||
+          inference.providerAttemptState !==
+            admission.inferenceFence.providerAttemptState
+        ) {
+          throw new RunContentOwnershipChangedError();
+        }
       }
       const thread =
         ownership.triggerSource !== null && ownership.thread

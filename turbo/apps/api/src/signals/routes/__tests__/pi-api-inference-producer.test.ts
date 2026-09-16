@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-imports, no-restricted-syntax -- These producer acceptance tests inspect the real PostgreSQL ownership fence and verify the absence of Runner/Sandbox rows at the actual provider boundary. */
 import { randomUUID } from "node:crypto";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -8,50 +7,62 @@ import {
   runnersJobClaimContract,
 } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+// eslint-disable-next-line no-restricted-imports -- Crash/epoch/capacity fixtures must seed and observe the durable ownership fence itself.
 import {
   agentRunInference,
   agentRunSandboxIntent,
   agentRunSandboxLease,
 } from "@okouai/db/schema/agent-run-inference";
+// eslint-disable-next-line no-restricted-imports -- Provider-boundary capacity proof must establish that no executable job exists.
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { usageEvent } from "@okouai/db/schema/usage-event";
+// eslint-disable-next-line no-restricted-imports -- Source-loss recovery requires deleting the exact captured key after admission.
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
+// eslint-disable-next-line no-restricted-imports -- Lost-process recovery fixtures need a canonical replacement session identity.
 import { agentSessions } from "@okouai/db/schema/agent-session";
+// eslint-disable-next-line no-restricted-imports -- Lost-process recovery fixtures need a canonical isolated thread.
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { createStore } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
+import { createAppWithRoutes } from "../../../app-factory-core";
 import { setupApp } from "../../../__tests__/test-helpers";
+// eslint-disable-next-line no-restricted-imports -- Explicit advisory-lock and process-loss fixtures require direct PostgreSQL ownership control.
 import { db } from "../../../lib/db";
 import { env, mockEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { runnersRoutes } from "../../routes/runners";
-import { updateFeatureSwitchesForUser } from "../../routes/__tests__/helpers/feature-switches";
+import { runnersRoutes } from "../runners";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
   createPiApiFirstTurnUsagePricingResolution,
   requireOrgId,
-} from "../../routes/__tests__/helpers/chat-events-fixture";
+} from "./helpers/chat-events-fixture";
 import {
   piResponsesContentSse,
   piResponsesTextSse,
-} from "../../routes/__tests__/helpers/pi-responses";
-import { consumeDeferredPiRun$ } from "../pi-deferred-sandbox.service";
-import { recoverDurablePiApiInference$ } from "../pi-api-inference-recovery.service";
+} from "./helpers/pi-responses";
+// eslint-disable-next-line no-restricted-imports -- Process-loss fixtures retain exact immutable receipts without invoking a second producer.
 import {
   publishPiInferenceObject,
   readPiInferenceObject,
   retainPiInferenceObject,
-} from "../pi-inference-object.service";
-import { piDeferredContextSchema } from "../pi-deferred-sandbox-contract";
+} from "../../services/pi-inference-object.service";
+// eslint-disable-next-line no-restricted-imports -- Process-loss fixtures validate the same immutable object schemas as production.
+import {
+  piDeferredConfigurationSchema,
+  piDeferredContextSchema,
+} from "../../services/pi-deferred-sandbox-contract";
+import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 
 const context = testContext();
+const billing = createBillingMediaApi(context);
 const {
   api,
   chat,
@@ -65,6 +76,35 @@ const {
 
 const SELECTED_MODEL = "deepseek-v4.1-flash";
 const PROVIDER_URL = "https://api.deepseek.com/responses";
+
+async function cleanupRun(runId: string, orgId: string) {
+  const app = createAppWithRoutes({
+    signal: context.signal,
+    routes: testCronCleanupSandboxesStateRoutes,
+  });
+  const response = await app.request(
+    "/api/test/cron-cleanup-sandboxes-state/cleanup",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        runIds: [runId],
+        orgIds: [orgId],
+        chatThreadIds: [],
+        exportJobIds: [],
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Scoped cleanup failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+  return {
+    status: response.status,
+    body: await response.json(),
+  };
+}
 
 async function enableDurablePi(
   actor: Awaited<ReturnType<typeof entitledChatActor>>["actor"],
@@ -118,6 +158,7 @@ async function readExecutionRows(runId: string) {
 async function seedProducerRecoveryRun(
   sourceRunId: string,
   kind: "ready" | "publishing",
+  options?: { readonly omitBillingCapture?: boolean },
 ): Promise<string> {
   const [[sourceRun], [sourceInference]] = await Promise.all([
     db().select().from(agentRuns).where(eq(agentRuns.id, sourceRunId)),
@@ -140,6 +181,29 @@ async function seedProducerRecoveryRun(
   const chatThreadId = kind === "ready" ? randomUUID() : sourceRun.chatThreadId;
   if (!chatThreadId) {
     throw new Error("Recovery fixture requires a chat thread");
+  }
+  let configurationHash = sourceInference.input.configurationHash;
+  if (options?.omitBillingCapture) {
+    const sourceConfiguration = await readPiInferenceObject(
+      db(),
+      {
+        runId: sourceRunId,
+        userId: sourceRun.userId,
+        orgId: sourceRun.orgId,
+        kind: "configuration",
+        hash: configurationHash,
+      },
+      piDeferredConfigurationSchema,
+    );
+    const { apiInferenceBilling: _billing, ...withoutBilling } =
+      sourceConfiguration;
+    configurationHash = await publishPiInferenceObject(
+      db(),
+      { userId: sourceRun.userId, orgId: sourceRun.orgId },
+      "configuration",
+      piDeferredConfigurationSchema,
+      withoutBilling,
+    );
   }
   let contextHash = sourceInference.input.contextHash;
   if (kind === "ready") {
@@ -169,7 +233,7 @@ async function seedProducerRecoveryRun(
       },
     );
   }
-  const createdAt = new Date();
+  const createdAt = nowDate();
   await db().transaction(async (tx) => {
     if (kind === "ready") {
       const [sourceSession] = await tx
@@ -225,6 +289,7 @@ async function seedProducerRecoveryRun(
       input: {
         ...sourceInference.input,
         inputEventId: null,
+        configurationHash,
         contextHash,
       },
       phase: kind,
@@ -242,7 +307,7 @@ async function seedProducerRecoveryRun(
       userId: sourceRun.userId,
       orgId: sourceRun.orgId,
       kind: "configuration",
-      hash: sourceInference.input.configurationHash,
+      hash: configurationHash,
     });
     await retainPiInferenceObject(tx, {
       runId,
@@ -381,18 +446,10 @@ describe("durable Pi API producer", () => {
         inputGeneration: 0,
       },
     });
-    const usage = await db()
-      .select({ idempotencyKey: usageEvent.idempotencyKey })
-      .from(usageEvent)
-      .where(eq(usageEvent.runId, run.runId));
-    expect(usage.length).toBeGreaterThan(0);
-    expect(
-      new Set(
-        usage.map((row) => {
-          return row.idempotencyKey;
-        }),
-      ).size,
-    ).toBe(usage.length);
+    await billing.processOrgUsageEvents(actor);
+    const usage = await billing.readUsageRecord(actor);
+    expect(usage.body.totalCredits).toBeGreaterThan(0);
+    expect(usage.body.pagination.total).toBeGreaterThan(0);
 
     const followUp = await sendChatRun(
       actor,
@@ -574,6 +631,95 @@ describe("durable Pi API producer", () => {
     expect(calls).toBe(2);
   }, 90_000);
 
+  it("fences stale output in the write transaction while settling observed usage", async () => {
+    configureNativeCliArtifact();
+    const { actor, agentId } = await entitledChatActor();
+    await enableDurablePi(actor);
+    await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const usagePricingResolution =
+      await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+
+    const providerEntered = createDeferredPromise<void>(context.signal);
+    const releaseProvider = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseProvider.settled()) {
+        releaseProvider.resolve(undefined);
+      }
+    });
+    let calls = 0;
+    server.use(
+      http.post(PROVIDER_URL, async () => {
+        calls += 1;
+        if (!providerEntered.settled()) {
+          providerEntered.resolve(undefined);
+        }
+        await releaseProvider.promise;
+        return new HttpResponse(
+          piResponsesTextSse("stale output must not publish", calls),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    const run = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "cancel at the durable output transaction",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await providerEntered.promise;
+
+    await db().transaction(async (tx) => {
+      const lockKey = `run_output_projection:${run.runId}`;
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      );
+      releaseProvider.resolve(undefined);
+      await expect
+        .poll(() => {
+          return readProducerState(run.runId);
+        })
+        .toMatchObject({
+          phase: "publishing",
+          providerAttemptState: "settled",
+          usageSettled: true,
+        });
+      await api.requestCancelRun(
+        actor,
+        run.runId,
+        [200],
+        usagePricingResolution,
+      );
+      await waitForRunStatus(actor, run.runId, "cancelled", 10_000);
+    });
+    await flushWaitUntilForTest();
+
+    expect(calls).toBe(1);
+    const events = (await chat.listThreadEvents(actor, run.threadId)).events;
+    expect(
+      events.filter((event) => {
+        return (
+          event.runId === run.runId &&
+          (event.eventType === "output.message" ||
+            event.eventType === "run.completed")
+        );
+      }),
+    ).toStrictEqual([]);
+    await expect(readProducerState(run.runId)).resolves.toMatchObject({
+      status: "cancelled",
+      phase: "terminal",
+      providerAttemptState: "settled",
+      usageSettled: true,
+    });
+    await billing.processOrgUsageEvents(actor);
+    const usage = await billing.readUsageRecord(actor);
+    expect(usage.body.totalCredits).toBeGreaterThan(0);
+  }, 90_000);
+
   it("rejects fleet-wide org overload before a second provider attempt", async () => {
     configureNativeCliArtifact();
     mockEnv("PI_INFERENCE_ORG_MAX_IN_FLIGHT", "1");
@@ -709,7 +855,7 @@ describe("durable Pi API producer", () => {
   it("recovers a lost ready owner through one fresh fenced provider attempt", async () => {
     configureNativeCliArtifact();
     const { actor, agentId } = await entitledChatActor();
-    await enableDurablePi(actor);
+    const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -739,13 +885,9 @@ describe("durable Pi API producer", () => {
     await flushWaitUntilForTest();
     const recoveryRunId = await seedProducerRecoveryRun(source.runId, "ready");
 
-    await expect(
-      createStore().set(
-        recoverDurablePiApiInference$,
-        [recoveryRunId],
-        context.signal,
-      ),
-    ).resolves.toBe(1);
+    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+      body: { errors: 0 },
+    });
     await waitForRunStatus(actor, recoveryRunId, "completed", 10_000);
     await flushWaitUntilForTest();
 
@@ -766,7 +908,7 @@ describe("durable Pi API producer", () => {
   it("rejects a recovered ready owner after its captured model source disappears", async () => {
     configureNativeCliArtifact();
     const { actor, agentId } = await entitledChatActor();
-    await enableDurablePi(actor);
+    const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -808,13 +950,9 @@ describe("durable Pi API producer", () => {
       .delete(builtInModelKeys)
       .where(eq(builtInModelKeys.id, captured.keyId));
 
-    await expect(
-      createStore().set(
-        recoverDurablePiApiInference$,
-        [recoveryRunId],
-        context.signal,
-      ),
-    ).resolves.toBe(1);
+    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+      body: { errors: 0 },
+    });
     await waitForRunStatus(actor, recoveryRunId, "failed", 10_000);
     await flushWaitUntilForTest();
 
@@ -835,7 +973,7 @@ describe("durable Pi API producer", () => {
   it("recovers settled H1 publication without another provider attempt", async () => {
     configureNativeCliArtifact();
     const { actor, agentId } = await entitledChatActor();
-    await enableDurablePi(actor);
+    const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -868,13 +1006,9 @@ describe("durable Pi API producer", () => {
       "publishing",
     );
 
-    await expect(
-      createStore().set(
-        recoverDurablePiApiInference$,
-        [recoveryRunId],
-        context.signal,
-      ),
-    ).resolves.toBe(1);
+    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+      body: { errors: 0 },
+    });
     await waitForRunStatus(actor, recoveryRunId, "completed", 10_000);
     await flushWaitUntilForTest();
 
@@ -890,11 +1024,164 @@ describe("durable Pi API producer", () => {
       intents: [],
       leases: [],
     });
-    const recoveredUsage = await db()
-      .select({ idempotencyKey: usageEvent.idempotencyKey })
-      .from(usageEvent)
-      .where(eq(usageEvent.runId, recoveryRunId));
-    expect(recoveredUsage.length).toBeGreaterThan(0);
+    await billing.processOrgUsageEvents(actor);
+    const recoveredUsage = await billing.readUsageRecord(actor);
+    expect(recoveredUsage.body.totalCredits).toBeGreaterThan(0);
+    expect(recoveredUsage.body.pagination.total).toBeGreaterThan(0);
+  }, 90_000);
+
+  it("settles a retained H1 receipt after canonical cancellation without publishing output", async () => {
+    configureNativeCliArtifact();
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = await enableDurablePi(actor);
+    await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const usagePricingResolution =
+      await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+
+    let calls = 0;
+    server.use(
+      http.post(PROVIDER_URL, () => {
+        calls += 1;
+        return new HttpResponse(
+          piResponsesTextSse("terminal accounting receipt", calls),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    const source = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "capture terminal accounting recovery",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, source.runId, "completed", 10_000);
+    await flushWaitUntilForTest();
+    await billing.processOrgUsageEvents(actor);
+    const before = await billing.readUsageRecord(actor);
+    const recoveryRunId = await seedProducerRecoveryRun(
+      source.runId,
+      "publishing",
+    );
+
+    await api.requestCancelRun(
+      actor,
+      recoveryRunId,
+      [200],
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
+    await db()
+      .update(agentRunInference)
+      .set({ deadlineAt: new Date(0) })
+      .where(eq(agentRunInference.runId, recoveryRunId));
+    await expect(readProducerState(recoveryRunId)).resolves.toMatchObject({
+      status: "cancelled",
+      phase: "terminal",
+      providerAttemptState: "settled",
+      usageSettled: false,
+    });
+
+    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+      body: { errors: 0 },
+    });
+    await flushWaitUntilForTest();
+
+    expect(calls).toBe(1);
+    await expect(readProducerState(recoveryRunId)).resolves.toMatchObject({
+      status: "cancelled",
+      phase: "terminal",
+      providerAttemptState: "settled",
+      usageSettled: true,
+    });
+    await expect(readExecutionRows(recoveryRunId)).resolves.toStrictEqual({
+      jobs: [],
+      intents: [],
+      leases: [],
+    });
+    const events = (await chat.listThreadEvents(actor, source.threadId)).events;
+    expect(
+      events.filter((event) => {
+        return (
+          event.runId === recoveryRunId &&
+          (event.eventType === "output.message" ||
+            event.eventType === "run.completed")
+        );
+      }),
+    ).toStrictEqual([]);
+    await billing.processOrgUsageEvents(actor);
+    const after = await billing.readUsageRecord(actor);
+    expect(after.body.totalCredits).toBeGreaterThan(before.body.totalCredits);
+  }, 90_000);
+
+  it("does not settle terminal usage when the required billing capture is missing", async () => {
+    configureNativeCliArtifact();
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = await enableDurablePi(actor);
+    await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const usagePricingResolution =
+      await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+
+    let calls = 0;
+    server.use(
+      http.post(PROVIDER_URL, () => {
+        calls += 1;
+        return new HttpResponse(piResponsesTextSse("billing source", calls), {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }),
+    );
+    const source = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "capture required billing identity",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, source.runId, "completed", 10_000);
+    await flushWaitUntilForTest();
+    await billing.processOrgUsageEvents(actor);
+    const before = await billing.readUsageRecord(actor);
+    const recoveryRunId = await seedProducerRecoveryRun(
+      source.runId,
+      "publishing",
+      { omitBillingCapture: true },
+    );
+    await api.requestCancelRun(
+      actor,
+      recoveryRunId,
+      [200],
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, recoveryRunId, "cancelled", 10_000);
+    await db()
+      .update(agentRunInference)
+      .set({ deadlineAt: new Date(0) })
+      .where(eq(agentRunInference.runId, recoveryRunId));
+
+    await expect(cleanupRun(recoveryRunId, orgId)).resolves.toMatchObject({
+      body: { errors: 0 },
+    });
+    await flushWaitUntilForTest();
+
+    expect(calls).toBe(1);
+    await expect(readProducerState(recoveryRunId)).resolves.toMatchObject({
+      status: "cancelled",
+      phase: "terminal",
+      providerAttemptState: "settled",
+      usageSettled: false,
+    });
+    await billing.processOrgUsageEvents(actor);
+    const after = await billing.readUsageRecord(actor);
+    expect(after.body.totalCredits).toBe(before.body.totalCredits);
   }, 90_000);
 
   it("publishes settled H1 demand for one input committed during provider execution", async () => {
@@ -981,7 +1268,7 @@ describe("durable Pi API producer", () => {
   it("terminalizes an expired uncertain provider attempt without replaying H0", async () => {
     configureNativeCliArtifact();
     const { actor, agentId } = await entitledChatActor();
-    await enableDurablePi(actor);
+    const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -1027,13 +1314,9 @@ describe("durable Pi API producer", () => {
       .set({ deadlineAt: new Date(0) })
       .where(eq(agentRunInference.runId, run.runId));
 
-    await expect(
-      createStore().set(
-        recoverDurablePiApiInference$,
-        [run.runId],
-        context.signal,
-      ),
-    ).resolves.toBe(1);
+    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+      body: { errors: 0 },
+    });
     await waitForRunStatus(actor, run.runId, "failed", 10_000);
     const [terminal] = await db()
       .select({
@@ -1057,17 +1340,15 @@ describe("durable Pi API producer", () => {
       providerAttemptState: "may-have-started",
       usageSettled: true,
     });
-    const lateUsage = await db()
-      .select({ idempotencyKey: usageEvent.idempotencyKey })
-      .from(usageEvent)
-      .where(eq(usageEvent.runId, run.runId));
-    expect(lateUsage.length).toBeGreaterThan(0);
+    await billing.processOrgUsageEvents(actor);
+    const lateUsage = await billing.readUsageRecord(actor);
+    expect(lateUsage.body.pagination.total).toBeGreaterThan(0);
   }, 90_000);
 
   it("publishes one durable H1 demand and reaches the accepted consumer without provider replay", async () => {
     configureNativeCliArtifact();
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await enableDurablePi(actor);
+    const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
@@ -1126,7 +1407,9 @@ describe("durable Pi API producer", () => {
     expect(calls).toBe(1);
     expect((await readExecutionRows(run.runId)).jobs).toStrictEqual([]);
 
-    await createStore().set(consumeDeferredPiRun$, run.runId, context.signal);
+    await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+      body: { errors: 0 },
+    });
     const runnerId = randomUUID();
     await api.requestHeartbeatRunner(true, [200], {
       runnerId,

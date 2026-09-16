@@ -456,14 +456,18 @@ export function assertPiInferenceApiFailure(
   if (!lifecycle) {
     return;
   }
+  if (lifecycle.intent !== null || lifecycle.inference.phase === "terminal") {
+    throw new Error("Pi API failure requires the current inference owner");
+  }
   if (
     ownerEpoch !== lifecycle.inference.ownerEpoch ||
-    lifecycle.intent !== null ||
     !["admitted", "ready", "provider", "publishing"].includes(
       lifecycle.inference.phase,
     )
   ) {
-    throw new Error("Pi API failure requires the current inference owner");
+    throw new Error(
+      "Pi API failure requires the current unexpired execution owner",
+    );
   }
 }
 

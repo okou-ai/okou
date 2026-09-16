@@ -5,7 +5,7 @@ import type {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunInference } from "@okouai/db/schema/agent-run-inference";
 import { command } from "ccstate";
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray, lte, or } from "drizzle-orm";
 import type { z } from "zod";
 
 import { logger } from "../../lib/log";
@@ -21,7 +21,10 @@ import {
 } from "./pi-api-first-turn-config";
 import { dispatchConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
 import { lockPiApiFirstTurnLifecycle } from "./pi-api-first-turn-lifecycle.service";
-import { recoverDurablePiPublication$ } from "./pi-api-first-turn.service";
+import {
+  recoverDurablePiPublication$,
+  recoverDurablePiUsage$,
+} from "./pi-api-first-turn.service";
 import {
   piDeferredConfigurationSchema,
   piDeferredContextSchema,
@@ -55,7 +58,7 @@ interface RecoveryClaimBase {
 type RecoveryClaim =
   | (RecoveryClaimBase & { readonly kind: "activate" })
   | (RecoveryClaimBase & {
-      readonly kind: "publish";
+      readonly kind: "publish" | "account";
       readonly publication: PiInferencePublication;
     })
   | (RecoveryClaimBase & { readonly kind: "uncertain" });
@@ -82,6 +85,10 @@ function recoveryActivation(
   if (!digest) {
     throw new Error("Durable Pi recovery is missing its resource digest");
   }
+  const billing = configuration.apiInferenceBilling;
+  if (!billing) {
+    throw new Error("Durable Pi recovery is missing its billing capture");
+  }
   return {
     executionMode: "durable-inference",
     runId: claim.run.id,
@@ -97,10 +104,9 @@ function recoveryActivation(
     },
     executionContext: {
       apiStartTime: claim.run.apiStartedAt.getTime(),
-      billableFirewalls:
-        configuration.apiInferenceBilling?.billableFirewalls ?? [],
+      billableFirewalls: billing.billableFirewalls,
       encryptedSecrets: runtime?.encryptedSecrets ?? null,
-      modelUsageProvider: configuration.apiInferenceBilling?.modelUsageProvider,
+      modelUsageProvider: billing.modelUsageProvider,
       platformEnvironment: runtime?.platformEnvironment ?? {},
       secretConnectorMap: runtime?.secretConnectorMap ?? null,
       secretConnectorMetadataMap: runtime?.secretConnectorMetadataMap ?? null,
@@ -200,6 +206,7 @@ function classifyRecovery(args: {
     | "terminal";
   readonly providerAttemptState: "not-started" | "may-have-started" | "settled";
   readonly publication: PiInferencePublication | null;
+  readonly usageSettled: boolean;
 }): RecoveryClaim["kind"] | null {
   if (args.phase === "ready" && args.providerAttemptState === "not-started") {
     return "activate";
@@ -210,6 +217,14 @@ function classifyRecovery(args: {
     args.publication
   ) {
     return "publish";
+  }
+  if (
+    args.phase === "terminal" &&
+    args.providerAttemptState === "settled" &&
+    args.publication &&
+    !args.usageSettled
+  ) {
+    return "account";
   }
   return args.phase === "provider" &&
     args.providerAttemptState === "may-have-started"
@@ -242,6 +257,7 @@ async function claimExpiredRecovery(
         providerAttemptId: agentRunInference.providerAttemptId,
         providerAttemptState: agentRunInference.providerAttemptState,
         publication: agentRunInference.publication,
+        usageSettled: agentRunInference.usageSettled,
       })
       .from(agentRuns)
       .innerJoin(agentRunInference, eq(agentRunInference.runId, agentRuns.id))
@@ -251,7 +267,6 @@ async function claimExpiredRecovery(
       !row ||
       !row.chatThreadId ||
       !row.apiStartedAt ||
-      !["pending", "running"].includes(row.status) ||
       row.launchSnapshot?.schemaVersion !== 4 ||
       row.launchSnapshot.executionMode !== "api-inference" ||
       !row.activationReady ||
@@ -259,14 +274,24 @@ async function claimExpiredRecovery(
     ) {
       return null;
     }
+    // Only the producer writes the encrypted activation envelope. Foundation
+    // and consumer-only fixtures retain their established timeout owner.
+    if (row.input.deferredSecrets.kind !== "encrypted") {
+      return null;
+    }
     const kind = classifyRecovery(row);
-    if (!kind) {
+    if (
+      !kind ||
+      (kind === "account"
+        ? !["completed", "failed", "timeout", "cancelled"].includes(row.status)
+        : !["pending", "running"].includes(row.status))
+    ) {
       return null;
     }
     const ownerEpoch = row.ownerEpoch + 1;
     const deadlineAt = new Date(
       at.getTime() +
-        (kind === "publish"
+        (kind === "publish" || kind === "account"
           ? PUBLICATION_RECOVERY_TIMEOUT_MS
           : PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS),
     );
@@ -280,6 +305,9 @@ async function claimExpiredRecovery(
           eq(agentRunInference.phase, row.phase),
           eq(agentRunInference.providerAttemptState, row.providerAttemptState),
           lte(agentRunInference.deadlineAt, at),
+          ...(kind === "account"
+            ? [eq(agentRunInference.usageSettled, false)]
+            : []),
         ),
       )
       .returning({ runId: agentRunInference.runId });
@@ -300,7 +328,7 @@ async function claimExpiredRecovery(
       providerAttemptId: row.providerAttemptId,
       deadlineAt,
     };
-    return kind === "publish"
+    return kind === "publish" || kind === "account"
       ? { ...base, kind, publication: row.publication! }
       : { ...base, kind };
   });
@@ -369,6 +397,16 @@ const recoverClaim$ = command(
     }
     const { configuration, context } = await readRecoveryObjects(db, claim);
     signal.throwIfAborted();
+    if (claim.kind === "account") {
+      await set(
+        recoverDurablePiUsage$,
+        recoveryActivation(claim, configuration, context),
+        claim.publication,
+        signal,
+      );
+      signal.throwIfAborted();
+      return;
+    }
     if (claim.kind === "publish") {
       const sideEffects = await set(
         recoverDurablePiPublication$,
@@ -418,9 +456,28 @@ export const recoverDurablePiApiInference$ = command(
       .innerJoin(agentRuns, eq(agentRuns.id, agentRunInference.runId))
       .where(
         and(
-          inArray(agentRunInference.phase, ["ready", "provider", "publishing"]),
           lte(agentRunInference.deadlineAt, at),
-          inArray(agentRuns.status, ["pending", "running"]),
+          or(
+            and(
+              inArray(agentRunInference.phase, [
+                "ready",
+                "provider",
+                "publishing",
+              ]),
+              inArray(agentRuns.status, ["pending", "running"]),
+            ),
+            and(
+              eq(agentRunInference.phase, "terminal"),
+              eq(agentRunInference.providerAttemptState, "settled"),
+              eq(agentRunInference.usageSettled, false),
+              inArray(agentRuns.status, [
+                "completed",
+                "failed",
+                "timeout",
+                "cancelled",
+              ]),
+            ),
+          ),
           ...(runIds ? [inArray(agentRunInference.runId, runIds)] : []),
         ),
       )
