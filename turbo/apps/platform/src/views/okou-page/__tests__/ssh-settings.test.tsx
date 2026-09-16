@@ -331,7 +331,7 @@ test.each(["host", "credential"] as const)(
     let attemptId = "";
     let committed = false;
     const confirmed: string[] = [];
-    let confirmationUnavailable = true;
+    let confirmationResult: "network" | "malformed" | "saved" = "network";
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, {
         connections: committed && kind === "host" ? [base] : [],
@@ -360,9 +360,11 @@ test.each(["host", "credential"] as const)(
             attemptId: params.attemptId,
           }).attemptId,
         );
-        return confirmationUnavailable
+        return confirmationResult === "network"
           ? HttpResponse.error()
-          : HttpResponse.json({ saved: true });
+          : HttpResponse.json(
+              confirmationResult === "malformed" ? {} : { saved: true },
+            );
       },
     );
     await page(kind === "host" ? "/connectors/ssh?add=1" : "/connectors/ssh");
@@ -405,12 +407,21 @@ test.each(["host", "credential"] as const)(
     await within(dialog).findByText(
       /We couldn't confirm whether your changes were saved/u,
     );
-    confirmationUnavailable = false;
+    confirmationResult = "malformed";
+    click(getAction("button", "Check result", dialog));
+    await within(dialog).findByText(
+      /We couldn't confirm whether your changes were saved/u,
+    );
+    expect(within(dialog).getByLabelText("Password")).toBeDisabled();
+    expect(within(dialog).getByLabelText("Password")).toHaveValue(
+      "lost-response-secret",
+    );
+    confirmationResult = "saved";
     click(getAction("button", "Check result", dialog));
     await waitFor(() => {
       return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(confirmed).toStrictEqual([attemptId, attemptId]);
+    expect(confirmed).toStrictEqual([attemptId, attemptId, attemptId]);
     expect(document.body.textContent).not.toContain("lost-response-secret");
   },
 );

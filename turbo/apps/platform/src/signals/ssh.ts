@@ -294,6 +294,11 @@ export const resolveSshSave$ = command(
       [200],
       signal,
     );
+    // Production clients do not validate responses by default. Only a valid
+    // terminal outcome may release the draft or allow another secret-bearing save.
+    const outcome = sshSaveAttemptsContract.resolve.responses[200].parse(
+      result.body,
+    );
     if (dialog.identity !== (await get(sshIdentity$))) {
       return;
     }
@@ -303,7 +308,7 @@ export const resolveSshSave$ = command(
     }
     set(unresolvedSave$, null);
     set(invalidateSsh$);
-    if (result.body.saved) {
+    if (outcome.saved) {
       set(closeSshDialog$);
     } else {
       set(saveMessage$, "not-saved");
