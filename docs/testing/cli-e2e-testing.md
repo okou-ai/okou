@@ -141,7 +141,9 @@ unused global account. Failed checkouts report HTTP status, request ID, and
 Retry-After, and product Playwright lanes retain traces on the first failure.
 
 Runner credential sign-in failures upload `runner-e2e-sign-in-diagnostics` for
-one day, separately from payment diagnostics and credentials. Each account's
+one day, separately from payment diagnostics and credentials. This upload is
+best-effort: upload failure does not change the original test result; credential
+generation and token upload still must succeed. Each account's
 JSON report records document milestones, the first 64 requests (origin/path,
 resource type, status, elapsed timings and finished/failed/pending outcome),
 omitted-record counts, and best-effort page/Clerk readiness. Status and response
