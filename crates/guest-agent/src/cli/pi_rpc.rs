@@ -224,9 +224,10 @@
 //! `Pi model turn <stopReason>` when a stop reason exists.
 //! A final `length` result uses a bounded output-limit message and the existing
 //! `output_token_limit` reason; any partial assistant answer remains in its event.
-//! Runtime model diagnostics carry only observed HTTP status, attempt counts,
-//! and an allowlisted failure reason. The reason is forwarded separately from
-//! `modelRequest` so older guests can ignore this additive field.
+//! Runtime model diagnostics carry observed HTTP status, attempt counts,
+//! allowlisted transport exception evidence, and a failure reason. No raw causes
+//! or network addresses enter `modelRequest`. The reason is forwarded separately
+//! from `modelRequest` so older guests can ignore these additive fields.
 //!
 //! When `agent_settled` arrives, the cached state is consumed and the public
 //! result contains `type: "result"`, `subtype: "error_during_execution"` and

@@ -13,11 +13,18 @@ import {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { preserveProviderErrorStatus } from "./provider-error-body";
 import { guardPiUpstreamErrorBody } from "./upstream-error-body";
+import {
+  modelTransportFailure,
+  observeModelResponseBody,
+  parseModelTransportFailure,
+  type PiModelTransportFailure,
+} from "./model-transport-diagnostics";
 
 interface ModelRequestObservation {
   httpStatus?: number;
   transportAttempts: number;
   failureReason?: KnownRunFailureReason;
+  transportFailure?: PiModelTransportFailure;
 }
 
 /** Decorate both native consumption paths without starting another stream pump. */
@@ -67,12 +74,13 @@ class ModelRequestEventStream extends AssistantMessageEventStream {
   }
 }
 
-/** Retain only status and allowlisted reasons from this model call's bounded error body. */
+/** Retain content-free provider and transport evidence before SDK normalization. */
 export function streamWithModelRequestDiagnostics(
   start: (
     fetch: NonNullable<SimpleStreamOptions["fetch"]>,
   ) => AssistantMessageEventStream,
   fetchImpl: NonNullable<SimpleStreamOptions["fetch"]>,
+  signal: AbortSignal | undefined,
 ): AssistantMessageEventStream {
   const observation: ModelRequestObservation = { transportAttempts: 0 };
   const observedFetch: NonNullable<SimpleStreamOptions["fetch"]> = async (
@@ -83,10 +91,27 @@ export function streamWithModelRequestDiagnostics(
     // A later network failure must not inherit an earlier response's status.
     observation.httpStatus = undefined;
     observation.failureReason = undefined;
-    const response = await fetchImpl(input, init);
+    observation.transportFailure = undefined;
+    let response: Response;
+    try {
+      response = await fetchImpl(input, init);
+    } catch (error) {
+      observation.transportFailure = modelTransportFailure(
+        error,
+        "request",
+        signal?.aborted === true,
+      );
+      throw error;
+    }
     observation.httpStatus = response.status;
     observation.failureReason = classifyProviderHttpFailure(response.status);
-    return response;
+    return observeModelResponseBody(response, (error) => {
+      observation.transportFailure = modelTransportFailure(
+        error,
+        "response_body",
+        signal?.aborted === true,
+      );
+    });
   };
   const source = start(
     preserveProviderErrorStatus(
@@ -97,6 +122,20 @@ export function streamWithModelRequestDiagnostics(
     ),
   );
   return new ModelRequestEventStream(source, observation);
+}
+
+/** Transport evidence belongs only to the selected failed model message. */
+export function piModelTransportFailure(
+  message: AssistantMessage,
+): PiModelTransportFailure | undefined {
+  if (message.stopReason !== "error") return undefined;
+  const diagnostic = message.diagnostics
+    ?.slice()
+    .reverse()
+    .find((item) => {
+      return item.type === "okou_model_request";
+    });
+  return parseModelTransportFailure(diagnostic?.details?.transportFailure);
 }
 
 /** Read only our bounded runtime diagnostic; provider prose is never a reason token. */
