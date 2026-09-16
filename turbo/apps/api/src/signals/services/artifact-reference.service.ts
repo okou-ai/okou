@@ -1,7 +1,9 @@
 import { command, computed } from "ccstate";
 import { z } from "zod";
-import { artifactShareTargetSchema } from "@okouai/api-contracts/contracts/artifact-shares";
-import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
+import {
+  artifactShareTargetSchema,
+  type ArtifactShareTarget,
+} from "@okouai/api-contracts/contracts/artifact-shares";
 import { env } from "../../lib/env";
 import { artifactHash } from "../../lib/file-url";
 import {
@@ -73,7 +75,9 @@ export const allocateArtifactReference$ = command(
         ),
         signal,
       );
-      if (written.ok) return reference;
+      if (written.ok) {
+        return reference;
+      }
       if (
         !(written.error instanceof Error) ||
         written.error.name !== "PreconditionFailed"

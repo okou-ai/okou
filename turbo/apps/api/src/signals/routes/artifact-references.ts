@@ -25,6 +25,64 @@ import {
 import { artifactReferenceRecord } from "../services/artifact-reference.service";
 import type { RouteEntry } from "../route-entry";
 
+const resolveFileReference$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly id: string;
+      readonly ownerKind: "file" | "html" | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { id, ownerKind } = args;
+    const auth = get(authContext$);
+    const file = await get(privateArtifactRecord(id));
+    signal.throwIfAborted();
+    if (file) {
+      if (ownerKind === "html") {
+        return notFound("Artifact unavailable");
+      }
+      if (file.userId !== auth.userId || file.orgId !== auth.orgId) {
+        if (ownerKind) {
+          return notFound("Artifact unavailable");
+        }
+        const shared = await set(
+          resolveArtifactTargetShare$,
+          { target: { kind: "file", id }, targetId: id, userId: auth.userId },
+          signal,
+        );
+        return shared
+          ? { status: 200 as const, body: shared }
+          : notFound("Artifact unavailable");
+      }
+      // Older attachment composers do not call complete after a single PUT.
+      // Verify the owned object exists before signing its preview; multipart
+      // uploads remain unreadable until R2 publishes the completed object.
+      const object = await get(s3ObjectHead(file.bucket, file.key));
+      signal.throwIfAborted();
+      if (object.kind === "missing") {
+        return notFound("Artifact unavailable");
+      }
+      const preview = await get(
+        generateArtifactPreviewUrl(file.bucket, file.key, {
+          signingDate: nowDate(),
+        }),
+      );
+      signal.throwIfAborted();
+      return {
+        status: 200 as const,
+        body: {
+          ...preview,
+          filename: file.filename,
+          contentType: file.contentType,
+          target: { kind: "file" as const, id },
+        },
+      };
+    }
+    return null;
+  },
+);
+
 const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(authContext$);
   const { kind: ownerKind } = get(queryOf(artifactReferencesContract.resolve));
@@ -38,9 +96,13 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (id === null) {
     const record = await get(artifactReferenceRecord(parsed.hash, signal));
     signal.throwIfAborted();
-    if (!record) return notFound("Artifact unavailable");
+    if (!record) {
+      return notFound("Artifact unavailable");
+    }
     if (record.version === 1) {
-      if (ownerKind) return notFound("Artifact unavailable");
+      if (ownerKind) {
+        return notFound("Artifact unavailable");
+      }
       const shared = await set(
         resolveArtifactShare$,
         { id: record.shareId, userId: auth.userId },
@@ -53,47 +115,15 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     id = record.target.id;
     targetKind = record.target.kind;
   }
-  const file =
-    targetKind === "html" ? null : await get(privateArtifactRecord(id));
-  signal.throwIfAborted();
-  if (file) {
-    if (ownerKind === "html") return notFound("Artifact unavailable");
-    if (file.userId !== auth.userId || file.orgId !== auth.orgId) {
-      if (ownerKind) return notFound("Artifact unavailable");
-      const shared = await set(
-        resolveArtifactTargetShare$,
-        { target: { kind: "file", id }, targetId: id, userId: auth.userId },
-        signal,
-      );
-      return shared
-        ? { status: 200 as const, body: shared }
-        : notFound("Artifact unavailable");
+  if (targetKind !== "html") {
+    const file = await set(resolveFileReference$, { id, ownerKind }, signal);
+    if (file) {
+      return file;
     }
-    // Older attachment composers do not call complete after a single PUT.
-    // Verify the owned object exists before signing its preview; multipart
-    // uploads remain unreadable until R2 publishes the completed object.
-    const object = await get(s3ObjectHead(file.bucket, file.key));
-    signal.throwIfAborted();
-    if (object.kind === "missing") {
-      return notFound("Artifact unavailable");
-    }
-    const preview = await get(
-      generateArtifactPreviewUrl(file.bucket, file.key, {
-        signingDate: nowDate(),
-      }),
-    );
-    signal.throwIfAborted();
-    return {
-      status: 200 as const,
-      body: {
-        ...preview,
-        filename: file.filename,
-        contentType: file.contentType,
-        target: { kind: "file" as const, id },
-      },
-    };
   }
-  if (targetKind === "file") return notFound("Artifact unavailable");
+  if (targetKind === "file") {
+    return notFound("Artifact unavailable");
+  }
   const [site] = await get(db$)
     .select({ deployment: privateHostedDeployments })
     .from(privateHostedDeployments)
@@ -104,10 +134,14 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   if (site) {
-    if (ownerKind === "file") return notFound("Artifact unavailable");
+    if (ownerKind === "file") {
+      return notFound("Artifact unavailable");
+    }
     const deployment = site.deployment;
     if (deployment.userId !== auth.userId || deployment.orgId !== auth.orgId) {
-      if (ownerKind) return notFound("Artifact unavailable");
+      if (ownerKind) {
+        return notFound("Artifact unavailable");
+      }
       const shared = await set(
         resolveArtifactTargetShare$,
         {
@@ -138,7 +172,9 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
         }
       : notFound("Artifact unavailable");
   }
-  if (targetKind || ownerKind) return notFound("Artifact unavailable");
+  if (targetKind || ownerKind) {
+    return notFound("Artifact unavailable");
+  }
   const shared = await set(
     resolveArtifactShare$,
     { id, userId: auth.userId },

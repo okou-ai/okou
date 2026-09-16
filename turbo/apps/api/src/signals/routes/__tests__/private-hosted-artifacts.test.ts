@@ -228,5 +228,5 @@ test("creates hostless references without requiring an API hostname", async () =
     capture.puts.some(({ key }) => {
       return key.startsWith("sites/");
     }),
-  ).toBe(false);
+  ).toBeFalsy();
 });

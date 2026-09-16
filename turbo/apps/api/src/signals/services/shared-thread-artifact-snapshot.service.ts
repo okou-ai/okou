@@ -117,11 +117,15 @@ function resourceReference(value: string, signal: AbortSignal) {
   return computed(async (get): Promise<ResourceReference | null> => {
     const reference = parseArtifactReference(value, env("APP_URL"));
     if (reference) {
-      if (reference.id) return { id: reference.id, suffix: reference.fragment };
+      if (reference.id) {
+        return { id: reference.id, suffix: reference.fragment };
+      }
       const record = await get(artifactReferenceRecord(reference.hash, signal));
       // Legacy share aliases grant viewing only. Source references still have
       // their ownership checked before any independent snapshot is published.
-      if (record?.version !== 2) throw new SharedThreadArtifactUnavailable();
+      if (record?.version !== 2) {
+        throw new SharedThreadArtifactUnavailable();
+      }
       return {
         id: record.target.id,
         kind: record.target.kind,
@@ -242,7 +246,9 @@ const allocateSnapshotReference$ = command(
         args.threadId,
         `${args.kind}:${args.id}:${attempt}`,
       );
-      if (args.reservedTokens.has(token)) continue;
+      if (args.reservedTokens.has(token)) {
+        continue;
+      }
       const registered = await settle(
         set(
           registerArtifactDelivery$,
@@ -266,9 +272,12 @@ const allocateSnapshotReference$ = command(
         ),
         signal,
       );
-      if (registered.ok) return token;
-      if (!(registered.error instanceof ArtifactDeliveryAliasConflict))
+      if (registered.ok) {
+        return token;
+      }
+      if (!(registered.error instanceof ArtifactDeliveryAliasConflict)) {
         throw registered.error;
+      }
     }
     throw new Error(
       "Unable to allocate a unique conversation artifact reference",
@@ -283,7 +292,9 @@ const privateFileSnapshot$ = command(
     reference: ResourceReference,
     signal: AbortSignal,
   ) => {
-    if (reference.kind === "html") return null;
+    if (reference.kind === "html") {
+      return null;
+    }
     const file = await get(privateArtifactRecord(reference.id));
     signal.throwIfAborted();
     if (file) {
@@ -449,6 +460,51 @@ function hostedSnapshotCopies(
   });
 }
 
+async function rewriteSnapshotMessages(
+  sourceMessages: readonly SharedMessage[],
+  rewrite: (content: string) => Promise<string>,
+  signal: AbortSignal,
+): Promise<SharedMessage[]> {
+  const messages: SharedMessage[] = [];
+  for (const message of sourceMessages) {
+    const attachments:
+      | NonNullable<SharedMessage["attachments"]>[number][]
+      | undefined = message.attachments === undefined ? undefined : [];
+    for (const attachment of message.attachments ?? []) {
+      attachments?.push({
+        ...attachment,
+        url: await rewrite(attachment.url),
+      });
+    }
+    messages.push({
+      ...message,
+      content: await rewrite(message.content),
+      ...(attachments === undefined ? {} : { attachments }),
+    });
+  }
+  signal.throwIfAborted();
+  return messages;
+}
+
+function snapshotPolicy(
+  args: SnapshotOwner,
+  resources: ReadonlyMap<string, SnapshotResource>,
+): SharedThreadArtifactPolicy {
+  return sharedThreadArtifactPolicySchema.parse({
+    version: 1,
+    threadId: args.threadId,
+    ownerId: args.userId,
+    orgId: args.orgId,
+    publicBrand: args.publicBrand,
+    status: "preparing",
+    resources: Object.fromEntries(
+      [...resources.values()].map((resource) => {
+        return [resource.token, resource.target];
+      }),
+    ),
+  });
+}
+
 /** Discover only the selected messages and their managed static dependencies. */
 export const prepareSharedThreadArtifacts$ = command(
   async (
@@ -564,39 +620,15 @@ export const prepareSharedThreadArtifacts$ = command(
       });
     }
 
-    const messages: SharedMessage[] = [];
-    for (const message of args.messages) {
-      const attachments:
-        | NonNullable<SharedMessage["attachments"]>[number][]
-        | undefined = message.attachments === undefined ? undefined : [];
-      for (const attachment of message.attachments ?? []) {
-        attachments?.push({
-          ...attachment,
-          url: await rewrite(attachment.url),
-        });
-      }
-      messages.push({
-        ...message,
-        content: await rewrite(message.content),
-        ...(attachments === undefined ? {} : { attachments }),
-      });
-    }
+    const messages = await rewriteSnapshotMessages(
+      args.messages,
+      rewrite,
+      signal,
+    );
     if (resources.size === 0) {
       return null;
     }
-    const policy = sharedThreadArtifactPolicySchema.parse({
-      version: 1,
-      threadId: args.threadId,
-      ownerId: args.userId,
-      orgId: args.orgId,
-      publicBrand: args.publicBrand,
-      status: "preparing",
-      resources: Object.fromEntries(
-        [...resources.values()].map((resource) => {
-          return [resource.token, resource.target];
-        }),
-      ),
-    });
+    const policy = snapshotPolicy(args, resources);
     return { messages, policy, copies };
   },
 );

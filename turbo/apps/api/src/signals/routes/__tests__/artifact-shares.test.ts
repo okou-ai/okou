@@ -1,4 +1,4 @@
-import { mockNow } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { artifactDeliveryKey } from "@okouai/api-contracts/contracts/artifact-delivery";
 import {
   artifactReferencePath,
@@ -26,7 +26,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactShareRoutes } from "../artifact-shares";
@@ -446,7 +445,7 @@ test("agent reference resolution enforces resource capability, type and ownershi
       iat: seconds,
       exp: seconds + 3600,
     });
-    await accept(
+    const resolved = await accept(
       api()(artifactReferencesContract).resolve({
         headers: { authorization: `Bearer ${token}` },
         params: { reference },
@@ -454,6 +453,11 @@ test("agent reference resolution enforces resource capability, type and ownershi
       }),
       [status],
     );
+    if (status === 200) {
+      expect(resolved.body).toMatchObject({
+        target: { kind: "file", id: prepared.body.id },
+      });
+    }
   }
 });
 

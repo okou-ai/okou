@@ -76,7 +76,9 @@ export function resolveArtifactFileReference(
 ) {
   return computed(async (get) => {
     const reference = artifactFileReference(value);
-    if (!reference || reference.id || !reference.hash) return reference;
+    if (!reference || reference.id || !reference.hash) {
+      return reference;
+    }
     const record = await get(artifactReferenceRecord(reference.hash, signal));
     // Share aliases grant viewing only. Provider input still requires ownership.
     return {

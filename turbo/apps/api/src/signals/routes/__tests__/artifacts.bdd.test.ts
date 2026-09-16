@@ -57,7 +57,9 @@ interface ArtifactActor {
 
 async function resolvePrivatePreviewReference(url: string) {
   const reference = parseArtifactReference(url);
-  if (!reference) throw new Error("Expected a private preview reference");
+  if (!reference) {
+    throw new Error("Expected a private preview reference");
+  }
   const resolved = await accept(
     setupApp({ context, routes: artifactReferenceRoutes })(
       artifactReferencesContract,

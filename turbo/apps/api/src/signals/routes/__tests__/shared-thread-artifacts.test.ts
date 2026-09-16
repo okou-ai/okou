@@ -500,6 +500,15 @@ test.each(["short", "legacy"] as const)(
     const owner = bdd.user({ orgId: f.actor.orgId });
     await flag(owner, true);
     const file = await f.upload(owner);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          { publicUserData: { userId: owner.userId } },
+          { publicUserData: { userId: f.actor.userId } },
+        ],
+        totalCount: 2,
+      },
+    );
     context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
       id: f.actor.orgId,
       name: "Owner organization",
@@ -585,7 +594,7 @@ test("snapshot short-reference collisions preserve the occupied alias and retry"
   expect(url).toMatch(/^https:\/\/a\.okou\.io\/[a-z0-9]{10}\.pdf$/u);
   expect(occupiedKey).toBeDefined();
   expect(occupiedKey).not.toContain(new URL(url).pathname.slice(1));
-  expect(f.objects.get(occupiedKey!)).toEqual(occupiedBody);
+  expect(f.objects.get(occupiedKey!)).toStrictEqual(occupiedBody);
 });
 
 test("independent thread snapshots use different short references and revoke separately", async () => {
