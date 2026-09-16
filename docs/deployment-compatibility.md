@@ -930,6 +930,22 @@ built-in/BYOK production samples, Axiom monitor configuration and delivered-aler
 verification. Runner INFO events are below the Axiom upload threshold, and the
 investigation token could not read monitor configuration.
 
+Pi queue expiry adds `provider_queue_timeout` under the same open-token
+contract. Prefer API/App readers and terminal policy before the patched CLI;
+Guest and Runner typed contracts ship as a supported pair. An old API's
+transient allowlist excludes the new token. Old Guests may ignore the optional
+runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
+generic server/overload evidence from exact terminal text. It cannot undo
+retries already performed by an old SDK. No new protocol, database column or
+session format is introduced, and local-deadline handoff is unchanged.
+
+Queued or active commit-addressed contexts can retain the old CLI. Release
+acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
+the controlled fixture against that artifact, and observe a fixed 24-hour
+window for unique affected runs, actual statuses/attempts and built-in warning
+visibility. No occurrence means no observed exposure, not proven recovery.
+Rollback can restore old retry behavior; retained reason tokens stay readable.
+
 Avoid one-shot protocol flips:
 
 - Do not require a new request field from frontend or runner in the same PR that
@@ -1474,7 +1490,15 @@ Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
 The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. With SSH enabled, Access management and
+schema or private Runner contract. Unified host forms also accept inline Access
+creation in the host write request. Existing `configId` selections remain valid;
+responses still return only the resolved binding. Deploy API support before the
+App uses inline creation. An older API rejects that write alternative; staff
+clients should refresh after the current API/App deployment, without a second
+save path or automatic fallback. Existing rows and older App requests remain
+valid, and Runner versions do not need a new decoder for this management change.
+
+With SSH enabled, Access management and
 protected host creation are available without an additional opt-in. With SSH off,
 both transports' management, guest inventory and fresh authority are unavailable.
 Already-bound hosts are never silently converted to Direct. Removing a binding

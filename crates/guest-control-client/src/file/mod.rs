@@ -3,10 +3,11 @@ mod read;
 mod write;
 
 use std::collections::{BTreeSet, HashMap};
-use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::{fmt, io};
 
+use guest_control_proto::ExecTermination;
 use shell_quote::quote_shell_arg;
 use tokio::sync::{OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock};
 
@@ -189,6 +190,38 @@ fn normalize_file_exec_stderr(mut stderr: Vec<u8>, stderr_truncated: bool) -> Ve
         exec_operation::append_diagnostic(&mut stderr, "stderr truncated");
     }
     stderr
+}
+
+// Callers validate their own output contract and normalize stderr first, then
+// interpret exit codes locally. Only non-exit terminal diagnostics are shared.
+fn file_exec_exit_code(
+    termination: ExecTermination,
+    operation: &str,
+    context: impl fmt::Display,
+    stderr: &[u8],
+    diagnostic: &str,
+) -> io::Result<i32> {
+    let (kind, reason) = match termination {
+        ExecTermination::Exited { exit_code } => return Ok(exit_code),
+        ExecTermination::TimedOut => (io::ErrorKind::TimedOut, "timed out"),
+        ExecTermination::Cancelled => (io::ErrorKind::Other, "was cancelled"),
+        ExecTermination::StartFailed => (io::ErrorKind::Other, "exec start failed"),
+        ExecTermination::WaitFailed => (io::ErrorKind::Other, "exec wait failed"),
+    };
+    let prefix = format!("{operation} {reason}{context}");
+    let mut details = Vec::new();
+    if !stderr.is_empty() {
+        details.push(format!("stderr: {}", String::from_utf8_lossy(stderr)));
+    }
+    if !diagnostic.is_empty() {
+        details.push(format!("diagnostic: {diagnostic}"));
+    }
+    let message = if details.is_empty() {
+        prefix
+    } else {
+        format!("{prefix}: {}", details.join("; "))
+    };
+    Err(io::Error::new(kind, message))
 }
 
 #[cfg(test)]

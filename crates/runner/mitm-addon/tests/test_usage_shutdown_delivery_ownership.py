@@ -8,7 +8,7 @@ import pytest
 
 import mitm_addon
 import usage
-from tests.pending_helpers import assert_current_pending
+from tests.pending_helpers import assert_pending
 from tests.thread_helpers import ThreadUnderTest, wait_for_event
 from tests.usage_buffer_helpers import event
 from tests.usage_helpers import UsageWebhookServer, install_recording_usage_timer
@@ -32,8 +32,7 @@ def test_done_owns_retry_after_late_timer_fires_during_executor_join(
     tmp_path, fresh_usage_executor, mitm_ctx
 ):
     timers = install_recording_usage_timer()
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     release_failed_post = threading.Event()
     release_other_post = threading.Event()
     release_retry_post = threading.Event()
@@ -94,12 +93,11 @@ def test_done_owns_retry_after_late_timer_fires_during_executor_join(
             timer_thread.join_and_raise(timeout=2)
             assert failed_server.request_count == 2
             assert done_thread.is_alive()
-            assert_current_pending(
-                pending_path,
+            assert_pending(
+                control_root,
                 flows=0,
                 buffered=2,
                 reports=1,
-                flush_request_id="executor-still-draining",
             )
 
             release_other_post.set()
@@ -122,17 +120,14 @@ def test_done_owns_retry_after_late_timer_fires_during_executor_join(
     assert other_server.request_count == 1
     assert all(timer.cancelled for timer in timers)
     assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-    assert_current_pending(
-        pending_path, flows=0, buffered=0, reports=0, flush_request_id="done-settled"
-    )
+    assert_pending(control_root, flows=0, buffered=0, reports=0)
 
 
 @pytest.mark.parametrize("timer_status", [204, 500])
 def test_final_drain_waits_for_timer_owned_delivery(tmp_path, fresh_usage_executor, timer_status):
     owner_lock = _ObservedFlushOwnerLock()
     timers = install_recording_usage_timer(flush_owner_lock=owner_lock)
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     release_timer_post = threading.Event()
     server = UsageWebhookServer()
     server.queue_response(timer_status, release_event=release_timer_post)
@@ -164,12 +159,11 @@ def test_final_drain_waits_for_timer_owned_delivery(tmp_path, fresh_usage_execut
                 message="final drain did not wait for active timer delivery",
             )
             assert drain_thread.is_alive()
-            assert_current_pending(
-                pending_path,
+            assert_pending(
+                control_root,
                 flows=0,
                 buffered=1,
                 reports=1,
-                flush_request_id="timer-still-delivering",
             )
             release_timer_post.set()
             timer_thread.join_and_raise(timeout=2)
@@ -180,9 +174,7 @@ def test_final_drain_waits_for_timer_owned_delivery(tmp_path, fresh_usage_execut
             assert len(timers) == 1
             assert timers[0].cancelled
             assert usage.webhook.pending_delivery_payload_count_for_tests() == 0
-            assert_current_pending(
-                pending_path, flows=0, buffered=0, reports=0, flush_request_id="final-drain-settled"
-            )
+            assert_pending(control_root, flows=0, buffered=0, reports=0)
         finally:
             release_timer_post.set()
             timer_thread.join(timeout=3)

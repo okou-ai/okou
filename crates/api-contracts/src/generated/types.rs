@@ -2254,6 +2254,9 @@ pub mod webhooks {
                 /// The provider stream timed out.
                 #[serde(rename = "provider_stream_timeout")]
                 ProviderStreamTimeout,
+                /// The provider expired the request before processing started.
+                #[serde(rename = "provider_queue_timeout")]
+                ProviderQueueTimeout,
                 /// The provider returned a server error.
                 #[serde(rename = "provider_server_error")]
                 ProviderServerError,

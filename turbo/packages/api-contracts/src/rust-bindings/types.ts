@@ -893,6 +893,9 @@ export const rustTypeBindings = [
           provider_rate_limited: ["The provider rate limited the request."],
           provider_overloaded: ["The provider reported overload."],
           provider_stream_timeout: ["The provider stream timed out."],
+          provider_queue_timeout: [
+            "The provider expired the request before processing started.",
+          ],
           provider_server_error: ["The provider returned a server error."],
           response_connection_lost: ["The response connection was lost."],
           safety_policy_refusal: ["The provider refused for safety policy."],

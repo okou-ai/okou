@@ -21,7 +21,7 @@ from tests.jsonl_log_helpers import (
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
-from tests.pending_helpers import assert_current_pending
+from tests.pending_helpers import assert_pending
 from tests.webhook_test_helpers import (
     SANITIZED_WEBHOOK_URL,
     assert_body_free_webhook_entry,
@@ -680,8 +680,7 @@ def test_falls_back_to_sync_after_shutdown(
     tmp_path, real_flow, fresh_usage_executor, usage_webhook_api
 ):
     """After executor shutdown, delivery happens synchronously before return."""
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     flow = model_usage_flow(real_flow, tmp_path)
     flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = {"tokens.input": 42}
     usage.flush_usage_events(trigger="test")
@@ -696,6 +695,4 @@ def test_falls_back_to_sync_after_shutdown(
     assert body["runId"] == "run-1"
     assert body["events"][0]["quantity"] == 42
     assert body["events"][0]["category"] == "tokens.input"
-    assert_current_pending(
-        pending_path, flows=0, buffered=0, reports=0, flush_request_id="sync-fallback"
-    )
+    assert_pending(control_root, flows=0, buffered=0, reports=0)

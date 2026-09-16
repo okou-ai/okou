@@ -26,11 +26,10 @@ from tests.model_provider_websocket_helpers import (
     feed_websocket_server_message,
     set_websocket_message,
 )
-from tests.pending_helpers import assert_current_pending, assert_pending
+from tests.pending_helpers import assert_pending
 from tests.usage_helpers import CapturedWebhookRequest, UsageWebhookServer
 from tests.webhook_test_helpers import (
     QueuedUsageExecutor,
-    install_runner_usage_flush_request,
     request_runner_usage_flush,
 )
 from usage import json_probe
@@ -605,8 +604,7 @@ def test_eviction_and_reset_release_retained_buffered_report(
     real_flow,
     mitm_ctx,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
 
     with (
         mitm_ctx(api_url="https://api.test"),
@@ -627,22 +625,20 @@ def test_eviction_and_reset_release_retained_buffered_report(
         mitm_addon.responseheaders(second_flow)
         _feed_generated_response(second_flow, include_text=False)
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=1,
             reports=0,
-            flush_request_id="after-eviction",
         )
 
         codex_output_timing.reset_for_tests()
 
-    assert_current_pending(
-        pending_path,
+    assert_pending(
+        control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-reset",
     )
 
 
@@ -651,8 +647,7 @@ def test_lru_hit_recency_preserves_recent_buffered_report(
     real_flow,
     mitm_ctx,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     delivery_available = False
 
     def enqueue_timing_delivery(
@@ -690,31 +685,28 @@ def test_lru_hit_recency_preserves_recent_buffered_report(
         overflow_flow = codex_flow("run-c")
         _feed_generated_response(overflow_flow, include_text=False)
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=2,
             reports=0,
-            flush_request_id="after-overflow",
         )
 
         delivery_available = True
         feed_websocket_server_message(second_flow, _event("response.completed"))
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=2,
             reports=0,
-            flush_request_id="after-cold-retry",
         )
 
         feed_websocket_server_message(first_flow, _event("response.completed"))
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=1,
             reports=0,
-            flush_request_id="after-recent-retry",
         )
 
 
@@ -726,7 +718,7 @@ def test_repeated_runner_flush_retries_saturated_timing_after_websocket_end(
 ) -> None:
     flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
     executor = QueuedUsageExecutor()
-    pending_path = install_runner_usage_flush_request(tmp_path)
+    control_root = tmp_path
     secret = "provider-secret-that-must-not-be-reported"
 
     with (
@@ -751,31 +743,28 @@ def test_repeated_runner_flush_retries_saturated_timing_after_websocket_end(
         first_flush_started_at = datetime.now(UTC)
         request_runner_usage_flush()
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=1,
             reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-            flush_request_id="request-1",
         )
 
         executor.run_next()
         request_runner_usage_flush()
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-            flush_request_id="request-1",
         )
 
         executor.run_all()
         request_runner_usage_flush()
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="request-1",
         )
 
     [request] = _timing_requests(usage_webhook_server)

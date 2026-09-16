@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.9](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.8...runner-rs-v0.194.9) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** revalidate orphan mitmdump identity ([#34540](https://github.com/vm0-ai/okou/issues/34540)) ([da059b5](https://github.com/vm0-ai/okou/commit/da059b51cbf068790482b632efee5366b60229c0))
+
 ## [0.194.8](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.7...runner-rs-v0.194.8) (2026-09-16)
 
 

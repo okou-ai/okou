@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.904.0](https://github.com/vm0-ai/okou/compare/app-v0.903.2...app-v0.904.0) (2026-09-16)
+
+
+### Features
+
+* add get started rewards with seven-day expiry ([#34404](https://github.com/vm0-ai/okou/issues/34404)) ([fb09ab0](https://github.com/vm0-ai/okou/commit/fb09ab0357f47181d1c6e38713b8a8d2dc959f6c))
+
+
+### Refactoring
+
+* remove composerCreateCommands feature switch ([#34527](https://github.com/vm0-ai/okou/issues/34527)) ([b3be0f4](https://github.com/vm0-ai/okou/commit/b3be0f414f149f23c3e33efc9161486268380c02))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.447.0
+    * @okouai/core bumped to 8.669.0
+
 ## [0.903.2](https://github.com/vm0-ai/okou/compare/app-v0.903.1...app-v0.903.2) (2026-09-16)
 
 

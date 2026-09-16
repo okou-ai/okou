@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.609.0](https://github.com/vm0-ai/okou/compare/api-v1.608.1...api-v1.609.0) (2026-09-16)
+
+
+### Features
+
+* add get started rewards with seven-day expiry ([#34404](https://github.com/vm0-ai/okou/issues/34404)) ([fb09ab0](https://github.com/vm0-ai/okou/commit/fb09ab0357f47181d1c6e38713b8a8d2dc959f6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.447.0
+    * @okouai/core bumped to 8.669.0
+    * @okouai/db bumped to 1.265.0
+    * @okouai/pi-agent-runtime bumped to 1.31.4
+
 ## [1.608.1](https://github.com/vm0-ai/okou/compare/api-v1.608.0...api-v1.608.1) (2026-09-16)
 
 

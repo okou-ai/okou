@@ -132,31 +132,46 @@ async function encryptCredentials(
   );
   return { encryptedClientId, encryptedClientSecret };
 }
+export async function prepareCloudflareAccessConfig(
+  body: CreateCloudflareAccessRequest,
+  context: FeatureSwitchContext,
+) {
+  return {
+    name: body.name,
+    ...(await encryptCredentials(body.credentials, context)),
+  };
+}
+export async function insertCloudflareAccessConfig(
+  tx: Transaction,
+  owner: Owner,
+  prepared: Awaited<ReturnType<typeof prepareCloudflareAccessConfig>>,
+) {
+  const [created] = await tx
+    .insert(cloudflareAccessConfigs)
+    .values({
+      orgId: owner.orgId,
+      userId: owner.userId,
+      ...prepared,
+    })
+    .returning(metadata);
+  if (!created) {
+    throw new Error("Cloudflare Access insert returned no row");
+  }
+  return response(created, []);
+}
 export async function createCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Owner;
   readonly body: CreateCloudflareAccessRequest;
   readonly featureContext: FeatureSwitchContext;
 }) {
-  const encrypted = await encryptCredentials(
-    args.body.credentials,
+  const prepared = await prepareCloudflareAccessConfig(
+    args.body,
     args.featureContext,
   );
   const config = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
-    const [created] = await tx
-      .insert(cloudflareAccessConfigs)
-      .values({
-        orgId: args.owner.orgId,
-        userId: args.owner.userId,
-        name: args.body.name,
-        ...encrypted,
-      })
-      .returning(metadata);
-    if (!created) {
-      throw new Error("Cloudflare Access insert returned no row");
-    }
-    return response(created, []);
+    return insertCloudflareAccessConfig(tx, args.owner, prepared);
   });
   await publishSshClientInvalidation(args.owner);
   return config;

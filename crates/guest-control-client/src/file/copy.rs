@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use guest_control_proto::{ExecOutputPolicy, ExecOutputStream, ExecTermination};
+use guest_control_proto::{ExecOutputPolicy, ExecOutputStream};
 use tokio::io::AsyncWriteExt;
 
 use crate::{
@@ -16,8 +16,8 @@ use crate::{
 };
 
 use super::{
-    MISSING_FILE_EXIT_CODE, normalize_file_exec_stderr, read_regular_file_command,
-    validate_guest_file_path,
+    MISSING_FILE_EXIT_CODE, file_exec_exit_code, normalize_file_exec_stderr,
+    read_regular_file_command, validate_guest_file_path,
 };
 
 const COPY_TEMP_CREATE_ATTEMPTS: usize = 16;
@@ -322,47 +322,33 @@ fn validate_copy_exec_result(
     }
     let (stderr, stderr_truncated) = copy_exec_stderr(&result)?;
     let stderr = normalize_file_exec_stderr(stderr, stderr_truncated);
-    match result.termination {
-        ExecTermination::Exited { exit_code: 0 } if stderr.is_empty() => {
-            Ok(CopyFileExecStatus::Present)
-        }
-        ExecTermination::Exited { exit_code: 0 } => Err(io::Error::new(
+    match file_exec_exit_code(
+        result.termination,
+        "copy_file",
+        format_args!(" for {path}"),
+        &stderr,
+        &result.diagnostic,
+    )? {
+        0 if stderr.is_empty() => Ok(CopyFileExecStatus::Present),
+        0 => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
                 "copy_file result for {path} included stderr: {}",
                 String::from_utf8_lossy(&stderr)
             ),
         )),
-        ExecTermination::Exited {
-            exit_code: MISSING_FILE_EXIT_CODE,
-        } if stderr.is_empty() => Ok(CopyFileExecStatus::Missing),
-        ExecTermination::Exited {
-            exit_code: MISSING_FILE_EXIT_CODE,
-        } => Err(io::Error::new(
+        MISSING_FILE_EXIT_CODE if stderr.is_empty() => Ok(CopyFileExecStatus::Missing),
+        MISSING_FILE_EXIT_CODE => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
                 "copy_file missing result for {path} included stderr: {}",
                 String::from_utf8_lossy(&stderr)
             ),
         )),
-        ExecTermination::Exited { exit_code } => Err(io::Error::other(format!(
+        exit_code => Err(io::Error::other(format!(
             "copy_file failed for {path} with exit code {exit_code}: {}",
             String::from_utf8_lossy(&stderr)
         ))),
-        ExecTermination::TimedOut => Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!("copy_file timed out for {path}"),
-        )),
-        ExecTermination::Cancelled => Err(io::Error::other(format!(
-            "copy_file was cancelled for {path}: {}",
-            result.diagnostic
-        ))),
-        ExecTermination::StartFailed | ExecTermination::WaitFailed => {
-            Err(io::Error::other(format!(
-                "copy_file exec operation failed for {path}: {}",
-                result.diagnostic
-            )))
-        }
     }
 }
 
@@ -386,6 +372,9 @@ impl GuestControlClient {
     /// Failures before the final rename leave an existing destination
     /// unchanged. An error reported after the rename does not roll back the
     /// published destination.
+    ///
+    /// Confirmed guest timeout, cancellation, start and wait failures include
+    /// captured stderr (with truncation notices) and available guest diagnostics.
     ///
     /// The guest path must be non-empty and must not contain NUL bytes.
     ///
