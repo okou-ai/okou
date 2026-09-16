@@ -14,6 +14,7 @@ import {
   BRAND_NAME,
   type BrandName,
 } from "../../signals/branding.ts";
+import { currentUserInfo$ } from "../../signals/auth.ts";
 import type { SharedThreadRichContentSignals } from "../../signals/shared-thread-page/shared-thread-rich-content.ts";
 import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
@@ -292,7 +293,8 @@ function SharedThreadHandoff({
 }: {
   readonly assistantName: string;
   readonly handoffUrl: string;
-  readonly signInUrl: string;
+  /** Null once the viewer is known to be signed in; they have an account. */
+  readonly signInUrl: string | null;
 }) {
   const { t } = useTranslation();
   return (
@@ -325,13 +327,15 @@ function SharedThreadHandoff({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                  <Button variant="quiet" size="sm" asChild>
-                    <a href={signInUrl}>
-                      {t(($) => {
-                        return $.sharedThread.signIn;
-                      })}
-                    </a>
-                  </Button>
+                  {signInUrl !== null ? (
+                    <Button variant="quiet" size="sm" asChild>
+                      <a href={signInUrl}>
+                        {t(($) => {
+                          return $.sharedThread.signIn;
+                        })}
+                      </a>
+                    </Button>
+                  ) : null}
                   <Button size="sm" asChild>
                     <a href={handoffUrl}>
                       {t(($) => {
@@ -367,8 +371,9 @@ function SharedThreadHeader({
   readonly brandName: BrandName;
   readonly homeUrl: string;
   readonly shareUrl: string | null;
-  readonly signInUrl: string;
-  readonly signUpUrl: string;
+  /** Both null once the viewer is known to be signed in; they have an account. */
+  readonly signInUrl: string | null;
+  readonly signUpUrl: string | null;
   readonly title: string | null;
 }) {
   const { t } = useTranslation();
@@ -426,25 +431,29 @@ function SharedThreadHeader({
             <Share2 size={18} />
           </Button>
         ) : null}
-        <Button
-          variant="quiet"
-          size="sm"
-          className="hidden sm:inline-flex"
-          asChild
-        >
-          <a href={signInUrl}>
-            {t(($) => {
-              return $.sharedThread.signIn;
-            })}
-          </a>
-        </Button>
-        <Button size="sm" asChild>
-          <a href={signUpUrl}>
-            {t(($) => {
-              return $.sharedThread.signUp;
-            })}
-          </a>
-        </Button>
+        {signInUrl !== null ? (
+          <Button
+            variant="quiet"
+            size="sm"
+            className="hidden sm:inline-flex"
+            asChild
+          >
+            <a href={signInUrl}>
+              {t(($) => {
+                return $.sharedThread.signIn;
+              })}
+            </a>
+          </Button>
+        ) : null}
+        {signUpUrl !== null ? (
+          <Button size="sm" asChild>
+            <a href={signUpUrl}>
+              {t(($) => {
+                return $.sharedThread.signUp;
+              })}
+            </a>
+          </Button>
+        ) : null}
       </div>
     </header>
   );
@@ -513,6 +522,14 @@ export function SharedThreadPage({
   // palette rather than the neutral default, as the artifact viewer already
   // does. A signed-out visitor has no palette and keeps that default.
   const mountRef = useSet(shellDocumentAttributesRef$);
+  // The sign-in and sign-up actions are for the visitor this link is written
+  // for. A viewer who already has an account keeps the conversation and the
+  // handoff without being asked to create a second one. Only a settled absence
+  // of a user offers them, so the page a link opens by default renders its
+  // actions immediately rather than after Clerk answers.
+  const viewer = useLoadable(currentUserInfo$);
+  const viewerSignedIn =
+    viewer.state === "hasData" && viewer.data !== undefined;
   const groups = sharedThread ? groupSharedMessages(sharedThread.messages) : [];
   // Threads shared under the retired brand keep their stored value, but only
   // okou.ai serves this page, so it always presents the Okou brand.
@@ -536,6 +553,8 @@ export function SharedThreadPage({
   signInUrl.searchParams.set("redirect_url", handoffUrl.toString());
   const signUpUrl = new URL("/sign-up", `${homeUrl}/`);
   signUpUrl.searchParams.set("redirect_url", handoffUrl.toString());
+  const signInHref = viewerSignedIn ? null : signInUrl.toString();
+  const signUpHref = viewerSignedIn ? null : signUpUrl.toString();
 
   return (
     <div
@@ -547,8 +566,8 @@ export function SharedThreadPage({
           brandName={BRAND_NAME}
           homeUrl={homeUrl}
           shareUrl={shareUrl}
-          signInUrl={signInUrl.toString()}
-          signUpUrl={signUpUrl.toString()}
+          signInUrl={signInHref}
+          signUpUrl={signUpHref}
           title={sharedThread?.title ?? null}
         />
         {sharedThread ? (
@@ -561,7 +580,7 @@ export function SharedThreadPage({
             <SharedThreadHandoff
               assistantName={ASSISTANT_NAME}
               handoffUrl={handoffUrl.toString()}
-              signInUrl={signInUrl.toString()}
+              signInUrl={signInHref}
             />
           </>
         ) : (

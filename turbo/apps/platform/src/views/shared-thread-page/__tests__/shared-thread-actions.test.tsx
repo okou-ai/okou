@@ -65,6 +65,28 @@ test("A visitor can continue a shared idea in Platform", async () => {
   );
 });
 
+test("A signed-in viewer is not asked to sign in or sign up", async () => {
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(200, sharedThread());
+  });
+
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "user_shared_thread_viewer", fullName: "Viewer" } },
+  });
+
+  await expect(
+    screen.findByText("Make this conversation yours"),
+  ).resolves.toBeInTheDocument();
+  // The handoff itself stays: it carries this conversation into a new chat,
+  // which is exactly what an account holder can act on.
+  expect(getLinkByName("Try it yourself")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(linksByName("Sign in")).toHaveLength(0);
+    expect(linksByName("Sign up")).toHaveLength(0);
+  });
+});
+
 test("A visitor can copy complete public message content", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
