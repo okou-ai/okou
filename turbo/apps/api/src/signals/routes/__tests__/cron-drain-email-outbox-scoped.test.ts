@@ -547,14 +547,18 @@ describe("email outbox provider replay", () => {
     });
 
     const claim = await holdEmailOutboxClaim(crossing.id, context.signal);
-    const drained = outbox.drainItems([crossing.id, sibling.id]);
-    await claim.waitForBlocked();
-    // Preparation already admitted the row against the clock. Its deadline is
-    // reached while the suppression lookup, claim update and commit run.
-    mockNow(deadlineMs);
-    await claim.release();
+    const [drained] = await Promise.all([
+      outbox.drainItems([crossing.id, sibling.id]),
+      (async () => {
+        await claim.waitForBlocked();
+        // Preparation already admitted the row against the clock. Its deadline
+        // is reached before the claim commits.
+        mockNow(deadlineMs);
+        await claim.release();
+      })(),
+    ]);
 
-    await expect(drained).resolves.toBe(2);
+    expect(drained).toBe(2);
     // Equality at the deadline expires the item, so only the still-valid
     // sibling reaches the provider.
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
@@ -603,6 +607,33 @@ describe("email outbox provider replay", () => {
         // is no writer left to block on removal. Commit it and join both
         // operations; either ordering must leave the row absent.
         await removal.release();
+      })(),
+    ]);
+
+    expect(drained).toBe(1);
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
+    await expect(outbox.readItem(item.id)).resolves.toBeNull();
+  });
+
+  it("never revives a row removed before its expired attempt completes", async () => {
+    const baseTime = pinTime();
+    const deadlineMs = baseTime + 1000;
+    const item = await seedItem({
+      status: "pending",
+      createdAt: new Date(deadlineMs - OUTBOX_TTL_MS),
+    });
+
+    const claim = await holdEmailOutboxClaim(item.id, context.signal, {
+      removeBeforeCommit: true,
+    });
+    const [drained] = await Promise.all([
+      outbox.drainItems([item.id]),
+      (async () => {
+        await claim.waitForBlocked();
+        mockNow(deadlineMs);
+        // The claim resumes, removes its row and commits before the expired
+        // completion runs. No ordering between competing lock waiters is assumed.
+        await claim.release();
       })(),
     ]);
 

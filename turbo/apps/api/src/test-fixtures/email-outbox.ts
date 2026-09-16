@@ -32,12 +32,14 @@ async function installEmailOutboxTrigger(
   functionName: string,
   createFunction: SQL,
   signal: AbortSignal,
+  timing: "before" | "after" = "before",
 ): Promise<() => Promise<void>> {
+  const event = timing === "after" ? sql`AFTER UPDATE` : sql`BEFORE UPDATE`;
   await db().transaction(async (tx) => {
     await tx.execute(createFunction);
     signal.throwIfAborted();
     await tx.execute(sql`
-      CREATE TRIGGER ${sql.identifier(itemId)} BEFORE UPDATE ON email_outbox
+      CREATE TRIGGER ${sql.identifier(itemId)} ${event} ON email_outbox
       FOR EACH ROW EXECUTE FUNCTION ${sql.identifier(functionName)}()
     `);
     signal.throwIfAborted();
@@ -67,8 +69,15 @@ async function installEmailOutboxTrigger(
 export async function holdEmailOutboxClaim(
   itemId: string,
   signal: AbortSignal,
+  options: { readonly removeBeforeCommit?: boolean } = {},
 ): Promise<HeldEmailOutboxWrite> {
   const functionName = triggerFunctionName("claim");
+  // Delete in the claim's AFTER UPDATE trigger so the prepared row is
+  // deterministically absent before completion. A separate queued DELETE can
+  // be overtaken when the claim UPDATE creates a new tuple version.
+  const removal = options.removeBeforeCommit
+    ? sql`DELETE FROM email_outbox WHERE id = NEW.id;`
+    : sql.empty();
   const dropTrigger = await installEmailOutboxTrigger(
     itemId,
     functionName,
@@ -80,12 +89,14 @@ export async function holdEmailOutboxClaim(
           PERFORM pg_advisory_xact_lock(
             hashtextextended('email-outbox-claim:' || TG_NAME, 0)
           );
+          ${removal}
         END IF;
         RETURN NEW;
       END;
       $$
     `,
     signal,
+    options.removeBeforeCommit ? "after" : "before",
   );
 
   const held = await holdDeferredRow(signal, async (tx) => {
