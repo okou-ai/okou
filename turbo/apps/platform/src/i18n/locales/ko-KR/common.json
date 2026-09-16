@@ -6285,7 +6285,7 @@
       "summary_other": "Access 구성 {{count}}개",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH 애플리케이션의 Service Auth 정책에서 허용하는 Service Token을 사용하세요. SSH 로그인 정보와는 별개입니다.",
-      "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다. 보호된 호스트는 연결할 수 없으며 직접 연결 호스트에는 영향이 없습니다.",
+      "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
       "usedBy_other": "호스트 {{count}}개에서 사용:"
     },
     "connectionStatus": {

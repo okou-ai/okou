@@ -58,7 +58,6 @@ export enum FeatureSwitchKey {
   TelegramDmSessions = "_telegramDmSessions",
   CustomConnectorMcp = "customConnectorMcp",
   SshAccess = "sshAccess",
-  CloudflareAccess = "cloudflareAccess",
   PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",

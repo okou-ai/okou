@@ -6362,7 +6362,7 @@
       "summary_other": "{{count}} configuraciones de Access",
       "title": "Cloudflare Access",
       "tokenHelp": "Usa un Service Token permitido por la política Service Auth de tu aplicación SSH. Es independiente de tus credenciales SSH.",
-      "unavailable": "Cloudflare Access no está disponible para esta cuenta. Los hosts protegidos no pueden conectarse; los directos no se ven afectados.",
+      "unavailable": "Cloudflare Access no está disponible para esta cuenta.",
       "usedBy_one": "Usada por {{count}} host:",
       "usedBy_many": "Usada por {{count}} hosts:",
       "usedBy_other": "Usada por {{count}} hosts:"

@@ -6285,7 +6285,7 @@
       "summary_other": "{{count}} konfigurasi Access",
       "title": "Cloudflare Access",
       "tokenHelp": "Gunakan Service Token yang diizinkan kebijakan Service Auth aplikasi SSH Anda. Ini terpisah dari login SSH.",
-      "unavailable": "Cloudflare Access tidak tersedia untuk akun ini. Host yang dilindungi tidak dapat terhubung; host langsung tidak terpengaruh.",
+      "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",
       "usedBy_other": "Digunakan oleh {{count}} host:"
     },
     "connectionStatus": {

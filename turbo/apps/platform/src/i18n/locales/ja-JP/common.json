@@ -6285,7 +6285,7 @@
       "summary_other": "Access 設定 {{count}} 件",
       "title": "Cloudflare Access",
       "tokenHelp": "SSH アプリケーションの Service Auth ポリシーで許可された Service Token を使用してください。SSH ログインとは別のものです。",
-      "unavailable": "このアカウントでは Cloudflare Access を利用できません。保護されたホストには接続できませんが、直接接続のホストには影響しません。",
+      "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
       "usedBy_other": "{{count}} 台のホストが使用："
     },
     "connectionStatus": {

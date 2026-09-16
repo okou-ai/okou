@@ -6300,7 +6300,7 @@
       "summary_other": "{{count}} Access कॉन्फ़िगरेशन",
       "title": "Cloudflare Access",
       "tokenHelp": "अपनी SSH ऐप की Service Auth नीति द्वारा अनुमत Service Token का उपयोग करें। यह आपके SSH लॉगिन से अलग है।",
-      "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है। सुरक्षित होस्ट कनेक्ट नहीं हो सकते; सीधे होस्ट प्रभावित नहीं हैं।",
+      "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।",
       "usedBy_one": "{{count}} होस्ट द्वारा उपयोग:",
       "usedBy_other": "{{count}} होस्ट द्वारा उपयोग:"
     },

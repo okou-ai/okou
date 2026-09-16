@@ -1446,38 +1446,41 @@ triggers, and views after that release drains.
 The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
-`sshAccess` is staff-only, and `cloudflareAccess` stays disabled, including for staff.
+Direct and Cloudflare Access now share the existing staff-only `sshAccess` switch;
+there is no independent Access switch. The SSH cohort and Agent grants are unchanged.
 Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
 Before the first protected configuration or binding is written in a deployed
 environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
-#34081 owns Access management UI and full real-Run acceptance before activation.
+#34081 owns Access management UI; #34370 records integrated real-Run acceptance
+and the owner-approved evidence boundaries at closure.
 Management stays inside `/connectors/ssh`. Access is a reusable host connection
 setting under the existing SSH Agent grant, not a separately authorized service.
-The Access feature switch controls rollout; it does not add an Agent permission.
+The SSH feature switch controls rollout for both transports; it does not replace
+the existing Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
 The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. With Access off it keeps Direct management
-available and hides Access creation. Already-bound hosts still identify their
-protected transport; editing, resetting keys and deleting them remain unavailable
-under the canonical API gate. Removing a binding requires Access eligibility and
-an explicit Direct selection. Losing the feature or changing
+schema or private Runner contract. With SSH enabled, Access management and
+protected host creation are available without an additional opt-in. With SSH off,
+both transports' management, guest inventory and fresh authority are unavailable.
+Already-bound hosts are never silently converted to Direct. Removing a binding
+requires SSH eligibility and an explicit Direct selection. Losing SSH eligibility or changing
 owner clears open secret forms and cancels their pending UI work. API authorization
 and same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
 
-| State                                                                 | Required behavior                                                                                      |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
-| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
-| Current API and S2 Runner with authorized protected handoff           | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
-| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                                     |
-| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                                             |
-| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                                              |
+| State                                                              | Required behavior                                                                                      |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
+| Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
+| Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
+| Current API with an unauthorized host or SSH feature off           | Private authority and guest inventory remain unavailable under the SSH gate and Agent grant.           |
+| Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
+| Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
 
 Feature disable does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
@@ -1486,8 +1489,13 @@ or conversion is part of deployment.
 #34080 changes the Runner transport without changing guest CLI terminal enums or
 the S1 private API contract. Existing Direct requests keep their behavior. A
 missing/incompatible authority response fails closed; no pre-GA dual decoder is
-introduced. The feature remains default-off after the carrier code lands, pending
-authorized real-provider evidence and #34081's integrated acceptance.
+introduced. The separate switch removal changes API eligibility and Platform
+visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
+Old pre-removal APIs may still enforce their Access switch, and old App bundles
+may hide Access until refreshed. Both remain pre-GA under `sshAccess`; deploy the
+current API/App and refresh staff clients rather than adding a compatibility alias
+or second decoder. Retired switch overrides are ignored by the existing registered-key
+filter; no database migration or destructive cleanup is required.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
 may leave cached authority usable for the remainder of an active Run if a notice

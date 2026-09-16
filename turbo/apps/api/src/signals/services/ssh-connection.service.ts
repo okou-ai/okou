@@ -32,7 +32,6 @@ import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 import {
   cloudflareAccessFailure,
   findCloudflareAccessConfig,
-  isCloudflareAccessEnabled,
 } from "./cloudflare-access.service";
 
 type SshConnectionRow = typeof sshConnections.$inferSelect;
@@ -167,20 +166,6 @@ function toSshConnectionResponse(
   };
 }
 
-function protectedEditFailure(
-  args: {
-    readonly featureContext: FeatureSwitchContext;
-  },
-  configId: string | null,
-) {
-  if (configId === null) {
-    return null;
-  }
-  return isCloudflareAccessEnabled(args.featureContext)
-    ? null
-    : cloudflareAccessFailure("unavailable");
-}
-
 async function validateAccessBinding(
   db: Pick<ReadonlyDb, "select">,
   owner: { readonly orgId: string; readonly userId: string },
@@ -203,27 +188,18 @@ async function validateAccessTransition(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly featureContext: FeatureSwitchContext;
     readonly body: UpdateSshConnectionRequest;
   },
   current: SshConnectionRow,
   host: string,
   port: number,
 ): Promise<SshConnectionResult<string | null>> {
-  const editFailure = protectedEditFailure(args, current.cloudflareAccessId);
-  if (editFailure) {
-    return editFailure;
-  }
   const accessId =
     args.body.transport === undefined
       ? current.cloudflareAccessId
       : args.body.transport.type === "direct"
         ? null
         : args.body.transport.configId;
-  const accessFailure = protectedEditFailure(args, accessId);
-  if (accessFailure) {
-    return accessFailure;
-  }
   const bindingFailure = await validateAccessBinding(
     db,
     args,
@@ -326,10 +302,6 @@ export async function createSshConnection(args: {
     args.body.transport?.type === "cloudflare_access"
       ? args.body.transport.configId
       : null;
-  const accessFailure = protectedEditFailure(args, accessId);
-  if (accessFailure) {
-    return accessFailure;
-  }
 
   const preparedCredential = await prepareSshCredentialSelection(
     args.body.credential,
@@ -433,13 +405,6 @@ export async function updateSshConnection(args: {
   const preflight = await findOwnerConnection(args.db, args);
   if (!preflight) {
     return failure("notFound");
-  }
-  const accessFailure = protectedEditFailure(
-    args,
-    preflight.cloudflareAccessId,
-  );
-  if (accessFailure) {
-    return accessFailure;
   }
   if (preflight.generation !== args.body.expectedGeneration) {
     return failure("generationConflict");
@@ -548,7 +513,6 @@ export async function deleteSshConnection(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly connectionId: string;
-  readonly featureContext: FeatureSwitchContext;
 }): Promise<SshConnectionResult<undefined>> {
   const result = await args.db.transaction<SshConnectionResult<undefined>>(
     async (tx) => {
@@ -556,13 +520,6 @@ export async function deleteSshConnection(args: {
       const current = await findOwnerConnection(tx, args);
       if (!current) {
         return failure("notFound");
-      }
-      const accessFailure = protectedEditFailure(
-        args,
-        current.cloudflareAccessId,
-      );
-      if (accessFailure) {
-        return accessFailure;
       }
       const [deleted] = await tx
         .delete(sshConnections)
@@ -596,7 +553,6 @@ export async function resetSshConnectionHostKey(args: {
   readonly userId: string;
   readonly connectionId: string;
   readonly expectedGeneration: number;
-  readonly featureContext: FeatureSwitchContext;
 }): Promise<SshConnectionResult<SshConnectionResponse>> {
   const result = await args.db.transaction<
     SshConnectionResult<SshConnectionResponse>
@@ -616,13 +572,6 @@ export async function resetSshConnectionHostKey(args: {
       .for("update");
     if (!current) {
       return failure("notFound");
-    }
-    const accessFailure = protectedEditFailure(
-      args,
-      current.cloudflareAccessId,
-    );
-    if (accessFailure) {
-      return accessFailure;
     }
     if (current.generation !== args.expectedGeneration) {
       return failure("generationConflict");
