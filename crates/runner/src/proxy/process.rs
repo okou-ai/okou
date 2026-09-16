@@ -389,11 +389,9 @@ impl MitmProxy {
         source_ip: &str,
         registration: &SandboxRegistration<'_>,
     ) -> RunnerResult<()> {
-        let publication = self
-            .registry_handle()
-            .register_sandbox(source_ip, registration)
-            .await?;
-        publication.observe().await;
+        let registry = self.registry_handle();
+        let publication = registry.register_sandbox(source_ip, registration).await?;
+        registry.observe_registration(publication);
         Ok(())
     }
 
@@ -573,6 +571,7 @@ impl MitmProxy {
 
 impl Drop for MitmProxy {
     fn drop(&mut self) {
+        self.control.set_target(None);
         self.stopping.store(true, Ordering::Release);
         self.delivery_flush = None;
         drop(self.child.take());

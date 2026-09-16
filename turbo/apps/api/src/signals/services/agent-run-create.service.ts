@@ -356,6 +356,7 @@ import {
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
+import { hasEarlierDeferredDemand } from "./pi-deferred-demand.service";
 import {
   admitNewComputeRun,
   validateNewComputeSession,
@@ -5778,6 +5779,15 @@ async function buildPermissionManifest(
   );
 }
 
+/**
+ * Caller owns the organization capacity advisory lock. A free slot is not enough
+ * on its own: older persisted Sandbox demand holds the same documented
+ * `(enqueuedAt, runId)` position that queued promotion and the deferred consumer
+ * already respect, so a stream of fresh direct creations cannot repeatedly take
+ * a just-freed slot ahead of it. The outcome stays the existing capacity
+ * outcome, so a queue-enabled caller queues and a nonqueue caller keeps its
+ * current error.
+ */
 async function checkRunConcurrencyLimit(
   tx: DbTransaction,
   orgId: string,
@@ -5795,8 +5805,12 @@ async function checkRunConcurrencyLimit(
   if (limit === 0) {
     return null;
   }
-
-  return state.activeRunCount >= limit ? concurrentRunLimit() : null;
+  if (state.activeRunCount >= limit) {
+    return concurrentRunLimit();
+  }
+  return (await hasEarlierDeferredDemand(tx, orgId, at))
+    ? concurrentRunLimit()
+    : null;
 }
 
 async function checkFinalRunAdmission(

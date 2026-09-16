@@ -30,15 +30,32 @@ export class AgentEventRunNotFoundError extends Error {
   }
 }
 
-class ContentOwnershipRaceError extends Error {
+export class RunContentOwnershipChangedError extends Error {
+  constructor(message = "Prepared run content ownership no longer matches") {
+    super(message);
+  }
+}
+
+class ContentOwnershipRaceError extends RunContentOwnershipChangedError {
   constructor() {
     super("Run content ownership changed while acquiring locks");
   }
 }
 
-async function setContentDeadlines(tx: Tx): Promise<void> {
-  await tx.execute(sql`SELECT set_config('lock_timeout', '1s', true)`);
-  await tx.execute(sql`SELECT set_config('statement_timeout', '5s', true)`);
+type ContentDeadlineProfile = "activity";
+
+async function setContentDeadlines(
+  tx: Tx,
+  profile?: ContentDeadlineProfile,
+): Promise<void> {
+  const lockTimeout = profile === "activity" ? "250ms" : "1s";
+  const statementTimeout = profile === "activity" ? "3s" : "5s";
+  await tx.execute(
+    sql`SELECT set_config('lock_timeout', ${lockTimeout}, true)`,
+  );
+  await tx.execute(
+    sql`SELECT set_config('statement_timeout', ${statementTimeout}, true)`,
+  );
 }
 
 async function readOwnership(tx: Tx, runId: string) {
@@ -118,27 +135,31 @@ async function readOwnership(tx: Tx, runId: string) {
       "Private run content requires its retained memory resource",
     );
   }
-  return {
+  return Object.freeze({
     runId,
     userId: run.userId,
     orgId: run.orgId,
     sessionId: run.sessionId,
     triggerSource: run.triggerSource,
-    thread: thread ?? null,
-    session,
-    resources,
+    thread: thread ? Object.freeze(thread) : null,
+    session: Object.freeze(session),
+    resources: Object.freeze(
+      resources.map((resource) => {
+        return Object.freeze(resource);
+      }),
+    ),
     memory:
       memoryMount && storage
-        ? {
-            mount: {
+        ? Object.freeze({
+            mount: Object.freeze({
               id: memoryMount.storageId,
               userId: memoryMount.userId,
               orgId: memoryMount.orgId,
-            },
-            storage,
-          }
+            }),
+            storage: Object.freeze(storage),
+          })
         : null,
-  };
+  });
 }
 
 export type RunContentOwnership = Awaited<ReturnType<typeof readOwnership>>;
@@ -147,10 +168,11 @@ export type RunContentOwnership = Awaited<ReturnType<typeof readOwnership>>;
 export async function readRunContentOwnership(
   db: Db,
   runId: string,
+  deadlineProfile?: ContentDeadlineProfile,
 ): Promise<RunContentOwnership> {
   return await db.transaction(
     async (tx) => {
-      await setContentDeadlines(tx);
+      await setContentDeadlines(tx, deadlineProfile);
       return await readOwnership(tx, runId);
     },
     { isolationLevel: "read committed" },
@@ -291,6 +313,7 @@ export async function withRunContentWrite<T>(
     readonly runOwner?: Owner;
     readonly destination?: Owner & { readonly threadId: string };
     readonly ownership: RunContentOwnership;
+    readonly deadlineProfile?: ContentDeadlineProfile;
   },
   write: (
     tx: Tx,
@@ -312,7 +335,7 @@ export async function withRunContentWrite<T>(
     const result = await settle(
       db.transaction(
         async (tx) => {
-          await setContentDeadlines(tx);
+          await setContentDeadlines(tx, args.deadlineProfile);
           const snapshot = await readOwnership(tx, args.runId);
           if (!(await admitSubjects(tx, snapshot))) {
             return { outcome: "closed" as const };
@@ -330,7 +353,7 @@ export async function withRunContentWrite<T>(
               (!sameOwner(snapshot, snapshot.memory.mount) ||
                 !sameOwner(snapshot, snapshot.memory.storage)))
           ) {
-            throw new Error("Prepared run content ownership no longer matches");
+            throw new RunContentOwnershipChangedError();
           }
           const value = await write(
             tx,

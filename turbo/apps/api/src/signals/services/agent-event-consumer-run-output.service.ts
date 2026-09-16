@@ -26,6 +26,7 @@ import { historicalRunGroupId } from "./run-event-provenance.service";
 import {
   withRunContentWrite,
   prepareRunOutputOwnership,
+  type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
 import {
   normalizeRunOutputEvents,
@@ -55,6 +56,7 @@ type RunOutputMaterializationResult =
       readonly outcome: "accepted";
       readonly chatProjection: MaterializedChatProjection | null;
       readonly payload: EventConsumerPayload;
+      readonly ownership: RunContentOwnership;
     }
   | { readonly outcome: "ignored-timeout" | "ignored-closure" };
 
@@ -303,6 +305,7 @@ function preparedRunOutputProjection(
 async function materializeAdmittedRunOutputEvents(
   args: {
     readonly tx: Tx;
+    readonly ownership: RunContentOwnership;
     readonly payload: EventConsumerPayload;
     readonly thread: MaterializedChatProjection["thread"] | null;
     readonly latestResult: OutputCandidate | null;
@@ -368,7 +371,12 @@ async function materializeAdmittedRunOutputEvents(
   signal.throwIfAborted();
 
   if (!thread) {
-    return { outcome: "accepted", chatProjection: null, payload };
+    return {
+      outcome: "accepted",
+      chatProjection: null,
+      payload,
+      ownership: args.ownership,
+    };
   }
 
   const acknowledgedAt = nowDate();
@@ -392,6 +400,7 @@ async function materializeAdmittedRunOutputEvents(
   return {
     outcome: "accepted",
     payload,
+    ownership: args.ownership,
     chatProjection: {
       thread,
       insertedRowCount,
@@ -449,6 +458,7 @@ async function materializeRunOutputEvents(
       return await materializeAdmittedRunOutputEvents(
         {
           tx,
+          ownership,
           payload: prepared.payload,
           thread,
           latestResult: prepared.latestResult,

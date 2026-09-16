@@ -17,7 +17,7 @@ historical billing data.
 Marketing captures `im_ref` only after initialized Termly advertising consent.
 The host-only `__Host-okou_impact_v2` cookie carries the click ID, capture time and
 consent epoch. Marketing-to-App links no longer carry Impact query parameters.
-The App sends one empty `POST https://www.okou.ai/api/marketing/impact/onboarding`
+The App sends one empty `POST https://www.okou.ai/api/marketing/finish-onboarding`
 when an authenticated user enters onboarding. It uses the same session-token
 provider as calls to `api.okou.ai` and sends `Authorization: Bearer <token>`.
 The browser also includes Marketing cookies for consent and click attribution;
@@ -32,7 +32,8 @@ Marketing write is idempotent. Already-onboarded users do not submit, and missin
 or invalid attribution/consent is skipped rather than waiting for new consent.
 
 Marketing verifies the Clerk bearer token, including signature, expiry,
-App authorized party, user identity and active admin organization. It reads its
+App authorized party, user identity and active organization. Impact storage
+requires an admin; members can still bind their own new acquisition attribution. It reads its
 own host-only click and consent cookies and retains server-side withdrawal and
 account-binding checks. The endpoint accepts only the configured App Origin,
 allows the browser's Authorization preflight, uses credentialed CORS and
@@ -42,16 +43,21 @@ returned to the App or its API.
 
 ### Deployment boundary
 
-Deploy the Marketing bearer-authenticated endpoint before the App change. This cutover retires
-`/finish-onboarding`, `/api/marketing/impact/config`, both signed handoff APIs,
-and their iframe, identity-proof and nonce machinery. Old iframe clients and
-pre-cutover rollback artifacts are outside the supported boundary; they must
-refresh onto the bearer-request App to record attribution. No client-version
-floor or compatibility bridge is introduced.
+Deploy the shared Marketing endpoint and acquisition migration before this App.
+Already-open Apps still use `/api/marketing/impact/onboarding`; Marketing retains
+that URL as a compatibility entry to the same storage handler, including the
+legacy admin requirement. New Apps send only finish-onboarding and no longer have
+an acquisition Feature Switch. The shared `marketing_onboarding_attempts` marker
+replaces the previous Impact-only marker, which must not suppress storage for the
+additional consented categories. Marketing deduplicates repeated captures/events.
+The owner confirmed Impact has not launched. Retire the legacy URL in the next
+Marketing release after both deployments are verified; cached Impact-only clients
+are outside that removal boundary.
 
-Marketing migration `0002_drop_impact_handoffs.sql` drops the obsolete replay
-nonce table. Existing consented captures, order decisions and refund receipts
-continue to serve the current cookie-based flow.
+The earlier iframe cutover retired `/finish-onboarding`, the config endpoint,
+signed handoff APIs, identity proofs and nonce handling. Those older iframe clients
+remain outside the supported boundary. Migration `0002_drop_impact_handoffs.sql`
+and its existing consented capture/order/refund data remain unchanged.
 
 ## Payment correlation
 
@@ -87,7 +93,10 @@ Refunds may correct known submissions after withdrawal, but never create a sale.
 
 ## Configuration
 
-The onboarding request has no rollout switch. Marketing uses its existing
+The onboarding request has no App rollout switch and only stores consented data.
+Marketing `ACQUISITION_REPORTING_ENABLED` gates its new acquisition comparison
+queue; it does not change Impact delivery. Existing gtag/PostHog senders remain
+active during the comparison phase. Marketing uses its existing
 `CLERK_SECRET_KEY`, attribution database and `IMPACT_APP_ORIGIN` configuration.
 Authentication does not depend on a session cookie reaching the Marketing domain.
 The App API no longer signs attribution proofs or needs

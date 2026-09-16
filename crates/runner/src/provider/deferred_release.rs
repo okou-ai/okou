@@ -12,6 +12,17 @@ use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 use tracing::warn;
 use uuid::Uuid;
 
+/// What the API established about this proof. `Stale` is a definitive
+/// acknowledgement that the receipt owns no capacity, so it can be closed.
+/// `Inconclusive` means an obligation may remain: retain the receipt and the
+/// claim barrier and retry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ReleaseOutcome {
+    Released,
+    Stale,
+    Inconclusive,
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Receipt {
@@ -458,14 +469,21 @@ impl DeferredReleaseOutbox {
                 body.as_object_mut()
                     .ok_or_else(|| std::io::Error::other("invalid release receipt object"))?
                     .remove("runId");
-                let released = api
+                let outcome = api
                     .release_deferred_sandbox(receipt.run_id, &body)
                     .await
                     .map_err(std::io::Error::other)?;
+                if outcome == ReleaseOutcome::Inconclusive {
+                    // The API could not confirm ownership, so an obligation may
+                    // still exist. Keep both the receipt and the claim barrier
+                    // and retry on a later heartbeat.
+                    warn!(run_id = %receipt.run_id, "deferred release remains unresolved; receipt and claim barrier retained");
+                    return Ok::<(), std::io::Error>(());
+                }
                 // The API atomically fences an unclaimed v4 Run before
                 // acknowledging not-started, including delayed claim requests.
                 let _ = fs::remove_file(self.claim_path(receipt.run_id)).await;
-                if released {
+                if outcome == ReleaseOutcome::Released {
                     fs::remove_file(entry.path()).await?;
                 } else {
                     let rejected = self.directory.with_extension("rejected");
@@ -735,6 +753,48 @@ mod tests {
         }
         response.assert_calls_async(1).await;
         assert!(!claim_path.exists());
+    }
+
+    #[tokio::test]
+    async fn inconclusive_release_retains_the_receipt_and_claim_barrier() {
+        let directory = tempfile::tempdir().unwrap();
+        let server = MockServer::start_async().await;
+        let client = api(&server);
+        let run_id = RunId::new_v4();
+        let identity = RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap();
+        let fence = DeferredSandboxFence {
+            owner_epoch: 3,
+            generation: 2,
+        };
+        let outbox = DeferredReleaseOutbox::new(directory.path().join("release"));
+        outbox.begin_claim(run_id, &identity).await.unwrap();
+        outbox.accept_claim(run_id, Some(fence)).await.unwrap();
+        let unresolved = server
+            .mock_async(|when, then| {
+                when.method("POST");
+                then.status(200)
+                    .json_body(serde_json::json!({ "released": false, "outcome": "inconclusive" }));
+            })
+            .await;
+        outbox
+            .record_and_flush(&client, identity.runner_id(), run_id, fence)
+            .await;
+        unresolved.assert_calls_async(1).await;
+        // An unresolved obligation stays retryable: nothing is quarantined and
+        // the claim barrier survives.
+        assert!(outbox.claim_path(run_id).exists());
+        assert!(!directory.path().join("release.rejected").exists());
+        unresolved.delete_async().await;
+        let released = server
+            .mock_async(|when, then| {
+                when.method("POST");
+                then.status(200)
+                    .json_body(serde_json::json!({ "released": true, "outcome": "released" }));
+            })
+            .await;
+        outbox.flush_one(&client).await;
+        released.assert_calls_async(1).await;
+        assert!(!outbox.claim_path(run_id).exists());
     }
 
     #[tokio::test]

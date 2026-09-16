@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.56](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.55...host-worker-v1.4.56) (2026-09-16)
+
+
+### Bug Fixes
+
+* **artifacts:** use consistent short resource references ([#34559](https://github.com/vm0-ai/okou/issues/34559)) ([9437bb7](https://github.com/vm0-ai/okou/commit/9437bb7e5dcc5b63d83ad01c63473e3535305139))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.1
+
 ## [1.4.55](https://github.com/vm0-ai/okou/compare/host-worker-v1.4.54...host-worker-v1.4.55) (2026-09-16)
 
 

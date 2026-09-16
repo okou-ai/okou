@@ -1,6 +1,6 @@
 import { command, computed, state } from "ccstate";
 
-import { setAblyPayloadLoop$ } from "../signals/realtime.ts";
+import { setWorkerAblyPayloadLoop$ } from "../signals/realtime.ts";
 import { resetSignal } from "../signals/utils.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
 import {
@@ -208,7 +208,7 @@ function createWorkerRealtimeSubscriptionGraph({
   });
   const run$ = command(({ set }, signal: AbortSignal): void => {
     set(
-      setAblyPayloadLoop$,
+      setWorkerAblyPayloadLoop$,
       {
         scope,
         topic,

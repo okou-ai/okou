@@ -38,6 +38,7 @@ import {
 import type {
   SharedDatabaseRealtimeMessage,
   SharedDatabaseRealtimeScope,
+  SharedDatabaseRealtimeTopic,
 } from "./protocol.ts";
 import {
   MessagePortSharedDatabaseBridge,
@@ -263,10 +264,10 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     return Promise.resolve();
   }
 
-  subscribeRealtime(
+  subscribeRealtime<TScope extends SharedDatabaseRealtimeScope>(
     subscriptionId: string,
-    scope: SharedDatabaseRealtimeScope,
-    topic: string,
+    scope: TScope,
+    topic: SharedDatabaseRealtimeTopic<NoInfer<TScope>>,
     listener: (message: SharedDatabaseRealtimeMessage) => void,
     _onResync: () => void,
   ): Promise<void> {
@@ -359,10 +360,10 @@ class TestSharedDatabaseBridge implements SharedDatabaseBridge {
     await this.afterRegistration?.();
   }
 
-  subscribeRealtime(
+  subscribeRealtime<TScope extends SharedDatabaseRealtimeScope>(
     subscriptionId: string,
-    scope: SharedDatabaseRealtimeScope,
-    topic: string,
+    scope: TScope,
+    topic: SharedDatabaseRealtimeTopic<NoInfer<TScope>>,
     listener: (message: SharedDatabaseRealtimeMessage) => void,
     onResync: () => void,
   ): Promise<void> {

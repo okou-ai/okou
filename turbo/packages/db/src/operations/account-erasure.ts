@@ -268,14 +268,14 @@ export async function assertErasureSubjectWritable(
   subjects: readonly ErasureSubject[],
 ): Promise<void> {
   await acquireErasureSubjectLocks(tx, subjects, "shared");
-  for (const subject of subjects) {
-    const [closed] = await tx
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(subjectCondition(subject))
-      .limit(1);
-    invariant(!closed, "subject_closed");
-  }
+  // Start a new READ COMMITTED statement after every lock has been acquired.
+  // A closure committed while a lock was waiting must be visible here.
+  const [closed] = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(or(...subjects.map(subjectCondition)))
+    .limit(1);
+  invariant(!closed, "subject_closed");
 }
 
 async function lockJob(tx: Tx, jobId: string, retiring = false): Promise<Job> {

@@ -1833,7 +1833,7 @@ pub(super) async fn register_proxy(
             })
             .await;
     }
-    publication.observe().await;
+    config.registry.observe_registration(publication);
     Ok(network_log_session)
 }
 
