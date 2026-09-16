@@ -597,10 +597,10 @@ describe("thread activity summary", () => {
         await chat.deleteThread(f.actor, f.run.threadId);
       }
       release.resolve("This phrase must not revive the run");
-      // The completion UPDATE fences the write, so the in-flight attempt reads
-      // the row as stored: its own claim is still leased and no phrase landed.
+      // Every post-provider transaction rechecks current-run eligibility;
+      // even the final INSERT/read must not return a terminal run's cache.
       await expect(pending).resolves.toMatchObject({
-        status: "available",
+        status: "ineligible",
         messages: [],
       });
       if (action !== "delete") {

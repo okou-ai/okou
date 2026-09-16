@@ -18,7 +18,10 @@ import {
   publishMaterializedChatProjection,
   type MaterializedChatProjection,
 } from "./agent-event-consumer-run-output.service";
-import { AgentEventRunNotFoundError } from "./run-content-erasure-admission.service";
+import {
+  AgentEventRunNotFoundError,
+  type RunContentOwnership,
+} from "./run-content-erasure-admission.service";
 import type { EventCitation } from "./pi-memory-citation-events";
 import { refreshTelegramTypingEvents$ } from "./agent-event-consumer-telegram-typing.service";
 import { settle, tapError } from "../utils";
@@ -46,14 +49,20 @@ interface ReceiveAgentEventsParams {
   readonly body: AgentEventsBody;
 }
 
-interface DispatchableConsumer {
-  readonly name: string;
-  readonly command$: ConsumerCommand;
-}
+type DispatchableConsumer =
+  | {
+      readonly name: "telegram-typing" | "agentphone-typing";
+      readonly command$: ConsumerCommand;
+    }
+  | {
+      readonly name: "activity-snapshot";
+      readonly command$: typeof captureRunActivity$;
+    };
 
 interface AcceptedAgentEvents {
   readonly payload: EventConsumerPayload;
   readonly chatProjection: MaterializedChatProjection | null;
+  readonly ownership: RunContentOwnership;
 }
 
 const OPTIONAL_EVENT_CONSUMERS: readonly DispatchableConsumer[] = [
@@ -98,13 +107,18 @@ const runOptionalEventConsumer$ = command(
     params: {
       readonly consumer: DispatchableConsumer;
       readonly payload: EventConsumerPayload;
+      readonly ownership: RunContentOwnership;
     },
     signal: AbortSignal,
   ): Promise<void> => {
     const range = eventRange(params.payload.events);
     set(eventConsumerPayloadState$, params.payload);
     const result = await tapError(
-      Promise.resolve(set(params.consumer.command$, signal)),
+      Promise.resolve(
+        params.consumer.name === "activity-snapshot"
+          ? set(params.consumer.command$, params.ownership, signal)
+          : set(params.consumer.command$, signal),
+      ),
       (error) => {
         L.error(`Optional event consumer "${params.consumer.name}" failed`, {
           runId: params.payload.runId,
@@ -160,7 +174,11 @@ export const dispatchOptionalAgentEventConsumers$ = command(
     }
 
     for (const consumer of OPTIONAL_EVENT_CONSUMERS) {
-      await set(runOptionalEventConsumer$, { consumer, payload }, signal);
+      await set(
+        runOptionalEventConsumer$,
+        { consumer, payload, ownership: accepted.ownership },
+        signal,
+      );
     }
 
     const range = eventRange(payload.events);
@@ -259,6 +277,7 @@ export const receiveAgentEvents$ = command(
       acceptedEvents: {
         payload: projectionResult.value.payload,
         chatProjection: projectionResult.value.chatProjection,
+        ownership: projectionResult.value.ownership,
       },
     };
   },
