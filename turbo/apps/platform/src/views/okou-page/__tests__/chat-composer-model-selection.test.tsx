@@ -662,6 +662,8 @@ test("Let an existing thread send while model availability is reconciling", asyn
   context.mocks.api(modelPoliciesMainContract.list, async ({ respond }) => {
     await policyGate.promise;
     return respond(200, {
+      revision: "revision-1",
+      writePreconditionRequired: false,
       policies: [],
       workspaceDefaultModel: null,
       workspaceDefaultPolicyId: null,

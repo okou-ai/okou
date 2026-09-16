@@ -45,6 +45,12 @@ function response(): OrgModelPoliciesResponse {
       return policy.isDefault;
     }) ?? null;
   return {
+    revision: policies
+      .map((policy) => {
+        return `${policy.id}:${policy.updatedAt}`;
+      })
+      .join(","),
+    writePreconditionRequired: false,
     policies,
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,

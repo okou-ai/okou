@@ -296,6 +296,8 @@ test("Refreshes the account target on explicit reconnect after a remote account 
   context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
     const currentPolicy = policy(switched ? "reconnect_required" : "available");
     return respond(200, {
+      revision: "revision-1",
+      writePreconditionRequired: false,
       policies: [
         {
           ...currentPolicy,
