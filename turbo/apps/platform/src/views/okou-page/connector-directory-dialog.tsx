@@ -306,7 +306,11 @@ const CHIP_RAIL_FADE = {
 /**
  * Sits over the faded end rather than beside the row, so it costs the row no
  * width and the dissolving chip behind it reads as the reason the control is
- * there. It needs its own opaque surface to stay legible on top of that chip.
+ * there. It needs its own opaque surface to stay legible on top of that chip,
+ * and that surface is the dialog's own `--card`: the composer's rail takes
+ * `--background` because that is what the composer sits on, but in dark the
+ * two are eight levels apart, so borrowing it here would sink the control into
+ * the card instead of raising it off the chip.
  */
 function DirectoryChipPager({ side }: { readonly side: "back" | "forward" }) {
   const { t } = useTranslation();
@@ -317,7 +321,7 @@ function DirectoryChipPager({ side }: { readonly side: "back" | "forward" }) {
       variant="quiet"
       className={cn(
         "absolute top-1/2 z-10 size-7 -translate-y-1/2 rounded-full p-0",
-        "border border-border bg-background shadow-sm hover:bg-state-hover-overlay",
+        "border border-border bg-card shadow-sm hover:bg-state-hover-overlay",
         side === "back" ? "left-3" : "right-3",
       )}
       aria-label={t(($) => {
