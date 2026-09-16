@@ -6107,6 +6107,35 @@ function MessageAnnotation({
     "rounded-md px-1.5 text-xs font-medium text-muted-foreground";
   if (renderPart.type === "automation") {
     const { part } = renderPart;
+    const content = (
+      <>
+        <Route size={15} className="shrink-0" />
+        <span className="min-w-0 truncate">{part.workflowName}</span>
+      </>
+    );
+    if (part.workflowId !== undefined) {
+      const workflowTitle =
+        part.workflowName.trim() ||
+        t(($) => {
+          return $.chat.templates.categories.workflow;
+        });
+      return (
+        <Link
+          pathname={ROUTES.workflowDetailAutomations}
+          options={{ pathParams: { workflowId: part.workflowId } }}
+          aria-label={t(
+            ($) => {
+              return $.chat.workflows.open;
+            },
+            { title: workflowTitle },
+          )}
+          className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
+          title={part.workflowName}
+        >
+          {content}
+        </Link>
+      );
+    }
     return (
       <div
         aria-label={t(
@@ -6120,8 +6149,7 @@ function MessageAnnotation({
         className={className}
         title={part.workflowName}
       >
-        <Route size={15} className="shrink-0" />
-        <span className="min-w-0 truncate">{part.workflowName}</span>
+        {content}
       </div>
     );
   }
@@ -6815,7 +6843,6 @@ function WorkflowUserMessage({
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
 }) {
-  const { t } = useTranslation();
   const renderPart = userMessageAnnotationRenderPart(
     event.userMessageRenderDocument,
   );
@@ -6823,11 +6850,6 @@ function WorkflowUserMessage({
     return null;
   }
   const { part } = renderPart;
-  const workflowTitle =
-    part.workflowName.trim() ||
-    t(($) => {
-      return $.chat.templates.categories.workflow;
-    });
   const workflowBody =
     messageDocumentToDisplayText(event.userMessage)?.trim() ||
     part.automationBrief?.trim();
@@ -6838,8 +6860,6 @@ function WorkflowUserMessage({
       <div className="px-4 py-3">{workflowBody}</div>
     </div>
   ) : null;
-  const workflowId = part.workflowId;
-  const linked = workflowId !== undefined;
 
   return (
     <div
@@ -6852,29 +6872,7 @@ function WorkflowUserMessage({
         <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
-          {linked && body ? (
-            <Link
-              pathname={ROUTES.workflowDetailAutomations}
-              options={{
-                pathParams: {
-                  workflowId,
-                },
-              }}
-              className="contents"
-              aria-label={t(
-                ($) => {
-                  return $.chat.workflows.open;
-                },
-                {
-                  title: workflowTitle,
-                },
-              )}
-            >
-              {body}
-            </Link>
-          ) : (
-            body
-          )}
+          {body}
         </div>
       </div>
     </div>
