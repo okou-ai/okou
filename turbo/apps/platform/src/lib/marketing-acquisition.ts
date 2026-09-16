@@ -11,8 +11,9 @@ export async function marketingShadowConfiguration(
   const response = await initClient(marketingAcquisitionContract, {
     baseUrl,
   }).config({ fetchOptions: { signal, cache: "no-store" } });
-  if (response.status !== 200)
+  if (response.status !== 200) {
     throw new Error("Marketing configuration unavailable");
+  }
   return response.body.shadowEnabled;
 }
 
@@ -33,7 +34,8 @@ export async function sendMarketingObservations(
     body,
     fetchOptions: { credentials: "include", keepalive: true, signal },
   });
-  if (response.status !== 200)
+  if (response.status !== 200) {
     throw new Error("Marketing observations unavailable");
+  }
   return response.body;
 }

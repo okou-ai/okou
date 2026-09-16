@@ -29,7 +29,9 @@ function chooseWorkflow() {
   const radio = queryAllByRoleFast("radio").find((candidate) => {
     return candidate.textContent?.includes("Workflow automation");
   });
-  if (!radio) throw new Error("Expected workflow choice");
+  if (!radio) {
+    throw new Error("Expected workflow choice");
+  }
   click(radio);
 }
 
@@ -50,14 +52,16 @@ test("consented shadow observations use the authenticated cookie request and sur
     const body = marketingAcquisitionContract.events.body.parse(
       await request.json(),
     );
-    if (body.events.length) observed.resolve({ request, body });
+    if (body.events.length) {
+      observed.resolve({ request, body });
+    }
     return Response.json(accepted());
   });
   await openOnboarding();
   const { request, body } = await observed.promise;
   expect(request.headers.get("authorization")).toBe("Bearer test-token");
   expect(request.credentials).toBe("include");
-  expect(body.events).toEqual(
+  expect(body.events).toStrictEqual(
     expect.arrayContaining([
       expect.objectContaining({
         name: "StepViewed",
@@ -65,7 +69,7 @@ test("consented shadow observations use the authenticated cookie request and sur
       }),
     ]),
   );
-  expect(body.sessionId).toEqual(expect.any(String));
+  expect(body.sessionId).toStrictEqual(expect.any(String));
   expect(document.querySelector("iframe")).toBeNull();
   chooseWorkflow();
   await expect(
@@ -90,7 +94,7 @@ test("a disabled shadow configuration leaves onboarding usable without acquisiti
   await expect(
     screen.findByRole("heading", { name: "What do you work on?" }),
   ).resolves.toBeInTheDocument();
-  expect(requests).toEqual([]);
+  expect(requests).toStrictEqual([]);
 });
 
 test("missing consent never sends buffered observations or writes a tab identifier", async () => {
@@ -116,7 +120,7 @@ test("missing consent never sends buffered observations or writes a tab identifi
     batches.every((batch) => {
       return batch.events.length === 0 && batch.sessionId === undefined;
     }),
-  ).toBe(true);
+  ).toBeTruthy();
   expect(context.store.get(tabSession.get$)).toBeNull();
 });
 
@@ -136,7 +140,9 @@ test("an unacknowledged batch keeps its event IDs when a later step resumes deli
       failed.resolve(body);
       return Response.json({ error: "Retry later" }, { status: 503 });
     }
-    if (body.events.length) retried.resolve(body);
+    if (body.events.length) {
+      retried.resolve(body);
+    }
     return Response.json(accepted());
   });
   await openOnboarding();
@@ -151,7 +157,7 @@ test("an unacknowledged batch keeps its event IDs when a later step resumes deli
     replay.events.map((event) => {
       return event.id;
     }),
-  ).toEqual(
+  ).toStrictEqual(
     expect.arrayContaining(
       original.events.map((event) => {
         return event.id;
