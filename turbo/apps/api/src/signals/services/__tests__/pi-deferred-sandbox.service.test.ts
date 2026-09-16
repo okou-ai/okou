@@ -57,7 +57,10 @@ import {
   agentRunSandboxLease,
 } from "@okouai/db/schema/agent-run-inference";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
+import {
+  agentRunInferenceObjects,
+  piInferenceObjects,
+} from "@okouai/db/schema/pi-inference-object";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
   runnersPollContract,
@@ -72,10 +75,13 @@ import {
   piDeferredConfigurationSchema,
   piDeferredContextSchema,
   piDeferredH1Schema,
+  piDeferredSecretsSchema,
 } from "../pi-deferred-sandbox-contract";
 import {
   publishPiInferenceObject,
   deletePiObjectOrphansForOwner,
+  readPiInferenceObject,
+  reclaimPiInferenceObjects,
 } from "../pi-inference-object.service";
 import { runnersRoutes } from "../../routes/runners";
 import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
@@ -1312,6 +1318,116 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     });
     expect(later.runId).toBeTruthy();
   }, 90_000);
+
+  it("rejects a foreign namespace and an unretained hash through the object seam", async () => {
+    const f = await fixture();
+    const state = await readRequiredPiFixture(f);
+    const hash = state.inference.input.configurationHash;
+    await expect(
+      readPiInferenceObject(
+        db(),
+        {
+          runId: f.runId,
+          orgId: f.orgId,
+          userId: `user_${randomUUID()}`,
+          kind: "configuration",
+          hash,
+        },
+        piDeferredConfigurationSchema,
+      ),
+    ).rejects.toThrow(/missing or fails integrity/u);
+    // The same bytes under another kind are not this Run's retained reference.
+    await expect(
+      readPiInferenceObject(
+        db(),
+        {
+          runId: f.runId,
+          orgId: f.orgId,
+          userId: f.userId,
+          kind: "context",
+          hash,
+        },
+        piDeferredContextSchema,
+      ),
+    ).rejects.toThrow(/not retained by this Run/u);
+  }, 45_000);
+
+  it("reclaims an unreferenced publication and keeps every retained object", async () => {
+    const f = await fixture();
+    const state = await readRequiredPiFixture(f);
+    const retained = state.inference.input.configurationHash;
+    const orphan = await publishPiInferenceObject(
+      db(),
+      f,
+      "h1",
+      piDeferredH1Schema,
+      {
+        schemaVersion: 1,
+        manifestGeneration: 9,
+        lastEventSequence: 9,
+        sessionHistory: `orphan-${f.runId}`,
+        historyHash: createHash("sha256").update(f.runId).digest("hex"),
+      },
+    );
+    // A publication whose reference or intent commit never landed has no Run
+    // edge; age it past the reclaim window without touching live references.
+    await db()
+      .update(piInferenceObjects)
+      .set({ createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000) })
+      .where(eq(piInferenceObjects.hash, orphan));
+    await expect(reclaimPiInferenceObjects(db())).resolves.toBeGreaterThan(0);
+    await expect(
+      db()
+        .select({ hash: piInferenceObjects.hash })
+        .from(piInferenceObjects)
+        .where(eq(piInferenceObjects.hash, orphan)),
+    ).resolves.toStrictEqual([]);
+    await expect(
+      db()
+        .select({ hash: piInferenceObjects.hash })
+        .from(piInferenceObjects)
+        .where(eq(piInferenceObjects.hash, retained)),
+    ).resolves.toStrictEqual([{ hash: retained }]);
+  }, 45_000);
+
+  it("fails an expired encrypted deferred secret without settling usage", async () => {
+    const f = await fixture();
+    const secretsHash = await publishPiInferenceObject(
+      db(),
+      f,
+      "secrets",
+      piDeferredSecretsSchema,
+      {
+        schemaVersion: 1,
+        ciphertext: await encryptPersistentSecretValue("synthetic-secret", f),
+      },
+    );
+    const state = await readRequiredPiFixture(f);
+    await db()
+      .update(agentRunInference)
+      .set({
+        input: {
+          ...state.inference.input,
+          deferredSecrets: {
+            kind: "encrypted",
+            objectHash: secretsHash,
+            expiresAt: new Date(Date.now() - 60_000).toISOString(),
+          },
+        },
+      })
+      .where(eq(agentRunInference.runId, f.runId));
+    await expect(
+      createStore().set(consumeDeferredPiRun$, f.runId, context.signal),
+    ).rejects.toThrow(/secret envelope expired/u);
+    await expect(
+      db()
+        .select({ runId: runnerJobQueue.runId })
+        .from(runnerJobQueue)
+        .where(eq(runnerJobQueue.runId, f.runId)),
+    ).resolves.toStrictEqual([]);
+    expect((await readRequiredPiFixture(f)).inference.usageSettled).toBeFalsy();
+    await accept(claim(f.runId, true, randomUUID()), [404]);
+  }, 45_000);
 
   it("suppresses terminal effects when the captured resource owner closes after transfer", async () => {
     const original = `user_${randomUUID()}`;
