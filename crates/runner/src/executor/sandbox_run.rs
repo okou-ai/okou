@@ -1635,8 +1635,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         prepared_guest_runtime,
     } = run;
     let cleanup_cancel = inputs.controls.cancel.clone();
-    let ssh = config
-        .ssh
+    let guest_rpc = config
+        .guest_rpc
         .as_ref()
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context.run_id, &cleanup_cancel));
     let reuse_result = start.reuse_result;
@@ -1655,8 +1655,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     )
     .await;
 
-    if let Some(ssh) = ssh {
-        ssh.shutdown().await;
+    if let Some(guest_rpc) = guest_rpc {
+        guest_rpc.shutdown().await;
     }
 
     let pre_process_resource_diagnostics = match result.as_ref() {
