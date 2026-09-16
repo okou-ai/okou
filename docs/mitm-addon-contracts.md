@@ -23,10 +23,10 @@ draft edits. Unrelated Google API paths retain their existing policy.
 Rejected requests receive a local `403` with reason `gmail_send_blocked` and a
 Gmail-compatible `error.message` so SDK callers see the actionable handoff:
 create a draft through the existing Gmail draft API, then run the existing
-`okou mail link <gmail-draft-id>` command to obtain the Web review URL. Outside
-Web chat, the user reviews and sends the draft in Gmail. Reuse or update an
-existing draft when recovering from a blocked send. No CLI command is added or
-changed by this restriction.
+`okou mail link <gmail-draft-id>` command and return the review URL for the user
+to review and send. Reuse or update an existing draft when recovering from a
+blocked send. The response uses the same instructions in every environment.
+No CLI command is added or changed by this restriction.
 The session-authenticated API review/send path remains outside this addon guard.
 
 Both request hooks share the restriction. The header hook must not install a

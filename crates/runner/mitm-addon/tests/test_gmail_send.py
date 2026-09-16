@@ -70,7 +70,7 @@ async def test_send_is_blocked_even_with_allow_grant(
     # This is also the field Gmail SDKs display to their caller.
     assert "Create a Gmail draft using the Gmail API (drafts.create)" in error["message"]
     assert "reuse or update it" in error["message"]
-    assert "okou mail link <gmail-draft-id>" in error["message"]
+    assert "Run okou mail link <gmail-draft-id> and return the review URL" in error["message"]
     assert "user can review and send" in error["message"]
     assert "upload_id" not in error["message"]
     assert "Authorization" not in flow.request.headers

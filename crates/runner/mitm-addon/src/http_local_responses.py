@@ -330,9 +330,9 @@ def block_gmail_send(flow: http.HTTPFlow) -> None:
                     "Direct Gmail API sending and Gmail batch requests are disabled. "
                     "Create a Gmail draft using the Gmail API (drafts.create). "
                     "If a draft already exists, reuse or update it. "
-                    "In Web chat, run okou mail link <gmail-draft-id> and return the review URL "
-                    "so the user can review and send. Outside Web chat, ask the user to review "
-                    "and send the draft in Gmail. Permission grants cannot unblock direct sending. "
+                    "Run okou mail link <gmail-draft-id> and return the review URL "
+                    "so the user can review and send. "
+                    "Permission grants cannot unblock direct sending. "
                     "For batch reads or draft edits, use individual API requests."
                 ),
             },
