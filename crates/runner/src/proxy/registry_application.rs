@@ -10,6 +10,8 @@ use tracing::info;
 
 use super::control::{self, ControlTarget};
 
+pub(super) mod observer;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String")]
 pub(super) struct RegistryDigest(String);
@@ -208,6 +210,14 @@ impl ApplicationReceipt {
 }
 
 impl RegistryPublication {
+    pub(super) fn unconfirmed(&self, reason: &'static str) {
+        info!(
+            registry_digest = %self.digest.0,
+            reason,
+            "registry published; addon application outcome not confirmed"
+        );
+    }
+
     async fn apply(&self) -> io::Result<ApplicationReceipt> {
         let target = self.target.as_ref().ok_or_else(|| {
             io::Error::new(io::ErrorKind::NotConnected, "addon control is unavailable")
