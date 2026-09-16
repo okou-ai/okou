@@ -259,7 +259,10 @@ function privateGenerationResult(result: unknown): Record<string, unknown> {
   if (
     !isRecord(result) ||
     typeof result.url !== "string" ||
-    !artifactFileReference(result.url)?.id
+    !(
+      artifactFileReference(result.url)?.id ||
+      artifactFileReference(result.url)?.hash
+    )
   ) {
     throw new Error(
       "Private generation result must reference an authenticated artifact",

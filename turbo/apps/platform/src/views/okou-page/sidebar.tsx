@@ -471,7 +471,7 @@ function ExpandedFooter() {
    what puts the workspace logo and the account mark the same distance from
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
-  "okou-nav-rail hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
+  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
 
 function LabeledRailLink({
   id,

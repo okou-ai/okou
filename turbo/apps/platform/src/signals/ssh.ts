@@ -498,7 +498,7 @@ export const subscribeSshChanged$ = command(({ set }, signal: AbortSignal) => {
     {
       topic: "ssh:changed",
       loopCommand$: onSshChanged$,
-      catchUpCommand$: catchUpSsh$,
+      initializeCommand$: catchUpSsh$,
       options: { runOnSubscribe: true },
     },
     signal,

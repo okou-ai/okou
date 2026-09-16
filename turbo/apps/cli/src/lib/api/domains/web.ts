@@ -5,6 +5,7 @@ import {
   type IntroVideoRenderResponse,
 } from "@okouai/api-contracts/contracts/intro-video-render";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { resolveOwnedArtifactReference } from "./artifact-references";
 import { isUtf8 } from "node:buffer";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
 import { basename, extname } from "node:path";
@@ -195,7 +196,14 @@ export async function webFileReferenceId(
   value: string,
 ): Promise<string | null> {
   const reference = parseArtifactReference(value);
-  if (reference) return reference.id;
+  if (reference)
+    return (
+      reference.id ??
+      (await resolveOwnedArtifactReference(
+        `${reference.hash}${reference.extension}`,
+        "file",
+      ))
+    );
   if (!URL.canParse(value)) return null;
   const url = new URL(value);
   const baseUrl = new URL(await getBaseUrl());
@@ -251,7 +259,7 @@ export async function downloadWebFile(
   outPath: string,
 ): Promise<DownloadWebFileResult> {
   const response = await fetchWebFile(
-    parseArtifactReference(fileId)?.id ?? fileId,
+    (await webFileReferenceId(fileId)) ?? fileId,
   );
 
   if (!response.ok) {

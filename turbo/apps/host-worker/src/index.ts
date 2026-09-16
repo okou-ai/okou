@@ -1081,7 +1081,8 @@ async function readSharedThreadResource(
   )
     return null;
   const target = parsed.data.resources[record.publicToken];
-  return target?.kind === record.targetKind
+  return target?.kind === record.targetKind &&
+    (record.targetId === undefined || target.id === record.targetId)
     ? { publicBrand: record.publicBrand, target }
     : null;
 }

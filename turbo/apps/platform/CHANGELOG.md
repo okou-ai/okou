@@ -11,6 +11,23 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.905.1](https://github.com/vm0-ai/okou/compare/app-v0.905.0...app-v0.905.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **app:** allow get started reward notifications through shared worker ([#34563](https://github.com/vm0-ai/okou/issues/34563)) ([48a840e](https://github.com/vm0-ai/okou/commit/48a840ec4d2f56d8626c9c0cb4db99788fb98012))
+* **app:** keep search category button widths stable ([#34564](https://github.com/vm0-ai/okou/issues/34564)) ([0566857](https://github.com/vm0-ai/okou/commit/0566857360ad4df2d78012dec7deb4f881ba3c08))
+* **platform:** present embedded sites in a public conversation ([#34528](https://github.com/vm0-ai/okou/issues/34528)) ([7135839](https://github.com/vm0-ai/okou/commit/7135839d97aa9f336d5e4a3b9898b1dcd26433ea))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.0
+    * @okouai/core bumped to 8.670.1
+
 ## [0.905.0](https://github.com/vm0-ai/okou/compare/app-v0.904.0...app-v0.905.0) (2026-09-16)
 
 

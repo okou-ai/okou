@@ -9,13 +9,19 @@ import { fetchWorker } from "./test-helpers";
 
 type Env = Parameters<typeof worker.fetch>[1];
 
-function fixture() {
+function fixture(tokenLength = 10) {
   const threadId = crypto.randomUUID();
   const fileId = crypto.randomUUID();
   const deploymentId = crypto.randomUUID();
   const siteId = crypto.randomUUID();
-  const fileToken = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
-  const siteToken = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+  const fileToken = crypto
+    .randomUUID()
+    .replaceAll("-", "")
+    .slice(0, tokenLength);
+  const siteToken = crypto
+    .randomUUID()
+    .replaceAll("-", "")
+    .slice(0, tokenLength);
   const fileKey = `private-artifacts/${fileId}/thread-shares/${threadId}/${fileToken}/video.mp4`;
   const prefix = `shared-artifacts/okou/${threadId}/${deploymentId}`;
   const policy: SharedThreadArtifactPolicy = {
@@ -86,6 +92,9 @@ function fixture() {
         publicBrand: "okou",
         publicToken: token,
         targetKind: kind,
+        ...(tokenLength === 10
+          ? { targetId: kind === "file" ? fileId : deploymentId }
+          : {}),
       }),
     );
   }
@@ -130,43 +139,66 @@ function fixture() {
   return { env, objects, policy, policyKey, fileUrl, siteUrl };
 }
 
-test("one conversation grant delivers fixed file bytes, ranges, and complete site resources", async () => {
-  const f = fixture();
-  const file = await fetchWorker(new Request(f.fileUrl), f.env);
-  expect(file.status).toBe(200);
-  expect(file.headers.get("cache-control")).toBe(
-    "private, max-age=31536000, immutable",
-  );
-  expect(await file.text()).toBe("0123456789");
-  const range = await fetchWorker(
-    new Request(f.fileUrl, { headers: { Range: "bytes=2-5" } }),
-    f.env,
-  );
-  expect(range.status).toBe(206);
-  expect(range.headers.get("cache-control")).toBe(
-    "private, max-age=31536000, immutable",
-  );
-  expect(range.headers.get("content-range")).toBe("bytes 2-5/10");
-  expect(await range.text()).toBe("2345");
-  expect(await (await fetchWorker(new Request(f.siteUrl), f.env)).text()).toBe(
-    "<h1>Snapshot one</h1>",
-  );
-  expect(
-    await (
-      await fetchWorker(new Request(`${f.siteUrl}assets/style.css`), f.env)
-    ).text(),
-  ).toBe("body{color:red}");
-  expect(
-    await (
-      await fetchWorker(
-        new Request(`${f.siteUrl}nested/page`, {
-          headers: { Accept: "text/html" },
-        }),
-        f.env,
-      )
-    ).text(),
-  ).toBe("<h1>Snapshot one</h1>");
-});
+test.each([10, 24])(
+  "%i-character snapshot links deliver fixed file bytes, ranges, and complete site resources",
+  async (tokenLength) => {
+    const f = fixture(tokenLength);
+    const file = await fetchWorker(new Request(f.fileUrl), f.env);
+    expect(file.status).toBe(200);
+    expect(file.headers.get("cache-control")).toBe(
+      "private, max-age=31536000, immutable",
+    );
+    expect(await file.text()).toBe("0123456789");
+    const range = await fetchWorker(
+      new Request(f.fileUrl, { headers: { Range: "bytes=2-5" } }),
+      f.env,
+    );
+    expect(range.status).toBe(206);
+    expect(range.headers.get("cache-control")).toBe(
+      "private, max-age=31536000, immutable",
+    );
+    expect(range.headers.get("content-range")).toBe("bytes 2-5/10");
+    expect(await range.text()).toBe("2345");
+    expect(
+      await (await fetchWorker(new Request(f.siteUrl), f.env)).text(),
+    ).toBe("<h1>Snapshot one</h1>");
+    expect(
+      await (
+        await fetchWorker(new Request(`${f.siteUrl}assets/style.css`), f.env)
+      ).text(),
+    ).toBe("body{color:red}");
+    expect(
+      await (
+        await fetchWorker(
+          new Request(`${f.siteUrl}nested/page`, {
+            headers: { Accept: "text/html" },
+          }),
+          f.env,
+        )
+      ).text(),
+    ).toBe("<h1>Snapshot one</h1>");
+  },
+);
+
+test.each(["file", "html"] as const)(
+  "a snapshot alias cannot resolve a different %s target",
+  async (kind) => {
+    const f = fixture();
+    const url = kind === "file" ? f.fileUrl : f.siteUrl;
+    const parsed = new URL(url);
+    const alias =
+      kind === "file"
+        ? parsed.pathname.slice(1)
+        : parsed.hostname.split(".")[0]!;
+    const key = artifactDeliveryKey("okou", kind, alias);
+    const record = JSON.parse(f.objects.get(key)!) as Record<string, unknown>;
+    f.objects.set(
+      key,
+      JSON.stringify({ ...record, targetId: crypto.randomUUID() }),
+    );
+    expect((await fetchWorker(new Request(url), f.env)).status).toBe(404);
+  },
+);
 
 test("hosted resources in one conversation keep independent content caches", async () => {
   const f = fixture();

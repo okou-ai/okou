@@ -237,18 +237,6 @@ function recoveredMaintenanceId(
     : expected.capturedMaintenanceStorageId;
 }
 
-function computeResourceIdentity(args: {
-  readonly agentId: string | null;
-  readonly maintenanceId: string | undefined;
-}): Pick<ResourceOwner, "kind" | "id"> | undefined {
-  if (args.agentId !== null) {
-    return { kind: "agent", id: args.agentId };
-  }
-  return args.maintenanceId === undefined
-    ? undefined
-    : { kind: "maintenance", id: args.maintenanceId };
-}
-
 /**
  * A live binding stays authoritative when it exists. A recovered identity is
  * accepted only when the storage still belongs to both the Run owner and the
@@ -285,9 +273,15 @@ export async function prepareComputeRunAdmission(
         userId: agentSessions.userId,
         orgId: agentSessions.orgId,
       },
+      agentOwner: {
+        id: agents.id,
+        userId: agents.owner,
+        orgId: agents.orgId,
+      },
     })
     .from(agentRuns)
     .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
     .where(eq(agentRuns.id, runId));
   if (!owner) {
     return undefined;
@@ -310,13 +304,18 @@ export async function prepareComputeRunAdmission(
     agentId: owner.agentId,
     bound: maintenance !== undefined,
   });
-  const identity = computeResourceIdentity({
-    agentId: owner.agentId,
-    maintenanceId: maintenance?.id ?? capturedMaintenance,
-  });
-  const resource = identity
-    ? await readResource(tx, identity, false)
-    : undefined;
+  const maintenanceId = maintenance?.id ?? capturedMaintenance;
+  // This join only discovers subjects. The resource still needs its locked
+  // reread below, and maintenance keeps its independent job/Storage authority.
+  const resource = owner.agentOwner
+    ? { ...owner.agentOwner, kind: "agent" as const }
+    : maintenanceId === undefined
+      ? undefined
+      : await readResource(
+          tx,
+          { kind: "maintenance", id: maintenanceId },
+          false,
+        );
   const allowed = await writable(tx, [
     owner,
     owner.sessionOwner,

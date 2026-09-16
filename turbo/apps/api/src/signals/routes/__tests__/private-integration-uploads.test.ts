@@ -8,7 +8,6 @@ import {
   integrationsTeamsUploadInitContract,
   integrationsTelegramUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { expect, test } from "vitest";
@@ -96,7 +95,7 @@ test.each(
         : "/test-user-artifacts/artifacts/",
     );
     if (privateFiles) {
-      expect(fileUrl).toBe(artifactReferencePath(uploadId, "notes.txt"));
+      expect(fileUrl).toMatch(/^\/artifacts\/[a-z0-9]{10}\.txt$/u);
     }
     expect(
       (await fetch(uploadUrl, { method: "PUT", body: "upload bytes" })).status,

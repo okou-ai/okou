@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -467,10 +466,8 @@ describe("GET /api/artifacts/catalog", () => {
         artifactKind,
         claimRun: false,
       });
-      const canonical = artifactReferencePath(
-        hosted.deploymentId,
-        "index.html",
-      );
+      const canonical = hosted.url;
+      expect(canonical).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
       const list = await chat.listArtifactCatalog(owner.actor);
       const entry = list.artifacts.find((item) => {
         return item.title === site;
@@ -501,7 +498,11 @@ describe("GET /api/artifacts/catalog", () => {
       expect(file?.previewImageUrl).toBeUndefined();
       expect(
         capture.puts.filter(({ key }) => {
-          return !key.startsWith("private-sites/") && !key.startsWith("agent");
+          return (
+            !key.startsWith("private-sites/") &&
+            !key.startsWith("agent") &&
+            !key.startsWith("artifact-references/")
+          );
         }),
       ).toStrictEqual([]);
       const colleague = bdd.user({ orgId: owner.actor.orgId });

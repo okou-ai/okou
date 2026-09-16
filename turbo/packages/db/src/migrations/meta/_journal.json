@@ -477,6 +477,13 @@
       "when": 1789540183977,
       "tag": "1145_pi_durable_sandbox_objects",
       "breakpoints": true
+    },
+    {
+      "idx": 1146,
+      "version": "7",
+      "when": 1789545996691,
+      "tag": "1146_user_templates",
+      "breakpoints": true
     }
   ]
 }

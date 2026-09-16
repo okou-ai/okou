@@ -439,6 +439,16 @@
     }
   },
   "artifacts": {
+    "access": {
+      "backToBrand": "Kembali ke {{brandName}}",
+      "description": "Artefak ini mungkin bersifat pribadi atau sudah tidak tersedia.",
+      "help": "Minta orang yang membagikan tautan ini untuk memeriksa akses.",
+      "signedInAs": "Masuk sebagai {{email}}",
+      "switchAccount": "Ganti akun",
+      "switchAccountFailed": "Tidak dapat membuka pemilih akun. Silakan coba lagi.",
+      "title": "Anda tidak dapat melihat artefak ini",
+      "tryAgain": "Coba lagi"
+    },
     "actions": {
       "backToAll": "Kembali ke semua artefak",
       "backToArtifacts": "Kembali ke artefak",
@@ -580,8 +590,7 @@
     },
     "sharing": {
       "shareOrganization": "Bagikan ke organisasi",
-      "sharePublic": "Bagikan ke publik",
-      "unavailable": "Artefak ini tidak tersedia atau Anda tidak memiliki akses."
+      "sharePublic": "Bagikan ke publik"
     },
     "sidebar": {
       "openSharedConversation": "Buka percakapan yang dibagikan",

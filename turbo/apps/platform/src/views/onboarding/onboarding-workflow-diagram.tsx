@@ -12,9 +12,8 @@ const OKOU_AVATAR_IMG = platformStaticAssetUrl(
   "views/onboarding/assets/okou-avatar-2df72642115f.webp",
 );
 
-/* 34px, not the 64px host: the retired `.owf-diagram-icon-box img` rule was
-   unlayered and outranked this image's own size, so this is what the avatar has
-   always rendered at. Resizing it is a visual change, not part of this move. */
+/* 34px, not the 64px host. The avatar is deliberately smaller than the tile it
+   sits in; resizing it is a visual change. */
 function WorkflowDiagramOkouAvatar() {
   return (
     <img
@@ -357,11 +356,10 @@ function WorkflowDiagramAction({
 const DIAGRAM_CANVAS_CLASS =
   "absolute top-0 left-0 h-[470px] w-[614px] min-h-0 origin-top-left scale-[0.6] self-start overflow-hidden rounded-2xl";
 
-/* Waypoint markers on the connector paths. The retired rules resolved their
-   coordinates through the canvas variable block; each one is spelled here at
-   the value that block produced. The ring is the literal `#ffffff` those rules
-   named, not `border-white`: `--color-white` is a theme-flipped token that
-   resolves to a near-black in Dark. */
+/* Waypoint markers on the connector paths; each coordinate is spelled at its
+   own value. The ring is the literal `#ffffff` rather than `border-white`:
+   `--color-white` is a theme-flipped token that resolves to a near-black in
+   Dark, and this ring is artwork that stays white in both themes. */
 const DIAGRAM_DOT_CLASS =
   "pointer-events-none absolute z-[6] box-border size-[8px] -translate-x-1/2 -translate-y-1/2 rounded-full border-(length:--border-width-illustration-marker) border-solid border-[#ffffff] bg-[#29292e]";
 

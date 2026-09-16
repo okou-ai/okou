@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.195.0](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.10...runner-rs-v0.195.0) (2026-09-16)
+
+
+### Features
+
+* add durable deferred pi sandbox consumer ([#34412](https://github.com/vm0-ai/okou/issues/34412)) ([7462236](https://github.com/vm0-ai/okou/commit/74622367fb4d6fb3ad6f12fc71ea1e526efe406b))
+
 ## [0.194.10](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.9...runner-rs-v0.194.10) (2026-09-16)
 
 

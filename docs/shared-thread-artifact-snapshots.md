@@ -12,6 +12,13 @@ URLs; this feature does not backfill historical data or crawl external websites.
 
 ## Snapshot and delivery
 
+- New snapshot tokens contain 10 lowercase alphanumeric characters. Each thread
+  share allocates independent aliases; repeated source references within it reuse
+  one alias. Conditional registry writes retry collisions and bind new aliases
+  to the source resource identity. Aliases are reserved before rewriting links
+  and copying bytes, and grant nothing until the parent policy becomes active.
+  Failed preparation may leave inert registry tombstones. Existing 24-character
+  snapshot tokens remain readable and revocable.
 - Files are copied within the private artifact bucket to
   `private-artifacts/<sourceId>/thread-shares/<sharedThreadId>/<token>/<filename>`.
   The copied messages reference `https://a.okou.io/<token>.<extension>`.
@@ -48,7 +55,7 @@ blocked to prevent independently cached derivatives.
 
 Publication creates a preparing policy and durable database identity, then locks
 that identity, rechecks current Clerk membership, copies the complete snapshot,
-registers aliases and conditionally activates the R2 policy. Public thread reads
+conditionally activates the R2 policy for the reserved aliases. Public thread reads
 also require the active policy. All started copies settle before cleanup on a
 failure or request cancellation; cleanup revokes the policy before removing
 copied bytes and the database identity. Failed cleanup retains the identity for

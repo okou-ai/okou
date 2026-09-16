@@ -15,6 +15,7 @@ import { pushSubscriptionsRoutes } from "../../push-subscriptions";
 import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
+import { installArtifactReferenceStorage } from "./artifact-reference-storage";
 import { openRouterModelContractError } from "./openrouter-model-contract";
 import type { AgentEvent } from "../../../../lib/event-consumer/verify";
 
@@ -468,6 +469,7 @@ export function createChatCallbacksApi(context: TestContext) {
         }
         return Promise.resolve({});
       });
+      installArtifactReferenceStorage(context);
       return {
         addObject(object: StoredS3Object): void {
           objects.push(object);
