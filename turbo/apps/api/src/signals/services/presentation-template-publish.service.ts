@@ -87,7 +87,7 @@ function rejected(message: string): PublishResult {
  */
 export const publishPresentationTemplate$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly ownerUserId: string;
