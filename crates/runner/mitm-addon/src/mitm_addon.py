@@ -271,6 +271,7 @@ def running() -> None:
             usage_state_id,
             registry_owner,
             runner_flush_lifecycle.DeliveryControl(),
+            usage_snapshot=run_usage.snapshot,
         )
         control.start()
         _registry_control = registry_owner

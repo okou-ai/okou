@@ -171,7 +171,7 @@ path.write_text(json.dumps({'sandboxes': {'10.200.0.1': {
     'billableFirewalls': [], 'usageGeneration': 'generation-1'
 }}}))
 registry.load_registry_state(str(path))
-server = ControlServer(directory, 'generation-1')
+server = ControlServer(directory, 'generation-1', usage_snapshot=run_usage.snapshot)
 server.start()
 try:
     print('ready', flush=True)

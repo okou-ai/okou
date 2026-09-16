@@ -31,7 +31,9 @@ def control(tmp_path):
     run_usage.initialize("generation-1")
     directory = tmp_path / "control"
     directory.mkdir(mode=0o700)
-    server = runner_control.ControlServer(directory, "generation-1")
+    server = runner_control.ControlServer(
+        directory, "generation-1", usage_snapshot=run_usage.snapshot
+    )
     server.start()
     try:
         yield directory
