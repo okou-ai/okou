@@ -409,7 +409,7 @@ impl MitmProxy {
     }
 
     /// Freeze the live launch; callers never follow a later replacement.
-    pub fn usage_flush_target(&mut self) -> Option<DeliveryTarget> {
+    pub(crate) fn usage_flush_target(&mut self) -> Option<DeliveryTarget> {
         let child_exited = match self.child.as_mut()?.try_wait() {
             Ok(Some(status)) => {
                 error!(
@@ -462,7 +462,7 @@ impl MitmProxy {
     /// The caller drives `MitmRestartParams::spawn` in a background task. It
     /// finishes old-child cleanup before starting the replacement; the caller
     /// then adopts the result with `complete_restart`.
-    pub fn begin_restart(&mut self) -> MitmRestartParams {
+    pub(crate) fn begin_restart(&mut self) -> MitmRestartParams {
         self.control.set_target(None);
         self.delivery_flush = None;
         // Each monitor keeps its own flag: an old child's delayed EOF must
@@ -485,7 +485,7 @@ impl MitmProxy {
     }
 
     /// Finish a restart by storing the newly spawned child process.
-    pub fn complete_restart(&mut self, child: ManagedMitmdump) {
+    pub(crate) fn complete_restart(&mut self, child: ManagedMitmdump) {
         self.control
             .set_target(child.control_directory().map(|directory| ControlTarget {
                 directory: directory.to_path_buf(),
@@ -567,7 +567,7 @@ impl MitmProxy {
         self.child = Some(ManagedMitmdump::unmanaged(child));
     }
 
-    pub fn set_reap_gate_for_test(&mut self, gate: crate::child_cleanup::ReapGate) {
+    pub(crate) fn set_reap_gate_for_test(&mut self, gate: crate::child_cleanup::ReapGate) {
         self.child
             .as_mut()
             .expect("test child installed")

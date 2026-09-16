@@ -49,7 +49,9 @@ def read_usage(control, run_id="run-1"):
         },
     )
     assert reply["type"] == "result"
-    return reply["data"]
+    data = reply["data"]
+    assert isinstance(data, dict)
+    return data
 
 
 def write_registration(tmp_path, *, run_id="run-1", billable=False, generation="generation-1"):
