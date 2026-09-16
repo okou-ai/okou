@@ -1,33 +1,7 @@
 {
   "version": 1,
   "legacyClassTokens": [],
-  "cssAtoms": {
-    "apps/platform/src/views/css/index.css": [
-      {
-        "atRules": [],
-        "selector": ".okou-border",
-        "property": "border",
-        "value": "0.7px solid hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-thumb-border",
-        "property": "border",
-        "value": "0.5px solid hsl(var(--gray-400))",
-        "important": false
-      }
-    ]
-  },
+  "cssAtoms": {},
   "classUsages": {},
-  "styleInjections": {
-    "apps/platform/src/views/okou-page/avatar-maker.tsx": [
-      {
-        "file": "apps/platform/src/views/okou-page/avatar-maker.tsx",
-        "kind": "jsx-style",
-        "fingerprint": "c2ae7df091deaac1ec819d82c4261087fedf4cc4fe033165510ada776afdb097",
-        "preview": "<style>{` @keyframes avatar-option-appear { from { opacity: 0; transform: translateY(8px) scale(0.9); } to { opacity: 1;"
-      }
-    ]
-  }
+  "styleInjections": {}
 }
