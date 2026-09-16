@@ -79,6 +79,10 @@ selecting another version, a recipient cannot use the earlier version's source
 reference to follow that change; the owner can still open their original version.
 Previously copied share-level organization links retain their existing behavior.
 Repeating the action for the already shared version only copies that link.
+Organization share responses return that same short link in both `url` and
+`shortUrl`; they no longer construct a long share-ID URL. An older organization
+policy without a short reference returns null for both fields until an explicit
+share action allocates one. Previously copied long links remain readable.
 CLI/model URLs use the same stable short references. CLI file and hosted-site
 consumers resolve owned references with `kind=file` or `kind=html`, respectively,
 under the existing `file:read` or `host:read` capability. Those requests cannot

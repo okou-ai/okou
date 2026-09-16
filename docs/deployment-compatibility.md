@@ -80,12 +80,13 @@ active, or introduce a versioned/new endpoint and migrate the frontend first.
 
 #### Artifact share names and short references
 
-Share status adds optional `shortUrl`; `url` continues returning the legacy
-32-character organization reference for already-open App bundles. New Apps
-prefer `shortUrl` and fall back to `url` when talking to an older API. An explicit
-share action allocates the new alias when a current API reports `shortUrl: null`;
-opening the menu does not mutate a share. Both organization reference formats
-resolve through the same membership and policy checks.
+Organization share status returns the same short reference in `url` and
+`shortUrl`; it no longer produces a 32-character share-level URL. The `url` field
+remains available to clients that consume only that field. New Apps prefer
+`shortUrl` and fall back to `url` when talking to an older API. An older policy
+without a short reference returns null for both fields until an explicit share
+action allocates the alias; opening the menu does not mutate a share. Previously
+copied organization references retain their membership and policy checks.
 
 The R2 policy fields `organizationReference` and `publicSlug` are optional, so
 old policies remain readable. The immutable reference index and public alias
@@ -94,19 +95,17 @@ reuse the same organization index and retain the legacy public-token registry
 entry. Named public sites use the existing generic Worker publication reader;
 they require no database migration or new Worker routing format. Current APIs
 must serve short-reference resolution before Apps begin copying those links.
-Rolling the API back removes short-reference support until it is restored;
-existing legacy organization URLs remain available in the `url` response.
+Serving and rollback APIs must support the reference formats emitted by the
+enabled writer.
 
 The compatibility scope preserves the explicitly requested existing links;
 `privateArtifacts` being non-GA does not independently require a rollback bridge.
 Issue [#32492](https://github.com/vm0-ai/vm0/issues/32492) owns later retirement:
 the optional response reader can be removed once older APIs leave serving and
-supported rollback targets. The legacy organization `url` projection can be
-removed only after the short-reference App is live and an App minimum version
-excludes earlier bundles. Open pages have no passive expiry. Neither gate is
-closed in this PR. Durable-link readers and aliases remain until a separate
-retirement decision accounts for the stored references; a deployment or App
-floor alone cannot invalidate links already copied by users.
+supported rollback targets. The long organization URL writer is retired by
+the explicit short-reference change. Durable-link readers and aliases remain
+until a separate retirement decision accounts for the stored references; a
+deployment or App floor alone cannot invalidate links already copied by users.
 
 The iframe loading correction spans the App's explicit first-party iframe
 referrer policy and the host Worker's same-origin resource policy. Both must be

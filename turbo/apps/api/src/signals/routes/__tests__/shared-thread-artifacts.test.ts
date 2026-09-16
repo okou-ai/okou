@@ -12,6 +12,7 @@ import { beforeEach, expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -523,7 +524,10 @@ test.each(["short", "legacy"] as const)(
       }),
       [200],
     );
-    const url = format === "short" ? shared.body.shortUrl : shared.body.url;
+    const url =
+      format === "short"
+        ? shared.body.shortUrl
+        : `https://app.okou.ai${artifactReferencePath(shared.body.shareId!, "report.pdf")}`;
     const selection = await f.selection(`[Organization report](${url})`);
     await accept(share(f.actor, selection), [400]);
     const catalog = await chat.listArtifactCatalog(f.actor, {

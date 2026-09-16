@@ -362,6 +362,7 @@ test("a private file keeps the same short reference through organization sharing
     [200],
   );
   expect(shared.body.shortUrl).toBe(`https://app.okou.ai${url}`);
+  expect(shared.body.url).toBe(shared.body.shortUrl);
   session(recipient);
   const resolved = await accept(
     api()(artifactReferencesContract).resolve({
@@ -488,7 +489,7 @@ test.each(["short", "legacy", "legacy-short"] as const)(
         ? `https://app.okou.ai/artifacts/${legacyReference}.pdf`
         : format === "short"
           ? shared.body.shortUrl!
-          : shared.body.url!,
+          : `https://app.okou.ai${artifactReferencePath(shared.body.shareId!, "report.pdf")}`,
     ).pathname
       .split("/")
       .at(-1)!;
@@ -561,7 +562,7 @@ test.each([false, true])(
       [200],
     );
     expect(status.body.shortUrl).toBeNull();
-    expect(status.body.url).toBe(shared.body.url);
+    expect(status.body.url).toBeNull();
     expect(objects).toStrictEqual(before);
 
     const updated = await accept(
@@ -743,9 +744,7 @@ test("organization resolution checks current original-org membership and never g
     [200],
   );
   const id = shared.body.shareId!;
-  expect(shared.body.url).toBe(
-    `https://app.okou.ai${artifactReferencePath(id, "report.pdf")}`,
-  );
+  expect(shared.body.url).toBe(shared.body.shortUrl);
   expect(shared.headers.get("cache-control")).toBe("private, no-store");
   const recipient = `user_${randomUUID()}`;
   session(recipient, `org_${randomUUID()}`);
@@ -997,6 +996,7 @@ test("html sharing pins the selected version until an explicit update and resolv
     url: share.body.url,
   });
   expect(share.body.shortUrl).toBe(`https://app.okou.ai${first.url}`);
+  expect(share.body.url).toBe(share.body.shortUrl);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
     organizationMemberships,
   );
@@ -1039,7 +1039,7 @@ test("html sharing pins the selected version until an explicit update and resolv
   expect(changed.body).toMatchObject({
     selectedTarget: newer,
     selectedVersion: 2,
-    url: share.body.url,
+    url: `https://app.okou.ai${second.url}`,
   });
   expect(changed.body.shortUrl).toBe(`https://app.okou.ai${second.url}`);
   session(recipient);
