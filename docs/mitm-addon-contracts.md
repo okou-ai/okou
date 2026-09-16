@@ -71,12 +71,64 @@ does not release an admitted writer ticket, and a lost reply after transmission
 means an unknown outcome; the transport does not automatically replay future
 mutations or move business state onto its thread.
 
-SIGUSR1 delivery drain and API/billing contracts remain unchanged. The old JSONL marker request/state files and watcher
-are removed; Runner and the embedded addon use the private control socket for
-flush coordination. Old Runner instances retain their embedded addon; no
+Runner and the embedded addon use the private control socket for all flush
+coordination. Old Runner instances retain their embedded addon; no
 API-first deployment or mixed Runner/addon protocol fallback is needed. This
 stage does not implement token accounting or guest RPC, and unit/packaged runtime
 tests do not claim production soak or a measured latency improvement.
+
+### Delivery admission, observation and shutdown
+
+`delivery.flush`, `delivery.status` and `delivery.drain` take empty parameters.
+They concern the whole addon generation, not a caller-selected run or current
+IP registration. The same request/generation checks reject stale callers.
+No delivery method reads policy files or changes registry/auth ownership.
+
+`delivery.flush` returns `state: admitted|coalesced`, acknowledging only a wake
+for the existing billing/retained-diagnostic owners. One delivery worker plus
+one queued wake bound admission. Repeated wakes cannot create parallel flush
+workers. Actual buffer admission or synchronous fallback may block that worker;
+neither the control loop nor its short snapshot lock waits for delivery I/O.
+
+`delivery.status` returns `flows`, `buffered`, `reports`, `workerActive`,
+`wakePending`, `closed`, `drainActive`, `flushFailures`, and `outcomes` containing
+`success`, `retryable_failure` and `permanent_failure`. Pending counters and
+outcome counters share one memory lock. A webhook outcome is recorded before
+its original callback and pending-report release. Outcomes count completed
+report delivery cycles, including the existing HTTP retries inside each cycle;
+they are not source-record counts, billable units or per-request/run totals.
+They reset on process restart and omit losses before webhook admission.
+`flushFailures` counts internal worker flush failures separately.
+
+One `delivery.drain` observer is admitted at a time; another receives `busy`.
+The observer requests the existing worker at most once per second and checks
+progress every 50 ms for up to four seconds. It returns
+`{state: quiescent|deadline, snapshot: ...}` within the five-second connection
+budget. Quiescence requires no active/queued flush and zero flow, buffered and
+report counts. It **does not mean every delivery succeeded**: permanent failures
+and retry-budget drops can retire work. Known outcome counters remain visible.
+This is not a durable journal, complete loss accounting or cumulative token query.
+
+A timeout/disconnect can retire only the observer, never actual worker, buffer
+or HTTP ownership. The Runner keeps one background wake request and at most
+one queued notification, so job completion does not wait for socket admission.
+Each notification freezes its launch target before dispatch. Restart drops the
+old local request owner without retargeting old work. Shutdown freezes one
+target and spends at most 30 seconds observing drain; only a correlated
+`busy` or `deadline` response permits another observation. A lost/invalid reply
+stops automatic requests because execution is unknown.
+
+After control stops, `done()` closes delivery admission and joins the actual
+flush worker before shutting down the usage executor. It then retries retained
+billing and diagnostics synchronously under their existing retry/idempotency
+owners. The separate model-failure reporter keeps its bounded shutdown window.
+Runner's existing outer SIGTERM/SIGKILL process stop remains the ultimate bound
+for a stuck kernel/network call; no caller deadline safely cancels that call.
+
+The addon delivery SIGUSR1 handler and request/ack files are removed together
+with their Rust consumers. Runner's independent service-drain SIGUSR1 is not
+this protocol and remains unchanged. API, guest RPC, registry/catalog and log
+schemas are unchanged; no mixed embedded-addon transport fallback is retained.
 
 ### Registry/catalog application receipts
 

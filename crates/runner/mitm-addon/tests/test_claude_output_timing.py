@@ -18,12 +18,11 @@ import usage
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_text_after_flush
 from tests.model_provider_flow_helpers import make_model_provider_sse_flow
-from tests.pending_helpers import assert_current_pending, assert_pending
+from tests.pending_helpers import assert_pending
 from tests.usage_buffer_helpers import event as usage_event
 from tests.usage_helpers import CapturedWebhookRequest, UsageWebhookServer
 from tests.webhook_test_helpers import (
     QueuedUsageExecutor,
-    install_runner_usage_flush_request,
     request_runner_usage_flush,
 )
 
@@ -359,8 +358,7 @@ def test_incomplete_context_retains_timing_until_complete_retry(
     sandbox_token: str,
     api_url: str,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     delivery_available = False
     admission_calls: list[tuple[str, str, dict[str, object], str, str]] = []
 
@@ -390,12 +388,11 @@ def test_incomplete_context_retains_timing_until_complete_retry(
             mitm_addon.response(incomplete_flow)
 
         assert admission_calls == []
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="incomplete-context",
         )
 
         delivery_available = True
@@ -425,12 +422,11 @@ def test_incomplete_context_retains_timing_until_complete_retry(
     assert isinstance(observed_at_value, str)
     observed_at = datetime.fromisoformat(observed_at_value)
     assert first_event_started_at <= observed_at <= first_event_finished_at
-    assert_current_pending(
-        pending_path,
+    assert_pending(
+        control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="complete-context",
     )
 
 
@@ -439,8 +435,7 @@ def test_eviction_and_reset_release_retained_buffered_report(
     real_flow,
     mitm_ctx,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
 
     with (
         mitm_ctx(api_url="https://api.test"),
@@ -461,22 +456,20 @@ def test_eviction_and_reset_release_retained_buffered_report(
         mitm_addon.responseheaders(second_flow)
         _feed(second_flow, _message_start(include_usage=False))
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=1,
             reports=0,
-            flush_request_id="after-eviction",
         )
 
         claude_output_timing.reset_for_tests()
 
-    assert_current_pending(
-        pending_path,
+    assert_pending(
+        control_root,
         flows=0,
         buffered=0,
         reports=0,
-        flush_request_id="after-reset",
     )
 
 
@@ -485,8 +478,7 @@ def test_lru_hit_recency_preserves_recent_buffered_report(
     real_flow,
     mitm_ctx,
 ) -> None:
-    pending_path = tmp_path / "usage-pending"
-    usage.set_pending_path(str(pending_path))
+    control_root = tmp_path / "delivery-control"
     delivery_available = False
 
     def enqueue_timing_delivery(
@@ -524,31 +516,28 @@ def test_lru_hit_recency_preserves_recent_buffered_report(
         overflow_flow = claude_flow("run-c")
         _feed(overflow_flow, _message_start(include_usage=False))
 
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=2,
             reports=0,
-            flush_request_id="after-overflow",
         )
 
         delivery_available = True
         mitm_addon.response(claude_flow("run-b"))
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=2,
             reports=0,
-            flush_request_id="after-cold-retry",
         )
 
         mitm_addon.response(claude_flow("run-a"))
-        assert_current_pending(
-            pending_path,
+        assert_pending(
+            control_root,
             flows=0,
             buffered=1,
             reports=0,
-            flush_request_id="after-recent-retry",
         )
 
 
@@ -562,7 +551,7 @@ def test_repeated_runner_flush_retries_saturated_timing_after_terminal(
 ) -> None:
     flow = _claude_sse_flow(real_flow, tmp_path)
     executor = QueuedUsageExecutor()
-    pending_path = install_runner_usage_flush_request(tmp_path)
+    control_root = tmp_path
     secret = "provider-secret-that-must-not-be-reported"
 
     with (
@@ -598,41 +587,37 @@ def test_repeated_runner_flush_retries_saturated_timing_after_terminal(
         first_flush_started_at = datetime.now(UTC)
         request_runner_usage_flush()
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=2,
             reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-            flush_request_id="request-1",
         )
 
         executor.run_next()
         request_runner_usage_flush()
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=2,
             reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-            flush_request_id="request-1",
         )
 
         executor.run_last()
         request_runner_usage_flush()
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS,
-            flush_request_id="request-1",
         )
 
         executor.run_all()
         request_runner_usage_flush()
         assert_pending(
-            pending_path,
+            control_root,
             flows=0,
             buffered=0,
             reports=0,
-            flush_request_id="request-1",
         )
 
     [request] = _timing_requests(usage_webhook_server)
