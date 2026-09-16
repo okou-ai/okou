@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.611.0](https://github.com/vm0-ai/okou/compare/api-v1.610.0...api-v1.611.0) (2026-09-16)
+
+
+### Features
+
+* add durable deferred pi sandbox consumer ([#34412](https://github.com/vm0-ai/okou/issues/34412)) ([7462236](https://github.com/vm0-ai/okou/commit/74622367fb4d6fb3ad6f12fc71ea1e526efe406b))
+
+
+### Bug Fixes
+
+* **api:** match low-credit email to resend branding ([#34560](https://github.com/vm0-ai/okou/issues/34560)) ([248df27](https://github.com/vm0-ai/okou/commit/248df27afa9bbc9e878fc8b9cb4853ff5b4266eb))
+* **api:** stop hosted-site preview readiness from depending on dom order ([#34571](https://github.com/vm0-ai/okou/issues/34571)) ([c26dba9](https://github.com/vm0-ai/okou/commit/c26dba999576111eed64fefa08d3e4684255fa23))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.449.0
+    * @okouai/core bumped to 8.670.1
+    * @okouai/db bumped to 1.266.0
+    * @okouai/pi-agent-runtime bumped to 1.32.0
+
 ## [1.610.0](https://github.com/vm0-ai/okou/compare/api-v1.609.0...api-v1.610.0) (2026-09-16)
 
 
