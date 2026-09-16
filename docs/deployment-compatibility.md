@@ -1998,3 +1998,55 @@ This slice transfers no execution ownership: it consumes no occurrence and adds
 no Run, Chat event, email, provider request or credit operation. See
 [the migration contract](morning-brief-migration-state.md) for the full
 invariants.
+
+## Morning Brief bounded Slack collection (#34727)
+
+Migration 1150 adds the empty `morning_brief_collection_occurrences` table, its
+two indexes, its check constraints, and its foreign keys to
+`org_members_metadata(org_id, user_id)` and `agents(id)`. It is purely additive
+and needs no backfill, `LOCK TABLE` or historical scan, so apply it before
+promoting API code. The production scale note below is automation inventory, not
+a cutover census, and nothing existing is materialized by this slice.
+
+Both schema directions are closed, but for different reasons, and the default-off
+switch is only half the story:
+
+- **Old code after migration** never names the new table. Its only readers and
+  writers ship with this change.
+- **New code before migration** reaches the table from two places. The collector
+  itself sits behind both the unregistered preview route and the default-off
+  `FeatureSwitchKey.SimpleMorningBrief`, so it cannot run at all. The cleanup
+  revocation added to membership, user and organization deletion is
+  **unconditional** — it is a `DELETE` that runs whenever those webhooks fire,
+  with no feature check in front of it. A default-off switch does not protect
+  it. The repository's migration-before-promotion ordering is therefore the
+  actual requirement here, not a convenience: promoting the API artifact before
+  migration 1150 has shipped would make Clerk membership, user and organization
+  cleanup fail with `42P01`.
+- A rollback leaves the table in place holding only operational metadata. An
+  older API neither reads nor deletes it; its rows stay fenced by the two
+  foreign keys until a newer artifact returns.
+
+The row's lifetime is durable member ownership rather than an evictable cache.
+`org_members_metadata` is the source of truth for the member's own preferences,
+including the timezone an enabled brief requires; it is deleted by membership,
+user and organization cleanup and is not refilled by a background reader. This
+is deliberately stronger than the `org_members_cache` parent the installed
+preference projection uses, which a concurrent membership read can refill.
+Claiming and finalizing take erasure admission first and then lock and recheck
+that member row with `FOR KEY SHARE`, so a cleanup either waits for the writer
+and cascades its row away or has already committed and leaves nothing to write.
+
+This slice transfers no execution ownership. It starts no Run, makes no LLM,
+credit or usage operation, writes no Chat event, email or outbox row, and leaves
+`next_run_at` and `last_run_at` untouched. The existing Settings, legacy
+automation and native Slack read contracts are unchanged. Durable membership and
+materialization ownership, global deletion readiness, scheduling and cutover
+remain S7 gates; the Clerk erasure bridge is still unregistered, so this is a
+local fence rather than global deletion finality.
+
+Requests already in flight to Slack cannot be retracted. Revocation guarantees
+only that no result of such a request is accepted, persisted or returned after
+the revoking transaction commits. See
+[the collection contract](morning-brief-collection.md) for the source contract,
+lease semantics, finite budgets and declared coverage limits.
