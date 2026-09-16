@@ -2499,7 +2499,7 @@
               "three": "A short explanation of what changed",
               "two": "Source links for every finding"
             },
-            "scope": "Firecrawl for page checks and Notion for findings; Slack alerts are optional.",
+            "scope": "Built-in web research for page checks and Notion for findings; Slack alerts are optional.",
             "steps": {
               "one": "Check the competitor pages you choose on a schedule",
               "three": "Save findings with sources to Notion; optionally alert Slack",
@@ -2569,13 +2569,13 @@
             "description": "Visitors, signups, and activation in one readable daily snapshot.",
             "name": "Daily metrics brief",
             "next": "Choose the site, available metrics, comparison period, and Slack destination.",
-            "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using Plausible and any relevant PostHog or Clerk data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
+            "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using the PostHog data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
             "results": {
               "one": "Daily visitors",
               "three": "A clear reporting period",
               "two": "Signup and activation numbers when available"
             },
-            "scope": "Plausible and Slack; PostHog or Clerk can add signup and activation data.",
+            "scope": "PostHog and Slack.",
             "steps": {
               "one": "Read the agreed website and signup metrics",
               "three": "Share the snapshot in the Slack destination you choose",
@@ -2607,13 +2607,13 @@
             "description": "A clear recap with decisions, action items, and owners.",
             "name": "Meeting recap",
             "next": "Choose how often to check for new notes and where the recap should go.",
-            "prompt": "Help me turn new Fireflies meeting notes into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
+            "prompt": "Help me turn new Google Meet transcripts into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
             "results": {
               "one": "Decisions from the conversation",
               "three": "Missing details flagged clearly",
               "two": "Action items and stated owners"
             },
-            "scope": "Checks Fireflies for new transcripts on a schedule. Gmail or Slack delivery is optional.",
+            "scope": "Checks Google Meet for new transcripts on a schedule. Gmail or Slack delivery is optional.",
             "steps": {
               "one": "Read a new meeting transcript",
               "three": "Deliver a concise recap to the destination you choose",
