@@ -337,6 +337,7 @@ test("Direct and protected mode retain their port and configuration drafts but s
   });
   expect(requests).toStrictEqual([
     {
+      id: expect.any(String),
       displayName: "Development",
       host: "ssh.example.com",
       port: 443,
@@ -417,8 +418,11 @@ test.each(["create", "edit"] as const)(
         await waitFor(() => {
           return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         });
+        const generatedId = expect.any(String);
         expect(requests.at(-1)).toStrictEqual({
-          ...(mode === "edit" ? { expectedGeneration: 1 } : {}),
+          ...(mode === "edit"
+            ? { expectedGeneration: 1 }
+            : { id: generatedId }),
           displayName: host.displayName,
           host: host.host,
           port: 443,
@@ -491,16 +495,15 @@ test("A failed host save retains inline Access input for manual retry without a 
   expect(secret).toHaveValue("test-client-secret");
   expect(secret).toBeDisabled();
   ready.resolve();
-  await screen.findByText("Save failed");
+  await within(dialog).findByText(
+    /We couldn't confirm whether your changes were saved/u,
+  );
   expect(secret).toHaveValue("test-client-secret");
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "Development",
   );
   failing = false;
-  await waitFor(() => {
-    return expect(getAction("button", "Save", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Save", dialog));
+  click(getAction("button", "Retry", dialog));
   await waitFor(() => {
     return expect(hosts).toHaveLength(2);
   });
@@ -551,13 +554,52 @@ test("Pending and failed Access Save keep secrets for retry; a background refres
   expect(secret).toHaveValue("test-client-secret");
   context.mocks.ably.trigger("ssh:changed", { orgId });
   pending.resolve();
-  await screen.findByText("Temporary failure");
+  await within(dialog).findByText(
+    /We couldn't confirm whether your changes were saved/u,
+  );
   expect(secret).toHaveValue("test-client-secret");
   failing = false;
-  click(getAction("button", "Save", dialog));
+  click(getAction("button", "Retry", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  expect(secret).toHaveValue("");
+});
+
+test("A committed Access creation completes on same-ID retry without another configuration", async () => {
+  const submitted: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.create, ({ body, respond }) => {
+    submitted.push(body);
+    return submitted.length > 1
+      ? respond(204)
+      : respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Response unavailable" },
+        });
+  });
+  await page();
+  click(getAction("radio", "Cloudflare Access"));
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add Access configuration");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  await tokenFields(dialog);
+  const secret = within(dialog).getByLabelText("Service Token Client Secret");
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByText(
+    /We couldn't confirm whether your changes were saved/u,
+  );
+  expect(secret).toHaveValue("test-client-secret");
+  expect(secret).toBeDisabled();
+  expect(submitted).toHaveLength(1);
+  click(getAction("button", "Retry", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(submitted).toHaveLength(2);
+  expect(submitted[0]).toHaveProperty("id", expect.any(String));
+  expect(submitted[0]).toStrictEqual(submitted[1]);
   expect(secret).toHaveValue("");
 });
 

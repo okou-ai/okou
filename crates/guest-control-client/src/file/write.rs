@@ -46,6 +46,7 @@ enum WriteFileChunkTracking<'a> {
 
 #[derive(Clone, Copy)]
 struct WriteFileChunkRequest<'a> {
+    compression: crate::FileCompression,
     path: &'a str,
     content: &'a [u8],
     sudo: bool,
@@ -56,6 +57,7 @@ struct WriteFileChunkRequest<'a> {
 impl<'a> WriteFileChunkRequest<'a> {
     fn standard(path: &'a str, content: &'a [u8], sudo: bool, append: bool) -> Self {
         Self {
+            compression: crate::FileCompression::None,
             path,
             content,
             sudo,
@@ -66,12 +68,18 @@ impl<'a> WriteFileChunkRequest<'a> {
 
     fn private(path: &'a str, content: &'a [u8], append: bool) -> Self {
         Self {
+            compression: crate::FileCompression::None,
             path,
             content,
             sudo: false,
             append,
             private: true,
         }
+    }
+
+    fn with_compression(mut self, options: crate::FileCompression) -> Self {
+        self.compression = options;
+        self
     }
 }
 
@@ -550,9 +558,68 @@ impl GuestControlClient {
         write_observer: FrameWriteObserver,
         chunk_limit: usize,
     ) -> io::Result<()> {
+        self.write_file_with_compression_and_chunk_limit(
+            path,
+            content,
+            sudo,
+            write_observer,
+            chunk_limit,
+            crate::FileCompression::None,
+        )
+        .await
+    }
+
+    /// Write unchanged guest bytes with an explicit per-file transport choice.
+    /// No size policy, sampling or raw retry is performed here.
+    pub async fn write_file_with_compression(
+        &self,
+        path: &str,
+        content: &[u8],
+        sudo: bool,
+        options: crate::FileCompression,
+    ) -> io::Result<()> {
+        self.write_file_with_compression_and_observer(
+            path,
+            content,
+            sudo,
+            options,
+            FrameWriteObserver::default(),
+        )
+        .await
+    }
+
+    pub async fn write_file_with_compression_and_observer(
+        &self,
+        path: &str,
+        content: &[u8],
+        sudo: bool,
+        options: crate::FileCompression,
+        observer: FrameWriteObserver,
+    ) -> io::Result<()> {
+        self.write_file_with_compression_and_chunk_limit(
+            path,
+            content,
+            sudo,
+            observer,
+            WRITE_FILE_CHUNK_LIMIT,
+            options,
+        )
+        .await
+    }
+
+    async fn write_file_with_compression_and_chunk_limit(
+        &self,
+        path: &str,
+        content: &[u8],
+        sudo: bool,
+        write_observer: FrameWriteObserver,
+        chunk_limit: usize,
+        options: crate::FileCompression,
+    ) -> io::Result<()> {
         validate_guest_file_path(path)?;
         if content.len() <= chunk_limit {
-            let request = WriteFileChunkRequest::standard(path, content, sudo, false);
+            let request = WriteFileChunkRequest::standard(path, content, sudo, false)
+                .with_compression(options);
             validate_write_file_chunk_request(request)?;
             let _path_guard = self.file_write_path_locks.acquire_shared(path).await;
             return self
@@ -585,7 +652,8 @@ impl GuestControlClient {
         let result = async {
             for (i, chunk) in content.chunks(chunk_limit).enumerate() {
                 self.write_file_chunk(
-                    WriteFileChunkRequest::standard(&tmp, chunk, sudo, i > 0),
+                    WriteFileChunkRequest::standard(&tmp, chunk, sudo, i > 0)
+                        .with_compression(options),
                     WriteFileChunkTracking::Composite(&mut normal_operation),
                     write_observer.clone(),
                 )
@@ -813,6 +881,61 @@ impl GuestControlClient {
         let _file_write_guard = self.shared.file_write_gate.lock().await;
         let timeout = WRITE_FILE_REQUEST_DEADLINE;
         let sequence = AtomicU32::new(0);
+        if request.compression == crate::FileCompression::Zstd {
+            let payload = guest_control_proto::encode_write_file(
+                request.path,
+                &[],
+                request.sudo,
+                request.append,
+            )
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+            let mut stream = crate::file_stream::Transfer::new(
+                Arc::clone(&self.shared),
+                request.content,
+                payload,
+            )?;
+            let write_observer = stream.observer(write_observer);
+            let build = stream.take_builder()?;
+            let terminal = async {
+                match tracking {
+                    WriteFileChunkTracking::Tracked => {
+                        normal_request_on_shared_with_write_observer_frame_builder(
+                            &self.shared,
+                            WRITE_FILE_TERMINAL_MSG_TYPES,
+                            timeout,
+                            write_observer,
+                            build,
+                        )
+                        .await
+                    }
+                    WriteFileChunkTracking::Composite(operation) => {
+                        request_on_shared_with_composite_operation_and_observer_frame_builder(
+                            &self.shared,
+                            WRITE_FILE_TERMINAL_MSG_TYPES,
+                            timeout,
+                            operation,
+                            write_observer,
+                            build,
+                        )
+                        .await
+                    }
+                }
+            };
+            let response = stream.run(terminal).await?;
+            if response.msg_type == MSG_ERROR {
+                return Err(write_file_guest_error(
+                    guest_control_proto::decode_error(&response.payload)
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
+                ));
+            }
+            let (success, error) = guest_control_proto::decode_write_file_result(&response.payload)
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+            return if success {
+                Ok(())
+            } else {
+                Err(write_file_guest_error(error))
+            };
+        }
         let write_sequence = &sequence;
         let build_frame = move |seq, frame: &mut Vec<u8>| {
             write_sequence.store(seq, Ordering::Relaxed);

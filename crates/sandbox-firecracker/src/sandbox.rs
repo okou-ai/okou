@@ -2947,6 +2947,23 @@ impl Sandbox for FirecrackerSandbox {
         .await
     }
 
+    async fn write_file_with_compression(
+        &self,
+        path: &str,
+        content: &[u8],
+        compression: sandbox::FileCompression,
+    ) -> sandbox::Result<()> {
+        if compression == sandbox::FileCompression::None {
+            return self.write_file(path, content).await;
+        }
+        self.run_bounded_guest_operation(SandboxOperation::WriteFile, |guest| async move {
+            guest
+                .write_file_with_compression(path, content, false, compression)
+                .await
+        })
+        .await
+    }
+
     async fn write_files(&self, files: &[WriteFileEntry<'_>]) -> sandbox::Result<()> {
         let operation = SandboxOperation::WriteFile;
         let files = files

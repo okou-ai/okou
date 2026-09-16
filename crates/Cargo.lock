@@ -1805,6 +1805,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test-support",
  "uuid",
+ "zstd",
 ]
 
 [[package]]
@@ -1926,6 +1927,7 @@ dependencies = [
  "guest-control-proto",
  "libc",
  "tempfile",
+ "zstd",
 ]
 
 [[package]]

@@ -1549,19 +1549,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Ouvrez l’app chaque jour. Réinitialisation à 00:00 UTC.",
+          "description": "Une fois par jour, chaque jour",
           "name": "Se connecter chaque jour",
           "unit": "par jour"
         },
         "connector": {
-          "description": "Connectez-vous avec OAuth. Une récompense par connecteur.",
+          "action": "Connecter",
+          "description": "Gmail, Notion et plus de 100 autres",
           "name": "Connecter un connecteur",
           "unit": "par connecteur"
         },
         "inReview": "En cours d'examen",
         "inReviewDescription": "Envoyé, en attente d'examen",
         "invite": {
-          "description": "Gagnez quand une invitation est acceptée, jusqu’à 15 membres.",
+          "action": "Inviter",
+          "description": "Chaque personne ajoutée compte",
           "name": "Invitez votre équipe",
           "unit": "par membre"
         },
@@ -1572,6 +1574,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "Connecteurs récompensés : {{amount}}",
         "share": {
+          "action": "Partager",
           "description": "Publiez, puis collez le lien",
           "name": "Partager {{assistantName}} sur X"
         },
@@ -1584,14 +1587,16 @@
           "title": "Partager {{assistantName}} sur X"
         },
         "slack": {
-          "description": "Gagnez 2 000 crédits d’organisation, une fois par organisation et espace de travail.",
+          "action": "Ajouter",
+          "description": "Là où votre équipe travaille déjà",
           "name": "Ajouter {{assistantName}} à Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "Essayez une tâche et gagnez des crédits.",
         "title": "Démarrer",
         "workflow": {
-          "description": "Exécutez avec succès un workflow que vous avez créé.",
+          "action": "Créer",
+          "description": "Transformez une tâche répétitive en compétence réutilisable",
           "name": "Créer un workflow"
         }
       },
@@ -5960,8 +5965,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "Par défaut",
+            "goldenHour": "Golden hour"
           },
           "title": "Thème de couleur"
         },
@@ -6465,6 +6470,10 @@
     "resetHelp": "Réinitialisez uniquement après avoir vérifié indépendamment la nouvelle identité du serveur. La prochaine connexion fera confiance à une nouvelle clé d’hôte et la mémorisera.",
     "retry": "Réessayer",
     "save": "Enregistrer",
+    "saveRecovery": {
+      "resourceIdConflict": "Cet identifiant de ressource ne peut pas être utilisé. Fermez puis rouvrez le formulaire pour réessayer.",
+      "uncertain": "Nous n’avons pas pu confirmer si vos modifications ont été enregistrées. Réessayez le même enregistrement, ou fermez le formulaire et consultez la liste avant de les ajouter à nouveau."
+    },
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",
