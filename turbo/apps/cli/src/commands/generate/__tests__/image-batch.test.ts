@@ -242,6 +242,7 @@ describe("okou generate image-batch command", () => {
   });
 
   it("bundles private images locally and retains their stable chat references", async () => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     const root = await makeTemporaryDirectory();
     const manifestPath = join(root, "images.tsv");
     const stateDirectory = join(root, "state");
@@ -316,9 +317,9 @@ describe("okou generate image-batch command", () => {
         {
           assetId: "hero",
           asset: "assets/image-hero.webp",
-          url: reference,
-          inlineMarkdownLink: `[hero](<${reference}>)`,
-          previewMarkdownBlock: `![hero](<${reference}>)`,
+          url: `https://app.okou.ai${reference}`,
+          inlineMarkdownLink: `[hero](<https://app.okou.ai${reference}>)`,
+          previewMarkdownBlock: `![hero](<https://app.okou.ai${reference}>)`,
         },
       ],
     });

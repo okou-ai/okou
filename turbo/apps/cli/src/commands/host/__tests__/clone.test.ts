@@ -43,6 +43,7 @@ describe("okou host clone command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     tempDir = join(tmpdir(), `host-clone-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
   });
@@ -58,6 +59,8 @@ describe("okou host clone command", () => {
   it.each([
     ARTIFACT_URL,
     "/artifacts/abcxyz1234.html",
+    "https://app.okou.ai/artifacts/abcxyz1234.html#slide-2",
+    "https://app.okou.ai/artifacts/00000000000040008000000000000002.html",
     artifactReferencePath("00000000-0000-4000-8000-000000000002", "index.html"),
   ])("downloads owned deployment files from %s", async (sourceUrl) => {
     const index = Buffer.from("<!doctype html><h1>Hello</h1>");

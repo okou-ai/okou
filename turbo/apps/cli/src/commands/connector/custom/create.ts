@@ -12,7 +12,7 @@ import {
   connectorActionUrl,
   printCallbackActionUrlExample,
 } from "../action-url";
-import { getPlatformOrigin } from "../../doctor/platform-url";
+import { getPlatformOrigin } from "../../../lib/platform-url";
 import { createCustomConnectorDefinitionFileSchema } from "./definition";
 
 interface CreateOptions {

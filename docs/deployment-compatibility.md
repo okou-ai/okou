@@ -114,6 +114,20 @@ The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
 #### Private attachment uploads
 
+CLI artifact output qualifies hostless references with its configured app origin
+(`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
+`https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
+download results use the same complete URL in text, JSON and Markdown. Public
+URLs keep their original bytes, including query strings. API responses and stored
+references retain their existing shapes, so older pinned CLIs retain their prior
+output and the new CLI can consume an older API. Downloading or cloning newly
+qualified URLs requires the updated CLI; previously captured contexts retain
+their own CLI package. No database rewrite or API rollout ordering is required.
+CLI download, generation-input and clone readers accept both
+hostless references and absolute references from that same app origin. Existing
+App thread readers already accept same-origin absolute references and resolve
+them through the authenticated artifact endpoint.
+
 New private artifact creation allocates a ten-character version-2 R2 reference
 index and stores the reference in file metadata or the hosted deployment URL.
 Organization sharing reuses that version reference. Readers retain the existing

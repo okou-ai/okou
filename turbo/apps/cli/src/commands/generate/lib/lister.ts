@@ -9,7 +9,7 @@ import {
   listConnectorCatalog,
   listConnectorCatalogStatus,
 } from "../../../lib/api/domains/connectors";
-import { getPlatformOrigin } from "../../doctor/platform-url";
+import { getPlatformOrigin } from "../../../lib/platform-url";
 import {
   currentPlanAllowsVideo,
   currentTokenCanReadBilling,

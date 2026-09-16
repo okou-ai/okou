@@ -4561,56 +4561,66 @@ describe("okou social command", () => {
     });
   });
 
-  it("auto-detects downloads and prints the stable envelope", async () => {
-    let requestBody: unknown;
-    server.use(
-      http.post(
-        "http://localhost:3000/api/social/downloads",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json(completedDownload(), { status: 202 });
+  it.each(["https://artifacts.example/video.mp4", "/artifacts/abcxyz1234.mp4"])(
+    "auto-detects downloads and prints a complete artifact URL for %s",
+    async (url) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const completed = completedDownload();
+      completed.artifact.url = url;
+      const expectedUrl = url.startsWith("/artifacts/")
+        ? `https://app.okou.ai${url}`
+        : url;
+      let requestBody: unknown;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/downloads",
+          async ({ request }) => {
+            requestBody = await request.json();
+            return HttpResponse.json(completed, { status: 202 });
+          },
+        ),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "https://youtu.be/example?si=tracking",
+        "--max-duration",
+        "600",
+        "--json",
+      ]);
+
+      expect(requestBody).toStrictEqual({
+        platform: "youtube",
+        url: "https://youtu.be/example",
+        maxDuration: 600,
+        quality: "720p",
+        format: "mp4",
+      });
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        operation: "download",
+        platform: "youtube",
+        billing: { quantity: 2, creditsCharged: 6 },
+        data: {
+          status: "completed",
+          artifact: { filename: "example.mp4", url: expectedUrl },
         },
-      ),
-    );
-
-    await socialCommand.parseAsync([
-      "node",
-      "okou",
-      "download",
-      "https://youtu.be/example?si=tracking",
-      "--max-duration",
-      "600",
-      "--json",
-    ]);
-
-    expect(requestBody).toStrictEqual({
-      platform: "youtube",
-      url: "https://youtu.be/example",
-      maxDuration: 600,
-      quality: "720p",
-      format: "mp4",
-    });
-    expect(JSON.parse(output()) as unknown).toMatchObject({
-      status: "complete",
-      operation: "download",
-      platform: "youtube",
-      billing: { quantity: 2, creditsCharged: 6 },
-      data: { status: "completed", artifact: { filename: "example.mp4" } },
-      inlineMarkdownLink:
-        "[example.mp4](<https://artifacts.example/video.mp4>)",
-      previewMarkdownBlock:
-        "![example.mp4](<https://artifacts.example/video.mp4>)",
-      artifactPresentationContext: expect.stringContaining(
-        "media file saved to Okou",
-      ),
-    });
-    expect(outputRequest()).toStrictEqual({
-      resume: false,
-      maxDuration: 600,
-      quality: "720p",
-      format: "mp4",
-    });
-  });
+        inlineMarkdownLink: `[example.mp4](<${expectedUrl}>)`,
+        previewMarkdownBlock: `![example.mp4](<${expectedUrl}>)`,
+        artifactPresentationContext: expect.stringContaining(
+          "media file saved to Okou",
+        ),
+      });
+      expect(outputRequest()).toStrictEqual({
+        resume: false,
+        maxDuration: 600,
+        quality: "720p",
+        format: "mp4",
+      });
+    },
+  );
 
   it("creates, polls and discovers an explicit MP3 audio download", async () => {
     const legacy = completedDownload();

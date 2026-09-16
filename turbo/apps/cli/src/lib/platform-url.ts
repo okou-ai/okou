@@ -1,5 +1,5 @@
-import { getApiUrl } from "../../lib/api/config";
-import { getOkouAppUrl } from "../../lib/okou-env";
+import { getApiUrl } from "./api/config";
+import { getOkouAppUrl } from "./okou-env";
 
 /**
  * Transform the API host to the platform (app) host.

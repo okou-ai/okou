@@ -9,7 +9,7 @@ import {
   type ArtifactShareStatus,
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { getOkouAppUrl } from "../../okou-env";
+import { getPlatformOrigin } from "../../platform-url";
 import { getClientConfig, handleError } from "../core/client-factory";
 
 export async function resolveArtifactShareTarget(
@@ -19,7 +19,7 @@ export async function resolveArtifactShareTarget(
   if (kind) {
     return artifactShareTargetSchema.parse({ kind, id: artifact });
   }
-  const reference = parseArtifactReference(artifact, getOkouAppUrl());
+  const reference = parseArtifactReference(artifact, await getPlatformOrigin());
   if (!reference) {
     throw new Error(
       "Use an owned /artifacts/<reference> path or an artifact URL from OKOU_APP_URL. For a file or deployment UUID, add --kind file or --kind html.",

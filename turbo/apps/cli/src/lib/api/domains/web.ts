@@ -55,6 +55,11 @@ import {
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import {
+  absoluteArtifactUrl,
+  withAbsoluteArtifactUrl,
+} from "../../artifact-url";
+import { getPlatformOrigin } from "../../platform-url";
 
 const BUILT_IN_GENERATION_POLL_INTERVAL_MS = 2_000;
 const BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE = {
@@ -195,7 +200,7 @@ interface DownloadWebFileResult {
 export async function webFileReferenceId(
   value: string,
 ): Promise<string | null> {
-  const reference = parseArtifactReference(value);
+  const reference = parseArtifactReference(value, await getPlatformOrigin());
   if (reference)
     return (
       reference.id ??
@@ -788,7 +793,9 @@ async function waitForBuiltInGenerationResult<T>(args: {
   );
 }
 
-async function readBuiltInGenerationResponse<T>(args: {
+async function readBuiltInGenerationResponse<
+  T extends { readonly url: string },
+>(args: {
   readonly response: Response;
   readonly baseUrl: string;
   readonly token: string;
@@ -796,12 +803,13 @@ async function readBuiltInGenerationResponse<T>(args: {
 }): Promise<T> {
   const body: unknown = await args.response.json();
   if (isBuiltInGenerationAcceptedResponse(body)) {
-    return waitForBuiltInGenerationResult<T>({
+    const result = await waitForBuiltInGenerationResult<T>({
       accepted: body,
       baseUrl: args.baseUrl,
       token: args.token,
       fallback: args.fallback,
     });
+    return withAbsoluteArtifactUrl(result);
   }
   if (args.response.status === 202) {
     throw new ApiRequestError(
@@ -810,7 +818,7 @@ async function readBuiltInGenerationResponse<T>(args: {
       502,
     );
   }
-  return body as T;
+  return withAbsoluteArtifactUrl(body as T);
 }
 
 /**
@@ -931,7 +939,7 @@ export async function uploadWebFile(
     filename: completed.filename,
     contentType: completed.contentType,
     size: completed.size,
-    url: completed.url,
+    url: await absoluteArtifactUrl(completed.url),
   };
 }
 
@@ -972,7 +980,9 @@ export async function generateWebVoice(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return (await response.json()) as GenerateWebVoiceResult;
+  return withAbsoluteArtifactUrl(
+    (await response.json()) as GenerateWebVoiceResult,
+  );
 }
 
 /**
@@ -1185,7 +1195,9 @@ export async function generateWebIntroVideoAgent(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return introVideoAgentResponseSchema.parse(await response.json());
+  return withAbsoluteArtifactUrl(
+    introVideoAgentResponseSchema.parse(await response.json()),
+  );
 }
 
 /** Reconcile one existing job; this endpoint never creates another video. */
@@ -1193,13 +1205,15 @@ export async function getWebIntroVideoAgent(
   generationId: string,
 ): Promise<IntroVideoAgentResponse> {
   const baseUrl = await getBaseUrl();
-  return introVideoAgentResponseSchema.parse(
-    await getIntroVideoCatalog(
-      new URL(
-        `/api/intro-video/agent/${encodeURIComponent(generationId)}`,
-        baseUrl,
+  return withAbsoluteArtifactUrl(
+    introVideoAgentResponseSchema.parse(
+      await getIntroVideoCatalog(
+        new URL(
+          `/api/intro-video/agent/${encodeURIComponent(generationId)}`,
+          baseUrl,
+        ),
+        "Failed to get Intro Video Agent job",
       ),
-      "Failed to get Intro Video Agent job",
     ),
   );
 }
@@ -1454,17 +1468,29 @@ export async function createWebIntroVideoRender(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  return introVideoRenderResponseSchema.parse(await response.json());
+  const result = introVideoRenderResponseSchema.parse(await response.json());
+  return {
+    ...result,
+    result: result.result
+      ? await withAbsoluteArtifactUrl(result.result)
+      : result.result,
+  };
 }
 
 export async function getWebIntroVideoRender(
   id: string,
 ): Promise<IntroVideoRenderResponse> {
   const baseUrl = await getBaseUrl();
-  return introVideoRenderResponseSchema.parse(
+  const result = introVideoRenderResponseSchema.parse(
     await getIntroVideoCatalog(
       new URL(`/api/intro-video/renders/${encodeURIComponent(id)}`, baseUrl),
       "Failed to retrieve cloud render",
     ),
   );
+  return {
+    ...result,
+    result: result.result
+      ? await withAbsoluteArtifactUrl(result.result)
+      : result.result,
+  };
 }

@@ -42,6 +42,7 @@ describe.each([
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
 
     tmpDir = join(tmpdir(), `web-download-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
@@ -58,12 +59,14 @@ describe.each([
     it.each([
       "abc-123-def",
       "/artifacts/abcxyz1234.txt",
+      "https://app.okou.ai/artifacts/abcxyz1234.txt#detail",
+      "https://app.okou.ai/artifacts/00000000000040008000000000000023.txt",
       artifactReferencePath(
         "00000000-0000-4000-8000-000000000023",
         "result.txt",
       ),
     ])(
-      "streams an authenticated file ID or hostless reference (%s)",
+      "streams an authenticated file ID or artifact reference (%s)",
       async (input) => {
         const payload = Buffer.from("hello world");
         const outPath = join(tmpDir, "result.txt");
@@ -93,7 +96,7 @@ describe.each([
           http.get(DOWNLOAD_URL, ({ request }) => {
             const url = new URL(request.url);
             expect(url.searchParams.get("file_id")).toBe(
-              input.startsWith("/artifacts/")
+              input.includes("/artifacts/")
                 ? "00000000-0000-4000-8000-000000000023"
                 : input,
             );

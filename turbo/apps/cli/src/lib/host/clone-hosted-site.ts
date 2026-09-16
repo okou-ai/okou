@@ -6,6 +6,7 @@ import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/ho
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { resolveOwnedArtifactReference } from "../api/domains/artifact-references";
 import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
+import { getPlatformOrigin } from "../platform-url";
 import { getBaseUrl } from "../api/core/client-factory";
 import { getHostedSiteFiles } from "../api/domains/host";
 import { checkDirectoryStatus } from "../utils/file-utils";
@@ -37,7 +38,7 @@ interface CloneHostedSiteOptions {
 
 export async function publicSlugFromSite(value: string): Promise<string> {
   const trimmed = value.trim();
-  const reference = parseArtifactReference(trimmed);
+  const reference = parseArtifactReference(trimmed, await getPlatformOrigin());
   if (reference) {
     const id =
       reference.id ??

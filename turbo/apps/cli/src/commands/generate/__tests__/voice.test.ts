@@ -102,32 +102,40 @@ describe("okou generate voice command", () => {
     expect(stdout).toContain("Credits charged: 1");
   });
 
-  it("should print the complete voice result as one JSON object", async () => {
-    server.use(
-      http.post(SPEECH_URL, () => {
-        return HttpResponse.json(VOICE_RESULT);
-      }),
-    );
+  it.each([VOICE_RESULT.url, "/artifacts/abcxyz1234.wav"])(
+    "prints the complete voice result for %s as one JSON object",
+    async (url) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const expectedUrl = url.startsWith("/artifacts/")
+        ? `https://app.okou.ai${url}`
+        : url;
+      server.use(
+        http.post(SPEECH_URL, () => {
+          return HttpResponse.json({ ...VOICE_RESULT, url });
+        }),
+      );
 
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "voice",
-      "--text",
-      "Hello from Okou",
-      "--json",
-    ]);
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "voice",
+        "--text",
+        "Hello from Okou",
+        "--json",
+      ]);
 
-    expect(mockConsoleLog.mock.calls).toHaveLength(1);
-    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
-      ...VOICE_RESULT,
-      inlineMarkdownLink: `[${VOICE_RESULT.filename}](<${VOICE_RESULT.url}>)`,
-      previewMarkdownBlock: `![${VOICE_RESULT.filename}](<${VOICE_RESULT.url}>)`,
-      artifactPresentationContext: expect.stringContaining(
-        "outside code fences",
-      ),
-    });
-  });
+      expect(mockConsoleLog.mock.calls).toHaveLength(1);
+      expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
+        ...VOICE_RESULT,
+        url: expectedUrl,
+        inlineMarkdownLink: `[${VOICE_RESULT.filename}](<${expectedUrl}>)`,
+        previewMarkdownBlock: `![${VOICE_RESULT.filename}](<${expectedUrl}>)`,
+        artifactPresentationContext: expect.stringContaining(
+          "outside code fences",
+        ),
+      });
+    },
+  );
 
   it.each([
     ["provider listing", ["voice", "--json"]],

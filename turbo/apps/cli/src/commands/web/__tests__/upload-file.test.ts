@@ -238,6 +238,7 @@ describe("okou web upload-file command", () => {
     });
 
     it("should prepare + PUT + complete and print artifact presentation context", async () => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
       const filePath = join(tmpDir, "report.pdf");
       writeFileSync(filePath, Buffer.from("%PDF-1.4 fake"));
 
@@ -339,9 +340,13 @@ describe("okou web upload-file command", () => {
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain("The artifact upload completed successfully.");
       expect(stdout).toContain("Artifact presentation context:");
-      expect(stdout).toContain(`[report.pdf](<${prepared.url}>)`);
+      expect(stdout).toContain(
+        `[report.pdf](<https://app.okou.ai${prepared.url}>)`,
+      );
       expect(stdout).toContain("This form remains a link in normal prose.");
-      expect(stdout).toContain(`\n\n![report.pdf](<${prepared.url}>)\n\n`);
+      expect(stdout).toContain(
+        `\n\n![report.pdf](<https://app.okou.ai${prepared.url}>)\n\n`,
+      );
       expect(stdout).toContain(
         "occupies its own Markdown paragraph, with a blank line before and after it, and is outside a code fence",
       );
