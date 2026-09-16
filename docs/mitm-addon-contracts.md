@@ -22,11 +22,11 @@ draft edits. Unrelated Google API paths retain their existing policy.
 
 Rejected requests receive a local `403` with reason `gmail_send_blocked` and a
 Gmail-compatible `error.message` so SDK callers see the actionable handoff:
-`okou mail draft --file message.eml` uploads an RFC822 file through the
-run's selected Gmail connector, then `okou mail link <gmail-draft-id>` returns the
-Web review URL. The CLI preserves MIME bytes and attachments, does not send, and
-does not retry uncertain writes. Outside Web chat, the user reviews and sends the
-draft in Gmail. Reuse an existing draft when recovering from a blocked send.
+create a draft through the existing Gmail draft API, then run the existing
+`okou mail link <gmail-draft-id>` command to obtain the Web review URL. Outside
+Web chat, the user reviews and sends the draft in Gmail. Reuse or update an
+existing draft when recovering from a blocked send. No CLI command is added or
+changed by this restriction.
 The session-authenticated API review/send path remains outside this addon guard.
 
 Both request hooks share the restriction. The header hook must not install a
@@ -35,11 +35,11 @@ local response after normal buffering. A local response is not a promise to stop
 receiving the client's body immediately. Existing request framing and cleanup
 remain in force.
 
-Ship the CLI draft command before rolling out the addon response that references
-it. Addon source is embedded in Runner, so old Runner instances must be replaced
-or drained for enforcement. No API, catalog, database, or Runner wire-format
-migration is required. `tests/test_gmail_send.py` exercises both request hooks and
-the browser exemption; CLI command tests cover the draft-upload handoff.
+Addon source is embedded in Runner, so old Runner instances must be replaced
+or drained for enforcement. The handoff uses an existing CLI command and needs
+no CLI rollout. No API, catalog, database, or Runner wire-format migration is
+required. `tests/test_gmail_send.py` exercises both request hooks, the browser
+exemption, and the existing draft/review handoff instructions.
 
 ## Runner-private control and readiness
 

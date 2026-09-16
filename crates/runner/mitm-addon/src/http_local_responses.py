@@ -328,8 +328,8 @@ def block_gmail_send(flow: http.HTTPFlow) -> None:
                 "errors": [{"domain": "okou", "reason": error_code}],
                 "message": (
                     "Direct Gmail API sending and Gmail batch requests are disabled. "
-                    "Use okou mail draft --file <message.eml> to create a Gmail draft "
-                    "(see okou mail draft --help). If a draft already exists, reuse it. "
+                    "Create a Gmail draft using the Gmail API (drafts.create). "
+                    "If a draft already exists, reuse or update it. "
                     "In Web chat, run okou mail link <gmail-draft-id> and return the review URL "
                     "so the user can review and send. Outside Web chat, ask the user to review "
                     "and send the draft in Gmail. Permission grants cannot unblock direct sending. "

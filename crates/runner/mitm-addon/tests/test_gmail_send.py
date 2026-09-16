@@ -68,7 +68,8 @@ async def test_send_is_blocked_even_with_allow_grant(
     assert error["code"] == 403
     assert error["errors"] == [{"domain": "okou", "reason": "gmail_send_blocked"}]
     # This is also the field Gmail SDKs display to their caller.
-    assert "okou mail draft --file <message.eml>" in error["message"]
+    assert "Create a Gmail draft using the Gmail API (drafts.create)" in error["message"]
+    assert "reuse or update it" in error["message"]
     assert "okou mail link <gmail-draft-id>" in error["message"]
     assert "user can review and send" in error["message"]
     assert "upload_id" not in error["message"]

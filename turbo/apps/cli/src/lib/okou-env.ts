@@ -10,11 +10,6 @@ export function getOkouToken(): string | undefined {
   return okouEnvironmentValue("TOKEN");
 }
 
-/** Gmail's run-selected connector binding; provider credentials stay at the proxy boundary. */
-export function getGmailToken(): string | undefined {
-  return environmentValue("GMAIL_TOKEN");
-}
-
 export function getOkouAgentId(): string | undefined {
   return okouEnvironmentValue("AGENT_ID");
 }
