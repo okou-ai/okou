@@ -15,11 +15,15 @@ describe("provider failure contract shared with guest-agent", () => {
     "keeps %s provider billing details private on built-in models",
     (code) => {
       const message = `API Error: 402 ${JSON.stringify({ error: { code, message: "Private provider billing details" } })}`;
+      const failureReason = classifyProviderFailure(message);
       expect(
-        formatRunBalanceError({ message, modelProvider: "built-in" }),
+        formatRunBalanceError({ failureReason, modelProvider: "built-in" }),
       ).toBe(MODEL_UNAVAILABLE_MESSAGE);
       expect(
-        formatRunBalanceError({ message, modelProvider: "openai-api-key" }),
+        formatRunBalanceError({
+          failureReason,
+          modelProvider: "openai-api-key",
+        }),
       ).toBe(PROVIDER_INSUFFICIENT_CREDITS_MESSAGE);
     },
   );

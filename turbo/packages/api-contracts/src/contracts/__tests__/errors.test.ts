@@ -38,20 +38,15 @@ describe("formatRunErrorForExternalSurface", () => {
   ] as const)(
     "presents upstream balance according to persisted provider %s",
     (modelProviderType, expected) => {
-      for (const failureReason of [
-        undefined,
-        "provider_insufficient_credits",
-      ] as const) {
-        expect(
-          formatRunErrorForExternalSurface({
-            code: "UNKNOWN",
-            message: "Credit balance is too low",
-            failureReason,
-            modelProviderType,
-            framework: "claude-code",
-          }),
-        ).toBe(expected);
-      }
+      expect(
+        formatRunErrorForExternalSurface({
+          code: "UNKNOWN",
+          message: "Credit balance is too low",
+          failureReason: "provider_insufficient_credits",
+          modelProviderType,
+          framework: "claude-code",
+        }),
+      ).toBe(expected);
     },
   );
 
@@ -81,22 +76,7 @@ describe("formatRunErrorForExternalSurface", () => {
     ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
   });
 
-  it.each([undefined, "insufficient_credits"] as const)(
-    "repairs legacy upstream affordability presentation (%s)",
-    (failureReason) => {
-      expect(
-        formatRunErrorForExternalSurface({
-          code: "UNKNOWN",
-          failureReason,
-          modelProviderType: "anthropic-api-key",
-          message:
-            "API Error: 402 This request requires more credits. You can only afford 100 tokens.",
-        }),
-      ).toBe("Your connected model provider account has insufficient balance.");
-    },
-  );
-
-  it("preserves unknown reason precedence over legacy balance words", () => {
+  it("preserves unknown reason precedence over untrusted balance words", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",

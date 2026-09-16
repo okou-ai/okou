@@ -3,7 +3,6 @@ import {
   assertPiInferencePublication,
 } from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
-import { isLegacyProviderBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -434,15 +433,10 @@ async function prepareCompletion(
   if (input.body.exitCode !== 0) {
     const error =
       input.body.error?.trim() || "Run failed without error message";
-    const reason = input.body.failureReason;
     return {
       status: "failed",
       error,
-      failureReason:
-        reason === "insufficient_credits" &&
-        isLegacyProviderBalanceError(error, null)
-          ? "provider_insufficient_credits"
-          : reason,
+      failureReason: input.body.failureReason,
       failureKind: "reported",
     };
   }
