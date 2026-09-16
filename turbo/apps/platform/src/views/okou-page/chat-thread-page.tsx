@@ -321,6 +321,7 @@ import {
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
+  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
   CHAT_THREAD_RESPONSE_FLUSH_CLASS,
   CHAT_THREAD_RESPONSE_LINE_CLASS,
@@ -5646,7 +5647,12 @@ function SelectablePagedGroupRow({
           : undefined
       }
       className={cn(
-        "relative -my-1 rounded-lg py-1 transition-colors",
+        // Every row in the transcript is otherwise a direct child of the
+        // message list's flex column. This wrapper interrupts that column, so
+        // it carries the same rhythm itself; without it a group holding a burst
+        // of user messages renders them with no gap at all.
+        "relative -my-1 flex flex-col rounded-lg py-1 transition-colors",
+        CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
         phase === "selecting" && "cursor-pointer hover:bg-state-hover",
       )}
       onClick={(event) => {
@@ -5960,35 +5966,41 @@ function UserMessageAttachments({
   );
 }
 
+// The row below a user message is part of that message's frame, not a thing the
+// copy button brings with it. It stays even when there is no button to show —
+// a message nobody can copy, or a mode that offers no per-message action — so
+// the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
-  canCopy,
+  showCopy,
   copied,
   onCopy,
 }: {
-  canCopy: boolean;
+  showCopy: boolean;
   copied: boolean;
   onCopy: () => void;
 }) {
   const { t } = useTranslation();
-  if (!canCopy) {
-    return null;
-  }
   return (
-    <div className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}>
-      <Button
-        type="button"
-        variant="quiet"
-        size="icon-xs"
-        iconSize="sm"
-        showTooltip
-        onClick={onCopy}
-        className="text-muted-foreground/60"
-        aria-label={t(($) => {
-          return $.chat.actions.copyMessage;
-        })}
-      >
-        {copied ? <Check /> : <Copy />}
-      </Button>
+    <div
+      data-chat-user-message-actions
+      className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
+    >
+      {showCopy ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          iconSize="sm"
+          showTooltip
+          onClick={onCopy}
+          className="text-muted-foreground/60"
+          aria-label={t(($) => {
+            return $.chat.actions.copyMessage;
+          })}
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -6986,18 +6998,22 @@ function PagedUserMessage({
             <MessageAnnotation renderPart={annotationPart} />
           ) : null}
           {renderDocument ? (
-            <UserMessageContent
-              document={renderDocument}
-              attachments={allAttachments}
-              onImageClick={openLightbox}
-            />
-          ) : null}
-          {sharingPhase === "idle" ? (
-            <UserMessageActions
-              canCopy={canCopy}
-              copied={copied}
-              onCopy={handleCopy}
-            />
+            <>
+              <UserMessageContent
+                document={renderDocument}
+                attachments={allAttachments}
+                onImageClick={openLightbox}
+              />
+              {/* The row belongs to the bubble, not to the button inside it.
+                  Sharing hides the button and a message nobody can copy has
+                  none, and in both cases the next message in the burst is
+                  still pulled up by the height this row holds. */}
+              <UserMessageActions
+                showCopy={canCopy && sharingPhase === "idle"}
+                copied={copied}
+                onCopy={handleCopy}
+              />
+            </>
           ) : null}
         </div>
       </div>

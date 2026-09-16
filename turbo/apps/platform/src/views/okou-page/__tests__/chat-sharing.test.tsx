@@ -25,7 +25,9 @@ const GROUPED_ANSWER_EVENT_IDS = [
   "b0000000-0000-4000-a000-000000000813",
 ] as const;
 const GROUPED_RUN_ID = "grouped-launch-run";
+const FOLLOW_UP_PROMPT_EVENT_ID = "b0000000-0000-4000-a000-000000000806";
 const PROMPT = "Summarize the launch plan";
+const FOLLOW_UP_PROMPT = "Keep it short";
 const ANSWER = "The launch plan has three phases.";
 
 function mockConversation(chatEvents = standardConversation()): void {
@@ -80,6 +82,22 @@ function selectableGroupForText(text: string): HTMLElement {
     throw new Error(`Selectable message group not found: ${text}`);
   }
   return group;
+}
+
+// The row under a user bubble holds the space the next bubble in a burst is
+// pulled into, so it is part of that message's frame rather than part of the
+// copy button it usually carries.
+function actionRowFor(text: string): HTMLElement {
+  const message = screen
+    .getByText(text)
+    .closest<HTMLElement>('[data-role="user"]');
+  const actions = message?.querySelector<HTMLElement>(
+    "[data-chat-user-message-actions]",
+  );
+  if (!actions) {
+    throw new Error(`User message action row not found: ${text}`);
+  }
+  return actions;
 }
 
 test("Share selected message groups as a public conversation snapshot", async () => {
@@ -148,6 +166,60 @@ test("Share selected message groups as a public conversation snapshot", async ()
   );
   expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
+});
+
+// Back-to-back user messages are pulled together by a negative margin sized
+// against the row that sits under every bubble. Share selection hides the copy
+// button in that row; when it took the row with it, the second bubble climbed
+// into the first one and the two rendered on top of each other.
+test("Back-to-back user messages keep their frame apart while sharing", async () => {
+  mockConversation([
+    {
+      id: PROMPT_EVENT_ID,
+      role: "user",
+      content: PROMPT,
+      runId: "launch-run",
+      createdAt: "2026-08-01T10:00:00Z",
+    },
+    {
+      id: FOLLOW_UP_PROMPT_EVENT_ID,
+      role: "user",
+      content: FOLLOW_UP_PROMPT,
+      runId: "launch-run",
+      createdAt: "2026-08-01T10:00:01Z",
+    },
+    {
+      id: ANSWER_EVENT_ID,
+      role: "assistant",
+      content: ANSWER,
+      runId: "launch-run",
+      createdAt: "2026-08-01T10:00:02Z",
+    },
+  ]);
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+
+  await screen.findByText(FOLLOW_UP_PROMPT);
+  expect(actionRowFor(PROMPT)).toBeInTheDocument();
+  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+  });
+
+  click(requiredButtonNamed("Share messages"));
+
+  await waitFor(() => {
+    expect(screen.getAllByText("0 selected").length).toBeGreaterThan(0);
+  });
+  expect(actionRowFor(PROMPT)).toBeInTheDocument();
+  expect(actionRowFor(FOLLOW_UP_PROMPT)).toBeInTheDocument();
+  expect(buttonsNamed("Copy message")).toHaveLength(0);
+  expect(selectableGroupForText(PROMPT)).toBe(
+    selectableGroupForText(FOLLOW_UP_PROMPT),
+  );
 });
 
 test("Replacing a selected live answer clears it before the next answer is shared", async () => {
