@@ -1,6 +1,6 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../../../signals/utils.ts";
@@ -155,88 +155,95 @@ test("Keep recording after an incremental segment fails and finish in order", as
   });
 });
 
-test("Resume a completed segment after reload without retranscribing its audio", async () => {
-  const resetPage$ = resetSignal();
-  const pageSignal = context.store.set(resetPage$, context.signal);
-  const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-  const started = context.mocks.deferred<void>();
-  context.mocks.browser.voiceInput({
-    rms: 0.1,
-    onPcmCapture: capture.resolve,
-    finalPcmSamples: new Float32Array(0),
-  });
-  installRunChat();
-  const inputs: { prefix: string; duration: number }[] = [];
-  let finalAttempts = 0;
-  context.mocks.http.post(endpoint, async ({ request }) => {
-    const form = await request.formData();
-    const options = JSON.parse(String(form.get("options"))) as {
-      previousTranscript: string;
-      final: boolean;
-    };
-    const file = form.get("file");
-    if (!(file instanceof File)) {
-      throw new Error("Expected remaining audio");
-    }
-    inputs.push({
-      prefix: options.previousTranscript,
-      duration: (file.size - 44) / 32_000,
+describe("a saved voice segment with failed final processing", () => {
+  let resetPage$: ReturnType<typeof resetSignal>;
+  let inputs: { prefix: string; duration: number }[];
+  beforeEach(async () => {
+    resetPage$ = resetSignal();
+    const pageSignal = context.store.set(resetPage$, context.signal);
+    const capture = context.mocks.deferred<(samples: Float32Array) => void>();
+    const started = context.mocks.deferred<void>();
+    context.mocks.browser.voiceInput({
+      rms: 0.1,
+      onPcmCapture: capture.resolve,
+      finalPcmSamples: new Float32Array(0),
     });
-    if (!options.final) {
-      started.resolve();
-      return HttpResponse.json({ transcript: "Saved part.", language: "en" });
-    }
-    finalAttempts += 1;
-    if (finalAttempts === 1) {
-      return HttpResponse.json(
-        {
-          error: {
-            code: "PROVIDER_UNAVAILABLE",
-            message: "Final processing unavailable",
+    installRunChat();
+    inputs = [];
+    let finalAttempts = 0;
+    context.mocks.http.post(endpoint, async ({ request }) => {
+      const form = await request.formData();
+      const options = JSON.parse(String(form.get("options"))) as {
+        previousTranscript: string;
+        final: boolean;
+      };
+      const file = form.get("file");
+      if (!(file instanceof File)) {
+        throw new Error("Expected remaining audio");
+      }
+      inputs.push({
+        prefix: options.previousTranscript,
+        duration: (file.size - 44) / 32_000,
+      });
+      if (!options.final) {
+        started.resolve();
+        return HttpResponse.json({ transcript: "Saved part.", language: "en" });
+      }
+      finalAttempts += 1;
+      if (finalAttempts === 1) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "Final processing unavailable",
+            },
           },
-        },
-        { status: 503 },
-      );
-    }
-    return HttpResponse.json({
-      transcript: "Last part.",
-      polishedText: "Saved part. Last part.",
-      language: "en",
+          { status: 503 },
+        );
+      }
+      return HttpResponse.json({
+        transcript: "Last part.",
+        polishedText: "Saved part. Last part.",
+        language: "en",
+      });
     });
+    await setupPage({
+      locale: "en-US",
+      context: { ...context, signal: pageSignal },
+      path: RUN_PATH,
+    });
+    click(await findEnabledButton("Voice input"));
+    const emit = await capture.promise;
+    emit(new Float32Array(60 * 16_000).fill(0.1));
+    await started.promise;
+    emit(new Float32Array(5 * 16_000).fill(0.2));
+    click(await findEnabledButton("Stop recording"));
+    await findEnabledButton("Retry");
   });
-  await setupPage({
-    locale: "en-US",
-    context: { ...context, signal: pageSignal },
-    path: RUN_PATH,
+
+  test("Resume a completed segment after reload without retranscribing its audio", async () => {
+    context.store.set(resetPage$);
+    cleanup();
+    vi.mocked(window.history.pushState).mockRestore();
+    vi.mocked(window.history.replaceState).mockRestore();
+    vi.mocked(window.history.back).mockRestore();
+    await setupPage({
+      locale: "en-US",
+      context: refreshedContext,
+      path: RUN_PATH,
+    });
+    click(await findEnabledButton("Retry"));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "Message" }),
+      ).toHaveTextContent("Saved part. Last part.");
+    });
+    expect(inputs).toStrictEqual([
+      { prefix: "", duration: 60 },
+      { prefix: "Saved part.", duration: 7 },
+      { prefix: "Saved part.", duration: 7 },
+    ]);
   });
-  click(await findEnabledButton("Voice input"));
-  const emit = await capture.promise;
-  emit(new Float32Array(60 * 16_000).fill(0.1));
-  await started.promise;
-  emit(new Float32Array(5 * 16_000).fill(0.2));
-  click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Retry");
-  context.store.set(resetPage$);
-  cleanup();
-  vi.mocked(window.history.pushState).mockRestore();
-  vi.mocked(window.history.replaceState).mockRestore();
-  vi.mocked(window.history.back).mockRestore();
-  await setupPage({
-    locale: "en-US",
-    context: refreshedContext,
-    path: RUN_PATH,
-  });
-  click(await findEnabledButton("Retry"));
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "Saved part. Last part.",
-    );
-  });
-  expect(inputs).toStrictEqual([
-    { prefix: "", duration: 60 },
-    { prefix: "Saved part.", duration: 7 },
-    { prefix: "Saved part.", duration: 7 },
-  ]);
 });
 
 test("Stop during transcription and finalize the saved prefix without retranscribing its audio", async () => {

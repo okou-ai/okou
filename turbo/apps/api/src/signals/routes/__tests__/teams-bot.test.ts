@@ -2498,130 +2498,136 @@ describe("POST /api/webhooks/teams/bot", () => {
     },
   );
 
-  it("replies when a connected Teams run is queued", async () => {
-    const { fixture, actor, outboundRequests } =
-      await setupConnectedTeamsBotActor();
-    const firstActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-active-1",
-    );
-    const secondActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-active-2",
-    );
-    const queuedActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-third",
-    );
-    const firstThreadId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-thread-1",
-    );
-    const secondThreadId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-thread-2",
-    );
-    const queuedThreadId = teamsFixtureExternalId(
-      fixture,
-      "activity-queue-thread-3",
-    );
-    outboundRequests.splice(0, outboundRequests.length);
+  describe("queued runs for a connected Teams bot", () => {
+    let prepared: Awaited<ReturnType<typeof setupConnectedTeamsBotActor>>;
+    beforeEach(async () => {
+      prepared = await setupConnectedTeamsBotActor();
+    });
 
-    const [firstResponse, secondResponse] = await Promise.all([
-      postTeamsActivity({
-        activity: teamsPersonalThreadMessageActivity({
-          fixture,
-          id: firstActivityId,
-          threadId: firstThreadId,
-          text: "active run one",
-        }),
-        token: teamsToken(),
-      }),
-      postTeamsActivity({
-        activity: teamsPersonalThreadMessageActivity({
-          fixture,
-          id: secondActivityId,
-          threadId: secondThreadId,
-          text: "active run two",
-        }),
-        token: teamsToken(),
-      }),
-    ]);
-    expect(firstResponse.status).toBe(200);
-    const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
-    expect(firstBody).not.toHaveProperty("dispatch");
-    const firstRunId = await runIdForPrompt(actor, "active run one");
-
-    expect(secondResponse.status).toBe(200);
-    const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
-    expect(secondBody).not.toHaveProperty("dispatch");
-    const secondRunId = await runIdForPrompt(actor, "active run two");
-
-    const queuedResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
+    it("replies when a connected Teams run is queued", async () => {
+      const { fixture, actor, outboundRequests } = prepared;
+      const firstActivityId = teamsFixtureExternalId(
         fixture,
-        id: queuedActivityId,
-        threadId: queuedThreadId,
-        text: "queued run three",
-      }),
-      token: teamsToken(),
-    });
-    expect(queuedResponse.status).toBe(200);
-    const queuedBody = await readTeamsBotResponseAndFlush(queuedResponse);
-    expect(queuedBody).not.toHaveProperty("dispatch");
-    const queuedRunId = await runIdForPrompt(actor, "queued run three");
+        "activity-queue-active-1",
+      );
+      const secondActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-active-2",
+      );
+      const queuedActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-third",
+      );
+      const firstThreadId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-thread-1",
+      );
+      const secondThreadId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-thread-2",
+      );
+      const queuedThreadId = teamsFixtureExternalId(
+        fixture,
+        "activity-queue-thread-3",
+      );
+      outboundRequests.splice(0, outboundRequests.length);
 
-    expect(outboundRequests).toHaveLength(4);
-    expect(
-      outboundRequests.slice(0, 3).map((request) => {
-        return request.body;
-      }),
-    ).toStrictEqual([
-      {
-        type: "typing",
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      },
-      {
-        type: "typing",
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      },
-      {
-        type: "typing",
-        channelData: { tenant: { id: fixture.teamsTenantId } },
-      },
-    ]);
-    expect(outboundRequests[3]).toMatchObject({
-      activityId: queuedActivityId,
-      body: {
-        type: "message",
-        summary: expect.stringContaining("Run queued"),
-        attachments: [
-          {
-            contentType: "application/vnd.microsoft.card.adaptive",
-            content: {
-              type: "AdaptiveCard",
-              version: "1.4",
-              body: expect.arrayContaining([
-                expect.objectContaining({ text: "Run queued" }),
-              ]),
-              actions: [
-                {
-                  type: "Action.OpenUrl",
-                  title: "View queue",
-                  url: `${APP_ORIGIN}/?queue=1`,
-                },
-              ],
+      const [firstResponse, secondResponse] = await Promise.all([
+        postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: firstActivityId,
+            threadId: firstThreadId,
+            text: "active run one",
+          }),
+          token: teamsToken(),
+        }),
+        postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: secondActivityId,
+            threadId: secondThreadId,
+            text: "active run two",
+          }),
+          token: teamsToken(),
+        }),
+      ]);
+      expect(firstResponse.status).toBe(200);
+      const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
+      expect(firstBody).not.toHaveProperty("dispatch");
+      const firstRunId = await runIdForPrompt(actor, "active run one");
+
+      expect(secondResponse.status).toBe(200);
+      const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
+      expect(secondBody).not.toHaveProperty("dispatch");
+      const secondRunId = await runIdForPrompt(actor, "active run two");
+
+      const queuedResponse = await postTeamsActivity({
+        activity: teamsPersonalThreadMessageActivity({
+          fixture,
+          id: queuedActivityId,
+          threadId: queuedThreadId,
+          text: "queued run three",
+        }),
+        token: teamsToken(),
+      });
+      expect(queuedResponse.status).toBe(200);
+      const queuedBody = await readTeamsBotResponseAndFlush(queuedResponse);
+      expect(queuedBody).not.toHaveProperty("dispatch");
+      const queuedRunId = await runIdForPrompt(actor, "queued run three");
+
+      expect(outboundRequests).toHaveLength(4);
+      expect(
+        outboundRequests.slice(0, 3).map((request) => {
+          return request.body;
+        }),
+      ).toStrictEqual([
+        {
+          type: "typing",
+          channelData: { tenant: { id: fixture.teamsTenantId } },
+        },
+        {
+          type: "typing",
+          channelData: { tenant: { id: fixture.teamsTenantId } },
+        },
+        {
+          type: "typing",
+          channelData: { tenant: { id: fixture.teamsTenantId } },
+        },
+      ]);
+      expect(outboundRequests[3]).toMatchObject({
+        activityId: queuedActivityId,
+        body: {
+          type: "message",
+          summary: expect.stringContaining("Run queued"),
+          attachments: [
+            {
+              contentType: "application/vnd.microsoft.card.adaptive",
+              content: {
+                type: "AdaptiveCard",
+                version: "1.4",
+                body: expect.arrayContaining([
+                  expect.objectContaining({ text: "Run queued" }),
+                ]),
+                actions: [
+                  {
+                    type: "Action.OpenUrl",
+                    title: "View queue",
+                    url: `${APP_ORIGIN}/?queue=1`,
+                  },
+                ],
+              },
             },
-          },
-        ],
-      },
-    });
-    expect(outboundRequests[3]?.body).not.toHaveProperty("text");
-    expect(outboundRequests.reactions).toHaveLength(0);
+          ],
+        },
+      });
+      expect(outboundRequests[3]?.body).not.toHaveProperty("text");
+      expect(outboundRequests.reactions).toHaveLength(0);
 
-    await runsApi.requestCancelRun(actor, queuedRunId, [200]);
-    await runsApi.requestCancelRun(actor, firstRunId, [200]);
-    await runsApi.requestCancelRun(actor, secondRunId, [200]);
+      await runsApi.requestCancelRun(actor, queuedRunId, [200]);
+      await runsApi.requestCancelRun(actor, firstRunId, [200]);
+      await runsApi.requestCancelRun(actor, secondRunId, [200]);
+    });
   });
 
   it("clears thinking and adds audit/footer text for Teams run admission failures", async () => {

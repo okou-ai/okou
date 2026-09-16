@@ -117,13 +117,59 @@ describe("Pi memory Phase 2 selection", () => {
     });
   });
 
-  it("applies every ranking tier before the 256-row boundary", async () => {
-    expect.assertions(12);
-    async function expectBoundaryWinner(
-      label: string,
-      better: Phase2CandidateInput,
-      worse: Phase2CandidateInput,
-    ): Promise<void> {
+  it.each([
+    {
+      label: "usage",
+      better: { piSessionId: "better-usage", usageCount: 2 },
+      worse: { piSessionId: "worse-usage", usageCount: 1 },
+    },
+    {
+      label: "effective-date",
+      better: {
+        piSessionId: "better-effective-date",
+        lastUsedAt: NOW,
+        sourceCompletedAt: new Date(NOW.getTime() - 2),
+      },
+      worse: {
+        piSessionId: "worse-effective-date",
+        lastUsedAt: new Date(NOW.getTime() - 1),
+        sourceCompletedAt: NOW,
+      },
+    },
+    {
+      label: "source-date",
+      better: {
+        piSessionId: "better-source-date",
+        lastUsedAt: NOW,
+        sourceCompletedAt: NOW,
+      },
+      worse: {
+        piSessionId: "worse-source-date",
+        lastUsedAt: NOW,
+        sourceCompletedAt: new Date(NOW.getTime() - 1),
+      },
+    },
+    {
+      label: "session-id",
+      better: {
+        piSessionId: "z-better-session-id",
+        lastUsedAt: NOW,
+        sourceCompletedAt: NOW,
+      },
+      worse: {
+        piSessionId: "a-worse-session-id",
+        lastUsedAt: NOW,
+        sourceCompletedAt: NOW,
+      },
+    },
+  ] satisfies {
+    label: string;
+    better: Phase2CandidateInput;
+    worse: Phase2CandidateInput;
+  }[])(
+    "applies the $label ranking tier before the 256-row boundary",
+    async ({ label, better, worse }) => {
+      expect.assertions(3);
       const scope = await createPhase2TestScope(`ranking-${label}`);
       const fillers = Array.from({ length: 255 }, (_, index) => {
         return {
@@ -147,53 +193,8 @@ describe("Pi memory Phase 2 selection", () => {
       expect(ids.size).toBe(256);
       expect(ids.has(better.piSessionId)).toBeTruthy();
       expect(ids.has(worse.piSessionId)).toBeFalsy();
-    }
-
-    await expectBoundaryWinner(
-      "usage",
-      { piSessionId: "better-usage", usageCount: 2 },
-      { piSessionId: "worse-usage", usageCount: 1 },
-    );
-    await expectBoundaryWinner(
-      "effective-date",
-      {
-        piSessionId: "better-effective-date",
-        lastUsedAt: NOW,
-        sourceCompletedAt: new Date(NOW.getTime() - 2),
-      },
-      {
-        piSessionId: "worse-effective-date",
-        lastUsedAt: new Date(NOW.getTime() - 1),
-        sourceCompletedAt: NOW,
-      },
-    );
-    await expectBoundaryWinner(
-      "source-date",
-      {
-        piSessionId: "better-source-date",
-        lastUsedAt: NOW,
-        sourceCompletedAt: NOW,
-      },
-      {
-        piSessionId: "worse-source-date",
-        lastUsedAt: NOW,
-        sourceCompletedAt: new Date(NOW.getTime() - 1),
-      },
-    );
-    await expectBoundaryWinner(
-      "session-id",
-      {
-        piSessionId: "z-better-session-id",
-        lastUsedAt: NOW,
-        sourceCompletedAt: NOW,
-      },
-      {
-        piSessionId: "a-worse-session-id",
-        lastUsedAt: NOW,
-        sourceCompletedAt: NOW,
-      },
-    );
-  });
+    },
+  );
 
   it("accepts the exact payload cap and stops before a one-byte overflow", async () => {
     const scope = await createPhase2TestScope("payload-cap");

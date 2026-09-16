@@ -955,40 +955,54 @@ describe("workflow queue", () => {
     expect(userResult.status).toBe(201);
   });
 
-  it("recovers a stale automation event after its terminal callback is missed", async () => {
-    mockNow(Date.UTC(2020, 0, 1));
-    const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    const firstRunId = await expectAcceptedRunId(
-      await postWorkflowWebhook(automation, "first"),
-      automation.threadId,
-    );
-    expectAcceptedWithoutRun(
-      await postWorkflowWebhook(automation, "stale pending event"),
-    );
-    const event = (await pendingAutomationEvents(automation.threadId))[0];
-    if (!event) {
-      throw new Error("Expected a pending automation event");
+  describe("a stale automation event with a missed terminal callback", () => {
+    async function prepareStaleEvent() {
+      mockNow(Date.UTC(2020, 0, 1));
+      const scenario = await setup();
+      const automation = await createWebhookAutomation(scenario);
+      const firstRunId = await expectAcceptedRunId(
+        await postWorkflowWebhook(automation, "first"),
+        automation.threadId,
+      );
+      expectAcceptedWithoutRun(
+        await postWorkflowWebhook(automation, "stale pending event"),
+      );
+      const event = (await pendingAutomationEvents(automation.threadId))[0];
+      if (!event) {
+        throw new Error("Expected a pending automation event");
+      }
+      await setWorkflowQueueEventCreatedAtFixture({
+        eventId: event.id,
+        createdAt: new Date("2019-12-31T23:54:00.000Z"),
+      });
+
+      await runsApi.heartbeatRunner(scenario.runnerGroup);
+      await runsApi.claimRunnerJob(firstRunId);
+      await completeRunWithoutCallbacksFixture({ runId: firstRunId });
+      return { scenario, automation, firstRunId };
     }
-    await setWorkflowQueueEventCreatedAtFixture({
-      eventId: event.id,
-      createdAt: new Date("2019-12-31T23:54:00.000Z"),
+
+    let prepared: Awaited<ReturnType<typeof prepareStaleEvent>>;
+    beforeEach(async () => {
+      prepared = await prepareStaleEvent();
     });
 
-    await runsApi.heartbeatRunner(scenario.runnerGroup);
-    await runsApi.claimRunnerJob(firstRunId);
-    await completeRunWithoutCallbacksFixture({ runId: firstRunId });
+    it("recovers a stale automation event after its terminal callback is missed", async () => {
+      const { scenario, automation, firstRunId } = prepared;
 
-    await cleanupWorkflowQueueFixtures({
-      threadId: automation.threadId,
-      orgId: scenario.orgId,
-      runIds: [firstRunId],
+      await cleanupWorkflowQueueFixtures({
+        threadId: automation.threadId,
+        orgId: scenario.orgId,
+        runIds: [firstRunId],
+      });
+
+      await expect(
+        pendingAutomationEvents(automation.threadId),
+      ).resolves.toHaveLength(0);
+      await expect(workflowRunIds(automation.threadId)).resolves.toHaveLength(
+        2,
+      );
     });
-
-    await expect(
-      pendingAutomationEvents(automation.threadId),
-    ).resolves.toHaveLength(0);
-    await expect(workflowRunIds(automation.threadId)).resolves.toHaveLength(2);
   });
 
   it("recovers a stale user message after its terminal callback is missed", async () => {
@@ -1051,41 +1065,53 @@ describe("workflow queue", () => {
     ).toBeTruthy();
   });
 
-  it("leaves queue events older than the recent stale sweep window", async () => {
-    mockNow(Date.UTC(2020, 0, 1));
-    const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    const firstRunId = await expectAcceptedRunId(
-      await postWorkflowWebhook(automation, "first"),
-      automation.threadId,
-    );
-    expectAcceptedWithoutRun(
-      await postWorkflowWebhook(automation, "outside the recovery window"),
-    );
-    const event = (await pendingAutomationEvents(automation.threadId))[0];
-    if (!event) {
-      throw new Error("Expected a pending automation event");
+  describe("an automation event older than the stale recovery window", () => {
+    async function prepareOldEvent() {
+      mockNow(Date.UTC(2020, 0, 1));
+      const scenario = await setup();
+      const automation = await createWebhookAutomation(scenario);
+      const firstRunId = await expectAcceptedRunId(
+        await postWorkflowWebhook(automation, "first"),
+        automation.threadId,
+      );
+      expectAcceptedWithoutRun(
+        await postWorkflowWebhook(automation, "outside the recovery window"),
+      );
+      const event = (await pendingAutomationEvents(automation.threadId))[0];
+      if (!event) {
+        throw new Error("Expected a pending automation event");
+      }
+      await setWorkflowQueueEventCreatedAtFixture({
+        eventId: event.id,
+        createdAt: new Date("2019-12-31T23:44:00.000Z"),
+      });
+
+      await runsApi.heartbeatRunner(scenario.runnerGroup);
+      await runsApi.claimRunnerJob(firstRunId);
+      await completeRunWithoutCallbacksFixture({ runId: firstRunId });
+      return { scenario, automation, firstRunId, event };
     }
-    await setWorkflowQueueEventCreatedAtFixture({
-      eventId: event.id,
-      createdAt: new Date("2019-12-31T23:44:00.000Z"),
+
+    let prepared: Awaited<ReturnType<typeof prepareOldEvent>>;
+    beforeEach(async () => {
+      prepared = await prepareOldEvent();
     });
 
-    await runsApi.heartbeatRunner(scenario.runnerGroup);
-    await runsApi.claimRunnerJob(firstRunId);
-    await completeRunWithoutCallbacksFixture({ runId: firstRunId });
-    await cleanupWorkflowQueueFixtures({
-      threadId: automation.threadId,
-      orgId: scenario.orgId,
-      runIds: [firstRunId],
-    });
+    it("leaves queue events older than the recent stale sweep window", async () => {
+      const { scenario, automation, firstRunId, event } = prepared;
+      await cleanupWorkflowQueueFixtures({
+        threadId: automation.threadId,
+        orgId: scenario.orgId,
+        runIds: [firstRunId],
+      });
 
-    await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
-      firstRunId,
-    ]);
-    await expect(
-      pendingAutomationEvents(automation.threadId),
-    ).resolves.toMatchObject([{ id: event.id }]);
+      await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
+        firstRunId,
+      ]);
+      await expect(
+        pendingAutomationEvents(automation.threadId),
+      ).resolves.toMatchObject([{ id: event.id }]);
+    });
   });
 
   it("queues webhook events without extra keys and drains one per completion", async () => {

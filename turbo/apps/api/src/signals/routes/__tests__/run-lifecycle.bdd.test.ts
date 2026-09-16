@@ -3928,110 +3928,119 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
   });
 
-  it("selects workspace and reusable-sandbox preferences from runner heartbeats", async () => {
-    const {
-      reuseRunnerId,
-      api,
-      cliAgentSessionId,
-      heartbeatHolder,
-      nextReuseSnapshotSequence,
-      pollFollowUp,
-      reuseKey,
-      runnerGroup,
-    } = await setupSameThreadReuseScenario();
-
-    await api.requestHeartbeatRunner(true, [200], {
-      runnerId: reuseRunnerId,
-      group: runnerGroup,
-      snapshotGeneration: 1,
-      snapshotSequence: nextReuseSnapshotSequence(),
-      admittableProfiles: ["vm0/default"],
-      heldWorkspaceStates: [
-        {
-          reuseKey,
-          lastCompletedAt: nowDate().toISOString(),
-          workspaceCaches: [
-            { profile: "vm0/large", workspaceAffinityVersion: 1 },
-            { profile: "vm0/default", workspaceAffinityVersion: 1 },
-          ],
-        },
-      ],
+  describe("workspace and reusable-sandbox preferences from runner heartbeats", () => {
+    let prepared: Awaited<ReturnType<typeof setupSameThreadReuseScenario>>;
+    beforeEach(async () => {
+      prepared = await setupSameThreadReuseScenario();
     });
-    const workspaceOnlyHolder = await pollFollowUp(
-      "continue with a workspace-only holder",
-    );
-    expect(workspaceOnlyHolder.job?.cliAgentSessionId).toBe(cliAgentSessionId);
-    expect(runnerPreference(workspaceOnlyHolder.job)).toStrictEqual({
-      kind: "preference",
-      runnerIdentity: {
+
+    it("selects workspace and reusable-sandbox preferences from runner heartbeats", async () => {
+      const {
+        reuseRunnerId,
+        api,
+        cliAgentSessionId,
+        heartbeatHolder,
+        nextReuseSnapshotSequence,
+        pollFollowUp,
+        reuseKey,
+        runnerGroup,
+      } = prepared;
+
+      await api.requestHeartbeatRunner(true, [200], {
         runnerId: reuseRunnerId,
-        heartbeatGeneration: 1,
-      },
-      tier: "workspaceCache",
-      expiresAt: expect.any(String),
-    });
-    await heartbeatHolder({
-      admittableProfiles: ["vm0/default"],
-      workspaceCaches: [
-        { profile: "vm0/default", workspaceAffinityVersion: 1 },
-      ],
-    });
-    const capableWorkspaceHolder = await pollFollowUp(
-      "continue with a capable workspace holder",
-    );
-    expect(runnerPreference(capableWorkspaceHolder.job)).toMatchObject({
-      kind: "preference",
-      tier: "workspaceCache",
-    });
-
-    const reusableRunnerId = randomUUID();
-    await api.requestHeartbeatRunner(true, [200], {
-      runnerId: reusableRunnerId,
-      group: runnerGroup,
-      snapshotGeneration: 1,
-      snapshotSequence: 1,
-      admittableProfiles: [],
-      heldSandboxStates: [
-        {
-          reuseKey,
-          lastCompletedAt: nowDate().toISOString(),
-          reusableSandbox: { profile: "vm0/default" },
+        group: runnerGroup,
+        snapshotGeneration: 1,
+        snapshotSequence: nextReuseSnapshotSequence(),
+        admittableProfiles: ["vm0/default"],
+        heldWorkspaceStates: [
+          {
+            reuseKey,
+            lastCompletedAt: nowDate().toISOString(),
+            workspaceCaches: [
+              { profile: "vm0/large", workspaceAffinityVersion: 1 },
+              { profile: "vm0/default", workspaceAffinityVersion: 1 },
+            ],
+          },
+        ],
+      });
+      const workspaceOnlyHolder = await pollFollowUp(
+        "continue with a workspace-only holder",
+      );
+      expect(workspaceOnlyHolder.job?.cliAgentSessionId).toBe(
+        cliAgentSessionId,
+      );
+      expect(runnerPreference(workspaceOnlyHolder.job)).toStrictEqual({
+        kind: "preference",
+        runnerIdentity: {
+          runnerId: reuseRunnerId,
+          heartbeatGeneration: 1,
         },
-      ],
-    });
-    const reusableOverWorkspace = await pollFollowUp(
-      "prefer a reusable holder over a capable workspace holder",
-    );
-    const reusablePreference = runnerPreference(reusableOverWorkspace.job);
-    expect(reusablePreference).toStrictEqual({
-      kind: "preference",
-      runnerIdentity: {
+        tier: "workspaceCache",
+        expiresAt: expect.any(String),
+      });
+      await heartbeatHolder({
+        admittableProfiles: ["vm0/default"],
+        workspaceCaches: [
+          { profile: "vm0/default", workspaceAffinityVersion: 1 },
+        ],
+      });
+      const capableWorkspaceHolder = await pollFollowUp(
+        "continue with a capable workspace holder",
+      );
+      expect(runnerPreference(capableWorkspaceHolder.job)).toMatchObject({
+        kind: "preference",
+        tier: "workspaceCache",
+      });
+
+      const reusableRunnerId = randomUUID();
+      await api.requestHeartbeatRunner(true, [200], {
         runnerId: reusableRunnerId,
-        heartbeatGeneration: 1,
-      },
-      tier: "reusableSandbox",
-      expiresAt: expect.any(String),
-    });
-    if (reusablePreference?.kind !== "preference") {
-      throw new Error("Expected a reusable sandbox preference");
-    }
-    expect(runnerPreference(reusableOverWorkspace.job)).toStrictEqual(
-      reusablePreference,
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "job",
-      expect.objectContaining({
-        runId: reusableOverWorkspace.run.runId,
-        runnerPreference: reusablePreference,
-      }),
-    );
-    await api.requestHeartbeatRunner(true, [200], {
-      runnerId: reusableRunnerId,
-      group: runnerGroup,
-      snapshotGeneration: 1,
-      snapshotSequence: 2,
-      admittableProfiles: [],
-      mode: "stopping",
+        group: runnerGroup,
+        snapshotGeneration: 1,
+        snapshotSequence: 1,
+        admittableProfiles: [],
+        heldSandboxStates: [
+          {
+            reuseKey,
+            lastCompletedAt: nowDate().toISOString(),
+            reusableSandbox: { profile: "vm0/default" },
+          },
+        ],
+      });
+      const reusableOverWorkspace = await pollFollowUp(
+        "prefer a reusable holder over a capable workspace holder",
+      );
+      const reusablePreference = runnerPreference(reusableOverWorkspace.job);
+      expect(reusablePreference).toStrictEqual({
+        kind: "preference",
+        runnerIdentity: {
+          runnerId: reusableRunnerId,
+          heartbeatGeneration: 1,
+        },
+        tier: "reusableSandbox",
+        expiresAt: expect.any(String),
+      });
+      if (reusablePreference?.kind !== "preference") {
+        throw new Error("Expected a reusable sandbox preference");
+      }
+      expect(runnerPreference(reusableOverWorkspace.job)).toStrictEqual(
+        reusablePreference,
+      );
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "job",
+        expect.objectContaining({
+          runId: reusableOverWorkspace.run.runId,
+          runnerPreference: reusablePreference,
+        }),
+      );
+      await api.requestHeartbeatRunner(true, [200], {
+        runnerId: reusableRunnerId,
+        group: runnerGroup,
+        snapshotGeneration: 1,
+        snapshotSequence: 2,
+        admittableProfiles: [],
+        mode: "stopping",
+      });
     });
   });
 

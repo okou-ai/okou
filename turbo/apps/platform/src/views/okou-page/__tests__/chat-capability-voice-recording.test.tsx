@@ -146,8 +146,8 @@ describe.each([
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("preserves the complete scenario", async () => {
-      const { resetFirstPage$, retries, uploads } = preparedScenario;
+    beforeEach(async () => {
+      const { resetFirstPage$, retries } = preparedScenario;
       // Keep interrupted capture and repeated transcription failures independent:
       // each case needs only one reload before its successful recovery.
       if (reloadAt === "recording") {
@@ -176,6 +176,9 @@ describe.each([
           path,
         });
       }
+    });
+    it("recovers the original PCM after reload and transcription failures", async () => {
+      const { retries, uploads } = preparedScenario;
       const retryButton = await findEnabledButton("Retry");
       expect(queryButton("Stop recording")).toBeNull();
       click(retryButton);

@@ -3562,25 +3562,32 @@ describe("Morning Brief default onboarding", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
 
-  it("keeps membership verification retryable when Clerk is temporarily unavailable", async () => {
-    const { actor, createdAt } = await prepareBriefMember();
-    await connectBriefSource(actor);
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
-      new Error("Temporary Clerk outage"),
-    );
-    const failed = await setupApp({ context, routes: userPreferencesRoutes })(
-      userPreferencesContract,
-    ).initialize({
-      headers: authHeaders(actor),
-      body: { timezone: "Asia/Shanghai" },
+  describe("membership verification after a transient Clerk outage", () => {
+    let prepared: Awaited<ReturnType<typeof prepareBriefMember>>;
+    beforeEach(async () => {
+      prepared = await prepareBriefMember();
+      await connectBriefSource(prepared.actor);
     });
-    expect(failed.status).toBe(200);
-    expect(failed.body).toMatchObject({ timezone: "Asia/Shanghai" });
-    mockBriefMemberships([{ actor, createdAt }]);
-    await tickBriefEnrollment(actor);
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: true,
-      status: "enabled",
+
+    it("keeps membership verification retryable when Clerk is temporarily unavailable", async () => {
+      const { actor, createdAt } = prepared;
+      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
+        new Error("Temporary Clerk outage"),
+      );
+      const failed = await setupApp({ context, routes: userPreferencesRoutes })(
+        userPreferencesContract,
+      ).initialize({
+        headers: authHeaders(actor),
+        body: { timezone: "Asia/Shanghai" },
+      });
+      expect(failed.status).toBe(200);
+      expect(failed.body).toMatchObject({ timezone: "Asia/Shanghai" });
+      mockBriefMemberships([{ actor, createdAt }]);
+      await tickBriefEnrollment(actor);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
     });
   });
 
@@ -5294,402 +5301,418 @@ describe("Official Workflow installations", () => {
     ).resolves.toStrictEqual(beforeRunFamily);
   });
 
-  it.each([
+  describe.each([
     "installation release",
     "instruction release",
     "concurrent pause",
     "persisted reconciliation",
-  ] as const)("preserves workflow identity during %s races", async (phase) => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-race-${suffix}`;
-    const blueprint = gmailLabelBlueprint();
-    await syncCatalog(
-      catalog([
-        activeDefinition(
-          definitionName,
-          [blueprint],
-          "Accepted Definition revision one.",
-        ),
-      ]),
-    );
-
-    const setup = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    const actor = setup.actor;
-    const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
+  ] as const)("workflow identity during %s races", (phase) => {
+    async function prepareRace() {
       installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
-    mockGmailConnectorOAuth({ email: `official-race-${suffix}@example.test` });
-    await workflowBdd.connectConnector(actor, "gmail");
-    mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
-
-    const watchStarted = createDeferredPromise<void>(context.signal);
-    const releaseWatch = createDeferredPromise<void>(context.signal);
-    const labelLookupStarted = createDeferredPromise<void>(context.signal);
-    const releaseLabelLookup = createDeferredPromise<void>(context.signal);
-    let blockNextWatch = true;
-    let blockNextLabelLookup = false;
-    let stopCalls = 0;
-    server.use(
-      http.get(
-        "https://gmail.googleapis.com/gmail/v1/users/me/labels",
-        async () => {
-          if (blockNextLabelLookup) {
-            blockNextLabelLookup = false;
-            labelLookupStarted.resolve(undefined);
-            await releaseLabelLookup.promise;
-          }
-          return HttpResponse.json({
-            labels: [
-              { id: "Label_important", name: "Important" },
-              { id: "Label_follow_up", name: "Follow Up" },
-            ],
-          });
-        },
-      ),
-      http.post(
-        "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-        async () => {
-          if (blockNextWatch) {
-            blockNextWatch = false;
-            watchStarted.resolve(undefined);
-            await releaseWatch.promise;
-          }
-          return HttpResponse.json({
-            historyId: "100",
-            expiration: "4102444800000",
-          });
-        },
-      ),
-      http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
-        stopCalls++;
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    await setOfficialWorkflowsEnabled(actor, true);
-    const headers = authHeaders(actor);
-    const installBody = {
-      agentId,
-      blueprints: [
-        {
-          blueprintKey: "gmail-label-trigger",
-          bindings: [{ key: "label-name", value: "Important" }],
-        },
-      ],
-    };
-
-    if (phase === "installation release") {
-      const installing = accept(
-        officialClient().install({
-          headers,
-          params: { definitionName },
-          body: installBody,
-        }),
-        [409],
-      );
-      await watchStarted.promise;
-      const installingWorkspaceAutomations = await accept(
-        automationClient().listWorkspace({ headers }),
-        [200],
-      );
-      expect(
-        installingWorkspaceAutomations.body.some((entry) => {
-          return entry.workflow.name === definitionName;
-        }),
-      ).toBeFalsy();
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-race-${suffix}`;
+      const blueprint = gmailLabelBlueprint();
       await syncCatalog(
         catalog([
           activeDefinition(
             definitionName,
             [blueprint],
-            "Accepted Definition revision two.",
+            "Accepted Definition revision one.",
           ),
         ]),
       );
-      releaseWatch.resolve(undefined);
-      const installConflict = await installing;
-      expect(installConflict.body.error.message).toBe(
-        "Official Workflow changed during installation; retry",
-      );
-      const afterInstallConflict = await accept(
-        workflowCollectionClient().list({
-          headers,
-          query: { agentId },
-        }),
-        [200],
-      );
-      expect(
-        afterInstallConflict.body.some((workflow) => {
-          return workflow.name === definitionName;
-        }),
-      ).toBeFalsy();
-      expect(stopCalls).toBeGreaterThan(0);
-    } else {
-      blockNextWatch = false;
-      const installed = await accept(
-        officialClient().install({
-          headers,
-          params: { definitionName },
-          body:
-            phase === "concurrent pause"
-              ? {
-                  ...installBody,
-                  blueprints: [
-                    {
-                      blueprintKey: "gmail-label-trigger",
-                      bindings: [{ key: "label-name", value: "Follow Up" }],
-                    },
-                  ],
-                }
-              : installBody,
-        }),
-        [201],
-      );
-      const installedAutomation = installed.body.workflow.automations[0];
-      if (!installedAutomation) {
-        throw new Error("Expected Official Gmail automation");
-      }
 
-      if (phase === "instruction release") {
-        blockNextLabelLookup = true;
-        const reconfiguring = accept(
-          installationClient().reconfigure({
-            headers,
-            params: { workflowId: installed.body.workflow.id },
-            body: {
-              blueprints: [
-                {
-                  blueprintKey: "gmail-label-trigger",
-                  bindings: [{ key: "label-name", value: "Follow Up" }],
-                },
+      const setup = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+      });
+      const actor = setup.actor;
+      const { agentId } = await workflowBdd.createAgent(actor);
+      onTestFinished(async () => {
+        installCatalogStorageFixture();
+        await bdd.deleteAgent(actor, agentId);
+        await cleanupCatalog();
+      });
+      mockGmailConnectorOAuth({
+        email: `official-race-${suffix}@example.test`,
+      });
+      await workflowBdd.connectConnector(actor, "gmail");
+      mockOptionalEnv("GMAIL_PUBSUB_TOPIC_NAME", GMAIL_TOPIC_NAME);
+      await setOfficialWorkflowsEnabled(actor, true);
+      return { definitionName, blueprint, actor, agentId };
+    }
+
+    let prepared: Awaited<ReturnType<typeof prepareRace>>;
+    beforeEach(async () => {
+      prepared = await prepareRace();
+    });
+
+    it("preserves identity and reconciles the concurrent operation", async () => {
+      const { definitionName, blueprint, actor, agentId } = prepared;
+
+      const watchStarted = createDeferredPromise<void>(context.signal);
+      const releaseWatch = createDeferredPromise<void>(context.signal);
+      const labelLookupStarted = createDeferredPromise<void>(context.signal);
+      const releaseLabelLookup = createDeferredPromise<void>(context.signal);
+      let blockNextWatch = true;
+      let blockNextLabelLookup = false;
+      let stopCalls = 0;
+      server.use(
+        http.get(
+          "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+          async () => {
+            if (blockNextLabelLookup) {
+              blockNextLabelLookup = false;
+              labelLookupStarted.resolve(undefined);
+              await releaseLabelLookup.promise;
+            }
+            return HttpResponse.json({
+              labels: [
+                { id: "Label_important", name: "Important" },
+                { id: "Label_follow_up", name: "Follow Up" },
               ],
-            },
+            });
+          },
+        ),
+        http.post(
+          "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+          async () => {
+            if (blockNextWatch) {
+              blockNextWatch = false;
+              watchStarted.resolve(undefined);
+              await releaseWatch.promise;
+            }
+            return HttpResponse.json({
+              historyId: "100",
+              expiration: "4102444800000",
+            });
+          },
+        ),
+        http.post("https://gmail.googleapis.com/gmail/v1/users/me/stop", () => {
+          stopCalls++;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+      const headers = authHeaders(actor);
+      const installBody = {
+        agentId,
+        blueprints: [
+          {
+            blueprintKey: "gmail-label-trigger",
+            bindings: [{ key: "label-name", value: "Important" }],
+          },
+        ],
+      };
+
+      if (phase === "installation release") {
+        const installing = accept(
+          officialClient().install({
+            headers,
+            params: { definitionName },
+            body: installBody,
           }),
+          [409],
+        );
+        await watchStarted.promise;
+        const installingWorkspaceAutomations = await accept(
+          automationClient().listWorkspace({ headers }),
           [200],
         );
-        await labelLookupStarted.promise;
+        expect(
+          installingWorkspaceAutomations.body.some((entry) => {
+            return entry.workflow.name === definitionName;
+          }),
+        ).toBeFalsy();
         await syncCatalog(
           catalog([
             activeDefinition(
               definitionName,
               [blueprint],
-              "Accepted Definition revision three.",
+              "Accepted Definition revision two.",
             ),
           ]),
         );
-        releaseLabelLookup.resolve(undefined);
-        const reconfiguredAcrossInstructionRelease = await reconfiguring;
+        releaseWatch.resolve(undefined);
+        const installConflict = await installing;
+        expect(installConflict.body.error.message).toBe(
+          "Official Workflow changed during installation; retry",
+        );
+        const afterInstallConflict = await accept(
+          workflowCollectionClient().list({
+            headers,
+            query: { agentId },
+          }),
+          [200],
+        );
         expect(
-          reconfiguredAcrossInstructionRelease.body.workflow.automations[0],
-        ).toMatchObject({
-          id: installedAutomation.id,
-          official: {
-            reconciliationStatus: "current",
-            parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-          },
-        });
-        const unchanged = await accept(
-          installationClient().get({
-            headers,
-            params: { workflowId: installed.body.workflow.id },
+          afterInstallConflict.body.some((workflow) => {
+            return workflow.name === definitionName;
           }),
-          [200],
-        );
-        expect(unchanged.body.workflow.instruction).toBe(
-          "Accepted Definition revision three.",
-        );
-        expect(unchanged.body.workflow.automations[0]?.official).toMatchObject({
-          reconciliationStatus: "current",
-          parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-        });
-
-        const reconfigured = await accept(
-          installationClient().reconfigure({
-            headers,
-            params: { workflowId: installed.body.workflow.id },
-            body: {
-              blueprints: [
-                {
-                  blueprintKey: "gmail-label-trigger",
-                  bindings: [{ key: "label-name", value: "Follow Up" }],
-                },
-              ],
-            },
-          }),
-          [200],
-        );
-        expect(reconfigured.body.workflow.automations[0]).toMatchObject({
-          id: installedAutomation.id,
-          chatThreadId: installedAutomation.chatThreadId,
-          official: {
-            reconciliationStatus: "current",
-            parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-          },
-        });
-      } else if (phase === "concurrent pause") {
-        const concurrentLookupStarted = createDeferredPromise<void>(
-          context.signal,
-        );
-        const releaseConcurrentLookup = createDeferredPromise<void>(
-          context.signal,
-        );
-        let blockConcurrentLookup = true;
-        server.use(
-          http.get(
-            "https://gmail.googleapis.com/gmail/v1/users/me/labels",
-            async () => {
-              if (blockConcurrentLookup) {
-                blockConcurrentLookup = false;
-                concurrentLookupStarted.resolve(undefined);
-                await releaseConcurrentLookup.promise;
-              }
-              return HttpResponse.json({
-                labels: [
-                  { id: "Label_important", name: "Important" },
-                  { id: "Label_follow_up", name: "Follow Up" },
-                ],
-              });
-            },
-          ),
-        );
-        const concurrentReconfiguration = accept(
-          installationClient().reconfigure({
-            headers,
-            params: { workflowId: installed.body.workflow.id },
-            body: {
-              blueprints: [
-                {
-                  blueprintKey: "gmail-label-trigger",
-                  bindings: [{ key: "label-name", value: "Important" }],
-                },
-              ],
-            },
-          }),
-          [200],
-        );
-        await concurrentLookupStarted.promise;
-        await accept(
-          automationClient().disable({
-            headers,
-            params: { id: installedAutomation.id },
-          }),
-          [200],
-        );
-        releaseConcurrentLookup.resolve(undefined);
-        const reconfiguredAfterPause = await concurrentReconfiguration;
-        expect(
-          reconfiguredAfterPause.body.workflow.automations[0],
-        ).toMatchObject({
-          id: installedAutomation.id,
-          enabled: false,
-          official: {
-            intendedEnabled: false,
-            reconciliationStatus: "current",
-            parameterBindings: [{ key: "label-name", value: "Important" }],
-          },
-        });
+        ).toBeFalsy();
+        expect(stopCalls).toBeGreaterThan(0);
       } else {
-        await accept(
-          automationClient().disable({
+        blockNextWatch = false;
+        const installed = await accept(
+          officialClient().install({
             headers,
-            params: { id: installedAutomation.id },
+            params: { definitionName },
+            body:
+              phase === "concurrent pause"
+                ? {
+                    ...installBody,
+                    blueprints: [
+                      {
+                        blueprintKey: "gmail-label-trigger",
+                        bindings: [{ key: "label-name", value: "Follow Up" }],
+                      },
+                    ],
+                  }
+                : installBody,
           }),
-          [200],
+          [201],
         );
-        let expiringWatchCalls = 0;
-        server.use(
-          http.post(
-            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-            () => {
-              expiringWatchCalls++;
-              return HttpResponse.json({
-                historyId: "101",
-                expiration: String(now() + 60_000),
-              });
-            },
-          ),
-        );
-        await accept(
-          automationClient().enable({
-            headers,
-            params: { id: installedAutomation.id },
-          }),
-          [200],
-        );
-        expect(expiringWatchCalls).toBe(1);
+        const installedAutomation = installed.body.workflow.automations[0];
+        if (!installedAutomation) {
+          throw new Error("Expected Official Gmail automation");
+        }
 
-        const reconciliationWatchStarted = createDeferredPromise<void>(
-          context.signal,
-        );
-        const releaseReconciliationWatch = createDeferredPromise<void>(
-          context.signal,
-        );
-        server.use(
-          http.post(
-            "https://gmail.googleapis.com/gmail/v1/users/me/watch",
-            async () => {
-              reconciliationWatchStarted.resolve(undefined);
-              await releaseReconciliationWatch.promise;
-              return HttpResponse.json({
-                historyId: "102",
-                expiration: "4102444800000",
-              });
+        if (phase === "instruction release") {
+          blockNextLabelLookup = true;
+          const reconfiguring = accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "gmail-label-trigger",
+                    bindings: [{ key: "label-name", value: "Follow Up" }],
+                  },
+                ],
+              },
+            }),
+            [200],
+          );
+          await labelLookupStarted.promise;
+          await syncCatalog(
+            catalog([
+              activeDefinition(
+                definitionName,
+                [blueprint],
+                "Accepted Definition revision three.",
+              ),
+            ]),
+          );
+          releaseLabelLookup.resolve(undefined);
+          const reconfiguredAcrossInstructionRelease = await reconfiguring;
+          expect(
+            reconfiguredAcrossInstructionRelease.body.workflow.automations[0],
+          ).toMatchObject({
+            id: installedAutomation.id,
+            official: {
+              reconciliationStatus: "current",
+              parameterBindings: [{ key: "label-name", value: "Follow Up" }],
             },
-          ),
-        );
-        const persistedReconfiguration = accept(
-          installationClient().reconfigure({
-            headers,
-            params: { workflowId: installed.body.workflow.id },
-            body: {
-              blueprints: [
-                {
-                  blueprintKey: "gmail-label-trigger",
-                  bindings: [{ key: "label-name", value: "Follow Up" }],
-                },
-              ],
-            },
-          }),
-          [200],
-        );
-        await reconciliationWatchStarted.promise;
-        const disableDuringReconciliation = await accept(
-          automationClient().disable({
-            headers,
-            params: { id: installedAutomation.id },
-          }),
-          [409],
-        );
-        expect(disableDuringReconciliation.body.error.message).toBe(
-          "Official Workflow reconfiguration is in progress; retry shortly",
-        );
-        releaseReconciliationWatch.resolve(undefined);
-        const reconfiguredAfterConflict = await persistedReconfiguration;
-        expect(
-          reconfiguredAfterConflict.body.workflow.automations[0],
-        ).toMatchObject({
-          id: installedAutomation.id,
-          enabled: true,
-          official: {
-            intendedEnabled: true,
+          });
+          const unchanged = await accept(
+            installationClient().get({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+            }),
+            [200],
+          );
+          expect(unchanged.body.workflow.instruction).toBe(
+            "Accepted Definition revision three.",
+          );
+          expect(
+            unchanged.body.workflow.automations[0]?.official,
+          ).toMatchObject({
             reconciliationStatus: "current",
             parameterBindings: [{ key: "label-name", value: "Follow Up" }],
-          },
-        });
+          });
+
+          const reconfigured = await accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "gmail-label-trigger",
+                    bindings: [{ key: "label-name", value: "Follow Up" }],
+                  },
+                ],
+              },
+            }),
+            [200],
+          );
+          expect(reconfigured.body.workflow.automations[0]).toMatchObject({
+            id: installedAutomation.id,
+            chatThreadId: installedAutomation.chatThreadId,
+            official: {
+              reconciliationStatus: "current",
+              parameterBindings: [{ key: "label-name", value: "Follow Up" }],
+            },
+          });
+        } else if (phase === "concurrent pause") {
+          const concurrentLookupStarted = createDeferredPromise<void>(
+            context.signal,
+          );
+          const releaseConcurrentLookup = createDeferredPromise<void>(
+            context.signal,
+          );
+          let blockConcurrentLookup = true;
+          server.use(
+            http.get(
+              "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+              async () => {
+                if (blockConcurrentLookup) {
+                  blockConcurrentLookup = false;
+                  concurrentLookupStarted.resolve(undefined);
+                  await releaseConcurrentLookup.promise;
+                }
+                return HttpResponse.json({
+                  labels: [
+                    { id: "Label_important", name: "Important" },
+                    { id: "Label_follow_up", name: "Follow Up" },
+                  ],
+                });
+              },
+            ),
+          );
+          const concurrentReconfiguration = accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "gmail-label-trigger",
+                    bindings: [{ key: "label-name", value: "Important" }],
+                  },
+                ],
+              },
+            }),
+            [200],
+          );
+          await concurrentLookupStarted.promise;
+          await accept(
+            automationClient().disable({
+              headers,
+              params: { id: installedAutomation.id },
+            }),
+            [200],
+          );
+          releaseConcurrentLookup.resolve(undefined);
+          const reconfiguredAfterPause = await concurrentReconfiguration;
+          expect(
+            reconfiguredAfterPause.body.workflow.automations[0],
+          ).toMatchObject({
+            id: installedAutomation.id,
+            enabled: false,
+            official: {
+              intendedEnabled: false,
+              reconciliationStatus: "current",
+              parameterBindings: [{ key: "label-name", value: "Important" }],
+            },
+          });
+        } else {
+          await accept(
+            automationClient().disable({
+              headers,
+              params: { id: installedAutomation.id },
+            }),
+            [200],
+          );
+          let expiringWatchCalls = 0;
+          server.use(
+            http.post(
+              "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+              () => {
+                expiringWatchCalls++;
+                return HttpResponse.json({
+                  historyId: "101",
+                  expiration: String(now() + 60_000),
+                });
+              },
+            ),
+          );
+          await accept(
+            automationClient().enable({
+              headers,
+              params: { id: installedAutomation.id },
+            }),
+            [200],
+          );
+          expect(expiringWatchCalls).toBe(1);
+
+          const reconciliationWatchStarted = createDeferredPromise<void>(
+            context.signal,
+          );
+          const releaseReconciliationWatch = createDeferredPromise<void>(
+            context.signal,
+          );
+          server.use(
+            http.post(
+              "https://gmail.googleapis.com/gmail/v1/users/me/watch",
+              async () => {
+                reconciliationWatchStarted.resolve(undefined);
+                await releaseReconciliationWatch.promise;
+                return HttpResponse.json({
+                  historyId: "102",
+                  expiration: "4102444800000",
+                });
+              },
+            ),
+          );
+          const persistedReconfiguration = accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "gmail-label-trigger",
+                    bindings: [{ key: "label-name", value: "Follow Up" }],
+                  },
+                ],
+              },
+            }),
+            [200],
+          );
+          await reconciliationWatchStarted.promise;
+          const disableDuringReconciliation = await accept(
+            automationClient().disable({
+              headers,
+              params: { id: installedAutomation.id },
+            }),
+            [409],
+          );
+          expect(disableDuringReconciliation.body.error.message).toBe(
+            "Official Workflow reconfiguration is in progress; retry shortly",
+          );
+          releaseReconciliationWatch.resolve(undefined);
+          const reconfiguredAfterConflict = await persistedReconfiguration;
+          expect(
+            reconfiguredAfterConflict.body.workflow.automations[0],
+          ).toMatchObject({
+            id: installedAutomation.id,
+            enabled: true,
+            official: {
+              intendedEnabled: true,
+              reconciliationStatus: "current",
+              parameterBindings: [{ key: "label-name", value: "Follow Up" }],
+            },
+          });
+        }
+        await accept(
+          installationClient().uninstall({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+          }),
+          [204],
+        );
       }
-      await accept(
-        installationClient().uninstall({
-          headers,
-          params: { workflowId: installed.body.workflow.id },
-        }),
-        [204],
-      );
-    }
+    });
   });
 
   it.each(["installation retry", "resume retry", "agent deletion"] as const)(
@@ -6175,593 +6198,642 @@ describe("Official Workflow installations", () => {
     expect(meet.createCalls).toBe(1);
   });
 
-  it("records selective non-blocking work and converges schema changes per Blueprint", async () => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-reconcile-${suffix}`;
-    const unrelatedDefinitionName = `api-test-reconcile-other-${suffix}`;
-    const initialBlueprints = [scheduledBlueprint(), loopBlueprint()];
-    const unrelatedInitial = loopBlueprint();
-    await syncCatalog(
-      catalog([
-        activeDefinition(definitionName, initialBlueprints),
-        activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
-      ]),
-    );
-
-    const setup = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    const { actor } = setup;
-    const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
+  describe("selective non-blocking Blueprint reconciliation", () => {
+    async function prepareInstalledBlueprints() {
       installCatalogStorageFixture();
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
-    await setOfficialWorkflowsEnabled(actor, true);
-    const headers = authHeaders(actor);
-    const installed = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body: {
-          agentId,
-          blueprints: [
-            {
-              blueprintKey: "daily",
-              bindings: [
-                { key: "cron-expression", value: "0 6 * * *" },
-                { key: "include-weekends", value: true },
-              ],
-            },
-            {
-              blueprintKey: "pulse",
-              bindings: [{ key: "interval-seconds", value: 300 }],
-            },
-          ],
-        },
-      }),
-      [201],
-    );
-    const workflowId = installed.body.workflow.id;
-    const initialDaily = installed.body.workflow.automations.find(
-      (automation) => {
-        return automation.official?.blueprintKey === "daily";
-      },
-    );
-    const initialPulse = installed.body.workflow.automations.find(
-      (automation) => {
-        return automation.official?.blueprintKey === "pulse";
-      },
-    );
-    if (!initialDaily?.official || !initialPulse?.official) {
-      throw new Error("Expected initial Official Automations");
-    }
-    await accept(
-      automationClient().disable({
-        headers,
-        params: { id: initialDaily.id },
-      }),
-      [200],
-    );
-
-    const presentationOnly = activeDefinition(
-      definitionName,
-      initialBlueprints,
-    );
-    await syncCatalog(
-      catalog([
-        {
-          ...presentationOnly,
-          presentation: { ...presentationOnly.presentation, order: 17 },
-        },
-        activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
-      ]),
-    );
-    await expect(
-      readOfficialWorkflowReconciliationState({}),
-    ).resolves.toMatchObject({ body: { reconciliationWork: [] } });
-
-    await syncCatalog(
-      catalog([
-        activeDefinition(
-          definitionName,
-          initialBlueprints,
-          "Instruction-only release must not reconcile Automations.",
-        ),
-        activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
-      ]),
-    );
-    await expect(
-      readOfficialWorkflowReconciliationState({}),
-    ).resolves.toMatchObject({ body: { reconciliationWork: [] } });
-
-    const unrelatedChanged = unresolvedLoopBlueprint();
-    const unrelatedActivation = await syncCatalog(
-      catalog([
-        activeDefinition(
-          definitionName,
-          initialBlueprints,
-          "Instruction-only release must not reconcile Automations.",
-        ),
-        activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
-      ]),
-    );
-    expect(unrelatedActivation.body.outcome).toBe("accepted");
-    const unrelatedWork = await readOfficialWorkflowReconciliationState({});
-    expect(unrelatedWork.body.reconciliationWork).toMatchObject([
-      { definitionName: unrelatedDefinitionName, state: "pending" },
-    ]);
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 1,
-      advanced: 0,
-      retried: 0,
-      installations: 0,
-    });
-
-    const onceAt = new Date(now() + 24 * 60 * 60 * 1000).toISOString();
-    const changedPulse = pulseOnceBlueprint(onceAt);
-    const activation = await syncCatalog(
-      catalog([
-        activeDefinition(definitionName, [scheduledBlueprint(), changedPulse]),
-        activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
-      ]),
-    );
-    expect(activation.body.outcome).toBe("accepted");
-    const pending = await readOfficialWorkflowReconciliationState({
-      definitionName,
-      workflowId,
-    });
-    expect(pending.body.reconciliationWork).toMatchObject([
-      { definitionName, cursorWorkflowId: null, state: "pending" },
-    ]);
-    const beforeDrain = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(
-      beforeDrain.body.workflow.automations.find((automation) => {
-        return automation.id === initialPulse.id;
-      }),
-    ).toMatchObject({
-      kind: "schedule",
-      schedule: { type: "loop", intervalSeconds: 300 },
-      official: {
-        appliedFingerprint: initialPulse.official.appliedFingerprint,
-      },
-    });
-
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 1,
-      completed: 1,
-      advanced: 0,
-      retried: 0,
-      installations: 1,
-    });
-    const afterPulse = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(
-      afterPulse.body.workflow.automations.find((automation) => {
-        return automation.id === initialPulse.id;
-      }),
-    ).toMatchObject({
-      id: initialPulse.id,
-      chatThreadId: initialPulse.chatThreadId,
-      enabled: true,
-      kind: "schedule",
-      schedule: { type: "once", atTime: onceAt, timezone: "Asia/Shanghai" },
-      official: { reconciliationStatus: "current", intendedEnabled: true },
-    });
-    expect(
-      afterPulse.body.workflow.automations.find((automation) => {
-        return automation.id === initialDaily.id;
-      }),
-    ).toMatchObject({
-      id: initialDaily.id,
-      chatThreadId: initialDaily.chatThreadId,
-      enabled: false,
-      official: {
-        appliedFingerprint: initialDaily.official.appliedFingerprint,
-        intendedEnabled: false,
-      },
-    });
-
-    const evolutionActivation = await syncCatalog(
-      catalog([
-        activeDefinition(definitionName, [
-          evolvedScheduledBlueprint(),
-          changedPulse,
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-reconcile-${suffix}`;
+      const unrelatedDefinitionName = `api-test-reconcile-other-${suffix}`;
+      const initialBlueprints = [scheduledBlueprint(), loopBlueprint()];
+      const unrelatedInitial = loopBlueprint();
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, initialBlueprints),
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
         ]),
-        activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
-      ]),
-    );
-    if (evolutionActivation.body.outcome !== "accepted") {
-      throw new Error(
-        `Evolution catalog rejected: ${JSON.stringify(evolutionActivation.body.diagnostics)}`,
       );
-    }
-    expect(evolutionActivation.body).toMatchObject({ outcome: "accepted" });
-    const evolutionWork = await readOfficialWorkflowReconciliationState({});
-    expect(evolutionWork.body.reconciliationWork).toMatchObject([
-      { definitionName, state: "pending" },
-    ]);
-    await runOfficialWorkflowReconciliationWorker();
-    const evolved = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    const evolvedDaily = evolved.body.workflow.automations.find(
-      (automation) => {
-        return automation.id === initialDaily.id;
-      },
-    );
-    expect(evolvedDaily).toMatchObject({
-      id: initialDaily.id,
-      enabled: false,
-      schedule: {
-        type: "cron",
-        cronExpression: "0 6 * * *",
+
+      const setup = await workflowBdd.setupWorkflowOrg({
         timezone: "Asia/Shanghai",
-      },
-      official: {
-        intendedEnabled: false,
-        reconciliationStatus: "current",
-        parameterBindings: expect.arrayContaining([
-          { key: "cron-expression", value: "0 6 * * *" },
-          { key: "autonomy-budget", value: 7 },
-        ]),
-      },
-    });
-    expect(
-      evolvedDaily?.official?.parameterBindings.some((binding) => {
-        return binding.key === "include-weekends";
-      }),
-    ).toBeFalsy();
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, initialDaily.id),
-    ).resolves.toMatchObject({ autonomyBudget: 7, enabled: false });
-
-    await syncCatalog(
-      catalog([
-        activeDefinition(definitionName, [
-          unresolvedScheduledBlueprint(),
-          withUnresolvedRequiredBudget(changedPulse),
-        ]),
-        activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
-      ]),
-    );
-    await setOfficialWorkflowsEnabled(actor, false);
-    await runOfficialWorkflowReconciliationWorker();
-    const unresolved = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(
-      unresolved.body.workflow.automations.find((automation) => {
-        return automation.id === initialDaily.id;
-      }),
-    ).toMatchObject({
-      enabled: false,
-      official: {
-        intendedEnabled: false,
-        reconciliationStatus: "needs_reconfiguration",
-      },
-    });
-    expect(
-      unresolved.body.workflow.automations.find((automation) => {
-        return automation.id === initialPulse.id;
-      }),
-    ).toMatchObject({
-      enabled: false,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "needs_reconfiguration",
-      },
-    });
-
-    const recovered = await accept(
-      installationClient().reconfigure({
-        headers,
-        params: { workflowId },
-        body: {
-          blueprints: [
-            {
-              blueprintKey: "daily",
-              bindings: [{ key: "required-budget", value: 9 }],
-            },
-            {
-              blueprintKey: "pulse",
-              bindings: [{ key: "required-budget", value: 6 }],
-            },
-          ],
+      });
+      const { actor } = setup;
+      const { agentId } = await workflowBdd.createAgent(actor);
+      onTestFinished(async () => {
+        installCatalogStorageFixture();
+        await bdd.deleteAgent(actor, agentId);
+        await cleanupCatalog();
+      });
+      await setOfficialWorkflowsEnabled(actor, true);
+      const headers = authHeaders(actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId,
+            blueprints: [
+              {
+                blueprintKey: "daily",
+                bindings: [
+                  { key: "cron-expression", value: "0 6 * * *" },
+                  { key: "include-weekends", value: true },
+                ],
+              },
+              {
+                blueprintKey: "pulse",
+                bindings: [{ key: "interval-seconds", value: 300 }],
+              },
+            ],
+          },
+        }),
+        [201],
+      );
+      const workflowId = installed.body.workflow.id;
+      const initialDaily = installed.body.workflow.automations.find(
+        (automation) => {
+          return automation.official?.blueprintKey === "daily";
         },
-      }),
-      [200],
-    );
-    expect(
-      recovered.body.workflow.automations.find((automation) => {
-        return automation.id === initialDaily.id;
-      }),
-    ).toMatchObject({
-      enabled: false,
-      official: { intendedEnabled: false, reconciliationStatus: "current" },
+      );
+      const initialPulse = installed.body.workflow.automations.find(
+        (automation) => {
+          return automation.official?.blueprintKey === "pulse";
+        },
+      );
+      if (!initialDaily?.official || !initialPulse?.official) {
+        throw new Error("Expected initial Official Automations");
+      }
+      await accept(
+        automationClient().disable({
+          headers,
+          params: { id: initialDaily.id },
+        }),
+        [200],
+      );
+      return {
+        definitionName,
+        unrelatedDefinitionName,
+        initialBlueprints,
+        unrelatedInitial,
+        actor,
+        agentId,
+        headers,
+        workflowId,
+        initialDaily: { ...initialDaily, official: initialDaily.official },
+        initialPulse: { ...initialPulse, official: initialPulse.official },
+      };
+    }
+
+    let prepared: Awaited<ReturnType<typeof prepareInstalledBlueprints>>;
+    beforeEach(async () => {
+      prepared = await prepareInstalledBlueprints();
     });
-    expect(
-      recovered.body.workflow.automations.find((automation) => {
-        return automation.id === initialPulse.id;
-      }),
-    ).toMatchObject({
-      enabled: true,
-      official: { intendedEnabled: true, reconciliationStatus: "current" },
+
+    it("records selective non-blocking work and converges schema changes per Blueprint", async () => {
+      const {
+        definitionName,
+        unrelatedDefinitionName,
+        initialBlueprints,
+        unrelatedInitial,
+        actor,
+        agentId,
+        headers,
+        workflowId,
+        initialDaily,
+        initialPulse,
+      } = prepared;
+
+      const presentationOnly = activeDefinition(
+        definitionName,
+        initialBlueprints,
+      );
+      await syncCatalog(
+        catalog([
+          {
+            ...presentationOnly,
+            presentation: { ...presentationOnly.presentation, order: 17 },
+          },
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
+        ]),
+      );
+      await expect(
+        readOfficialWorkflowReconciliationState({}),
+      ).resolves.toMatchObject({ body: { reconciliationWork: [] } });
+
+      await syncCatalog(
+        catalog([
+          activeDefinition(
+            definitionName,
+            initialBlueprints,
+            "Instruction-only release must not reconcile Automations.",
+          ),
+          activeDefinition(unrelatedDefinitionName, [unrelatedInitial]),
+        ]),
+      );
+      await expect(
+        readOfficialWorkflowReconciliationState({}),
+      ).resolves.toMatchObject({ body: { reconciliationWork: [] } });
+
+      const unrelatedChanged = unresolvedLoopBlueprint();
+      const unrelatedActivation = await syncCatalog(
+        catalog([
+          activeDefinition(
+            definitionName,
+            initialBlueprints,
+            "Instruction-only release must not reconcile Automations.",
+          ),
+          activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
+        ]),
+      );
+      expect(unrelatedActivation.body.outcome).toBe("accepted");
+      const unrelatedWork = await readOfficialWorkflowReconciliationState({});
+      expect(unrelatedWork.body.reconciliationWork).toMatchObject([
+        { definitionName: unrelatedDefinitionName, state: "pending" },
+      ]);
+      await expect(
+        runOfficialWorkflowReconciliationWorker(),
+      ).resolves.toStrictEqual({
+        claimed: 1,
+        completed: 1,
+        advanced: 0,
+        retried: 0,
+        installations: 0,
+      });
+
+      const onceAt = new Date(now() + 24 * 60 * 60 * 1000).toISOString();
+      const changedPulse = pulseOnceBlueprint(onceAt);
+      const activation = await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            scheduledBlueprint(),
+            changedPulse,
+          ]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
+        ]),
+      );
+      expect(activation.body.outcome).toBe("accepted");
+      const pending = await readOfficialWorkflowReconciliationState({
+        definitionName,
+        workflowId,
+      });
+      expect(pending.body.reconciliationWork).toMatchObject([
+        { definitionName, cursorWorkflowId: null, state: "pending" },
+      ]);
+      const beforeDrain = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(
+        beforeDrain.body.workflow.automations.find((automation) => {
+          return automation.id === initialPulse.id;
+        }),
+      ).toMatchObject({
+        kind: "schedule",
+        schedule: { type: "loop", intervalSeconds: 300 },
+        official: {
+          appliedFingerprint: initialPulse.official.appliedFingerprint,
+        },
+      });
+
+      await expect(
+        runOfficialWorkflowReconciliationWorker(),
+      ).resolves.toStrictEqual({
+        claimed: 1,
+        completed: 1,
+        advanced: 0,
+        retried: 0,
+        installations: 1,
+      });
+      const afterPulse = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(
+        afterPulse.body.workflow.automations.find((automation) => {
+          return automation.id === initialPulse.id;
+        }),
+      ).toMatchObject({
+        id: initialPulse.id,
+        chatThreadId: initialPulse.chatThreadId,
+        enabled: true,
+        kind: "schedule",
+        schedule: { type: "once", atTime: onceAt, timezone: "Asia/Shanghai" },
+        official: { reconciliationStatus: "current", intendedEnabled: true },
+      });
+      expect(
+        afterPulse.body.workflow.automations.find((automation) => {
+          return automation.id === initialDaily.id;
+        }),
+      ).toMatchObject({
+        id: initialDaily.id,
+        chatThreadId: initialDaily.chatThreadId,
+        enabled: false,
+        official: {
+          appliedFingerprint: initialDaily.official.appliedFingerprint,
+          intendedEnabled: false,
+        },
+      });
+
+      const evolutionActivation = await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            evolvedScheduledBlueprint(),
+            changedPulse,
+          ]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
+        ]),
+      );
+      if (evolutionActivation.body.outcome !== "accepted") {
+        throw new Error(
+          `Evolution catalog rejected: ${JSON.stringify(evolutionActivation.body.diagnostics)}`,
+        );
+      }
+      expect(evolutionActivation.body).toMatchObject({ outcome: "accepted" });
+      const evolutionWork = await readOfficialWorkflowReconciliationState({});
+      expect(evolutionWork.body.reconciliationWork).toMatchObject([
+        { definitionName, state: "pending" },
+      ]);
+      await runOfficialWorkflowReconciliationWorker();
+      const evolved = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      const evolvedDaily = evolved.body.workflow.automations.find(
+        (automation) => {
+          return automation.id === initialDaily.id;
+        },
+      );
+      expect(evolvedDaily).toMatchObject({
+        id: initialDaily.id,
+        enabled: false,
+        schedule: {
+          type: "cron",
+          cronExpression: "0 6 * * *",
+          timezone: "Asia/Shanghai",
+        },
+        official: {
+          intendedEnabled: false,
+          reconciliationStatus: "current",
+          parameterBindings: expect.arrayContaining([
+            { key: "cron-expression", value: "0 6 * * *" },
+            { key: "autonomy-budget", value: 7 },
+          ]),
+        },
+      });
+      expect(
+        evolvedDaily?.official?.parameterBindings.some((binding) => {
+          return binding.key === "include-weekends";
+        }),
+      ).toBeFalsy();
+      await expect(
+        readWorkflowAutomationAutonomyFixture(context, initialDaily.id),
+      ).resolves.toMatchObject({ autonomyBudget: 7, enabled: false });
+
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            unresolvedScheduledBlueprint(),
+            withUnresolvedRequiredBudget(changedPulse),
+          ]),
+          activeDefinition(unrelatedDefinitionName, [unrelatedChanged]),
+        ]),
+      );
+      await setOfficialWorkflowsEnabled(actor, false);
+      await runOfficialWorkflowReconciliationWorker();
+      const unresolved = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(
+        unresolved.body.workflow.automations.find((automation) => {
+          return automation.id === initialDaily.id;
+        }),
+      ).toMatchObject({
+        enabled: false,
+        official: {
+          intendedEnabled: false,
+          reconciliationStatus: "needs_reconfiguration",
+        },
+      });
+      expect(
+        unresolved.body.workflow.automations.find((automation) => {
+          return automation.id === initialPulse.id;
+        }),
+      ).toMatchObject({
+        enabled: false,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "needs_reconfiguration",
+        },
+      });
+
+      const recovered = await accept(
+        installationClient().reconfigure({
+          headers,
+          params: { workflowId },
+          body: {
+            blueprints: [
+              {
+                blueprintKey: "daily",
+                bindings: [{ key: "required-budget", value: 9 }],
+              },
+              {
+                blueprintKey: "pulse",
+                bindings: [{ key: "required-budget", value: 6 }],
+              },
+            ],
+          },
+        }),
+        [200],
+      );
+      expect(
+        recovered.body.workflow.automations.find((automation) => {
+          return automation.id === initialDaily.id;
+        }),
+      ).toMatchObject({
+        enabled: false,
+        official: { intendedEnabled: false, reconciliationStatus: "current" },
+      });
+      expect(
+        recovered.body.workflow.automations.find((automation) => {
+          return automation.id === initialPulse.id;
+        }),
+      ).toMatchObject({
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      });
     });
   });
 
-  it("recovers superseded and crashed work while preserving permanent Blueprint identity", async () => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-identity-${suffix}`;
-    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    const setup = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-    });
-    const { actor } = setup;
-    const { agentId } = await workflowBdd.createAgent(actor);
-    onTestFinished(async () => {
+  describe("permanent Blueprint identity through reconciliation recovery", () => {
+    async function prepareEmptyInstallation() {
       installCatalogStorageFixture();
-      const createdRuns = await runs.listAgentRuns(actor, {
-        agent: agentId,
-        limit: 100,
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = `api-test-identity-${suffix}`;
+      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+      const setup = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
       });
-      for (const run of createdRuns.runs) {
-        await runs.requestCancelRun(actor, run.id, [200, 400]);
+      const { actor } = setup;
+      const { agentId } = await workflowBdd.createAgent(actor);
+      onTestFinished(async () => {
+        installCatalogStorageFixture();
+        const createdRuns = await runs.listAgentRuns(actor, {
+          agent: agentId,
+          limit: 100,
+        });
+        for (const run of createdRuns.runs) {
+          await runs.requestCancelRun(actor, run.id, [200, 400]);
+        }
+        await bdd.deleteAgent(actor, agentId);
+        await cleanupCatalog();
+      });
+      await setOfficialWorkflowsEnabled(actor, true);
+      const headers = authHeaders(actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: { agentId, blueprints: [] },
+        }),
+        [201],
+      );
+      const workflowId = installed.body.workflow.id;
+
+      return { definitionName, actor, agentId, headers, workflowId };
+    }
+
+    let prepared: Awaited<ReturnType<typeof prepareEmptyInstallation>>;
+    beforeEach(async () => {
+      prepared = await prepareEmptyInstallation();
+    });
+
+    it("recovers superseded and crashed work while preserving permanent Blueprint identity", async () => {
+      const { definitionName, actor, agentId, headers, workflowId } = prepared;
+      const firstAddition = await syncCatalog(
+        catalog([activeDefinition(definitionName, [scheduledBlueprint()])]),
+      );
+      const firstRequestedReleaseId = firstAddition.body.releaseId;
+      const duplicate = await syncCatalog(
+        catalog([activeDefinition(definitionName, [scheduledBlueprint()])]),
+      );
+      expect(duplicate.body).toMatchObject({
+        outcome: "unchanged",
+        releaseId: firstRequestedReleaseId,
+      });
+
+      const supersedingBlueprint: OfficialWorkflowBlueprint = {
+        ...scheduledBlueprint(),
+        desiredState: {
+          ...scheduledBlueprint().desiredState,
+          autonomyBudget: 5,
+        },
+      };
+      const superseding = await syncCatalog(
+        catalog([activeDefinition(definitionName, [supersedingBlueprint])]),
+      );
+      expect(superseding.body.releaseId).not.toBe(firstRequestedReleaseId);
+      const supersededState = await readOfficialWorkflowReconciliationState({});
+      expect(supersededState.body.reconciliationWork).toMatchObject([
+        {
+          definitionName,
+          requestedReleaseId: superseding.body.releaseId,
+          cursorWorkflowId: null,
+          state: "pending",
+          attemptCount: 0,
+        },
+      ]);
+
+      await simulateOfficialWorkflowReconciliationWorkerCrash(definitionName);
+      const crashedState = await readOfficialWorkflowReconciliationState({});
+      expect(crashedState.body.reconciliationWork).toMatchObject([
+        { definitionName, state: "running", leaseId: expect.any(String) },
+      ]);
+      const concurrent = await Promise.all([
+        runOfficialWorkflowReconciliationWorker(),
+        runOfficialWorkflowReconciliationWorker(),
+      ]);
+      expect(
+        concurrent.reduce((sum, result) => {
+          return sum + result.claimed;
+        }, 0),
+      ).toBe(1);
+      expect(
+        concurrent.reduce((sum, result) => {
+          return sum + result.completed;
+        }, 0),
+      ).toBe(1);
+      expect(
+        concurrent.reduce((sum, result) => {
+          return sum + result.installations;
+        }, 0),
+      ).toBe(1);
+      await expect(
+        runOfficialWorkflowReconciliationWorker(),
+      ).resolves.toStrictEqual({
+        claimed: 0,
+        completed: 0,
+        advanced: 0,
+        retried: 0,
+        installations: 0,
+      });
+
+      const added = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(added.body.workflow.automations).toHaveLength(1);
+      const addedAutomation = added.body.workflow.automations[0];
+      if (!addedAutomation?.official) {
+        throw new Error("Expected reconciled added Official Automation");
       }
-      await bdd.deleteAgent(actor, agentId);
-      await cleanupCatalog();
-    });
-    await setOfficialWorkflowsEnabled(actor, true);
-    const headers = authHeaders(actor);
-    const installed = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body: { agentId, blueprints: [] },
-      }),
-      [201],
-    );
-    const workflowId = installed.body.workflow.id;
+      expect(addedAutomation).toMatchObject({
+        enabled: false,
+        official: {
+          intendedEnabled: false,
+          reconciliationStatus: "current",
+        },
+      });
+      const addedIdentity = await readOfficialWorkflowReconciliationState({
+        workflowId,
+      });
+      expect(addedIdentity.body.identities).toStrictEqual([
+        expect.objectContaining({
+          id: addedAutomation.id,
+          automationId: addedAutomation.id,
+          blueprintKey: "daily",
+          state: "active",
+        }),
+      ]);
 
-    const firstAddition = await syncCatalog(
-      catalog([activeDefinition(definitionName, [scheduledBlueprint()])]),
-    );
-    const firstRequestedReleaseId = firstAddition.body.releaseId;
-    const duplicate = await syncCatalog(
-      catalog([activeDefinition(definitionName, [scheduledBlueprint()])]),
-    );
-    expect(duplicate.body).toMatchObject({
-      outcome: "unchanged",
-      releaseId: firstRequestedReleaseId,
-    });
+      await setOfficialWorkflowsEnabled(actor, false);
+      await accept(
+        automationClient().enable({
+          headers,
+          params: { id: addedAutomation.id },
+        }),
+        [200],
+      );
+      runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      const historical = await accept(
+        automationClient().run({
+          headers,
+          params: { id: addedAutomation.id },
+        }),
+        [201],
+      );
+      if (!historical.body.runId) {
+        throw new Error("Expected historical Official Automation Run");
+      }
+      await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
 
-    const supersedingBlueprint: OfficialWorkflowBlueprint = {
-      ...scheduledBlueprint(),
-      desiredState: {
-        ...scheduledBlueprint().desiredState,
-        autonomyBudget: 5,
-      },
-    };
-    const superseding = await syncCatalog(
-      catalog([activeDefinition(definitionName, [supersedingBlueprint])]),
-    );
-    expect(superseding.body.releaseId).not.toBe(firstRequestedReleaseId);
-    const supersededState = await readOfficialWorkflowReconciliationState({});
-    expect(supersededState.body.reconciliationWork).toMatchObject([
-      {
-        definitionName,
-        requestedReleaseId: superseding.body.releaseId,
-        cursorWorkflowId: null,
-        state: "pending",
-        attemptCount: 0,
-      },
-    ]);
+      await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+      await runOfficialWorkflowReconciliationWorker();
+      const removed = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(removed.body.workflow.automations).toStrictEqual([]);
+      const removedIdentity = await readOfficialWorkflowReconciliationState({
+        workflowId,
+      });
+      expect(removedIdentity.body.identities).toStrictEqual([
+        expect.objectContaining({
+          id: addedAutomation.id,
+          automationId: null,
+          blueprintKey: "daily",
+          state: "removed",
+          retainedIntendedEnabled: true,
+        }),
+      ]);
+      await expect(
+        readOfficialWorkflowRunStateFixture(context, historical.body.runId),
+      ).resolves.toMatchObject({
+        provenance: {
+          definitions: [expect.objectContaining({ name: definitionName })],
+        },
+      });
 
-    await simulateOfficialWorkflowReconciliationWorkerCrash(definitionName);
-    const crashedState = await readOfficialWorkflowReconciliationState({});
-    expect(crashedState.body.reconciliationWork).toMatchObject([
-      { definitionName, state: "running", leaseId: expect.any(String) },
-    ]);
-    const concurrent = await Promise.all([
-      runOfficialWorkflowReconciliationWorker(),
-      runOfficialWorkflowReconciliationWorker(),
-    ]);
-    expect(
-      concurrent.reduce((sum, result) => {
-        return sum + result.claimed;
-      }, 0),
-    ).toBe(1);
-    expect(
-      concurrent.reduce((sum, result) => {
-        return sum + result.completed;
-      }, 0),
-    ).toBe(1);
-    expect(
-      concurrent.reduce((sum, result) => {
-        return sum + result.installations;
-      }, 0),
-    ).toBe(1);
-    await expect(
-      runOfficialWorkflowReconciliationWorker(),
-    ).resolves.toStrictEqual({
-      claimed: 0,
-      completed: 0,
-      advanced: 0,
-      retried: 0,
-      installations: 0,
-    });
-
-    const added = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(added.body.workflow.automations).toHaveLength(1);
-    const addedAutomation = added.body.workflow.automations[0];
-    if (!addedAutomation?.official) {
-      throw new Error("Expected reconciled added Official Automation");
-    }
-    expect(addedAutomation).toMatchObject({
-      enabled: false,
-      official: {
-        intendedEnabled: false,
-        reconciliationStatus: "current",
-      },
-    });
-    const addedIdentity = await readOfficialWorkflowReconciliationState({
-      workflowId,
-    });
-    expect(addedIdentity.body.identities).toStrictEqual([
-      expect.objectContaining({
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [supersedingBlueprint])]),
+      );
+      await Promise.all([
+        runOfficialWorkflowReconciliationWorker(),
+        runOfficialWorkflowReconciliationWorker(),
+      ]);
+      const restored = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(restored.body.workflow.automations).toHaveLength(1);
+      expect(restored.body.workflow.automations[0]).toMatchObject({
         id: addedAutomation.id,
-        automationId: addedAutomation.id,
-        blueprintKey: "daily",
-        state: "active",
-      }),
-    ]);
+        chatThreadId: historical.body.chatThreadId,
+        enabled: true,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "current",
+        },
+      });
+      await expect(
+        readOfficialWorkflowRunStateFixture(context, historical.body.runId),
+      ).resolves.toMatchObject({
+        provenance: {
+          definitions: [expect.objectContaining({ name: definitionName })],
+        },
+      });
 
-    await setOfficialWorkflowsEnabled(actor, false);
-    await accept(
-      automationClient().enable({
-        headers,
-        params: { id: addedAutomation.id },
-      }),
-      [200],
-    );
-    runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    const historical = await accept(
-      automationClient().run({
-        headers,
-        params: { id: addedAutomation.id },
-      }),
-      [201],
-    );
-    if (!historical.body.runId) {
-      throw new Error("Expected historical Official Automation Run");
-    }
-    await runs.requestCancelRun(actor, historical.body.runId, [200, 400]);
-
-    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
-    await runOfficialWorkflowReconciliationWorker();
-    const removed = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(removed.body.workflow.automations).toStrictEqual([]);
-    const removedIdentity = await readOfficialWorkflowReconciliationState({
-      workflowId,
-    });
-    expect(removedIdentity.body.identities).toStrictEqual([
-      expect.objectContaining({
-        id: addedAutomation.id,
-        automationId: null,
-        blueprintKey: "daily",
-        state: "removed",
-        retainedIntendedEnabled: true,
-      }),
-    ]);
-    await expect(
-      readOfficialWorkflowRunStateFixture(context, historical.body.runId),
-    ).resolves.toMatchObject({
-      provenance: {
-        definitions: [expect.objectContaining({ name: definitionName })],
-      },
-    });
-
-    await syncCatalog(
-      catalog([activeDefinition(definitionName, [supersedingBlueprint])]),
-    );
-    await Promise.all([
-      runOfficialWorkflowReconciliationWorker(),
-      runOfficialWorkflowReconciliationWorker(),
-    ]);
-    const restored = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(restored.body.workflow.automations).toHaveLength(1);
-    expect(restored.body.workflow.automations[0]).toMatchObject({
-      id: addedAutomation.id,
-      chatThreadId: historical.body.chatThreadId,
-      enabled: true,
-      official: {
-        intendedEnabled: true,
-        reconciliationStatus: "current",
-      },
-    });
-    await expect(
-      readOfficialWorkflowRunStateFixture(context, historical.body.runId),
-    ).resolves.toMatchObject({
-      provenance: {
-        definitions: [expect.objectContaining({ name: definitionName })],
-      },
-    });
-
-    await syncCatalog(
-      catalog([
-        activeDefinition(definitionName, [
-          {
-            ...supersedingBlueprint,
-            desiredState: {
-              ...supersedingBlueprint.desiredState,
-              autonomyBudget: 9,
+      await syncCatalog(
+        catalog([
+          activeDefinition(definitionName, [
+            {
+              ...supersedingBlueprint,
+              desiredState: {
+                ...supersedingBlueprint.desiredState,
+                autonomyBudget: 9,
+              },
             },
-          },
+          ]),
         ]),
-      ]),
-    );
-    const pendingAtRetirement = await readOfficialWorkflowReconciliationState(
-      {},
-    );
-    expect(pendingAtRetirement.body.reconciliationWork).toMatchObject([
-      { definitionName, state: "pending" },
-    ]);
-    await syncCatalog(catalog([retiredDefinition(definitionName)]));
-    const retired = await readOfficialWorkflowReconciliationState({});
-    expect(retired.body.reconciliationWork).toStrictEqual([]);
-    const whileRetired = await accept(
-      installationClient().get({ headers, params: { workflowId } }),
-      [200],
-    );
-    expect(whileRetired.body.workflow.automations[0]).toMatchObject({
-      id: addedAutomation.id,
-      enabled: true,
-      official: { reconciliationStatus: "current" },
-    });
+      );
+      const pendingAtRetirement = await readOfficialWorkflowReconciliationState(
+        {},
+      );
+      expect(pendingAtRetirement.body.reconciliationWork).toMatchObject([
+        { definitionName, state: "pending" },
+      ]);
+      await syncCatalog(catalog([retiredDefinition(definitionName)]));
+      const retired = await readOfficialWorkflowReconciliationState({});
+      expect(retired.body.reconciliationWork).toStrictEqual([]);
+      const whileRetired = await accept(
+        installationClient().get({ headers, params: { workflowId } }),
+        [200],
+      );
+      expect(whileRetired.body.workflow.automations[0]).toMatchObject({
+        id: addedAutomation.id,
+        enabled: true,
+        official: { reconciliationStatus: "current" },
+      });
 
-    const reactivatedBlueprint: OfficialWorkflowBlueprint = {
-      ...supersedingBlueprint,
-      desiredState: {
-        ...supersedingBlueprint.desiredState,
-        autonomyBudget: 8,
-      },
-    };
-    await syncCatalog(
-      catalog([activeDefinition(definitionName, [reactivatedBlueprint])]),
-    );
-    const reactivation = await readOfficialWorkflowReconciliationState({});
-    expect(reactivation.body.reconciliationWork).toMatchObject([
-      { definitionName, state: "pending" },
-    ]);
-    await runOfficialWorkflowReconciliationWorker();
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, addedAutomation.id),
-    ).resolves.toMatchObject({ autonomyBudget: 8, enabled: true });
+      const reactivatedBlueprint: OfficialWorkflowBlueprint = {
+        ...supersedingBlueprint,
+        desiredState: {
+          ...supersedingBlueprint.desiredState,
+          autonomyBudget: 8,
+        },
+      };
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [reactivatedBlueprint])]),
+      );
+      const reactivation = await readOfficialWorkflowReconciliationState({});
+      expect(reactivation.body.reconciliationWork).toMatchObject([
+        { definitionName, state: "pending" },
+      ]);
+      await runOfficialWorkflowReconciliationWorker();
+      await expect(
+        readWorkflowAutomationAutonomyFixture(context, addedAutomation.id),
+      ).resolves.toMatchObject({ autonomyBudget: 8, enabled: true });
+    });
   });
 
   describe.each([
@@ -9089,266 +9161,301 @@ describe("Official Workflow Run admission", () => {
     expect(ordinaryWorkflowId).not.toBe(firstInstallation.body.workflow.id);
   });
 
-  it.each(["explicit and scheduled", "once", "webhook"])(
+  describe.each(["explicit and scheduled", "once", "webhook"])(
     "routes enabled result email through %s Official admission",
-    async (producerKind) => {
-      installCatalogStorageFixture();
-      mockEnv("OKOU_WEB_URL", "https://api.okou.ai");
-      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-      const definitionName = `api-test-producers-${suffix}`;
-      await syncCatalog(
-        catalog([
-          activeDefinition(definitionName, [
-            loopBlueprint(true),
-            onceBlueprint(true),
-            webhookBlueprint(true),
-          ]),
-        ]),
-      );
-      const setup = await workflowBdd.setupWorkflowOrg({
-        timezone: "Asia/Shanghai",
-        tier: "team",
-      });
-      const { actor } = setup;
-      if (!actor.orgId) {
-        throw new Error("Expected organization-scoped actor");
-      }
-      await selectBuiltInDefaultModel(actor);
-      const { agentId } = await workflowBdd.createAgent(actor);
-      const headers = authHeaders(actor);
-      configureResultEmailRecipient(actor);
-      await setOfficialWorkflowsEnabled(actor, true);
-      const atTime = new Date(now() + 60_000).toISOString();
-      const installed = await accept(
-        officialClient().install({
-          headers,
-          params: { definitionName },
-          body: {
-            agentId,
-            blueprints: [
-              {
-                blueprintKey: "pulse",
-                bindings: [{ key: "interval-seconds", value: 60 }],
-              },
-              {
-                blueprintKey: "one-shot",
-                bindings: [
-                  { key: "at-time", value: atTime },
-                  {
-                    key: "callback-url",
-                    value: "https://example.test/official-callback",
-                  },
-                  { key: "correlation-id", value: randomUUID() },
-                ],
-              },
-              { blueprintKey: "webhook-trigger", bindings: [] },
-            ],
-          },
-        }),
-        [201],
-      );
-      onTestFinished(async () => {
+    (producerKind) => {
+      async function prepareProducerInstallation() {
         installCatalogStorageFixture();
-        await bdd.deleteAgent(actor, agentId);
-        await cleanupCatalog();
-      });
-      const runnerGroup = runs.configureRunnerGroup();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-
-      const automations = new Map(
-        installed.body.workflow.automations.flatMap((automation) => {
-          return automation.official
-            ? [[automation.official.blueprintKey, automation] as const]
-            : [];
-        }),
-      );
-      const loopAutomation = automations.get("pulse");
-      const onceAutomation = automations.get("one-shot");
-      const webhookAutomation = automations.get("webhook-trigger");
-      if (!loopAutomation || !onceAutomation || !webhookAutomation) {
-        throw new Error("Expected all Official Workflow producer automations");
-      }
-
-      const producerRuns: {
-        readonly runId: string;
-        readonly automationId: string;
-      }[] = [];
-      if (producerKind === "explicit and scheduled") {
-        const explicit = await accept(
-          automationClient().run({
+        mockEnv("OKOU_WEB_URL", "https://api.okou.ai");
+        const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+        const definitionName = `api-test-producers-${suffix}`;
+        await syncCatalog(
+          catalog([
+            activeDefinition(definitionName, [
+              loopBlueprint(true),
+              onceBlueprint(true),
+              webhookBlueprint(true),
+            ]),
+          ]),
+        );
+        const setup = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Shanghai",
+          tier: "team",
+        });
+        const { actor } = setup;
+        if (!actor.orgId) {
+          throw new Error("Expected organization-scoped actor");
+        }
+        await selectBuiltInDefaultModel(actor);
+        const { agentId } = await workflowBdd.createAgent(actor);
+        const headers = authHeaders(actor);
+        configureResultEmailRecipient(actor);
+        await setOfficialWorkflowsEnabled(actor, true);
+        const atTime = new Date(now() + 60_000).toISOString();
+        const installed = await accept(
+          officialClient().install({
             headers,
-            extraHeaders: { origin: "https://app.okou.ai" },
-            params: { id: loopAutomation.id },
+            params: { definitionName },
+            body: {
+              agentId,
+              blueprints: [
+                {
+                  blueprintKey: "pulse",
+                  bindings: [{ key: "interval-seconds", value: 60 }],
+                },
+                {
+                  blueprintKey: "one-shot",
+                  bindings: [
+                    { key: "at-time", value: atTime },
+                    {
+                      key: "callback-url",
+                      value: "https://example.test/official-callback",
+                    },
+                    { key: "correlation-id", value: randomUUID() },
+                  ],
+                },
+                { blueprintKey: "webhook-trigger", bindings: [] },
+              ],
+            },
           }),
           [201],
         );
-        if (!explicit.body.runId) {
-          throw new Error("Expected explicit Official Automation Run");
-        }
-        producerRuns.push({
-          runId: explicit.body.runId,
-          automationId: loopAutomation.id,
+        onTestFinished(async () => {
+          installCatalogStorageFixture();
+          await bdd.deleteAgent(actor, agentId);
+          await cleanupCatalog();
         });
-        await completeSuccessfulRun(
-          runnerGroup,
-          explicit.body.runId,
-          "Explicit Official result",
-        );
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        runs.acceptTelemetryIngest();
 
-        const scheduled = await withMockNowForTest(
-          now() + 120_000,
-          async () => {
+        const automations = new Map(
+          installed.body.workflow.automations.flatMap((automation) => {
+            return automation.official
+              ? [[automation.official.blueprintKey, automation] as const]
+              : [];
+          }),
+        );
+        const loopAutomation = automations.get("pulse");
+        const onceAutomation = automations.get("one-shot");
+        const webhookAutomation = automations.get("webhook-trigger");
+        if (!loopAutomation || !onceAutomation || !webhookAutomation) {
+          throw new Error(
+            "Expected all Official Workflow producer automations",
+          );
+        }
+        return {
+          definitionName,
+          actor,
+          agentId,
+          headers,
+          atTime,
+          installed,
+          runnerGroup,
+          loopAutomation,
+          onceAutomation,
+          webhookAutomation,
+        };
+      }
+
+      let prepared: Awaited<ReturnType<typeof prepareProducerInstallation>>;
+      beforeEach(async () => {
+        prepared = await prepareProducerInstallation();
+      });
+
+      it("preserves result email and immutable admission provenance", async () => {
+        const {
+          definitionName,
+          actor,
+          agentId,
+          headers,
+          atTime,
+          installed,
+          runnerGroup,
+          loopAutomation,
+          onceAutomation,
+          webhookAutomation,
+        } = prepared;
+        const producerRuns: {
+          readonly runId: string;
+          readonly automationId: string;
+        }[] = [];
+        if (producerKind === "explicit and scheduled") {
+          const explicit = await accept(
+            automationClient().run({
+              headers,
+              extraHeaders: { origin: "https://app.okou.ai" },
+              params: { id: loopAutomation.id },
+            }),
+            [201],
+          );
+          if (!explicit.body.runId) {
+            throw new Error("Expected explicit Official Automation Run");
+          }
+          producerRuns.push({
+            runId: explicit.body.runId,
+            automationId: loopAutomation.id,
+          });
+          await completeSuccessfulRun(
+            runnerGroup,
+            explicit.body.runId,
+            "Explicit Official result",
+          );
+
+          const scheduled = await withMockNowForTest(
+            now() + 120_000,
+            async () => {
+              return await accept(
+                automationExecutionClient().execute({
+                  body: { automation_id: loopAutomation.id },
+                }),
+                [200],
+              );
+            },
+          );
+          expect(scheduled.body.executed).toBe(1);
+          const scheduledRun = await readLatestWorkflowAutomationRunFixture(
+            context,
+            loopAutomation.id,
+          );
+          if (!scheduledRun || scheduledRun.runId === explicit.body.runId) {
+            throw new Error(
+              "Expected a distinct scheduled Official Automation Run",
+            );
+          }
+          producerRuns.push({
+            runId: scheduledRun.runId,
+            automationId: loopAutomation.id,
+          });
+          await completeSuccessfulRun(
+            runnerGroup,
+            scheduledRun.runId,
+            "Scheduled Official result",
+          );
+        }
+
+        if (producerKind === "once") {
+          const once = await withMockNowForTest(now() + 120_000, async () => {
             return await accept(
               automationExecutionClient().execute({
-                body: { automation_id: loopAutomation.id },
+                body: { automation_id: onceAutomation.id },
               }),
               [200],
             );
-          },
-        );
-        expect(scheduled.body.executed).toBe(1);
-        const scheduledRun = await readLatestWorkflowAutomationRunFixture(
-          context,
-          loopAutomation.id,
-        );
-        if (!scheduledRun || scheduledRun.runId === explicit.body.runId) {
-          throw new Error(
-            "Expected a distinct scheduled Official Automation Run",
+          });
+          expect(once.body.executed).toBe(1);
+          const onceRun = await readLatestWorkflowAutomationRunFixture(
+            context,
+            onceAutomation.id,
+          );
+          if (!onceRun) {
+            throw new Error("Expected once Official Automation Run");
+          }
+          producerRuns.push({
+            runId: onceRun.runId,
+            automationId: onceAutomation.id,
+          });
+          await completeSuccessfulRun(
+            runnerGroup,
+            onceRun.runId,
+            "Once Official result",
           );
         }
-        producerRuns.push({
-          runId: scheduledRun.runId,
-          automationId: loopAutomation.id,
-        });
-        await completeSuccessfulRun(
-          runnerGroup,
-          scheduledRun.runId,
-          "Scheduled Official result",
-        );
-      }
 
-      if (producerKind === "once") {
-        const once = await withMockNowForTest(now() + 120_000, async () => {
-          return await accept(
-            automationExecutionClient().execute({
-              body: { automation_id: onceAutomation.id },
+        if (producerKind === "webhook") {
+          if (
+            webhookAutomation.kind !== "event" ||
+            webhookAutomation.eventType !== "webhook-received"
+          ) {
+            throw new Error("Expected Official webhook automation");
+          }
+          const webhookCredentials = await accept(
+            automationClient().revealWebhookSecret({
+              headers,
+              params: { id: webhookAutomation.id },
+              body: undefined,
             }),
             [200],
           );
-        });
-        expect(once.body.executed).toBe(1);
-        const onceRun = await readLatestWorkflowAutomationRunFixture(
-          context,
-          onceAutomation.id,
-        );
-        if (!onceRun) {
-          throw new Error("Expected once Official Automation Run");
+          const webhook = await postOfficialWorkflowWebhook({
+            webhookUrl: webhookCredentials.body.webhookUrl,
+            secret: webhookCredentials.body.webhookSecret,
+            body: JSON.stringify({ event: "official-p2-regression" }),
+          });
+          expect(webhook).toMatchObject({
+            status: 200,
+            body: { success: true, duplicate: false },
+          });
+          await expect
+            .poll(async () => {
+              return (
+                await readLatestWorkflowAutomationRunFixture(
+                  context,
+                  webhookAutomation.id,
+                )
+              )?.runId;
+            })
+            .toEqual(expect.any(String));
+          const webhookRun = await readLatestWorkflowAutomationRunFixture(
+            context,
+            webhookAutomation.id,
+          );
+          if (!webhookRun) {
+            throw new Error("Expected Official webhook Automation Run");
+          }
+          producerRuns.push({
+            runId: webhookRun.runId,
+            automationId: webhookAutomation.id,
+          });
+          await completeSuccessfulRun(
+            runnerGroup,
+            webhookRun.runId,
+            "Event Official result",
+          );
         }
-        producerRuns.push({
-          runId: onceRun.runId,
-          automationId: onceAutomation.id,
-        });
-        await completeSuccessfulRun(
-          runnerGroup,
-          onceRun.runId,
-          "Once Official result",
-        );
-      }
 
-      if (producerKind === "webhook") {
-        if (
-          webhookAutomation.kind !== "event" ||
-          webhookAutomation.eventType !== "webhook-received"
-        ) {
-          throw new Error("Expected Official webhook automation");
-        }
-        const webhookCredentials = await accept(
-          automationClient().revealWebhookSecret({
-            headers,
-            params: { id: webhookAutomation.id },
-            body: undefined,
-          }),
-          [200],
-        );
-        const webhook = await postOfficialWorkflowWebhook({
-          webhookUrl: webhookCredentials.body.webhookUrl,
-          secret: webhookCredentials.body.webhookSecret,
-          body: JSON.stringify({ event: "official-p2-regression" }),
-        });
-        expect(webhook).toMatchObject({
-          status: 200,
-          body: { success: true, duplicate: false },
-        });
-        await expect
-          .poll(async () => {
-            return (
-              await readLatestWorkflowAutomationRunFixture(
-                context,
-                webhookAutomation.id,
-              )
-            )?.runId;
-          })
-          .toEqual(expect.any(String));
-        const webhookRun = await readLatestWorkflowAutomationRunFixture(
-          context,
-          webhookAutomation.id,
-        );
-        if (!webhookRun) {
-          throw new Error("Expected Official webhook Automation Run");
-        }
-        producerRuns.push({
-          runId: webhookRun.runId,
-          automationId: webhookAutomation.id,
-        });
-        await completeSuccessfulRun(
-          runnerGroup,
-          webhookRun.runId,
-          "Event Official result",
-        );
-      }
-
-      const accepted = await readAcceptedDefinitionFixture(definitionName);
-      for (const producer of producerRuns) {
-        const state = await readOfficialWorkflowRunStateFixture(
-          context,
-          producer.runId,
-        );
-        expect(state.model_provider).toBe("built-in");
-        expect(state.provenance?.definitions).toStrictEqual([
-          expect.objectContaining({
-            name: definitionName,
-            revision: accepted.definition.revision,
-          }),
-        ]);
-        expect(state.storage_mounts).toStrictEqual(
-          expect.arrayContaining([
+        const accepted = await readAcceptedDefinitionFixture(definitionName);
+        for (const producer of producerRuns) {
+          const state = await readOfficialWorkflowRunStateFixture(
+            context,
+            producer.runId,
+          );
+          expect(state.model_provider).toBe("built-in");
+          expect(state.provenance?.definitions).toStrictEqual([
             expect.objectContaining({
-              org_id: SYSTEM_ORG_ID,
-              user_id: VOLUME_ORG_USER_ID,
-              storage_id: accepted.definition.artifact.storageId,
-              version: accepted.definition.artifact.storageVersion,
+              name: definitionName,
+              revision: accepted.definition.revision,
             }),
-          ]),
-        );
-        const source = await outbox.findSourceState({
-          sourceRunId: producer.runId,
-          sourceWorkflowAutomationId: producer.automationId,
-        });
-        expect(source.claim).not.toBeNull();
-        expect(source.items).toStrictEqual([
-          expect.objectContaining({
-            public_brand: "okou",
-            subject: `Display ${definitionName}`,
-            source_run_id: producer.runId,
-            source_workflow_automation_id: producer.automationId,
-            status: "pending",
-            template: expect.objectContaining({
-              template: "official-automation-result",
+          ]);
+          expect(state.storage_mounts).toStrictEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                org_id: SYSTEM_ORG_ID,
+                user_id: VOLUME_ORG_USER_ID,
+                storage_id: accepted.definition.artifact.storageId,
+                version: accepted.definition.artifact.storageVersion,
+              }),
+            ]),
+          );
+          const source = await outbox.findSourceState({
+            sourceRunId: producer.runId,
+            sourceWorkflowAutomationId: producer.automationId,
+          });
+          expect(source.claim).not.toBeNull();
+          expect(source.items).toStrictEqual([
+            expect.objectContaining({
+              public_brand: "okou",
+              subject: `Display ${definitionName}`,
+              source_run_id: producer.runId,
+              source_workflow_automation_id: producer.automationId,
+              status: "pending",
+              template: expect.objectContaining({
+                template: "official-automation-result",
+              }),
             }),
-          }),
-        ]);
-      }
+          ]);
+        }
+      });
     },
   );
 

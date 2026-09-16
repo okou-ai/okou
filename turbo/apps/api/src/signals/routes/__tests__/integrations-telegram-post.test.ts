@@ -1899,16 +1899,21 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     { ownerKind: "official", scenario: "pinned-replies" },
   ] as const)("$ownerKind Telegram DM $scenario", ({ ownerKind, scenario }) => {
     let dm: Awaited<ReturnType<typeof prepareTelegramDm>>;
+    let replyChain:
+      | {
+          branch: Awaited<ReturnType<typeof dm.completeDm>>;
+          followUp: Awaited<ReturnType<typeof dm.completeDm>>;
+        }
+      | undefined;
 
     beforeEach(async () => {
       dm = await prepareTelegramDm(ownerKind);
     });
 
-    it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {
-      const { sendDm, completeDm, main } = dm;
-      expect(main.claim.resumeSession).toBeNull();
+    beforeEach(async () => {
+      replyChain = undefined;
       if (scenario !== "models") {
-        const branch = await completeDm(
+        const branch = await dm.completeDm(
           "start a reply chain",
           3503,
           3501,
@@ -1916,7 +1921,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         );
         expect(branch.claim.resumeSession).toBeNull();
         expect(branch.replyCount).toBeGreaterThan(1);
-        const branchFollowUp = await completeDm(
+        const branchFollowUp = await dm.completeDm(
           "continue the reply chain",
           3504,
           branch.botReplyId,
@@ -1924,6 +1929,18 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
           branch.sessionId,
         );
+        replyChain = { branch, followUp: branchFollowUp };
+      }
+    });
+
+    it(`routes ${ownerKind} Telegram DM ${scenario}`, async () => {
+      const { sendDm, completeDm, main } = dm;
+      expect(main.claim.resumeSession).toBeNull();
+      if (scenario !== "models") {
+        if (!replyChain) {
+          throw new Error("Expected a completed Telegram reply chain");
+        }
+        const { branch, followUp: branchFollowUp } = replyChain;
         if (scenario === "reply-anchors") {
           const earlierReply = await completeDm(
             "reply to the earlier user message",

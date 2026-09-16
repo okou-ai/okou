@@ -330,8 +330,6 @@ describe("with a localized running conversation", () => {
   let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
   beforeEach(async () => {
     preparedScenario = await prepareScenario();
-  });
-  it("a cancelled run keeps its meaning when the language changes", async () => {
     const { stop } = preparedScenario;
     click(stop);
 
@@ -346,7 +344,9 @@ describe("with a localized running conversation", () => {
         interruptsRunId: RUN_ID,
       });
     });
+  });
 
+  it("a cancelled run keeps its meaning when the language changes", async () => {
     await changeLanguage(portuguese, english);
 
     const englishCancellation = await screen.findByText(

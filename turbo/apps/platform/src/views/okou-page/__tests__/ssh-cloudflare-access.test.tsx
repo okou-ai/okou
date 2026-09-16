@@ -347,9 +347,17 @@ test("Direct and protected mode retain their port and configuration drafts but s
   ]);
 });
 
-test.each(["create", "edit"] as const)(
-  "A %s host can atomically select or create both resource types",
-  async (mode) => {
+test.each(
+  (["create", "edit"] as const).flatMap((mode) => {
+    return [false, true].flatMap((newAccess) => {
+      return [false, true].map((newCredential) => {
+        return { mode, newAccess, newCredential };
+      });
+    });
+  }),
+)(
+  "A $mode host atomically saves resources (new Access: $newAccess, new credential: $newCredential)",
+  async ({ mode, newAccess, newCredential }) => {
     context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
       return respond(200, { connections: mode === "edit" ? [host] : [] });
     });
@@ -366,96 +374,85 @@ test.each(["create", "edit"] as const)(
       return respond(200, host);
     });
     await page();
-    for (const newAccess of [false, true]) {
-      for (const newCredential of [false, true]) {
-        click(
-          await waitFor(() => {
-            return getAction(
-              "button",
-              mode === "create" ? "Add host" : "Edit host",
-            );
-          }),
+    click(
+      await waitFor(() => {
+        return getAction(
+          "button",
+          mode === "create" ? "Add host" : "Edit host",
         );
-        const dialog = await screen.findByRole("dialog");
-        if (mode === "create") {
-          await fill(
-            within(dialog).getByLabelText("Display name"),
-            host.displayName,
-          );
-          await fill(
-            within(dialog).getByLabelText("Public hostname or IP address"),
-            host.host,
-          );
-          click(getAction("radio", "Cloudflare Access", dialog));
-        }
-        await within(dialog).findByLabelText("Access configuration");
-        if (newAccess) {
-          await selectConfig(dialog, "Create new configuration");
-          await tokenFields(dialog);
-        }
-        if (newCredential) {
-          await userEvent.click(
-            await within(dialog).findByLabelText("Credential"),
-          );
-          click(
-            await screen.findByRole("option", {
-              name: "Create new credential",
-            }),
-          );
-          await fill(
-            within(dialog).getByLabelText("Credential name"),
-            "New SSH login",
-          );
-          await fill(within(dialog).getByLabelText("SSH username"), "deploy");
-          click(getAction("radio", "Password", dialog));
-          await fill(
-            within(dialog).getByLabelText("Password"),
-            "password-canary",
-          );
-        }
-        expect(screen.getAllByRole("dialog")).toHaveLength(1);
-        click(getAction("button", "Save", dialog));
-        await waitFor(() => {
-          return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-        });
-        const generatedId = expect.any(String);
-        expect(requests.at(-1)).toStrictEqual({
-          ...(mode === "edit"
-            ? { expectedGeneration: 1 }
-            : { id: generatedId }),
-          displayName: host.displayName,
-          host: host.host,
-          port: 443,
-          transport: {
-            type: "cloudflare_access",
-            ...(newAccess
-              ? {
-                  create: {
-                    name: config.name,
-                    credentials: {
-                      clientId: "test-client-id",
-                      clientSecret: "test-client-secret",
-                    },
-                  },
-                }
-              : { configId: config.id }),
-          },
-          credential: newCredential
-            ? {
-                create: {
-                  name: "New SSH login",
-                  username: "deploy",
-                  authentication: {
-                    method: "password",
-                    password: "password-canary",
-                  },
-                },
-              }
-            : { id: credential.id },
-        });
-      }
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    if (mode === "create") {
+      await fill(
+        within(dialog).getByLabelText("Display name"),
+        host.displayName,
+      );
+      await fill(
+        within(dialog).getByLabelText("Public hostname or IP address"),
+        host.host,
+      );
+      click(getAction("radio", "Cloudflare Access", dialog));
     }
-    expect(requests).toHaveLength(4);
+    await within(dialog).findByLabelText("Access configuration");
+    if (newAccess) {
+      await selectConfig(dialog, "Create new configuration");
+      await tokenFields(dialog);
+    }
+    if (newCredential) {
+      await userEvent.click(await within(dialog).findByLabelText("Credential"));
+      click(
+        await screen.findByRole("option", {
+          name: "Create new credential",
+        }),
+      );
+      await fill(
+        within(dialog).getByLabelText("Credential name"),
+        "New SSH login",
+      );
+      await fill(within(dialog).getByLabelText("SSH username"), "deploy");
+      click(getAction("radio", "Password", dialog));
+      await fill(within(dialog).getByLabelText("Password"), "password-canary");
+    }
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    const generatedId = expect.any(String);
+    expect(requests.at(-1)).toStrictEqual({
+      ...(mode === "edit" ? { expectedGeneration: 1 } : { id: generatedId }),
+      displayName: host.displayName,
+      host: host.host,
+      port: 443,
+      transport: {
+        type: "cloudflare_access",
+        ...(newAccess
+          ? {
+              create: {
+                name: config.name,
+                credentials: {
+                  clientId: "test-client-id",
+                  clientSecret: "test-client-secret",
+                },
+              },
+            }
+          : { configId: config.id }),
+      },
+      credential: newCredential
+        ? {
+            create: {
+              name: "New SSH login",
+              username: "deploy",
+              authentication: {
+                method: "password",
+                password: "password-canary",
+              },
+            },
+          }
+        : { id: credential.id },
+    });
+    expect(requests).toHaveLength(1);
   },
 );
 

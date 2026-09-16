@@ -17,7 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
@@ -163,43 +163,48 @@ async function selectComposerModel(
   await user.click(await screen.findByRole("option", { name: nextModelName }));
 }
 
-test("Explain a model or speed change that will apply next", async () => {
-  const user = userEvent.setup({ delay: null });
-  configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    activeRunIds: [RUN_A],
-    chatEvents: [
-      promptEvent({
-        id: "next-model-user",
-        runId: RUN_A,
-        seqId: 1,
-        text: "Active Sol request",
-        model: "gpt-5.6-sol",
-      }),
-      assistantEvent({
-        id: "next-model-progress",
-        runId: RUN_A,
-        seqId: 2,
-        text: "Sol is still working.",
-      }),
-    ],
+describe("a model or speed change during an active run", () => {
+  beforeEach(async () => {
+    configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      activeRunIds: [RUN_A],
+      chatEvents: [
+        promptEvent({
+          id: "next-model-user",
+          runId: RUN_A,
+          seqId: 1,
+          text: "Active Sol request",
+          model: "gpt-5.6-sol",
+        }),
+        assistantEvent({
+          id: "next-model-progress",
+          runId: RUN_A,
+          seqId: 2,
+          text: "Sol is still working.",
+        }),
+      ],
+    });
+
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
+    });
+
+    await readyChat();
   });
 
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
+  test("Explain a model or speed change that will apply next", async () => {
+    const user = userEvent.setup({ delay: null });
+    expect(screen.getByText("Sol is still working.")).toBeVisible();
+    await selectComposerModel(user, "GPT 5.6 Sol", "GPT 5.6 Luna");
+
+    await expect(
+      screen.findByText("Next run will use GPT 5.6 Luna"),
+    ).resolves.toBeVisible();
+    expect(screen.getByText("Active Sol request")).toBeVisible();
   });
-
-  await readyChat();
-  expect(screen.getByText("Sol is still working.")).toBeVisible();
-  await selectComposerModel(user, "GPT 5.6 Sol", "GPT 5.6 Luna");
-
-  await expect(
-    screen.findByText("Next run will use GPT 5.6 Luna"),
-  ).resolves.toBeVisible();
-  expect(screen.getByText("Active Sol request")).toBeVisible();
 });
 
 test("Keep a next-run model choice through active-run steering", async () => {

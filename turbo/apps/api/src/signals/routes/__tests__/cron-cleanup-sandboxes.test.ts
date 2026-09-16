@@ -1021,55 +1021,60 @@ describe("sandbox cleanup", () => {
     });
   });
 
-  it("processes only the oldest bounded batch of threadless runs", async () => {
-    mockNow(THREADLESS_TEST_NOW_MS);
-    const userId = `user-${randomUUID()}`;
-    const orgId = `org-${randomUUID()}`;
-    const fixtures = await Promise.all(
-      Array.from({ length: THREADLESS_SWEEP_LIMIT + 1 }, async (_, index) => {
-        return await trackRun(
-          insertRunFixture({
-            status: "completed",
-            createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + index + 1),
-            completedAt: new Date(
-              THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-            ),
-            threadless: true,
-            userId,
-            orgId,
-          }),
-        );
-      }),
-    );
-
-    const firstResponse = await cleanupRegisteredFixtures();
-
-    expect(firstResponse.body.threadlessRuns).toStrictEqual({
-      discovered: THREADLESS_SWEEP_LIMIT,
-      cancelled: 0,
-      waiting: 0,
-      deleted: THREADLESS_SWEEP_LIMIT,
-      failed: 0,
-      errors: [],
-    });
-    const remaining = await findRemainingRunIds(fixtures);
-    expect(remaining).toStrictEqual(
-      fixtures.slice(THREADLESS_SWEEP_LIMIT).map((fixture) => {
-        return fixture.runId;
-      }),
-    );
-    // What the bound left behind stays untouched and eligible for a next pass.
-    await expect(
-      Promise.all(
-        remaining.map((runId) => {
-          return findRun(runId);
+  describe("an over-capacity batch of threadless runs", () => {
+    let fixtures: Awaited<ReturnType<typeof trackRun>>[];
+    beforeEach(async () => {
+      mockNow(THREADLESS_TEST_NOW_MS);
+      const userId = `user-${randomUUID()}`;
+      const orgId = `org-${randomUUID()}`;
+      fixtures = await Promise.all(
+        Array.from({ length: THREADLESS_SWEEP_LIMIT + 1 }, async (_, index) => {
+          return await trackRun(
+            insertRunFixture({
+              status: "completed",
+              createdAt: new Date(THREADLESS_FORWARD_CUTOFF_MS + index + 1),
+              completedAt: new Date(
+                THREADLESS_TEST_NOW_MS - CANCELLATION_RECOVERY_STALE_AFTER_MS,
+              ),
+              threadless: true,
+              userId,
+              orgId,
+            }),
+          );
         }),
-      ),
-    ).resolves.toStrictEqual(
-      remaining.map(() => {
-        return { status: "completed", error: null };
-      }),
-    );
+      );
+    });
+
+    it("processes only the oldest bounded batch of threadless runs", async () => {
+      const firstResponse = await cleanupRegisteredFixtures();
+
+      expect(firstResponse.body.threadlessRuns).toStrictEqual({
+        discovered: THREADLESS_SWEEP_LIMIT,
+        cancelled: 0,
+        waiting: 0,
+        deleted: THREADLESS_SWEEP_LIMIT,
+        failed: 0,
+        errors: [],
+      });
+      const remaining = await findRemainingRunIds(fixtures);
+      expect(remaining).toStrictEqual(
+        fixtures.slice(THREADLESS_SWEEP_LIMIT).map((fixture) => {
+          return fixture.runId;
+        }),
+      );
+      // What the bound left behind stays untouched and eligible for a next pass.
+      await expect(
+        Promise.all(
+          remaining.map((runId) => {
+            return findRun(runId);
+          }),
+        ),
+      ).resolves.toStrictEqual(
+        remaining.map(() => {
+          return { status: "completed", error: null };
+        }),
+      );
+    });
   });
 
   it("acknowledges an event projection that loses the root-delete race", async () => {

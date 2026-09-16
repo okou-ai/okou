@@ -180,14 +180,6 @@ describe.each([false, true])(
     let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
-    });
-    it("preserves the complete scenario", async () => {
-      const {
-        resetInitialPage$,
-        publishThreadConfirmation,
-        refreshedPageSignal,
-        auth,
-      } = preparedScenario;
       await fill(
         await screen.findByRole("textbox", { name: "Message" }),
         "Start the conversation",
@@ -201,6 +193,14 @@ describe.each([false, true])(
       click(await enabledButton("Voice input"));
       click(await enabledButton("Stop recording"));
       await enabledButton("Retry");
+    });
+    it("finishes voice recovery before conversation confirmation", async () => {
+      const {
+        resetInitialPage$,
+        publishThreadConfirmation,
+        refreshedPageSignal,
+        auth,
+      } = preparedScenario;
       click(await enabledButton("Retry"));
       await waitFor(() => {
         expect(
