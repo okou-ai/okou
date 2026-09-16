@@ -155,7 +155,8 @@ impl GuestControlClient {
     /// regular-file status can no longer be established. Invalid input, exec
     /// or capture failures, and read failures for a path still established as
     /// regular return an error. Files larger than `max_bytes` return an error
-    /// instead of silently returning truncated bytes.
+    /// instead of silently returning truncated bytes. The helper reads at most
+    /// `max_bytes + 1` bytes to detect oversized files without reading to EOF.
     pub async fn read_file(
         &self,
         path: &str,
@@ -197,7 +198,8 @@ impl GuestControlClient {
             ));
         }
 
-        let command = read_regular_file_command(path, MISSING_FILE_EXIT_CODE);
+        let command =
+            read_regular_file_command(path, MISSING_FILE_EXIT_CODE, Some(stdout_limit_bytes));
         let result = exec_operation::exec_operation_capture_on_shared_with_write_observer(
             &self.shared,
             ExecCaptureRequest {
