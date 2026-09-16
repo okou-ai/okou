@@ -314,14 +314,14 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     description:
       "Gather public posts and engagement from the accounts you track into one sheet.",
     shortDescription: "Gather public social posts into one sheet.",
-    connectorSlugs: ["google-sheets", "slack"],
+    connectorSlugs: ["google-sheets"],
     behavior: [
       "Read the public accounts you name",
       "Posts and engagement collected",
       "One row per post in Google Sheets",
     ],
     missingInfo:
-      "Connectors: google-sheets required; slack optional.\nRead the accounts with the built-in social capabilities, which cover public LinkedIn, X, Facebook, Instagram, TikTok, and YouTube content. Do not request a social connector.\nSuggested trigger: Add a schedule trigger (e.g. daily or weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the accounts or handles, the columns to keep, the spreadsheet destination, and the schedule.",
+      "Connectors: google-sheets required.\nRead the accounts with the built-in social capabilities, which cover public LinkedIn, X, Facebook, Instagram, TikTok, and YouTube content. Do not request a social connector.\nSuggested trigger: Add a schedule trigger (e.g. daily or weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the accounts or handles, the columns to keep, the spreadsheet destination, and the schedule.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:keyword-ranks-to-sheets",
@@ -330,14 +330,14 @@ export const WORKFLOW_TEMPLATE_ITEMS: readonly WorkflowTemplateItem[] = [
     description:
       "Check where your pages rank for the keywords you care about and log the movers.",
     shortDescription: "Log weekly keyword rank movement to a sheet.",
-    connectorSlugs: ["google-sheets", "slack"],
+    connectorSlugs: ["google-sheets"],
     behavior: [
       "Check live search results for your keywords",
       "Positions compared with the previous run",
       "Movers written to Google Sheets",
     ],
     missingInfo:
-      "Connectors: google-sheets required; slack optional.\nRead search results with the built-in SEO capabilities, which cover live SERP positions, keyword ideas, ranked keywords, and backlinks. Do not request an SEO connector.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the domain, the keyword list, the search location and language, the spreadsheet destination, and the schedule.",
+      "Connectors: google-sheets required.\nRead search results with the built-in SEO capabilities, which cover live SERP positions, keyword ideas, ranked keywords, and backlinks. Do not request an SEO connector.\nSuggested trigger: Add a schedule trigger (e.g. weekly).\n\nCreate the workflow draft first. Before adding or enabling its automation, ask one short question for the next missing detail among the domain, the keyword list, the search location and language, the spreadsheet destination, and the schedule.",
   }),
   defineWorkflowTemplate({
     id: "workflow-template:web-data-to-sheets",
