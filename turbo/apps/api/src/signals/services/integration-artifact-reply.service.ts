@@ -33,7 +33,14 @@ interface ReplyOwner {
   readonly chatThreadId: string | null;
 }
 
-interface ReplyIdentity extends IntegrationReply, ReplyOwner {
+interface IntegrationContent extends ReplyOwner {
+  readonly db: Db;
+  readonly deliveryKey: string;
+  readonly publicBrand: PublicBrand;
+  readonly contents: readonly string[];
+}
+
+interface ReplyIdentity extends IntegrationContent {
   readonly sourceContentHash: string;
 }
 
@@ -45,7 +52,7 @@ const existingReply$ = command(
     { get },
     args: ReplyIdentity,
     signal: AbortSignal,
-  ): Promise<string | undefined> => {
+  ): Promise<readonly string[] | undefined> => {
     return await args.db.transaction(async (tx) => {
       const [existing] = await tx
         .select({
@@ -78,11 +85,19 @@ const existingReply$ = command(
       );
       signal.throwIfAborted();
       if (current?.policy.status === "active") {
-        const message = snapshot.messages[0];
-        if (snapshot.messages.length !== 1 || message?.role !== "assistant") {
+        if (
+          snapshot.messages.length !== args.contents.length ||
+          snapshot.messages.some((message, index) => {
+            return (
+              message.role !== "assistant" || message.messageIndex !== index
+            );
+          })
+        ) {
           throw new Error("Integration reply snapshot content is unavailable");
         }
-        return message.content;
+        return snapshot.messages.map((message) => {
+          return message.content;
+        });
       }
       if (current?.policy.status === "revoked") {
         throw new Error("Integration reply snapshot was revoked");
@@ -139,26 +154,12 @@ const discardIncompleteReply$ = command(
   },
 );
 
-const prepareIntegrationReply$ = command(
-  async ({ set }, args: IntegrationReply, signal: AbortSignal) => {
-    const [owner] = await args.db
-      .select({
-        userId: agentRuns.userId,
-        orgId: agentRuns.orgId,
-        chatThreadId: agentRuns.chatThreadId,
-      })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, args.runId))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!owner) {
-      throw new Error("Integration reply run is unavailable");
-    }
+export const prepareIntegrationContent$ = command(
+  async ({ set }, args: IntegrationContent, signal: AbortSignal) => {
     const identity: ReplyIdentity = {
       ...args,
-      ...owner,
       sourceContentHash: createHash("sha256")
-        .update(args.content)
+        .update(JSON.stringify(args.contents))
         .digest("hex"),
     };
     const existing = await set(existingReply$, identity, signal);
@@ -168,18 +169,19 @@ const prepareIntegrationReply$ = command(
     const plan = await set(
       prepareSharedThreadArtifacts$,
       {
-        ...owner,
+        userId: args.userId,
+        orgId: args.orgId,
         threadId: randomUUID(),
         publicBrand: args.publicBrand,
         preserveUnmanagedMessageLinks: true,
-        messages: [
-          { messageIndex: 0, role: "assistant", content: args.content },
-        ],
+        messages: args.contents.map((content, messageIndex) => {
+          return { messageIndex, role: "assistant" as const, content };
+        }),
       },
       signal,
     );
     if (!plan) {
-      return args.content;
+      return args.contents;
     }
     if (Buffer.byteLength(JSON.stringify(plan.messages)) > 2 * 1024 * 1024) {
       throw new Error("Integration reply snapshot is too large");
@@ -189,9 +191,9 @@ const prepareIntegrationReply$ = command(
       const claimed = await args.db.transaction(async (tx) => {
         await tx.insert(sharedThreads).values({
           id: plan.policy.threadId,
-          userId: owner.userId,
-          orgId: owner.orgId,
-          sourceChatThreadId: owner.chatThreadId,
+          userId: args.userId,
+          orgId: args.orgId,
+          sourceChatThreadId: args.chatThreadId,
           hasArtifactSnapshot: true,
           publicBrand: args.publicBrand,
           title: "Integration reply",
@@ -232,7 +234,9 @@ const prepareIntegrationReply$ = command(
       }
       await set(publishSharedThreadArtifacts$, plan, signal);
       signal.throwIfAborted();
-      return plan.messages[0]!.content;
+      return plan.messages.map((message) => {
+        return message.content;
+      });
     };
     return await onRejection(publish(), async () => {
       // Cleanup must finish even when the callback/request has been cancelled.
@@ -250,5 +254,23 @@ export async function snapshotIntegrationReply(
   args: IntegrationReply,
   signal: AbortSignal,
 ): Promise<string> {
-  return await createStore().set(prepareIntegrationReply$, args, signal);
+  const [owner] = await args.db
+    .select({
+      userId: agentRuns.userId,
+      orgId: agentRuns.orgId,
+      chatThreadId: agentRuns.chatThreadId,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, args.runId))
+    .limit(1);
+  signal.throwIfAborted();
+  if (!owner) {
+    throw new Error("Integration reply run is unavailable");
+  }
+  const contents = await createStore().set(
+    prepareIntegrationContent$,
+    { ...args, ...owner, contents: [args.content] },
+    signal,
+  );
+  return contents[0]!;
 }

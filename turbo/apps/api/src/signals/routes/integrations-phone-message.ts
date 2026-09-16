@@ -4,6 +4,7 @@ import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contract
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { snapshotIntegrationMessage$ } from "../services/integration-artifact-message.service";
 import type { RouteEntry } from "../route-entry";
 import { writeDb$ } from "../external/db";
 import {
@@ -74,12 +75,25 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return routeError(404, "AgentPhone agent not found", "NOT_FOUND");
   }
 
+  const outbound = integrationsPhoneMessageContract.sendMessage.body.parse({
+    ...body,
+    ...(await set(
+      snapshotIntegrationMessage$,
+      {
+        content: { text: body.text },
+        publicBrand: userLink.publicBrand,
+      },
+      signal,
+    )),
+  });
+  signal.throwIfAborted();
+
   const sendResult = await settle(
     sendAgentPhoneMessage(
       {
         agentphoneAgentId,
         toNumber: phoneHandle,
-        body: body.text,
+        body: outbound.text,
       },
       signal,
     ),
@@ -103,7 +117,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     phoneHandle,
     fromNumber: sent.fromNumber ?? "",
     toNumber: sent.toNumber ?? phoneHandle,
-    body: body.text,
+    body: outbound.text,
     channel: sent.channel,
     userChannel,
   });

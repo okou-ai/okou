@@ -1,3 +1,4 @@
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createStore } from "ccstate";
@@ -148,6 +149,58 @@ async function seedSendableContext(args: {
 }
 
 describe("POST /api/integrations/telegram/message", () => {
+  it("snapshots private Telegram links before HTML formatting and preserves reply targets", async () => {
+    const fixture = await seedSendableContext({ agentName: "Artifact sender" });
+    const artifact = await privateIntegrationArtifact(context, {
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+      orgRole: "org:admin",
+      email: `${fixture.userId}@example.test`,
+    });
+    let sent: Record<string, unknown> | undefined;
+    server.use(
+      http.post(
+        "https://api.telegram.org/bottest-bot-token/sendMessage",
+        async ({ request }) => {
+          sent = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              message_id: 321,
+              chat: { id: -100_123 },
+              text: sent.text,
+            },
+          });
+        },
+      ),
+    );
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+    await accept(
+      client.sendMessage({
+        headers: { authorization: `Bearer ${okouToken(fixture)}` },
+        body: {
+          botId: fixture.telegramBotId,
+          chatId: "-100123",
+          replyToMessageId: 42,
+          messageThreadId: 7,
+          text: `[Report](${artifact.url})`,
+        },
+      }),
+      [200],
+    );
+    const delivered = await artifact.expectDelivered(String(sent?.text));
+    expect(sent).toMatchObject({
+      chat_id: "-100123",
+      reply_parameters: { message_id: 42 },
+      message_thread_id: 7,
+      parse_mode: "HTML",
+    });
+    expect(sent?.text).toContain(`<a href="${delivered}">Report</a>`);
+  });
+
   it("returns 401 when no auth token is provided", async () => {
     const client = setupApp({
       context,

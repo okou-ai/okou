@@ -12,13 +12,14 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { snapshotIntegrationMessage$ } from "../services/integration-artifact-message.service";
 import {
   FeishuApiError,
   replyWithFeishuMessage,
   sendFeishuMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
@@ -31,6 +32,40 @@ function apiError(
     status,
     body: { error: { code, message } },
   } as const;
+}
+
+async function resolveFeishuMessageUser(
+  args: {
+    readonly db: Db;
+    readonly installationId: string;
+    readonly userId: string;
+    readonly user: string | undefined;
+    readonly platformName: string;
+  },
+  signal: AbortSignal,
+) {
+  if (args.user !== "me") {
+    return args.user;
+  }
+  const [connection] = await args.db
+    .select({ openId: feishuOrgConnections.feishuOpenId })
+    .from(feishuOrgConnections)
+    .where(
+      and(
+        eq(feishuOrgConnections.installationId, args.installationId),
+        eq(feishuOrgConnections.userId, args.userId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  return (
+    connection?.openId ??
+    apiError(
+      404,
+      "NOT_FOUND",
+      `No ${args.platformName} connection found for the current user`,
+    )
+  );
 }
 
 const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -78,32 +113,35 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  let userOpenId = body.user;
-  if (userOpenId === "me") {
-    const [connection] = await db
-      .select({ openId: feishuOrgConnections.feishuOpenId })
-      .from(feishuOrgConnections)
-      .where(
-        and(
-          eq(feishuOrgConnections.installationId, installation.id),
-          eq(feishuOrgConnections.userId, auth.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!connection) {
-      return apiError(
-        404,
-        "NOT_FOUND",
-        `No ${platformName} connection found for the current user`,
-      );
-    }
-    userOpenId = connection.openId;
+  const userOpenId = await resolveFeishuMessageUser(
+    {
+      db,
+      installationId: installation.id,
+      userId: auth.userId,
+      user: body.user,
+      platformName,
+    },
+    signal,
+  );
+  if (typeof userOpenId === "object") {
+    return userOpenId;
   }
 
-  const message: FeishuOutboundMessage = body.card
-    ? { msgType: "interactive", content: body.card }
-    : { msgType: "text", content: { text: body.text } };
+  const outbound = integrationsFeishuMessageContract.sendMessage.body.parse({
+    ...body,
+    ...(await set(
+      snapshotIntegrationMessage$,
+      {
+        content: { text: body.text, card: body.card },
+      },
+      signal,
+    )),
+  });
+  signal.throwIfAborted();
+
+  const message: FeishuOutboundMessage = outbound.card
+    ? { msgType: "interactive", content: outbound.card }
+    : { msgType: "text", content: { text: outbound.text } };
   const receiveId = userOpenId ?? body.chat;
   let delivery: ReturnType<typeof sendFeishuMessage>;
   if (body.replyToMessageId) {

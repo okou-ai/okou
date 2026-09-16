@@ -1,3 +1,6 @@
+import { createRouteMocks } from "./helpers/route-test";
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
+import { createApp } from "../../../app-factory";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createStore } from "ccstate";
@@ -140,6 +143,192 @@ describe("POST /api/integrations/slack/message", () => {
     );
     return { runId: run.runId };
   }
+
+  it("snapshots private text and nested blocks independently for multiple sends in one run", async () => {
+    const base = await seedWithInstallation();
+    const actor: ApiTestUser = {
+      ...base,
+      orgRole: "org:admin",
+      email: `${base.userId}@example.test`,
+    };
+    const artifact = await privateIntegrationArtifact(context, actor);
+    context.mocks.slack.chat.postMessage.mockImplementation(async (message) => {
+      // Delivery must already be readable when Slack receives the message.
+      await artifact.expectDelivered(JSON.stringify(message));
+      return { ok: true, ts: "mock.ts", channel: "C123456" };
+    });
+    const token = okouToken({ ...base, runId: "run-1" });
+    const headers = { authorization: `Bearer ${token}` };
+    const client = setupApp({
+      context,
+      routes: integrationsSlackMessageRoutes,
+    })(integrationsSlackMessageContract);
+    const action = "https://app.okou.test/api/connector/authorize?code=keep";
+    const text = `Report "quoted"\n<${artifact.url}|Download report>`;
+    const block = {
+      type: "section",
+      text: { type: "mrkdwn", text },
+      accessory: {
+        type: "button",
+        text: { type: "plain_text", text: "Open" },
+        url: artifact.url,
+      },
+    };
+    await accept(
+      client.sendMessage({
+        headers,
+        body: {
+          channel: "C123456",
+          threadTs: "parent",
+          text,
+          blocks: [
+            block,
+            { type: "section", text: { type: "mrkdwn", text: action } },
+          ],
+        },
+      }),
+      [200],
+    );
+    const first = context.mocks.slack.chat.postMessage.mock.lastCall?.[0];
+    const firstUrl = await artifact.expectDelivered(JSON.stringify(first));
+    expect(first).toMatchObject({
+      channel: "C123456",
+      thread_ts: "parent",
+      text: text.replace(artifact.url, firstUrl),
+      blocks: [
+        {
+          ...block,
+          text: { type: "mrkdwn", text: text.replace(artifact.url, firstUrl) },
+          accessory: { ...block.accessory, url: firstUrl },
+        },
+        { type: "section", text: { type: "mrkdwn", text: action } },
+      ],
+    });
+    await accept(
+      client.sendMessage({
+        headers,
+        body: { channel: "C-another", blocks: [block] },
+      }),
+      [200],
+    );
+    const second = context.mocks.slack.chat.postMessage.mock.lastCall?.[0];
+    const secondUrl = await artifact.expectDelivered(JSON.stringify(second));
+    expect(secondUrl).not.toBe(firstUrl);
+    expect(second).toMatchObject({
+      channel: "C-another",
+      blocks: [{ accessory: { url: secondUrl } }],
+    });
+  });
+
+  it("snapshots block-only sends without a run and includes hosted dependencies", async () => {
+    const base = await seedWithInstallation();
+    const artifact = await privateIntegrationArtifact(context, {
+      ...base,
+      orgRole: "org:admin",
+      email: `${base.userId}@example.test`,
+    });
+    const siteUrl = await artifact.createSite();
+    const client = setupApp({
+      context,
+      routes: integrationsSlackMessageRoutes,
+    })(integrationsSlackMessageContract);
+    await accept(
+      client.sendMessage({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          user: "U-recipient",
+          blocks: [
+            { type: "section", text: { type: "mrkdwn", text: siteUrl } },
+          ],
+        },
+      }),
+      [200],
+    );
+    const sent = context.mocks.slack.chat.postMessage.mock.lastCall?.[0];
+    expect(sent).toMatchObject({ channel: "D-mock-dm" });
+    const serialized = JSON.stringify(sent);
+    expect(serialized).not.toContain(siteUrl);
+    const deliveredSite = serialized.match(
+      /https:\/\/[a-z0-9]+\.okou\.app\//u,
+    )?.[0];
+    expect(deliveredSite).toBeDefined();
+    const page = await fetch(deliveredSite!);
+    expect(page.status).toBe(200);
+    await artifact.expectDelivered(await page.text());
+    const plot = await fetch(`${deliveredSite}plot.svg`);
+    expect(plot.status).toBe(200);
+    await expect(plot.text()).resolves.toContain("Snapshot plot");
+  });
+
+  it("passes public and action links through without creating snapshot storage", async () => {
+    const base = await seedWithInstallation();
+    await privateIntegrationArtifact(context, {
+      ...base,
+      orgRole: "org:admin",
+      email: `${base.userId}@example.test`,
+    });
+    const storageCalls = context.mocks.s3.send.mock.calls.length;
+    const text =
+      "https://a.okou.io/public.pdf https://app.okou.test/api/connector/authorize?code=keep https://example.test/report";
+    const client = setupApp({
+      context,
+      routes: integrationsSlackMessageRoutes,
+    })(integrationsSlackMessageContract);
+    await accept(
+      client.sendMessage({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { channel: "C123456", text },
+      }),
+      [200],
+    );
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text }),
+    );
+    expect(context.mocks.s3.send.mock.calls).toHaveLength(storageCalls);
+  });
+
+  it.each(["missing", "foreign", "copy"] as const)(
+    "does not send a private artifact when %s prevents snapshot publication",
+    async (failure) => {
+      const base = await seedWithInstallation();
+      const actor = {
+        ...base,
+        orgRole: "org:admin" as const,
+        email: `${base.userId}@example.test`,
+      };
+      const artifact = await privateIntegrationArtifact(
+        context,
+        failure === "foreign"
+          ? { ...actor, userId: `user_${randomUUID()}` }
+          : actor,
+      );
+      if (failure === "missing") {
+        artifact.removeOriginal();
+      }
+      if (failure === "copy") {
+        artifact.rejectCopies();
+      }
+      createRouteMocks(context).clerk.session(base.userId, base.orgId);
+      const response = await createApp({
+        signal: context.signal,
+        routes: integrationsSlackMessageRoutes,
+      }).request("/api/integrations/slack/message", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer clerk-session",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          channel: "C123456",
+          blocks: [
+            { type: "image", image_url: artifact.url, alt_text: "Report" },
+          ],
+        }),
+      });
+      expect(response.status).toBe(500);
+      expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns 401 when no auth token is provided", async () => {
     const client = setupApp({

@@ -1,3 +1,4 @@
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 import { randomUUID } from "node:crypto";
 
 import { GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
@@ -5,6 +6,7 @@ import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   integrationsFeishuMessageContract,
+  integrationsLarkMessageContract,
   integrationsLarkUploadCompleteContract,
   integrationsLarkUploadInitContract,
   integrationsFeishuUploadCompleteContract,
@@ -305,6 +307,81 @@ describe("POST /api/integrations/feishu/message", () => {
       );
     }
   });
+
+  it.each(["feishu", "lark"] as const)(
+    "snapshots %s text and nested cards before proactive sends",
+    async (platform) => {
+      const { actor, installationId } = await setupFeishuInstallation(
+        undefined,
+        platform,
+      );
+      const artifact = await privateIntegrationArtifact(context, actor);
+      captured = [];
+      const client = setupApp({
+        context,
+        routes: integrationsFeishuMessageRoutes,
+      })(
+        platform === "lark"
+          ? integrationsLarkMessageContract
+          : integrationsFeishuMessageContract,
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      await accept(
+        client.sendMessage({
+          headers,
+          body: { installationId, chat: "oc_report", text: artifact.url },
+        }),
+        [200],
+      );
+      await artifact.expectDelivered(JSON.stringify(captured[0]?.content));
+      const action = "https://app.okou.test/api/connector/authorize?code=keep";
+      await accept(
+        client.sendMessage({
+          headers,
+          body: {
+            installationId,
+            replyToMessageId: "om_parent",
+            replyInThread: true,
+            card: {
+              schema: "2.0",
+              config: { wide_screen_mode: true },
+              body: {
+                elements: [
+                  {
+                    tag: "markdown",
+                    content: `Report "quoted"\n${artifact.url}`,
+                  },
+                  { tag: "button", url: artifact.url },
+                  { tag: "button", url: action },
+                ],
+              },
+            },
+          },
+        }),
+        [200],
+      );
+      const delivered = await artifact.expectDelivered(
+        JSON.stringify(captured[1]?.content),
+      );
+      expect(captured[1]).toMatchObject({
+        kind: "reply",
+        target: "om_parent",
+        replyInThread: true,
+        msgType: "interactive",
+        content: {
+          schema: "2.0",
+          config: { wide_screen_mode: true },
+          body: {
+            elements: [
+              { tag: "markdown", content: `Report "quoted"\n${delivered}` },
+              { tag: "button", url: delivered },
+              { tag: "button", url: action },
+            ],
+          },
+        },
+      });
+    },
+  );
 
   it("requires authentication and the feishu:write capability", async () => {
     const client = setupApp({

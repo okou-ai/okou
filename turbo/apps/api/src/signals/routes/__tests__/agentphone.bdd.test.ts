@@ -1,3 +1,6 @@
+import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
+import { integrationsPhoneMessageRoutes } from "../integrations-phone-message";
+import { setupApp } from "../../../__tests__/test-helpers";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through runner poll/claim, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
@@ -11,7 +14,7 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
@@ -375,6 +378,30 @@ const EXPECTED_PLAIN_RUN_OUTPUT = [
 ].join("\n");
 
 describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
+  it("snapshots private artifacts in proactive AgentPhone messages without a run", async () => {
+    const { actor, phone, sends } = await entitledLinkedActor();
+    const artifact = await privateIntegrationArtifact(context, actor);
+    const before = sends.messages.length;
+    const client = setupApp({
+      context,
+      routes: integrationsPhoneMessageRoutes,
+    })(integrationsPhoneMessageContract);
+    await accept(
+      client.sendMessage({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+          toNumber: phone,
+          text: `Your report: ${artifact.url}`,
+        },
+      }),
+      [200],
+    );
+    expect(sends.messages).toHaveLength(before + 1);
+    expect(lastSend(sends).toNumber).toBe(phone);
+    await artifact.expectDelivered(lastSend(sends).body ?? "");
+  });
+
   it("links an AgentPhone user without provisioning artifact storage", async () => {
     const bdd = createBddApi(context);
     const integrations = createBddIntegrationApi(context);

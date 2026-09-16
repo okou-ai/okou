@@ -7,6 +7,7 @@ import { and, eq } from "drizzle-orm";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { snapshotIntegrationMessage$ } from "../services/integration-artifact-message.service";
 import { db$, type ReadonlyDb } from "../external/db";
 import {
   createTeamsPersonalConversation,
@@ -183,7 +184,7 @@ async function resolveTeamsMessageTarget(
   };
 }
 
-const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
+const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const bodyResult = await get(
     bodyResultOf(integrationsTeamsMessageContract.sendMessage),
@@ -226,14 +227,26 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
     return target;
   }
 
+  const outbound = integrationsTeamsMessageContract.sendMessage.body.parse({
+    ...body,
+    ...(await set(
+      snapshotIntegrationMessage$,
+      {
+        content: { text: body.text, card: body.card },
+      },
+      signal,
+    )),
+  });
+  signal.throwIfAborted();
+
   const result = await sendTeamsMessage(
     {
       serviceUrl: installation.serviceUrl,
       conversationId: target.conversationId,
       activityId: target.activityId,
       tenantId: installation.teamsTenantId,
-      text: body.text ?? "Adaptive card",
-      card: body.card,
+      text: outbound.text ?? "Adaptive card",
+      card: outbound.card,
     },
     signal,
   );

@@ -4,6 +4,7 @@ import { integrationsSlackMessageContract } from "@okouai/api-contracts/contract
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { snapshotIntegrationMessage$ } from "../services/integration-artifact-message.service";
 import type { SlackAnyBlock } from "../external/slack-block-kit";
 import { createSlackClient } from "../external/slack-message-client";
 import { slackOrgInstallation } from "../services/slack-data.service";
@@ -35,7 +36,7 @@ const noUserConnection = Object.freeze({
   }),
 });
 
-const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
+const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const authRunId =
     "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
@@ -97,14 +98,26 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
     targetChannel = body.channel!;
   }
 
-  let finalBlocks = body.blocks as SlackAnyBlock[] | undefined;
+  const outbound = integrationsSlackMessageContract.sendMessage.body.parse({
+    ...body,
+    ...(await set(
+      snapshotIntegrationMessage$,
+      {
+        content: { text: body.text, blocks: body.blocks },
+      },
+      signal,
+    )),
+  });
+  signal.throwIfAborted();
+
+  let finalBlocks = outbound.blocks as SlackAnyBlock[] | undefined;
   if (footerText) {
     const footerBlocks = buildFooterBlocks(footerText);
     if (finalBlocks && finalBlocks.length > 0) {
       finalBlocks = [...finalBlocks, ...footerBlocks];
-    } else if (body.text) {
+    } else if (outbound.text) {
       finalBlocks = [
-        { type: "section", text: { type: "mrkdwn", text: body.text } },
+        { type: "section", text: { type: "mrkdwn", text: outbound.text } },
         ...footerBlocks,
       ];
     } else {
@@ -112,7 +125,7 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
     }
   }
 
-  const result = await client.postMessage(targetChannel, body.text ?? "", {
+  const result = await client.postMessage(targetChannel, outbound.text ?? "", {
     threadTs: body.threadTs,
     blocks: finalBlocks,
   });

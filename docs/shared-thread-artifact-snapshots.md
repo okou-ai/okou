@@ -81,13 +81,19 @@ mixed deployments fail closed for new snapshot links. This change creates no
 bucket, DNS route, credential or rollout override. Per-PR staging acceptance is
 still needed for the deployed App/API/Worker combination.
 
-## Integration final replies
+## Integration messages
 
 Final replies in Slack, Feishu, Lark, Microsoft Teams, Telegram, GitHub comments,
 AgentPhone and automation result emails prepare the same resource snapshot before
 provider formatting and delivery. The legacy Feishu organization callback follows
-the same path. Only that final reply's references and their managed static
-dependencies are selected; canonical chat history keeps its original private URLs.
+the same path. The authenticated message-send APIs for Slack, Feishu, Lark,
+Teams, Telegram and AgentPhone also prepare snapshots before sending. This covers
+text, nested Slack blocks, Feishu/Lark interactive cards and Teams Adaptive Cards,
+including card-only messages and messages with both text and a card. Only outgoing
+content is rewritten; recipient and reply/thread identifiers are preserved.
+Repeated references within a payload reuse one snapshot resource. Only the outgoing
+message's references and their managed static dependencies are selected; canonical
+chat history keeps its original private URLs.
 Plain text, existing public URLs and external URLs do not create a snapshot.
 Authorization/action links and unmanaged download links in the reply retain their
 original URLs. Static bundle dependencies retain the stricter sharing checks.
@@ -95,8 +101,8 @@ original URLs. Static bundle dependencies retain the stricter sharing checks.
 Each delivery has a separate `integration_artifact_deliveries` identity bound to
 its owner, organization, brand and source-content hash. It points to a dedicated
 `shared_threads` parent for the existing publication and account-erasure protocol.
-The parent contains one rewritten assistant message, has no artifact-catalog entry,
-and is excluded from public conversation and metadata reads. Manual conversation
+The parent contains only the rewritten outgoing text values, has no artifact-catalog
+entry, and is excluded from public conversation and metadata reads. Manual conversation
 shares have independent identities and grants.
 
 Delivery waits for the complete policy to become active. Existing delivery retry
@@ -106,6 +112,13 @@ recognized missing or foreign private references fail delivery. A concurrent
 preparation is left alone; a retry can recover a preparing identity older than five
 minutes. A delivery record with a revoked policy fails closed. This does not
 introduce new provider-message retry behavior.
+
+Proactive sends use the authenticated user and organization as the artifact owner,
+so session/PAT callers without a run receive the same checks and replacement.
+They do not attach a run or infer ownership from a run ID. Each API call receives
+a new delivery identity, including multiple sends within one run. Retrying the
+API remains another provider send; this does not add message-send idempotency or
+reuse a callback identity across different recipients or content.
 
 Snapshot URLs can be opened by anyone possessing the link. They do not enforce
 membership in the destination conversation. Original artifacts retain their
@@ -118,7 +131,7 @@ The Worker must support the existing `thread-resource` protocol before this API
 is deployed; this change adds no protocol, App, DNS or bucket requirement. Older
 APIs tolerate the additive table; rolling back stops automatic snapshot creation
 while existing delivery links retain their policy. Rolling back to an API without
-the conversation-read exclusion can expose the single final reply if its internal
+the conversation-read exclusion can expose the outgoing text values if the internal
 snapshot UUID is known; no preceding conversation messages are stored in that
 parent. The existing `privateArtifacts` switch still controls source artifact
 creation; delivery also handles already-created private artifacts after the

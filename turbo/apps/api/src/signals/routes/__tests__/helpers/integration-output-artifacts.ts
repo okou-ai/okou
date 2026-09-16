@@ -16,6 +16,7 @@ import { createRouteMocks } from "./route-test";
 import { installSharedThreadStorage } from "./shared-thread-storage";
 import type { ApiTestUser } from "./api-bdd";
 import { createHostMapsBddApi } from "./api-bdd-host-maps";
+import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { hostedTextFile } from "./api-bdd-host-files";
 
 /** Upload through the same public API as a generated artifact. */
@@ -150,6 +151,13 @@ export async function privateIntegrationArtifact(
         [200],
       );
       expect(status.body.audience).toBe("private");
+      const catalog = await createChatFilesBddApi(context).listArtifactCatalog(
+        actor,
+        {
+          kind: "shared-thread",
+        },
+      );
+      expect(catalog.artifacts).toStrictEqual([]);
       return deliveredUrl!;
     },
   };

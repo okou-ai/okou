@@ -1,3 +1,4 @@
+import { privateIntegrationArtifact } from "./helpers/integration-output-artifacts";
 import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
@@ -172,6 +173,74 @@ describe("Microsoft Teams integration CLI routes", () => {
         await removeTeamsForTest(context.signal, fixture);
       }
     }
+  });
+
+  it("snapshots private Teams text and Adaptive Card links before sending", async () => {
+    const fixture = teamsFixture();
+    fixtures.push(fixture);
+    const captured: CapturedTeamsActivity = {};
+    mockOutgoingTeams(fixture, captured);
+    await seedConnectedTeams(fixture);
+    const artifact = await privateIntegrationArtifact(context, {
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+      orgRole: "org:admin",
+      email: `${fixture.userId}@example.test`,
+    });
+    const client = setupApp({
+      context,
+      routes: integrationsTeamsMessageRoutes,
+    })(integrationsTeamsMessageContract);
+    const action = "https://example.test/approve?code=keep";
+    const card = {
+      type: "AdaptiveCard" as const,
+      version: "1.4",
+      body: [{ type: "TextBlock", text: artifact.url, wrap: true }],
+      actions: [
+        { type: "Action.OpenUrl", title: "Report", url: artifact.url },
+        { type: "Action.OpenUrl", title: "Approve", url: action },
+      ],
+    };
+    await accept(
+      client.sendMessage({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          conversationId: fixture.teamsConversationId,
+          activityId: fixture.teamsThreadId,
+          text: artifact.url,
+          card,
+        },
+      }),
+      [200],
+    );
+    const delivered = await artifact.expectDelivered(
+      JSON.stringify(captured.body),
+    );
+    expect(captured.body).toMatchObject({
+      summary: delivered,
+      replyToId: fixture.teamsThreadId,
+      attachments: [
+        {
+          content: {
+            ...card,
+            body: [{ type: "TextBlock", text: delivered, wrap: true }],
+            actions: [
+              { type: "Action.OpenUrl", title: "Report", url: delivered },
+              { type: "Action.OpenUrl", title: "Approve", url: action },
+            ],
+          },
+        },
+      ],
+    });
+    await accept(
+      client.sendMessage({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { user: "me", card },
+      }),
+      [200],
+    );
+    await artifact.expectDelivered(JSON.stringify(captured.body));
+    expect(captured.body?.summary).toBe("Adaptive card");
   });
 
   it("sends a Teams message through the installed bot", async () => {

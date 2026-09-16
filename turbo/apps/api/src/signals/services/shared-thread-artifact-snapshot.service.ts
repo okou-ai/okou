@@ -580,9 +580,11 @@ function snapshotPolicy(
 function replaceSnapshotReferences(
   content: string,
   replacements: ReadonlyMap<string, string>,
+  preserveUnmanaged: boolean,
 ): string {
-  return content.replace(REFERENCE_PATTERN, (match) => {
-    const value = match.replace(/[.,;!]+$/u, "");
+  const referenceValue = snapshotReferenceValue(content, preserveUnmanaged);
+  return content.replace(REFERENCE_PATTERN, (match, offset: number) => {
+    const value = referenceValue(match, offset);
     return `${replacements.get(value) ?? value}${match.slice(value.length)}`;
   });
 }
@@ -590,6 +592,35 @@ function replaceSnapshotReferences(
 interface SnapshotSelection extends SnapshotOwner {
   readonly messages: readonly SharedMessage[];
   readonly preserveUnmanagedMessageLinks?: boolean;
+}
+
+function snapshotReferenceValue(content: string, preserveUnmanaged: boolean) {
+  return (match: string, offset: number) => {
+    // Slack mrkdwn labels are outside the URL. Only message content accepts
+    // this syntax; hosted dependency paths retain their literal pipes.
+    const label =
+      preserveUnmanaged && content[offset - 1] === "<"
+        ? match.indexOf("|")
+        : -1;
+    return (label === -1 ? match : match.slice(0, label)).replace(
+      /[.,;!]+$/u,
+      "",
+    );
+  };
+}
+
+function snapshotReferences(content: string, preserveUnmanaged: boolean) {
+  if (!preserveUnmanaged) {
+    return artifactTextReferences(content);
+  }
+  const referenceValue = snapshotReferenceValue(content, preserveUnmanaged);
+  return [
+    ...new Set(
+      [...content.matchAll(REFERENCE_PATTERN)].map((match) => {
+        return referenceValue(match[0], match.index);
+      }),
+    ),
+  ];
 }
 
 /** Discover only the selected messages and their managed static dependencies. */
@@ -690,7 +721,7 @@ export const prepareSharedThreadArtifacts$ = command(
     ): Promise<string> {
       const replacements = new Map(
         await mapConcurrent(
-          artifactTextReferences(content),
+          snapshotReferences(content, preserveUnmanaged),
           10,
           async (value) => {
             const source = value.replaceAll("&amp;", "&");
@@ -706,7 +737,7 @@ export const prepareSharedThreadArtifacts$ = command(
         ),
       );
       signal.throwIfAborted();
-      return replaceSnapshotReferences(content, replacements);
+      return replaceSnapshotReferences(content, replacements, preserveUnmanaged);
     }
 
     const messages = await rewriteSnapshotMessages(

@@ -4,6 +4,7 @@ import { integrationsTelegramMessageContract } from "@okouai/api-contracts/contr
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { snapshotIntegrationMessage$ } from "../services/integration-artifact-message.service";
 import { sendMessage } from "../external/telegram-client";
 import {
   getOfficialTelegramBotConfig,
@@ -24,7 +25,7 @@ const botNotFound = Object.freeze({
   }),
 });
 
-const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
+const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const orgId = auth.orgId;
   const authRunId =
@@ -61,7 +62,19 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
-  const text = buildTelegramResponse(body.text, undefined, footerText);
+  const outbound = integrationsTelegramMessageContract.sendMessage.body.parse({
+    ...body,
+    ...(await set(
+      snapshotIntegrationMessage$,
+      {
+        content: { text: body.text },
+      },
+      signal,
+    )),
+  });
+  signal.throwIfAborted();
+
+  const text = buildTelegramResponse(outbound.text, undefined, footerText);
 
   const result = await sendMessage(botToken, body.chatId, text, {
     replyToMessageId: body.replyToMessageId,
