@@ -7,6 +7,8 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+mod file_stream;
+
 #[derive(Debug, Eq, PartialEq)]
 struct Args {
     append: bool,
@@ -20,7 +22,8 @@ const USAGE: &str = concat!(
     "usage: guest-write-file [--append] [--] <path>\n",
     "       guest-write-file --create-parents [--] <path>\n",
     "       guest-write-file --private [--append] [--] <path>\n",
-    "       guest-write-file --batch [--private]",
+    "       guest-write-file --batch [--private]\n",
+    "       guest-write-file --zstd <decoded-size> [--append] [--create-parents] [--] <path>",
 );
 
 fn parse_args<I>(args: I) -> Result<Args, String>
@@ -247,6 +250,7 @@ fn prepare_output_file(_file: &File) -> io::Result<()> {
 /// guest-write-file --create-parents [--] <path>
 /// guest-write-file --private [--append] [--] <path>
 /// guest-write-file --batch [--private]
+/// guest-write-file --zstd <decoded-size> [--append | --create-parents] [--] <path>
 /// ```
 ///
 /// Use `--` before `<path>` when the literal path begins with `-`. `stdin`
@@ -269,12 +273,22 @@ fn prepare_output_file(_file: &File) -> io::Result<()> {
 /// `--private`, every entry uses the private runtime-file behavior described
 /// above.
 ///
+/// `--zstd` reads exactly one checksummed zstd frame and writes its decoded
+/// bytes using ordinary file semantics. Decoded requests are at most 15 MiB,
+/// with a 16 MiB decoder window. Private and batch modes are not supported.
+/// A decode or write failure may leave partial bytes just like an ordinary write;
+/// callers that need atomic replacement must stage and rename the complete file.
+///
 /// Returns process-style exit codes: `0` for success, `1` for runtime or write
 /// failures, and `2` for usage or argument errors.
 pub fn run_cli<I>(args: I, stdin: impl Read, mut stderr: impl Write) -> i32
 where
     I: IntoIterator<Item = String>,
 {
+    let args: Vec<String> = args.into_iter().collect();
+    if args.first().is_some_and(|arg| arg == "--zstd") {
+        return file_stream::run(args, stdin, stderr);
+    }
     let args = match parse_args(args) {
         Ok(args) => args,
         Err(e) => {

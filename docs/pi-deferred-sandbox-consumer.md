@@ -114,6 +114,25 @@ canonical session, pending tool IDs and event sequence, then installs the exact
 history atomically before entering the existing pending-tool or settled-session
 RPC continuation. It never substitutes an initial prompt for H1.
 
+### Executable handoff size contract
+
+Publication, demand admission, materialization, the chunk API and the CLI reader
+share one size contract. Session history is bounded by the CLI's own 16 MiB
+session ceiling, measured in UTF-8 bytes rather than UTF-16 code units, so a
+multibyte history cannot satisfy a string-length check and then overflow the
+reader. The serialized `{sessionHistory, resourceSnapshot}` aggregate the chunk
+API streams is bounded at 32 MiB, which individually valid objects can otherwise
+exceed together while each still fits the per-object envelope.
+
+Both bounds are applied before a continuation can become executable: immutable
+object publication rejects an oversized history, demand admission re-checks the
+aggregate once both objects are durable, and materialization checks it again
+before the job row exists. An unsupported continuation is rejected or finalized
+truthfully; already-incurred inference usage, diagnostic locators and pending
+tool identity are retained, and history is never truncated nor the original
+prompt or provider request replayed. A producer calling the demand interface
+observes `false` and an already terminal Run rather than queued executable work.
+
 ## Physical release proof and uncertain claims
 
 Lease timeout, cancellation and completion alone do not free capacity. Claimed,
@@ -148,9 +167,27 @@ managed CPU cgroups and rejects nonempty old guest groups. Local unmanaged
 Runners cannot supply this recovery proof.
 
 Claim-directory scans keep a cursor across bounded heartbeat batches. Release
-HTTP failures retain their outbox receipt for retry. Stale acknowledged receipts
-are quarantined without changing another owner's capacity. A corrupt ownership
-record is retained; it is never interpreted as release proof.
+HTTP failures retain their outbox receipt for retry. A corrupt ownership record
+is retained; it is never interpreted as release proof.
+
+The release response reports an explicit outcome alongside the legacy `released`
+boolean. `released` changed capacity. `stale` is a definitive acknowledgement
+that the proof owns no capacity here, so the receipt is quarantined and the claim
+barrier is removed without changing another owner's capacity. `inconclusive`
+means the API could not reconstruct the owner, so an obligation may remain: the
+Runner retains both the receipt and the claim barrier and retries on a later
+heartbeat, and capacity is never freed without a matched proof. An older Runner
+reads only `released` and keeps its existing quarantine behaviour; a capable
+Runner against an older API sees no `outcome` and falls back to that boolean.
+
+Cleanup identity is independent of a still-live execution binding. A threadless
+private maintenance Run is otherwise discoverable only through the live
+`pi_memory_phase2_jobs.maintenance_run_id` mapping, which normal checkpoint
+settlement, success and failure retire. Cleanup therefore resolves the resource
+from the Run's retained, hash- and namespace-verified captured configuration and
+still requires that storage to belong to both the Run owner and the captured
+cleanup owner. Execution admission is unchanged and continues to validate the
+live maintenance lease.
 
 ## Migration and verification boundaries
 

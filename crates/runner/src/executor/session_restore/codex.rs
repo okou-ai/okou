@@ -96,7 +96,7 @@ pub(super) async fn restore_codex_session(
     };
     let session_path = format!("{logical_path}{physical_suffix}");
 
-    write_session_history_file(sandbox, &session_path, session_history).await?;
+    write_session_history_file(sandbox, &session_path, session).await?;
 
     let diagnostics = SessionRestoreDiagnostics {
         framework: "codex",

@@ -1524,19 +1524,21 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "毎日アプリを開くと獲得。00:00 UTC にリセット。",
+          "description": "1日1回、毎日",
           "name": "毎日チェックイン",
           "unit": "1日あたり"
         },
         "connector": {
-          "description": "OAuth で接続。各コネクタにつき1回獲得できます。",
+          "action": "接続",
+          "description": "Gmail、Notion など100以上",
           "name": "コネクタを接続",
           "unit": "コネクタごと"
         },
         "inReview": "確認中",
         "inReviewDescription": "送信済み、確認待ち",
         "invite": {
-          "description": "招待が承諾されると獲得。最大15人まで。",
+          "action": "招待",
+          "description": "追加した人数だけ加算されます",
           "name": "チームを招待",
           "unit": "メンバーごと"
         },
@@ -1547,6 +1549,7 @@
         "reward": "+{{amount}}",
         "rewardedConnections": "報酬獲得済みコネクタ: {{amount}}",
         "share": {
+          "action": "シェア",
           "description": "投稿して、リンクを貼り付け",
           "name": "{{assistantName}} を X でシェア"
         },
@@ -1559,14 +1562,16 @@
           "title": "{{assistantName}} を X でシェア"
         },
         "slack": {
-          "description": "組織とワークスペースごとに1回、組織用クレジットを2,000獲得。",
+          "action": "追加",
+          "description": "チームがすでに使っている場所へ",
           "name": "{{assistantName}} を Slack に追加"
         },
         "stepCount": "{{completed}}/{{total}}",
         "subtitle": "タスクを試してクレジットを獲得。",
         "title": "はじめる",
         "workflow": {
-          "description": "自分で作成したワークフローを正常に実行。",
+          "action": "作成",
+          "description": "繰り返しの作業を再利用できるスキルに変える",
           "name": "ワークフローを作る"
         }
       },
@@ -5886,8 +5891,8 @@
             "cottonSky": "Cotton sky",
             "daydream": "Daydream",
             "deepLagoon": "Deep lagoon",
-            "goldenHour": "Golden hour",
-            "limelight": "Limelight"
+            "default": "デフォルト",
+            "goldenHour": "Golden hour"
           },
           "title": "カラーテーマ"
         },
@@ -6380,6 +6385,10 @@
     "resetHelp": "新しいサーバーの識別情報を別の方法で確認してからリセットしてください。次の接続では新しいホスト鍵を信頼し、記憶します。",
     "retry": "再試行",
     "save": "保存",
+    "saveRecovery": {
+      "resourceIdConflict": "このリソース ID は使用できません。フォームを閉じて開き直し、もう一度お試しください。",
+      "uncertain": "変更が保存されたか確認できませんでした。同じ内容で保存を再試行するか、閉じて一覧を確認してから追加し直してください。"
+    },
     "summary_one": "{{count}} 台のホストを設定済み",
     "summary_other": "{{count}} 台のホストを設定済み",
     "title": "SSH ホスト",

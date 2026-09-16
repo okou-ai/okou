@@ -201,21 +201,34 @@ test("An admin sees every step and what each one pays", async () => {
       "Rewards expire 7 days after they are granted. Slack rewards go to the organization; other rewards go to your personal balance.",
     ),
   ).toBeInTheDocument();
-  const workflow = within(screen.getByTestId("get-started-quest-workflow"));
+  const workflowRow = screen.getByTestId("get-started-quest-workflow");
+  const workflow = within(workflowRow);
   expect(workflow.getByText("Build a workflow")).toBeInTheDocument();
-  expect(
-    workflow.getByText("Successfully run a workflow you created."),
-  ).toBeInTheDocument();
+  // The reward leads the description line, so the two read as one sentence.
+  expect(normalizedText(workflowRow)).toContain(
+    "+1,000 · Turn a repeat task into a reusable skill",
+  );
   expect(workflow.getByText("+1,000")).toBeInTheDocument();
+  // An unfinished quest names what pressing the row does.
+  expect(workflow.getByText("Build")).toBeInTheDocument();
 
   // A reward that keeps paying names its unit next to the amount.
   const invite = within(screen.getByTestId("get-started-quest-invite"));
   expect(invite.getByText("Invite your team")).toBeInTheDocument();
   expect(invite.getByText("per member")).toBeInTheDocument();
 
+  // A finished quest keeps the completion check and offers nothing to press.
+  const slackRow = screen.getByTestId("get-started-quest-slack");
+  expect(within(slackRow).queryByText("Add")).not.toBeInTheDocument();
+
+  // Done but still earning: the connector keeps both its reward and its
+  // affordance instead of collapsing to the completion check.
+  const connectorRow = screen.getByTestId("get-started-quest-connector");
+  expect(normalizedText(connectorRow)).toContain("+100 per connector");
+  expect(within(connectorRow).getByText("Connect")).toBeInTheDocument();
+
   // Personal earnings exclude Slack; another OAuth connector can still earn a reward.
   expect(within(panel).getByText("400")).toBeInTheDocument();
-  expect(screen.getByTestId("get-started-quest-connector")).toBeInTheDocument();
 });
 
 test("A member is only offered the steps they can finish themselves", async () => {
@@ -385,12 +398,15 @@ test("Reward notifications refresh quests without disconnecting shared chat hist
     GET_STARTED_REWARDS_CHANGED_EVENT,
     null,
   );
-  await expect(
-    within(panel).findByText(
+  // The reward shares the description line, so the rejection reason is read
+  // off the row rather than as a standalone text node.
+  await waitFor(() => {
+    expect(
+      normalizedText(screen.getByTestId("get-started-quest-share")),
+    ).toContain(
       "This post is not eligible. Submit another public post mentioning Okou.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByTestId("get-started-quest-share")).toBeInTheDocument();
+    );
+  });
 });
 
 test("The entry stays hidden while the switch is off", async () => {
@@ -505,12 +521,12 @@ test("A rejected X claim can be replaced and survives opening the task panel", a
     path: questChatPath(),
     featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
   });
-  const panel = await openQuestPanel();
+  await openQuestPanel();
   expect(
-    within(panel).getByText(
-      "This post is not eligible. Submit another public post mentioning Okou.",
-    ),
-  ).toBeInTheDocument();
+    normalizedText(screen.getByTestId("get-started-quest-share")),
+  ).toContain(
+    "This post is not eligible. Submit another public post mentioning Okou.",
+  );
   click(screen.getByTestId("get-started-quest-share"));
   await expect(
     screen.findByRole("dialog", { name: "Share Okou on X" }),
@@ -538,9 +554,12 @@ test("Opening the app checks in and focus refresh uses the server UTC day", asyn
   });
   const panel = await openQuestPanel();
   await expect(within(panel).findByText("400")).resolves.toBeInTheDocument();
-  expect(
-    within(panel).getByText("Open the app daily. Resets at 00:00 UTC."),
-  ).toBeInTheDocument();
+  // Opening the app is the check-in, so the claimed row carries its title and
+  // description and nothing else: no reward left to earn, nothing to press.
+  const checkinRow = screen.getByTestId("get-started-quest-checkin");
+  expect(normalizedText(checkinRow)).toBe(
+    "Check in dailyOnce a day, every day",
+  );
   data.serverNow = "2026-09-16T00:00:00.000Z";
   data.nextResetAt = "2026-09-17T00:00:00.000Z";
   data.claimedToday = false;

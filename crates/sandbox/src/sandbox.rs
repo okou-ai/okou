@@ -15,6 +15,17 @@ use crate::types::{
     StorageManifestRequest, WriteFileEntry,
 };
 
+/// Ephemeral file-transfer encoding, explicitly selected by the business caller.
+/// The bytes and format stored inside the guest are unchanged.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum FileCompression {
+    #[default]
+    /// Use the ordinary uncompressed transfer.
+    None,
+    /// Stream a checksummed zstd frame at the transport's fast compression level.
+    Zstd,
+}
+
 /// Eligibility result after a sandbox successfully reaches the parked state.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SandboxParkOutcome {
@@ -939,6 +950,15 @@ pub trait Sandbox: Send + Sync + Any {
     ///
     /// The guest path must be non-empty and must not contain NUL bytes.
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<()>;
+
+    /// Write ordinary file bytes using the caller's immutable transport choice.
+    /// Implementations must honor it without sampling, switching codecs or retrying raw.
+    async fn write_file_with_compression(
+        &self,
+        path: &str,
+        content: &[u8],
+        compression: FileCompression,
+    ) -> Result<()>;
 
     /// Write multiple ordinary files inside the guest.
     ///
