@@ -1918,6 +1918,8 @@
       "providerIncompatibleAction": "新しいセッションを開始する",
       "providerIncompatiblePrefix": "このセッションは別のモデル プロバイダーで開始されたため、現在のモデル プロバイダーでは続行できません。",
       "recovery": {
+        "autonomyLimitDescription": "連続自動実行の上限に達しました。続行するには確認が必要です。",
+        "autonomyLimitTitle": "自動実行の上限に達しました",
         "capacityDescription": "少ししてからもう一度試すか、別のモデルに切り替えてください。",
         "capacityTitle": "このモデルは現在混雑しています",
         "claudeCode": "Claude Code",
@@ -2958,27 +2960,6 @@
     "toasts": {
       "copied": "コピーされました",
       "deleted": "チャットが削除されました"
-    },
-    "translation": {
-      "action": "翻訳",
-      "close": "翻訳を閉じる",
-      "copy": "翻訳をコピー",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "翻訳",
-      "targetLanguage": "翻訳先の言語"
     },
     "voice": {
       "checkingLimit": "音声入力制限を確認する",
@@ -6394,6 +6375,35 @@
     "title": "SSH ホスト",
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
+  },
+  "templates": {
+    "actions": {
+      "delete": "削除",
+      "menu": "{{title}} の操作",
+      "preview": "{{title}} をプレビュー",
+      "rename": "テンプレート名を変更"
+    },
+    "custom": "カスタム",
+    "detail": {
+      "back": "カスタムテンプレート",
+      "page": "{{number}} ページ目",
+      "source_other": "{{count}} ページ · {{filename}} から"
+    },
+    "empty": {
+      "description": "アップロードしたファイルから作成されたテンプレートがここに表示されます。",
+      "title": "テンプレートはまだありません"
+    },
+    "loadFailed": "テンプレートを読み込めませんでした。",
+    "pageCount_other": "{{count}} ページ",
+    "retry": "再試行",
+    "sharedBy": "{{owner}} が共有",
+    "visibility": {
+      "change": "変更",
+      "organization": "組織",
+      "organizationState": "この組織の全員が使用できます",
+      "private": "非公開",
+      "privateState": "自分だけが表示・使用できます"
+    }
   },
   "usage": {
     "displayNames": {

@@ -194,6 +194,29 @@ export function validatePolicyFiles(allowlist, baseline) {
     injectionKeys.add(key);
   }
 
+  const classDependencyKeys = new Set();
+  for (const [index, entry] of allowlist.classDependencies.entries()) {
+    const label = `classDependencies[${index}]`;
+    errors.push(...metadataErrors(entry, label));
+    if (
+      typeof entry.file !== "string" ||
+      typeof entry.token !== "string" ||
+      entry.token.trim() === "" ||
+      !Number.isSafeInteger(entry.count) ||
+      entry.count <= 0
+    ) {
+      errors.push(
+        `${label} must have exact file, token, and a positive integer count`,
+      );
+      continue;
+    }
+    const key = `${entry.file}\u0000${entry.token}`;
+    if (classDependencyKeys.has(key)) {
+      errors.push(`${label} duplicates an existing class dependency entry`);
+    }
+    classDependencyKeys.add(key);
+  }
+
   const vendorFiles = new Set();
   for (const [index, entry] of allowlist.vendorFiles.entries()) {
     const label = `vendorFiles[${index}]`;
@@ -611,11 +634,14 @@ function collectCurrentStyleState({
   const sourceFiles = globSync(SOURCE_GLOBS, { cwd: root })
     .filter(isProductionSource)
     .sort();
-  const classUsages = collectLegacyClassUsages(
-    root,
-    sourceFiles,
-    baseline.legacyClassTokens,
-  );
+  const classUsages = collectLegacyClassUsages(root, sourceFiles, [
+    ...new Set([
+      ...baseline.legacyClassTokens,
+      ...allowlist.classDependencies.map((entry) => {
+        return entry.token;
+      }),
+    ]),
+  ]);
 
   for (const file of sourceFiles) {
     const text = readFileSync(resolve(root, file), "utf8");
@@ -678,32 +704,51 @@ export function checkStylePolicy({
     );
   }
 
+  // An allowlisted class dependency pins an exact count in an exact file, the
+  // way a baseline entry does. It is not prunable, so a count that no longer
+  // matches points at the allowlist rather than at the ratchet.
+  const allowlistedUsage = {};
+  for (const entry of allowlist.classDependencies) {
+    allowlistedUsage[entry.file] ??= {};
+    allowlistedUsage[entry.file][entry.token] = entry.count;
+  }
+
   const sourceFiles = new Set([
     ...Object.keys(current.classUsages),
     ...Object.keys(baseline.classUsages),
+    ...Object.keys(allowlistedUsage),
   ]);
   for (const file of sourceFiles) {
     const currentUsage = current.classUsages[file] ?? {};
-    const expectedUsage = baseline.classUsages[file] ?? {};
+    const baselineUsage = baseline.classUsages[file] ?? {};
+    const allowedUsage = allowlistedUsage[file] ?? {};
     for (const token of new Set([
       ...Object.keys(currentUsage),
-      ...Object.keys(expectedUsage),
+      ...Object.keys(baselineUsage),
+      ...Object.keys(allowedUsage),
     ])) {
+      const allowed = allowedUsage[token];
       const actual = currentUsage[token] ?? 0;
-      const expected = expectedUsage[token] ?? 0;
+      const expected = allowed ?? baselineUsage[token] ?? 0;
       if (actual > expected) {
         issues.push({
           type: "growth",
           file,
           line: 1,
-          message: `Legacy class \`${token}\` usage grew from ${expected} to ${actual}. Replace the new use with Tailwind utilities.`,
+          message:
+            allowed === undefined
+              ? `Legacy class \`${token}\` usage grew from ${expected} to ${actual}. Replace the new use with Tailwind utilities.`
+              : `Allowlisted class \`${token}\` usage grew from ${expected} to ${actual}. An allowlist entry authorizes an exact count; it is not a license to spread the class.`,
         });
       } else if (actual < expected) {
         issues.push({
           type: "stale",
           file,
           line: 1,
-          message: `Legacy class \`${token}\` usage fell from ${expected} to ${actual}. Run \`pnpm lint:style:prune\` to ratchet the baseline down.`,
+          message:
+            allowed === undefined
+              ? `Legacy class \`${token}\` usage fell from ${expected} to ${actual}. Run \`pnpm lint:style:prune\` to ratchet the baseline down.`
+              : `Allowlisted class \`${token}\` usage fell from ${expected} to ${actual}. Lower the count in style-allowlist.json, or remove the entry.`,
         });
       }
     }

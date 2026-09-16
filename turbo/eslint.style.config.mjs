@@ -13,6 +13,22 @@ const baseline = JSON.parse(
   ),
 );
 
+const allowlist = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "style-allowlist.json"), "utf8"),
+);
+
+// A class the rule may see: still in the shrink-only baseline, or authorized as
+// a third-party DOM dependency. The policy owns the count; this only keeps the
+// unknown-class rule from flagging the names those files already carry.
+const knownLegacyClasses = [
+  ...new Set([
+    ...baseline.legacyClassTokens,
+    ...allowlist.classDependencies.map((entry) => {
+      return entry.token;
+    }),
+  ]),
+];
+
 function exactRegex(value) {
   return `^${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`;
 }
@@ -77,7 +93,7 @@ export default [
         "error",
         {
           attributes: ["class", "className", "contentClassName"],
-          ignore: baseline.legacyClassTokens.map(exactRegex),
+          ignore: knownLegacyClasses.map(exactRegex),
         },
       ],
     },

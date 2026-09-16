@@ -3,8 +3,29 @@ import { z } from "zod";
 
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
+import { withPreparedLaunchAdmissionTrackingForTest } from "../signals/services/prepared-launch-admission-lock.service";
+import { createDeferredPromise } from "../signals/utils";
 
 const waiterCountSchema = z.object({ waiterCount: z.number() });
+
+// Infrastructure-only observation: no API exposes when this request has
+// finished preparation and is about to acquire its final admission lock.
+export function observePreparedLaunchAdmissionFixture(args: {
+  readonly orgId: string;
+  readonly signal: AbortSignal;
+}) {
+  const attempted = createDeferredPromise<void>(args.signal);
+  return {
+    attempted: attempted.promise,
+    async track<T>(work: () => Promise<T>): Promise<T> {
+      return await withPreparedLaunchAdmissionTrackingForTest((orgId) => {
+        if (orgId === args.orgId && !attempted.settled()) {
+          attempted.resolve(undefined);
+        }
+      }, work);
+    },
+  };
+}
 
 // Infrastructure-only observation for the refresh/terminal race. Product state
 // is created and asserted through production APIs; no API exposes lock timing.

@@ -1,3 +1,4 @@
+import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
 import { nowDate } from "../../lib/time";
 import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -32,7 +33,10 @@ import {
   generateArtifactPreviewUrl,
   putHostedSitesS3Object,
 } from "../external/s3";
-import { privateArtifactRecord } from "./private-artifact-storage.service";
+import {
+  privateArtifactRecord,
+  privateArtifactUrl,
+} from "./private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
 
@@ -118,6 +122,10 @@ function ownedShareTarget(
       }
       return {
         targetId: file.id,
+        ownerUrl: new URL(
+          privateArtifactUrl(file.id, file.filename, file.metadata),
+          env("APP_URL"),
+        ).href,
         publicBrand: file.publicBrand,
         candidateVersion: null,
         target: {
@@ -152,6 +160,7 @@ function ownedShareTarget(
     const deployment = row.deployment;
     return {
       targetId: deployment.siteId,
+      ownerUrl: new URL(deployment.artifactUrl, env("APP_URL")).href,
       publicBrand: deployment.publicBrand,
       candidateVersion: deployment.deploymentVersion,
       target: {
@@ -159,7 +168,7 @@ function ownedShareTarget(
         id: deployment.id,
         siteId: deployment.siteId,
         deploymentVersion: deployment.deploymentVersion,
-        manifest: deployment.manifest,
+        manifest: hostedSiteDeliveryManifest(deployment.manifest),
       },
     };
   });
@@ -254,11 +263,13 @@ function shortShareUrl(policy: ArtifactSharePolicy | null): string | null {
 function shareStatus(args: {
   readonly policy: ArtifactSharePolicy | null;
   readonly organization: ArtifactShareStatus["organization"];
+  readonly ownerUrl: string;
   readonly candidateVersion: number | null;
 }): ArtifactShareStatus {
   const policy = args.policy;
   const shortUrl = shortShareUrl(policy);
   return {
+    ownerUrl: args.ownerUrl,
     shareId: policy?.shareId ?? null,
     audience: policy?.audience ?? "private",
     organization: args.organization,
@@ -344,6 +355,7 @@ export const readArtifactShare$ = command(
     return shareStatus({
       policy: stored?.policy ?? null,
       organization: { id: args.orgId, name: member.organization.name },
+      ownerUrl: candidate.ownerUrl,
       candidateVersion: candidate.candidateVersion,
     });
   },
@@ -361,7 +373,15 @@ const snapshotTarget$ = command(
       }
       const key = `private-artifacts/${target.id}/shares/${snapshotId}/${encodeURIComponent(target.filename)}`;
       await get(
-        copyArtifactShareObject(file.bucket, target.key, key, false, signal),
+        copyArtifactShareObject(
+          {
+            bucket: file.bucket,
+            sourceKey: target.key,
+            targetKey: key,
+            hosted: false,
+          },
+          signal,
+        ),
       );
       signal.throwIfAborted();
       return { ...target, key };
@@ -374,10 +394,12 @@ const snapshotTarget$ = command(
         files.slice(start, start + 10).map((path) => {
           return get(
             copyArtifactShareObject(
-              policyBucket(),
-              `private-sites/${candidate.publicBrand}/${target.id}${path}`,
-              `${prefix}${path}`,
-              true,
+              {
+                bucket: policyBucket(),
+                sourceKey: `private-sites/${candidate.publicBrand}/${target.id}${path}`,
+                targetKey: `${prefix}${path}`,
+                hosted: true,
+              },
               signal,
             ),
           );
@@ -515,6 +537,7 @@ export const updateArtifactShare$ = command(
     return shareStatus({
       policy,
       organization: { id: args.orgId, name: member.organization.name },
+      ownerUrl: candidate.ownerUrl,
       candidateVersion: candidate.candidateVersion,
     });
   },

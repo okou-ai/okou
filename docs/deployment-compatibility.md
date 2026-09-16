@@ -1834,3 +1834,50 @@ so enablement requires the capable API, Runner and commit-addressed co-built CLI
 Drain existing v4 intents, leases and release receipts before rolling any of
 those readers back below that floor. No switch is enabled by the consumer
 implementation.
+
+## Email outbox provider replay (#34645)
+
+Migration 1148 adds nullable `email_outbox.provider_idempotency_key` and
+`email_outbox.provider_request`, plus a unique index over the key. Apply it
+before promoting API code; both columns stay NULL for producer-enqueued rows and
+for every row written before the migration, so an older API keeps working and a
+rollback retains the additive columns.
+
+The first delivery attempt of a row renders its template, commits that provider
+request together with a key derived from the row's own id, and only then calls
+Resend. Later attempts replay the committed request byte-for-byte under the same
+key, so a template change, a sender/`APP_URL` change, a restart, or a provider
+acceptance whose completion write is lost resolves to the same email instead of a
+second one. Attempts never derive a new key, and an idempotency conflict
+(`invalid_idempotent_request`) fails the row visibly rather than re-keying it.
+
+Recovery and bounds:
+
+- A prepared row stays `sending` and owns a 60-second lease. After the lease, a
+  drain re-selects it and replays the same request; the abandoned attempt's
+  completion is fenced on `(status, attempts)` and cannot overwrite the newer
+  one. `sending` is now a durable state, not only an in-transaction marker.
+- Expiry is evaluated against the clock reached immediately before the send, not
+  the timestamp the batch started with, so a paced backlog cannot send items past
+  the 15-minute outbox TTL. Expired and attempt-exhausted rows are failed without
+  contacting the provider and are then removed by the existing cleanup.
+- Three attempts within a 15-minute TTL stay well inside Resend's documented
+  24-hour idempotency retention. Outside that window the provider no longer
+  replays a key, so this is bounded retry safety, not unlimited exactly-once
+  delivery, and sends made before this rollout carried no key and cannot be
+  deduplicated retroactively.
+- Delivery clears the committed request and keeps only the key and provider id.
+  Undelivered rows are removed by the existing TTL cleanup, so the rendered
+  message is retained no longer than the template and recipient already on the
+  row, and no new retention or erasure obligation is created.
+
+Mixed-version limitation: an old drain worker selects only `pending` rows and
+sends without a key, so it can still duplicate a row that a new worker returned
+to `pending`. Full retry protection starts once every drain worker runs the new
+path. Row locking with `SKIP LOCKED` keeps the two versions from processing the
+same row at the same time, and an old worker never claims a `sending` row.
+
+Scale at the time of the change: a fully paginated masked read at 2026-09-16
+09:56:29 UTC found 1,008 retained outbox rows, all `sent` and none past one
+attempt. That is retained row inventory under the 15-minute TTL, not historical
+volume, and it does not establish that an ambiguous send never happened.

@@ -683,42 +683,52 @@ describe("sandbox cleanup", () => {
     ).resolves.toStrictEqual({ version: 1, targets: [] });
   });
 
-  it("bounds connector diagnostic registration compensation and converges", async () => {
-    const fixtures: RunFixture[] = [];
-    for (
-      let index = 0;
-      index < CONNECTOR_DIAGNOSTIC_REGISTRATION_SWEEP_LIMIT + 1;
-      index++
-    ) {
-      const fixture = await trackRun(
-        insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
-      );
-      await insertConnectorDiagnosticRegistration(fixture, {
-        createdAt: new Date(Date.UTC(1990, 0, 1, 0, 0, index)),
-      });
-      fixtures.push(fixture);
+  describe("with a complete diagnostic cleanup cohort", () => {
+    async function prepareScenario() {
+      const fixtures: RunFixture[] = [];
+      for (
+        let index = 0;
+        index < CONNECTOR_DIAGNOSTIC_REGISTRATION_SWEEP_LIMIT + 1;
+        index++
+      ) {
+        const fixture = await trackRun(
+          insertRunFixture({ status: "completed", createdAt: minutesAgo(1) }),
+        );
+        await insertConnectorDiagnosticRegistration(fixture, {
+          createdAt: new Date(Date.UTC(1990, 0, 1, 0, 0, index)),
+        });
+        fixtures.push(fixture);
+      }
+      return { fixtures };
     }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
+    });
+    it("bounds connector diagnostic registration compensation and converges", async () => {
+      const { fixtures } = preparedScenario;
 
-    await cleanupRegisteredFixtures();
+      await cleanupRegisteredFixtures();
 
-    const first = fixtures[0];
-    const last = fixtures.at(-1);
-    if (!first || !last) {
-      throw new Error("Expected bounded registration cleanup fixtures");
-    }
+      const first = fixtures[0];
+      const last = fixtures.at(-1);
+      if (!first || !last) {
+        throw new Error("Expected bounded registration cleanup fixtures");
+      }
 
-    await expect(
-      findConnectorDiagnosticRegistration(first.runId),
-    ).resolves.toBeNull();
-    await expect(
-      findConnectorDiagnosticRegistration(last.runId),
-    ).resolves.toStrictEqual({ version: 1, targets: [] });
+      await expect(
+        findConnectorDiagnosticRegistration(first.runId),
+      ).resolves.toBeNull();
+      await expect(
+        findConnectorDiagnosticRegistration(last.runId),
+      ).resolves.toStrictEqual({ version: 1, targets: [] });
 
-    await cleanupRegisteredFixtures();
+      await cleanupRegisteredFixtures();
 
-    await expect(
-      findConnectorDiagnosticRegistration(last.runId),
-    ).resolves.toBeNull();
+      await expect(
+        findConnectorDiagnosticRegistration(last.runId),
+      ).resolves.toBeNull();
+    });
   });
 
   it("leaves the audited pre-forward threadless cohort discoverable", async () => {

@@ -1918,6 +1918,8 @@
       "providerIncompatibleAction": "새 세션 시작",
       "providerIncompatiblePrefix": "이 세션은 다른 모델 공급자로 시작되어 현재 공급자로 계속할 수 없습니다.",
       "recovery": {
+        "autonomyLimitDescription": "연속 자동 실행 한도에 도달했습니다. 계속하려면 확인해 주세요.",
+        "autonomyLimitTitle": "자동 실행 한도에 도달했습니다",
         "capacityDescription": "잠시 후 다시 시도하거나 다른 모델로 전환하세요.",
         "capacityTitle": "이 모델은 지금 혼잡합니다",
         "claudeCode": "Claude Code",
@@ -2958,27 +2960,6 @@
     "toasts": {
       "copied": "복사됨",
       "deleted": "채팅 삭제됨"
-    },
-    "translation": {
-      "action": "번역",
-      "close": "번역 닫기",
-      "copy": "번역 복사",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "번역",
-      "targetLanguage": "번역 언어"
     },
     "voice": {
       "checkingLimit": "음성 입력 제한 확인 중",
@@ -6394,6 +6375,35 @@
     "title": "SSH 호스트",
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
+  },
+  "templates": {
+    "actions": {
+      "delete": "삭제",
+      "menu": "{{title}} 작업",
+      "preview": "{{title}} 미리보기",
+      "rename": "템플릿 이름 바꾸기"
+    },
+    "custom": "커스텀",
+    "detail": {
+      "back": "커스텀 템플릿",
+      "page": "{{number}}페이지",
+      "source_other": "{{count}}페이지 · {{filename}}에서"
+    },
+    "empty": {
+      "description": "업로드한 파일로 만든 템플릿이 여기에 표시됩니다.",
+      "title": "아직 템플릿이 없습니다"
+    },
+    "loadFailed": "템플릿을 불러오지 못했습니다.",
+    "pageCount_other": "{{count}}페이지",
+    "retry": "다시 시도",
+    "sharedBy": "{{owner}} 님이 공유함",
+    "visibility": {
+      "change": "변경",
+      "organization": "조직",
+      "organizationState": "이 조직의 모든 사람이 사용할 수 있습니다",
+      "private": "비공개",
+      "privateState": "나만 보고 사용할 수 있습니다"
+    }
   },
   "usage": {
     "displayNames": {

@@ -16,7 +16,7 @@ load '../../helpers/setup'
     refute_output --partial "  run"
     refute_output --partial "compose"
     refute_output --partial "volume"
-    refute_output --partial "artifact"
+    assert_output --partial "artifact"
 }
 
 @test "okou outputs a semantic version" {

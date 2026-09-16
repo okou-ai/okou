@@ -136,6 +136,7 @@ test.each([
     expect(action("button", "Share")).toHaveAttribute("aria-busy", "true");
 
     statusReady.resolve({
+      ownerUrl: `https://app.okou.ai${canonical}`,
       shareId,
       audience,
       organization: { id: "original-org", name: "Original organization" },
@@ -172,6 +173,7 @@ test("a denied sharing check reports the error and allows retrying the selection
       });
     }
     return respond(200, {
+      ownerUrl: `https://app.okou.ai${canonical}`,
       shareId,
       audience: "organization",
       organization: { id: "original-org", name: "Original organization" },
@@ -210,6 +212,7 @@ test("a denied sharing check reports the error and allows retrying the selection
 test("a blocked clipboard replaces the loading toast with a copy error", async () => {
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
     return respond(200, {
+      ownerUrl: `https://app.okou.ai${canonical}`,
       shareId,
       audience: "organization",
       organization: { id: "original-org", name: "Original organization" },
@@ -237,6 +240,7 @@ test("a blocked clipboard replaces the loading toast with a copy error", async (
 
 test("the two share actions create and copy links, then only copy the existing audience", async () => {
   let status: ArtifactShareStatus = {
+    ownerUrl: `https://app.okou.ai${canonical}`,
     shareId: null,
     audience: "private",
     organization: { id: "original-org", name: "Original organization" },
@@ -322,6 +326,7 @@ test.each([null, "https://app.okou.ai/artifacts/a1b2c3d4e5.html"])(
     const clipboard = context.mocks.browser.clipboardWriteText();
     const publications: string[] = [];
     const status: ArtifactShareStatus = {
+      ownerUrl: `https://app.okou.ai${canonical}`,
       shareId,
       audience: "organization",
       organization: { id: "original-org", name: "Original organization" },
@@ -353,6 +358,7 @@ test.each([null, "https://app.okou.ai/artifacts/a1b2c3d4e5.html"])(
 test("sharing a newer HTML version publishes that version before copying its link", async () => {
   const publications: string[] = [];
   const status: ArtifactShareStatus = {
+    ownerUrl: `https://app.okou.ai${canonical}`,
     shareId,
     audience: "public",
     organization: { id: "original-org", name: "Original organization" },

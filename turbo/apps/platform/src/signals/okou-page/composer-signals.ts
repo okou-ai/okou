@@ -59,6 +59,7 @@ import {
 } from "./chat-composer.ts";
 import { videoRunOptionsForSend } from "./video-run-options.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
@@ -124,6 +125,11 @@ export interface ComposerSubmission {
    * composers carry their settings in the message's additional_info part.
    */
   readonly videoRunOptions: ChatRunVideoOptionsRequest | undefined;
+  /**
+   * What the composer is set to make. A send inside a thread keeps it, so a
+   * send that creates one hands it to the thread it opens.
+   */
+  readonly taskSelection: ComposerTaskSelection;
 }
 
 export type ComposerSubmissionAction = "send" | "queue";
@@ -924,6 +930,11 @@ function createSubmitCurrentInput({
           generationTemplate: get(draft.generationTemplate$),
           editorDocument,
           videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+          taskSelection: {
+            task: get(taskChips.task$) ?? mode,
+            presentationSlideCount: get(create.presentationSlideCount$),
+            visualization: get(taskChips.visualization.preferences$),
+          },
         },
         signal,
       );

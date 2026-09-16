@@ -40,7 +40,22 @@ function itemStateSelection() {
     attempts: emailOutbox.attempts,
     last_error: emailOutbox.lastError,
     resend_id: emailOutbox.resendId,
+    provider_idempotency_key: emailOutbox.providerIdempotencyKey,
+    provider_request: emailOutbox.providerRequest,
   };
+}
+
+/**
+ * Report whether the immutable provider request is committed without exposing
+ * the rendered message body through a test endpoint.
+ */
+function itemState<Item extends { readonly provider_request: unknown }>(
+  item: Item,
+): Omit<Item, "provider_request"> & {
+  readonly has_provider_request: boolean;
+} {
+  const { provider_request: providerRequest, ...state } = item;
+  return { ...state, has_provider_request: providerRequest !== null };
 }
 
 async function applyAction(
@@ -75,7 +90,7 @@ async function applyAction(
       }
       return {
         status: 200 as const,
-        body: { action: "seed-item" as const, item },
+        body: { action: "seed-item" as const, item: itemState(item) },
       };
     }
     case "find-item": {
@@ -92,7 +107,7 @@ async function applyAction(
       signal.throwIfAborted();
       return {
         status: 200 as const,
-        body: { action: "find-item" as const, items },
+        body: { action: "find-item" as const, items: items.map(itemState) },
       };
     }
     case "find-source": {
@@ -134,7 +149,7 @@ async function applyAction(
         status: 200 as const,
         body: {
           action: "find-source" as const,
-          items,
+          items: items.map(itemState),
           claim: claims[0] ?? null,
         },
       };
@@ -147,7 +162,7 @@ async function applyAction(
       signal.throwIfAborted();
       return {
         status: 200 as const,
-        body: { action: "read-items" as const, items },
+        body: { action: "read-items" as const, items: items.map(itemState) },
       };
     }
     case "delete-items": {

@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -55,41 +55,51 @@ async function openQuoteComposer(sends: CapturedChatSend[] = []) {
   return await quoteSelectedPassage();
 }
 
-test.each([
+describe.each([
   { key: "ArrowDown", edge: "end", offset: NOTE.length },
   { key: "ArrowRight", edge: "end", offset: NOTE.length },
   { key: "ArrowUp", edge: "start", offset: 0 },
   { key: "ArrowLeft", edge: "start", offset: 0 },
 ])(
-  "Keep the caret in quote text after $key at its $edge",
-  async ({ key, offset }) => {
-    const sends: CapturedChatSend[] = [];
-    const note = await openQuoteComposer(sends);
-    const user = userEvent.setup({ delay: null });
-    await user.type(note, NOTE);
-    placeNoteCaret(note, offset);
-
-    await user.keyboard(`{${key}}`);
-
-    await waitFor(() => {
-      expectNoteCaret(note, NOTE, offset);
+  "keep the caret in quote text after $key at its $edge",
+  ({ key, offset }) => {
+    async function prepareScenario() {
+      const sends: CapturedChatSend[] = [];
+      const note = await openQuoteComposer(sends);
+      const user = userEvent.setup({ delay: null });
+      await user.type(note, NOTE);
+      placeNoteCaret(note, offset);
+      return { user, note, sends };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    await user.keyboard("!");
-    const expected = offset === 0 ? `!${NOTE}` : `${NOTE}!`;
-    expect(note).toHaveTextContent(expected);
-    click(await findButton("Send"));
-    const sent = await waitForSend(sends, 1);
-    expect(
-      sent.userMessage?.parts.filter((part) => {
-        return part.type !== "model";
-      }),
-    ).toMatchObject([
-      {
-        type: "feedback",
-        quote: PASSAGE,
-        note: [{ type: "text", text: expected }],
-      },
-    ]);
+    it("preserves the complete scenario", async () => {
+      const { user, note, sends } = preparedScenario;
+
+      await user.keyboard(`{${key}}`);
+
+      await waitFor(() => {
+        expectNoteCaret(note, NOTE, offset);
+      });
+      await user.keyboard("!");
+      const expected = offset === 0 ? `!${NOTE}` : `${NOTE}!`;
+      expect(note).toHaveTextContent(expected);
+      click(await findButton("Send"));
+      const sent = await waitForSend(sends, 1);
+      expect(
+        sent.userMessage?.parts.filter((part) => {
+          return part.type !== "model";
+        }),
+      ).toMatchObject([
+        {
+          type: "feedback",
+          quote: PASSAGE,
+          note: [{ type: "text", text: expected }],
+        },
+      ]);
+    });
   },
 );
 

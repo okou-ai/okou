@@ -20,6 +20,7 @@ import {
 } from "./agent-event-consumer-run-output.service";
 import {
   AgentEventRunNotFoundError,
+  RunOutputDiagnostics,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
 import type { EventCitation } from "./pi-memory-citation-events";
@@ -199,11 +200,13 @@ export const receiveAgentEvents$ = command(
     L.debug(
       `Delivering events ${range.firstSequence}-${range.lastSequence} for run ${payload.runId}`,
     );
+    const diagnostics = new RunOutputDiagnostics();
     const projectionResult = await settle(
       set(
         materializeRunOutputEvents$,
         {
           payload,
+          diagnostics,
           suppliedCitations:
             params.body.piMemoryCitationTransport?.citations ?? [],
         },
@@ -211,6 +214,9 @@ export const receiveAgentEvents$ = command(
       ),
     );
     signal.throwIfAborted();
+    const outputFailure = projectionResult.ok
+      ? undefined
+      : diagnostics.takeFailure(projectionResult.error);
     if (!projectionResult.ok) {
       if (
         projectionResult.error instanceof AgentEventRunNotFoundError ||
@@ -236,6 +242,7 @@ export const receiveAgentEvents$ = command(
           ...range,
           errorCode: "55P03",
           retryable: true,
+          ...outputFailure,
         });
       } else {
         L.error("Required database run output projection failed", {

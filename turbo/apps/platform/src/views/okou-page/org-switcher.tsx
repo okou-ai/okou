@@ -128,7 +128,7 @@ function CreateWorkspaceMenuItem({ clerk }: { clerk: Clerk }) {
       <DropdownMenuItem
         onClick={handleCreateOrg}
         disabled={creatingOrg}
-        className="min-w-0 gap-3 px-3 py-2.5"
+        className="min-w-0 gap-3 px-3"
       >
         <Plus size={18} className="shrink-0" />
         <span>
@@ -207,7 +207,7 @@ function OtherMembershipsList() {
             onClick={() => {
               handleSwitchOrg(membership.organization.id);
             }}
-            className="min-w-0 gap-3 px-3 py-2.5"
+            className="min-w-0 gap-3 px-3"
           >
             <WorkspaceLogo
               name={membership.organization.name}

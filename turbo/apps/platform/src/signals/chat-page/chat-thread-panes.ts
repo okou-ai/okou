@@ -6,6 +6,7 @@ import { logger } from "../log.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import type { DraftSignals } from "../okou-page/chat-draft.ts";
+import { adoptComposerTaskHandoff$ } from "../okou-page/composer-task-handoff.ts";
 import { createChatPanelSignals, ensureDraft$ } from "./create-chat-thread.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
@@ -212,6 +213,9 @@ const setupPaneThread$ = command(
       agentId: meta.agentId,
       draft: set(ensureDraft$, threadId),
     });
+    // A send from the start page ends here, in a composer that has never been
+    // told what it is making. The selection it sent with follows it in.
+    set(adoptComposerTaskHandoff$, threadId, thread.composer);
 
     await set(
       resolvePaneThread$,

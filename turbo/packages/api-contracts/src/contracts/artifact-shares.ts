@@ -105,6 +105,8 @@ export const artifactSharePolicySchema = z
 export type ArtifactSharePolicy = z.infer<typeof artifactSharePolicySchema>;
 
 const statusSchema = z.object({
+  // Stable owner reference for the requested version, independent of sharing.
+  ownerUrl: z.url(),
   shareId: z.uuid().nullable(),
   audience: audienceSchema,
   organization: z.object({ id: z.string(), name: z.string() }),

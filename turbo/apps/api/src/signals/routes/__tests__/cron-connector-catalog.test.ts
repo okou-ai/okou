@@ -4462,129 +4462,142 @@ describe("connector catalog valid lifecycle", () => {
     ]);
   });
 
-  it("preserves the authorization-start scope snapshot across catalog updates", async () => {
-    mockDatadogConnectorOAuth();
-    configureSource();
-    const matching = buildRelease({
-      version: "2026-07-15.external-connected-status",
-      connectorSlug: "datadog",
-      label: "Datadog",
-      mutateCatalog: (artifact) => {
-        const method = publicAuthMethod({
-          id: "oauth",
-          grantKind: "auth-code",
-        });
-        setArtifactAuthMethods(artifact, [method]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          datadogPrivateAuthMethod(["dashboards_read", "logs_read_index_data"]),
-        ]);
-      },
-    });
-    serveObjects(catalogObjects([matching], matching));
-    await syncCatalog();
-    const actor = bdd.user();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.DatadogConnector]: false,
-    });
-    const cleanupConnector = createConnectorCleanup(actor, "datadog");
-    onTestFinished(async () => {
-      await cleanupConnector();
-      await connectorsApi.deleteFeatureSwitches(actor);
-    });
-    const start = await connectorsApi.startOauth(actor, "datadog", "oauth");
-    const state = new URL(start.authorizationUrl).searchParams.get("state");
-    if (!state) {
-      throw new Error("Expected Datadog authorization state");
-    }
-    const changedScopes = buildRelease({
-      version: "2026-07-15.external-scope-change",
-      connectorSlug: "datadog",
-      label: "Datadog",
-      mutateCatalog: (artifact) => {
-        const method = publicAuthMethod({
-          id: "oauth",
-          grantKind: "auth-code",
-        });
-        setArtifactAuthMethods(artifact, [method]);
-      },
-      mutateRuntime: (artifact) => {
-        setArtifactAuthMethods(artifact, [
-          datadogPrivateAuthMethod([
-            "dashboards_read",
-            "logs_read_index_data",
-            "future_scope",
-          ]),
-        ]);
-      },
-    });
-    serveObjects(catalogObjects([matching, changedScopes], changedScopes));
-    await syncCatalog();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.DatadogConnector]: false,
-    });
-    const callback = await connectorsApi.completeOauthCallback("datadog", {
-      code: "external-catalog-status",
-      state,
-      domain: "us3.datadoghq.com",
-    });
-    const callbackLocation = callback.headers.get("location");
-    expect(callbackLocation).not.toBeNull();
-    expect(
-      new URL(callbackLocation ?? "https://invalid.example").pathname,
-    ).toBe("/connector/success");
-    const hiddenConnectedList = await connectorsApi.listConnectors(actor);
-    expect(hiddenConnectedList.connectors).toContainEqual(
-      expect.objectContaining({ slug: "datadog", authMethod: "oauth" }),
-    );
-    expect(hiddenConnectedList.connectorProvidedBindings).toContainEqual(
-      expect.objectContaining({
+  describe("with a pending catalog authorization", () => {
+    async function prepareScenario() {
+      mockDatadogConnectorOAuth();
+      configureSource();
+      const matching = buildRelease({
+        version: "2026-07-15.external-connected-status",
         connectorSlug: "datadog",
-        authMethod: "oauth",
-        name: "DATADOG_TOKEN",
-      }),
-    );
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.DatadogConnector]: true,
+        label: "Datadog",
+        mutateCatalog: (artifact) => {
+          const method = publicAuthMethod({
+            id: "oauth",
+            grantKind: "auth-code",
+          });
+          setArtifactAuthMethods(artifact, [method]);
+        },
+        mutateRuntime: (artifact) => {
+          setArtifactAuthMethods(artifact, [
+            datadogPrivateAuthMethod([
+              "dashboards_read",
+              "logs_read_index_data",
+            ]),
+          ]);
+        },
+      });
+      serveObjects(catalogObjects([matching], matching));
+      await syncCatalog();
+      const actor = bdd.user();
+      await connectorsApi.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.DatadogConnector]: false,
+      });
+      const cleanupConnector = createConnectorCleanup(actor, "datadog");
+      onTestFinished(async () => {
+        await cleanupConnector();
+        await connectorsApi.deleteFeatureSwitches(actor);
+      });
+      const start = await connectorsApi.startOauth(actor, "datadog", "oauth");
+      const state = new URL(start.authorizationUrl).searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected Datadog authorization state");
+      }
+      return { matching, actor, state };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
+    it("preserves the authorization-start scope snapshot across catalog updates", async () => {
+      const { matching, actor, state } = preparedScenario;
+      const changedScopes = buildRelease({
+        version: "2026-07-15.external-scope-change",
+        connectorSlug: "datadog",
+        label: "Datadog",
+        mutateCatalog: (artifact) => {
+          const method = publicAuthMethod({
+            id: "oauth",
+            grantKind: "auth-code",
+          });
+          setArtifactAuthMethods(artifact, [method]);
+        },
+        mutateRuntime: (artifact) => {
+          setArtifactAuthMethods(artifact, [
+            datadogPrivateAuthMethod([
+              "dashboards_read",
+              "logs_read_index_data",
+              "future_scope",
+            ]),
+          ]);
+        },
+      });
+      serveObjects(catalogObjects([matching, changedScopes], changedScopes));
+      await syncCatalog();
+      await connectorsApi.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.DatadogConnector]: false,
+      });
+      const callback = await connectorsApi.completeOauthCallback("datadog", {
+        code: "external-catalog-status",
+        state,
+        domain: "us3.datadoghq.com",
+      });
+      const callbackLocation = callback.headers.get("location");
+      expect(callbackLocation).not.toBeNull();
+      expect(
+        new URL(callbackLocation ?? "https://invalid.example").pathname,
+      ).toBe("/connector/success");
+      const hiddenConnectedList = await connectorsApi.listConnectors(actor);
+      expect(hiddenConnectedList.connectors).toContainEqual(
+        expect.objectContaining({ slug: "datadog", authMethod: "oauth" }),
+      );
+      expect(hiddenConnectedList.connectorProvidedBindings).toContainEqual(
+        expect.objectContaining({
+          connectorSlug: "datadog",
+          authMethod: "oauth",
+          name: "DATADOG_TOKEN",
+        }),
+      );
+      await connectorsApi.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.DatadogConnector]: true,
+      });
 
-    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const headers = { authorization: "Bearer clerk-session" };
-    const catalogClient = setupApp({
-      context,
-      routes: connectorCatalogRoutes,
-    })(connectorCatalogContract);
-    const mismatched = await accept(catalogClient.status({ headers }), [200]);
-    expect(mismatched.body.connectors[0]).toMatchObject({
-      slug: "datadog",
-      connected: true,
-      connectionStatus: "scope-mismatch",
-      scopeMismatch: true,
-      authMethodSupportsRefresh: true,
-      tokenExpiresAt: expect.any(String),
-      singleAuthCodeAuthMethodId: "oauth",
-      connection: {
-        authMethod: "oauth",
-        externalUsername: "us3.datadoghq.com",
-        externalEmail: null,
-        reconnectReason: null,
-      },
-    });
-    expect(mismatched.body.connectors[0]?.connection).not.toHaveProperty(
-      "oauthScopes",
-    );
-    await expect(
-      connectorsApi.readScopeDiff(actor, "datadog"),
-    ).resolves.toStrictEqual({
-      addedScopes: ["future_scope"],
-      removedScopes: [],
-      currentScopes: [
-        "dashboards_read",
-        "logs_read_index_data",
-        "future_scope",
-      ],
-      storedScopes: ["dashboards_read", "logs_read_index_data"],
+      routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const headers = { authorization: "Bearer clerk-session" };
+      const catalogClient = setupApp({
+        context,
+        routes: connectorCatalogRoutes,
+      })(connectorCatalogContract);
+      const mismatched = await accept(catalogClient.status({ headers }), [200]);
+      expect(mismatched.body.connectors[0]).toMatchObject({
+        slug: "datadog",
+        connected: true,
+        connectionStatus: "scope-mismatch",
+        scopeMismatch: true,
+        authMethodSupportsRefresh: true,
+        tokenExpiresAt: expect.any(String),
+        singleAuthCodeAuthMethodId: "oauth",
+        connection: {
+          authMethod: "oauth",
+          externalUsername: "us3.datadoghq.com",
+          externalEmail: null,
+          reconnectReason: null,
+        },
+      });
+      expect(mismatched.body.connectors[0]?.connection).not.toHaveProperty(
+        "oauthScopes",
+      );
+      await expect(
+        connectorsApi.readScopeDiff(actor, "datadog"),
+      ).resolves.toStrictEqual({
+        addedScopes: ["future_scope"],
+        removedScopes: [],
+        currentScopes: [
+          "dashboards_read",
+          "logs_read_index_data",
+          "future_scope",
+        ],
+        storedScopes: ["dashboards_read", "logs_read_index_data"],
+      });
     });
   });
 

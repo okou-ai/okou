@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
+
 import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -109,62 +110,84 @@ describe("Pi inference erasure parameter boundary", () => {
     await expectErased(last);
   });
 
-  it.each(["usage", "lease"] as const)(
+  describe.each(["usage", "lease"] as const)(
     "a protected %s target at the end prevents every deletion until settled and released",
-    async (blocker) => {
-      const first = await fixture({ legacy: true });
-      const last = await fixture(
-        blocker === "usage"
-          ? { phase: "provider" }
-          : { phase: "terminal", leaseState: "releasing" },
-      );
-      if (blocker === "lease") {
-        await settlePiErasureUsageFixture(last);
+    (blocker) => {
+      async function prepareScenario() {
+        const first = await fixture({ legacy: true });
+        const last = await fixture(
+          blocker === "usage"
+            ? { phase: "provider" }
+            : { phase: "terminal", leaseState: "releasing" },
+        );
+        if (blocker === "lease") {
+          await settlePiErasureUsageFixture(last);
+        }
+        const ids = largeTargetSet(first, last);
+        const before = await readPiInferenceFixture(last);
+        return { ids, first, last, before };
       }
-      const ids = largeTargetSet(first, last);
-      const before = await readPiInferenceFixture(last);
-      const blocked = await erasePiInferenceRunSetFixture(ids);
-      expect(blocked.result).toMatchObject({
-        ok: false,
-        error: {
-          message:
-            "Pi inference erasure awaits usage or Sandbox release evidence",
-          cause: { code: "55P03" },
-        },
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
       });
-      expect(blocked.deletionStatements).toBe(0);
-      expect(blocked.objectReferenceParameters).toStrictEqual([]);
-      await expectRetained(first);
-      await expectRetained(last);
-      await expect(readPiInferenceFixture(last)).resolves.toStrictEqual(before);
+      it("preserves the complete scenario", async () => {
+        const { ids, first, last, before } = preparedScenario;
+        const blocked = await erasePiInferenceRunSetFixture(ids);
+        expect(blocked.result).toMatchObject({
+          ok: false,
+          error: {
+            message:
+              "Pi inference erasure awaits usage or Sandbox release evidence",
+            cause: { code: "55P03" },
+          },
+        });
+        expect(blocked.deletionStatements).toBe(0);
+        expect(blocked.objectReferenceParameters).toStrictEqual([]);
+        await expectRetained(first);
+        await expectRetained(last);
+        await expect(readPiInferenceFixture(last)).resolves.toStrictEqual(
+          before,
+        );
 
-      await settlePiInferenceFixture(last);
-      const erased = await erasePiInferenceRunSetFixture(ids);
-      expect(erased.result).toMatchObject({
-        ok: true,
-        value: { deletedConversations: 2, releasedReferences: 2 },
+        await settlePiInferenceFixture(last);
+        const erased = await erasePiInferenceRunSetFixture(ids);
+        expect(erased.result).toMatchObject({
+          ok: true,
+          value: { deletedConversations: 2, releasedReferences: 2 },
+        });
+        await expectErased(first);
+        await expectErased(last);
       });
-      await expectErased(first);
-      await expectErased(last);
     },
   );
 
-  it("rolls back large-set deletion and blob releases on a later failure", async () => {
-    const first = await fixture({ legacy: true });
-    const last = await fixture({ phase: "terminal", leaseState: "released" });
-    await settlePiInferenceFixture(last);
-    const before = await readPiInferenceFixture(last);
-    const erased = await erasePiInferenceRunSetFixture(
-      largeTargetSet(first, last),
-      { rollbackAfterRelease: true },
-    );
-    expect(erased.result).toMatchObject({
-      ok: false,
-      error: { message: "Synthetic failure after erasure release" },
+  describe("with a settled large legacy target set", () => {
+    async function prepareScenario() {
+      const first = await fixture({ legacy: true });
+      const last = await fixture({ phase: "terminal", leaseState: "released" });
+      await settlePiInferenceFixture(last);
+      const before = await readPiInferenceFixture(last);
+      const ids = largeTargetSet(first, last);
+      return { first, last, before, ids };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    await expectRetained(first);
-    await expectRetained(last);
-    await expect(readPiInferenceFixture(last)).resolves.toStrictEqual(before);
+    it("rolls back large-set deletion and blob releases on a later failure", async () => {
+      const { first, last, before, ids } = preparedScenario;
+      const erased = await erasePiInferenceRunSetFixture(ids, {
+        rollbackAfterRelease: true,
+      });
+      expect(erased.result).toMatchObject({
+        ok: false,
+        error: { message: "Synthetic failure after erasure release" },
+      });
+      await expectRetained(first);
+      await expectRetained(last);
+      await expect(readPiInferenceFixture(last)).resolves.toStrictEqual(before);
+    });
   });
 
   it("leaves empty input as a no-op", async () => {

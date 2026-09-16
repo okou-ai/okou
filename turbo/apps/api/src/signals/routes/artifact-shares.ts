@@ -81,15 +81,26 @@ function noStore(handler: Command<unknown, [AbortSignal]>) {
     return await set(handler, signal);
   });
 }
-// Browser/session or user PAT only. A run token cannot implicitly publish.
+// Run tokens need explicit artifact capabilities; upload/hosting capabilities
+// alone cannot publish. Services retain owner and original-org authorization.
 export const artifactShareRoutes: readonly RouteEntry[] = [
   {
     route: artifactSharesContract.status,
-    handler: noStore(authRoute({ requireOrganization: true }, status$)),
+    handler: noStore(
+      authRoute(
+        { requireOrganization: true, requiredCapability: "artifact:read" },
+        status$,
+      ),
+    ),
   },
   {
     route: artifactSharesContract.update,
-    handler: noStore(authRoute({ requireOrganization: true }, update$)),
+    handler: noStore(
+      authRoute(
+        { requireOrganization: true, requiredCapability: "artifact:write" },
+        update$,
+      ),
+    ),
   },
   {
     route: artifactSharesContract.resolve,

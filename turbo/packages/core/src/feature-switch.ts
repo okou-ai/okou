@@ -45,12 +45,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SocialStatus]: {
-    maintainer: "liangyou@okou.ai",
-    description: "On-demand public Social service health",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description: "Manually create a welcome conversation with fixed examples",
@@ -69,7 +63,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Templates compiled from a file the user uploaded, with their own catalog.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    // Narrowed from the staff org to the maintainer while nothing in the
+    // product publishes a row: the API route exists, but no upload surface
+    // calls it yet, so everyone else would only ever see the empty panel.
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
   [FeatureSwitchKey.ComposerTaskChips]: {
     maintainer: "bingjie@okou.ai",
@@ -236,6 +234,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Morning Brief and email subscription management in Preferences.",
     enabled: true,
   },
+  [FeatureSwitchKey.SimpleMorningBrief]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Select the platform-funded simple-morning-brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
+    enabled: false,
+  },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -350,12 +354,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Center every avatar's visible artwork in its box and move it halfway to a shared fill, so hair volume stops changing how large an avatar looks.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatTranslation]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Translate selected assistant text into a remembered target language.",
-    enabled: false,
   },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",

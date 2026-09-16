@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.195.3](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.2...runner-rs-v0.195.3) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** attribute required-output backpressure phases ([#34663](https://github.com/vm0-ai/okou/issues/34663)) ([a1e31af](https://github.com/vm0-ai/okou/commit/a1e31afbdd683ded91cb4b0343bfaa2505244b26))
+
+## [0.195.2](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.1...runner-rs-v0.195.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **api:** close deferred sandbox release, fairness and payload gaps ([#34595](https://github.com/vm0-ai/okou/issues/34595)) ([c8b0471](https://github.com/vm0-ai/okou/commit/c8b0471c07e9ec0b897e8e0caf4f0050225e9dcf))
+* **runner:** reconcile cancellation after successful claims ([#34580](https://github.com/vm0-ai/okou/issues/34580)) ([435944a](https://github.com/vm0-ai/okou/commit/435944a392ca774cdcfe7be13e37733cdbf52bb5))
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
 ## [0.195.1](https://github.com/vm0-ai/okou/compare/runner-rs-v0.195.0...runner-rs-v0.195.1) (2026-09-16)
 
 

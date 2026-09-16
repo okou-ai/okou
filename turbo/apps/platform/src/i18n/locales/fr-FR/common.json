@@ -1961,6 +1961,8 @@
       "providerIncompatibleAction": "Commencer une nouvelle session",
       "providerIncompatiblePrefix": "Cette session a été commencée avec un fournisseur de modèle différent et ne peut pas être continuée avec le fournisseur actuel.",
       "recovery": {
+        "autonomyLimitDescription": "La limite des exécutions automatiques consécutives a été atteinte. Confirmez pour continuer.",
+        "autonomyLimitTitle": "Limite des exécutions automatiques atteinte",
         "capacityDescription": "Réessayez dans quelques instants ou changez de modèle.",
         "capacityTitle": "Ce modèle est saturé pour le moment",
         "claudeCode": "Claude Code",
@@ -3013,27 +3015,6 @@
     "toasts": {
       "copied": "Copié",
       "deleted": "Chat supprimé"
-    },
-    "translation": {
-      "action": "Traduire",
-      "close": "Fermer la traduction",
-      "copy": "Copier la traduction",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Traduction",
-      "targetLanguage": "Langue de traduction"
     },
     "voice": {
       "checkingLimit": "Vérification de la limite d'entrée vocale",
@@ -6480,6 +6461,39 @@
     "title": "Hôtes SSH",
     "unavailable": "L’accès SSH n’est pas disponible pour ce compte.",
     "username": "Nom d’utilisateur SSH"
+  },
+  "templates": {
+    "actions": {
+      "delete": "Supprimer",
+      "menu": "Actions pour {{title}}",
+      "preview": "Aperçu de {{title}}",
+      "rename": "Renommer le modèle"
+    },
+    "custom": "Personnalisés",
+    "detail": {
+      "back": "Modèles personnalisés",
+      "page": "Page {{number}}",
+      "source_one": "{{count}} page · à partir de {{filename}}",
+      "source_many": "{{count}} pages · à partir de {{filename}}",
+      "source_other": "{{count}} pages · à partir de {{filename}}"
+    },
+    "empty": {
+      "description": "Les modèles créés à partir d'un fichier que vous importez apparaîtront ici.",
+      "title": "Aucun modèle pour l'instant"
+    },
+    "loadFailed": "Impossible de charger les modèles.",
+    "pageCount_one": "{{count}} page",
+    "pageCount_many": "{{count}} pages",
+    "pageCount_other": "{{count}} pages",
+    "retry": "Réessayer",
+    "sharedBy": "Partagé par {{owner}}",
+    "visibility": {
+      "change": "Modifier",
+      "organization": "Organisation",
+      "organizationState": "Tout le monde dans cette organisation peut l'utiliser",
+      "private": "Privé",
+      "privateState": "Vous seul pouvez le voir et l'utiliser"
+    }
   },
   "usage": {
     "displayNames": {

@@ -38,6 +38,10 @@ import {
 } from "./artifact-preview.service";
 import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
 import {
+  collectHostedSiteDependencies$,
+  hostedSiteDeliveryManifest,
+} from "./hosted-site-dependencies.service";
+import {
   assertHostedDeploymentScope,
   canonicalizeHostedSiteScope,
   HostedSiteScopeError,
@@ -1028,6 +1032,36 @@ const promoteHostedSiteDeployment$ = command(
   },
 );
 
+const publishHostedSiteManifest$ = command(
+  async (
+    { get, set },
+    deployment: HostedDeploymentRow,
+    bucket: string,
+    signal: AbortSignal,
+  ) => {
+    if (deployment.manifest.access === "owner-private-v1") {
+      await set(collectHostedSiteDependencies$, deployment, bucket, signal);
+      signal.throwIfAborted();
+    }
+    const manifestKey = `${deployment.r2Prefix}/manifest.json`;
+    await get(
+      putHostedSitesS3Object(
+        bucket,
+        manifestKey,
+        JSON.stringify(
+          hostedSiteDeliveryManifest(deployment.manifest),
+          null,
+          2,
+        ),
+        "application/json",
+      ),
+    );
+    signal.throwIfAborted();
+
+    return manifestKey;
+  },
+);
+
 export const completeHostedSiteDeployment$ = command(
   async (
     { get, set },
@@ -1073,14 +1107,11 @@ export const completeHostedSiteDeployment$ = command(
       };
     }
 
-    const manifestKey = `${deployment.r2Prefix}/manifest.json`;
-    await get(
-      putHostedSitesS3Object(
-        hostedR2.config.bucket,
-        manifestKey,
-        JSON.stringify(deployment.manifest, null, 2),
-        "application/json",
-      ),
+    const manifestKey = await set(
+      publishHostedSiteManifest$,
+      deployment,
+      hostedR2.config.bucket,
+      signal,
     );
     signal.throwIfAborted();
 

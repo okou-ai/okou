@@ -18,6 +18,7 @@ Building something:
 | Drawing a border, a rule or a separator                   | The hairline tokens in [Sources of truth](#sources-of-truth), then [Horizontal hairline rules](#horizontal-hairline-rules) or [The all-round hairline](#the-all-round-hairline) |
 | Building a card, panel or page surface                    | [Page surfaces](#page-surfaces)                                                                                                                                                 |
 | Building a badge, tag or chip                             | [Inline badges](#inline-badges)                                                                                                                                                 |
+| Building a dropdown, menu or select row                   | [Menu and select rows](#menu-and-select-rows)                                                                                                                                   |
 | Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
 | Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
 | Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
@@ -326,6 +327,35 @@ queue drawer's cards, the mail draft card, the onboarding pickers, and the
 composer variant. They are not a supported API for a new surface; reach for
 `surfaceVariants` instead. The chat transcript card reads its own
 `--okou-chat-card-*` siblings.
+
+### Menu and select rows
+
+Every popup list draws one row height: 36px, the same figure `Button` ships as
+its default size and `IconButton` ships as its square. `MENU_ROW_HEIGHT_CLASS`
+in `components/ui/menu-row.ts` is its single owner — `min-h-9 py-1.5 text-sm` —
+and `DropdownMenuItem`, `DropdownMenuSubTrigger` and `SelectItem` compose it. It
+is a floor rather than a fixed height so a row whose label wraps or whose child
+is taller than the line box grows instead of clipping, and a floor rather than
+padding alone because padding expresses the height only in terms of the line
+box: a caller passing `text-xs` would quietly draw a 32px row. A bespoke row
+built on `Button` inherits the same 36px from `size="default"`; the model
+picker's lists state it as `h-9` because each row is a fixed single line inside
+a scroller.
+
+Callers own the content, the icons and the horizontal rhythm — `px-*` and
+`gap-*` stay adjustable, and a wide menu with avatars legitimately runs `px-3`.
+Callers do not restate the height. `py-*` and `h-*` on one of those components
+fork the row, which is what left the composer's `+` menu at 32px, the account
+and workspace menus at 40px, the subscriptions reset action at 28px, and the
+model picker beside them at 36px. `ccstate/menu-row-height` fails the build on
+those utilities; `min-h-*` stays available to raise the floor for a deliberate
+touch target, and the chat thread header's actions keep `min-h-11` on that
+basis.
+
+Two-line rows are a different control, not a taller menu row. The model picker's
+type rail and its current-model rows pair a label with a summary line and state
+their own `h-11` and `h-12`; they sit outside this contract because they are not
+single-line list rows.
 
 ### Inline badges
 
@@ -1075,6 +1105,12 @@ Only two exception kinds exist:
 - `third-party-dom-adapter` covers DOM or isolated documents whose element
   classes are owned outside the business component.
 
+They are recorded in three shapes: a `selectors` entry for a CSS rule, a
+`styleInjections` entry for an injected stylesheet, and a `classDependencies`
+entry for a class a component must put on an element because a third party's
+DOM contract keys on it. A `vendorFiles` entry pins a whole vendored stylesheet
+by hash.
+
 Hosted Clerk authentication does not use a third-party DOM adapter. It stays on
 Clerk's public appearance API under the narrower rules in
 [Clerk customization](./clerk-customize.md).
@@ -1107,11 +1143,17 @@ legacy class dependencies left in Platform and UI, beside `wmde-markdown` in
 `markdown-frame.tsx`. Sonner neither defines nor requires that class; the
 component invents it, hands it to Sonner's `className` prop, and then anchors
 its own `group-[.toaster]:` variants on it. Sonner's actual contract is the
-`[data-sonner-toaster]` attribute it puts on its own list element. There is also
-no mechanism to authorize this kind of dependency: `turbo/style-allowlist.json`
-holds CSS selectors, style injections and vendored files, so a legacy class
-named in a component's `className` can only be drained or left in the
-shrink-only baseline — never allowlisted.
+`[data-sonner-toaster]` attribute it puts on its own list element. Both are `classDependencies` entries in
+`turbo/style-allowlist.json`, which is where a class carrying a third party's
+DOM contract belongs: the baseline is a ratchet for debt, and neither of these
+is expected to go until its renderer does.
+
+An entry authorizes a count in a file, not a class. A second use in the same
+file, or any use in another file, still fails lint; a count that has fallen
+points back at the allowlist, because `pnpm lint:style:prune` cannot reach an
+entry it does not own. A class a first-party element invents for itself is not
+this kind of exception and is drained — the borrowed-name rule above is what
+separates the two.
 
 ## Shrink-only legacy state
 

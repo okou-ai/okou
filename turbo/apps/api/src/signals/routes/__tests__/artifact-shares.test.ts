@@ -96,6 +96,24 @@ async function file() {
   return { kind: "file" as const, id: prepared.body.id };
 }
 
+function runHeaders(
+  userId: string,
+  orgId: string,
+  capabilities: readonly string[],
+) {
+  const seconds = Math.floor(now() / 1000);
+  const token = signSandboxJwtForTests({
+    scope: "okou",
+    userId,
+    orgId,
+    runId: randomUUID(),
+    capabilities: [...capabilities],
+    iat: seconds,
+    exp: seconds + 3600,
+  });
+  return { authorization: `Bearer ${token}` };
+}
+
 async function fixture() {
   const owner = `user_${randomUUID()}`;
   const org = `org_${randomUUID()}`;
@@ -188,7 +206,12 @@ async function fixture() {
       return Promise.resolve({});
     }
     if (cmd instanceof GetObjectCommand) {
-      const body = objects.get(cmd.input.Key!);
+      // Host fixtures treat presigned uploads as complete, as does HEAD above.
+      const body =
+        objects.get(cmd.input.Key!) ??
+        (cmd.input.Key?.startsWith("private-sites/")
+          ? "Hosted fixture"
+          : undefined);
       if (body === undefined) {
         return Promise.reject(
           Object.assign(new Error("Missing"), { name: "NoSuchKey" }),
@@ -355,6 +378,172 @@ test("viewing and copying stable references grant nothing; only the owner can ma
       return key.startsWith("artifact-shares/");
     }),
   ).toHaveLength(0);
+});
+
+test("agent sharing and the Share menu reuse one policy, including revocation after rollout is disabled", async () => {
+  const { owner, org } = await fixture();
+  const target = await file();
+  const agentHeaders = runHeaders(owner, org, [
+    "artifact:read",
+    "artifact:write",
+  ]);
+  const initial = await accept(
+    api()(artifactSharesContract).status({
+      headers: agentHeaders,
+      body: target,
+    }),
+    [200],
+  );
+  expect(initial.body).toMatchObject({
+    ownerUrl: expect.stringMatching(
+      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+    ),
+    audience: "private",
+    shareId: null,
+    url: null,
+  });
+
+  for (const audience of ["organization", "public"] as const) {
+    const shared = await accept(
+      api()(artifactSharesContract).update({
+        headers: agentHeaders,
+        body: { target, audience },
+      }),
+      [200],
+    );
+    expect(shared.body.url).not.toBeNull();
+    expect(shared.body.ownerUrl).toBe(initial.body.ownerUrl);
+    if (audience === "organization") {
+      expect(shared.body.url).toBe(initial.body.ownerUrl);
+    }
+    const uiStatus = await accept(
+      api()(artifactSharesContract).status({ headers, body: target }),
+      [200],
+    );
+    expect(uiStatus.body).toStrictEqual(shared.body);
+    const repeated = await accept(
+      api()(artifactSharesContract).update({
+        headers,
+        body: { target, audience },
+      }),
+      [200],
+    );
+    expect(repeated.body).toStrictEqual(shared.body);
+  }
+
+  await flag(false);
+  await accept(
+    api()(artifactSharesContract).update({
+      headers: agentHeaders,
+      body: { target, audience: "organization" },
+    }),
+    [403],
+  );
+  const revoked = await accept(
+    api()(artifactSharesContract).update({
+      headers: agentHeaders,
+      body: { target, audience: "private" },
+    }),
+    [200],
+  );
+  expect(revoked.body).toMatchObject({
+    audience: "private",
+    url: null,
+    ownerUrl: initial.body.ownerUrl,
+  });
+  const uiStatus = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+  expect(uiStatus.body).toStrictEqual(revoked.body);
+});
+
+test("artifact capabilities do not let agents manage another owner's share", async () => {
+  const { org, members, session } = await fixture();
+  const target = await file();
+  const peer = `user_${randomUUID()}`;
+  members.add(peer);
+  session(peer);
+  await flag(true);
+  const agentHeaders = runHeaders(peer, org, [
+    "artifact:read",
+    "artifact:write",
+  ]);
+  await accept(
+    api()(artifactSharesContract).status({
+      headers: agentHeaders,
+      body: target,
+    }),
+    [404],
+  );
+  await accept(
+    api()(artifactSharesContract).update({
+      headers: agentHeaders,
+      body: { target, audience: "public" },
+    }),
+    [404],
+  );
+  session();
+  const unchanged = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+  expect(unchanged.body).toMatchObject({
+    audience: "private",
+    shareId: null,
+    url: null,
+  });
+});
+
+test("upload, hosting and read-only run capabilities cannot change sharing", async () => {
+  const { owner, org } = await fixture();
+  const target = await file();
+  for (const capabilities of [
+    ["file:write", "host:write"],
+    ["artifact:read"],
+    [],
+  ]) {
+    const agentHeaders = runHeaders(owner, org, capabilities);
+    await accept(
+      api()(artifactSharesContract).update({
+        headers: agentHeaders,
+        body: { target, audience: "public" },
+      }),
+      [403],
+    );
+    await accept(
+      api()(artifactSharesContract).status({
+        headers: agentHeaders,
+        body: target,
+      }),
+      [capabilities.includes("artifact:read") ? 200 : 403],
+    );
+  }
+  const seconds = Math.floor(now() / 1000);
+  const sandbox = signSandboxJwtForTests({
+    scope: "sandbox",
+    userId: owner,
+    orgId: org,
+    runId: randomUUID(),
+    iat: seconds,
+    exp: seconds + 3600,
+  });
+  await accept(
+    api()(artifactSharesContract).update({
+      headers: { authorization: `Bearer ${sandbox}` },
+      body: { target, audience: "public" },
+    }),
+    [403],
+  );
+  const unchanged = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+  expect(unchanged.body).toMatchObject({
+    audience: "private",
+    shareId: null,
+    url: null,
+  });
 });
 
 test("hostless owner references authorize before signing and ignore extension hints", async () => {
@@ -533,6 +722,9 @@ test("agent reference resolution enforces resource capability, type and ownershi
     [owner, "host:read", "file", 403],
     [owner, "host:read", "html", 404],
     [recipient, "file:read", "file", 404],
+    [owner, "artifact:read", "artifact", 200],
+    [owner, "file:read", "artifact", 403],
+    [recipient, "artifact:read", "artifact", 404],
   ] as const) {
     const token = signSandboxJwtForTests({
       scope: "okou",
@@ -1057,7 +1249,8 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
 });
 
 test("html sharing pins the selected version until an explicit update and resolves to isolated content", async () => {
-  const { actor, objects, members, session } = await hostedFixture();
+  const { owner, org, actor, objects, members, session } =
+    await hostedFixture();
   const host = createHostMapsBddApi(context);
   const body = {
     site: `sharing-${randomUUID().slice(0, 8)}`,
@@ -1068,13 +1261,30 @@ test("html sharing pins the selected version until an explicit update and resolv
   const first = await host.prepareHostedSite(actor, body);
   await host.completeHostedSite(actor, first.deploymentId);
   const target = { kind: "html" as const, id: first.deploymentId };
+  const agentHeaders = runHeaders(owner, org, [
+    "artifact:read",
+    "artifact:write",
+  ]);
+  const privateStatus = await accept(
+    api()(artifactSharesContract).status({
+      headers: agentHeaders,
+      body: target,
+    }),
+    [200],
+  );
+  expect(privateStatus.body).toMatchObject({
+    audience: "private",
+    ownerUrl: `https://app.okou.ai${first.url}`,
+    url: null,
+  });
   const ownerReference = artifactReferencePath(first.deploymentId, "hint.pdf")
     .split("/")
     .at(-1)!;
   const preview = await accept(
     api()(artifactReferencesContract).resolve({
-      headers,
+      headers: agentHeaders,
       params: { reference: ownerReference },
+      query: { kind: "artifact" },
     }),
     [200],
   );
@@ -1095,11 +1305,18 @@ test("html sharing pins the selected version until an explicit update and resolv
   session();
   const share = await accept(
     api()(artifactSharesContract).update({
-      headers,
+      headers: agentHeaders,
       body: { target, audience: "organization" },
     }),
     [200],
   );
+  const deliveryManifests = [...objects].filter(([key]) => {
+    return (
+      key.startsWith("shared-artifacts/") && key.endsWith("/manifest.json")
+    );
+  });
+  expect(deliveryManifests).toHaveLength(1);
+  expect(deliveryManifests[0]![1]).not.toContain("snapshotDependencies");
   const second = await host.prepareHostedSite(actor, {
     ...body,
     files: [hostedTextFile("/index.html", "<h1>Version two</h1>")],
@@ -1111,6 +1328,7 @@ test("html sharing pins the selected version until an explicit update and resolv
     [200],
   );
   expect(before.body).toMatchObject({
+    ownerUrl: `https://app.okou.ai${second.url}`,
     selectedTarget: target,
     selectedVersion: 1,
     candidateVersion: 2,
@@ -1176,6 +1394,19 @@ test("html sharing pins the selected version until an explicit update and resolv
     [200],
   );
   expect(current.body.target).toStrictEqual(newer);
+  session();
+  const revoked = await accept(
+    api()(artifactSharesContract).update({
+      headers: agentHeaders,
+      body: { target: newer, audience: "private" },
+    }),
+    [200],
+  );
+  expect(revoked.body).toMatchObject({
+    audience: "private",
+    url: null,
+    ownerUrl: `https://app.okou.ai${second.url}`,
+  });
 });
 
 test("public site names stay on the selected version and rotate after revocation", async () => {

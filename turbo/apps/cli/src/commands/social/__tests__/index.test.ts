@@ -2037,6 +2037,23 @@ describe("okou social command", () => {
     expect(requests).toBe(0);
   });
 
+  it("documents status authentication and capabilities through command help", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => {
+      return true;
+    });
+    onTestFinished(() => {
+      stdout.mockRestore();
+    });
+
+    await expect(
+      socialCommand.parseAsync(["node", "okou", "status", "--help"]),
+    ).rejects.toThrow("process.exit called");
+    expect(stdout.mock.calls.flat().join("")).toContain(
+      "Requires authentication, an organization, and social:read for capability tokens.",
+    );
+    expect(mockExit).toHaveBeenCalledWith(0);
+  });
+
   it.each(["healthy", "degraded", "unavailable", "unknown"])(
     "prints %s live status and normalizes the X platform alias",
     async (status) => {
@@ -2076,14 +2093,14 @@ describe("okou social command", () => {
     },
   );
 
-  it("reports status API errors without inventing healthy observations", async () => {
+  it("reports missing status capabilities without inventing healthy observations", async () => {
     server.use(
       http.get("http://localhost:3000/api/social/status", () => {
         return HttpResponse.json(
           {
             error: {
               code: "FORBIDDEN",
-              message: "Social status is not enabled",
+              message: "Missing required capability: social:read",
             },
           },
           { status: 403 },
@@ -2093,7 +2110,7 @@ describe("okou social command", () => {
     await expect(
       socialCommand.parseAsync(["node", "okou", "status", "--json"]),
     ).rejects.toThrow("process.exit called");
-    expect(errorOutput()).toContain("Social status is not enabled");
+    expect(errorOutput()).toContain("Missing required capability: social:read");
     expect(mockExit).toHaveBeenCalledWith(1);
     expect(output()).toBe("");
   });

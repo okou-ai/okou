@@ -1961,6 +1961,8 @@
       "providerIncompatibleAction": "Empieza una nueva sesión",
       "providerIncompatiblePrefix": "Esta sesión se inició con un modelo diferente y no se puede continuar con el actual.",
       "recovery": {
+        "autonomyLimitDescription": "Se ha alcanzado el límite de ejecuciones automáticas consecutivas. Confirma para continuar.",
+        "autonomyLimitTitle": "Límite de ejecuciones automáticas alcanzado",
         "capacityDescription": "Inténtalo de nuevo en unos minutos o cambia de modelo.",
         "capacityTitle": "Este modelo está ocupado ahora mismo",
         "claudeCode": "Claude Code",
@@ -3013,27 +3015,6 @@
     "toasts": {
       "copied": "Copiado",
       "deleted": "Chat eliminado"
-    },
-    "translation": {
-      "action": "Traducir",
-      "close": "Cerrar traducción",
-      "copy": "Copiar traducción",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "Traducción",
-      "targetLanguage": "Idioma de traducción"
     },
     "voice": {
       "checkingLimit": "Comprobando el límite de entrada de voz",
@@ -6480,6 +6461,39 @@
     "title": "Hosts SSH",
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
+  },
+  "templates": {
+    "actions": {
+      "delete": "Eliminar",
+      "menu": "Acciones para {{title}}",
+      "preview": "Vista previa de {{title}}",
+      "rename": "Cambiar nombre de la plantilla"
+    },
+    "custom": "Personalizadas",
+    "detail": {
+      "back": "Plantillas personalizadas",
+      "page": "Página {{number}}",
+      "source_one": "{{count}} página · de {{filename}}",
+      "source_many": "{{count}} páginas · de {{filename}}",
+      "source_other": "{{count}} páginas · de {{filename}}"
+    },
+    "empty": {
+      "description": "Las plantillas creadas a partir de un archivo que subas aparecerán aquí.",
+      "title": "Aún no hay plantillas"
+    },
+    "loadFailed": "No se pudieron cargar las plantillas.",
+    "pageCount_one": "{{count}} página",
+    "pageCount_many": "{{count}} páginas",
+    "pageCount_other": "{{count}} páginas",
+    "retry": "Reintentar",
+    "sharedBy": "Compartida por {{owner}}",
+    "visibility": {
+      "change": "Cambiar",
+      "organization": "Organización",
+      "organizationState": "Cualquier persona de esta organización puede usarla",
+      "private": "Privado",
+      "privateState": "Solo tú puedes verla y usarla"
+    }
   },
   "usage": {
     "displayNames": {

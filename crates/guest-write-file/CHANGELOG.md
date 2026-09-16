@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.165](https://github.com/vm0-ai/okou/compare/guest-write-file-v0.1.164...guest-write-file-v0.1.165) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
 ## [0.1.164](https://github.com/vm0-ai/okou/compare/guest-write-file-v0.1.163...guest-write-file-v0.1.164) (2026-09-16)
 
 ## [0.1.163](https://github.com/vm0-ai/okou/compare/guest-write-file-v0.1.162...guest-write-file-v0.1.163) (2026-09-16)

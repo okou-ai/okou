@@ -109,6 +109,24 @@ test("Create commands stay hidden until enabled", async () => {
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
 });
 
+test("The type a slash command selects states the run in the action row", async () => {
+  setupModels();
+  const editor = await setupComposer();
+  await chooseCommand(editor, "Our launch /", "video");
+  /*
+    What a slash command leaves behind is the same composer state a task chip
+    is, so it sits in the same row: under the input, beside the connectors and
+    the model, rather than in the per-message lane a send clears.
+  */
+  const control = screen.getByTestId("composer-create-mode");
+  expect(editor.compareDocumentPosition(control)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(control.compareDocumentPosition(button("Send"))).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+});
+
 test("Choose a video from the slash panel with the keyboard and submit its settings", async () => {
   setupModels();
   const submissions: {

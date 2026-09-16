@@ -1926,6 +1926,8 @@
       "providerIncompatibleAction": "नया सत्र प्रारंभ करें",
       "providerIncompatiblePrefix": "यह सत्र एक अलग मॉडल प्रोवाइडर के साथ शुरू किया गया था और इसे वर्तमान के साथ जारी नहीं रखा जा सकता है।",
       "recovery": {
+        "autonomyLimitDescription": "लगातार अपने-आप चलने की सीमा पूरी हो गई है। जारी रखने के लिए पुष्टि करें।",
+        "autonomyLimitTitle": "अपने-आप चलने की सीमा पूरी हो गई",
         "capacityDescription": "थोड़ी देर बाद फिर कोशिश करें, या मॉडल बदलें।",
         "capacityTitle": "यह मॉडल अभी व्यस्त है",
         "claudeCode": "Claude Code",
@@ -2967,27 +2969,6 @@
     "toasts": {
       "copied": "कॉपी किया गया",
       "deleted": "चैट हटा दी गई"
-    },
-    "translation": {
-      "action": "अनुवाद करें",
-      "close": "अनुवाद बंद करें",
-      "copy": "अनुवाद कॉपी करें",
-      "languages": {
-        "de": "Deutsch",
-        "en": "English",
-        "es": "Español",
-        "fr": "Français",
-        "hi": "हिन्दी",
-        "id": "Bahasa Indonesia",
-        "it": "Italiano",
-        "ja": "日本語",
-        "ko": "한국어",
-        "ptBR": "Português",
-        "zhCN": "简体中文",
-        "zhTW": "繁體中文"
-      },
-      "result": "अनुवाद",
-      "targetLanguage": "अनुवाद की भाषा"
     },
     "voice": {
       "checkingLimit": "ध्वनि इनपुट सीमा की जाँच की जा रही है",
@@ -6413,6 +6394,37 @@
     "title": "SSH होस्ट",
     "unavailable": "इस खाते के लिए SSH ऐक्सेस उपलब्ध नहीं है।",
     "username": "SSH उपयोगकर्ता नाम"
+  },
+  "templates": {
+    "actions": {
+      "delete": "हटाएँ",
+      "menu": "{{title}} के लिए क्रियाएँ",
+      "preview": "{{title}} का पूर्वावलोकन करें",
+      "rename": "टेम्पलेट का नाम बदलें"
+    },
+    "custom": "कस्टम",
+    "detail": {
+      "back": "कस्टम टेम्पलेट",
+      "page": "पृष्ठ {{number}}",
+      "source_one": "{{count}} पृष्ठ · {{filename}} से",
+      "source_other": "{{count}} पृष्ठ · {{filename}} से"
+    },
+    "empty": {
+      "description": "आपके द्वारा अपलोड की गई फ़ाइल से बने टेम्पलेट यहाँ दिखाई देंगे।",
+      "title": "अभी तक कोई टेम्पलेट नहीं"
+    },
+    "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
+    "pageCount_one": "{{count}} पृष्ठ",
+    "pageCount_other": "{{count}} पृष्ठ",
+    "retry": "फिर से कोशिश करें",
+    "sharedBy": "{{owner}} द्वारा साझा किया गया",
+    "visibility": {
+      "change": "बदलें",
+      "organization": "संगठन",
+      "organizationState": "इस संगठन में कोई भी इसका उपयोग कर सकता है",
+      "private": "निजी",
+      "privateState": "केवल आप इसे देख और उपयोग कर सकते हैं"
+    }
   },
   "usage": {
     "displayNames": {

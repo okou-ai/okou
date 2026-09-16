@@ -88,6 +88,58 @@ consumers resolve owned references with `kind=file` or `kind=html`, respectively
 under the existing `file:read` or `host:read` capability. Those requests cannot
 resolve another owner's organization share or cross the resource-type boundary.
 
+## Agent CLI visibility and downloads
+
+`okou artifact` uses the same owner management endpoints and stored policy as
+the Share menu. Run tokens receive `artifact:read` and `artifact:write` when
+`privateArtifacts` is enabled; file upload and hosting capabilities alone do
+not authorize sharing. When that switch is enabled, the run system prompt adds
+short pointers to `okou artifact --help` and `okou artifact download -h`.
+Command help provides the detailed usage. Existing session/PAT callers remain supported.
+
+```bash
+okou artifact /artifacts/abc123def4.pdf --json
+okou artifact /artifacts/abc123def4.pdf --visibility only-me
+okou artifact /artifacts/abc123def4.pdf --visibility org
+okou artifact /artifacts/abc123def4.html --visibility public
+okou artifact download /artifacts/abc123def4.pdf -o /tmp/report.pdf
+```
+
+The input accepts an owned artifact reference or an absolute artifact URL on
+`OKOU_APP_URL`. A UUID requires `--kind file` or `--kind html`. Reference
+resolution uses `kind=artifact` with `artifact:read`, accepts either resource
+type, and never resolves another owner's organization share. Legacy UUID
+references remain supported. Public delivery URLs and temporary preview URLs
+are not management identities.
+
+Without `--visibility`, the command reads the current visibility and URL without
+changing permissions. Setting `only-me`, `org`, or `public` uses the existing API
+values `private`, `organization`, and `public`. The API returns a stable
+`ownerUrl` for the requested artifact version in addition to the existing share
+URL fields. The CLI returns that owner URL for `only-me`, and the existing share
+URL for `org` or `public`, in both text and JSON output. Historical organization
+shares without a short alias still return no share URL until explicitly updated.
+
+An explicit visibility change checks the selected target, version, audience and
+allocated alias before writing; an already shared version returns its current
+link. The Share button sees the same policy and reuses that link. A newer hosted
+version remains private until explicitly selected for sharing. Setting an
+already private artifact to `only-me` returns its owner URL without creating a grant. There is one active
+audience, so switching Public to organization or private revokes the old public
+link; later Public sharing allocates a new public token. Previously issued
+temporary previews retain their existing expiration.
+
+`okou artifact download <file-id> [-o|--out <path>]` uses the same command
+implementation, output (`path`, `mimetype`, `size`), `file:read` capability, and
+owner authorization as `okou web download-file`. It supports file UUIDs and
+private `/artifacts/<reference>` files, streams bytes to disk, and does not alter
+visibility. Hosted HTML deployments continue to use the hosting commands.
+
+If an update fails or its response is lost, rerun without `--visibility` before retrying: the
+policy write may already have succeeded. Deploy the API and CLI together before
+using these commands; older run tokens lack the new capabilities and require a
+new run. No storage migration or host Worker protocol change is required.
+
 ## Standalone artifact viewer
 
 The shared `privateArtifacts` switch applies to

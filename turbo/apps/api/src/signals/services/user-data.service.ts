@@ -1,7 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
 import {
-  chatTranslationLanguageSchema,
-  type ChatTranslationLanguage,
   colorThemeSchema,
   type ColorTheme,
   SUPPORTED_USER_LOCALES,
@@ -94,15 +92,6 @@ function parseUserLocale(value: unknown): UserLocale | null {
   throw new Error(`Unexpected user locale: ${String(value)}`);
 }
 
-function parseChatTranslationLanguage(
-  value: unknown,
-): ChatTranslationLanguage | null {
-  if (value === null) {
-    return null;
-  }
-  return chatTranslationLanguageSchema.parse(value);
-}
-
 function parseSecretType(value: string): SecretType {
   if (value === "user" || value === "model-provider" || value === "connector") {
     return value;
@@ -120,7 +109,6 @@ export function userPreferences({
       .select({
         timezone: orgMembersMetadata.timezone,
         locale: orgMembersMetadata.locale,
-        translationLanguage: orgMembersMetadata.translationLanguage,
         pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
         sendMode: orgMembersMetadata.sendMode,
         cloudBrowserEnabledByDefault:
@@ -144,7 +132,6 @@ export function userPreferences({
       return {
         timezone: null,
         locale: null,
-        translationLanguage: null,
         supportedLocales: [...SUPPORTED_USER_LOCALES],
         pinnedAgentIds: [],
         sendMode: "enter",
@@ -159,9 +146,6 @@ export function userPreferences({
     return {
       timezone: row.timezone,
       locale: parseUserLocale(row.locale),
-      translationLanguage: parseChatTranslationLanguage(
-        row.translationLanguage,
-      ),
       supportedLocales: [...SUPPORTED_USER_LOCALES],
       pinnedAgentIds: normalizePinnedAgentIds(
         toStringArray(row.pinnedAgentIds),
@@ -241,11 +225,10 @@ type UpdateUserPreferencesResult =
 
 type StoredUserPreferences = Omit<
   UserPreferencesResponse,
-  "theme" | "colorTheme" | "translationLanguage"
+  "theme" | "colorTheme"
 > & {
   readonly theme: ThemePreference | null;
   readonly colorTheme: ColorTheme | null;
-  readonly translationLanguage: ChatTranslationLanguage | null;
 };
 
 function mergeUserPreferences(
@@ -255,8 +238,6 @@ function mergeUserPreferences(
   return {
     timezone: preferences.timezone ?? existing.timezone,
     locale: preferences.locale ?? existing.locale,
-    translationLanguage:
-      preferences.translationLanguage ?? existing.translationLanguage ?? null,
     supportedLocales: [...SUPPORTED_USER_LOCALES],
     pinnedAgentIds:
       preferences.pinnedAgentIds === undefined
@@ -286,9 +267,6 @@ function userPreferenceUpdateColumns(
       timezone: preferences.timezone,
     }),
     ...(preferences.locale !== undefined && { locale: preferences.locale }),
-    ...(preferences.translationLanguage !== undefined && {
-      translationLanguage: preferences.translationLanguage,
-    }),
     ...(preferences.pinnedAgentIds !== undefined && {
       pinnedAgentIds: normalizePinnedAgentIds(preferences.pinnedAgentIds),
     }),
@@ -344,7 +322,6 @@ export const updateUserPreferences$ = command(
         userId: args.userId,
         timezone: merged.timezone,
         locale: merged.locale,
-        translationLanguage: merged.translationLanguage,
         pinnedAgentIds: merged.pinnedAgentIds,
         sendMode: merged.sendMode,
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,

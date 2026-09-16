@@ -109,6 +109,26 @@ and #33911 compete for migration 1117. These are overlap records, not
 dependencies or ordering reservations.
 The first merged migration is canonical; later PRs regenerate against main.
 
+## X resource deduplication accounting
+
+The planned X ingestion path in #34532 computes the unidentified remainder
+from the original billable count minus identified occurrences, before collapsing
+duplicate IDs. Final billable `quantity` is the globally new unique resource
+count plus that remainder. Unidentified units retain the original count-based
+charge.
+
+Keep the remainder transient. Do not add `nonDeduplicatedQuantity` to usage
+events, hourly rollups or historical usage API responses, or duplicate it in
+observation receipts. Show **Cannot deduplicate** in the current operation's
+result; historical bills do not promise a retained breakdown of that remainder.
+This expected condition is not `billingError`.
+
+Shared daily resource claims and observation idempotency still require durable
+state. Their atomic write with the net usage obligation, replay/erasure fences
+and scope-wide activation gates belong to the consuming implementation in
+#34610. No dedicated remainder migration or counter-preserving compactor rollout
+is a prerequisite. This policy does not activate resource deduplication.
+
 ## Bounded operator backfill
 
 Run from `turbo` with the repository-pinned pnpm and an explicitly authorized

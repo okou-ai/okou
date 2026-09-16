@@ -25,6 +25,25 @@ const userTemplatePreviewAssetSchema = z.object({
 });
 
 export const MAX_USER_TEMPLATE_PAGES = 100;
+export const MAX_USER_TEMPLATE_SOURCE_BYTES = 100 * 1024 * 1024;
+export const MAX_USER_TEMPLATE_PAGE_BYTES = 25 * 1024 * 1024;
+export const MAX_USER_TEMPLATE_TOTAL_PAGE_BYTES = 500 * 1024 * 1024;
+export const MAX_USER_TEMPLATE_PACKAGE_BYTES = 100 * 1024 * 1024;
+export const MAX_USER_TEMPLATE_PACKAGE_FILES = 200;
+export const MAX_USER_TEMPLATE_PACKAGE_FILE_BYTES = 25 * 1024 * 1024;
+
+/** v1 compiles decks. Documents follow the Office output toolchain. */
+export const USER_TEMPLATE_SOURCE_CONTENT_TYPES = [
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+] as const;
+export const USER_TEMPLATE_PAGE_CONTENT_TYPE = "image/png";
+
+/** Guidance a later generation run reads. Assets are optional; these are not. */
+export const REQUIRED_USER_TEMPLATE_PACKAGE_FILES = [
+  "SKILL.md",
+  "design-system.md",
+] as const;
 
 const userTemplateSummarySchema = z.object({
   id: z.uuid(),
@@ -78,7 +97,41 @@ const updateUserTemplateBodySchema = z
     return body.title !== undefined || body.visibility !== undefined;
   }, "A title or visibility change is required");
 
+/**
+ * Everything a finished reverse run hands back, in one call.
+ *
+ * The ids are ordinary private uploads the run already made, so nothing here is
+ * a bespoke transfer protocol. Page order is the array order, which is why the
+ * whole set arrives together: a single invocation cannot pair one source with
+ * another source's pages.
+ *
+ * There is no create-then-fill pair. A row exists only once this call validates
+ * a package, so an abandoned run leaves nothing behind.
+ */
+const publishUserTemplateBodySchema = z.object({
+  title: z.string().trim().min(1).max(255),
+  kind: userTemplateKindSchema,
+  sourceFileId: z.uuid(),
+  pageFileIds: z.array(z.uuid()).min(1).max(MAX_USER_TEMPLATE_PAGES),
+  packageFileId: z.uuid(),
+});
+
 export const userTemplatesContract = c.router({
+  publish: {
+    method: "POST",
+    path: "/api/user-templates",
+    headers: authHeadersSchema,
+    body: publishUserTemplateBodySchema,
+    responses: {
+      200: userTemplateSummarySchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "Publish a compiled reverse run as a ready user template",
+  },
   list: {
     method: "GET",
     path: "/api/user-templates",
@@ -152,7 +205,21 @@ export const userTemplatesContract = c.router({
 });
 
 export type UserTemplateSummary = z.infer<typeof userTemplateSummarySchema>;
+export type UserTemplateCatalogEntry = z.infer<
+  typeof userTemplateCatalogEntrySchema
+>;
+export type UserTemplateDetail = z.infer<typeof userTemplateDetailSchema>;
 export type UserTemplatePreviewAsset = z.infer<
   typeof userTemplatePreviewAssetSchema
 >;
 export type UserTemplateKind = z.infer<typeof userTemplateKindSchema>;
+export type UserTemplateVisibility = z.infer<
+  typeof userTemplateVisibilitySchema
+>;
+export type PublishUserTemplateBody = z.infer<
+  typeof publishUserTemplateBodySchema
+>;
+export type UpdateUserTemplateBody = z.infer<
+  typeof updateUserTemplateBodySchema
+>;
+export type UserTemplatesContract = typeof userTemplatesContract;
