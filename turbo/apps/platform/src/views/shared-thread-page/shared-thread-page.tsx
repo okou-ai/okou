@@ -525,7 +525,7 @@ export function SharedThreadPage({
   signUpUrl.searchParams.set("redirect_url", handoffUrl.toString());
 
   return (
-    <div className="okou-app relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex h-full min-h-0 flex-col text-foreground">
+    <div className="relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex h-full min-h-0 flex-col text-foreground">
       <SharedThreadHeader
         brandName={BRAND_NAME}
         homeUrl={homeUrl}

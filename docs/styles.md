@@ -581,8 +581,8 @@ does not record it.
 
 A page does not restate the shell it renders inside. This one is mounted with
 the `standalone` layout, so `StandaloneLayout` is its ancestor and already
-carries `okou-app` along with the theme attributes; the page's own copy of that
-class was redundant and is gone. `position: fixed` changes where a box is laid
+carried the shell class along with the theme attributes; the page's own copy of
+that class was redundant and went first, and the class itself is gone now. `position: fixed` changes where a box is laid
 out, not where it sits in the DOM, so the shell's custom properties still
 inherit into the cover.
 
@@ -864,6 +864,32 @@ the case list carries only the six configurations it can tell apart.
 `background-size: 100% 100%` and the initial `auto auto` size a gradient to the
 same box, so dropping it changes zero pixels; it is kept because the retired
 rule declared it and the computed value is part of what this drain preserves.
+
+### The app shell class — drained
+
+`okou-app` was the last first-party class in the platform-shell family, and by
+the time it was removed it painted nothing. The card tokens moved to `:root`,
+the dead `[data-desktop-shell]` selection rules were deleted, and the workspace
+canvas collapsed onto registered utilities, which between them retired every
+rule that named the class. What remained was the string itself on twenty
+elements and a scope that selected nothing.
+
+Deleting it is therefore not a visual change and there is nothing to measure:
+after those three drains no stylesheet in the App or in `@okouai/ui` contains a
+`.okou-app` selector, so no declaration reaches an element through it and no
+computed value can depend on it. Two dialogs kept the class only to re-enter a
+scope that no longer exists — `unsaved-bar.tsx`, whose comment said so
+explicitly, and `instatus-status-notice.tsx` — and both now sit in the same
+place with the same tokens, because those tokens are resolved at the document
+root.
+
+`sidebar-account-menu.test.tsx` used `document.querySelector(".okou-app")` to
+decide whether the app shell was still mounted during an account switch. It now
+queries `[data-slot="app-shell"]` on the same element, which is the one
+`shellDocumentAttributesRef$` attaches to — so the probe reads the element that
+actually owns mount state rather than one that happened to carry a styling
+class. Only `SidebarLayout` declares the slot, because only that layout is
+mounted on the route the test renders.
 
 ### Desktop titlebar drag region — drained
 

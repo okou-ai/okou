@@ -1337,7 +1337,7 @@ export function ThreeColumnSearchDialog({
       })}
       smMaxWidth={820}
       showCloseButton={false}
-      contentClassName="okou-app gap-0"
+      contentClassName="gap-0"
       commandClassName="gap-0"
       commandProps={{
         shouldFilter: false,
@@ -1472,7 +1472,7 @@ export function PinAgentDialog({
         return $.actions.close;
       })}
       smMaxWidth="xl"
-      contentClassName="okou-app gap-0"
+      contentClassName="gap-0"
       commandClassName="gap-0"
       commandProps={{
         shouldFilter: false,

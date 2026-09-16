@@ -1124,7 +1124,8 @@ test.each(["success", "failure", "pending task"])(
     }
     let appWasUnmounted = false;
     mockedClerk.setActive.mockImplementation(async (params) => {
-      appWasUnmounted = document.querySelector(".okou-app") === null;
+      appWasUnmounted =
+        document.querySelector('[data-slot="app-shell"]') === null;
       await finishSwitch.promise;
       await setActive(params);
     });
@@ -1139,7 +1140,9 @@ test.each(["success", "failure", "pending task"])(
       });
     const originalUrl = window.location.href;
     const lifecycle = window._okou;
-    expect(document.querySelector(".okou-app")).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-slot="app-shell"]'),
+    ).toBeInTheDocument();
 
     const menu = await openAccountMenu();
     click(within(menu).getByText("Switch account"));

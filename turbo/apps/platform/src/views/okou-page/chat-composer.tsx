@@ -7283,7 +7283,7 @@ function AddConnectorsDialog({
       <DialogContent
         ref={registerConnectionDialog}
         maxWidth="2xl"
-        contentClassName="okou-app flex flex-col"
+        contentClassName="flex flex-col"
         aria-describedby={undefined}
       >
         <DialogHeader className="shrink-0">
