@@ -360,6 +360,8 @@ import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance
 import { hasEarlierDeferredDemand } from "./pi-deferred-demand.service";
 import {
   admitNewComputeRun,
+  lockComputeSessionSnapshot,
+  type LockedComputeSessionSnapshot,
   validateNewComputeSession,
   withComputeOwnershipRetry,
 } from "./compute-erasure-admission.service";
@@ -830,6 +832,7 @@ interface ValidatedThreadSessionSnapshot {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
   readonly agentSessionId: string | null;
+  readonly lockedSession: LockedComputeSessionSnapshot | undefined;
 }
 
 type AtomicLaunchCommitResult =
@@ -8644,18 +8647,14 @@ async function validateThreadSessionSnapshot(
       kind: "validated-thread-session-snapshot",
       chatThreadId,
       agentSessionId: thread.agentSessionId,
+      lockedSession: undefined,
     };
   }
-  const [session] = await args.timing.measure(
+  const session = await args.timing.measure(
     "api_dispatch_validate_thread_session_snapshot_session",
     "nested",
     async () => {
-      return await tx
-        .select({ conversationId: agentSessions.conversationId })
-        .from(agentSessions)
-        .where(eq(agentSessions.id, expectedSessionId))
-        .for("update")
-        .limit(1);
+      return await lockComputeSessionSnapshot(tx, expectedSessionId);
     },
   );
   if (
@@ -8672,6 +8671,7 @@ async function validateThreadSessionSnapshot(
     kind: "validated-thread-session-snapshot",
     chatThreadId,
     agentSessionId: thread.agentSessionId,
+    lockedSession: session,
   };
 }
 
@@ -8839,14 +8839,20 @@ async function commitPreparedLaunchUnderLock(
     timing: args.timing,
   });
   if (
-    !(await validateNewComputeSession(tx, {
-      userId: args.createArgs.userId,
-      orgId: args.createArgs.orgId,
-      agentId: args.context.resolved.agentId,
-      existingSessionId: args.identity.shouldCreateSession
-        ? undefined
-        : args.identity.sessionId,
-    }))
+    !(await validateNewComputeSession(
+      tx,
+      {
+        userId: args.createArgs.userId,
+        orgId: args.createArgs.orgId,
+        agentId: args.context.resolved.agentId,
+        existingSessionId: args.identity.shouldCreateSession
+          ? undefined
+          : args.identity.sessionId,
+      },
+      threadSessionValidation?.kind === "validated-thread-session-snapshot"
+        ? threadSessionValidation.lockedSession
+        : undefined,
+    ))
   ) {
     return conflict("Run admission is unavailable");
   }

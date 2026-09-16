@@ -178,6 +178,39 @@ reduction does not imply constant execution cost. The fixture was rolled back;
 these synthetic plans and single samples are not production throughput evidence.
 There is no global lock, timeout increase or production operation.
 
+### Locked session observation reuse (#34720)
+
+Successful thread snapshot validation reads the expected session's conversation
+and user/org/Agent ownership together under the existing `FOR UPDATE` lock.
+Final new-run ownership validation reuses that observation only when its opaque
+transaction identity and session ID match the current transaction and actual
+insertion session. The observation is immutable, local to that admission, and
+never derived from preparation or the initial pre-lock subject discovery.
+
+Ordinary reused-session admission therefore performs one locked session SELECT
+instead of two. Both snapshot and ownership predicates still run. Stale binding
+or conversation results, missing prepared resolution, different insertion
+sessions and threadless launches retain independent ownership reads. New
+sessions retain their existing no-owner-read behavior; rotation still validates
+the old expected session. Failed-preparation persistence and private maintenance
+retain their separate admission. A queued-payload retry creates a fresh
+transaction and cannot reuse the earlier observation.
+
+Subject/resource/catalog/org/thread/session/provider ordering, account-closure
+checks and ownership-error precedence over stale-snapshot retry are unchanged.
+No schema, persisted proof, credential cache or client/Runner contract changes;
+rollback restores the extra query. Query-count reduction does not establish a
+production latency improvement.
+
+Local PostgreSQL 18.6 statement capture compared main
+`d1312dca7973bcd5615ca7a55123e4e5ee4906da` with this change on September 16.
+Ten successful reused-session admissions in each suite run executed two locked
+session SELECTs before the change and one afterward. Rotation retained its
+expected-session read. API/Runner regressions cover queued reuse through
+promotion and user/org/Agent changes committed while admission waits on the
+session lock, both with and without a concurrent conversation change. Query
+capture stays outside runtime and CI assertions; no timing threshold is added.
+
 ## Remaining boundaries and activation gates
 
 - Preparation may already write provider/storage artifacts before the guarded

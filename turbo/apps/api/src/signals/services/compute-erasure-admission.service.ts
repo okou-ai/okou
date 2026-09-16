@@ -198,22 +198,60 @@ export async function admitNewComputeRun(
   );
 }
 
-export async function validateNewComputeSession(
+const lockedComputeSessionTransaction = Symbol(
+  "lockedComputeSessionTransaction",
+);
+
+export interface LockedComputeSessionSnapshot extends Owner {
+  readonly id: string;
+  readonly agentId: string | null;
+  readonly conversationId: string | null;
+  readonly [lockedComputeSessionTransaction]: Tx;
+}
+
+/** Only this locked read can establish the observation's transaction provenance. */
+export async function lockComputeSessionSnapshot(
   tx: Tx,
-  args: ComputeRunOwner & { readonly existingSessionId: string | undefined },
-): Promise<boolean> {
-  if (args.existingSessionId === undefined) {
-    return true;
-  }
+  sessionId: string,
+): Promise<LockedComputeSessionSnapshot | undefined> {
   const [session] = await tx
     .select({
+      id: agentSessions.id,
+      conversationId: agentSessions.conversationId,
       userId: agentSessions.userId,
       orgId: agentSessions.orgId,
       agentId: agentSessions.agentId,
     })
     .from(agentSessions)
-    .where(eq(agentSessions.id, args.existingSessionId))
-    .for("update");
+    .where(eq(agentSessions.id, sessionId))
+    .for("update")
+    .limit(1);
+  return session
+    ? Object.freeze({ ...session, [lockedComputeSessionTransaction]: tx })
+    : undefined;
+}
+
+export async function validateNewComputeSession(
+  tx: Tx,
+  args: ComputeRunOwner & { readonly existingSessionId: string | undefined },
+  observedSession?: LockedComputeSessionSnapshot,
+): Promise<boolean> {
+  if (args.existingSessionId === undefined) {
+    return true;
+  }
+  const [session] =
+    observedSession?.[lockedComputeSessionTransaction] === tx &&
+    observedSession.id === args.existingSessionId
+      ? [observedSession]
+      : await tx
+          .select({
+            userId: agentSessions.userId,
+            orgId: agentSessions.orgId,
+            agentId: agentSessions.agentId,
+          })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, args.existingSessionId))
+          .for("update");
   return (
     session !== undefined &&
     sameOwner(session, args) &&
