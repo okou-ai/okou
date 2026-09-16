@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, lt, lte, or } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
@@ -81,7 +81,7 @@ export async function hasEarlierDeferredDemand(
         eq(agentRuns.status, "pending"),
         eq(agentRunSandboxIntent.state, "waiting"),
         retainedDemand(tx),
-        sql`${agentRunSandboxIntent.expiresAt} > ${nowDate()}`,
+        gt(agentRunSandboxIntent.expiresAt, nowDate()),
         runId === undefined
           ? lte(agentRunSandboxIntent.enqueuedAt, at)
           : or(

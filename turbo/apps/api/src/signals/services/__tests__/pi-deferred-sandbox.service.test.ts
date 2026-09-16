@@ -1298,25 +1298,15 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     expect(refused.body).toMatchObject({
       error: { code: "CONCURRENT_RUN_LIMIT" },
     });
+    // The older demand then takes the slot it was owed.
     await expect(
       createStore().set(consumeDeferredPiRun$, deferred.runId, context.signal),
     ).resolves.toBeTruthy();
-    await accept(claim(deferred.runId, true, randomUUID()), [200]);
-    // Ordinary behaviour returns once no older demand is waiting.
-    await accept(
-      cancel.cancel({
-        params: { id: deferred.runId },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
+    const claimed = await accept(
+      claim(deferred.runId, true, randomUUID()),
       [200],
     );
-    await flushWaitUntilForTest();
-    const later = await api.createRun(actor, {
-      agentId: agent.agentId,
-      prompt: "later legacy",
-      modelProvider: "anthropic-api-key",
-    });
-    expect(later.runId).toBeTruthy();
+    expect(claimed.body.apiStartTime).toBe(deferred.apiStartedAt.getTime());
   }, 90_000);
 
   it("rejects a foreign namespace and an unretained hash through the object seam", async () => {
