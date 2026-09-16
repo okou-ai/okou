@@ -323,6 +323,62 @@ describe("email outbox provider replay", () => {
     );
   });
 
+  it("stops replaying once the existing attempt bound is reached", async () => {
+    const baseTime = pinTime();
+    const item = await seedItem({ status: "pending", createdAt: nowDate() });
+    const key = providerKey(item.id);
+    context.mocks.resend.send.mockResolvedValue({
+      data: null,
+      error: {
+        name: "internal_server_error",
+        message: "provider unavailable",
+        statusCode: 500,
+      },
+    });
+
+    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    mockNow(baseTime + FIRST_BACKOFF_MS);
+    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+    const thirdAttemptAt = baseTime + FIRST_BACKOFF_MS + FIRST_BACKOFF_MS * 4;
+
+    // The last permitted attempt reaches the provider and never records its
+    // outcome.
+    const sendStarted = createDeferredPromise<void>(context.signal);
+    const releaseSend = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseSend.settled()) {
+        releaseSend.resolve(undefined);
+      }
+    });
+    context.mocks.resend.send.mockImplementationOnce(async () => {
+      sendStarted.resolve(undefined);
+      await releaseSend.promise;
+      return { data: { id: "resend-last-attempt" }, error: null };
+    });
+    mockNow(thirdAttemptAt);
+    const unresolvedDrain = outbox.drainItems([item.id]);
+    await sendStarted.promise;
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
+
+    // Recovery after the lease must respect the retry bound instead of
+    // replaying indefinitely.
+    mockNow(thirdAttemptAt + SEND_LEASE_MS);
+    await expect(outbox.drainItems([item.id])).resolves.toBe(1);
+
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
+    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
+      status: "failed",
+      attempts: 3,
+      resend_id: null,
+      provider_idempotency_key: key,
+      last_error: expect.stringContaining("exhausted its delivery attempts"),
+    });
+
+    releaseSend.resolve(undefined);
+    await expect(unresolvedDrain).resolves.toBe(1);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
+  });
+
   it("retries a concurrent same-key response within the existing bounds", async () => {
     const baseTime = pinTime();
     const item = await seedItem({ status: "pending", createdAt: nowDate() });
