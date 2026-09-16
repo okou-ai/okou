@@ -3647,7 +3647,8 @@ printf '%s\n' \
 
         assert!(reports[0].status.is_none());
         assert!(has_status_unavailable_warning(&reports[0]));
-        assert_eq!(print_report(&reports, &[], &[]), 1);
+        assert_eq!(reports[0].warnings.len(), 1);
+        assert_eq!(print_report(&reports, &[], &[]), ExitCode::FAILURE);
     }
 
     #[tokio::test]
@@ -3681,7 +3682,7 @@ printf '%s\n' \
         );
         assert!(!has_status_unavailable_warning(&reports[0]));
         assert!(reports[0].warnings.is_empty());
-        assert_eq!(print_report(&reports, &[], &[]), 0);
+        assert_eq!(print_report(&reports, &[], &[]), ExitCode::SUCCESS);
     }
 
     #[tokio::test]
@@ -3710,7 +3711,8 @@ printf '%s\n' \
         assert!(reports[0].status.is_some());
         assert!(!has_status_unavailable_warning(&reports[0]));
         assert!(has_proxy_warning(&reports[0]));
-        assert_eq!(print_report(&reports, &[], &[]), 1);
+        assert_eq!(reports[0].warnings.len(), 1);
+        assert_eq!(print_report(&reports, &[], &[]), ExitCode::FAILURE);
     }
 
     #[tokio::test]
