@@ -8,13 +8,11 @@ import { dispatchCompleteSideEffectsCore$ } from "./agent-webhook-complete.servi
 import type { z } from "zod";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
-import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
 import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import {
   and,
-  asc,
   eq,
   exists,
   inArray,
@@ -29,6 +27,7 @@ import { inspectPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
 import {
   claimCompatibleStoredExecutionContextSchema,
   piDeferredSandboxConfigSchema,
+  type DeferredSandboxReleaseOutcome,
   type PiDeferredSandboxConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -255,6 +254,41 @@ async function assertDeferredContinuationWithinLimits(
   });
 }
 
+/**
+ * An unsupported continuation is finalized truthfully instead of becoming
+ * queued executable demand. Already-incurred inference usage, diagnostics and
+ * the retained object references stay on the Run; nothing is truncated.
+ */
+async function acceptDeferredContinuationSize(
+  tx: Tx,
+  run: Run,
+  args: {
+    readonly runId: string;
+    readonly userId: string;
+    readonly orgId: string;
+    readonly contextHash: string;
+    readonly continuation: PiSandboxContinuation;
+  },
+): Promise<boolean> {
+  const checked = await settle(
+    assertDeferredContinuationWithinLimits(tx, args),
+  );
+  if (checked.ok) {
+    return true;
+  }
+  if (!(checked.error instanceof PiDeferredHandoffUnsupportedError)) {
+    throw checked.error;
+  }
+  await failDeferredPiRun(tx, {
+    runId: run.id,
+    snapshot: run.launchSnapshot,
+    at: nowDate(),
+    status: "failed",
+    error: checked.error.message,
+  });
+  return false;
+}
+
 /** Durable producer interface for #34244. It only accepts an already admitted
  * inference owner; this change adds no API producer or switch activation. */
 async function commitPiSandboxDemand(
@@ -335,27 +369,14 @@ async function commitPiSandboxDemand(
         });
       }
       // Both inputs are durable here, so this is the earliest point the shared
-      // executable-handoff contract can be applied. An unsupported continuation
-      // is finalized truthfully instead of becoming queued executable demand;
-      // already-incurred inference usage and diagnostics stay on the Run.
-      const oversized = await settle(
-        assertDeferredContinuationWithinLimits(tx, {
+      // executable-handoff contract can be applied.
+      if (
+        !(await acceptDeferredContinuationSize(tx, run, {
           ...reference,
           contextHash: input.contextHash,
           continuation: parsed,
-        }),
-      );
-      if (!oversized.ok) {
-        if (!(oversized.error instanceof PiDeferredHandoffUnsupportedError)) {
-          throw oversized.error;
-        }
-        await failDeferredPiRun(tx, {
-          runId: run.id,
-          snapshot: run.launchSnapshot,
-          at: nowDate(),
-          status: "failed",
-          error: oversized.error.message,
-        });
+        }))
+      ) {
         return false;
       }
       const at = nowDate();
@@ -695,6 +716,27 @@ async function readMaterialization(db: Db, fence: PiSandboxFence) {
   };
 }
 
+/**
+ * A size verdict on immutable inputs is definitive, not a retryable preparation
+ * failure, so the continuation is finalized instead of holding capacity until
+ * demand expiry. Every other failure stays retryable and propagates.
+ */
+async function readMaterializationOrReject(db: Db, fence: PiSandboxFence) {
+  const materialization = await settle(readMaterialization(db, fence));
+  if (materialization.ok) {
+    return materialization.value;
+  }
+  if (!(materialization.error instanceof PiDeferredHandoffUnsupportedError)) {
+    throw materialization.error;
+  }
+  await failUnsupportedPiContinuation(
+    db,
+    fence.runId,
+    materialization.error.message,
+  );
+  return undefined;
+}
+
 /** An unsupported payload is a definitive verdict on immutable inputs. The
  * reserved lease was never claimed, so the same unclaimed-release evidence the
  * recovery path uses applies; incurred inference usage stays on the Run. */
@@ -756,26 +798,12 @@ export const consumeDeferredPiRun$ = command(
       },
     );
     // I/O and environment preparation run only after reservation has committed.
-    const materialization = await settle(readMaterialization(db, fence));
+    const input = await readMaterializationOrReject(db, fence);
     signal.throwIfAborted();
-    if (!materialization.ok) {
-      if (
-        !(materialization.error instanceof PiDeferredHandoffUnsupportedError)
-      ) {
-        throw materialization.error;
-      }
-      // A size verdict is definitive, not a retryable preparation failure.
-      // Finalize truthfully instead of holding capacity until demand expiry.
-      await failUnsupportedPiContinuation(
-        db,
-        runId,
-        materialization.error.message,
-      );
-      signal.throwIfAborted();
+    if (!input) {
       await set(settleDeferredPiTerminal$, runId, signal);
       return false;
     }
-    const input = materialization.value;
     const prepared = await set(materializeDeferredPiRun$, input, signal);
     signal.throwIfAborted();
     const materializedAt = now();
@@ -1069,7 +1097,7 @@ async function releaseUnclaimedDemand(
   run: Run,
   lease: typeof agentRunSandboxLease.$inferSelect | undefined,
   args: DeferredReleaseProof,
-): Promise<DeferredReleaseOutcome> {
+): Promise<DeferredSandboxReleaseOutcome> {
   const lifecycle = await readPiInferenceLifecycle(
     tx,
     run.id,
@@ -1134,18 +1162,13 @@ function matchesDeferredClaimProof(
 }
 
 /**
- * `stale` is a definitive acknowledgement that this proof owns no capacity here;
- * the Runner may close its receipt. `inconclusive` means the API could not
- * reconstruct the owner, so an obligation may remain and the Runner must retain
- * its receipt and claim barrier for a later attempt. A timeout, missing mapping
- * or disabled start switch is never physical-release proof.
+ * A timeout, missing mapping, completion callback or disabled start switch is
+ * never physical-release proof; only a matched proof releases capacity.
  */
-export type DeferredReleaseOutcome = "released" | "stale" | "inconclusive";
-
 export async function releaseDeferredPiSandbox(
   db: Db,
   args: DeferredReleaseProof,
-): Promise<DeferredReleaseOutcome> {
+): Promise<DeferredSandboxReleaseOutcome> {
   return await withComputeOwnershipRetry(async () => {
     const [owner] = await db
       .select({
@@ -1166,78 +1189,83 @@ export async function releaseDeferredPiSandbox(
       { ...owner, hash: owner.input.configurationHash, kind: "configuration" },
       piDeferredConfigurationSchema,
     );
-    return db.transaction(async (tx): Promise<DeferredReleaseOutcome> => {
-      const admission = await prepareComputeRunAdmission(tx, args.runId, {
-        ...owner,
-        capturedCleanupOwner: captured.resourceOwner,
-        capturedMaintenanceStorageId:
-          captured.piMemoryPhase2Maintenance?.memoryStorageId,
-      });
-      if (!admission) {
-        return "inconclusive";
-      }
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${owner.orgId}))`,
-      );
-      await tx
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .where(
-          inArray(
-            chatThreads.id,
-            tx
-              .select({ id: agentRuns.chatThreadId })
-              .from(agentRuns)
-              .where(eq(agentRuns.id, args.runId)),
-          ),
-        )
-        .orderBy(chatThreads.id)
-        .for("update");
-      // Cleanup does not require a still-live private execution lease. It only
-      // removes capacity after real release, never publishes provider output.
-      if (!(await validateComputeRunCleanupOwnership(tx, admission))) {
-        return "inconclusive";
-      }
-      const [lease] = await tx
-        .select()
-        .from(agentRunSandboxLease)
-        .where(eq(agentRunSandboxLease.runId, args.runId))
-        .for("update");
-      const [run] = await tx
-        .select()
-        .from(agentRuns)
-        .where(eq(agentRuns.id, args.runId));
-      if (!run || !isPiInferenceRun(run.launchSnapshot)) {
-        return "stale";
-      }
-      if (args.proof === "not-started" && (!lease || lease.runnerId === null)) {
-        return await releaseUnclaimedDemand(tx, run, lease, args);
-      }
-      if (!lease || !matchesDeferredClaimProof(run, lease, args)) {
-        return "stale";
-      }
-      if (lease.state === "released") {
-        return "released";
-      }
-      if (["pending", "running"].includes(run.status)) {
-        const at = nowDate();
-        await failDeferredPiRun(tx, {
-          runId: args.runId,
-          snapshot: run.launchSnapshot,
-          at,
-          status: "failed",
-          error: "Sandbox stopped before terminal completion was recorded",
+    return db.transaction(
+      async (tx): Promise<DeferredSandboxReleaseOutcome> => {
+        const admission = await prepareComputeRunAdmission(tx, args.runId, {
+          ...owner,
+          capturedCleanupOwner: captured.resourceOwner,
+          capturedMaintenanceStorageId:
+            captured.piMemoryPhase2Maintenance?.memoryStorageId,
         });
-      }
-      await tx
-        .update(agentRunSandboxLease)
-        .set({
-          state: "released",
-          releaseEvidence: `runner-${args.proof}:${args.runnerId}:${lease.claimedOwnerEpoch}:${lease.claimedGeneration}`,
-        })
-        .where(eq(agentRunSandboxLease.runId, args.runId));
-      return "released";
-    });
+        if (!admission) {
+          return "inconclusive";
+        }
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${owner.orgId}))`,
+        );
+        await tx
+          .select({ id: chatThreads.id })
+          .from(chatThreads)
+          .where(
+            inArray(
+              chatThreads.id,
+              tx
+                .select({ id: agentRuns.chatThreadId })
+                .from(agentRuns)
+                .where(eq(agentRuns.id, args.runId)),
+            ),
+          )
+          .orderBy(chatThreads.id)
+          .for("update");
+        // Cleanup does not require a still-live private execution lease. It only
+        // removes capacity after real release, never publishes provider output.
+        if (!(await validateComputeRunCleanupOwnership(tx, admission))) {
+          return "inconclusive";
+        }
+        const [lease] = await tx
+          .select()
+          .from(agentRunSandboxLease)
+          .where(eq(agentRunSandboxLease.runId, args.runId))
+          .for("update");
+        const [run] = await tx
+          .select()
+          .from(agentRuns)
+          .where(eq(agentRuns.id, args.runId));
+        if (!run || !isPiInferenceRun(run.launchSnapshot)) {
+          return "stale";
+        }
+        if (
+          args.proof === "not-started" &&
+          (!lease || lease.runnerId === null)
+        ) {
+          return await releaseUnclaimedDemand(tx, run, lease, args);
+        }
+        if (!lease || !matchesDeferredClaimProof(run, lease, args)) {
+          return "stale";
+        }
+        if (lease.state === "released") {
+          return "released";
+        }
+        if (["pending", "running"].includes(run.status)) {
+          const at = nowDate();
+          await failDeferredPiRun(tx, {
+            runId: args.runId,
+            snapshot: run.launchSnapshot,
+            at,
+            status: "failed",
+            error: "Sandbox stopped before terminal completion was recorded",
+          });
+        }
+        await tx
+          .update(agentRunSandboxLease)
+          .set({
+            state: "released",
+            releaseEvidence: `runner-${args.proof}:${args.runnerId}:${lease.claimedOwnerEpoch}:${lease.claimedGeneration}`,
+          })
+          .where(eq(agentRunSandboxLease.runId, args.runId));
+        return "released";
+      },
+    );
   });
 }
 
@@ -1406,7 +1434,10 @@ export async function readDeferredPiHandoffChunk(
       sessionHistory: h1?.sessionHistory ?? context.h0SessionHistory,
       resourceSnapshot: context.resourceSnapshot,
     });
-    if (bytes.length > PI_DEFERRED_HANDOFF_MAX_BYTES || offset >= bytes.length) {
+    if (
+      bytes.length > PI_DEFERRED_HANDOFF_MAX_BYTES ||
+      offset >= bytes.length
+    ) {
       return undefined;
     }
     const end = Math.min(offset + 1024 * 1024, bytes.length);

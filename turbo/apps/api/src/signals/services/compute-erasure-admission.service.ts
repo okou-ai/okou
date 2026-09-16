@@ -221,6 +221,54 @@ export async function validateNewComputeSession(
   );
 }
 
+/**
+ * Only a cleanup caller that carries a captured cleanup owner may recover a
+ * retired private maintenance identity. Execution admission never does.
+ */
+function recoveredMaintenanceId(
+  expected: ComputeRunOwner,
+  run: { readonly agentId: string | null; readonly bound: boolean },
+): string | undefined {
+  if (run.agentId !== null || run.bound) {
+    return undefined;
+  }
+  return expected.capturedCleanupOwner === undefined
+    ? undefined
+    : expected.capturedMaintenanceStorageId;
+}
+
+function computeResourceIdentity(args: {
+  readonly agentId: string | null;
+  readonly maintenanceId: string | undefined;
+}): Pick<ResourceOwner, "kind" | "id"> | undefined {
+  if (args.agentId !== null) {
+    return { kind: "agent", id: args.agentId };
+  }
+  return args.maintenanceId === undefined
+    ? undefined
+    : { kind: "maintenance", id: args.maintenanceId };
+}
+
+/**
+ * A live binding stays authoritative when it exists. A recovered identity is
+ * accepted only when the storage still belongs to both the Run owner and the
+ * captured cleanup owner.
+ */
+function maintenanceResourceOwned(args: {
+  readonly resource: ResourceOwner;
+  readonly owner: Owner;
+  readonly bound: Owner | undefined;
+  readonly capturedCleanupOwner: Owner | undefined;
+}): boolean {
+  if (!sameOwner(args.resource, args.owner)) {
+    return false;
+  }
+  if (args.capturedCleanupOwner === undefined) {
+    return args.bound !== undefined && sameOwner(args.bound, args.owner);
+  }
+  return sameOwner(args.resource, args.capturedCleanupOwner);
+}
+
 /** Resolve without business locks, then acquire the complete sorted B1 set. */
 export async function prepareComputeRunAdmission(
   tx: Tx,
@@ -258,21 +306,14 @@ export async function prepareComputeRunAdmission(
       : [];
   // A retired maintenance binding is not proof that no obligation remains. Fall
   // back to the caller's captured identity, which only cleanup supplies.
-  const capturedMaintenance =
-    owner.agentId === null &&
-    !maintenance &&
-    expected.capturedMaintenanceStorageId !== undefined &&
-    expected.capturedCleanupOwner !== undefined
-      ? expected.capturedMaintenanceStorageId
-      : undefined;
-  const identity =
-    owner.agentId !== null
-      ? { kind: "agent" as const, id: owner.agentId }
-      : maintenance
-        ? { kind: "maintenance" as const, id: maintenance.id }
-        : capturedMaintenance
-          ? { kind: "maintenance" as const, id: capturedMaintenance }
-          : undefined;
+  const capturedMaintenance = recoveredMaintenanceId(expected, {
+    agentId: owner.agentId,
+    bound: maintenance !== undefined,
+  });
+  const identity = computeResourceIdentity({
+    agentId: owner.agentId,
+    maintenanceId: maintenance?.id ?? capturedMaintenance,
+  });
   const resource = identity
     ? await readResource(tx, identity, false)
     : undefined;
@@ -297,11 +338,14 @@ export async function prepareComputeRunAdmission(
   }
   if (
     resource.kind === "maintenance" &&
-    (!sameOwner(resource, owner) ||
-      (capturedMaintenance === undefined
-        ? !maintenance || !sameOwner(maintenance, owner)
-        : !expected.capturedCleanupOwner ||
-          !sameOwner(resource, expected.capturedCleanupOwner)))
+    !maintenanceResourceOwned({
+      resource,
+      owner,
+      bound: maintenance,
+      capturedCleanupOwner: capturedMaintenance
+        ? expected.capturedCleanupOwner
+        : undefined,
+    })
   ) {
     return undefined;
   }

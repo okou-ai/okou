@@ -24,14 +24,11 @@ import {
  * `PI_DEFERRED_HANDOFF_MAX_BYTES` bounds the serialized aggregate the chunk API
  * streams, which individually valid objects can otherwise exceed together.
  */
-export const PI_DEFERRED_HISTORY_MAX_BYTES =
-  PI_API_FIRST_TURN_SESSION_MAX_BYTES;
+const PI_DEFERRED_HISTORY_MAX_BYTES = PI_API_FIRST_TURN_SESSION_MAX_BYTES;
 export const PI_DEFERRED_HANDOFF_MAX_BYTES = 32 * 1024 * 1024;
 
 const sessionHistorySchema = z.string().refine((history) => {
-  return (
-    Buffer.byteLength(history, "utf8") <= PI_DEFERRED_HISTORY_MAX_BYTES
-  );
+  return Buffer.byteLength(history, "utf8") <= PI_DEFERRED_HISTORY_MAX_BYTES;
 }, "Pi durable session history exceeds its shared UTF-8 limit");
 
 /** The exact bytes the chunk API streams and the CLI reassembles. */

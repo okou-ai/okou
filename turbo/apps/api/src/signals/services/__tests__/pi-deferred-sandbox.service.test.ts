@@ -1133,7 +1133,7 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         sessionHistory: oversized,
         historyHash: "0".repeat(64),
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(/shared UTF-8 limit/u);
     // Multibyte content stays inside a UTF-16 length limit while overflowing
     // the reader's UTF-8 ceiling.
     await expect(
@@ -1144,13 +1144,13 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         sessionHistory: "\u20ac".repeat(9 * 1024 * 1024),
         historyHash: "0".repeat(64),
       }),
-    ).rejects.toThrow();
-    expect(
-      await db()
+    ).rejects.toThrow(/shared UTF-8 limit/u);
+    await expect(
+      db()
         .select({ hash: agentRunInferenceObjects.hash })
         .from(agentRunInferenceObjects)
         .where(eq(agentRunInferenceObjects.runId, f.runId)),
-    ).toStrictEqual([]);
+    ).resolves.toStrictEqual([]);
   }, 60_000);
 
   it("finalizes individually valid objects that exceed the combined limit", async () => {
@@ -1214,18 +1214,18 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         },
       ),
     ).resolves.toBeFalsy();
-    expect(
-      await db()
+    await expect(
+      db()
         .select({ runId: agentRunSandboxIntent.runId })
         .from(agentRunSandboxIntent)
         .where(eq(agentRunSandboxIntent.runId, f.runId)),
-    ).toStrictEqual([]);
-    expect(
-      await db()
+    ).resolves.toStrictEqual([]);
+    await expect(
+      db()
         .select({ runId: runnerJobQueue.runId })
         .from(runnerJobQueue)
         .where(eq(runnerJobQueue.runId, f.runId)),
-    ).toStrictEqual([]);
+    ).resolves.toStrictEqual([]);
     const [run] = await db()
       .select({ status: agentRuns.status, error: agentRuns.error })
       .from(agentRuns)
@@ -1280,13 +1280,18 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     await flushWaitUntilForTest();
     // The freed slot belongs to the older persisted demand, so a nonqueue
     // caller keeps the existing capacity error instead of taking it.
-    await expect(
-      api.createRun(actor, {
+    const refused = await api.requestCreateRun(
+      actor,
+      {
         agentId: agent.agentId,
         prompt: "fresh legacy",
         modelProvider: "anthropic-api-key",
-      }),
-    ).rejects.toThrow();
+      },
+      [429],
+    );
+    expect(refused.body).toMatchObject({
+      error: { code: "CONCURRENT_RUN_LIMIT" },
+    });
     await expect(
       createStore().set(consumeDeferredPiRun$, deferred.runId, context.signal),
     ).resolves.toBeTruthy();
