@@ -71,6 +71,11 @@ release and production acceptance.
 The nullable `agent_runs.model_provider_account_identity` column records a
 SHA-256 digest of the proven upstream account identity during the existing
 final admission transaction, after its normal account/bundle validation. It
+is included in the existing atomic run INSERT for both pending and queued
+admission, using only the account validated under the final admission locks.
+Queue-payload retries revalidate before insertion; the digest is not retained
+in preparation state or durable queue payloads. There is no separate identity
+UPDATE while those locks are held. The annotation
 contains no token, ciphertext, or per-run credential copy. Codex uses its
 upstream account ID; Claude uses its upstream UUID, or the established
 email/workspace identity for older connections. This annotation does not alter

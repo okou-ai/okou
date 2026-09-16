@@ -325,6 +325,49 @@ async function finish(
 }
 
 describe("personal subscription run identity", () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "preserves proven recovery identity for pending and queued %s admissions",
+    async (type) => {
+      const f = await fixture(type);
+      const first = await f.start();
+      const pending = await f.start();
+      const queued = await f.start();
+      await expect(runs.readRun(f.actor, pending)).resolves.toMatchObject({
+        status: "pending",
+        source: { account: { status: "connected", id: f.connected.id } },
+      });
+      await expect(runs.readRun(f.actor, queued)).resolves.toMatchObject({
+        status: "queued",
+        source: { account: { status: "connected", id: f.connected.id } },
+      });
+
+      await connect(f.actor, type, "identity-b");
+      for (const runId of [pending, queued]) {
+        expect(
+          (await runs.readRun(f.actor, runId)).source?.account,
+        ).toStrictEqual({
+          status: "unavailable",
+        });
+      }
+      for (const runId of [queued, pending, first]) {
+        await runs.requestCancelRun(f.actor, runId, [200]);
+      }
+    },
+  );
+
+  it("keeps recovery identity unknown when launch preparation fails", async () => {
+    const f = await fixture("codex-oauth-token");
+    context.mocks.s3.getSignedUrl.mockRejectedValue(
+      new Error("Archive signing failed"),
+    );
+    const runId = await f.start();
+    await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
+      status: "failed",
+      error: "Archive signing failed",
+      source: { account: { status: "unknown" } },
+    });
+  });
+
   it("preserves proven singleton recovery while both UI switches remain off", async () => {
     const f = await fixture("codex-oauth-token", false, false);
     const runId = await f.start();

@@ -7886,12 +7886,16 @@ function preparedLaunchRowsArgs(args: {
   };
 }
 
-interface PersistAtomicLaunchRowsArgs {
+interface ValidatedPreparedLaunchAdmission {
+  readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
+  readonly validatedAccountIdentity: string | null;
+}
+
+interface PersistAtomicLaunchRowsArgs extends ValidatedPreparedLaunchAdmission {
   readonly tx: DbTransaction;
   readonly commit: CommitPreparedLaunchArgs;
   readonly status: Extract<LaunchRunStatus, "pending" | "queued">;
   readonly payload: RunnerJobPayload;
-  readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
 }
 
 type ReturnedIdCte = WithSubquery & { readonly id: SQLWrapper };
@@ -7978,6 +7982,7 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
       .insert(agentRuns)
       .values({
         ...launchRunValues(rowsArgs, createdAt, metadata),
+        modelProviderAccountIdentity: args.validatedAccountIdentity,
         sessionId: insertedSession
           ? returnedCteId(insertedSession)
           : rowsArgs.identity.sessionId,
@@ -8680,7 +8685,7 @@ async function commitQueuedPreparedLaunch(
   args: CommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
   queueFirstClaim: QueueFirstRunClaimed | undefined,
-  validatedThreadSession: ValidatedThreadSessionSnapshot | undefined,
+  admission: ValidatedPreparedLaunchAdmission,
 ): Promise<Extract<AtomicLaunchCommitResult, { readonly kind: "queued" }>> {
   if (!args.encryptedQueuedParams) {
     throw new Error("Missing encrypted queued runner job payload");
@@ -8691,7 +8696,7 @@ async function commitQueuedPreparedLaunch(
     commit: args,
     status: "queued",
     payload,
-    validatedThreadSession,
+    ...admission,
   });
   await bindPreparedPiMemoryPhase2MaintenanceRun(tx, args, persisted.run.id);
   await activatePreparedLaunchUsageAllowance({
@@ -8712,14 +8717,14 @@ async function commitPendingPreparedLaunch(
   args: CommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
   queueFirstClaim: QueueFirstRunClaimed | undefined,
-  validatedThreadSession: ValidatedThreadSessionSnapshot | undefined,
+  admission: ValidatedPreparedLaunchAdmission,
 ): Promise<Extract<AtomicLaunchCommitResult, { readonly kind: "pending" }>> {
   const persisted = await persistAtomicLaunchRows({
     tx,
     commit: args,
     status: "pending",
     payload,
-    validatedThreadSession,
+    ...admission,
   });
   await bindPreparedPiMemoryPhase2MaintenanceRun(tx, args, persisted.run.id);
   await activatePreparedLaunchUsageAllowance({
@@ -8870,25 +8875,13 @@ async function commitPreparedLaunchUnderLock(
       return failure;
     }
   }
-  const result = await commitValidatedPreparedLaunch(
+  return await commitValidatedPreparedLaunch(
     tx,
     args,
     payload,
     threadSessionValidation,
+    capturedIdentity,
   );
-  if (
-    capturedIdentity &&
-    "kind" in result &&
-    (result.kind === "pending" || result.kind === "queued")
-  ) {
-    // The new run and its validated account are still owned by this admission
-    // transaction. Historical and preparation-failure rows remain unknown.
-    await tx
-      .update(agentRuns)
-      .set({ modelProviderAccountIdentity: capturedIdentity })
-      .where(eq(agentRuns.id, result.run.id));
-  }
-  return result;
 }
 
 async function commitValidatedPreparedLaunch(
@@ -8898,6 +8891,7 @@ async function commitValidatedPreparedLaunch(
   threadSessionValidation: Awaited<
     ReturnType<typeof validateThreadSessionSnapshot>
   >,
+  validatedAccountIdentity: string | null,
 ): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
   if (threadSessionValidation?.kind === "thread-session-snapshot-stale") {
     const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
@@ -8960,7 +8954,7 @@ async function commitValidatedPreparedLaunch(
       args,
       payload,
       queueFirstClaim,
-      validatedThreadSession,
+      { validatedThreadSession, validatedAccountIdentity },
     );
   }
 
@@ -8981,13 +8975,10 @@ async function commitValidatedPreparedLaunch(
   if (queueFirstClaim?.kind === "lost") {
     return { kind: "queue-first-claim-lost" };
   }
-  return await commitPendingPreparedLaunch(
-    tx,
-    args,
-    payload,
-    queueFirstClaim,
+  return await commitPendingPreparedLaunch(tx, args, payload, queueFirstClaim, {
     validatedThreadSession,
-  );
+    validatedAccountIdentity,
+  });
 }
 
 async function commitPreparedLaunch(
