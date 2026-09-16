@@ -597,8 +597,8 @@ as `box-border` for the same reason the sibling page roots spell it — the base
 layer's universal rule already sets it, but the shell owns its own box model
 rather than depending on that.
 
-Visual evidence for this batch is not captured yet; it is recorded `implemented`
-rather than `verified` in `turbo/style-migration-manifest.json`.
+Pixel evidence for this batch was never captured; the equivalence argument
+above is the whole of it.
 
 ### Top-edge clearance
 
@@ -855,10 +855,8 @@ equivalent, and dropping the class is required rather than optional: a class in
 the selector registers a first-party class-selector declaration against the
 shrink-only baseline, which is the same reason the composer veil records.
 
-The recorded cases pin routes and viewports. `VisualCase` carries no palette
-field, so a case cannot distinguish a gradient state from a default one; the
-gradient palette is measured through the computed-style harness instead, and
-the case list carries only the six configurations it can tell apart.
+The gradient palette is measured through the computed-style harness rather
+than by screenshot, because a route and a viewport do not pin a palette.
 
 `before:bg-[length:100%_100%]` is retained although no measurement can move it.
 `background-size: 100% 100%` and the initial `auto auto` size a gradient to the
@@ -885,8 +883,8 @@ retired; `okou-workspace-bg` kept the fifteen declarations unrelated to the
 desktop shell, and "The workspace canvas" above drains those.
 
 **Nothing in the repository ever set that attribute.** It occurred only in the
-App stylesheet, in the baseline derived from it, in the migration ledger, and in
-this document; there is no DOM write anywhere in the App, the UI package, the
+App stylesheet, in the baseline derived from it, and in this document; there is
+no DOM write anywhere in the App, the UI package, the
 Desktop app, the Worker HTML, or a test. So the block never matched an element,
 both drag regions were always `display: none`, and the header always kept its
 6px inset. The header's `padding-top: 0` override was dead twice over, because
@@ -909,7 +907,7 @@ That deletion also retires the last references to `.okou-chat-bubble-user` and
 `.okou-chat-bubble-assistant`. The chat-bubble batch removed those class names
 from every element and recorded that they survived only inside this selection
 exception; with the exception gone, neither name appears anywhere in the
-repository outside the migration ledger. With the card tokens promoted to
+repository but this guide. With the card tokens promoted to
 `:root` and the workspace canvas drained above, `.okou-app` no longer appears in
 the stylesheet at all — it neither carries a declaration nor scopes one. The
 class survives only on the elements that still spell it, which is what the
@@ -1148,8 +1146,8 @@ They now win because they are unlayered and `my-1.5` sits in `@layer utilities`.
 A card anywhere else matched only the retired rule and now matches only the
 utility. All three positions therefore keep the margins they had.
 
-Visual evidence for this batch is not captured yet; it is recorded `implemented`
-rather than `verified` in `turbo/style-migration-manifest.json`.
+Pixel evidence for this batch was never captured; the equivalence argument
+above is the whole of it.
 
 ### Chat transcript cards
 
