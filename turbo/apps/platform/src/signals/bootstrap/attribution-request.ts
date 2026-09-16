@@ -1,7 +1,7 @@
 import { command, computed, state, type Command, type State } from "ccstate";
 import { clerk$, user$ } from "../auth.ts";
 import { rootSignal$, rootVersion$ } from "../root-signal.ts";
-import { onRejection, resetSignal, waitForOperation } from "../utils.ts";
+import { onRejection, waitForOperation } from "../utils.ts";
 import { readStoredAdAttributionMetadata$ } from "./ad-attribution.ts";
 
 export const readAttributionContext$ = command(
@@ -52,7 +52,6 @@ export function createAttributionRequest<T>(
   execute$: Command<Promise<T>, [AttributionContext, AbortSignal]>,
   reuse: (result: T) => boolean,
 ) {
-  const resetRequest$ = resetSignal();
   // Commands initiate these checks; the computed only scopes their bookkeeping.
   // Replacing the root releases the old slot instead of retaining an identity map.
   const requestState$ = computed((get) => {
@@ -61,7 +60,9 @@ export function createAttributionRequest<T>(
   });
 
   const invalidate$ = command(({ get, set }) => {
-    set(resetRequest$);
+    // Existing callers still own their captured request. A signup check may
+    // invalidate reuse while checkout is waiting; cancelling that transport
+    // would cancel the checkout action as well.
     set(get(requestState$), null);
   });
 
@@ -92,10 +93,8 @@ export function createAttributionRequest<T>(
       let request = get(request$);
       if (request?.key !== context.key) {
         const id = Symbol();
-        const owner = set(resetRequest$, rootSignal);
-        owner.throwIfAborted();
         const operation = onRejection(
-          set(executeRequest$, context, id, request$, owner),
+          set(executeRequest$, context, id, request$, rootSignal),
           () => {
             if (get(request$)?.id === id) {
               set(request$, null);

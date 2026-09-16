@@ -364,3 +364,67 @@ test("A signup check invalidates an earlier account decision", async () => {
     ],
   ]);
 });
+
+test("Signup invalidation preserves an awaiting checkout while a new consumer resolves again", async () => {
+  const gate = createDeferredPromise<void>(context.signal);
+  let accountReads = 0;
+  const gtag = installGtag();
+  context.mocks.api(
+    acquisitionAttributionContract.resolveGoogleAdsAccount,
+    async ({ respond }) => {
+      accountReads += 1;
+      if (accountReads === 1) {
+        await gate.promise;
+      }
+      return respond(200, { googleAdsAccountId: NEW_ACCOUNT });
+    },
+  );
+  context.mocks.api(
+    acquisitionAttributionContract.recordSignup,
+    ({ respond }) => {
+      return respond(200, { recorded: false, googleAdsAccountId: NEW_ACCOUNT });
+    },
+  );
+  await setupPage({ context, path: "/agents" });
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
+  context.mocks.browser.cookie("_ga=GA1.1.123.456");
+  const checkout = Promise.allSettled([
+    context.store.set(
+      capturePaidOnboardingRedirectToStripe$,
+      "test",
+      context.signal,
+    ),
+  ]);
+  await waitFor(() => {
+    expect(accountReads).toBe(1);
+  });
+  await context.store.set(recordSignupAttribution$, context.signal);
+  await context.store.set(
+    capturePaidOnboardingStepViewed$,
+    "make",
+    context.signal,
+  );
+  expect(accountReads).toBe(2);
+  gate.resolve();
+  await expect(checkout).resolves.toStrictEqual([
+    { status: "fulfilled", value: undefined },
+  ]);
+  expect(gtag.mock.calls).toStrictEqual([
+    [
+      "event",
+      "conversion",
+      expect.objectContaining({
+        send_to: "AW-18407336975/xkGcCLaRrOccEI_YpslE",
+      }),
+    ],
+    [
+      "event",
+      "conversion",
+      expect.objectContaining({
+        send_to: "AW-18407336975/hWi8CPWRrOccEI_YpslE",
+      }),
+    ],
+  ]);
+});
