@@ -994,7 +994,7 @@ impl JobProvider for ApiProvider {
         self.deferred_release_outbox
             .recover_claims(&self.api, &self.runner_identity)
             .await;
-        self.deferred_release_outbox.flush_one(&self.api).await;
+        self.deferred_release_outbox.flush_batch(&self.api).await;
         self.deferred_release_outbox
             .recover_foreign(&self.api, &self.runner_identity)
             .await;
@@ -1534,23 +1534,13 @@ impl ApiClient {
         let response = check_api_status(response, "deferred-sandbox-release").await?;
         #[derive(Deserialize)]
         struct ReleaseReceipt {
-            released: bool,
-            /// Absent on an API that predates the explicit outcome, and unknown
-            /// values stay unknown: both fall back to the legacy boolean.
-            #[serde(default)]
-            outcome: Option<String>,
+            outcome: ReleaseOutcome,
         }
         let receipt: ReleaseReceipt = response
             .json()
             .await
             .map_err(|error| RunnerError::Api(format!("decode deferred release: {error}")))?;
-        Ok(match receipt.outcome.as_deref() {
-            Some("released") => ReleaseOutcome::Released,
-            Some("stale") => ReleaseOutcome::Stale,
-            Some("inconclusive") => ReleaseOutcome::Inconclusive,
-            _ if receipt.released => ReleaseOutcome::Released,
-            _ => ReleaseOutcome::Stale,
-        })
+        Ok(receipt.outcome)
     }
 
     async fn poll(

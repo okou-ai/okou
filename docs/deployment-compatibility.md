@@ -1824,8 +1824,13 @@ disappearance decisions. This API slice alone adds no new stop-delay bound.
 Before a v4 API-inference producer can emit Sandbox demand, deploy the
 [durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
 Its optional Runner header is ignored by older APIs; older Runners remain
-excluded from v4 jobs. The outer Pi launch-config v2 contains a new versioned
-continuation slot, so enablement requires both the capable Runner and the
-commit-addressed co-built CLI. Drain existing v4 intents/leases and release
-receipts before rolling the API back below that floor. No switch is enabled by
-the consumer implementation.
+excluded from v4 jobs. The release endpoint and Runner use one strict explicit
+outcome contract: a missing, malformed or unknown outcome retains the receipt
+instead of fabricating a stale acknowledgement. No mixed-response bridge is
+required while the feature is non-GA: no production publisher exists and
+`piDeferredSandbox` is off, so an older API cannot produce a v4 job for a newer
+Runner. The outer Pi launch-config v2 contains a new versioned continuation slot,
+so enablement requires the capable API, Runner and commit-addressed co-built CLI.
+Drain existing v4 intents, leases and release receipts before rolling any of
+those readers back below that floor. No switch is enabled by the consumer
+implementation.

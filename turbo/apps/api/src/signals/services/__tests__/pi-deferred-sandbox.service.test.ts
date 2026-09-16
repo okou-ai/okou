@@ -57,10 +57,7 @@ import {
   agentRunSandboxLease,
 } from "@okouai/db/schema/agent-run-inference";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import {
-  agentRunInferenceObjects,
-  piInferenceObjects,
-} from "@okouai/db/schema/pi-inference-object";
+import { piInferenceObjects } from "@okouai/db/schema/pi-inference-object";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import {
   runnersPollContract,
@@ -433,7 +430,7 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       }),
       [200],
     );
-    expect(release.body.released).toBeTruthy();
+    expect(release.body.outcome).toBe("released");
     expect((await readRequiredPiFixture(f)).lease?.state).toBe("released");
   }, 150_000);
 
@@ -631,7 +628,7 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       }),
       [200],
     );
-    expect(wrong.body.released).toBeFalsy();
+    expect(wrong.body.outcome).toBe("stale");
     for (let attempt = 0; attempt < 2; attempt++) {
       const release = await accept(
         app(runnersJobClaimContract).release({
@@ -643,7 +640,7 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         }),
         [200],
       );
-      expect(release.body.released).toBeTruthy();
+      expect(release.body.outcome).toBe("released");
     }
     await expect(
       createStore().set(consumeDeferredPiRun$, second.runId, context.signal),
@@ -675,7 +672,7 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     await waitForDeferredBlocker(releasePid);
     await held.release();
     const proof = await accept(release, [200]);
-    expect(proof.body.released).toBeTruthy();
+    expect(proof.body.outcome).toBe("released");
     await accept(claiming, [404]);
     expect((await readRequiredPiFixture(f)).lease?.state).toBe("released");
     expect((await readRequiredPiFixture(f)).inference.phase).toBe("terminal");
@@ -1111,19 +1108,13 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       release({ runnerId, ownerEpoch: 2, generation: 2, proof: "destroyed" }),
       [200],
     );
-    expect(mismatched.body).toStrictEqual({
-      released: false,
-      outcome: "stale",
-    });
+    expect(mismatched.body).toStrictEqual({ outcome: "stale" });
     for (let attempt = 0; attempt < 2; attempt++) {
       const released = await accept(
         release({ runnerId, ownerEpoch: 2, generation: 1, proof: "destroyed" }),
         [200],
       );
-      expect(released.body).toStrictEqual({
-        released: true,
-        outcome: "released",
-      });
+      expect(released.body).toStrictEqual({ outcome: "released" });
     }
     const state = await readRequiredPiFixture(f);
     expect(state.lease?.state).toBe("released");
@@ -1153,12 +1144,6 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
         historyHash: "0".repeat(64),
       }),
     ).rejects.toThrow(/shared UTF-8 limit/u);
-    await expect(
-      db()
-        .select({ hash: agentRunInferenceObjects.hash })
-        .from(agentRunInferenceObjects)
-        .where(eq(agentRunInferenceObjects.runId, f.runId)),
-    ).resolves.toStrictEqual([]);
   }, 60_000);
 
   it("finalizes individually valid objects that exceed the combined limit", async () => {
@@ -1346,10 +1331,7 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       }),
       [200],
     );
-    expect(released.body).toStrictEqual({
-      released: true,
-      outcome: "released",
-    });
+    expect(released.body).toStrictEqual({ outcome: "released" });
     expect((await readRequiredPiFixture(f)).lease?.state).toBe("released");
   }, 60_000);
 

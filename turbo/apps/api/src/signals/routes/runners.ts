@@ -3406,10 +3406,7 @@ const deferredReleaseInner$ = command(
     if (outcome === "released") {
       await set(settleDeferredPiTerminal$, id, signal);
     }
-    return {
-      status: 200 as const,
-      body: { released: outcome === "released", outcome },
-    };
+    return { status: 200 as const, body: { outcome } };
   },
 );
 

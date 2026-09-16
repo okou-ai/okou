@@ -12,11 +12,16 @@ use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 use tracing::warn;
 use uuid::Uuid;
 
+const RELEASE_SCAN_LIMIT: usize = 100;
+const RELEASE_REQUEST_LIMIT: usize = 8;
+const RELEASE_DELIVERY_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// What the API established about this proof. `Stale` is a definitive
 /// acknowledgement that the receipt owns no capacity, so it can be closed.
 /// `Inconclusive` means an obligation may remain: retain the receipt and the
 /// claim barrier and retry.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(super) enum ReleaseOutcome {
     Released,
     Stale,
@@ -61,6 +66,7 @@ pub(super) struct DeferredReleaseOutbox {
     foreign: Mutex<ForeignRecovery>,
     drain: Mutex<()>,
     claims: Mutex<()>,
+    release_cursor: Mutex<Option<fs::ReadDir>>,
     recovery_cursor: Mutex<Option<fs::ReadDir>>,
 }
 
@@ -73,6 +79,7 @@ impl DeferredReleaseOutbox {
             foreign: Mutex::new(ForeignRecovery::default()),
             drain: Mutex::new(()),
             claims: Mutex::new(()),
+            release_cursor: Mutex::new(None),
             recovery_cursor: Mutex::new(None),
         }
     }
@@ -158,11 +165,12 @@ impl DeferredReleaseOutbox {
                 }
             };
             // Keep the guard in this scope through every proof and HTTP attempt.
-            peer.flush_one(api).await;
+            peer.flush_batch(api).await;
             peer.recover_claims(api, identity).await;
-            let complete = peer.recovery_cursor.lock().await.is_none();
+            let release_complete = peer.release_cursor.lock().await.is_none();
+            let claim_complete = peer.recovery_cursor.lock().await.is_none();
             drop(guard);
-            if complete {
+            if release_complete && claim_complete {
                 cursor.active = None;
             }
             Ok::<(), std::io::Error>(())
@@ -190,36 +198,37 @@ impl DeferredReleaseOutbox {
         self.persist_release(api, receipt).await;
     }
 
+    async fn write_release(&self, receipt: &Receipt) -> std::io::Result<()> {
+        fs::create_dir_all(&self.directory).await?;
+        let path = self.directory.join(format!(
+            "{}-{}.json",
+            receipt.run_id,
+            receipt.heartbeat_generation.unwrap_or_default()
+        ));
+        let staging = self.directory.with_extension("publishing");
+        fs::create_dir_all(&staging).await?;
+        let temporary = staging.join(format!("{}.tmp", Uuid::new_v4()));
+        let bytes = serde_json::to_vec(receipt).map_err(std::io::Error::other)?;
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .await?;
+        file.write_all(&bytes).await?;
+        file.sync_all().await?;
+        fs::rename(temporary, path).await?;
+        fs::File::open(&self.directory).await?.sync_all().await
+    }
+
     async fn persist_release(&self, api: &ApiClient, receipt: Receipt) {
         let run_id = receipt.run_id;
-        let write = async {
-            fs::create_dir_all(&self.directory).await?;
-            let path = self.directory.join(format!(
-                "{run_id}-{}.json",
-                receipt.heartbeat_generation.unwrap_or_default()
-            ));
-            let staging = self.directory.with_extension("publishing");
-            fs::create_dir_all(&staging).await?;
-            let temporary = staging.join(format!("{}.tmp", Uuid::new_v4()));
-            let bytes = serde_json::to_vec(&receipt).map_err(std::io::Error::other)?;
-            let mut file = fs::OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&temporary)
-                .await?;
-            file.write_all(&bytes).await?;
-            file.sync_all().await?;
-            fs::rename(temporary, path).await?;
-            fs::File::open(&self.directory).await?.sync_all().await
-        }
-        .await;
-        if let Err(error) = write {
+        if let Err(error) = self.write_release(&receipt).await {
             warn!(%run_id, %error, "failed to persist deferred Sandbox release; API capacity remains held");
             return;
         }
         // Keep the per-Run claim barrier until API acknowledgement. A delayed
         // not-started fact must never overlap a second claim by this process.
-        self.flush_one(api).await;
+        self.flush_batch(api).await;
     }
 
     fn claim_path(&self, run_id: RunId) -> PathBuf {
@@ -432,19 +441,36 @@ impl DeferredReleaseOutbox {
         }
     }
 
-    pub(super) async fn flush_one(&self, api: &ApiClient) {
+    pub(super) async fn flush_batch(&self, api: &ApiClient) {
+        self.flush_batch_with_timeout(api, RELEASE_DELIVERY_TIMEOUT)
+            .await;
+    }
+
+    async fn flush_batch_with_timeout(&self, api: &ApiClient, timeout: Duration) {
         let Ok(_guard) = self.drain.try_lock() else {
             return;
         };
-        // At most one delivery per heartbeat; no cleanup timer is release proof.
+        // The cursor survives heartbeats and an active foreign-scope recovery.
+        // A failed proof advances only delivery selection; it never removes the
+        // durable receipt or per-Run claim barrier.
         let delivery = async {
-            let mut entries = match fs::read_dir(&self.directory).await {
-                Ok(entries) => entries,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-                Err(error) => return Err(error),
-            };
-            for _ in 0..100 {
-                let Some(entry) = entries.next_entry().await? else {
+            let mut cursor = self.release_cursor.lock().await;
+            if cursor.is_none() {
+                match fs::read_dir(&self.directory).await {
+                    Ok(entries) => *cursor = Some(entries),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                    Err(error) => return Err(error),
+                }
+            }
+            let mut requests = 0;
+            for _ in 0..RELEASE_SCAN_LIMIT {
+                let Some(entry) = cursor
+                    .as_mut()
+                    .ok_or_else(|| std::io::Error::other("missing release cursor"))?
+                    .next_entry()
+                    .await?
+                else {
+                    *cursor = None;
                     return Ok(());
                 };
                 if entry.path().extension().and_then(|ext| ext.to_str()) != Some("json") {
@@ -469,36 +495,38 @@ impl DeferredReleaseOutbox {
                 body.as_object_mut()
                     .ok_or_else(|| std::io::Error::other("invalid release receipt object"))?
                     .remove("runId");
-                let outcome = api
-                    .release_deferred_sandbox(receipt.run_id, &body)
-                    .await
-                    .map_err(std::io::Error::other)?;
-                if outcome == ReleaseOutcome::Inconclusive {
-                    // The API could not confirm ownership, so an obligation may
-                    // still exist. Keep both the receipt and the claim barrier
-                    // and retry on a later heartbeat.
-                    warn!(run_id = %receipt.run_id, "deferred release remains unresolved; receipt and claim barrier retained");
-                    return Ok::<(), std::io::Error>(());
+                requests += 1;
+                match api.release_deferred_sandbox(receipt.run_id, &body).await {
+                    Ok(ReleaseOutcome::Inconclusive) => {
+                        warn!(run_id = %receipt.run_id, "deferred release remains unresolved; receipt and claim barrier retained");
+                    }
+                    Ok(outcome) => {
+                        // The API atomically fences an unclaimed v4 Run before
+                        // acknowledging not-started, including delayed claims.
+                        let _ = fs::remove_file(self.claim_path(receipt.run_id)).await;
+                        if outcome == ReleaseOutcome::Released {
+                            fs::remove_file(entry.path()).await?;
+                        } else {
+                            let rejected = self.directory.with_extension("rejected");
+                            fs::create_dir_all(&rejected).await?;
+                            fs::rename(entry.path(), rejected.join(entry.file_name())).await?;
+                            warn!(run_id = %receipt.run_id, "stale deferred release receipt acknowledged without changing capacity");
+                        }
+                        fs::File::open(&self.directory).await?.sync_all().await?;
+                    }
+                    Err(error) => {
+                        warn!(run_id = %receipt.run_id, %error, "deferred Sandbox release delivery retained for retry");
+                    }
                 }
-                // The API atomically fences an unclaimed v4 Run before
-                // acknowledging not-started, including delayed claim requests.
-                let _ = fs::remove_file(self.claim_path(receipt.run_id)).await;
-                if outcome == ReleaseOutcome::Released {
-                    fs::remove_file(entry.path()).await?;
-                } else {
-                    let rejected = self.directory.with_extension("rejected");
-                    fs::create_dir_all(&rejected).await?;
-                    fs::rename(entry.path(), rejected.join(entry.file_name())).await?;
-                    warn!(run_id = %receipt.run_id, "stale deferred release receipt acknowledged without changing capacity");
+                if requests == RELEASE_REQUEST_LIMIT {
+                    return Ok(());
                 }
-                fs::File::open(&self.directory).await?.sync_all().await?;
-                return Ok::<(), std::io::Error>(());
             }
             Ok(())
         };
-        match tokio::time::timeout(Duration::from_secs(5), delivery).await {
+        match tokio::time::timeout(timeout, delivery).await {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => warn!(%error, "deferred Sandbox release delivery retained for retry"),
+            Ok(Err(error)) => warn!(%error, "deferred Sandbox release scan retained for retry"),
             Err(_) => warn!("deferred Sandbox release delivery timed out; receipt retained"),
         }
     }
@@ -563,6 +591,40 @@ mod tests {
         )
     }
 
+    fn release_path(outbox: &DeferredReleaseOutbox, run_id: RunId) -> PathBuf {
+        outbox.directory.join(format!("{run_id}-0.json"))
+    }
+
+    async fn write_destroyed_receipt(
+        outbox: &DeferredReleaseOutbox,
+        runner_id: Uuid,
+        run_id: RunId,
+        fence: DeferredSandboxFence,
+    ) {
+        outbox
+            .write_release(&Receipt {
+                run_id,
+                runner_id,
+                owner_epoch: Some(fence.owner_epoch),
+                generation: Some(fence.generation),
+                heartbeat_generation: None,
+                proof: "destroyed".to_owned(),
+            })
+            .await
+            .unwrap();
+    }
+
+    async fn seed_claimed_release(
+        outbox: &DeferredReleaseOutbox,
+        identity: &RunnerProcessIdentity,
+        run_id: RunId,
+        fence: DeferredSandboxFence,
+    ) {
+        outbox.begin_claim(run_id, identity).await.unwrap();
+        outbox.accept_claim(run_id, Some(fence)).await.unwrap();
+        write_destroyed_receipt(outbox, identity.runner_id(), run_id, fence).await;
+    }
+
     #[tokio::test]
     async fn restarted_unstarted_claim_uses_original_process_identity() {
         let directory = tempfile::tempdir().unwrap();
@@ -574,7 +636,7 @@ mod tests {
         let response = server.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/jobs/{run_id}/release"))
                 .json_body(serde_json::json!({ "runnerId": original.runner_id(), "heartbeatGeneration": 1, "proof": "not-started" }));
-            then.status(200).json_body(serde_json::json!({ "released": true }));
+            then.status(200).json_body(serde_json::json!({ "outcome": "released" }));
         }).await;
         let path = directory.path().join("release");
         DeferredReleaseOutbox::new(path.clone())
@@ -619,16 +681,16 @@ mod tests {
             .mock_async(|when, then| {
                 when.method("POST");
                 then.status(200)
-                    .json_body(serde_json::json!({ "released": true }));
+                    .json_body(serde_json::json!({ "outcome": "released" }));
             })
             .await;
-        outbox.flush_one(&client).await;
+        outbox.flush_batch(&client).await;
         acknowledged.assert_calls_async(1).await;
         assert!(!outbox.claim_path(run_id).exists());
     }
 
     #[tokio::test]
-    async fn ambiguous_release_acknowledgement_retains_claim_barrier() {
+    async fn unsupported_release_outcome_retains_claim_barrier() {
         let directory = tempfile::tempdir().unwrap();
         let server = MockServer::start_async().await;
         let client = api(&server);
@@ -641,7 +703,7 @@ mod tests {
             .mock_async(|when, then| {
                 when.method("POST");
                 then.status(200)
-                    .json_body(serde_json::json!({ "unrelated": true }));
+                    .json_body(serde_json::json!({ "released": false, "outcome": "future" }));
             })
             .await;
         outbox.recover_claims(&client, &identity).await;
@@ -677,7 +739,7 @@ mod tests {
                 when.method("POST")
                     .path(format!("/api/runners/jobs/{abandoned}/release"));
                 then.status(200)
-                    .json_body(serde_json::json!({ "released": true }));
+                    .json_body(serde_json::json!({ "outcome": "released" }));
             })
             .await;
         for _ in 0..3 {
@@ -700,7 +762,7 @@ mod tests {
         let response = server.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/jobs/{run_id}/release"))
                 .json_body(serde_json::json!({ "runnerId": original.runner_id(), "heartbeatGeneration": 1, "proof": "not-started" }));
-            then.status(200).json_body(serde_json::json!({ "released": true }));
+            then.status(200).json_body(serde_json::json!({ "outcome": "released" }));
         }).await;
         for _ in 0..3 {
             new.recover_foreign(&client, &current).await;
@@ -743,7 +805,7 @@ mod tests {
         let response = server.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/jobs/{run_id}/release"))
                 .json_body(serde_json::json!({ "runnerId": original.runner_id(), "ownerEpoch": 3, "generation": 2, "proof": "destroyed" }));
-            then.status(200).json_body(serde_json::json!({ "released": true }));
+            then.status(200).json_body(serde_json::json!({ "outcome": "released" }));
         }).await;
         let claim_path = old.claim_path(run_id);
         drop(old);
@@ -756,45 +818,260 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inconclusive_release_retains_the_receipt_and_claim_barrier() {
+    async fn unresolved_receipt_does_not_starve_healthy_receipts_after_restart() {
         let directory = tempfile::tempdir().unwrap();
         let server = MockServer::start_async().await;
         let client = api(&server);
-        let run_id = RunId::new_v4();
+        let identity = RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap();
+        let fence = DeferredSandboxFence {
+            owner_epoch: 3,
+            generation: 2,
+        };
+        let path = directory.path().join("release");
+        let writer = DeferredReleaseOutbox::new(path.clone());
+        let unresolved_run = RunId::new_v4();
+        let released_runs = [RunId::new_v4(), RunId::new_v4()];
+        for run_id in std::iter::once(unresolved_run).chain(released_runs.iter().copied()) {
+            seed_claimed_release(&writer, &identity, run_id, fence).await;
+        }
+        drop(writer);
+
+        let unresolved = server
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/jobs/{unresolved_run}/release"));
+                then.status(200)
+                    .json_body(serde_json::json!({ "outcome": "inconclusive" }));
+            })
+            .await;
+        let released = released_runs
+            .iter()
+            .map(|run_id| {
+                server.mock(|when, then| {
+                    when.method("POST")
+                        .path(format!("/api/runners/jobs/{run_id}/release"));
+                    then.status(200)
+                        .json_body(serde_json::json!({ "outcome": "released" }));
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let restarted = DeferredReleaseOutbox::new(path);
+        restarted.flush_batch(&client).await;
+
+        unresolved.assert_calls_async(1).await;
+        for (run_id, acknowledgement) in released_runs.iter().zip(&released) {
+            acknowledgement.assert_calls_async(1).await;
+            assert!(!restarted.claim_path(*run_id).exists());
+            assert!(!release_path(&restarted, *run_id).exists());
+        }
+        assert!(restarted.claim_path(unresolved_run).exists());
+        assert!(release_path(&restarted, unresolved_run).exists());
+        assert!(!directory.path().join("release.rejected").exists());
+
+        unresolved.delete_async().await;
+        let converged = server
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/jobs/{unresolved_run}/release"));
+                then.status(200)
+                    .json_body(serde_json::json!({ "outcome": "released" }));
+            })
+            .await;
+        restarted.flush_batch(&client).await;
+        converged.assert_calls_async(1).await;
+        assert!(!restarted.claim_path(unresolved_run).exists());
+        assert!(!release_path(&restarted, unresolved_run).exists());
+    }
+
+    #[tokio::test]
+    async fn bounded_release_cursor_advances_past_one_scan_batch() {
+        let directory = tempfile::tempdir().unwrap();
+        let server = MockServer::start_async().await;
+        let client = api(&server);
         let identity = RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap();
         let fence = DeferredSandboxFence {
             owner_epoch: 3,
             generation: 2,
         };
         let outbox = DeferredReleaseOutbox::new(directory.path().join("release"));
-        outbox.begin_claim(run_id, &identity).await.unwrap();
-        outbox.accept_claim(run_id, Some(fence)).await.unwrap();
+        let mut run_ids = Vec::new();
+        for _ in 0..=RELEASE_SCAN_LIMIT {
+            let run_id = RunId::new_v4();
+            seed_claimed_release(&outbox, &identity, run_id, fence).await;
+            run_ids.push(run_id);
+        }
         let unresolved = server
             .mock_async(|when, then| {
                 when.method("POST");
                 then.status(200)
-                    .json_body(serde_json::json!({ "released": false, "outcome": "inconclusive" }));
+                    .json_body(serde_json::json!({ "outcome": "inconclusive" }));
             })
             .await;
-        outbox
-            .record_and_flush(&client, identity.runner_id(), run_id, fence)
+
+        let batches = (RELEASE_SCAN_LIMIT + RELEASE_REQUEST_LIMIT) / RELEASE_REQUEST_LIMIT;
+        for _ in 0..batches {
+            outbox.flush_batch(&client).await;
+        }
+
+        unresolved.assert_calls_async(RELEASE_SCAN_LIMIT + 1).await;
+        for run_id in run_ids {
+            assert!(outbox.claim_path(run_id).exists());
+            assert!(release_path(&outbox, run_id).exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn delivery_timeout_advances_to_unrelated_receipts() {
+        let directory = tempfile::tempdir().unwrap();
+        let server = MockServer::start_async().await;
+        let client = api(&server);
+        let identity = RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap();
+        let fence = DeferredSandboxFence {
+            owner_epoch: 3,
+            generation: 2,
+        };
+        let outbox = DeferredReleaseOutbox::new(directory.path().join("release"));
+        let timed_out_run = RunId::new_v4();
+        let released_runs = [RunId::new_v4(), RunId::new_v4()];
+        for run_id in std::iter::once(timed_out_run).chain(released_runs.iter().copied()) {
+            seed_claimed_release(&outbox, &identity, run_id, fence).await;
+        }
+        let timed_out = server
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/jobs/{timed_out_run}/release"));
+                then.status(200)
+                    .delay(Duration::from_secs(2))
+                    .json_body(serde_json::json!({ "outcome": "released" }));
+            })
             .await;
+        let released = released_runs
+            .iter()
+            .map(|run_id| {
+                server.mock(|when, then| {
+                    when.method("POST")
+                        .path(format!("/api/runners/jobs/{run_id}/release"));
+                    then.status(200)
+                        .json_body(serde_json::json!({ "outcome": "released" }));
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for _ in 0..2 {
+            outbox
+                .flush_batch_with_timeout(&client, Duration::from_millis(500))
+                .await;
+            if released_runs
+                .iter()
+                .all(|run_id| !outbox.claim_path(*run_id).exists())
+            {
+                break;
+            }
+        }
+
+        assert!(timed_out.calls_async().await >= 1);
+        assert!(outbox.claim_path(timed_out_run).exists());
+        assert!(release_path(&outbox, timed_out_run).exists());
+        for (run_id, acknowledgement) in released_runs.iter().zip(&released) {
+            acknowledgement.assert_calls_async(1).await;
+            assert!(!outbox.claim_path(*run_id).exists());
+            assert!(!release_path(&outbox, *run_id).exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_drains_do_not_duplicate_acknowledgements() {
+        let directory = tempfile::tempdir().unwrap();
+        let server = MockServer::start_async().await;
+        let client = api(&server);
+        let identity = RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap();
+        let fence = DeferredSandboxFence {
+            owner_epoch: 3,
+            generation: 2,
+        };
+        let outbox = DeferredReleaseOutbox::new(directory.path().join("release"));
+        let unresolved_run = RunId::new_v4();
+        let released_runs = [RunId::new_v4(), RunId::new_v4()];
+        for run_id in std::iter::once(unresolved_run).chain(released_runs.iter().copied()) {
+            seed_claimed_release(&outbox, &identity, run_id, fence).await;
+        }
+        let unresolved = server
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/jobs/{unresolved_run}/release"));
+                then.status(200)
+                    .json_body(serde_json::json!({ "outcome": "inconclusive" }));
+            })
+            .await;
+        let released = released_runs
+            .iter()
+            .map(|run_id| {
+                server.mock(|when, then| {
+                    when.method("POST")
+                        .path(format!("/api/runners/jobs/{run_id}/release"));
+                    then.status(200)
+                        .json_body(serde_json::json!({ "outcome": "released" }));
+                })
+            })
+            .collect::<Vec<_>>();
+
+        tokio::join!(
+            outbox.flush_batch(&client),
+            outbox.flush_batch(&client),
+            outbox.flush_batch(&client),
+            outbox.flush_batch(&client),
+        );
+
         unresolved.assert_calls_async(1).await;
-        // An unresolved obligation stays retryable: nothing is quarantined and
-        // the claim barrier survives.
-        assert!(outbox.claim_path(run_id).exists());
-        assert!(!directory.path().join("release.rejected").exists());
-        unresolved.delete_async().await;
-        let released = server
+        assert!(outbox.claim_path(unresolved_run).exists());
+        for (run_id, acknowledgement) in released_runs.iter().zip(&released) {
+            acknowledgement.assert_calls_async(1).await;
+            assert!(!outbox.claim_path(*run_id).exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn foreign_recovery_keeps_its_release_cursor_between_heartbeats() {
+        let root = tempfile::tempdir().unwrap();
+        let server = MockServer::start_async().await;
+        let client = api(&server);
+        let original = RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap();
+        let current = RunnerProcessIdentity::new(Uuid::new_v4(), 1).unwrap();
+        let old = DeferredReleaseOutbox::new_shared(root.path().to_owned(), &original);
+        old.own_scope().await.unwrap();
+        let fence = DeferredSandboxFence {
+            owner_epoch: 3,
+            generation: 2,
+        };
+        let mut run_ids = Vec::new();
+        for _ in 0..=RELEASE_REQUEST_LIMIT {
+            let run_id = RunId::new_v4();
+            write_destroyed_receipt(&old, original.runner_id(), run_id, fence).await;
+            run_ids.push(run_id);
+        }
+        let unresolved = server
             .mock_async(|when, then| {
                 when.method("POST");
                 then.status(200)
-                    .json_body(serde_json::json!({ "released": true, "outcome": "released" }));
+                    .json_body(serde_json::json!({ "outcome": "inconclusive" }));
             })
             .await;
-        outbox.flush_one(&client).await;
-        released.assert_calls_async(1).await;
-        assert!(!outbox.claim_path(run_id).exists());
+        let current_outbox = DeferredReleaseOutbox::new_shared(root.path().to_owned(), &current);
+        current_outbox.recover_foreign(&client, &current).await;
+        unresolved.assert_calls_async(0).await;
+
+        let old_directory = old.directory.clone();
+        drop(old);
+        current_outbox.recover_foreign(&client, &current).await;
+        current_outbox.recover_foreign(&client, &current).await;
+
+        unresolved
+            .assert_calls_async(RELEASE_REQUEST_LIMIT + 1)
+            .await;
+        for run_id in run_ids {
+            assert!(old_directory.join(format!("{run_id}-0.json")).exists());
+        }
     }
 
     #[tokio::test]

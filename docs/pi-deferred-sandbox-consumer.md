@@ -127,11 +127,15 @@ exceed together while each still fits the per-object envelope.
 Both bounds are applied before a continuation can become executable: immutable
 object publication rejects an oversized history, demand admission re-checks the
 aggregate once both objects are durable, and materialization checks it again
-before the job row exists. An unsupported continuation is rejected or finalized
-truthfully; already-incurred inference usage, diagnostic locators and pending
-tool identity are retained, and history is never truncated nor the original
-prompt or provider request replayed. A producer calling the demand interface
-observes `false` and an already terminal Run rather than queued executable work.
+before the job row exists. The same schema validates durable objects when they
+are read. No migration is required for that read-side tightening because no
+production publisher exists and `piDeferredSandbox` remains off, including for
+staff; deploy this reader before #34244 introduces a writer. An unsupported
+continuation is rejected or finalized truthfully; already-incurred inference
+usage, diagnostic locators and pending tool identity are retained, and history
+is never truncated nor the original prompt or provider request replayed. A
+producer calling the demand interface observes `false` and an already terminal
+Run rather than queued executable work.
 
 ## Physical release proof and uncertain claims
 
@@ -166,19 +170,32 @@ unreadable evidence remains unknown. Official Runner startup already requires
 managed CPU cgroups and rejects nonempty old guest groups. Local unmanaged
 Runners cannot supply this recovery proof.
 
-Claim-directory scans keep a cursor across bounded heartbeat batches. Release
-HTTP failures retain their outbox receipt for retry. A corrupt ownership record
-is retained; it is never interpreted as release proof.
+Claim and release scans keep cursors across bounded heartbeat batches and across
+an active foreign-process recovery scope. A release batch scans at most 100
+entries, makes at most eight sequential HTTP requests and owns at most five
+seconds. An inconclusive response, transport failure or timeout advances only
+the selection cursor; the receipt and claim barrier remain durable and the same
+cycle can service later receipts. A local process restart reconstructs the scan
+from the retained directory. Foreign recovery retains its scoped outbox until
+both release and claim scan cycles complete, rather than recreating a cursor on
+every heartbeat. A corrupt ownership record is retained; it is never interpreted
+as release proof.
 
-The release response reports an explicit outcome alongside the legacy `released`
-boolean. `released` changed capacity. `stale` is a definitive acknowledgement
-that the proof owns no capacity here, so the receipt is quarantined and the claim
-barrier is removed without changing another owner's capacity. `inconclusive`
-means the API could not reconstruct the owner, so an obligation may remain: the
-Runner retains both the receipt and the claim barrier and retries on a later
-heartbeat, and capacity is never freed without a matched proof. An older Runner
-reads only `released` and keeps its existing quarantine behaviour; a capable
-Runner against an older API sees no `outcome` and falls back to that boolean.
+The release response has one explicit `outcome`. `released` means matched proof
+changed capacity. `stale` is a definitive acknowledgement that the proof owns no
+capacity here, so the receipt is quarantined and the claim barrier is removed
+without changing another owner's capacity. `inconclusive` means the API could
+not reconstruct the owner, so an obligation may remain: the Runner retains both
+the receipt and the claim barrier for another cycle, and capacity is never freed
+without a matched proof. A missing, malformed or unknown outcome fails response
+decoding and retains the same responsibility; it cannot be converted to stale.
+
+There is no old-response fallback for this non-GA path. No production publisher
+exists and `piDeferredSandbox` remains off, so an old API cannot produce a v4 job
+for a new Runner and old Runners remain excluded from v4 jobs. The capable API,
+Runner and commit-addressed CLI become one reader floor before #34244 enables a
+producer; after activation, existing v4 obligations must drain before rollback
+below that floor.
 
 Cleanup identity is independent of a still-live execution binding. A threadless
 private maintenance Run is otherwise discoverable only through the live

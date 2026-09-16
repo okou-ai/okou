@@ -1653,11 +1653,7 @@ export const runnersJobClaimContract = c.router({
       }),
     ]),
     responses: {
-      // `released` stays the legacy boolean an older Runner reads. `outcome`
-      // additionally separates a definitive `stale` acknowledgement from an
-      // `inconclusive` cleanup whose obligation a capable Runner must retry.
-      200: z.object({
-        released: z.boolean(),
+      200: z.strictObject({
         outcome: deferredSandboxReleaseOutcomeSchema,
       }),
       400: apiErrorSchema,
