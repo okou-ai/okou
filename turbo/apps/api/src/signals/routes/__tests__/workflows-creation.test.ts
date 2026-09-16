@@ -384,6 +384,47 @@ describe("Workflow creation publication", () => {
     await assertReadable(actor, recovered.body.id, body);
   });
 
+  it("publishes independent workflows on the same agent while another publication waits on its thread", async () => {
+    const { actor, thread, body } = await setupCreation();
+    installS3Fixture();
+    const boundary = await holdWorkflowCreationThreadFixture(
+      thread.id,
+      context.signal,
+    );
+    const creating = client().create({ headers: headers(actor), body });
+    const settledPublication = Promise.allSettled([boundary.done, creating]);
+    onTestFinished(async () => {
+      boundary.release();
+      await settledPublication;
+    });
+    await vi.waitFor(async () => {
+      await expect(boundary.blockedPids()).resolves.toHaveLength(1);
+    });
+
+    const independentBody = {
+      ...body,
+      name: `${body.name}-independent`,
+      chatThreadId: undefined,
+    };
+    const independent = client().create({
+      headers: headers(actor),
+      body: independentBody,
+    });
+    const settledIndependent = Promise.allSettled([independent]);
+    onTestFinished(async () => {
+      boundary.release();
+      await settledIndependent;
+    });
+    const published = await accept(independent, [201]);
+    await assertReadable(actor, published.body.id, independentBody);
+    await expect(boundary.blockedPids()).resolves.toHaveLength(1);
+
+    boundary.release();
+    await boundary.done;
+    const created = await accept(creating, [201]);
+    await assertReadable(actor, created.body.id, body);
+  });
+
   it.each(["public", "private"] as const)(
     "publishes one winner for concurrent %s creates and preserves its files",
     async (visibility) => {

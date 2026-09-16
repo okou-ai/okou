@@ -106,6 +106,8 @@ describe("Pi inference erasure parameter boundary", () => {
     expect(erased.preflightParameters[0]?.[0]).toStrictEqual(ids);
     expect(erased.objectReferenceParameters).toHaveLength(1);
     expect(erased.objectReferenceParameters[0]).toStrictEqual([ids]);
+    // Three child deletes and one locked Run delete, independent of padding.
+    expect(erased.deletionStatements).toBe(4);
     await expectErased(first);
     await expectErased(last);
   });
