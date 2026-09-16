@@ -13361,36 +13361,26 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
   });
 
-  it("advertises live Social status only while the feature is enabled", async () => {
+  it("advertises live Social status for an ordinary organization", async () => {
     const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    for (const enabled of [false, true]) {
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SocialStatus]: enabled,
-      });
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "check public social service health",
-        modelProvider: "anthropic-api-key",
-      });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-      expect(prompt).toContain("okou social capabilities [platform] --json");
-      expect(prompt).toContain(
-        "total/page limits, source constraints, and advanced inputs",
-      );
-      if (enabled) {
-        expect(prompt).toContain("okou social status [platform] --json");
-        expect(prompt).toContain(
-          "health does not establish caller access, account quota, or Okou balance",
-        );
-      } else {
-        expect(prompt).not.toContain("okou social status [platform] --json");
-      }
-      await api.requestCancelRun(actor, run.runId, [200]);
-    }
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "check public social service health",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou social capabilities [platform] --json");
+    expect(prompt).toContain(
+      "total/page limits, source constraints, and advanced inputs",
+    );
+    expect(prompt).toContain("okou social status [platform] --json");
+    expect(prompt).toContain(
+      "health does not establish caller access, account quota, or Okou balance",
+    );
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("advertises Slack bot reads for an ordinary organization", async () => {

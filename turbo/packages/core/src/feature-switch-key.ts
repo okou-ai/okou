@@ -33,7 +33,6 @@ export enum FeatureSwitchKey {
   StripeMarketplaceOAuthConnector = "stripeMarketplaceOAuthConnector",
   OkouDebug = "_debug",
   Banking = "banking",
-  SocialStatus = "socialStatus",
   Lab = "_lab",
   StripeInvoicePaidWorkflowAutomations = "stripeInvoicePaidWorkflowAutomations",
   OfficialWorkflows = "officialWorkflows",
