@@ -1,4 +1,7 @@
-import { pendingMarketingEvents$ } from "../../../signals/bootstrap/marketing-events.ts";
+import {
+  marketingAcquisitionContract,
+  type ObservedAcquisitionEvent,
+} from "@okouai/api-contracts/contracts/marketing-acquisition";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import {
   agentsByIdContract,
@@ -1431,6 +1434,22 @@ test.each([
 ])(
   "Onboarding and checkout route only to $accountId",
   async ({ accountId, onboarding, checkout }) => {
+    const marketing = "https://www.okou.ai/api/marketing/acquisition";
+    const observations: ObservedAcquisitionEvent[] = [];
+    context.mocks.http.get(`${marketing}/config`, () => {
+      return Response.json({ shadowEnabled: true });
+    });
+    context.mocks.http.post(`${marketing}/events`, async ({ request }) => {
+      const batch = marketingAcquisitionContract.events.body.parse(
+        await request.json(),
+      );
+      observations.push(...batch.events);
+      return Response.json({
+        recorded: true,
+        shadowEnabled: true,
+        consented: true,
+      });
+    });
     context.mocks.api(
       acquisitionAttributionContract.resolveGoogleAdsAccount,
       ({ respond }) => {
@@ -1450,6 +1469,7 @@ test.each([
     await setupPage({
       context,
       path: "/onboarding/video-template?choice=video",
+      host: "app.okou.ai",
     });
 
     await expect(
@@ -1480,21 +1500,22 @@ test.each([
       expect(window.location.href).toContain("checkout.stripe.com");
       expect(sentConversions(gtag)).toStrictEqual([...onboarding, ...checkout]);
     });
-    const observations = context.store.get(pendingMarketingEvents$);
-    expect(
-      observations.map((entry) => {
-        return entry.event.name;
-      }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        "StepViewed",
-        "CheckoutCreated",
-        "RedirectToStripe",
-      ]),
-    );
+    await waitFor(() => {
+      expect(
+        observations.map((event) => {
+          return event.name;
+        }),
+      ).toStrictEqual(
+        expect.arrayContaining([
+          "StepViewed",
+          "CheckoutCreated",
+          "RedirectToStripe",
+        ]),
+      );
+    });
     for (const observation of observations) {
-      expect(observation.event.properties).not.toHaveProperty("gclid");
-      expect(observation.event.properties).not.toHaveProperty("ga_client_id");
+      expect(observation.properties).not.toHaveProperty("gclid");
+      expect(observation.properties).not.toHaveProperty("ga_client_id");
     }
   },
 );
