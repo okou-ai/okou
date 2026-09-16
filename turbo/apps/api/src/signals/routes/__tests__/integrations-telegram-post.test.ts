@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core";
 
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -41,7 +40,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
@@ -251,11 +249,6 @@ async function seedTelegramPostFixture(
   if (!fixture) {
     throw new Error("seedTelegramPostFixture: response missing fixture");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: String(fixture.user_id), orgId: String(fixture.org_id) },
-    { [FeatureSwitchKey.TelegramDmSessions]: true },
-  );
   return {
     orgId: String(fixture.org_id),
     userId: String(fixture.user_id),
@@ -1721,17 +1714,15 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it.each([
-    { ownerKind: "custom", enabled: true, scenario: "models" },
-    { ownerKind: "official", enabled: true, scenario: "models" },
-    { ownerKind: "custom", enabled: true, scenario: "reply-anchors" },
-    { ownerKind: "official", enabled: true, scenario: "reply-anchors" },
-    { ownerKind: "custom", enabled: true, scenario: "pinned-replies" },
-    { ownerKind: "official", enabled: true, scenario: "pinned-replies" },
-    { ownerKind: "custom", enabled: false, scenario: "models" },
-    { ownerKind: "official", enabled: false, scenario: "models" },
+    { ownerKind: "custom", scenario: "models" },
+    { ownerKind: "official", scenario: "models" },
+    { ownerKind: "custom", scenario: "reply-anchors" },
+    { ownerKind: "official", scenario: "reply-anchors" },
+    { ownerKind: "custom", scenario: "pinned-replies" },
+    { ownerKind: "official", scenario: "pinned-replies" },
   ] as const)(
-    "routes $ownerKind Telegram DM $scenario with scoped sessions enabled=$enabled",
-    async ({ ownerKind, enabled, scenario }) => {
+    "routes $ownerKind Telegram DM $scenario with scoped sessions",
+    async ({ ownerKind, scenario }) => {
       const runnerGroup = configureCanonicalTelegramRunner();
       configureOfficialBotEnv();
       const actor = authOrgApi.user();
@@ -1742,11 +1733,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const onboarded = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
         displayName: "Telegram DM agent",
       });
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.TelegramDmSessions]: enabled },
-      );
       const provider = await runsApi.createOrgModelProvider(actor, {
         type: "anthropic-api-key",
         secret: "telegram-dm-model-routing-key",
@@ -1955,16 +1941,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
       const followUp = await completeDm("continue the main DM", 3502);
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
-
-      if (!enabled) {
-        const reply = await completeDm("continue the unsplit DM", 3503, 3501);
-        expect(reply.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
-        await sendDm("/model claude-opus-4-8", 3504);
-        const switched = await completeDm("change the unsplit DM model", 3505);
-        expect(switched.claim.modelUsageProvider).toBe("claude-opus-4-8");
-        expect(switched.claim.resumeSession?.sessionId).toBe(reply.sessionId);
-        return;
-      }
 
       await sendDm("/model claude-opus-4-8", 3506);
       const alternate = await completeDm("use the alternate DM model", 3507);

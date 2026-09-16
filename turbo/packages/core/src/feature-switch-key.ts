@@ -55,7 +55,6 @@ export enum FeatureSwitchKey {
   PersonalModelProviderAccounts = "_multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
-  TelegramDmSessions = "_telegramDmSessions",
   CustomConnectorMcp = "customConnectorMcp",
   SshAccess = "sshAccess",
   PiDeferredSandbox = "piDeferredSandbox",
