@@ -6405,6 +6405,37 @@
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
+  "templates": {
+    "actions": {
+      "delete": "Löschen",
+      "menu": "Aktionen für {{title}}",
+      "preview": "{{title}} in der Vorschau anzeigen",
+      "rename": "Vorlage umbenennen"
+    },
+    "custom": "Eigene",
+    "detail": {
+      "back": "Eigene Vorlagen",
+      "page": "Seite {{number}}",
+      "source_one": "{{count}} Seite · aus {{filename}}",
+      "source_other": "{{count}} Seiten · aus {{filename}}"
+    },
+    "empty": {
+      "description": "Vorlagen, die aus einer hochgeladenen Datei erstellt werden, erscheinen hier.",
+      "title": "Noch keine Vorlagen"
+    },
+    "loadFailed": "Vorlagen konnten nicht geladen werden.",
+    "pageCount_one": "{{count}} Seite",
+    "pageCount_other": "{{count}} Seiten",
+    "retry": "Erneut versuchen",
+    "sharedBy": "Geteilt von {{owner}}",
+    "visibility": {
+      "change": "Ändern",
+      "organization": "Organisation",
+      "organizationState": "Alle in dieser Organisation können sie verwenden",
+      "private": "Privat",
+      "privateState": "Nur du kannst sie sehen und verwenden"
+    }
+  },
   "usage": {
     "displayNames": {
       "avatar": "Avatar",

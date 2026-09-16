@@ -6472,6 +6472,39 @@
     "unavailable": "L’accesso SSH non è disponibile per questo account.",
     "username": "Nome utente SSH"
   },
+  "templates": {
+    "actions": {
+      "delete": "Elimina",
+      "menu": "Azioni per {{title}}",
+      "preview": "Anteprima di {{title}}",
+      "rename": "Rinomina modello"
+    },
+    "custom": "Personalizzati",
+    "detail": {
+      "back": "Modelli personalizzati",
+      "page": "Pagina {{number}}",
+      "source_one": "{{count}} pagina · da {{filename}}",
+      "source_many": "{{count}} pagine · da {{filename}}",
+      "source_other": "{{count}} pagine · da {{filename}}"
+    },
+    "empty": {
+      "description": "I modelli creati da un file che carichi appariranno qui.",
+      "title": "Ancora nessun modello"
+    },
+    "loadFailed": "Impossibile caricare i modelli.",
+    "pageCount_one": "{{count}} pagina",
+    "pageCount_many": "{{count}} pagine",
+    "pageCount_other": "{{count}} pagine",
+    "retry": "Riprova",
+    "sharedBy": "Condiviso da {{owner}}",
+    "visibility": {
+      "change": "Modifica",
+      "organization": "Organizzazione",
+      "organizationState": "Chiunque in questa organizzazione può usarlo",
+      "private": "Privato",
+      "privateState": "Solo tu puoi vederlo e usarlo"
+    }
+  },
   "usage": {
     "displayNames": {
       "avatar": "Avatar",

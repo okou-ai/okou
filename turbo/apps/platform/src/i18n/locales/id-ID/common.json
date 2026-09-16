@@ -6386,6 +6386,35 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
+  "templates": {
+    "actions": {
+      "delete": "Hapus",
+      "menu": "Tindakan untuk {{title}}",
+      "preview": "Pratinjau {{title}}",
+      "rename": "Ganti nama templat"
+    },
+    "custom": "Kustom",
+    "detail": {
+      "back": "Templat kustom",
+      "page": "Halaman {{number}}",
+      "source_other": "{{count}} halaman · dari {{filename}}"
+    },
+    "empty": {
+      "description": "Templat yang dibuat dari file yang Anda unggah akan muncul di sini.",
+      "title": "Belum ada templat"
+    },
+    "loadFailed": "Tidak dapat memuat templat.",
+    "pageCount_other": "{{count}} halaman",
+    "retry": "Coba lagi",
+    "sharedBy": "Dibagikan oleh {{owner}}",
+    "visibility": {
+      "change": "Ubah",
+      "organization": "Organisasi",
+      "organizationState": "Siapa pun di organisasi ini dapat menggunakannya",
+      "private": "Pribadi",
+      "privateState": "Hanya Anda yang dapat melihat dan menggunakannya"
+    }
+  },
   "usage": {
     "displayNames": {
       "avatar": "Avatar",

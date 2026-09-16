@@ -6386,6 +6386,35 @@
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
+  "templates": {
+    "actions": {
+      "delete": "削除",
+      "menu": "{{title}} の操作",
+      "preview": "{{title}} をプレビュー",
+      "rename": "テンプレート名を変更"
+    },
+    "custom": "カスタム",
+    "detail": {
+      "back": "カスタムテンプレート",
+      "page": "{{number}} ページ目",
+      "source_other": "{{count}} ページ · {{filename}} から"
+    },
+    "empty": {
+      "description": "アップロードしたファイルから作成されたテンプレートがここに表示されます。",
+      "title": "テンプレートはまだありません"
+    },
+    "loadFailed": "テンプレートを読み込めませんでした。",
+    "pageCount_other": "{{count}} ページ",
+    "retry": "再試行",
+    "sharedBy": "{{owner}} が共有",
+    "visibility": {
+      "change": "変更",
+      "organization": "組織",
+      "organizationState": "この組織の全員が使用できます",
+      "private": "非公開",
+      "privateState": "自分だけが表示・使用できます"
+    }
+  },
   "usage": {
     "displayNames": {
       "avatar": "アバター",

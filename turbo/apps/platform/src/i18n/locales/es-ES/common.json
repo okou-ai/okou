@@ -6472,6 +6472,39 @@
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
+  "templates": {
+    "actions": {
+      "delete": "Eliminar",
+      "menu": "Acciones para {{title}}",
+      "preview": "Vista previa de {{title}}",
+      "rename": "Cambiar nombre de la plantilla"
+    },
+    "custom": "Personalizadas",
+    "detail": {
+      "back": "Plantillas personalizadas",
+      "page": "Página {{number}}",
+      "source_one": "{{count}} página · de {{filename}}",
+      "source_many": "{{count}} páginas · de {{filename}}",
+      "source_other": "{{count}} páginas · de {{filename}}"
+    },
+    "empty": {
+      "description": "Las plantillas creadas a partir de un archivo que subas aparecerán aquí.",
+      "title": "Aún no hay plantillas"
+    },
+    "loadFailed": "No se pudieron cargar las plantillas.",
+    "pageCount_one": "{{count}} página",
+    "pageCount_many": "{{count}} páginas",
+    "pageCount_other": "{{count}} páginas",
+    "retry": "Reintentar",
+    "sharedBy": "Compartida por {{owner}}",
+    "visibility": {
+      "change": "Cambiar",
+      "organization": "Organización",
+      "organizationState": "Cualquier persona de esta organización puede usarla",
+      "private": "Privado",
+      "privateState": "Solo tú puedes verla y usarla"
+    }
+  },
   "usage": {
     "displayNames": {
       "avatar": "Avatar",

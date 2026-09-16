@@ -6386,6 +6386,35 @@
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
+  "templates": {
+    "actions": {
+      "delete": "삭제",
+      "menu": "{{title}} 작업",
+      "preview": "{{title}} 미리보기",
+      "rename": "템플릿 이름 바꾸기"
+    },
+    "custom": "커스텀",
+    "detail": {
+      "back": "커스텀 템플릿",
+      "page": "{{number}}페이지",
+      "source_other": "{{count}}페이지 · {{filename}}에서"
+    },
+    "empty": {
+      "description": "업로드한 파일로 만든 템플릿이 여기에 표시됩니다.",
+      "title": "아직 템플릿이 없습니다"
+    },
+    "loadFailed": "템플릿을 불러오지 못했습니다.",
+    "pageCount_other": "{{count}}페이지",
+    "retry": "다시 시도",
+    "sharedBy": "{{owner}} 님이 공유함",
+    "visibility": {
+      "change": "변경",
+      "organization": "조직",
+      "organizationState": "이 조직의 모든 사람이 사용할 수 있습니다",
+      "private": "비공개",
+      "privateState": "나만 보고 사용할 수 있습니다"
+    }
+  },
   "usage": {
     "displayNames": {
       "avatar": "아바타",

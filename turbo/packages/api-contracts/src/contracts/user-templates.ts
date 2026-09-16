@@ -152,7 +152,18 @@ export const userTemplatesContract = c.router({
 });
 
 export type UserTemplateSummary = z.infer<typeof userTemplateSummarySchema>;
+export type UserTemplateCatalogEntry = z.infer<
+  typeof userTemplateCatalogEntrySchema
+>;
+export type UserTemplateDetail = z.infer<typeof userTemplateDetailSchema>;
 export type UserTemplatePreviewAsset = z.infer<
   typeof userTemplatePreviewAssetSchema
 >;
 export type UserTemplateKind = z.infer<typeof userTemplateKindSchema>;
+export type UserTemplateVisibility = z.infer<
+  typeof userTemplateVisibilitySchema
+>;
+export type UpdateUserTemplateBody = z.infer<
+  typeof updateUserTemplateBodySchema
+>;
+export type UserTemplatesContract = typeof userTemplatesContract;
