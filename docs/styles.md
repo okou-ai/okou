@@ -159,6 +159,8 @@ filled-state alpha tokens. Disabled buttons retain the shared opacity treatment.
 Removing the document's color-theme attributes restores the shared Amber primary
 tokens.
 
+The preset also supplies `--primary-400`, because one filled control reads that ramp stop rather than `--primary`. The checked `Switch` track takes 400 so it sits one step darker than the brand stop, which is what keeps a 44x24 fill reading as a fill on a near-white card; `Checkbox` and `Radio` are small enough to take `--primary` directly. A preset has a single anchor and no ramp, so pointing the stop at that anchor puts the checked toggle on the same fill as every other filled control instead of leaving it Amber under all eight palettes. This is the same move the presets already make on the gray ramp, and it is confined to the one stop with a consumer: `--brand-subtle`, `--brand-text`, and `--brand-text-hover` keep reading the Amber ramp, because the brand mark is not palette-driven.
+
 Auxiliary controls and previews revealed by hover or keyboard focus change
 opacity immediately. Do not add opacity transitions to message actions, sidebar
 controls, card overlays, or similar contextual affordances; temporary

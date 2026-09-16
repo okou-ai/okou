@@ -87,11 +87,14 @@ Firewall and auth context
   registry failures. It is orthogonal to ``FIREWALL_ACTION``: an ``ALLOW``
   decision can still have an auth or forwarding error.
 - ``CONNECTOR_DIAGNOSTIC_SLUG``: optional ``str`` connector slug stored under
-  the canonical slug key for a generic connector availability diagnostic. HTTP
-  request classification records this for an inactive built-in connector
-  candidate from the request-header stream path or the request hook; network
-  logs expose it only after the response/error hook turns the candidate into an
-  agent-visible diagnostic.
+  the canonical slug key for a generic connector availability diagnostic.
+  Ordinary allowed requests retain private eligibility and catalog lookup
+  context without setting this key. ``connector_diagnostics`` writes it when
+  creating a local shared-base 424 in ``requestheaders()`` or ``request()``, or
+  replacing an eligible upstream 401/403 in ``responseheaders()`` or
+  ``response()``. Connection-error handling only finalizes an already-installed
+  response-header diagnostic; it does not create one from pending lookup
+  context. Network logs copy the public diagnostic fields when present.
 - ``CONNECTOR_DIAGNOSTIC_REASON``: optional ``str`` generic diagnostic reason.
   First-version diagnostics use ``not_configured_for_run``.
 - ``CONNECTOR_DIAGNOSTIC_ENV_NAMES``: optional ``list[str]`` env aliases that

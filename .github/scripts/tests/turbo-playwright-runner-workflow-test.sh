@@ -84,8 +84,8 @@ grep -Fq 'createRunnerCheckout' "$RUNNER_TOKEN" ||
   fail "paid runner accounts must use the public checkout API"
 grep -Fq 'fillStripeCheckout' "$RUNNER_TOKEN" ||
   fail "real runner accounts must complete the public Stripe checkout"
-if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 3 ]]; then
-  fail "real Codex, real Claude, and mock Claude runner accounts must upgrade to Pro"
+if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 4 ]]; then
+  fail "both real Codex accounts, real Claude, and mock Claude must upgrade to Pro"
 fi
 if [[ "$(grep -Fc 'upgradeToPro: false' "$RUNNER_TOKEN")" -ne 1 ]]; then
   fail "the default mock runner account must remain on limited-free"
@@ -116,6 +116,18 @@ browser = jobs.fetch("cli-e2e-02-browser")
 playwright = jobs.fetch("cli-e2e-02-playwright")
 playwright_finalizer = jobs.fetch("cli-e2e-02-playwright-finalize")
 account_prepare = jobs.fetch("cli-e2e-03-runner-prepare")
+account_prepare_steps = account_prepare.fetch("steps")
+model_policy_index = account_prepare_steps.index do |step|
+  step["name"] == "Check runner E2E model policy" &&
+    step["run"] == "cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts"
+end
+prepare_accounts_index = account_prepare_steps.index do |step|
+  step["name"] == "Prepare runner E2E accounts"
+end
+unless model_policy_index && prepare_accounts_index &&
+    model_policy_index < prepare_accounts_index
+  raise "runner E2E must check the Luna cost policy before preparing real accounts"
+end
 bootstrap = jobs.fetch("cli-e2e-03-runner-bootstrap")
 runner = jobs.fetch("cli-e2e-03-runner")
 account_cleanup = jobs.fetch("cli-e2e-03-runner-cleanup")
@@ -382,6 +394,7 @@ expected_organization_outputs = {
   "codex-organization-id" => "codex-organization-id",
   "claude-organization-id" => "claude-organization-id",
   "mock-claude-organization-id" => "mock-claude-organization-id",
+  "codex-built-in-organization-id" => "codex-built-in-organization-id",
 }
 expected_organization_outputs.each do |job_output, step_output|
   expected = "${{ steps.account.outputs.#{step_output} }}"
@@ -421,6 +434,10 @@ unless token_step.dig("env", "E2E_RUNNER_MOCK_CLAUDE_ORGANIZATION_ID") ==
     "${{ steps.account.outputs.mock-claude-organization-id }}"
   raise "runner E2E token generation must receive the mock Claude organization"
 end
+unless token_step.dig("env", "E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID") ==
+    "${{ steps.account.outputs.codex-built-in-organization-id }}"
+  raise "runner E2E token generation must receive the built-in Codex organization"
+end
 
 diagnostic_upload_step = account_prepare.fetch("steps").find do |step|
   step["name"] == "Upload runner E2E Checkout diagnostics"
@@ -449,6 +466,7 @@ end
   e2e-api-credentials-runner-real-codex.json
   e2e-api-credentials-runner-real-claude.json
   e2e-api-credentials-runner-mock-claude.json
+  e2e-api-credentials-runner-real-codex-built-in.json
 ].each do |file_name|
   unless upload_step.dig("with", "path").include?(file_name)
     raise "runner E2E token artifact must include #{file_name}"
@@ -551,6 +569,27 @@ end
 unless codex_step.dig("env", "OPENAI_API_KEY") ==
     "${{ secrets.OPENAI_API_KEY }}"
   raise "real Codex bootstrap must receive the OpenAI credential"
+end
+built_in_codex_step = bootstrap_steps.find do |step|
+  step["name"] == "Bootstrap built-in Codex account"
+end
+raise "missing built-in Codex account bootstrap" unless built_in_codex_step
+built_in_codex_script = built_in_codex_step.fetch("run")
+%w[
+  e2e-api-credentials-runner-real-codex-built-in.json
+  /api/model-policies
+  /api/feature-switches
+  gpt-5.6-luna
+].each do |required_fragment|
+  unless built_in_codex_script.include?(required_fragment)
+    raise "built-in Codex bootstrap must include #{required_fragment}"
+  end
+end
+unless built_in_codex_script.include?('"defaultProviderType":"built-in"') &&
+    built_in_codex_script.include?('"modelProviderId":null') &&
+    built_in_codex_script.include?('"_realAgentInPreview":true,"piLoop":false') &&
+    built_in_codex_script.include?('.effectiveSwitches.piLoop == false')
+  raise "built-in Luna must retain Codex execution in its isolated account"
 end
 claude_step = bootstrap_steps.find do |step|
   step["name"] == "Bootstrap real Claude account"

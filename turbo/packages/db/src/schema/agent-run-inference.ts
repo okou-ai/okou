@@ -112,6 +112,7 @@ export const agentRunSandboxIntent = pgTable(
     attemptDeadlineAt: timestamp("attempt_deadline_at"),
     attempts: integer("attempts").notNull().default(0),
     notifiedAt: timestamp("notified_at"),
+    terminalEffectsPendingAt: timestamp("terminal_effects_pending_at"),
   },
   (t) => {
     return [
@@ -127,6 +128,9 @@ export const agentRunSandboxIntent = pgTable(
         "agent_run_sandbox_intent_expiry_check",
         sql`${t.expiresAt} > ${t.enqueuedAt} AND ${t.expiresAt} <= ${t.enqueuedAt} + interval '2 hours'`,
       ),
+      index("agent_run_sandbox_intent_terminal_idx")
+        .on(t.terminalEffectsPendingAt, t.runId)
+        .where(sql`${t.terminalEffectsPendingAt} IS NOT NULL`),
       index("agent_run_sandbox_intent_queue_idx").on(
         t.state,
         t.enqueuedAt,
@@ -171,6 +175,8 @@ export const agentRunSandboxLease = pgTable(
     ownerEpoch: integer("owner_epoch").notNull(),
     deadlineAt: timestamp("deadline_at").notNull(),
     runnerId: uuid("runner_id"),
+    claimedOwnerEpoch: integer("claimed_owner_epoch"),
+    claimedGeneration: integer("claimed_generation"),
     releaseEvidence: text("release_evidence"),
   },
   (t) => {

@@ -1,5 +1,6 @@
 //! [`JobProvider`] backed by an Ably control plane + HTTP polling + REST API.
 
+use super::{DeferredSandboxFence, deferred_release::DeferredReleaseOutbox};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -194,6 +195,7 @@ const CLAIM_TELEMETRY_DURATION_MS_MAX: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug)]
 struct PollApiResult {
+    deferred_sandbox: bool,
     job: Option<Job>,
     http_request_elapsed: Duration,
 }
@@ -328,6 +330,7 @@ enum DiscoveryWakeup {
 /// cooldown and defers all discovery before retrying.
 pub struct ApiProvider {
     api: ApiClient,
+    deferred_release_outbox: DeferredReleaseOutbox,
     runner_identity: RunnerProcessIdentity,
     runner_hostname: Option<String>,
     group: String,
@@ -359,6 +362,7 @@ pub struct BuiltinFirewallCatalogCachePaths {
 }
 
 pub struct ApiProviderConfig {
+    pub(crate) deferred_release_root: std::path::PathBuf,
     pub(crate) ssh: Option<Arc<crate::ssh::SshRuntime>>,
     pub(crate) runner_identity: RunnerProcessIdentity,
     pub(crate) runner_hostname: Option<String>,
@@ -377,12 +381,15 @@ impl ApiProvider {
         cancel_tokens: RunCancellationRegistry,
     ) -> Arc<Self> {
         let ApiProviderConfig {
+            deferred_release_root,
             ssh,
             runner_identity,
             runner_hostname,
             group,
             supported_profiles,
         } = config;
+        let deferred_release_outbox =
+            DeferredReleaseOutbox::new_shared(deferred_release_root, &runner_identity);
         let api = ApiClient::new(http, token);
         let connector_runtime_sync = ConnectorRuntimeSyncHandle::new(api.clone());
         let builtin_firewall_catalog_refresh = BuiltinFirewallCatalogRefreshController::new(
@@ -399,6 +406,7 @@ impl ApiProvider {
         let active_input_notifications = ActiveInputNotifications::new();
         Arc::new(Self {
             api,
+            deferred_release_outbox,
             runner_identity,
             runner_hostname,
             group,
@@ -699,6 +707,7 @@ impl JobProvider for ApiProvider {
             match poll_result {
                 Ok(PollApiResult {
                     job: Some(job),
+                    deferred_sandbox,
                     http_request_elapsed,
                 }) => {
                     if let Some(retry_after) = self.claim_cooldowns.remaining(job.run_id).await {
@@ -750,6 +759,7 @@ impl JobProvider for ApiProvider {
                     let profile = job.experimental_profile;
                     info!(run_id = %run_id, %profile, poll_reason = ?reason, "poll: job found");
                     let mut candidate = JobCandidate::new(run_id, profile)
+                        .with_deferred_sandbox(deferred_sandbox)
                         .with_reuse_key(reuse_key)
                         .with_history_generation_run_id(history_generation_run_id)
                         .with_parsed_runner_preference_context(runner_preference_context)
@@ -797,6 +807,18 @@ impl JobProvider for ApiProvider {
 
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
         let run_id = candidate.run_id();
+        // Only an HTTP poll can opt this candidate into the v4 claim protocol.
+        // Legacy/notification candidates omit the claim capability, so even a
+        // stale hint cannot claim a v4 Run without the durable barrier.
+        if candidate.deferred_sandbox()
+            && let Err(error) = self
+                .deferred_release_outbox
+                .begin_claim(run_id, &self.runner_identity)
+                .await
+        {
+            warn!(%run_id, %error, "claim skipped because its durable ownership journal is unavailable");
+            return None;
+        }
         let claim_request_started_at = Instant::now();
         let claim_result = self
             .api
@@ -814,13 +836,51 @@ impl JobProvider for ApiProvider {
                 response_body_read_elapsed,
                 response_decode_elapsed,
             })) => {
+                let deferred_slot = ctx
+                    .pi_launch_config
+                    .as_ref()
+                    .and_then(|config| config.get("apiFirstTurn"))
+                    .filter(|slot| {
+                        slot.get("schemaVersion")
+                            .and_then(serde_json::Value::as_u64)
+                            == Some(2)
+                    });
+                let fence = deferred_slot.and_then(|slot| {
+                    serde_json::from_value::<DeferredSandboxFence>(slot.clone()).ok()
+                });
+                if deferred_slot.is_some() && (!candidate.deferred_sandbox() || fence.is_none()) {
+                    self.deferred_release_outbox.actor_gone(run_id).await;
+                    return None;
+                }
+                if candidate.deferred_sandbox()
+                    && let Err(error) = self
+                        .deferred_release_outbox
+                        .accept_claim(run_id, fence)
+                        .await
+                {
+                    warn!(%run_id, %error, "claimed job cannot dispatch without durable claim identity");
+                    self.deferred_release_outbox.actor_gone(run_id).await;
+                    return None;
+                }
                 let api_claim_timing = ApiClaimTiming::new(
                     claim_request_elapsed,
                     request_to_response_headers_elapsed,
                     response_body_read_elapsed,
                     response_decode_elapsed,
                 );
-                let active_input_source = supports_thread_active_input(ctx.reuse_key.as_deref())
+                let deferred_active_input = ctx
+                    .pi_launch_config
+                    .as_ref()
+                    .and_then(|config| config.get("apiFirstTurn"))
+                    .is_some_and(|slot| {
+                        slot.get("schemaVersion")
+                            .and_then(serde_json::Value::as_u64)
+                            == Some(2)
+                            && slot.get("activeInput").and_then(serde_json::Value::as_bool)
+                                == Some(true)
+                    });
+                let active_input_source = (supports_thread_active_input(ctx.reuse_key.as_deref())
+                    || deferred_active_input)
                     .then(|| {
                         ActiveInputSource::api(
                             self.api.clone(),
@@ -852,6 +912,7 @@ impl JobProvider for ApiProvider {
                             },
                         )
                         .await;
+                        self.deferred_release_outbox.actor_gone(run_id).await;
                         return None;
                     }
                 };
@@ -865,17 +926,42 @@ impl JobProvider for ApiProvider {
                 Some(claimed)
             }
             Ok(None) => {
+                self.deferred_release_outbox.actor_gone(run_id).await;
                 self.claim_cooldowns.remove(run_id).await;
                 info!(run_id = %run_id, "job unavailable, skipping");
                 self.poll_wakeups.request_immediate_poll();
                 None
             }
             Err(e) => {
+                self.deferred_release_outbox.actor_gone(run_id).await;
                 self.record_claim_failure(run_id, classify_claim_failure(&e))
                     .await;
                 None
             }
         }
+    }
+
+    async fn release_deferred_sandbox(&self, run_id: RunId, fence: DeferredSandboxFence) {
+        self.deferred_release_outbox
+            .record_and_flush(&self.api, self.runner_identity.runner_id(), run_id, fence)
+            .await;
+    }
+
+    async fn bind_claimed_sandbox(
+        &self,
+        run_id: RunId,
+        sandbox_id: sandbox::SandboxId,
+    ) -> RunnerResult<()> {
+        self.deferred_release_outbox
+            .bind_sandbox(run_id, sandbox_id)
+            .await
+            .map_err(|error| {
+                RunnerError::Internal(format!("persist deferred Sandbox binding: {error}"))
+            })
+    }
+
+    async fn claimed_actor_gone(&self, run_id: RunId) {
+        self.deferred_release_outbox.actor_gone(run_id).await;
     }
 
     async fn heartbeat(&self, state: &HeartbeatState) {
@@ -889,6 +975,13 @@ impl JobProvider for ApiProvider {
                     .await;
             }
         }
+        self.deferred_release_outbox
+            .recover_claims(&self.api, &self.runner_identity)
+            .await;
+        self.deferred_release_outbox.flush_one(&self.api).await;
+        self.deferred_release_outbox
+            .recover_foreign(&self.api, &self.runner_identity)
+            .await;
     }
 
     async fn defer_poll_until(&self, deadline: Instant) {
@@ -1403,6 +1496,36 @@ impl ApiClient {
     }
 
     /// Poll for a pending job. The response contains `job: None` when no work is available.
+    pub(super) async fn release_deferred_sandbox(
+        &self,
+        run_id: RunId,
+        body: &serde_json::Value,
+    ) -> RunnerResult<bool> {
+        let id = run_id.to_string();
+        let response = send_api(
+            self.http
+                .request_resolved_route(
+                    routes::runners::jobs::by_id::release::route(
+                        routes::runners::jobs::by_id::release::Params { id: &id },
+                    ),
+                    &self.token,
+                )
+                .json(body),
+            "deferred-sandbox-release",
+        )
+        .await?;
+        let response = check_api_status(response, "deferred-sandbox-release").await?;
+        #[derive(Deserialize)]
+        struct ReleaseReceipt {
+            released: bool,
+        }
+        let receipt: ReleaseReceipt = response
+            .json()
+            .await
+            .map_err(|error| RunnerError::Api(format!("decode deferred release: {error}")))?;
+        Ok(receipt.released)
+    }
+
     async fn poll(
         &self,
         runner_id: uuid::Uuid,
@@ -1422,15 +1545,21 @@ impl ApiClient {
         let resp = send_api(
             self.http
                 .request_route(routes::runners::poll::POLL, &self.token)
+                .deferred_pi_reader()
                 .json(&body),
             "poll",
         )
         .await?;
 
         let resp = check_api_status(resp, "poll").await?;
+        let deferred_sandbox = resp
+            .headers()
+            .get("X-Pi-Deferred-Sandbox")
+            .is_some_and(|value| value == "1");
         let poll: PollResponse = decode_api_json(resp, "poll").await?;
 
         Ok(PollApiResult {
+            deferred_sandbox,
             job: poll.job,
             http_request_elapsed: poll_started_at.elapsed(),
         })
@@ -1463,17 +1592,20 @@ impl ApiClient {
         let run_id = candidate.run_id();
         let body = claim_request_body(candidate, runner_identity, runner_hostname);
         let run_id = run_id.to_string();
-        let request = self
-            .http
-            .request_resolved_route(
-                routes::runners::jobs::by_id::claim::route(
-                    routes::runners::jobs::by_id::claim::Params {
-                        id: run_id.as_str(),
-                    },
-                ),
-                &self.token,
-            )
-            .json(&body);
+        let request = self.http.request_resolved_route(
+            routes::runners::jobs::by_id::claim::route(
+                routes::runners::jobs::by_id::claim::Params {
+                    id: run_id.as_str(),
+                },
+            ),
+            &self.token,
+        );
+        let request = if candidate.deferred_sandbox() {
+            request.deferred_pi_reader()
+        } else {
+            request
+        };
+        let request = request.json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let resp = send_api(request, "claim").await?;
         let request_to_response_headers_elapsed = request_to_response_headers_started_at.elapsed();
@@ -2412,6 +2544,9 @@ mod tests {
         );
         Arc::new(ApiProvider {
             ssh: None,
+            deferred_release_outbox: DeferredReleaseOutbox::new(
+                std::env::temp_dir().join(format!("pi-release-test-{}", Uuid::new_v4())),
+            ),
             connector_runtime_sync: ConnectorRuntimeSyncHandle::new(api.clone()),
             builtin_firewall_catalog_refresh: BuiltinFirewallCatalogRefreshController::disabled(),
             api,
@@ -5404,6 +5539,56 @@ mod tests {
             "fixture-artifact-version"
         );
         claim_mock.assert_calls_async(1).await;
+    }
+
+    #[tokio::test]
+    async fn deferred_legacy_api_transient_claim_can_retry_without_release_protocol() {
+        let server = MockServer::start_async().await;
+        let run_id = RunId::new_v4();
+        let claim_path = format!("/api/runners/jobs/{run_id}/claim");
+        let transient = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path(&claim_path)
+                    .header_missing("X-Pi-Deferred-Sandbox");
+                then.status(503);
+            })
+            .await;
+        let poll = server.mock_async(|when, then| {
+            when.method(POST).path("/api/runners/poll");
+            then.status(200).json_body(serde_json::json!({"job": {"runId": run_id, "experimentalProfile": crate::profile::DEFAULT_PROFILE}}));
+        }).await;
+        let provider = api_provider_for_test(
+            server.base_url(),
+            CancellationToken::new(),
+            Arc::new(PollWakeups::new(false)),
+        );
+        let candidate = tokio::time::timeout(Duration::from_secs(1), provider.discover())
+            .await
+            .expect("old API poll should decode")
+            .expect("old API poll candidate");
+        assert!(!candidate.deferred_sandbox());
+        assert!(provider.claim(candidate).await.is_none());
+        transient.assert_calls_async(1).await;
+        transient.delete_async().await;
+        let success = server.mock_async(|when, then| {
+            when.method(POST).path(&claim_path).header_missing("X-Pi-Deferred-Sandbox");
+            then.status(200).json_body(serde_json::json!({
+                "runId": run_id, "prompt": "legacy retry", "sandboxToken": "test-token", "cliAgentType": "claude_code", "platformEnvironment": {}, "connectorRuntimeTargets": []
+            }));
+        }).await;
+        let candidate = tokio::time::timeout(Duration::from_secs(10), provider.discover())
+            .await
+            .expect("bounded retry poll")
+            .expect("retry candidate");
+        assert!(!candidate.deferred_sandbox());
+        let claimed = provider
+            .claim(candidate)
+            .await
+            .expect("legacy retry must not require a v4 release endpoint");
+        assert_eq!(claimed.context().prompt, "legacy retry");
+        success.assert_calls_async(1).await;
+        assert!(poll.calls_async().await >= 2);
     }
 
     #[tokio::test]

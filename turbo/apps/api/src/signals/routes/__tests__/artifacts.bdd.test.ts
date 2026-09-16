@@ -1035,7 +1035,7 @@ describe("hosted Artifact previews", () => {
     expect(snapshotRequests).toHaveLength(1);
   }, 120_000);
 
-  it("retries navigation timeouts once with explicit DOM readiness", async () => {
+  it("retries navigation timeouts once with a shape-independent settle wait", async () => {
     const owner = await artifactActor("Artifacts API navigation retry agent");
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
     mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
@@ -1068,13 +1068,12 @@ describe("hosted Artifact previews", () => {
     });
     expect(snapshotRequests[1]?.body).toMatchObject({
       gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
-      waitForSelector: {
-        selector: "body > *",
-        visible: true,
-        timeout: 10_000,
-      },
+      waitForTimeout: 3000,
       actionTimeout: 30_000,
     });
+    // Readiness must not depend on which node the document opens its body with:
+    // a leading hidden sprite or script can never satisfy a visibility probe.
+    expect(snapshotRequests[1]?.body).not.toHaveProperty("waitForSelector");
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
       /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,

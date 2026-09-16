@@ -1540,31 +1540,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Uma vez por dia, todo dia",
+          "description": "Abra o app diariamente. Reinicia às 00:00 UTC.",
           "name": "Entrar todo dia",
           "unit": "por dia"
         },
         "connector": {
-          "description": "Gmail, Notion e mais de 100",
+          "description": "Conecte com OAuth. Uma recompensa por conector.",
           "name": "Conectar um conector",
           "unit": "por conector"
         },
         "inReview": "Em análise",
         "inReviewDescription": "Enviado, aguardando análise",
         "invite": {
-          "description": "Cada pessoa que você adiciona conta",
+          "description": "Ganhe quando um convite for aceito, até 15 membros.",
           "name": "Convide seu time",
           "unit": "por membro"
         },
-        "personalBalanceNote": "Os créditos vão para o seu saldo pessoal.",
+        "pendingInvitations": "Convites pendentes: {{amount}}",
+        "personalBalanceNote": "As recompensas expiram 7 dias após a concessão. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
         "progressLabel": "Progresso dos primeiros passos",
+        "rejectedDescription": "Esta publicação não atende aos requisitos. Envie outra publicação pública que mencione Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Conectores recompensados: {{amount}}",
         "share": {
           "description": "Publique e cole o link aqui",
           "name": "Compartilhe o {{assistantName}} no X"
         },
         "shareDialog": {
-          "description": "Publique algo que você criou e cole o link. Você tem um envio.",
+          "description": "Envie uma publicação pública para análise. Uma recompensa aprovada por pessoa.",
           "helper": "A publicação precisa ser pública e mencionar o {{assistantName}}.",
           "inputLabel": "Link da publicação",
           "placeholder": "https://x.com/...",
@@ -1572,14 +1575,14 @@
           "title": "Compartilhe o {{assistantName}} no X"
         },
         "slack": {
-          "description": "Onde seu time já trabalha",
+          "description": "Ganhe 2.000 créditos da organização, uma vez por organização e workspace.",
           "name": "Adicionar o {{assistantName}} ao Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Conclua uma etapa e fique com os créditos.",
+        "subtitle": "Experimente uma tarefa e ganhe créditos.",
         "title": "Primeiros passos",
         "workflow": {
-          "description": "Transforme uma tarefa repetida em automação",
+          "description": "Execute com sucesso um workflow que você criou.",
           "name": "Criar um workflow"
         }
       },
@@ -1798,9 +1801,7 @@
       "create": {
         "addStyle": "Adicionar estilo",
         "addTemplate": "Adicionar modelo",
-        "chooseScene": "Escolha o que criar",
         "chooseType": "Escolha um tipo",
-        "description": "Apresentações, vídeos e imagens",
         "exit": "Sair do modo de criação",
         "image": "Criar imagem",
         "imageDescription": "Transforme uma ideia em uma imagem",
@@ -1808,12 +1809,10 @@
         "presentation": "Criar apresentação",
         "presentationDescription": "Slides para sua história",
         "presentationPlaceholder": "Qual é o tema da sua apresentação?",
-        "question": "O que você gostaria de realizar?",
         "settingsAdjusted": "Algumas configurações de vídeo foram ajustadas para este modelo",
         "slideCount": "Número de slides",
         "slideCountAuto": "Automático",
         "slideCountRange": "{{range}} slides",
-        "title": "Criar",
         "video": "Criar vídeo",
         "videoDescription": "Dê movimento às suas ideias",
         "videoPlaceholder": "Descreva o vídeo que você quer criar…"
@@ -1912,6 +1911,7 @@
         "moreAccounts_many": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Precisa de atenção",
+        "nextCategories": "Próximas categorias",
         "noResultsBody": "Tente o nome de um produto ou crie o seu a partir de uma API ou servidor MCP.",
         "noResultsTitle": "Nenhum conector corresponde a “{{query}}”",
         "openDetailAria": "Abrir detalhes de {{connector}}",
@@ -1919,6 +1919,7 @@
         "permissionCount_one": "{{count}} permissão",
         "permissionCount_many": "{{count}} permissões",
         "permissionCount_other": "{{count}} permissões",
+        "previousCategories": "Categorias anteriores",
         "showAll_one": "Ver todos os {{count}}",
         "showAll_many": "Ver todos os {{count}}",
         "showAll_other": "Ver todos os {{count}}",
@@ -3721,7 +3722,7 @@
       },
       "feishu": {
         "addBot": "Adicionar bot",
-        "addDialogDescription": "Crie um app personalizado empresarial, ative o bot e conclua estas etapas no console de desenvolvedor do Feishu.",
+        "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Feishu.",
         "addDialogTitle": "Adicionar um bot do Feishu",
         "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
@@ -3734,14 +3735,14 @@
         "copied": "Copiado: {{label}}",
         "copy": "Copiar",
         "create": {
-          "descriptionAfter": ", crie um app personalizado empresarial com o nome e o ícone que preferir e adicione o recurso Bot.",
+          "descriptionAfter": ", crie um app empresarial e selecione o tipo Agent. Escolha o nome e o ícone que preferir; o modelo Agent inclui o recurso Bot.",
           "descriptionBefore": "No ",
           "downloadIcon": "Baixar o ícone opcional do {{brandName}}",
           "iconAlt": "Ícone opcional do app {{brandName}}",
           "iconHint": " ou use qualquer ícone de sua preferência.",
           "iconTitle": "Ícone opcional do app {{brandName}}",
           "imageAlt": "Formulário de criação de app do Feishu com o nome, o ícone e o botão Criar destacados",
-          "title": "Criar um app personalizado empresarial"
+          "title": "Criar um app do tipo Agent"
         },
         "credentials": {
           "appId": "ID do app",
@@ -3771,6 +3772,9 @@
         "faq": {
           "approvalAnswer": "Se a disponibilidade estiver definida como All members, um administrador do Feishu deverá aprovar a versão. O Feishu envia a solicitação de aprovação a um administrador por mensagem direta, e o app permanece pendente até a conclusão da revisão.",
           "approvalQuestion": "Por que a publicação do app está aguardando aprovação?",
+          "botFeatureAnswer": "Abra Features → Add Features no console de desenvolvedor do Feishu. Em By Feature, adicione o recurso Bot, depois continue este guia e publique o app. Apps do tipo Agent incluem o recurso Bot por padrão.",
+          "botFeatureImageAlt": "Console de desenvolvedor do Lark mostrando o recurso Bot em Add Features",
+          "botFeatureQuestion": "E se eu escolhi Custom App em vez de Agent?",
           "challengeAnswer": "Isso geralmente significa que o Encrypt Key ou o Verification Token salvo na etapa Tokens está incorreto. Volte à etapa Tokens, insira novamente os dois valores de Event Configuration → Encryption Strategy, salve-os e tente a Request URL outra vez.",
           "challengeQuestion": "Por que o Feishu mostra \"Challenge code didn't get a response\"?",
           "title": "Perguntas frequentes sobre a configuração"
@@ -3781,14 +3785,14 @@
         "moreOptions": "Mais opções para {{bot}}",
         "pageDescription": "Gerencie o encaminhamento dos bots neste workspace",
         "permissions": {
-          "description": "No console de desenvolvedor do Feishu, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Isso importa todos os escopos do conector gerenciado em User identity. Essas são as permissões mínimas necessárias para que a integração funcione.",
-          "hint": "Mantenha todas as permissões importadas de User identity e depois crie e publique uma nova versão do app para que a tela de consentimento OAuth possa concedê-las. Remover qualquer permissão impedirá o funcionamento da integração, e talvez seja necessária a aprovação de um administrador do Feishu.",
-          "label": "JSON de escopos do token de usuário",
+          "description": "No console de desenvolvedor do Feishu, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Ele inclui permissões de identidade do app para o bot e de identidade do usuário para sua conta conectada.",
+          "hint": "Mantenha todas as permissões importadas das duas identidades e crie e publique uma nova versão do app. A aprovação de um administrador do Feishu pode ser necessária.",
+          "label": "JSON de escopos do app e do usuário",
           "menuAlt": "Página Permissões e escopos do Feishu com o menu de importação/exportação em lote de escopos destacado",
           "menuLabel": "Abrir importação/exportação em lote de escopos",
           "reviewAlt": "Caixa de diálogo de importação/exportação em lote de escopos do Feishu com o JSON importado e o botão de revisão destacado",
           "reviewLabel": "Colar o JSON e revisar os novos escopos",
-          "title": "Importar escopos do token de usuário"
+          "title": "Importar escopos do app e do usuário"
         },
         "publish": {
           "allMembersAlt": "Configurações de disponibilidade do Feishu com All members selecionado",
@@ -3850,7 +3854,7 @@
       },
       "lark": {
         "addBot": "Adicionar bot",
-        "addDialogDescription": "Crie um app personalizado empresarial, ative o bot e conclua estas etapas no console de desenvolvedor do Lark.",
+        "addDialogDescription": "Crie um app empresarial do tipo Agent e conclua estas etapas no console de desenvolvedor do Lark.",
         "addDialogTitle": "Adicionar um bot do Lark",
         "agentDescription": "Escolha o agente que deve processar as mensagens enviadas a este bot.",
         "backToIntegrations": "Voltar para integrações",
@@ -3863,14 +3867,14 @@
         "copied": "Copiado: {{label}}",
         "copy": "Copiar",
         "create": {
-          "descriptionAfter": ", crie um app personalizado empresarial com o nome e o ícone que preferir e adicione o recurso Bot.",
+          "descriptionAfter": ", crie um app empresarial e selecione o tipo Agent. Escolha o nome e o ícone que preferir; o modelo Agent inclui o recurso Bot.",
           "descriptionBefore": "No ",
           "downloadIcon": "Baixar o ícone opcional do {{brandName}}",
           "iconAlt": "Ícone opcional do app {{brandName}}",
           "iconHint": " ou use qualquer ícone de sua preferência.",
           "iconTitle": "Ícone opcional do app {{brandName}}",
           "imageAlt": "Formulário de criação de app do Feishu com o nome, o ícone e o botão Criar destacados",
-          "title": "Criar um app personalizado empresarial"
+          "title": "Criar um app do tipo Agent"
         },
         "credentials": {
           "appId": "ID do app",
@@ -3900,6 +3904,9 @@
         "faq": {
           "approvalAnswer": "Se a disponibilidade estiver definida como All members, um administrador do Lark deverá aprovar a versão. O Lark envia a solicitação de aprovação a um administrador por mensagem direta, e o app permanece pendente até a conclusão da revisão.",
           "approvalQuestion": "Por que a publicação do app está aguardando aprovação?",
+          "botFeatureAnswer": "Abra Features → Add Features no console de desenvolvedor do Lark. Em By Feature, adicione o recurso Bot, depois continue este guia e publique o app. Apps do tipo Agent incluem o recurso Bot por padrão.",
+          "botFeatureImageAlt": "Console de desenvolvedor do Lark mostrando o recurso Bot em Add Features",
+          "botFeatureQuestion": "E se eu escolhi Custom App em vez de Agent?",
           "challengeAnswer": "Isso geralmente significa que o Encrypt Key ou o Verification Token salvo na etapa Tokens está incorreto. Volte à etapa Tokens, insira novamente os dois valores de Event Configuration → Encryption Strategy, salve-os e tente a Request URL outra vez.",
           "challengeQuestion": "Por que o Lark mostra \"Challenge code didn't get a response\"?",
           "title": "Perguntas frequentes sobre a configuração"
@@ -3911,14 +3918,14 @@
         "moreOptions": "Mais opções para {{bot}}",
         "pageDescription": "Gerencie o encaminhamento dos bots neste workspace",
         "permissions": {
-          "description": "No console de desenvolvedor do Lark, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Isso importa todos os escopos do conector gerenciado em User identity. Essas são as permissões mínimas necessárias para que a integração funcione.",
-          "hint": "Mantenha todas as permissões importadas de User identity e depois crie e publique uma nova versão do app para que a tela de consentimento OAuth possa concedê-las. Remover qualquer permissão impedirá o funcionamento da integração, e talvez seja necessária a aprovação de um administrador do Lark.",
-          "label": "JSON de escopos do token de usuário",
+          "description": "No console de desenvolvedor do Lark, abra Permissions & Scopes, escolha Batch Import/Export > Import e cole o JSON abaixo. Ele inclui permissões de identidade do app para o bot e de identidade do usuário para sua conta conectada.",
+          "hint": "Mantenha todas as permissões importadas das duas identidades e crie e publique uma nova versão do app. A aprovação de um administrador do Lark pode ser necessária.",
+          "label": "JSON de escopos do app e do usuário",
           "menuAlt": "Página Permissões e escopos do Feishu com o menu de importação/exportação em lote de escopos destacado",
           "menuLabel": "Abrir importação/exportação em lote de escopos",
           "reviewAlt": "Caixa de diálogo de importação/exportação em lote de escopos do Feishu com o JSON importado e o botão de revisão destacado",
           "reviewLabel": "Colar o JSON e revisar os novos escopos",
-          "title": "Importar escopos do token de usuário"
+          "title": "Importar escopos do app e do usuário"
         },
         "publish": {
           "allMembersAlt": "Configurações de disponibilidade do Feishu com All members selecionado",
@@ -6331,17 +6338,16 @@
     "choosePrivateKeyFile": "Escolher arquivo de chave privada",
     "cloudflare": {
       "add": "Adicionar configuração do Access",
-      "back": "Voltar ao host",
       "changed": "Esta configuração do Access mudou durante a edição. Revise as configurações mais recentes antes de salvar.",
       "clientId": "ID do cliente do Service Token",
       "clientSecret": "Segredo do cliente do Service Token",
       "configuration": "Configuração do Access",
-      "createNew": "Criar configuração do Access",
+      "createNew": "Criar nova configuração",
       "delete": "Excluir configuração",
       "deleteHelp": "Excluir esta configuração do Access não utilizada? O Service Token salvo não poderá ser recuperado.",
       "direct": "Direta",
+      "edit": "Editar configuração do Access",
       "empty": "Nenhuma configuração do Access ainda. Adicione um Service Token para conectar hosts SSH protegidos pelo Cloudflare Access.",
-      "gatewayHelp": "Conecta via WebSocket criptografado na porta 443. Configure o endereço e a porta SSH privados no Cloudflare.",
       "inUse": "Um host usa esta configuração do Access. Revise os hosts afetados e altere a configuração deles ou exclua-os primeiro.",
       "inUseHelp": "Selecione outra configuração do Access para esses hosts, mude-os explicitamente para Direta ou exclua-os antes de excluir esta configuração.",
       "keepChanges": "Aplicar minhas alterações a esta versão",
@@ -6353,16 +6359,15 @@
       "name": "Nome da configuração",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nome de host publicado",
-      "rename": "Renomear configuração",
       "replace": "Substituir Service Token",
       "reviewHelp": "Seu rascunho foi preservado. Confirme as últimas configurações salvas antes de aplicar suas alterações.",
       "select": "Selecione uma configuração",
-      "summary_one": "{{count}} configuração do Access",
-      "summary_many": "{{count}} configurações do Access",
-      "summary_other": "{{count}} configurações do Access",
+      "summary_one": "{{count}} configuração do Access definida",
+      "summary_many": "{{count}} configurações do Access definidas",
+      "summary_other": "{{count}} configurações do Access definidas",
       "title": "Cloudflare Access",
       "tokenHelp": "Use um Service Token permitido pela política Service Auth do aplicativo SSH. Ele é separado das suas credenciais SSH.",
-      "unavailable": "Cloudflare Access não está disponível para esta conta. Os hosts protegidos não podem se conectar; os diretos não são afetados.",
+      "unavailable": "Cloudflare Access não está disponível para esta conta.",
       "usedBy_one": "Usada por {{count}} host:",
       "usedBy_many": "Usada por {{count}} hosts:",
       "usedBy_other": "Usada por {{count}} hosts:"
@@ -6401,6 +6406,7 @@
       "name": "Nome da credencial",
       "password": "Senha",
       "replaceAuthentication": "Substituir autenticação",
+      "select": "Selecionar uma credencial",
       "sharedHelp_one": "As alterações de login se aplicam a {{count}} host:",
       "sharedHelp_many": "As alterações de login se aplicam a todos os {{count}} hosts:",
       "sharedHelp_other": "As alterações de login se aplicam a todos os {{count}} hosts:",
@@ -6420,8 +6426,8 @@
     "empty": "Nenhum host SSH configurado. Adicione um host para disponibilizá-lo aos Agents com acesso SSH.",
     "errors": {
       "agentUnavailable": "Este agente não está mais disponível. Escolha outro agente.",
-      "configurationChanged": "Este host mudou durante a edição. A lista foi atualizada. Abra o host novamente e revise as configurações atuais antes de salvar.",
-      "credentialChanged": "Esta credencial foi alterada. Abra-a novamente e revise as configurações e os hosts afetados antes de salvar.",
+      "configurationChanged": "Este host mudou durante a edição. Seu rascunho foi preservado. Revise as configurações mais recentes antes de aplicar suas alterações.",
+      "credentialChanged": "Esta credencial mudou enquanto você a editava. Seu rascunho foi preservado. Revise as configurações mais recentes e os hosts afetados antes de salvar.",
       "credentialInUse": "Esta credencial está em uso. Selecione outra para os hosts ou exclua esses hosts primeiro.",
       "credentialUnavailable": "Esta credencial SSH não está mais disponível. Selecione outra ou crie uma nova.",
       "failed": "Não foi possível salvar a alteração SSH. Tente novamente.",

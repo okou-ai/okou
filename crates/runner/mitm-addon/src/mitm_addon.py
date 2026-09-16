@@ -15,7 +15,6 @@ import asyncio
 import base64
 import binascii
 import os
-import signal
 import tempfile
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -178,15 +177,9 @@ def load(loader: Loader) -> None:
     """Initialize compatibility and process-global state before addon options.
 
     Exact-version mitmproxy and wsproto compatibility is installed first. An
-    unreviewed runtime raises ``RuntimeError`` before the process-global runner
-    usage-flush signal handler or custom options are registered. The signal
-    handler is installed next, followed by custom option registration.
+    unreviewed runtime raises ``RuntimeError`` before custom options are registered.
     """
     mitmproxy_compat.install_runtime_compatibility()
-    signal.signal(
-        runner_flush_lifecycle.RUNNER_USAGE_FLUSH_SIGNAL,
-        runner_flush_lifecycle.handle_runner_usage_flush_signal,
-    )
     loader.add_option(
         name="okou_api_url",
         typespec=str,
@@ -215,7 +208,7 @@ def load(loader: Loader) -> None:
         name="okou_usage_state_id",
         typespec=str,
         default="",
-        help="Runner-generated usage-pending state id",
+        help="Runner-generated addon control generation",
     )
     loader.add_option(
         name="okou_control_socket_dir",
@@ -256,13 +249,6 @@ def configure(updated: set[str]) -> None:
         usage.configure_usage_buffer(
             flush_interval_seconds=ctx.options.okou_usage_flush_interval_seconds
         )
-    if "okou_usage_state_id" in updated:
-        # Custom --set options are deferred until after load() registers them,
-        # so initialize this file here where ctx.options has the runner value.
-        usage.set_pending_path(
-            str(Path(__file__).resolve().parent / "usage-pending"),
-            usage_state_id=ctx.options.okou_usage_state_id or None,
-        )
 
 
 _runner_control: runner_control.ControlServer | None = None
@@ -278,7 +264,12 @@ def running() -> None:
         registry_owner = registry_control.RegistryControl(
             asyncio.get_running_loop(), get_registry_path()
         )
-        control = runner_control.ControlServer(Path(control_dir), usage_state_id, registry_owner)
+        control = runner_control.ControlServer(
+            Path(control_dir),
+            usage_state_id,
+            registry_owner,
+            runner_flush_lifecycle.DeliveryControl(),
+        )
         control.start()
         _registry_control = registry_owner
         _runner_control = control
@@ -2014,7 +2005,7 @@ def _handle_error(flow: http.HTTPFlow) -> None:
 def done():
     """Flush pending reports and forwarding workers before mitmproxy exits.
 
-    The runner flush lifecycle waits for any active SIGUSR1 delivery worker,
+    The runner flush lifecycle waits for any active delivery worker,
     retries buffered usage and retained diagnostic reports, drains accepted
     requests, and closes admission before this hook shuts down the usage
     executor. Control admission is already closed; pending log prefixes remain

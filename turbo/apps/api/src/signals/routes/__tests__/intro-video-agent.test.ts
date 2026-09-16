@@ -70,6 +70,11 @@ const PRICING_ROWS = [
     unitSize: 60,
   },
 ] as const satisfies readonly UsagePricingRow[];
+// A gateway answers with its own page rather than HeyGen's error envelope.
+const GATEWAY_ERROR_PAGE = `<html>
+  <head><title>502 Bad Gateway</title></head>
+  <body>upstream connect error or disconnect/reset before headers</body>
+</html>`;
 
 interface Fixture {
   readonly orgId: string;
@@ -736,6 +741,39 @@ describe("Managed Intro Video Agent", () => {
     expect(provider.videoRequests).toBe(1);
     expect(provider.submissions).toHaveLength(1);
     await expect(credits(f)).resolves.toBe(9390);
+  });
+
+  it("retains an unknown submission when the gateway answers with an error page", async () => {
+    const f = await fixture();
+    const provider = mockProvider();
+    // A gateway 5xx carries no JSON error envelope, unlike every other failure
+    // this suite exercises, so it reaches the provider reader as plain text.
+    server.use(
+      http.post(HEYGEN_CREATE_URL, async ({ request: providerRequest }) => {
+        provider.submissions.push(record(await providerRequest.json()));
+        return new HttpResponse(GATEWAY_ERROR_PAGE, {
+          status: 502,
+          headers: { "content-type": "text/html" },
+        });
+      }),
+    );
+
+    const body = request();
+    expect((await submit(f, body)).status).toBe(202);
+    await expect(status(f, body.requestId)).resolves.toMatchObject({
+      generationId: body.requestId,
+      status: "running",
+      providerStatus: "submission_unknown",
+      sessionId: null,
+      videoId: null,
+      notice: expect.stringContaining("do not submit another paid generation"),
+    });
+
+    // An ambiguous gateway failure must not license a second paid submission.
+    const retried = await submit(f, body);
+    expect([200, 202]).toContain(retried.status);
+    expect(provider.submissions).toHaveLength(1);
+    await expect(credits(f)).resolves.toBe(10_000);
   });
 
   it("rejects conflicting request IDs and hides another user's generation", async () => {

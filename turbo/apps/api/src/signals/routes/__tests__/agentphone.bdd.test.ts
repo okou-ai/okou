@@ -84,6 +84,74 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   return { actor, phone, runnerGroup, sends, storage };
 }
 
+const modelSessionScenarios = [
+  { channel: "sms", withConversation: false },
+  { channel: "imessage", withConversation: true },
+  { channel: "imessage", withConversation: false },
+] as const;
+
+const modelResumeScenarios = modelSessionScenarios.flatMap((scenario) => {
+  return [
+    { ...scenario, model: "claude-sonnet-5", otherModel: "claude-opus-4-8" },
+    { ...scenario, model: "claude-opus-4-8", otherModel: "claude-sonnet-5" },
+  ] as const;
+});
+
+async function modelSessionScenario({
+  channel,
+  withConversation,
+}: (typeof modelSessionScenarios)[number]) {
+  const ap = createAgentPhoneBddApi(context);
+  const runs = createRunsApi(context);
+  const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
+  const provider = await runs.createOrgModelProvider(actor, {
+    type: "anthropic-api-key",
+    secret: "phone-dm-model-routing-key",
+  });
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-sonnet-5",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: provider.providerId,
+    },
+    {
+      model: "claude-opus-4-8",
+      isDefault: false,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: provider.providerId,
+    },
+  ]);
+  const conversationId = withConversation ? uniqueConversationId() : undefined;
+  async function send(body: string) {
+    return await ap.postAgentPhoneInboundMessage({
+      channel,
+      from: phone,
+      body,
+      conversationId,
+    });
+  }
+  async function complete(body: string) {
+    const messageId = await send(body);
+    const run = await claimDispatchedRun(runnerGroup);
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    expect(lastSend(sends).body).toBe("Task completed successfully.");
+    if (channel === "imessage") {
+      expect(lastSend(sends)).toMatchObject({
+        conversationId,
+        replyToMessageId: messageId,
+      });
+    } else {
+      expect(lastSend(sends).toNumber).toBe(phone);
+      expect(lastSend(sends).replyToMessageId).toBeUndefined();
+    }
+    return await waitForRunSessionIdPresent(actor, run.runId);
+  }
+  return { send, complete, sends };
+}
+
 async function claimDispatchedRun(runnerGroup: string): Promise<{
   readonly runId: string;
   readonly sandboxToken: string;
@@ -566,64 +634,33 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
   });
 
-  it.each([
-    { channel: "sms", withConversation: false },
-    { channel: "imessage", withConversation: true },
-    { channel: "imessage", withConversation: false },
-  ] as const)(
-    "resumes each selected model in its own $channel DM session (conversation: $withConversation)",
-    async ({ channel, withConversation }) => {
-      const ap = createAgentPhoneBddApi(context);
-      const runs = createRunsApi(context);
-      const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();
-      const provider = await runs.createOrgModelProvider(actor, {
-        type: "anthropic-api-key",
-        secret: "phone-dm-model-routing-key",
-      });
-      await runs.updateOrgModelPolicies(actor, [
-        {
-          model: "claude-sonnet-5",
-          isDefault: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: provider.providerId,
-        },
-        {
-          model: "claude-opus-4-8",
-          isDefault: false,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: provider.providerId,
-        },
-      ]);
-      const conversationId = withConversation
-        ? uniqueConversationId()
-        : undefined;
-      async function send(body: string) {
-        return await ap.postAgentPhoneInboundMessage({
-          channel,
-          from: phone,
-          body,
-          conversationId,
-        });
+  it.each(modelResumeScenarios)(
+    "resumes $model in its own $channel DM session (conversation: $withConversation)",
+    async (scenario) => {
+      const { send, complete, sends } = await modelSessionScenario(scenario);
+      if (scenario.model !== "claude-sonnet-5") {
+        await send(`/model ${scenario.model}`);
+        expect(lastSend(sends).body).toContain("Switched to");
       }
-      async function complete(body: string) {
-        const messageId = await send(body);
-        const run = await claimDispatchedRun(runnerGroup);
-        await completeSandboxRun(run.sandboxToken, run.runId, 0);
-        expect(lastSend(sends).body).toBe("Task completed successfully.");
-        if (channel === "imessage") {
-          expect(lastSend(sends)).toMatchObject({
-            conversationId,
-            replyToMessageId: messageId,
-          });
-        } else {
-          expect(lastSend(sends).toNumber).toBe(phone);
-          expect(lastSend(sends).replyToMessageId).toBeUndefined();
-        }
-        return await waitForRunSessionIdPresent(actor, run.runId);
-      }
+      const originalSession = await complete(
+        "start the selected model session",
+      );
+      await send(`/model ${scenario.otherModel}`);
+      expect(lastSend(sends).body).toContain("Switched to");
+      const alternateSession = await complete("start the other model session");
+      expect(alternateSession).not.toBe(originalSession);
 
+      await send(`/model ${scenario.model}`);
+      await expect(
+        complete("return to the selected model session"),
+      ).resolves.toBe(originalSession);
+    },
+  );
+
+  it.each(modelSessionScenarios)(
+    "resets the selected model's $channel DM session (conversation: $withConversation)",
+    async (scenario) => {
+      const { send, complete, sends } = await modelSessionScenario(scenario);
       const originalSession = await complete("start the default model session");
       await send("/model claude-opus-4-8");
       expect(lastSend(sends).body).toContain("Switched to");
@@ -631,15 +668,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         "start the alternate model session",
       );
       expect(alternateSession).not.toBe(originalSession);
-
-      await send("/model claude-sonnet-5");
-      await expect(
-        complete("return to the default model session"),
-      ).resolves.toBe(originalSession);
-      await send("/model claude-opus-4-8");
-      await expect(
-        complete("return to the alternate model session"),
-      ).resolves.toBe(alternateSession);
 
       await send("/new_session");
       expect(lastSend(sends).body).toContain("New session started");

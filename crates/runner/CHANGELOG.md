@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.194.10](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.9...runner-rs-v0.194.10) (2026-09-16)
+
+
+### Documentation
+
+* correct connector diagnostic metadata lifecycle ([#34533](https://github.com/vm0-ai/okou/issues/34533)) ([82c8379](https://github.com/vm0-ai/okou/commit/82c83791c62380f25d2179a985805dee7c3c46d4))
+
+## [0.194.9](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.8...runner-rs-v0.194.9) (2026-09-16)
+
+
+### Bug Fixes
+
+* **runner:** revalidate orphan mitmdump identity ([#34540](https://github.com/vm0-ai/okou/issues/34540)) ([da059b5](https://github.com/vm0-ai/okou/commit/da059b51cbf068790482b632efee5366b60229c0))
+
+## [0.194.8](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.7...runner-rs-v0.194.8) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** preserve causal transport failure diagnostics ([#34505](https://github.com/vm0-ai/okou/issues/34505)) ([9ae5a27](https://github.com/vm0-ai/okou/commit/9ae5a2748353914dce8bcf983dac554f7ae5a4af))
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+* **runner:** preserve bounded rootfs usage diagnostics ([#34496](https://github.com/vm0-ai/okou/issues/34496)) ([29bec8e](https://github.com/vm0-ai/okou/commit/29bec8e1c81e2a675d0b9821136954c6097bf29f))
+* **runner:** treat expected connector unavailability as info ([#34516](https://github.com/vm0-ai/okou/issues/34516)) ([a3a608f](https://github.com/vm0-ai/okou/commit/a3a608fb34c13c1497c19759d918569c9b89fb97))
+
+
+### Documentation
+
+* **runner:** qualify optional failure-message overflow guarantees ([#34504](https://github.com/vm0-ai/okou/issues/34504)) ([dfe2b6f](https://github.com/vm0-ai/okou/commit/dfe2b6f884615b01d1dbad8c268c4b618ba87b2b))
+
 ## [0.194.7](https://github.com/vm0-ai/okou/compare/runner-rs-v0.194.6...runner-rs-v0.194.7) (2026-09-16)
 
 

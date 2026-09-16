@@ -34,7 +34,7 @@ pub struct FailureDiagnostic {
     pub failure_detail_source: Option<FailureDetailSource>,
     /// Parsed detailed failure reason, when available.
     pub failure_reason: Option<FailureReason>,
-    /// Observed model-request status and completed retry evidence, when available.
+    /// Observed model-request, causal transport and completed retry evidence, when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_request: Option<ModelRequestDiagnostic>,
     /// Conservative session-history target status recorded during failure handling.
@@ -71,6 +71,9 @@ pub struct ModelRequestDiagnostic {
     /// Session retry maximum observed from an SDK retry event, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_limit: Option<u32>,
+    /// Original transport exception reduced to fixed values before SDK normalization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_failure: Option<crate::model_transport::ModelTransportFailure>,
 }
 
 impl FailureDiagnostic {
@@ -711,6 +714,8 @@ pub enum FailureReason {
     ProviderOverloaded,
     /// The provider stream timed out.
     ProviderStreamTimeout,
+    /// The provider explicitly expired a request before processing started.
+    ProviderQueueTimeout,
     /// The provider returned a server error.
     ProviderServerError,
     /// The response connection was lost.
@@ -743,6 +748,7 @@ impl FailureReason {
             Self::ProviderRateLimited => "provider_rate_limited",
             Self::ProviderOverloaded => "provider_overloaded",
             Self::ProviderStreamTimeout => "provider_stream_timeout",
+            Self::ProviderQueueTimeout => "provider_queue_timeout",
             Self::ProviderServerError => "provider_server_error",
             Self::ResponseConnectionLost => "response_connection_lost",
             Self::SafetyPolicyRefusal => "safety_policy_refusal",
@@ -771,6 +777,7 @@ impl From<FailureReason>
             FailureReason::ProviderRateLimited => Self::ProviderRateLimited,
             FailureReason::ProviderOverloaded => Self::ProviderOverloaded,
             FailureReason::ProviderStreamTimeout => Self::ProviderStreamTimeout,
+            FailureReason::ProviderQueueTimeout => Self::ProviderQueueTimeout,
             FailureReason::ProviderServerError => Self::ProviderServerError,
             FailureReason::ResponseConnectionLost => Self::ResponseConnectionLost,
             FailureReason::SafetyPolicyRefusal => Self::SafetyPolicyRefusal,
@@ -1503,6 +1510,10 @@ mod tests {
                 "provider_stream_timeout",
             ),
             (FailureReason::ProviderServerError, "provider_server_error"),
+            (
+                FailureReason::ProviderQueueTimeout,
+                "provider_queue_timeout",
+            ),
             (
                 FailureReason::ResponseConnectionLost,
                 "response_connection_lost",

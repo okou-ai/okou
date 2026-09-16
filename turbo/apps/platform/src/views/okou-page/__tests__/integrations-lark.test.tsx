@@ -40,7 +40,7 @@ test("Lark has an independent integration card and guided setup", async () => {
   await expect(screen.findByText("Lark bots")).resolves.toBeInTheDocument();
   click(await screen.findByText("Add bot"));
   await expect(
-    screen.findByText("Create an enterprise custom app"),
+    screen.findByText("Create an Agent app"),
   ).resolves.toBeInTheDocument();
   const consoleLink = getAction("link", "Lark developer console");
   expect(consoleLink).toHaveAttribute(

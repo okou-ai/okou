@@ -216,16 +216,25 @@ const CLERK_READ_MAX_JITTER_MS = 250;
 const CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS = 1000;
 
 export interface ClerkReadUnavailable {
-  readonly providerStatus: number;
+  readonly providerStatus: number | null;
+  readonly failureClass:
+    | "transient_read_exhausted"
+    | "transport_read_exhausted";
 }
 
 class ClerkReadUnavailableError extends Error implements ClerkReadUnavailable {
+  readonly failureClass: ClerkReadUnavailable["failureClass"];
+
   constructor(
-    readonly providerStatus: number,
+    readonly providerStatus: number | null,
     cause: unknown,
   ) {
     super("Clerk read is temporarily unavailable", { cause });
     this.name = "ClerkReadUnavailableError";
+    this.failureClass =
+      providerStatus === null
+        ? "transport_read_exhausted"
+        : "transient_read_exhausted";
   }
 }
 
@@ -274,12 +283,30 @@ export function isClerkResourceNotFound(error: unknown): boolean {
 
 interface ClerkReadRetry {
   readonly delayMs: number;
-  readonly providerStatus: number;
+  readonly providerStatus: number | null;
 }
 
 function clerkReadRetry(error: unknown): ClerkReadRetry | null {
+  if (!isClerkAPIResponseError(error)) {
+    return null;
+  }
+
+  // Clerk 3.13.1 wraps fetch failures without a status. Its catch also wraps
+  // parsing errors, so only the observed singleton transport signature retries.
   if (
-    !isClerkAPIResponseError(error) ||
+    error.status === undefined &&
+    Array.isArray(error.errors) &&
+    error.errors.length === 1 &&
+    error.errors[0]?.code === "unexpected_error" &&
+    error.errors[0]?.message === "fetch failed"
+  ) {
+    return {
+      delayMs: CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS,
+      providerStatus: null,
+    };
+  }
+
+  if (
     !Number.isInteger(error.status) ||
     error.status < 500 ||
     error.status > 599
@@ -293,7 +320,7 @@ function clerkReadRetry(error: unknown): ClerkReadRetry | null {
   };
 }
 
-/** Retry Clerk 5xx reads; rate limits are surfaced without another request. */
+/** Retry Clerk 5xx/transport reads; rate limits surface without another request. */
 export async function retryClerkRead<T>(
   read: () => Promise<T>,
   context: ClerkReadContext = createClerkReadContext(),

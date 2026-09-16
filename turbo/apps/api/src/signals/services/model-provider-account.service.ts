@@ -1422,6 +1422,7 @@ export async function captureActivePersonalModelProviderAccount(
 
 export async function personalModelProviderAccountById(args: {
   readonly db: Db;
+  readonly runId?: string;
   readonly id: string;
   readonly orgId: string;
   readonly userId: string;
@@ -1432,7 +1433,7 @@ export async function personalModelProviderAccountById(args: {
     .where(
       and(
         eq(modelProviderAccounts.id, args.id),
-        isNull(modelProviderAccounts.disconnectedAt),
+        personalSubscriptionAccountAccessCondition(args.db, args.runId),
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
       ),
@@ -2153,19 +2154,27 @@ export async function validatePersonalSubscriptionAdmission(
   if (snapshotNeedsCoordination(snapshot, args.sourceId)) {
     await reconcileCodexRefreshMetadata(args.db, snapshot);
   }
-  // The snapshot locks these rows through run insertion. Return the exact
-  // connected source for recovery identity without another SELECT or reselection.
-  return (
-    snapshot.accounts.find((account) => {
-      return (
-        account.id === args.sourceId &&
-        account.orgId === args.orgId &&
-        account.userId === args.userId &&
-        account.type === args.type &&
-        account.disconnectedAt === null
-      );
-    }) ?? null
-  );
+  // The snapshot locks the exact source through the commit. New admission needs
+  // a connected account; an existing deferred Run must prove its live retention
+  // binding before using the same disconnected account.
+  const account = snapshot.accounts.find((candidate) => {
+    return (
+      candidate.id === args.sourceId &&
+      candidate.orgId === args.orgId &&
+      candidate.userId === args.userId &&
+      candidate.type === args.type
+    );
+  });
+  if (!account || account.disconnectedAt === null) {
+    return account ?? null;
+  }
+  if (!args.runId) {
+    return null;
+  }
+  return await personalModelProviderAccountById({
+    ...args,
+    id: account.id,
+  });
 }
 
 function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {

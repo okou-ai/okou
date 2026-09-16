@@ -1,3 +1,5 @@
+import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
+import { deleteUnreferencedPiObjects } from "./pi-inference-object.service";
 import { assertPiInferenceErasureReady } from "./pi-inference-lifecycle.service";
 import {
   agentRunInference,
@@ -36,6 +38,23 @@ export async function deleteRunConversations(
   runIds: readonly string[],
 ) {
   await assertPiInferenceErasureReady(tx, runIds);
+  // Capture references once under the caller's Run locks. One UUID-array
+  // binding avoids per-batch reads and PostgreSQL's scalar parameter limit.
+  const objectReferences =
+    runIds.length > 0
+      ? await tx
+          .select({ hash: agentRunInferenceObjects.hash })
+          .from(agentRunInferenceObjects)
+          .where(
+            eq(
+              agentRunInferenceObjects.runId,
+              sql`ANY(${sql.param(runIds)}::uuid[])`,
+            ),
+          )
+      : [];
+  const piObjectHashes = objectReferences.map((reference) => {
+    return reference.hash;
+  });
   // All erasure owners call this before parent cascades. Only proven releases
   // may be removed; the lease FK blocks unknown external cleanup atomically.
   for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {
@@ -90,7 +109,7 @@ export async function deleteRunConversations(
       }
     }
   }
-  return { references, deletedConversations };
+  return { references, deletedConversations, piObjectHashes };
 }
 
 /** Delete only the locked Run set; a later scoped INSERT is not our evidence. */
@@ -186,6 +205,7 @@ export async function releaseDeletedConversationReferences(
       );
     }
   }
+  await deleteUnreferencedPiObjects(tx, [...new Set(removed.piObjectHashes)]);
   return {
     deletedConversations: removed.deletedConversations,
     releasedReferences: references.reduce((total, entry) => {

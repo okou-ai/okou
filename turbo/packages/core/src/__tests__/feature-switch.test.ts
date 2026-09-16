@@ -141,7 +141,8 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.SshAccess, {})).toBe(false);
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.SshAccess]).toEqual({
       maintainer: "liangyou@okou.ai",
-      description: "Enable standalone Runner-mediated SSH configuration",
+      description:
+        "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
       rolloutStage: "beta",
     });
   });

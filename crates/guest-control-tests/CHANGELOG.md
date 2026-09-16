@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.11.19](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.18...guest-control-tests-v0.11.19) (2026-09-16)
+
+## [0.11.18](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.17...guest-control-tests-v0.11.18) (2026-09-16)
+
+
+### Performance Improvements
+
+* **rust:** bound source reads for guest small files ([#34535](https://github.com/vm0-ai/okou/issues/34535)) ([7ab0782](https://github.com/vm0-ai/okou/commit/7ab07825a5f0d6394452d71c04a5c106be317b3b))
+
+## [0.11.17](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.16...guest-control-tests-v0.11.17) (2026-09-16)
+
 ## [0.11.16](https://github.com/vm0-ai/okou/compare/guest-control-tests-v0.11.15...guest-control-tests-v0.11.16) (2026-09-16)
 
 ## [0.11.15](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.14...guest-control-tests-v0.11.15) (2026-09-15)

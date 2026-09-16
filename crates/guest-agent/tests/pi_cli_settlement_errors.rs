@@ -162,6 +162,15 @@ fi
         terminal_failure.diagnostic.failure_reason,
         expected_failure_reason
     );
+    if expected_failure_reason == Some(FailureReason::ProviderQueueTimeout) {
+        assert_eq!(
+            result
+                .cli_observed_exit
+                .as_ref()
+                .and_then(|exit| exit.exit_code),
+            Some(0)
+        );
+    }
     if expected_failure_reason == Some(FailureReason::ProviderRateLimited) {
         assert_eq!(
             result
@@ -177,11 +186,33 @@ fi
                 transport_attempts: 1,
                 retry_attempts: 0,
                 retry_limit: None,
+                transport_failure: None,
             })
         );
         let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
             terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
         assert_eq!(serde_json::to_value(reason)?, "provider_rate_limited");
+    }
+    if expected_failure_reason == Some(FailureReason::ResponseConnectionLost) {
+        assert_eq!(
+            result
+                .cli_observed_exit
+                .as_ref()
+                .and_then(|exit| exit.exit_code),
+            Some(0)
+        );
+        let request = terminal_failure
+            .diagnostic
+            .model_request
+            .ok_or_else(|| std::io::Error::other("missing model request evidence"))?;
+        assert_eq!(request.http_status, Some(200));
+        assert_eq!(
+            serde_json::to_value(request.transport_failure)?,
+            serde_json::json!({
+                "phase": "response_body", "signalAborted": false,
+                "errorName": "TypeError", "causeCode": "UND_ERR_RES_CONTENT_LENGTH_MISMATCH"
+            })
+        );
     }
 
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
@@ -265,6 +296,48 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
 -> Result<(), Box<dyn std::error::Error>> {
     let base_path = std::env::var_os("PATH").unwrap_or_default();
     let original_directory = std::env::current_dir()?;
+    const QUEUE_TIMEOUT: &str = "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
+    for (index, metadata) in [
+        serde_json::json!({
+            "httpStatus": 200, "transportAttempts": 1,
+            "failureReason": "provider_queue_timeout"
+        }),
+        serde_json::json!({
+            "httpStatus": 503, "transportAttempts": 1,
+            "failureReason": "provider_server_error"
+        }),
+        serde_json::json!({
+            "httpStatus": 529, "transportAttempts": 1,
+            "failureReason": "provider_overloaded"
+        }),
+        serde_json::json!({
+            "transportAttempts": 1, "failureReason": "future_provider_reason"
+        }),
+        Value::Null,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut message = serde_json::json!({
+            "role": "assistant", "stopReason": "error", "api": "openai-responses",
+            "content": [], "errorMessage": QUEUE_TIMEOUT
+        });
+        if !metadata.is_null() {
+            message["diagnostics"] = serde_json::json!([{
+                "type": "okou_model_request", "details": metadata
+            }]);
+        }
+        run_settlement_case(
+            &format!("00000000-0000-4000-8000-{:012}", 150 + index),
+            &[message],
+            ExpectedTerminalResult::Exact(QUEUE_TIMEOUT),
+            Some(FailureReason::ProviderQueueTimeout),
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
     for (run_id, message, result, reason, assistant_text) in [
         (
             "00000000-0000-4000-8000-000000000140",
@@ -341,6 +414,19 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
         std::slice::from_ref(&rate_limit),
         ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
         Some(FailureReason::ProviderRateLimited),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    let terminated: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-stream-terminated.json"
+    ))?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000145",
+        &[terminated],
+        ExpectedTerminalResult::Exact("terminated"),
+        Some(FailureReason::ResponseConnectionLost),
         None,
         &base_path,
         &original_directory,

@@ -1,6 +1,5 @@
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
-import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -83,9 +82,14 @@ export function ComposerSelectedTask({
   );
   const Icon = task ? TASK_ICONS[task] : null;
   /*
-    The type's own options sit on this line, beside the chip they describe. In
-    the action row below they were 260px right and 112px down from it, among
+    The presentation options sit on this line, beside the chip they describe.
+    In the action row below they were 260px right and 112px down from it, among
     controls that act on the message rather than on the artifact.
+
+    Video is the exception, and it is not the same case: its spec has to be read
+    against the model that accepts it, and that model's picker lives in the
+    action row, so the spec is back there next to the connectors rather than two
+    rows above the value it depends on.
 
     The row is not the chip's: the chip is gated by a switch the options are
     not, so it also has to stand on its own. `empty:hidden` keeps it from
@@ -137,7 +141,6 @@ export function ComposerSelectedTask({
         </Button>
       ) : null}
       <ComposerPresentationOptions signals={signals} />
-      <ComposerVideoOptionsChip signals={signals} />
     </div>,
   );
 }
@@ -199,16 +202,15 @@ export function ComposerCreateControls({
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const choosing = useGet(signals.create.choosing$);
   const mode = useGet(signals.create.mode$);
   const task = useGet(signals.taskChips.task$);
   const pickerOpen = useGet(signals.create.pickerOpen$);
   const setPickerOpen = useSet(signals.create.setPickerOpen$);
   const setMode = useSet(signals.create.setMode$);
-  if (task || (!choosing && !mode)) {
+  if (task || !mode) {
     return withChatScrollLayout(null);
   }
-  const Icon = COMPOSER_CREATE_ICONS[mode ?? "choose"];
+  const Icon = COMPOSER_CREATE_ICONS[mode];
   return withChatScrollLayout(
     <div
       className="@container/create-controls flex shrink-0 items-center gap-1 px-4 pt-4 pb-1"
@@ -254,13 +256,7 @@ export function ComposerCreateControls({
         }}
       >
         <Icon className={CREATE_MODE_ICON_CLASS} aria-hidden />
-        <span className="truncate">
-          {mode
-            ? composerCreateModeLabel(mode)
-            : t(($) => {
-                return $.chat.composer.create.title;
-              })}
-        </span>
+        <span className="truncate">{composerCreateModeLabel(mode)}</span>
         <ChevronDown
           className={cn("shrink-0 opacity-50", pickerOpen && "rotate-180")}
           aria-hidden
@@ -281,13 +277,6 @@ export function ComposerCreateControls({
       >
         <X aria-hidden />
       </Button>
-      {choosing && (
-        <span className="ml-1 min-w-0 truncate text-sm text-muted-foreground @max-[350px]/create-controls:hidden">
-          {t(($) => {
-            return $.chat.composer.create.chooseScene;
-          })}
-        </span>
-      )}
     </div>,
   );
 }

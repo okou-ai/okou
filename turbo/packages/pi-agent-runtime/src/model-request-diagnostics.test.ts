@@ -195,6 +195,9 @@ describe("Codex model request diagnostics", () => {
       expect(JSON.stringify(result.diagnostics)).not.toContain(
         body.error.message,
       );
+      expect(
+        result.diagnostics?.[0]?.details?.transportFailure,
+      ).toBeUndefined();
     },
   );
 

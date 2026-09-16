@@ -1516,31 +1516,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Once a day, every day",
+          "description": "Open the app daily. Resets at 00:00 UTC.",
           "name": "Check in daily",
           "unit": "a day"
         },
         "connector": {
-          "description": "Gmail, Notion, and 100+ more",
+          "description": "Connect with OAuth. Earn once per connector.",
           "name": "Connect a connector",
           "unit": "per connector"
         },
         "inReview": "In review",
         "inReviewDescription": "Submitted, waiting on review",
         "invite": {
-          "description": "Everyone you add counts",
+          "description": "Earn when an invite is accepted, up to 15 members.",
           "name": "Invite your team",
           "unit": "per member"
         },
-        "personalBalanceNote": "Credits go to your personal balance.",
+        "pendingInvitations": "Pending invitations: {{amount}}",
+        "personalBalanceNote": "Rewards expire 7 days after they are granted. Slack rewards go to the organization; other rewards go to your personal balance.",
         "progressLabel": "Get started progress",
+        "rejectedDescription": "This post is not eligible. Submit another public post mentioning Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Rewarded connectors: {{amount}}",
         "share": {
           "description": "Post it, then paste the link",
           "name": "Share {{assistantName}} on X"
         },
         "shareDialog": {
-          "description": "Post about something you built, then paste the link. You get one submission.",
+          "description": "Submit a public post for review. One successful reward per person.",
           "helper": "The post has to be public and mention {{assistantName}}.",
           "inputLabel": "Post link",
           "placeholder": "https://x.com/...",
@@ -1548,14 +1551,14 @@
           "title": "Share {{assistantName}} on X"
         },
         "slack": {
-          "description": "Where your team already works",
+          "description": "Earn 2,000 organization credits, once per organization and workspace.",
           "name": "Add {{assistantName}} to Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Finish a step, keep the credits.",
+        "subtitle": "Try a task, earn credits.",
         "title": "Get started",
         "workflow": {
-          "description": "Turn a repeat task into an automation",
+          "description": "Successfully run a workflow you created.",
           "name": "Build a workflow"
         }
       },
@@ -1769,9 +1772,7 @@
       "create": {
         "addStyle": "Add style",
         "addTemplate": "Add template",
-        "chooseScene": "Choose what to create",
         "chooseType": "Choose a type",
-        "description": "Presentations, videos, and images",
         "exit": "Exit create mode",
         "image": "Create image",
         "imageDescription": "Turn an idea into a visual",
@@ -1779,12 +1780,10 @@
         "presentation": "Create presentation",
         "presentationDescription": "Slides for your story",
         "presentationPlaceholder": "What is your presentation about?",
-        "question": "What would you like to make happen?",
         "settingsAdjusted": "Some video settings were adjusted for this model",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides",
-        "title": "Create",
         "video": "Create video",
         "videoDescription": "Bring your ideas to motion",
         "videoPlaceholder": "Describe the video you want to create…"
@@ -1879,12 +1878,14 @@
         "moreAccounts_one": "+{{count}}",
         "moreAccounts_other": "+{{count}}",
         "needsAttention": "Needs attention",
+        "nextCategories": "Next categories",
         "noResultsBody": "Try a product name, or build your own from an API or MCP server.",
         "noResultsTitle": "No connector matches “{{query}}”",
         "openDetailAria": "Open {{connector}} details",
         "otherCategory": "Other",
         "permissionCount_one": "{{count}} permission",
         "permissionCount_other": "{{count}} permissions",
+        "previousCategories": "Previous categories",
         "showAll_one": "Show all {{count}}",
         "showAll_other": "Show all {{count}}",
         "tabCustom": "Custom",
@@ -3659,7 +3660,7 @@
       },
       "feishu": {
         "addBot": "Add bot",
-        "addDialogDescription": "Create an enterprise custom app, enable its bot, and complete these steps in the Feishu developer console.",
+        "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Feishu developer console.",
         "addDialogTitle": "Add a Feishu bot",
         "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
@@ -3672,14 +3673,14 @@
         "copied": "{{label}} copied",
         "copy": "Copy",
         "create": {
-          "descriptionAfter": ", create an enterprise custom app using the name and icon you want, then add the Bot capability.",
+          "descriptionAfter": ", create an enterprise app and select the Agent type. Choose the name and icon you want; the Agent template includes the Bot capability.",
           "descriptionBefore": "In the ",
           "downloadIcon": "Download the optional {{brandName}} icon",
           "iconAlt": "Optional {{brandName}} app icon",
           "iconHint": ", or use any icon you prefer.",
           "iconTitle": "Optional {{brandName}} app icon",
           "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
-          "title": "Create an enterprise custom app"
+          "title": "Create an Agent app"
         },
         "credentials": {
           "appId": "App ID",
@@ -3709,6 +3710,9 @@
         "faq": {
           "approvalAnswer": "If availability is set to All members, a Feishu administrator must approve the release. Feishu sends the approval request to an administrator in a direct message, and the app remains pending until an administrator completes the review.",
           "approvalQuestion": "Why is publishing the app waiting for approval?",
+          "botFeatureAnswer": "Open Features → Add Features in the Feishu developer console. Under By Feature, add the Bot capability, then continue this guide and publish the app. Agent apps include the Bot capability by default.",
+          "botFeatureImageAlt": "Lark developer console showing the Bot capability under Add Features",
+          "botFeatureQuestion": "What if I chose Custom App instead of Agent?",
           "challengeAnswer": "This usually means the Encrypt Key or Verification Token saved during the Tokens step is incorrect. Return to the Tokens step, enter both values from Event Configuration → Encryption Strategy again, save them, and retry the Request URL.",
           "challengeQuestion": "Why does Feishu show \"Challenge code didn't get a response\"?",
           "title": "Setup FAQ"
@@ -3719,14 +3723,14 @@
         "moreOptions": "More options for {{bot}}",
         "pageDescription": "Manage bot routing for this workspace",
         "permissions": {
-          "description": "In the Feishu developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It imports every managed connector scope under User identity. These are the minimum permissions required for the integration to work.",
-          "hint": "Keep every imported User identity permission, then create and publish a new app version so the OAuth consent screen can grant them. Removing any permission prevents the integration from working, and Feishu administrator approval may be required.",
-          "label": "User token scope JSON",
+          "description": "In the Feishu developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It includes App identity permissions for the bot and User identity permissions for your connected account.",
+          "hint": "Keep all imported permissions under both identities, then create and publish a new app version. Feishu administrator approval may be required.",
+          "label": "App and user scope JSON",
           "menuAlt": "Feishu Permissions & Scopes page with the Batch import/export scopes menu highlighted",
           "menuLabel": "Open Batch import/export scopes",
           "reviewAlt": "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
           "reviewLabel": "Paste the JSON and review new scopes",
-          "title": "Import user token scopes"
+          "title": "Import app and user scopes"
         },
         "publish": {
           "allMembersAlt": "Feishu availability settings with All members selected",
@@ -3788,7 +3792,7 @@
       },
       "lark": {
         "addBot": "Add bot",
-        "addDialogDescription": "Create an enterprise custom app, enable its bot, and complete these steps in the Lark developer console.",
+        "addDialogDescription": "Create an enterprise app with the Agent type, then complete these steps in the Lark developer console.",
         "addDialogTitle": "Add a Lark bot",
         "agentDescription": "Choose the agent that should handle messages sent to this bot.",
         "backToIntegrations": "Back to integrations",
@@ -3801,14 +3805,14 @@
         "copied": "{{label}} copied",
         "copy": "Copy",
         "create": {
-          "descriptionAfter": ", create an enterprise custom app using the name and icon you want, then add the Bot capability.",
+          "descriptionAfter": ", create an enterprise app and select the Agent type. Choose the name and icon you want; the Agent template includes the Bot capability.",
           "descriptionBefore": "In the ",
           "downloadIcon": "Download the optional {{brandName}} icon",
           "iconAlt": "Optional {{brandName}} app icon",
           "iconHint": ", or use any icon you prefer.",
           "iconTitle": "Optional {{brandName}} app icon",
           "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
-          "title": "Create an enterprise custom app"
+          "title": "Create an Agent app"
         },
         "credentials": {
           "appId": "App ID",
@@ -3838,6 +3842,9 @@
         "faq": {
           "approvalAnswer": "If availability is set to All members, a Lark administrator must approve the release. Lark sends the approval request to an administrator in a direct message, and the app remains pending until an administrator completes the review.",
           "approvalQuestion": "Why is publishing the app waiting for approval?",
+          "botFeatureAnswer": "Open Features → Add Features in the Lark developer console. Under By Feature, add the Bot capability, then continue this guide and publish the app. Agent apps include the Bot capability by default.",
+          "botFeatureImageAlt": "Lark developer console showing the Bot capability under Add Features",
+          "botFeatureQuestion": "What if I chose Custom App instead of Agent?",
           "challengeAnswer": "This usually means the Encrypt Key or Verification Token saved during the Tokens step is incorrect. Return to the Tokens step, enter both values from Event Configuration → Encryption Strategy again, save them, and retry the Request URL.",
           "challengeQuestion": "Why does Lark show \"Challenge code didn't get a response\"?",
           "title": "Setup FAQ"
@@ -3849,14 +3856,14 @@
         "moreOptions": "More options for {{bot}}",
         "pageDescription": "Manage bot routing for this workspace",
         "permissions": {
-          "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It imports every managed connector scope under User identity. These are the minimum permissions required for the integration to work.",
-          "hint": "Keep every imported User identity permission, then create and publish a new app version so the OAuth consent screen can grant them. Removing any permission prevents the integration from working, and Lark administrator approval may be required.",
-          "label": "User token scope JSON",
+          "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It includes App identity permissions for the bot and User identity permissions for your connected account.",
+          "hint": "Keep all imported permissions under both identities, then create and publish a new app version. Lark administrator approval may be required.",
+          "label": "App and user scope JSON",
           "menuAlt": "Feishu Permissions & Scopes page with the Batch import/export scopes menu highlighted",
           "menuLabel": "Open Batch import/export scopes",
           "reviewAlt": "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
           "reviewLabel": "Paste the JSON and review new scopes",
-          "title": "Import user token scopes"
+          "title": "Import app and user scopes"
         },
         "publish": {
           "allMembersAlt": "Feishu availability settings with All members selected",
@@ -6262,17 +6269,16 @@
     "choosePrivateKeyFile": "Choose private key file",
     "cloudflare": {
       "add": "Add Access configuration",
-      "back": "Back to host",
       "changed": "This Access configuration changed while you were editing. Review its latest settings before saving your changes.",
       "clientId": "Service Token Client ID",
       "clientSecret": "Service Token Client Secret",
       "configuration": "Access configuration",
-      "createNew": "Create Access configuration",
+      "createNew": "Create new configuration",
       "delete": "Delete configuration",
       "deleteHelp": "Delete this unused Access configuration? Its stored Service Token cannot be recovered.",
       "direct": "Direct",
+      "edit": "Edit Access configuration",
       "empty": "No Access configurations yet. Add a Service Token to connect to SSH hosts protected by Cloudflare Access.",
-      "gatewayHelp": "Connects over encrypted WebSocket on port 443. Configure the private SSH address and port in Cloudflare.",
       "inUse": "This Access configuration is used by a host. Review the affected hosts and rebind or delete them first.",
       "inUseHelp": "Select another Access configuration for these hosts, switch them explicitly to Direct, or delete them before deleting this configuration.",
       "keepChanges": "Keep my changes with this version",
@@ -6284,15 +6290,14 @@
       "name": "Configuration name",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Published hostname",
-      "rename": "Rename configuration",
       "replace": "Replace Service Token",
       "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
       "select": "Select a configuration",
-      "summary_one": "{{count}} Access configuration",
-      "summary_other": "{{count}} Access configurations",
+      "summary_one": "{{count}} Access configuration configured",
+      "summary_other": "{{count}} Access configurations configured",
       "title": "Cloudflare Access",
       "tokenHelp": "Use a Service Token allowed by your SSH application's Service Auth policy. This is separate from your SSH login.",
-      "unavailable": "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
+      "unavailable": "Cloudflare Access is not available for this account.",
       "usedBy_one": "Used by {{count}} host:",
       "usedBy_other": "Used by {{count}} hosts:"
     },
@@ -6329,6 +6334,7 @@
       "name": "Credential name",
       "password": "Password",
       "replaceAuthentication": "Replace authentication",
+      "select": "Select a credential",
       "sharedHelp_one": "Login changes apply to {{count}} host:",
       "sharedHelp_other": "Login changes apply to all {{count}} hosts:",
       "summary_one": "{{count}} credential configured",
@@ -6346,8 +6352,8 @@
     "empty": "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
     "errors": {
       "agentUnavailable": "This Agent is no longer available. Choose another Agent.",
-      "configurationChanged": "This host changed while you were editing it. The list has been updated. Reopen the host and review its current settings before saving.",
-      "credentialChanged": "This credential changed while you were editing it. Reopen it and review the current settings and affected hosts before saving.",
+      "configurationChanged": "This host changed while you were editing. Your draft is preserved. Review its latest settings before applying your changes.",
+      "credentialChanged": "This credential changed while you were editing. Your draft is preserved. Review its latest settings and affected hosts before saving your changes.",
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",
       "credentialUnavailable": "This SSH credential is no longer available. Select an existing credential or create a new one.",
       "failed": "Could not save the SSH change. Try again.",

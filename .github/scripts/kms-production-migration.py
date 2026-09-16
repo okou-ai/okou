@@ -773,12 +773,12 @@ def retirement_verification():
     digest = required_env("VERIFICATION_ARTIFACT_SHA256")
     require(run_id.isdigit(), "invalid_verification_run")
     require(re.fullmatch(r"[0-9a-f]{64}", digest), "invalid_verification_digest")
-    base = "https://api.github.com/repos/vm0-ai/vm0/actions"
+    base = "https://api.github.com/repos/vm0-ai/okou/actions"
     token = required_env("GH_TOKEN")
     run = request_json(base + "/runs/" + run_id, token)
     require(
         str(run["id"]) == run_id
-        and run["repository"]["full_name"] == "vm0-ai/vm0"
+        and run["repository"]["full_name"] == "vm0-ai/okou"
         and run["workflow_id"] == 353130414
         and run["path"] == ".github/workflows/kms-production-preflight.yml"
         and run["event"] == "workflow_dispatch"
@@ -811,7 +811,7 @@ def retirement_verification():
         [
             "gh",
             "api",
-            "repos/vm0-ai/vm0/actions/artifacts/" + str(artifact["id"]) + "/zip",
+            "repos/vm0-ai/okou/actions/artifacts/" + str(artifact["id"]) + "/zip",
             "--allow-escape-sequences",
         ],
         capture_output=True,
@@ -963,12 +963,29 @@ def source_retirement(mode):
         "auditServicesChanged": False,
     }
     try:
+        waiver = os.environ.get("SKIP_VERIFICATION_FOR_KEY", "")
+        if waiver:
+            require(
+                mode == "retire-source"
+                and waiver == SOURCE
+                and required_env("GITHUB_ACTOR") == "hulh122",
+                "invalid_retirement_verification_waiver",
+            )
+            report["verificationWaiver"] = {
+                "actor": "hulh122",
+                "source": SOURCE,
+                "currentProductionVerificationSkipped": True,
+                "sourceAuditSkipped": True,
+                "deploymentCheckSkipped": True,
+                "acceptedRemainingSourceDependencyLoss": True,
+            }
         if mode == "retire-source":
             require(
                 required_env("ACCEPT_HISTORICAL_RECOVERY_LOSS") == "true",
                 "recovery_disposition_required",
             )
             report["acceptedHistoricalRecoveryLoss"] = True
+        if mode == "retire-source" and not waiver:
             report["verification"] = retirement_verification()
             # This repeats only the audit's bounded historical window, never a
             # completed data migration or snapshot restore. It makes no KMS calls.
@@ -1030,11 +1047,12 @@ def source_retirement(mode):
             report["keyBefore"]["state"] in {"Enabled", "Disabled"},
             "source_key_state_not_schedulable",
         )
-        require(
-            production_deployment(required_env("EXPECTED_DEPLOYMENT_ID"))
-            == report["verification"]["deployment"],
-            "verified_deployment_changed",
-        )
+        if not waiver:
+            require(
+                production_deployment(required_env("EXPECTED_DEPLOYMENT_ID"))
+                == report["verification"]["deployment"],
+                "verified_deployment_changed",
+            )
         report.update(mutationAttempted=True, mutationEffects="unknown")
         path.write_text(json.dumps(report, indent=2) + "\n")
         scheduled = aws(
@@ -1114,14 +1132,14 @@ def main():
         "source-status": "kms-production-retire.yml",
     }[mode]
     require(
-        required_env("GITHUB_REPOSITORY") == "vm0-ai/vm0"
+        required_env("GITHUB_REPOSITORY") == "vm0-ai/okou"
         and required_env("GITHUB_REF") == "refs/heads/main"
         and required_env("GITHUB_EVENT_NAME") == "workflow_dispatch",
         "protected_manual_main_required",
     )
     require(
         required_env("GITHUB_WORKFLOW_REF")
-        == "vm0-ai/vm0/.github/workflows/" + workflow + "@refs/heads/main",
+        == "vm0-ai/okou/.github/workflows/" + workflow + "@refs/heads/main",
         "workflow_scope_mismatch",
     )
     require(

@@ -9,8 +9,8 @@ use std::task::Poll;
 use std::time::Duration;
 
 use guest_control_proto::{
-    ExecOutputPolicy, ExecTermination, MSG_ERROR, MSG_EXEC_START, MSG_WRITE_FILE,
-    MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES,
+    ExecCapturedOutput, ExecOutputPolicy, ExecTermination, MSG_ERROR, MSG_EXEC_START,
+    MSG_WRITE_FILE, MSG_WRITE_FILE_RESULT, MSG_WRITE_FILES,
 };
 use shell_quote::quote_shell_arg;
 use tokio::io::AsyncWriteExt;
@@ -21,7 +21,7 @@ use tokio::task::JoinHandle;
 use super::super::support::{
     MockGuest, assert_connection_accepts_exec_operation, await_mock_guest, host_from_stream,
     make_pair, normal_operation_readiness, operation_count, pending_request_count,
-    read_guest_message, send_exec_result, setup_host_and_guest,
+    read_guest_message, send_exec_result, send_raw_exec_result, setup_host_and_guest,
 };
 use super::support::{
     ExecStartFrame, WriteFileFrame, expect_exec_start, expect_write_file, send_guest_error,
@@ -1613,7 +1613,21 @@ async fn assert_rename_terminal_failure_reports(
     let write_task = fixture.spawn_write(ChunkedWriteFixture::two_chunk_content(), false);
 
     let rename = drive_two_chunk_write_to_rename(&mut fixture).await;
-    send_exec_result(&mut fixture.guest, rename.seq(), termination, &[], stderr).await;
+    let payload = guest_control_proto::encode_exec_result(
+        termination,
+        12,
+        ExecCapturedOutput::Captured {
+            bytes: b"",
+            truncated: false,
+        },
+        ExecCapturedOutput::Captured {
+            bytes: stderr,
+            truncated: true,
+        },
+        "guest rename diagnostic",
+    )
+    .unwrap();
+    send_raw_exec_result(&mut fixture.guest, rename.seq(), payload).await;
 
     let cleanup = fixture.expect_cleanup().await;
     fixture.assert_readiness(NormalOperationReadiness::Busy);
@@ -1627,10 +1641,20 @@ async fn assert_rename_terminal_failure_reports(
     .await;
 
     let err = write_task.await.unwrap().unwrap_err();
+    assert_eq!(err.kind(), io::ErrorKind::Other);
     let message = err.to_string();
     let stderr_text = String::from_utf8_lossy(stderr);
     assert!(message.contains(expected_message), "{message}");
+    assert!(
+        message.contains("while moving temp file to /tmp/big.bin"),
+        "{message}"
+    );
     assert!(message.contains(stderr_text.as_ref()), "{message}");
+    assert!(message.contains("stderr truncated"), "{message}");
+    assert!(
+        message.contains("diagnostic: guest rename diagnostic"),
+        "{message}"
+    );
     fixture.assert_readiness(NormalOperationReadiness::Idle);
 }
 

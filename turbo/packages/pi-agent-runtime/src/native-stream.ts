@@ -97,16 +97,20 @@ export function streamPiNative(
   // images and cache points. Only the final request uses the upstream alias.
   if (isMessages(model)) {
     if (config.transport !== "sse") throw new Error("Pi Messages requires SSE");
-    return streamWithModelRequestDiagnostics((fetch) => {
-      return streamMessages(
-        { ...model, id: config.catalogModel },
-        nativeContext,
-        {
-          ...nativeOptions,
-          fetch,
-        },
-      );
-    }, nativeOptions.fetch);
+    return streamWithModelRequestDiagnostics(
+      (fetch) => {
+        return streamMessages(
+          { ...model, id: config.catalogModel },
+          nativeContext,
+          {
+            ...nativeOptions,
+            fetch,
+          },
+        );
+      },
+      nativeOptions.fetch,
+      nativeOptions.signal,
+    );
   }
   if (
     !isBedrock(model) ||

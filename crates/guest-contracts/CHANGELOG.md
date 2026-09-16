@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.13](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.12...guest-contracts-v0.14.13) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** stop retries after provider queue expiry ([#34531](https://github.com/vm0-ai/okou/issues/34531)) ([38285ac](https://github.com/vm0-ai/okou/commit/38285acb5a5aa77c2e31c81ef37235dfedc6e2b5))
+
+## [0.14.12](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.11...guest-contracts-v0.14.12) (2026-09-16)
+
+
+### Bug Fixes
+
+* **pi:** preserve causal transport failure diagnostics ([#34505](https://github.com/vm0-ai/okou/issues/34505)) ([9ae5a27](https://github.com/vm0-ai/okou/commit/9ae5a2748353914dce8bcf983dac554f7ae5a4af))
+* **runner:** classify contained tool oom as informational ([#34520](https://github.com/vm0-ai/okou/issues/34520)) ([02e789d](https://github.com/vm0-ai/okou/commit/02e789d0129298079e23570bc319c5c0557a2d77))
+
 ## [0.14.11](https://github.com/vm0-ai/okou/compare/guest-contracts-v0.14.10...guest-contracts-v0.14.11) (2026-09-16)
 
 ## [0.14.10](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.9...guest-contracts-v0.14.10) (2026-09-15)

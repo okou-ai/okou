@@ -44,13 +44,19 @@ const SNAPSHOT_ACTION_TIMEOUT_MS = 30_000;
 const PRIMARY_NAVIGATION_OPTIONS = {
   gotoOptions: { waitUntil: "networkidle2", timeout: 20_000 },
 } as const;
+// `domcontentloaded` fires before late content paints, so this retry needs a
+// settle window. It must not be `waitForSelector` on `body > *`: Browser
+// Rendering applies Puppeteer semantics, which resolve the selector's *first*
+// match and then wait for that one element to become visible. Whichever node a
+// document happens to open its body with decides the outcome, and an icon
+// sprite (`<svg display:none>`) or a leading script can never satisfy the
+// visibility check, so ready pages burned the probe's whole budget and failed
+// the retry. A fixed wait does not depend on document shape. 3s covers every
+// failing artifact measured here, whose `networkidle2` came at p90 1.8s and at
+// most 2.7s from navigation start.
 const NAVIGATION_TIMEOUT_RETRY_OPTIONS = {
   gotoOptions: { waitUntil: "domcontentloaded", timeout: 15_000 },
-  waitForSelector: {
-    selector: "body > *",
-    visible: true,
-    timeout: 10_000,
-  },
+  waitForTimeout: 3000,
 } as const;
 
 const browserSnapshotSchema = z.object({

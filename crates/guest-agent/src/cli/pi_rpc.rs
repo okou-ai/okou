@@ -224,9 +224,10 @@
 //! `Pi model turn <stopReason>` when a stop reason exists.
 //! A final `length` result uses a bounded output-limit message and the existing
 //! `output_token_limit` reason; any partial assistant answer remains in its event.
-//! Runtime model diagnostics carry only observed HTTP status, attempt counts,
-//! and an allowlisted failure reason. The reason is forwarded separately from
-//! `modelRequest` so older guests can ignore this additive field.
+//! Runtime model diagnostics carry observed HTTP status, attempt counts,
+//! allowlisted transport exception evidence, and a failure reason. No raw causes
+//! or network addresses enter `modelRequest`. The reason is forwarded separately
+//! from `modelRequest` so older guests can ignore these additive fields.
 //!
 //! When `agent_settled` arrives, the cached state is consumed and the public
 //! result contains `type: "result"`, `subtype: "error_during_execution"` and
@@ -618,6 +619,7 @@ pub(super) struct PiRpcProjection {
     assistant_stream: Option<PiAssistantStream>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
+    runtime_progress_at: Option<u64>,
 }
 
 impl PiRpcProjection {
@@ -632,12 +634,19 @@ impl PiRpcProjection {
             assistant_stream: None,
             pending_retry: None,
             terminal_error: false,
+            runtime_progress_at: None,
         }
     }
 
     pub(super) fn with_session_output(mut self, output: PiSessionOutputSender) -> Self {
         self.session_output = Some(output);
         self
+    }
+
+    /// Source timestamp of the latest validated native message. Reading a
+    /// buffered line is not by itself evidence of post-OOM runtime progress.
+    pub(super) fn runtime_progress_at(&self) -> Option<u64> {
+        self.runtime_progress_at
     }
 
     /// Project one official Pi RPC record into the existing public event stream.
@@ -787,14 +796,24 @@ impl PiRpcProjection {
                 "Pi RPC message_end omitted its message".to_string(),
             ));
         };
-        if message.get("role").and_then(Value::as_str) == Some("assistant") {
-            let event_id_prefix = self.assistant_stream.take().map(PiAssistantStream::finish);
-            return self.project_assistant_message(message, event_id_prefix.as_deref());
-        }
-        if message.get("role").and_then(Value::as_str) == Some("toolResult") {
-            return self.project_tool_result_message(message).map(Some);
-        }
-        Ok(None)
+        let timestamp = message
+            .get("timestamp")
+            .and_then(Value::as_u64)
+            .filter(|timestamp| {
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .is_ok_and(|now| u128::from(*timestamp) <= now.as_millis())
+            });
+        let projected = match message.get("role").and_then(Value::as_str) {
+            Some("assistant") => {
+                let event_id_prefix = self.assistant_stream.take().map(PiAssistantStream::finish);
+                self.project_assistant_message(message, event_id_prefix.as_deref())?
+            }
+            Some("toolResult") => Some(self.project_tool_result_message(message)?),
+            _ => return Ok(None),
+        };
+        self.runtime_progress_at = self.runtime_progress_at.max(timestamp);
+        Ok(projected)
     }
 
     fn project_assistant_message(
@@ -2319,6 +2338,59 @@ mod tests {
             .expect("projected tool-result image data should be a string");
         assert_eq!(projected_image_data.len(), LARGE_PAYLOAD_BYTES);
         assert!(std::ptr::eq(projected_image_data.as_ptr(), image_data_ptr));
+    }
+
+    #[test]
+    fn native_progress_preserves_failed_tools_and_independent_quota_failure() {
+        let (responses, _rx) = response_channel();
+        let mut projection = PiRpcProjection::new("run", "session");
+        assert_eq!(projection.runtime_progress_at(), None);
+        let tool = projection
+            .project(
+                json!({
+                    "type": "message_end", "message": {
+                        "role": "toolResult", "timestamp": 20, "toolCallId": "tool-1",
+                        "content": [{"type": "text", "text": "tool killed"}], "isError": true
+                    }
+                }),
+                &responses,
+                0,
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(tool["message"]["content"][0]["is_error"], true);
+        assert_eq!(projection.runtime_progress_at(), Some(20));
+        assert!(
+            projection
+                .project(
+                    json!({
+                        "type": "message_end", "message": {"role": "toolResult", "timestamp": 30}
+                    }),
+                    &responses,
+                    0
+                )
+                .is_err()
+        );
+        assert_eq!(projection.runtime_progress_at(), Some(20));
+        projection
+            .project(
+                json!({
+                    "type": "message_end", "message": {
+                        "role": "assistant", "timestamp": 40, "content": [],
+                        "stopReason": "error", "errorMessage": "ChatGPT Pro quota exhausted"
+                    }
+                }),
+                &responses,
+                0,
+            )
+            .unwrap();
+        assert_eq!(projection.runtime_progress_at(), Some(40));
+        let terminal = projection
+            .project(json!({"type": "agent_settled"}), &responses, 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(terminal["is_error"], true);
+        assert_eq!(terminal["subtype"], "error_during_execution");
     }
 
     #[test]

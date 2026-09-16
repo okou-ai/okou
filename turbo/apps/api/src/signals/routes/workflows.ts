@@ -1703,6 +1703,7 @@ const runWorkflowInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       preloadedAgent: agent,
       timing,
       agentRunPreCreateSource: "workflow_slash_command",
+      getStartedWorkflowId: workflow.id,
       ...(workflow.officialDefinitionName === null
         ? {}
         : { requiredOfficialWorkflowIds: [workflow.id] }),

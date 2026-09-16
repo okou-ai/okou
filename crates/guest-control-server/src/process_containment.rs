@@ -352,7 +352,7 @@ impl ExecProcessContainment {
         self,
         mode: ProcessContainmentCleanupMode,
     ) -> Result<(), ProcessContainmentError> {
-        self.cleanup_with_evidence(mode).map(|_| ())
+        self.cleanup_with_evidence(mode, false).map(|_| ())
     }
 
     pub(crate) fn capture_error(&self) {
@@ -367,8 +367,9 @@ impl ExecProcessContainment {
     pub(crate) fn cleanup_with_evidence(
         self,
         mode: ProcessContainmentCleanupMode,
+        process_completed: bool,
     ) -> Result<Option<String>, ProcessContainmentError> {
-        self.cleanup_with_outputs(mode, &mut None)
+        self.cleanup_with_outputs(mode, &mut None, process_completed)
     }
 
     pub(crate) fn cleanup_with_storage_resources(
@@ -376,16 +377,18 @@ impl ExecProcessContainment {
         mode: ProcessContainmentCleanupMode,
         resources: &mut Option<StorageResourceUsage>,
     ) -> Result<(), ProcessContainmentError> {
-        self.cleanup_with_outputs(mode, resources).map(|_| ())
+        self.cleanup_with_outputs(mode, resources, false)
+            .map(|_| ())
     }
 
     fn cleanup_with_outputs(
         self,
         mode: ProcessContainmentCleanupMode,
         resources: &mut Option<StorageResourceUsage>,
+        process_completed: bool,
     ) -> Result<Option<String>, ProcessContainmentError> {
         match self.backend {
-            ContainmentBackend::Cgroup(guard) => guard.cleanup(mode, resources),
+            ContainmentBackend::Cgroup(guard) => guard.cleanup(mode, resources, process_completed),
             ContainmentBackend::ProcessGroup | ContainmentBackend::TestNoop => Ok(None),
             ContainmentBackend::TestResourceFiles {
                 resource_path,
@@ -720,6 +723,7 @@ impl CgroupGuard {
         self,
         mode: ProcessContainmentCleanupMode,
         resources: &mut Option<StorageResourceUsage>,
+        process_completed: bool,
     ) -> Result<Option<String>, ProcessContainmentError> {
         let started = Instant::now();
         let CgroupGuard {
@@ -735,19 +739,25 @@ impl CgroupGuard {
         drop(outer_placement);
         drop(workload_placement);
 
+        // Capture before any cleanup enumeration, signal or removal. Placement
+        // workers have joined, so this lock cannot wait behind socket IO.
+        let evidence = oom_evidence.and_then(|monitor| {
+            Some(
+                monitor
+                    .lock()
+                    .ok()?
+                    .capture(guest_contracts::oom_evidence::CaptureReason::Cleanup),
+            )
+        });
         log_resource_events(
             &group_name,
             &group_path.join(WORKLOAD_CGROUP_NAME),
             storage_operation.as_ref(),
             mode,
             resources,
+            evidence.as_ref().filter(|_| process_completed),
         );
-
-        // Capture before any cleanup enumeration, signal or removal. Placement
-        // workers have joined, so this lock cannot wait behind socket IO.
-        let oom_diagnostic = oom_evidence.and_then(|monitor| {
-            let mut monitor = monitor.lock().ok()?;
-            let evidence = monitor.capture(guest_contracts::oom_evidence::CaptureReason::Cleanup);
+        let oom_diagnostic = evidence.and_then(|evidence| {
             if evidence.incidents.is_empty() {
                 return None;
             }
@@ -922,6 +932,7 @@ fn log_resource_events(
     storage_operation: Option<&StorageOperation>,
     mode: ProcessContainmentCleanupMode,
     resources: &mut Option<StorageResourceUsage>,
+    evidence: Option<&guest_contracts::oom_evidence::OomEvidence>,
 ) {
     let snapshot_started = Instant::now();
     let files = ResourceEventFiles::read(workload_path);
@@ -942,10 +953,18 @@ fn log_resource_events(
         }
     };
     if let Some(hard_limit) = events.hard_limit_diagnostic() {
+        let contained = mode == ProcessContainmentCleanupMode::Graceful
+            && evidence
+                .is_some_and(|evidence| evidence.proves_contained_resource_limit(&hard_limit));
+        let classification = if contained {
+            "contained_tool_oom"
+        } else {
+            "unproven_containment"
+        };
         log(
-            "WARN",
+            if contained { "INFO" } else { "WARN" },
             &format!(
-                "exec workload hard resource limit reached group={group_name} memory_max={} memory_oom={} memory_oom_kill={} memory_oom_group_kill={} pids_max={}",
+                "exec workload hard resource limit reached group={group_name} oom_classification={classification} memory_max={} memory_oom={} memory_oom_kill={} memory_oom_group_kill={} pids_max={}",
                 hard_limit.memory_max_events,
                 hard_limit.memory_oom_events,
                 hard_limit.memory_oom_kill_events,
@@ -1303,12 +1322,24 @@ fn serve_oom_evidence(
             return;
         }
         let reason = match request[0] {
-            1 => CaptureReason::Sample,
-            2 => CaptureReason::CliError,
+            1 | 3 => CaptureReason::Sample,
+            2 | 4 => CaptureReason::CliError,
             _ => return,
         };
+        let progress = if request[0] >= 3 {
+            let mut bytes = [0; 8];
+            if stream.read_exact(&mut bytes).is_err() {
+                return;
+            }
+            Some(u64::from_be_bytes(bytes))
+        } else {
+            None
+        };
         let evidence = match monitor.lock() {
-            Ok(mut monitor) => monitor.capture(reason),
+            Ok(mut monitor) => {
+                monitor.record_runtime_progress(progress);
+                monitor.capture(reason)
+            }
             Err(_) => return,
         };
         // Never retain the monitor lock while waiting for a recipient.
@@ -1908,7 +1939,7 @@ mod tests {
         };
         let mut resources = None;
         let diagnostic = guard
-            .cleanup(ProcessContainmentCleanupMode::Forced, &mut resources)
+            .cleanup(ProcessContainmentCleanupMode::Forced, &mut resources, false)
             .unwrap()
             .unwrap();
         assert!(!root.exists());
@@ -1956,6 +1987,24 @@ mod tests {
         assert!(first.incidents.is_empty());
         assert_eq!(error.incidents.len(), 1);
         assert!(error.incidents[0].kernel_events.is_empty());
+        let progress = 1_000_u64;
+        client.write_all(&[3]).unwrap();
+        client.write_all(&progress.to_be_bytes()).unwrap();
+        let continued = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
+        assert_eq!(continued.runtime_progress_at, Some(progress));
+        assert_eq!(continued.operation_id, first.operation_id);
+        client.write_all(&[4]).unwrap();
+        client.write_all(&u64::MAX.to_be_bytes()).unwrap();
+        let future = guest_contracts::oom_evidence::read_evidence(&client).unwrap();
+        assert_eq!(
+            future.runtime_progress_at,
+            Some(progress),
+            "future timestamps cannot prove survival"
+        );
+        assert!(
+            !future.proves_contained_tool_oom(),
+            "native activity alone never proves tool containment"
+        );
         drop(cancel_writer);
         done_rx.recv_timeout(Duration::from_secs(2)).unwrap();
         worker.join().unwrap();

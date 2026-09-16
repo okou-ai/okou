@@ -4,11 +4,7 @@ import type {
   UpdateCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -37,11 +33,6 @@ type Metadata = Pick<
   keyof typeof metadata
 >;
 const failures = {
-  unavailable: {
-    kind: "not_found",
-    code: SSH_ERROR_CODES.ACCESS_UNAVAILABLE,
-    message: "Cloudflare Access is not available",
-  },
   notFound: {
     kind: "not_found",
     code: SSH_ERROR_CODES.ACCESS_NOT_FOUND,
@@ -60,14 +51,6 @@ const failures = {
 } as const;
 export function cloudflareAccessFailure(reason: keyof typeof failures) {
   return { ok: false as const, ...failures[reason] };
-}
-export function isCloudflareAccessEnabled(
-  context: FeatureSwitchContext,
-): boolean {
-  return (
-    isFeatureEnabled(FeatureSwitchKey.SshAccess, context) &&
-    isFeatureEnabled(FeatureSwitchKey.CloudflareAccess, context)
-  );
 }
 function ownedConfig(owner: Owner, id?: string) {
   return and(
@@ -149,31 +132,46 @@ async function encryptCredentials(
   );
   return { encryptedClientId, encryptedClientSecret };
 }
+export async function prepareCloudflareAccessConfig(
+  body: CreateCloudflareAccessRequest,
+  context: FeatureSwitchContext,
+) {
+  return {
+    name: body.name,
+    ...(await encryptCredentials(body.credentials, context)),
+  };
+}
+export async function insertCloudflareAccessConfig(
+  tx: Transaction,
+  owner: Owner,
+  prepared: Awaited<ReturnType<typeof prepareCloudflareAccessConfig>>,
+) {
+  const [created] = await tx
+    .insert(cloudflareAccessConfigs)
+    .values({
+      orgId: owner.orgId,
+      userId: owner.userId,
+      ...prepared,
+    })
+    .returning(metadata);
+  if (!created) {
+    throw new Error("Cloudflare Access insert returned no row");
+  }
+  return response(created, []);
+}
 export async function createCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Owner;
   readonly body: CreateCloudflareAccessRequest;
   readonly featureContext: FeatureSwitchContext;
 }) {
-  const encrypted = await encryptCredentials(
-    args.body.credentials,
+  const prepared = await prepareCloudflareAccessConfig(
+    args.body,
     args.featureContext,
   );
   const config = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
-    const [created] = await tx
-      .insert(cloudflareAccessConfigs)
-      .values({
-        orgId: args.owner.orgId,
-        userId: args.owner.userId,
-        name: args.body.name,
-        ...encrypted,
-      })
-      .returning(metadata);
-    if (!created) {
-      throw new Error("Cloudflare Access insert returned no row");
-    }
-    return response(created, []);
+    return insertCloudflareAccessConfig(tx, args.owner, prepared);
   });
   await publishSshClientInvalidation(args.owner);
   return config;

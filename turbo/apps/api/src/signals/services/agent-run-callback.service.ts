@@ -83,10 +83,7 @@ interface DispatchSingleCallbackInput {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly balanceContext: Omit<
-    Parameters<typeof formatRunBalanceError>[0],
-    "message"
-  >;
+  readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
 }
 
 export async function chatCallbackIdForRun(
@@ -283,6 +280,30 @@ const dispatchSingleInternalCallback$ = command(
   },
 );
 
+/** Durable consumer recovery must observe delivery, not only dispatcher return. */
+export async function hasUndeliveredRunCallbacks(
+  db: Pick<Db, "select">,
+  runId: string,
+): Promise<boolean> {
+  const [pending] = await db
+    .select({ id: agentRunCallbacks.id })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.runId, runId),
+        inArray(agentRunCallbacks.status, ["pending", "failed"]),
+        or(
+          isNull(agentRunCallbacks.internalKind),
+          notInArray(agentRunCallbacks.internalKind, [
+            ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
+          ]),
+        ),
+      ),
+    )
+    .limit(1);
+  return pending !== undefined;
+}
+
 export async function dispatchRunCallbacks(
   db: Db,
   runId: string,
@@ -296,7 +317,6 @@ export async function dispatchRunCallbacks(
       userId: agentRuns.userId,
       failureReason: agentRuns.failureReason,
       modelProvider: agentRuns.modelProvider,
-      launchSnapshot: agentRuns.launchSnapshot,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
@@ -347,7 +367,6 @@ export async function dispatchRunCallbacks(
       balanceContext: {
         failureReason: run.failureReason,
         modelProvider: run.modelProvider,
-        framework: run.launchSnapshot?.framework,
       },
     });
     results.push(dispatchResult);
@@ -397,7 +416,6 @@ export const dispatchRunCallbacks$ = command(
         userId: agentRuns.userId,
         failureReason: agentRuns.failureReason,
         modelProvider: agentRuns.modelProvider,
-        launchSnapshot: agentRuns.launchSnapshot,
       })
       .from(agentRuns)
       .where(eq(agentRuns.id, runId))
@@ -474,7 +492,6 @@ export const dispatchRunCallbacks$ = command(
             balanceContext: {
               failureReason: run.failureReason,
               modelProvider: run.modelProvider,
-              framework: run.launchSnapshot?.framework,
             },
           });
       signal.throwIfAborted();
@@ -670,8 +687,7 @@ async function dispatchHttpCallback(
     error:
       error === undefined
         ? undefined
-        : (formatRunBalanceError({ ...input.balanceContext, message: error }) ??
-          error),
+        : (formatRunBalanceError(input.balanceContext) ?? error),
     payload: callback.payload,
   });
   const timestamp = Math.floor(now() / 1000);

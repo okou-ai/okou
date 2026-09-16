@@ -109,7 +109,7 @@ beforeEach(() => {
 });
 
 describe("low-credit email delivery", () => {
-  it("uses the configured sender domain for low-credit alerts", async () => {
+  it("sends branded low-credit alerts with billing and unsubscribe links", async () => {
     const actor = bdd.user();
     const billing = createBillingMediaApi(context);
     bdd.acceptAgentStorageWrites();
@@ -217,6 +217,26 @@ describe("low-credit email delivery", () => {
         },
       }),
     );
+    const sent = resendMocks.send.mock.calls[0]?.[0];
+    for (const content of [
+      "Your credit balance is running low",
+      "4,999 credits",
+      "5,000 credits or less",
+      "Manage billing",
+      "The Okou Team",
+      "https://app.okou.ai/email/unsubscribe?token=",
+    ]) {
+      expect(sent).toMatchObject({
+        html: expect.stringContaining(content),
+        text: expect.stringContaining(content),
+      });
+    }
+    expect(sent).toMatchObject({
+      html: expect.stringContaining('alt="Okou"'),
+      text: expect.stringContaining(
+        "https://app.okou.ai/?settings=billing&billingView=credits",
+      ),
+    });
   });
 });
 

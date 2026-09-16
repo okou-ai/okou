@@ -20,6 +20,10 @@ import { slackConnectRoutes } from "../slack-connect";
 import { slackOauthRoutes } from "../slack-oauth";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -240,6 +244,7 @@ beforeEach(() => {
 
 test("installation grants bot and user scopes and connects the OAuth account", async () => {
   const current = actor();
+  await setGetStartedEnabled(context, current);
   const authorization = await startInstall();
   expect(authorization.origin).toBe("https://slack.com");
   expect(parameter(authorization, "scope").split(",")).toContain(
@@ -273,6 +278,23 @@ test("installation grants bot and user scopes and connects the OAuth account", a
   );
   expect(location(replay).searchParams.get("error")).toContain("already used");
   await expect(accounts()).resolves.toHaveLength(1);
+  const rewards = await readGetStartedStatus(context, current);
+  expect(rewards.quests).toContainEqual(
+    expect.objectContaining({
+      key: "slack",
+      claimedCount: 1,
+      earnedCredits: 2000,
+      rewardTarget: "org",
+    }),
+  );
+  expect(rewards.quests).toContainEqual(
+    expect.objectContaining({
+      key: "connector",
+      claimedCount: 1,
+      earnedCredits: 100,
+      rewardTarget: "user",
+    }),
+  );
 });
 
 test("connect reuses the same OAuth account and both disconnect operations stay independent", async () => {
@@ -589,6 +611,7 @@ test("a Slack connect OAuth callback recovers a failed channel confirmation by D
 
 test("an admin binds an anonymously installed workspace through user OAuth", async () => {
   const current = actor();
+  await setGetStartedEnabled(context, current);
   const anonymous = await accept(
     clients()(slackOauthContract).install({ query: {} }),
     [307],
@@ -611,6 +634,9 @@ test("an admin binds an anonymously installed workspace through user OAuth", asy
   await expect(integrationStatus()).resolves.toMatchObject({
     isInstalled: false,
   });
+  expect(
+    (await readGetStartedStatus(context, current)).recentGrants,
+  ).toStrictEqual([]);
 
   const connected = await complete(await startConnect(current), current);
 
@@ -621,4 +647,12 @@ test("an admin binds an anonymously installed workspace through user OAuth", asy
     isAdmin: true,
   });
   await expect(accounts()).resolves.toHaveLength(1);
+  expect((await readGetStartedStatus(context, current)).quests).toContainEqual(
+    expect.objectContaining({
+      key: "slack",
+      rewardTarget: "org",
+      claimedCount: 1,
+      earnedCredits: 2000,
+    }),
+  );
 });

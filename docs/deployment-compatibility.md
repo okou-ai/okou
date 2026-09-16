@@ -909,16 +909,42 @@ uses persisted run ownership to display a platform-owned balance failure as
 metadata. Model unavailability is presentation, not a completion failure reason.
 The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
 use generic failure copy for an unknown token instead of rejecting the run or
-showing the vm0 recharge card. No schema migration is required.
+showing the vm0 recharge card. The token addition required no schema migration.
 
-Prefer API readers before the runner writer for this change. Old runners and
-retained rows can still have missing reasons or legacy upstream affordability
-text labeled `insufficient_credits`; exact legacy presentation remains supported
-without inferring an unobserved status or suppressing unknown diagnostics. Remove
-that compatibility only after old runners drain and affected retained rows are
-gone or migrated. Public run, activity, HTTP callback, model-error event, and network-export
-projections keep built-in balance details internal; rolling back these readers
-can restore the prior disclosure behavior even though the tokens remain readable.
+The #34219 cleanup follows the reader/writer rollout in #34251. The production
+read on 2026-09-16 found API `1.607.0`, App `0.902.2`, and all three running
+Runners on `0.194.6`, containing the owner-aware reader and structured writer
+commit `0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6`.
+
+Historical errors remain as stored, including missing or misclassified failure
+reasons. No data migration or repair is required. The user accepted that those
+records may display raw errors or the old incorrect credit classification after
+terminal text inference is removed. Terminal readers use the persisted cause.
+Current failed provider-event detection and network-export redaction remain.
+The production rollback resolver enforces the commit above for both the API
+target and its independently resolved Runner tag, preventing an older writer or
+public reader from returning for new runs.
+
+This change does not certify alert delivery. #34219 remains open for actual
+built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+verification. Runner INFO events are below the Axiom upload threshold, and the
+investigation token could not read monitor configuration.
+
+Pi queue expiry adds `provider_queue_timeout` under the same open-token
+contract. Prefer API/App readers and terminal policy before the patched CLI;
+Guest and Runner typed contracts ship as a supported pair. An old API's
+transient allowlist excludes the new token. Old Guests may ignore the optional
+runtime diagnosis but preserve failure; a new Guest can refine an old CLI's
+generic server/overload evidence from exact terminal text. It cannot undo
+retries already performed by an old SDK. No new protocol, database column or
+session format is introduced, and local-deadline handoff is unchanged.
+
+Queued or active commit-addressed contexts can retain the old CLI. Release
+acceptance must record API SHA, CLI package SHA and Runner/Guest versions, run
+the controlled fixture against that artifact, and observe a fixed 24-hour
+window for unique affected runs, actual statuses/attempts and built-in warning
+visibility. No occurrence means no observed exposure, not proven recovery.
+Rollback can restore old retry behavior; retained reason tokens stay readable.
 
 Avoid one-shot protocol flips:
 
@@ -1446,38 +1472,49 @@ triggers, and views after that release drains.
 The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
-`sshAccess` is staff-only, and `cloudflareAccess` stays disabled, including for staff.
+Direct and Cloudflare Access now share the existing staff-only `sshAccess` switch;
+there is no independent Access switch. The SSH cohort and Agent grants are unchanged.
 Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
 Before the first protected configuration or binding is written in a deployed
 environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
-#34081 owns Access management UI and full real-Run acceptance before activation.
+#34081 owns Access management UI; #34370 records integrated real-Run acceptance
+and the owner-approved evidence boundaries at closure.
 Management stays inside `/connectors/ssh`. Access is a reusable host connection
 setting under the existing SSH Agent grant, not a separately authorized service.
-The Access feature switch controls rollout; it does not add an Agent permission.
+The SSH feature switch controls rollout for both transports; it does not replace
+the existing Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
 The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. With Access off it keeps Direct management
-available and hides Access creation. Already-bound hosts still identify their
-protected transport; editing, resetting keys and deleting them remain unavailable
-under the canonical API gate. Removing a binding requires Access eligibility and
-an explicit Direct selection. Losing the feature or changing
+schema or private Runner contract. Unified host forms also accept inline Access
+creation in the host write request. Existing `configId` selections remain valid;
+responses still return only the resolved binding. Deploy API support before the
+App uses inline creation. An older API rejects that write alternative; staff
+clients should refresh after the current API/App deployment, without a second
+save path or automatic fallback. Existing rows and older App requests remain
+valid, and Runner versions do not need a new decoder for this management change.
+
+With SSH enabled, Access management and
+protected host creation are available without an additional opt-in. With SSH off,
+both transports' management, guest inventory and fresh authority are unavailable.
+Already-bound hosts are never silently converted to Direct. Removing a binding
+requires SSH eligibility and an explicit Direct selection. Losing SSH eligibility or changing
 owner clears open secret forms and cancels their pending UI work. API authorization
 and same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
 
-| State                                                                 | Required behavior                                                                                      |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
-| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
-| Current API and S2 Runner with authorized protected handoff           | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
-| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                                     |
-| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                                             |
-| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                                              |
+| State                                                              | Required behavior                                                                                      |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
+| Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
+| Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
+| Current API with an unauthorized host or SSH feature off           | Private authority and guest inventory remain unavailable under the SSH gate and Agent grant.           |
+| Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
+| Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
 
 Feature disable does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
@@ -1486,8 +1523,13 @@ or conversion is part of deployment.
 #34080 changes the Runner transport without changing guest CLI terminal enums or
 the S1 private API contract. Existing Direct requests keep their behavior. A
 missing/incompatible authority response fails closed; no pre-GA dual decoder is
-introduced. The feature remains default-off after the carrier code lands, pending
-authorized real-provider evidence and #34081's integrated acceptance.
+introduced. The separate switch removal changes API eligibility and Platform
+visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
+Old pre-removal APIs may still enforce their Access switch, and old App bundles
+may hide Access until refreshed. Both remain pre-GA under `sshAccess`; deploy the
+current API/App and refresh staff clients rather than adding a compatibility alias
+or second decoder. Retired switch overrides are ignored by the existing registered-key
+filter; no database migration or destructive cleanup is required.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
 may leave cached authority usable for the remainder of an active Run if a notice
@@ -1732,3 +1774,14 @@ the additive column.
 Deploy the API across the serving fleet before enabling the Runner consumer in
 #34384. Unsupported endpoints and other inconclusive reads must not become
 disappearance decisions. This API slice alone adds no new stop-delay bound.
+
+## Deferred Pi Sandbox reader floor
+
+Before a v4 API-inference producer can emit Sandbox demand, deploy the
+[durable consumer and its Runner/CLI readers](./pi-deferred-sandbox-consumer.md).
+Its optional Runner header is ignored by older APIs; older Runners remain
+excluded from v4 jobs. The outer Pi launch-config v2 contains a new versioned
+continuation slot, so enablement requires both the capable Runner and the
+commit-addressed co-built CLI. Drain existing v4 intents/leases and release
+receipts before rolling the API back below that floor. No switch is enabled by
+the consumer implementation.

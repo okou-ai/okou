@@ -1,9 +1,14 @@
+import {
+  readGetStartedStatus,
+  setGetStartedEnabled,
+} from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
   type BillingStatusResponse,
+  type UsagePackCreditsResponse,
   USAGE_PACKS_USD,
   billingCheckoutContract,
   billingUsagePackCatalogContract,
@@ -13445,6 +13450,9 @@ describe("usage pack allocation management", () => {
       const billing = await readBillingStatus(fixture);
       expect(billing.showUsagePack).toBeTruthy();
 
+      context.mocks.clerk.organizations.createOrganizationInvitation.mockResolvedValueOnce(
+        { id: `inv_${randomUUID()}` },
+      );
       const client = setupApp({ context, routes: orgInviteRoutes })(
         orgInviteContract,
       );
@@ -14748,6 +14756,7 @@ describe("usage pack allocation management", () => {
         redirectUrl: "https://app.okou.ai",
         privateMetadata: {
           usagePackInvitationPurchaseId: activePurchaseId,
+          getStartedClaimId: expect.any(String),
         },
       }),
     );
@@ -15185,9 +15194,17 @@ describe("usage pack allocation management", () => {
 
   it("activates one paid invitation exactly once after Clerk acceptance", async () => {
     const purchase = await beginInvitationPurchase();
+    await setGetStartedEnabled(context, purchase.fixture);
     const invitationId = `inv_paid_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);
     await payInvitationPurchase(purchase, invitationId);
+    expect(
+      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
+        (q) => {
+          return q.key === "invite";
+        },
+      ),
+    ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
 
     const pending = await readUsagePackState(
       purchase.fixture.orgId,
@@ -15286,6 +15303,13 @@ describe("usage pack allocation management", () => {
         idempotencyKey: expect.stringContaining(purchase.purchaseId),
       }),
     );
+    expect(
+      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
+        (q) => {
+          return q.key === "invite";
+        },
+      ),
+    ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
   });
 
   it("activates one paid invitation exactly once after Clerk creates the membership", async () => {
@@ -16069,6 +16093,29 @@ describe("usage pack allocation management", () => {
 });
 
 describe("POST /api/billing/checkout/complete", () => {
+  function normalizeCreditGrants(
+    credits: UsagePackCreditsResponse,
+  ): UsagePackCreditsResponse {
+    return {
+      ...credits,
+      creditGrants: [...credits.creditGrants].sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      }),
+      ...(credits.memberCredits === undefined
+        ? {}
+        : {
+            memberCredits: credits.memberCredits.map((member) => {
+              return {
+                ...member,
+                creditGrants: [...member.creditGrants].sort((a, b) => {
+                  return a.id.localeCompare(b.id);
+                }),
+              };
+            }),
+          }),
+    };
+  }
+
   beforeEach(() => {
     setTierPrices();
   });
@@ -16290,8 +16337,9 @@ describe("POST /api/billing/checkout/complete", () => {
       await expect(readBillingStatus(fixture)).resolves.toStrictEqual(
         statusBeforeWebhook,
       );
-      expect((await readCredits()).body).toStrictEqual(
-        creditsBeforeWebhook.body,
+      // Equal creation timestamps do not define a stable grant order.
+      expect(normalizeCreditGrants((await readCredits()).body)).toStrictEqual(
+        normalizeCreditGrants(creditsBeforeWebhook.body),
       );
     },
   );

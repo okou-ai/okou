@@ -5,136 +5,120 @@ use super::super::support::{
 };
 use std::sync::Arc;
 
-fn usage_pending_path(base_dir: &std::path::Path) -> std::path::PathBuf {
-    base_dir.join("mitm-addon").join("usage-pending")
-}
-
-fn usage_test_now_millis() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
-        .unwrap_or(0)
-}
-
-fn write_usage_pending_state(
-    base_dir: &std::path::Path,
-    usage_state_id: &str,
-    flows: u32,
-    buffered: u32,
-    reports: u32,
-) {
-    let addon_dir = base_dir.join("mitm-addon");
-    std::fs::create_dir_all(&addon_dir).unwrap();
-    std::fs::write(
-        usage_pending_path(base_dir),
-        serde_json::json!({
-            "pid": std::process::id(),
-            "usageStateId": usage_state_id,
-            "updatedAtMs": usage_test_now_millis(),
-            "flows": flows,
-            "buffered": buffered,
-            "reports": reports,
-        })
-        .to_string(),
-    )
-    .unwrap();
-}
-
 async fn install_usage_flush_child(
     config: &mut RunConfig,
+    hold_flush_reply: bool,
 ) -> tokio::io::Lines<tokio::io::BufReader<tokio::process::ChildStdout>> {
+    use std::os::unix::fs::PermissionsExt;
     use tokio::io::AsyncBufReadExt;
 
-    std::fs::create_dir_all(config.paths.base_dir.join("mitm-addon")).unwrap();
-    let mut child = tokio::process::Command::new("bash")
-        .arg("-c")
-        .arg(
-            r#"
-set -euo pipefail
-base_dir="$1"
-fifo="$base_dir/usage-flush-child.fifo"
-request="$base_dir/mitm-addon/usage-flush-request"
-pending="$base_dir/mitm-addon/usage-pending"
-write_pending_snapshot() {
-  [[ -f "$request" ]] || return 0
-  flush_id="$(sed -n 's/.*"flushRequestId":"\([^"]*\)".*/\1/p' "$request")"
-  state_id="$(sed -n 's/.*"usageStateId":"\([^"]*\)".*/\1/p' "$request")"
-  [[ -n "$flush_id" && -n "$state_id" ]] || return 0
-  now_ms="$(date +%s%3N)"
-  printf '{"pid":%s,"usageStateId":"%s","updatedAtMs":%s,"flows":0,"buffered":0,"reports":0,"flushRequestId":"%s"}' "$$" "$state_id" "$now_ms" "$flush_id" > "$pending"
-}
-mkfifo "$fifo"
-exec 3<>"$fifo"
-# SIGUSR1 only wakes the usage work owned by this external process.
-trap 'printf "signaled\n"; printf "\n" >&3' USR1
-trap 'exit 0' TERM
-echo ready
-while true; do
-  if read -r -t 0.05 _ <&3; then
-    write_pending_snapshot
-  fi
-done
-"#,
-        )
-        .arg("usage-flush-child")
-        .arg(&config.paths.base_dir)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let mut ready_lines = tokio::io::BufReader::new(stdout).lines();
-    let ready = tokio::time::timeout(Duration::from_secs(2), ready_lines.next_line())
-        .await
-        .expect("usage flush child did not print ready")
-        .unwrap()
-        .expect("usage flush child stdout closed before ready");
-    assert_eq!(ready, "ready");
+    let directory = config.paths.base_dir.join("addon-control");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    config
+        .proxy
+        .mitm
+        .set_control_directory_for_test(directory.clone());
+    let mut child = tokio::process::Command::new("python3")
+        .arg("-u").arg("-c").arg(r#"
+import json, os, socket, struct, sys, threading, time
+from pathlib import Path
+root = Path(sys.argv[1])
+hold = sys.argv[2] == 'true'
+fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+listener.bind(f'/proc/self/fd/{fd}/control.sock')
+listener.listen(8)
+
+def read_exact(conn, size):
+    result = b''
+    while len(result) < size:
+        data = conn.recv(size - len(result))
+        if not data:
+            raise EOFError()
+        result += data
+    return result
+
+def handle(conn):
+    with conn:
+        conn.settimeout(5)
+        size, = struct.unpack('!I', read_exact(conn, 4))
+        req = json.loads(read_exact(conn, size))
+        assert req['generation'] == 'test-usage-state-id'
+        method = req['method']
+        if method == 'delivery.flush':
+            assert req['params'] == {}
+            print('flush-received', flush=True)
+            until = time.monotonic() + 5
+            while hold and not (root / 'release').exists():
+                assert time.monotonic() < until
+                time.sleep(0.01)
+            data = {'state': 'admitted'}
+        elif method == 'delivery.drain':
+            data = {'state': 'quiescent', 'snapshot': {
+                'flows': 0, 'buffered': 0, 'reports': 0,
+                'workerActive': False, 'wakePending': False, 'closed': False,
+                'drainActive': True, 'flushFailures': 0,
+                'outcomes': {'success': 0, 'retryable_failure': 0, 'permanent_failure': 0}}}
+        elif method == 'logs.flush':
+            params = req['params']
+            path = Path(params['path'])
+            assert path.name == 'network-' + params['runId'] + '.jsonl'
+            with path.open('a') as output:
+                output.write(json.dumps({'timestamp':'2026-01-01T00:00:02Z', 'type':'dns', 'host':'addon.example', 'port':53}) + '\n')
+            data = dict(params, boundary=1, pending=0, state='processed')
+        else:
+            raise AssertionError(method)
+        payload = json.dumps({'requestId':req['requestId'], 'generation':req['generation'], 'type':'result', 'data':data}).encode()
+        conn.sendall(struct.pack('!I', len(payload)) + payload)
+print('ready', flush=True)
+while True:
+    conn, _ = listener.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+"#)
+        .arg(directory).arg(hold_flush_reply.to_string())
+        .stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped())
+        .kill_on_drop(true).spawn().unwrap();
+    let mut lines = tokio::io::BufReader::new(child.stdout.take().unwrap()).lines();
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(2), lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .as_deref(),
+        Some("ready")
+    );
     config.proxy.mitm.set_child_for_test(child);
-    ready_lines
+    lines
 }
 
 #[tokio::test]
 async fn job_completion_requests_proxy_usage_flush_without_waiting() {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    let mut child_lines = install_usage_flush_child(&mut config).await;
-    let usage_state_id = config.proxy.mitm.usage_state_id_for_test().to_string();
-    write_usage_pending_state(&config.paths.base_dir, &usage_state_id, 0, 0, 1);
-    let base_dir = config.paths.base_dir.clone();
+    let mut child_lines = install_usage_flush_child(&mut config, true).await;
+    let release = config.paths.base_dir.join("addon-control/release");
     let run_handle = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(run(config)));
-
     wait_discover_entered(&env, Duration::from_secs(2)).await;
-
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
-
-    let completion = env
-        .handle
-        .wait_completion(run_id, Duration::from_secs(5))
-        .await;
     assert!(
-        completion.is_some(),
-        "job completion must not wait for proxy usage drain"
+        env.handle
+            .wait_completion(run_id, Duration::from_secs(5))
+            .await
+            .is_some(),
+        "job completion must not wait for proxy delivery"
     );
     wait_usage_flush_requested(&env, Duration::from_secs(5)).await;
-
-    // The observer precedes the signal call. Require receipt in the child
-    // before shutdown can independently signal it or usage delivery is released.
-    let signaled = tokio::time::timeout(Duration::from_secs(5), child_lines.next_line())
-        .await
-        .expect("proxy child must receive SIGUSR1 after job completion")
-        .unwrap();
-    assert_eq!(signaled.as_deref(), Some("signaled"));
-    let pending: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(usage_pending_path(&base_dir)).unwrap()).unwrap();
     assert_eq!(
-        pending["reports"], 1,
-        "job completion and signal receipt must not require usage delivery"
+        tokio::time::timeout(Duration::from_secs(5), child_lines.next_line())
+            .await
+            .unwrap()
+            .unwrap()
+            .as_deref(),
+        Some("flush-received")
     );
-
-    write_usage_pending_state(&base_dir, &usage_state_id, 0, 0, 0);
+    // The real control request reached the child, but its reply is still held.
+    std::fs::write(release, b"release").unwrap();
     shutdown(&env, run_handle.detach()).await;
 }
 
@@ -189,18 +173,8 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
     });
 
     let (mut config, env) = mock_run_config_with_api_url(test_profiles(), 8, 32768, 4, &api_url);
-    // Keep the signal acknowledgement pipe open until the child is stopped.
-    let _child_lines = install_usage_flush_child(&mut config).await;
-    let addon_dir = config.paths.base_dir.join("mitm-addon");
-    std::fs::set_permissions(
-        &addon_dir,
-        std::os::unix::fs::PermissionsExt::from_mode(0o700),
-    )
-    .unwrap();
-    config
-        .proxy
-        .mitm
-        .set_control_directory_for_test(addon_dir.clone());
+    // Keep the control peer's diagnostic pipe open until the child is stopped.
+    let _child_lines = install_usage_flush_child(&mut config, false).await;
     let mitm_jsonl_flush = config.proxy.mitm.jsonl_flush_handle();
     let write_started = Arc::new(tokio::sync::Notify::new());
     let release_write = Arc::new(tokio::sync::Semaphore::new(0));
@@ -214,35 +188,6 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
     // Seed a network log file so `upload_network_logs` has a payload to POST
     // (otherwise it early-returns on NotFound).
     let run_id = RunId::new_v4();
-    let mut addon_tasks = tokio::task::JoinSet::new();
-    let addon_listener = tokio::net::UnixListener::bind(addon_dir.join("control.sock")).unwrap();
-    let addon_path = config.exec_config.log_paths.network_log(run_id);
-    addon_tasks.spawn(async move {
-        use tokio::io::AsyncReadExt;
-        let (mut socket, _) = addon_listener.accept().await.unwrap();
-        let size = socket.read_u32().await.unwrap() as usize;
-        assert!(size <= 64 * 1024);
-        let mut bytes = vec![0; size];
-        socket.read_exact(&mut bytes).await.unwrap();
-        let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(request["method"], "logs.flush");
-        assert_eq!(request["params"]["runId"], run_id.to_string());
-        assert_eq!(request["params"]["path"], addon_path.to_string_lossy().as_ref());
-        // Model the external addon boundary: this record becomes available only
-        // after the deferred upload sends the exact run's flush request.
-        let mut file = tokio::fs::OpenOptions::new().append(true).open(&addon_path).await.unwrap();
-        file.write_all(br#"{"timestamp":"2026-01-01T00:00:02Z","type":"dns","host":"addon.example","port":53}
-"#).await.unwrap();
-        file.flush().await.unwrap();
-        let response = serde_json::to_vec(&serde_json::json!({
-            "requestId": request["requestId"], "generation": request["generation"],
-            "type": "result", "data": {
-                "runId": run_id, "path": addon_path, "boundary": 1, "pending": 0, "state": "processed"
-            }
-        })).unwrap();
-        socket.write_u32(response.len() as u32).await.unwrap();
-        socket.write_all(&response).await.unwrap();
-    });
     let network_log_path = config.exec_config.log_paths.network_log(run_id);
     std::fs::create_dir_all(network_log_path.parent().unwrap()).unwrap();
     std::fs::write(
@@ -349,12 +294,6 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
     tokio::time::timeout(WAIT, server_tasks.join_next())
         .await
         .expect("HTTP server should stop")
-        .unwrap()
-        .unwrap();
-
-    tokio::time::timeout(WAIT, addon_tasks.join_next())
-        .await
-        .unwrap()
         .unwrap()
         .unwrap();
 }

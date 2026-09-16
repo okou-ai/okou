@@ -34,13 +34,35 @@ export function classifyProviderFailure(
     !hasProviderErrorProvenance(message, httpStatus)
   )
     return undefined;
-  if (reason) return reason;
+  if (
+    reason &&
+    reason !== "provider_server_error" &&
+    reason !== "provider_overloaded"
+  )
+    return reason;
 
   const errorMessage = payload && (object(payload.error) ?? payload).message;
   const normalized = (typeof errorMessage === "string" ? errorMessage : message)
     .trim()
     .toLowerCase()
     .replace(/^codex error: /u, "");
+  const textReason = providerTextFailureReason(normalized);
+  return textReason === "provider_queue_timeout"
+    ? textReason
+    : (reason ?? textReason ?? classifyProviderHttpFailure(httpStatus));
+}
+
+function providerTextFailureReason(
+  normalized: string,
+): KnownRunFailureReason | undefined {
+  if (
+    normalized.replace(
+      /^(?:error code )?(?:unknown|server_error|internal_server_error|overloaded_error|server_overloaded|timeout): /u,
+      "",
+    ) ===
+    "we were unable to start processing your request within the 900-second timeout limit. please try again later."
+  )
+    return "provider_queue_timeout";
   if (
     normalized ===
       "our servers are currently overloaded. please try again later." ||
@@ -79,7 +101,7 @@ export function classifyProviderFailure(
   ) {
     return "context_window_exceeded";
   }
-  return classifyProviderHttpFailure(httpStatus);
+  return undefined;
 }
 
 export function classifyProviderHttpFailure(
@@ -127,6 +149,7 @@ function providerErrorPayload(
     !(
       prefix === "" ||
       prefix === "codex error:" ||
+      /^(?:openai|anthropic) api error \(\d{3}\):$/u.test(prefix) ||
       /^(?:api error: |unexpected status |\d{3}(?:\s|$))/u.test(prefix)
     )
   )

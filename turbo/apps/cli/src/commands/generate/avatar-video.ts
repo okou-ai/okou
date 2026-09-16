@@ -498,6 +498,7 @@ Notes:
   - Public avatar and voice IDs are discoverable with the list flags.
   - Built-in generation uses Okou-managed JoggAI credentials and charges org credits.
   - Connector generation uses the connected JoggAI account and provider credits.
+  - After starting built-in generation, wait for the command to finish and use its returned artifact; do not launch a duplicate because polling takes time.
   - Authenticates via OKOU_TOKEN and requires file:write capability.`,
   )
   .action(withErrorHandler(runAvatarVideoCommand));

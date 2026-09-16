@@ -32,24 +32,27 @@ def reject(code):
 
 
 if binary.name == "gh":
+    state["verificationReads"] += 1
     assert args == [
         "api",
-        "repos/vm0-ai/vm0/actions/artifacts/123/zip",
+        "repos/vm0-ai/okou/actions/artifacts/123/zip",
         "--allow-escape-sequences",
     ]
     raw = base64.b64decode(state["archive"])
     sys.stdout.buffer.write(
         raw + (b"changed" if scenario == "archive-changed" else b"")
     )
+    save()
     sys.exit(0)
 
 if binary.name == "curl":
     url = next(arg for arg in args if arg.startswith("https://"))
-    if url == "https://api.github.com/repos/vm0-ai/vm0/actions/runs/54321":
+    if url == "https://api.github.com/repos/vm0-ai/okou/actions/runs/54321":
+        state["verificationReads"] += 1
         result = state["run"]
     elif (
         url
-        == "https://api.github.com/repos/vm0-ai/vm0/actions/runs/54321/artifacts?per_page=100"
+        == "https://api.github.com/repos/vm0-ai/okou/actions/runs/54321/artifacts?per_page=100"
     ):
         result = {"total_count": 1, "artifacts": [state["artifact"]]}
     elif (
@@ -118,6 +121,7 @@ if args[:2] == ["sts", "get-caller-identity"]:
     if scenario == "wrong-principal":
         result["Arn"] = "arn:aws:iam::072707626411:user/other"
 elif args[:3] == ["cloudtrail", "lookup-events", "--no-paginate"]:
+    state["auditReads"] += 1
     payload = json.loads(
         Path(
             args[args.index("--cli-input-json") + 1].removeprefix("file://")

@@ -1,15 +1,18 @@
 import { classifyProviderFailure } from "@okouai/api-contracts/contracts/provider-failure";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import type { PiModelTransportFailure } from "./model-transport-diagnostics";
 
 /** Content-free evidence; never infer an HTTP status from provider prose. */
 export interface PiApiModelFailureDiagnostic {
   readonly category: "http_error" | "stream_terminated" | "aborted" | "unknown";
   readonly httpStatus?: number;
+  readonly transportFailure?: PiModelTransportFailure;
 }
 
 export function projectPiApiModelFailure(
   error: unknown,
   responseStatus?: number,
+  transportFailure?: PiModelTransportFailure,
 ): PiApiModelFailureDiagnostic {
   const httpStatus =
     responseStatus !== undefined &&
@@ -32,7 +35,11 @@ export function projectPiApiModelFailure(
         : error instanceof Error && error.name === "AbortError"
           ? "aborted"
           : "unknown";
-  return { category, ...(httpStatus === undefined ? {} : { httpStatus }) };
+  return {
+    category,
+    ...(httpStatus === undefined ? {} : { httpStatus }),
+    ...(transportFailure ? { transportFailure } : {}),
+  };
 }
 
 /** Only the request/stream boundary may create this recovery provenance. */

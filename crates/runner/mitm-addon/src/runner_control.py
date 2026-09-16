@@ -25,6 +25,7 @@ import registry_observation
 
 if TYPE_CHECKING:
     import registry_control
+    import runner_flush_lifecycle
 
 MAX_FRAME_BYTES = 64 * 1024
 MAX_CONNECTIONS = 16
@@ -84,10 +85,12 @@ class ControlServer:
         directory: Path,
         generation: str,
         registry_owner: registry_control.RegistryControl | None = None,
+        delivery_owner: runner_flush_lifecycle.DeliveryControl | None = None,
     ) -> None:
         self._directory = directory
         self._generation = _identifier(generation)
         self._registry_owner = registry_owner
+        self._delivery_owner = delivery_owner
         self._started: Future[None] = Future()
         self._shutdown: Future[None] = Future()
         self._tasks: set[asyncio.Task[None]] = set()
@@ -201,6 +204,8 @@ class ControlServer:
                 return self._error(request_id, "invalid_request")
             if generation != self._generation:
                 return self._error(request_id, "stale_generation")
+            if method in {"delivery.flush", "delivery.status", "delivery.drain"}:
+                return await self._delivery(request_id, method, request["params"])
             if method == "logs.flush":
                 return await self._flush_logs(request_id, request["params"])
             if method == "registry.apply":
@@ -229,6 +234,34 @@ class ControlServer:
             "type": "result",
             "data": data,
         }
+
+    async def _delivery(
+        self, request_id: str, method: str, params: dict[str, object]
+    ) -> dict[str, object]:
+        if params:
+            return self._error(request_id, "invalid_request")
+        owner = self._delivery_owner
+        if owner is None:
+            return self._error(request_id, "not_ready")
+        try:
+            if method == "delivery.status":
+                return self._result(request_id, owner.status())
+            if owner.status()["closed"]:
+                return self._error(request_id, "not_ready")
+            if method == "delivery.flush":
+                state = owner.flush()
+                if state == "closed":
+                    return self._error(request_id, "not_ready")
+                return self._result(request_id, {"state": state})
+            result = await owner.drain()
+            if result is None:
+                return self._error(request_id, "busy")
+            return self._result(request_id, result)
+        except Exception as error:
+            addon_process_logging.emit_addon_process_event(
+                "error", f"Delivery control failed ({type(error).__name__})"
+            )
+            return self._error(request_id, "internal_error")
 
     async def _apply_registry(
         self, request_id: str, params: dict[str, object]

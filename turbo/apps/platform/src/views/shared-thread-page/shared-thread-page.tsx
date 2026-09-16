@@ -5,7 +5,7 @@ import type {
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { Button, Card, CardContent, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { useLoadable } from "ccstate-react";
+import { useLoadable, useSet } from "ccstate-react";
 import type { Root } from "hast";
 import { Copy, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,7 @@ import {
   type BrandName,
 } from "../../signals/branding.ts";
 import type { SharedThreadRichContentSignals } from "../../signals/shared-thread-page/shared-thread-rich-content.ts";
+import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { MarkdownEventBody } from "../components/markdown.tsx";
@@ -36,6 +37,7 @@ import {
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
+import { WorkspaceInset } from "../okou-page/workspace-inset.tsx";
 import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
 
 /**
@@ -364,7 +366,7 @@ function SharedThreadHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:px-6">
+    <header className="relative z-10 flex min-h-12 shrink-0 items-center gap-3 border-b border-border/50 bg-background px-3 sm:h-14 sm:border-b-0 sm:px-6 md:bg-transparent">
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <a
           href={homeUrl}
@@ -500,6 +502,10 @@ export function SharedThreadPage({
   readonly sharedThread: SharedDisplayThread | null;
 }) {
   const { t } = useTranslation();
+  // A public conversation is an app surface, so it follows the viewer's own
+  // palette rather than the neutral default, as the artifact viewer already
+  // does. A signed-out visitor has no palette and keeps that default.
+  const mountRef = useSet(shellDocumentAttributesRef$);
   const groups = sharedThread ? groupSharedMessages(sharedThread.messages) : [];
   // Threads shared under the retired brand keep their stored value, but only
   // okou.ai serves this page, so it always presents the Okou brand.
@@ -525,7 +531,10 @@ export function SharedThreadPage({
   signUpUrl.searchParams.set("redirect_url", handoffUrl.toString());
 
   return (
-    <div className="relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] flex h-full min-h-0 flex-col text-foreground">
+    <div
+      ref={mountRef}
+      className="flex h-full min-h-0 flex-col bg-background text-foreground md:bg-sidebar"
+    >
       <SharedThreadHeader
         brandName={BRAND_NAME}
         homeUrl={homeUrl}
@@ -534,22 +543,24 @@ export function SharedThreadPage({
         signUpUrl={signUpUrl.toString()}
         title={sharedThread?.title ?? null}
       />
-      {sharedThread ? (
-        <>
-          <SharedThreadTranscript
-            assistantName={ASSISTANT_NAME}
-            groups={groups}
-            richContent={sharedThread.richContent}
-          />
-          <SharedThreadHandoff
-            assistantName={ASSISTANT_NAME}
-            handoffUrl={handoffUrl.toString()}
-            signInUrl={signInUrl.toString()}
-          />
-        </>
-      ) : (
-        <SharedThreadNotFound />
-      )}
+      <WorkspaceInset beside="nothing">
+        {sharedThread ? (
+          <>
+            <SharedThreadTranscript
+              assistantName={ASSISTANT_NAME}
+              groups={groups}
+              richContent={sharedThread.richContent}
+            />
+            <SharedThreadHandoff
+              assistantName={ASSISTANT_NAME}
+              handoffUrl={handoffUrl.toString()}
+              signInUrl={signInUrl.toString()}
+            />
+          </>
+        ) : (
+          <SharedThreadNotFound />
+        )}
+      </WorkspaceInset>
     </div>
   );
 }

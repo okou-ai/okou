@@ -34,6 +34,23 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
     let normalized = normalized
         .strip_prefix("codex error: ")
         .unwrap_or(&normalized);
+    let queue_message = normalized.strip_prefix("error code ").unwrap_or(normalized);
+    let queue_message = [
+        "unknown: ",
+        "server_error: ",
+        "internal_server_error: ",
+        "overloaded_error: ",
+        "server_overloaded: ",
+        "timeout: ",
+    ]
+    .iter()
+    .find_map(|prefix| queue_message.strip_prefix(prefix))
+    .unwrap_or(queue_message);
+    if queue_message
+        == "we were unable to start processing your request within the 900-second timeout limit. please try again later."
+    {
+        return Some(FailureReason::ProviderQueueTimeout);
+    }
     if normalized == "our servers are currently overloaded. please try again later."
         || normalized == "selected model is at capacity. please try a different model."
     {
@@ -111,6 +128,7 @@ fn envelope_failure_reason(message: &str) -> Option<FailureReason> {
     let prefix = message[..start].trim().to_ascii_lowercase();
     if !(prefix.is_empty()
         || prefix == "codex error:"
+        || is_sdk_error_prefix(&prefix)
         || prefix.starts_with("api error: ")
         || prefix.starts_with("unexpected status ")
         || prefix.split_whitespace().next().is_some_and(|status| {
@@ -130,6 +148,14 @@ fn envelope_failure_reason(message: &str) -> Option<FailureReason> {
         return None;
     }
     Some(reason)
+}
+
+fn is_sdk_error_prefix(prefix: &str) -> bool {
+    prefix
+        .strip_prefix("openai api error (")
+        .or_else(|| prefix.strip_prefix("anthropic api error ("))
+        .and_then(|status| status.strip_suffix("):"))
+        .is_some_and(|status| status.len() == 3 && status.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
 /// An upstream error object, distinct from the platform's string error envelope.
@@ -183,6 +209,19 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
         .get("code")
         .and_then(Value::as_str)
         .or_else(|| error.get("type").and_then(Value::as_str));
+    if matches!(
+        code,
+        None | Some(
+            "overloaded_error" | "server_overloaded" | "server_error" | "internal_server_error"
+        )
+    ) && error
+        .get("message")
+        .and_then(Value::as_str)
+        .and_then(text_failure_reason)
+        == Some(FailureReason::ProviderQueueTimeout)
+    {
+        return Some(FailureReason::ProviderQueueTimeout);
+    }
     match code {
         Some("invalid_api_key") => Some(FailureReason::InvalidApiKey),
         Some("authentication_error") => Some(FailureReason::InvalidCredentials),

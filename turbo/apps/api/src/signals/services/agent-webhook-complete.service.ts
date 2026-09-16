@@ -3,7 +3,6 @@ import {
   assertPiInferencePublication,
 } from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
-import { isLegacyProviderBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -226,6 +225,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   provider_rate_limited: "suppress-byok",
   provider_overloaded: "suppress-byok",
   provider_stream_timeout: "suppress-byok",
+  provider_queue_timeout: "suppress-byok",
   provider_server_error: "suppress-byok",
   response_connection_lost: "suppress-byok",
   reconnect_required: "suppress-byok",
@@ -434,15 +434,10 @@ async function prepareCompletion(
   if (input.body.exitCode !== 0) {
     const error =
       input.body.error?.trim() || "Run failed without error message";
-    const reason = input.body.failureReason;
     return {
       status: "failed",
       error,
-      failureReason:
-        reason === "insufficient_credits" &&
-        isLegacyProviderBalanceError(error, null)
-          ? "provider_insufficient_credits"
-          : reason,
+      failureReason: input.body.failureReason,
       failureKind: "reported",
     };
   }
@@ -507,7 +502,20 @@ async function lockCompletionRun(
     input.body.runId,
     run.launchSnapshot,
   );
-  assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  const sandboxFence = input.auth.piSandbox;
+  if (sandboxFence) {
+    if (
+      lifecycle?.lease?.claimedOwnerEpoch !== sandboxFence.ownerEpoch ||
+      lifecycle.lease.claimedGeneration !== sandboxFence.generation
+    ) {
+      throw new Error("Stale Pi Sandbox completion");
+    }
+    if (lifecycle.inference.phase !== "terminal") {
+      assertPiInferencePublication(lifecycle, sandboxFence.ownerEpoch);
+    }
+  } else {
+    assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+  }
 
   return { ...run, status: runStatusSchema.parse(run.status) };
 }

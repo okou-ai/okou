@@ -25,6 +25,11 @@ const publishCommand = new Command()
     "--package <dir>",
     "Directory holding SKILL.md, design-system.md and any assets",
   )
+  .addHelpText(
+    "after",
+    `
+This is the publish step, not page rendering. First follow the authoritative reverse-template guide and render ordered page images with okou presentation screenshot. publish uploads the original deck, ordered page PNGs, and guidance package, then commits them together.`,
+  )
   .action(
     withErrorHandler(async (options: PublishOptions) => {
       const template = await publishPresentationTemplate({

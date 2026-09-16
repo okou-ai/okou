@@ -43,11 +43,8 @@ import {
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 
 import {
-  composerCreateCommandLabel,
-  composerCreateModeLabel,
-  composerCreateModeName,
   composerCreatePlaceholder,
-  type ComposerCreateCommand,
+  type ComposerCreateMode,
 } from "../../signals/okou-page/composer-create.ts";
 
 function isMacKeyboard(): boolean {
@@ -164,9 +161,8 @@ function WorkflowComposerPlaceholder({
   composer: ComposerSignals;
   sending: boolean | undefined;
 }) {
-  const { t } = useTranslation();
+  useTranslation();
   const createMode = useGet(composer.create.mode$);
-  const choosing = useGet(composer.create.choosing$);
   const hasInput = useGet(composer.editor.hasInput$);
   const hasEditorContent = useEditorState({
     editor: composer.editor.editor,
@@ -187,13 +183,9 @@ function WorkflowComposerPlaceholder({
       }`}
       aria-hidden="true"
     >
-      {choosing
-        ? t(($) => {
-            return $.chat.composer.create.question;
-          })
-        : createMode
-          ? composerCreatePlaceholder(createMode)
-          : workflowComposerPlaceholder(sending)}
+      {createMode
+        ? composerCreatePlaceholder(createMode)
+        : workflowComposerPlaceholder(sending)}
     </div>
   );
 }
@@ -320,8 +312,6 @@ interface ComposerSuggestionMenuState {
   readonly selectedIndex: number;
   readonly close: () => void;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
-  readonly createModes: readonly ComposerCreateCommand[];
-  readonly selectCreate: (mode: ComposerCreateCommand) => void;
   /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
   readonly previewIndex: number | null;
@@ -342,48 +332,21 @@ interface ComposerSuggestionMenuState {
   readonly handleKeyDown: (event: KeyboardEvent) => boolean;
 }
 
-function useComposerCreateSuggestions(
-  composer: ComposerSignals,
-  query: string | undefined,
-): readonly ComposerCreateCommand[] {
-  useTranslation();
-  const enabled = useGet(composer.create.enabled$);
-  if (!enabled || query === undefined) {
-    return [];
-  }
-  const normalized = query.toLowerCase().trim();
-  if (
-    "create".startsWith(normalized) ||
-    composerCreateCommandLabel("choose").toLowerCase().startsWith(normalized)
-  ) {
-    return ["choose"];
-  }
-  return composer.create.modes.filter((mode) => {
-    return (
-      `create ${mode}`.includes(normalized) ||
-      composerCreateModeLabel(mode).toLowerCase().includes(normalized) ||
-      composerCreateModeName(mode).toLowerCase().includes(normalized)
-    );
-  });
-}
-
 /**
- * The three categories that are also composer create modes keep their existing
- * action, so choosing "Presentation" from the panel does exactly what choosing
- * it from the flat menu does today. Website and Workflow have no create mode,
- * so they open the template picker on their own tab instead.
+ * The three categories that are also composer create modes enter that mode, so
+ * choosing "Presentation" from the panel does exactly what choosing it from the
+ * task chips does. Website and Workflow have no create mode, so they open the
+ * template picker on their own tab instead.
  */
 const SLASH_TEMPLATE_CATEGORY_CREATE_MODE = {
   slides: "presentation",
   illustration: "image",
   video: "video",
-} as const satisfies Partial<
-  Record<SlashTemplateCategory, ComposerCreateCommand>
->;
+} as const satisfies Partial<Record<SlashTemplateCategory, ComposerCreateMode>>;
 
 function createModeForCategory(
   category: SlashTemplateCategory,
-): ComposerCreateCommand | undefined {
+): ComposerCreateMode | undefined {
   return category in SLASH_TEMPLATE_CATEGORY_CREATE_MODE
     ? SLASH_TEMPLATE_CATEGORY_CREATE_MODE[
         category as keyof typeof SLASH_TEMPLATE_CATEGORY_CREATE_MODE
@@ -391,13 +354,16 @@ function createModeForCategory(
     : undefined;
 }
 
+/**
+ * The panel's own switch is the only gate: the caller withholds the query while
+ * it is off. Reading a second switch here is what used to let the task chips
+ * decide whether the panel had any rows to show.
+ */
 function useSlashTemplateCategorySuggestions(
-  composer: ComposerSignals,
   query: string | undefined,
 ): readonly SlashTemplateCategory[] {
   useTranslation();
-  const enabled = useGet(composer.create.enabled$);
-  if (!enabled || query === undefined) {
+  if (query === undefined) {
     return [];
   }
   const normalized = query.toLowerCase().trim();
@@ -409,8 +375,8 @@ function useSlashTemplateCategorySuggestions(
 }
 
 /**
- * Everything the two-pane panel needs that the flat menu does not: which rows
- * the typed query leaves, and what each row does when it is chosen.
+ * Everything the two-pane panel needs: which rows the typed query leaves, and
+ * what each row does when it is chosen.
  */
 function useSlashTemplatePanelActions(
   composer: ComposerSignals,
@@ -426,7 +392,6 @@ function useSlashTemplatePanelActions(
   const runDeckImport = useSet(importPresentationTemplateDeck$);
   const rootSignal = useGet(rootSignal$);
   const categories = useSlashTemplateCategorySuggestions(
-    composer,
     enabled ? query : undefined,
   );
   return {
@@ -515,9 +480,7 @@ function useComposerMentionSuggestions(
 
 interface SuggestionRows {
   readonly showWorkflows: boolean;
-  readonly panelEnabled: boolean;
   readonly panelCategories: readonly SlashTemplateCategory[];
-  readonly createModes: readonly ComposerCreateCommand[];
   /** How many rows sit above the workflow suggestions. */
   readonly headCount: number;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
@@ -527,20 +490,17 @@ interface SuggestionRows {
 
 interface SuggestionRowActions {
   readonly selectCategory: (category: SlashTemplateCategory) => void;
-  readonly selectCreate: (mode: ComposerCreateCommand) => void;
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
   readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
 }
 
-/** The head row for an index, whichever of the two menus is rendered. */
+/** The head row for an index; empty while the panel's switch is off. */
 function suggestionHeadRow(
   index: number,
   rows: SuggestionRows,
-): SlashTemplateCategory | ComposerCreateCommand | undefined {
-  return rows.panelEnabled
-    ? rows.panelCategories[index]
-    : rows.createModes[index];
+): SlashTemplateCategory | undefined {
+  return rows.panelCategories[index];
 }
 
 function selectSlashSuggestionRow(
@@ -548,18 +508,10 @@ function selectSlashSuggestionRow(
   rows: SuggestionRows,
   actions: SuggestionRowActions,
 ): void {
-  if (rows.panelEnabled) {
-    const category = rows.panelCategories[index];
-    if (category) {
-      actions.selectCategory(category);
-      return;
-    }
-  } else {
-    const mode = rows.createModes[index];
-    if (mode) {
-      actions.selectCreate(mode);
-      return;
-    }
+  const category = rows.panelCategories[index];
+  if (category) {
+    actions.selectCategory(category);
+    return;
   }
   const workflow = rows.workflows[index - rows.headCount];
   if (workflow) {
@@ -604,16 +556,9 @@ function useComposerSuggestionMenu({
   readonly composer: ComposerSignals;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }): ComposerSuggestionMenuState {
-  const selectCreate = useSet(composer.create.selectCommand$);
-  const setCreateMode = useSet(composer.create.setMode$);
-  const choosing = useGet(composer.create.choosing$);
   const slashRange = useGet(composer.suggestion.activeSlashRange$);
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
-  const flatCreateModes = useComposerCreateSuggestions(
-    composer,
-    slashRange?.query,
-  );
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
   const previewIndex = useGet(composer.suggestion.previewSuggestionIndex$);
   const previewSuggestion = useSet(composer.suggestion.previewSuggestion$);
@@ -628,9 +573,6 @@ function useComposerSuggestionMenu({
   );
   const templatePanelEnabled = templatePanel.enabled;
   const panelCategories = templatePanel.categories;
-  // The panel replaces the flat Create group, so only one of the two occupies
-  // the indexes ahead of the workflow suggestions.
-  const createModes = templatePanelEnabled ? [] : flatCreateModes;
   const insertWorkflow = useSet(composer.workflow.insertWorkflow$);
   const insertAgent = useSet(composer.suggestion.insertAgent$);
   const insertChatThread = useSet(composer.suggestion.insertChatThread$);
@@ -648,18 +590,14 @@ function useComposerSuggestionMenu({
     : showMentions
       ? chatThreadRange
       : null;
-  const headCount = templatePanelEnabled
-    ? panelCategories.length
-    : createModes.length;
+  const headCount = panelCategories.length;
   const suggestionCount = showWorkflows
     ? headCount + workflowSuggestions.length
     : agents.length + chatThreads.length;
 
   const rows: SuggestionRows = {
     showWorkflows,
-    panelEnabled: templatePanelEnabled,
     panelCategories,
-    createModes,
     headCount,
     workflows: workflowSuggestions,
     agents,
@@ -669,7 +607,6 @@ function useComposerSuggestionMenu({
   function selectSuggestion(index: number): void {
     selectSuggestionRow(index, rows, {
       selectCategory: templatePanel.selectCategory,
-      selectCreate,
       insertWorkflow,
       insertAgent,
       insertChatThread,
@@ -683,11 +620,6 @@ function useComposerSuggestionMenu({
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
-    if (event.key === "Escape" && choosing && !open) {
-      event.preventDefault();
-      setCreateMode(null);
-      return true;
-    }
     return handleComposerKeyDownCapture(event, {
       composer,
       selectedTask,
@@ -709,8 +641,6 @@ function useComposerSuggestionMenu({
     selectedIndex,
     close,
     workflows: workflowSuggestions,
-    createModes,
-    selectCreate,
     panelCategories,
     previewIndex,
     previewSuggestion,
@@ -832,8 +762,6 @@ export function TiptapWorkflowComposer({
             suggestionMenu.range,
           )}
           workflows={suggestionMenu.workflows}
-          createModes={suggestionMenu.createModes}
-          onSelectCreate={suggestionMenu.selectCreate}
           loading={suggestionMenu.workflowsLoading}
           selectedIndex={suggestionMenu.selectedIndex}
           showWorkflowsPageLink

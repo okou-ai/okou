@@ -1,5 +1,6 @@
 import type {
   PiLaunchConfig,
+  PiApiFirstTurnConfig,
   PiModelConfig,
   StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
@@ -25,7 +26,9 @@ export interface PiApiFirstTurnActivation {
   > & {
     readonly apiStartTime: number;
     readonly billableFirewalls: readonly string[];
-    readonly piLaunchConfig: PiLaunchConfig;
+    readonly piLaunchConfig: PiLaunchConfig & {
+      readonly apiFirstTurn: PiApiFirstTurnConfig;
+    };
     readonly piModelConfig: PiModelConfig;
     readonly piSessionId: string;
   };
@@ -60,6 +63,7 @@ export function requirePiApiFirstTurnExecutionContext(
     context.apiStartTime === undefined ||
     context.billableFirewalls === undefined ||
     context.piLaunchConfig === undefined ||
+    context.piLaunchConfig.apiFirstTurn.schemaVersion !== 1 ||
     context.piModelConfig === undefined ||
     context.piSessionId === undefined
   ) {
@@ -71,7 +75,10 @@ export function requirePiApiFirstTurnExecutionContext(
     encryptedSecrets: context.encryptedSecrets,
     environment: context.environment,
     modelUsageProvider: context.modelUsageProvider,
-    piLaunchConfig: context.piLaunchConfig,
+    piLaunchConfig: {
+      ...context.piLaunchConfig,
+      apiFirstTurn: context.piLaunchConfig.apiFirstTurn,
+    },
     platformEnvironment: context.platformEnvironment,
     piModelConfig: context.piModelConfig,
     piSessionId: context.piSessionId,
@@ -102,6 +109,9 @@ export function refreshPiApiFirstTurnDeadline<
     return { ...context, apiStartTime } as T;
   }
   const slot = launchConfig.apiFirstTurn;
+  if (slot.schemaVersion !== 1) {
+    throw new Error("Deferred Pi work cannot enter legacy queue promotion");
+  }
   return {
     ...context,
     apiStartTime,

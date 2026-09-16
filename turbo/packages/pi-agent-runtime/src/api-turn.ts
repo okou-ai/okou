@@ -3,7 +3,10 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { piAgentStreamForConfig } from "./model";
-import { piModelFailureReason } from "./model-request-diagnostics";
+import {
+  piModelFailureReason,
+  piModelTransportFailure,
+} from "./model-request-diagnostics";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -119,6 +122,7 @@ export function projectPiApiAssistantMessage(
       failureDiagnostic: projectPiApiModelFailure(
         message.errorMessage,
         responseStatus,
+        piModelTransportFailure(message),
       ),
     };
   }

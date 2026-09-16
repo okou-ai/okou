@@ -431,6 +431,10 @@ describe("CHAT-02: run-level model overrides", () => {
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(foreignFirst.runId, foreignClaim.sandboxHeaders);
 
+    // Completion acknowledges before terminal callbacks finish. Settle both
+    // runs before injecting a cross-owner binding that production APIs forbid.
+    await flushWaitUntilForTest();
+
     const primaryBinding = await readThreadSessionBinding(
       context,
       primaryFirst.threadId,

@@ -343,8 +343,11 @@ ${callbackPromptExample}  okou connector permission-request gmail --permission m
   okou connector permission-request browser --permission browser:write
 
 Notes:
-  - First run okou connector check --url <FAILED_URL> --method <METHOD>
-  - Use the exact permission-request command printed by connector check
+  - Plan the concrete connector operations needed for this task; do not request hypothetical future access
+  - Check okou whoami --permissions first and skip permissions already allowed
+  - First run okou connector check --url <FAILED_URL> --method <METHOD>; use its firewall-denial URL and omit secret query strings or fragments
+  - Use the exact permission-request command printed by connector check, one command per permission
+  - Provider OAuth errors such as Slack missing_scope or needed are provider scopes, not Okou permission names
   - A platform URL is output only when that request maps to a denied or approval-required permission
   - Builtin requests require --url and run-scoped policy data; an unavailable
     non-run diagnostic cannot produce a builtin permission approval
@@ -361,7 +364,9 @@ Notes:
   - The user chooses the permission duration on the confirmation page
   - --callback-prompt requires the current web chat and its current Agent;
     it is unsupported for custom, Browser, and Computer Use authorization
-${callbackPromptNotes}  - Builtin permission requests update the current user's connector grants after confirmation`,
+${callbackPromptNotes}  - When multiple connector or permission actions are needed, do not use callbacks; return each ordinary action URL on its own line and wait for all confirmations
+  - Return every generated action URL verbatim with all query parameters
+  - Builtin permission requests update the current user's connector grants after confirmation`,
   )
   .action(
     withErrorHandler(

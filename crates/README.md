@@ -260,6 +260,44 @@ They run after completion reporting and sandbox ownership settlement, but
 graceful Runner shutdown waits for outstanding uploads. Deadline cancellation
 can leave a request's result unknown; it does not prove that ingestion failed.
 
+### Guest root filesystem usage after abnormal exits
+
+The existing abnormal-exit probe records `guest_root_fs_usage` separately from
+`diagnostic_stdout`, so Axiom's 4 KiB text-field limit cannot let preceding
+binary or kernel output crowd out directory evidence. The usage section is
+limited to 3600 bytes plus an explicit output-limit marker.
+
+The embedded Python 3 sampler prioritizes `/tmp` and `/home/user/.pi`, then
+known CLI state/cache directories, home and system locations. It reads only
+metadata through no-follow directory descriptors, skips other devices and the
+canonical workspace, `/proc`, `/sys`, `/dev` and `/run`, and prints fixed labels
+without discovered names or contents. `bytes` uses allocated blocks, including
+directory metadata, with hard links deduplicated within each observation.
+
+Each target has a 4096-entry, 120 ms and 32-level traversal budget; the whole
+sample has 32768 entries and 2.2 seconds. The shell imposes a 3-second timeout
+with a 200 ms kill grace inside the existing 5-second/64 KiB guest probe. These
+time budgets do not make a blocking filesystem syscall interruptible; the
+outer process deadline still owns termination. Python runs isolated and
+without bytecode writes, using Python/coreutils already in supported templates.
+
+`complete` means the eligible traversal finished; it is not an atomic snapshot.
+`partial` retains observed bytes with `entries`, `time`, `depth`, `io` or
+`changed` reasons. Missing, unavailable and other-filesystem targets have no
+fabricated byte total. A `started` row without its result, no final `done`, or
+`sampler_failed_or_timed_out` indicates interrupted evidence. Overlapping
+targets and cross-target hard links make observations non-additive. Incomplete
+small observations cannot rule out a large directory; named entries that have
+been unlinked but are still open are outside this scan.
+
+This diagnostic does not alter capacity, data, mounts, resource classification
+or recovery. Before closing [#34463](https://github.com/vm0-ai/okou/issues/34463),
+record the deployed Runner/Guest artifact and a bounded production window,
+evaluate observation completeness and correlate the actual root-writing
+workload. Historical writer attribution and the first ENOSPC operation remain
+unconfirmed. A diagnostics deployment or a window without failures alone does
+not establish remediation.
+
 ## TLS in Guest Binaries
 
 Guest crates (`guest-agent`, `guest-storage-apply`) **must** use system certificate roots, not bundled webpki roots. The host runs a mitmproxy transparent proxy that intercepts HTTPS traffic with its own CA certificate, which is installed into the guest's system certificate store at boot. Using bundled roots would bypass the proxy CA and cause TLS verification failures.

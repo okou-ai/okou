@@ -71,6 +71,66 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
 }
 
 #[tokio::test(start_paused = true)]
+async fn deferred_pi_uses_fresh_dispatch_while_a_compatible_blank_is_ready() {
+    let calls = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let (config, env) =
+        mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, Arc::clone(&calls));
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let run_handle = tokio::spawn(run(config));
+    wait_idle_pool_len(&idle_pool, 1, Duration::from_secs(5)).await;
+    let blank_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
+    let run_id = RunId::new_v4();
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let mut context = minimal_context(run_id);
+    context.cli_agent_type = "pi".into();
+    context.pi_session_id = Some(session_id.clone());
+    context.pi_model_config = Some(serde_json::json!({
+        "provider": "deepseek", "baseUrl": "https://api.deepseek.com/", "model": "deepseek-v4-flash",
+        "apiKeyEnv": "OPENAI_API_KEY", "credentialSecretName": "DEEPSEEK_API_KEY"
+    }));
+    context.pi_launch_config = Some(serde_json::json!({
+        "schemaVersion": 2,
+        "apiFirstTurn": {
+            "schemaVersion": 2, "runId": run_id.to_string(), "activeInput": false,
+            "ownerEpoch": 2, "generation": 1, "deadlineAt": 2_000_000_000_000_u64,
+            "historyHash": "a".repeat(64), "resourceSnapshotDigest": "b".repeat(64),
+            "baseSession": { "sessionId": session_id, "sha256": null },
+            "sandboxEventSequenceStart": 5,
+            "continuation": { "mode": "pending-tools", "h1Hash": "c".repeat(64), "manifestGeneration": 3,
+                "lastEventSequence": 4, "pendingToolIds": ["retained-tool"] }
+        }
+    }));
+    env.provider.set_claim_result(run_id, Some(context));
+    env.handle
+        .discover_tx
+        .send(
+            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+                .with_deferred_sandbox(true),
+        )
+        .unwrap();
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("deferred job completes");
+    assert_eq!(completion.exit_code, 0);
+    assert!(completion.sandbox_id.is_some());
+    assert_ne!(completion.sandbox_id, Some(blank_id));
+    assert!(
+        !calls
+            .unpark_run_control_ids()
+            .contains(&Some(run_id.to_string()))
+    );
+    assert!(calls.create_configs().len() >= 2);
+    assert!(
+        calls
+            .start_run_control_ids()
+            .contains(&Some(run_id.to_string()))
+    );
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn full_capacity_claims_compatible_blank_before_pressure_eviction() {
     let (config, env) = mock_run_config(test_profiles(), 16, 32_768, 8);
     let idle_pool = Arc::clone(&config.shared.idle_pool);

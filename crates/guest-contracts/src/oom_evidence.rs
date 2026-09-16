@@ -1,5 +1,7 @@
 //! Bounded, metadata-only evidence for one Guest containment lifecycle.
 
+mod containment;
+
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -183,6 +185,12 @@ pub struct OomEvidence {
     pub started_boottime_us: u64,
     /// Source sample time.
     pub sampled_at: String,
+    /// Latest validated native Pi message timestamp in Unix milliseconds.
+    /// Ordering after an incident must be checked before using it as proof.
+    /// Supplied only by the operation's authenticated Guest Agent. This local
+    /// observability context is not part of the version-1 telemetry API.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_progress_at: Option<u64>,
     /// Last consumed kernel sequence, absent before the first record.
     pub kernel_cursor: Option<u64>,
     /// Availability of the bounded kernel reader at this sample.
@@ -260,7 +268,16 @@ pub fn split_diagnostic(diagnostic: &str) -> DiagnosticSplit {
             continue;
         };
         match parse_bounded_evidence(json) {
-            Some(evidence) => split.evidence = Some(evidence),
+            Some(evidence) => {
+                if split
+                    .evidence
+                    .as_ref()
+                    .is_some_and(|previous| previous != &evidence)
+                {
+                    split.malformed_lines = split.malformed_lines.saturating_add(1);
+                }
+                split.evidence = Some(evidence);
+            }
             None => split.malformed_lines = split.malformed_lines.saturating_add(1),
         }
     }

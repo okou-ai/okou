@@ -165,7 +165,11 @@ function inboundMessage(
     return null;
   }
   const event = v2MessageEventSchema.safeParse(envelope.event);
-  if (!event.success || event.data.sender.sender_type === "app") {
+  if (
+    !event.success ||
+    event.data.sender.sender_type === "app" ||
+    event.data.message.message_type === "system"
+  ) {
     return null;
   }
   const chatType = event.data.message.chat_type;

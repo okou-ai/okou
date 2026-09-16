@@ -133,7 +133,7 @@ class RetirementCliTest(unittest.TestCase):
                 key["MultiRegion"] = True
             run = {
                 "id": 54321,
-                "repository": {"full_name": "vm0-ai/vm0"},
+                "repository": {"full_name": "vm0-ai/okou"},
                 "workflow_id": 353130414,
                 "path": ".github/workflows/kms-production-preflight.yml",
                 "event": "workflow_dispatch",
@@ -146,6 +146,8 @@ class RetirementCliTest(unittest.TestCase):
             }
             if scenario == "wrong-run":
                 run["conclusion"] = "failure"
+            if scenario == "wrong-repository":
+                run["repository"]["full_name"] = "another-owner/okou"
             if scenario == "wrong-actor":
                 run["actor"]["login"] = "another-user"
             state = {
@@ -165,6 +167,8 @@ class RetirementCliTest(unittest.TestCase):
                     "digest": "sha256:" + digest,
                 },
                 "deploymentReads": 0,
+                "verificationReads": 0,
+                "auditReads": 0,
                 "scheduleRequests": 0,
                 "eventTime": (now - datetime.timedelta(hours=1)).isoformat(),
             }
@@ -176,12 +180,13 @@ class RetirementCliTest(unittest.TestCase):
                 "RUNNER_TEMP": str(root),
                 "KMS_OPERATION": "retire-source",
                 "GITHUB_RUN_ATTEMPT": "1",
-                "GITHUB_REPOSITORY": "vm0-ai/vm0",
+                "GITHUB_ACTOR": "hulh122",
+                "GITHUB_REPOSITORY": "vm0-ai/okou",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
                 "GITHUB_SHA": "c" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/kms-production-retire.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-retire.yml@refs/heads/main",
                 "EXPECTED_BACKUP_SHA256": hashlib.sha256(
                     json.dumps(snapshot, separators=(",", ":")).encode()
                 ).hexdigest(),
@@ -198,6 +203,7 @@ class RetirementCliTest(unittest.TestCase):
                 "VERIFICATION_ARTIFACT_SHA256": digest,
                 "EXPECTED_DEPLOYMENT_ID": "dpl_verified",
                 "ACCEPT_HISTORICAL_RECOVERY_LOSS": "true",
+                "SKIP_VERIFICATION_FOR_KEY": "",
             }
             env.update(overrides or {})
             result = subprocess.run(
@@ -239,6 +245,7 @@ class RetirementCliTest(unittest.TestCase):
     def test_proof_and_artifact_failures_leave_key_usable(self):
         for scenario in [
             "wrong-run",
+            "wrong-repository",
             "wrong-actor",
             "archive-changed",
             "nested-source",
@@ -251,6 +258,86 @@ class RetirementCliTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(provider["key"]["KeyState"], "Enabled")
                 self.assertFalse(report["mutationAttempted"])
+
+    def test_explicit_waiver_schedules_without_verification_or_audit_access(self):
+        for scenario in ["wrong-run", "source-crypto", "audit-denied"]:
+            with self.subTest(scenario=scenario):
+                result, provider, report = self.invoke(
+                    scenario,
+                    {
+                        "SKIP_VERIFICATION_FOR_KEY": SOURCE,
+                        "VERIFICATION_RUN_ID": "",
+                        "VERIFICATION_ARTIFACT_SHA256": "",
+                        "EXPECTED_DEPLOYMENT_ID": "",
+                        "SOURCE_AUDIT_WINDOW_START": "",
+                        "GH_TOKEN": "",
+                        "VERCEL_TOKEN": "",
+                    },
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(provider["key"]["KeyState"], "PendingDeletion")
+                self.assertEqual(provider["scheduleRequests"], 1)
+                self.assertEqual(provider["verificationReads"], 0)
+                self.assertEqual(provider["auditReads"], 0)
+                self.assertEqual(provider["deploymentReads"], 0)
+                self.assertEqual(report["result"], "pending_deletion")
+                self.assertEqual(report["deletionDate"], provider["key"]["DeletionDate"])
+                self.assertEqual(report["verificationWaiver"]["actor"], "hulh122")
+                self.assertEqual(report["verificationWaiver"]["source"], SOURCE)
+                self.assertTrue(
+                    report["verificationWaiver"]["acceptedRemainingSourceDependencyLoss"]
+                )
+                self.assertNotIn("verification", report)
+                self.assertNotIn("audit", report)
+
+    def test_waiver_requires_exact_source_operator_and_recovery_acceptance(self):
+        for overrides in [
+            {"SKIP_VERIFICATION_FOR_KEY": TARGET},
+            {"GITHUB_ACTOR": "another-user"},
+            {"ACCEPT_HISTORICAL_RECOVERY_LOSS": "false"},
+            {"KMS_OPERATION": "source-status"},
+            {"GITHUB_RUN_ATTEMPT": "2"},
+            {"GITHUB_REF": "refs/heads/feature"},
+        ]:
+            with self.subTest(overrides=overrides):
+                result, provider, _ = self.invoke(
+                    overrides={"SKIP_VERIFICATION_FOR_KEY": SOURCE, **overrides}
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(provider["key"]["KeyState"], "Enabled")
+                self.assertEqual(provider["scheduleRequests"], 0)
+
+    def test_waiver_preserves_source_identity_and_backup_checks(self):
+        for scenario in ["wrong-key", "wrong-key-type", "wrong-principal", "backup-changed"]:
+            with self.subTest(scenario=scenario):
+                result, provider, report = self.invoke(
+                    scenario, {"SKIP_VERIFICATION_FOR_KEY": SOURCE}
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(provider["key"]["KeyState"], "Enabled")
+                self.assertEqual(provider["scheduleRequests"], 0)
+                self.assertFalse(report["mutationAttempted"])
+
+    def test_waiver_preserves_pending_date_and_unknown_mutation_effects(self):
+        for scenario in ["already-pending", "lost-response", "schedule-denied"]:
+            with self.subTest(scenario=scenario):
+                result, provider, report = self.invoke(
+                    scenario, {"SKIP_VERIFICATION_FOR_KEY": SOURCE}
+                )
+                if scenario == "already-pending":
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(provider["scheduleRequests"], 0)
+                    self.assertEqual(
+                        report["keyBefore"]["deletionDate"], provider["key"]["DeletionDate"]
+                    )
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(provider["scheduleRequests"], 1)
+                    self.assertEqual(report["mutationEffects"], "unknown")
+                    self.assertEqual(
+                        provider["key"]["KeyState"],
+                        "PendingDeletion" if scenario == "lost-response" else "Enabled",
+                    )
 
     def test_new_crypto_or_unreadable_audit_blocks_retirement(self):
         for scenario in ["source-crypto", "audit-denied"]:
@@ -317,6 +404,7 @@ class RetirementCliTest(unittest.TestCase):
         for overrides in [
             {"GITHUB_RUN_ATTEMPT": "2"},
             {"GITHUB_REF": "refs/heads/feature"},
+            {"GITHUB_REPOSITORY": "another-owner/okou"},
             {"GITHUB_WORKFLOW_REF": "other"},
             {"ACCEPT_HISTORICAL_RECOVERY_LOSS": "false"},
         ]:

@@ -55,6 +55,10 @@ Examples:
   Machine readable:     okou host ./dist --site my-product-demo --spa --json
 
 Notes:
+  - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
+  - For an HTML presentation, add --artifact-kind presentation-html
+  - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
+  - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
   - With private artifacts enabled, the result is an authenticated preview URL
   - Private deployments never update an existing public alias

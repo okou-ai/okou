@@ -70,6 +70,13 @@ beforeEach(() => {
   });
 });
 
+async function selectNewCredential(dialog: HTMLElement) {
+  await userEvent.click(await within(dialog).findByLabelText("Credential"));
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Create new credential" }),
+  );
+}
+
 test("An existing credential can be reused without entering or reading its secrets", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
@@ -87,11 +94,16 @@ test("An existing credential can be reused without entering or reading its secre
   });
   expect(within(hostFields).getByLabelText("Port")).toHaveValue(22);
   expect(within(hostFields).queryByLabelText("Credential name")).toBeNull();
+  await waitFor(() => {
+    return expect(
+      within(credentialFields).getByRole("combobox"),
+    ).toHaveTextContent("Deployment login · deploy");
+  });
   expect(
-    within(credentialFields).getByLabelText("Credential name"),
-  ).toBeVisible();
-  expect(within(credentialFields).getByLabelText("SSH username")).toBeVisible();
-  expect(within(credentialFields).getByLabelText("Private key")).toBeVisible();
+    within(credentialFields).queryByLabelText("Credential name"),
+  ).toBeNull();
+  expect(within(credentialFields).queryByLabelText("SSH username")).toBeNull();
+  expect(within(credentialFields).queryByLabelText("Private key")).toBeNull();
   expect(within(credentialFields).queryByLabelText("Display name")).toBeNull();
   await fill(within(hostFields).getByLabelText("Display name"), "Second host");
   await fill(
@@ -222,6 +234,7 @@ test.each(["host", "credential"])(
     }
     const dialog = await screen.findByRole("dialog");
     if (kind === "host") {
+      await selectNewCredential(dialog);
       await fill(within(dialog).getByLabelText("Display name"), "Deployment");
       await fill(
         within(dialog).getByLabelText("Public hostname or IP address"),
@@ -288,6 +301,9 @@ test.each(["host", "credential"])(
     expect(requests).toStrictEqual([expected, expected]);
     click(getAction("button", kind === "host" ? "Add host" : "Add credential"));
     const reopened = await screen.findByRole("dialog");
+    if (kind === "host") {
+      await selectNewCredential(reopened);
+    }
     click(getAction("radio", "Password", reopened));
     expect(within(reopened).getByLabelText("Password")).toHaveValue("");
   },
@@ -313,6 +329,13 @@ test("Shared credential editing explains its impact and conflicts do not retry o
   const requests: unknown[] = [];
   context.mocks.api(sshCredentialsContract.update, ({ body, respond }) => {
     requests.push(body);
+    if (body.expectedRevision === 2) {
+      return respond(200, {
+        ...current,
+        username: body.username ?? current.username,
+        revision: 3,
+      });
+    }
     current = { ...current, revision: 2, name: "Edited elsewhere" };
     return respond(409, {
       error: {
@@ -333,10 +356,25 @@ test("Shared credential editing explains its impact and conflicts do not retry o
   click(getAction("button", "Save", dialog));
   await screen.findByText("Edited elsewhere");
   await screen.findByText(/This credential changed while you were editing/u);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(dialog).toBeVisible();
+  expect(within(dialog).getByLabelText("SSH username")).toHaveValue("new-user");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(document.body.textContent).not.toContain("not UI copy");
   expect(requests).toStrictEqual([
-    { expectedRevision: 1, name: credential.name, username: "new-user" },
+    { expectedRevision: 1, username: "new-user" },
+  ]);
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    return expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(within(dialog).getByLabelText("SSH username")).toHaveValue("new-user");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    { expectedRevision: 1, username: "new-user" },
+    { expectedRevision: 2, username: "new-user" },
   ]);
 });
 
@@ -442,6 +480,7 @@ test.each(["token", "profile", "session"])(
     await screen.findByText("deploy@ssh.example.com:22");
     click(getAction("button", "Add host"));
     const dialog = await screen.findByRole("dialog");
+    await selectNewCredential(dialog);
     await fill(within(dialog).getByLabelText("Display name"), "Unsaved host");
     await fill(
       within(dialog).getByLabelText("Public hostname or IP address"),
@@ -510,6 +549,7 @@ test.each(["session", "organization"])(
     await screen.findByText("deploy@ssh.example.com:22");
     click(getAction("button", "Add host"));
     const dialog = await screen.findByRole("dialog");
+    await selectNewCredential(dialog);
     await fill(within(dialog).getByLabelText("Private key"), "unsaved-key");
     await fill(
       within(dialog).getByLabelText("Passphrase (optional)"),
@@ -796,6 +836,7 @@ test("Invalid host errors preserve credentials so the host can be corrected and 
   });
   await page("/connectors/ssh?add=1");
   const dialog = await screen.findByRole("dialog");
+  await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Deployment");
   await fill(
     within(dialog).getByLabelText("Public hostname or IP address"),
@@ -960,6 +1001,7 @@ test("Allows adding a host when more than 64 hosts are configured", async () => 
   await screen.findByText("65 hosts configured");
   click(getAction("button", "Add host"));
   const dialog = await screen.findByRole("dialog");
+  await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Additional host");
   const port = within(dialog).getByLabelText("Port");
   await fill(port, "0");
@@ -1007,6 +1049,7 @@ test.each(["paste", "file"])(
     );
     click(getAction("button", "Add host"));
     const dialog = await screen.findByRole("dialog");
+    await selectNewCredential(dialog);
     await fill(within(dialog).getByLabelText("Display name"), "Deployment");
     await fill(
       within(dialog).getByLabelText("Public hostname or IP address"),
@@ -1100,6 +1143,7 @@ test.each(["empty", "oversized", "unreadable"])(
     await screen.findByText("0 hosts configured");
     click(getAction("button", "Add host"));
     const dialog = await screen.findByRole("dialog");
+    await selectNewCredential(dialog);
     const input = within(dialog).getByLabelText("Choose private key file");
     const key = within(dialog).getByLabelText("Private key");
     await fill(key, "previous-key");
@@ -1144,6 +1188,7 @@ test.each(["another file", "manual input", "close"])(
     await screen.findByText("0 hosts configured");
     click(getAction("button", "Add host"));
     let dialog = await screen.findByRole("dialog");
+    await selectNewCredential(dialog);
     const originalKey = within(dialog).getByLabelText("Private key");
     await userEvent.upload(
       within(dialog).getByLabelText("Choose private key file"),
@@ -1161,6 +1206,7 @@ test.each(["another file", "manual input", "close"])(
     if (action === "close") {
       click(getAction("button", "Add host"));
       dialog = await screen.findByRole("dialog");
+      await selectNewCredential(dialog);
     }
     expect(within(dialog).getByLabelText("Private key")).toHaveValue("");
     if (action === "another file") {
@@ -1203,6 +1249,7 @@ test.each(["Display name", "Public hostname or IP address", "SSH username"])(
       }),
     );
     const dialog = await screen.findByRole("dialog");
+    await selectNewCredential(dialog);
     await fill(within(dialog).getByLabelText("Display name"), "Deployment");
     await fill(
       within(dialog).getByLabelText("Public hostname or IP address"),
@@ -1291,8 +1338,6 @@ test("Credential replacement retains input during saving and clears secrets on c
   expect(requests).toStrictEqual([
     {
       expectedRevision: 1,
-      name: credential.name,
-      username: credential.username,
       authentication: {
         method: "private_key",
         privateKey: " new-key\n",
@@ -1313,14 +1358,19 @@ test("Reset requires confirmation, generation conflict refreshes without retry, 
     ...base,
     learnedHostKey: { algorithm: "ssh-ed25519", fingerprint: "SHA256:fixture" },
   };
-  let hosts = [learned];
+  let hosts: SshConnectionResponse[] = [learned];
+  const resetRequests: unknown[] = [];
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: hosts });
   });
   context.mocks.api(
     sshConnectionsContract.resetHostKey,
     ({ body, respond }) => {
-      expect(body).toStrictEqual({ expectedGeneration: 1 });
+      resetRequests.push(body);
+      if (body.expectedGeneration === 2) {
+        hosts = [{ ...learned, generation: 3, learnedHostKey: null }];
+        return respond(200, hosts[0]!);
+      }
       hosts = [{ ...learned, generation: 2 }];
       return respond(409, {
         error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
@@ -1345,6 +1395,25 @@ test("Reset requires confirmation, generation conflict refreshes without retry, 
   click(getAction("button", "Reset host key", reset));
   await screen.findByRole("alert");
   expect(screen.getByText("SHA256:fixture")).toBeInTheDocument();
+  expect(getAction("button", "Reset host key", reset)).toBeDisabled();
+  expect(resetRequests).toStrictEqual([{ expectedGeneration: 1 }]);
+  click(
+    await waitFor(() => {
+      return getAction("button", "Keep my changes with this version", reset);
+    }),
+  );
+  await waitFor(() => {
+    return expect(getAction("button", "Reset host key", reset)).toBeEnabled();
+  });
+  click(getAction("button", "Reset host key", reset));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(screen.queryByText("SHA256:fixture")).toBeNull();
+  expect(resetRequests).toStrictEqual([
+    { expectedGeneration: 1 },
+    { expectedGeneration: 2 },
+  ]);
   click(getAction("button", "Delete host"));
   const remove = await screen.findByRole("dialog");
   expect(screen.getByText("deploy@ssh.example.com:22")).toBeInTheDocument();
@@ -1386,6 +1455,7 @@ test("Changing owner while an SSH token is pending prevents the old mutation", a
   await screen.findByText("0 hosts configured");
   click(getAction("button", "Add host"));
   const dialog = await screen.findByRole("dialog");
+  await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Old owner host");
   await fill(
     within(dialog).getByLabelText("Public hostname or IP address"),
@@ -1447,6 +1517,7 @@ test("Leaving SSH while its token is pending cancels the old mutation", async ()
   );
   click(getAction("button", "Add host"));
   const dialog = await screen.findByRole("dialog");
+  await selectNewCredential(dialog);
   await fill(within(dialog).getByLabelText("Display name"), "Cancelled host");
   await fill(
     within(dialog).getByLabelText("Public hostname or IP address"),

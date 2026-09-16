@@ -201,6 +201,7 @@ fn oom_evidence_diagnostic(proof: bool) -> String {
         guest_boot_id: Some("22222222-2222-4222-8222-222222222222".to_string()),
         started_boottime_us: 500_000,
         sampled_at: "2026-09-09T07:19:59.000Z".to_string(),
+        runtime_progress_at: None,
         kernel_cursor: proof.then_some(42),
         kernel_status: if proof {
             EvidenceStatus::Available
@@ -879,6 +880,7 @@ fn clean_terminal_log_context(
         stream_overflowed: false,
         actionable_diagnostic: false,
         evidence_has_proof: false,
+        contained_tool_oom: false,
         evidence_malformed: false,
         host_cancel_requested: false,
     }
@@ -1534,5 +1536,123 @@ fn exec_operation_close_snapshot_limits_logged_operations() {
     for operation in snapshot.operations {
         assert!(operations.contains_seq(operation.seq));
         assert!(operation.label_log.starts_with("operation-"));
+    }
+}
+
+#[test]
+fn contained_tool_oom_log_retains_evidence_and_independent_failures() {
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+    let evidence: OomEvidence = serde_json::from_str(include_str!(
+        "../../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+    ))
+    .unwrap();
+    let diagnostic =
+        ExecOperationDiagnostic::new(7, "guest-agent", ExecProcessRole::Agent, true, false);
+    let metadata = format!(
+        "{EVIDENCE_PREFIX}{}",
+        serde_json::to_string(&evidence).unwrap()
+    );
+    for (termination, overflow, residual, expected) in [
+        (
+            ExecTermination::Exited { exit_code: 0 },
+            false,
+            "",
+            Level::INFO,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 1 },
+            false,
+            "",
+            Level::WARN,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 124 },
+            false,
+            "",
+            Level::WARN,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 0 },
+            true,
+            "",
+            Level::WARN,
+        ),
+        (
+            ExecTermination::Exited { exit_code: 0 },
+            false,
+            "disk failure\n",
+            Level::WARN,
+        ),
+        (ExecTermination::TimedOut, false, "", Level::WARN),
+        (ExecTermination::Cancelled, false, "", Level::WARN),
+        (ExecTermination::StartFailed, false, "", Level::WARN),
+        (ExecTermination::WaitFailed, false, "", Level::WARN),
+    ] {
+        let transported = format!("{residual}{metadata}");
+        let result = guest_control_proto::DecodedExecResult {
+            termination,
+            diagnostic: &transported,
+            ..clean_terminal_result()
+        };
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            diagnostic.log_terminal(
+                ExecTerminalLogLifecycle::Supervised,
+                &result,
+                overflow,
+                true,
+            );
+        });
+        let events = captured.entries();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].level, expected,
+            "termination={termination:?}, overflow={overflow}, residual={residual}"
+        );
+        assert_terminal_log_field(&events[0], "oom_classification", "contained_tool_oom");
+        assert_terminal_log_field(&events[0], "oom_incidents", "1");
+        assert_terminal_log_field(&events[0], "oom_kernel_events", "1");
+        assert!(events[0].fields["operation_id"].contains(&evidence.operation_id));
+        assert_eq!(
+            result.diagnostic, transported,
+            "logging must not consume retained evidence"
+        );
+    }
+    for (seq, role, evidence) in [
+        (8, ExecProcessRole::Agent, evidence.clone()),
+        (7, ExecProcessRole::Workload, evidence.clone()),
+        (
+            7,
+            ExecProcessRole::Agent,
+            OomEvidence {
+                runtime_progress_at: None,
+                ..evidence
+            },
+        ),
+    ] {
+        let diagnostic = ExecOperationDiagnostic::new(seq, "guest-agent", role, true, false);
+        let transported = format!(
+            "{EVIDENCE_PREFIX}{}",
+            serde_json::to_string(&evidence).unwrap()
+        );
+        let captured = CapturedEvents::default();
+        let subscriber = tracing_subscriber::registry().with(captured.clone());
+        tracing::subscriber::with_default(subscriber, || {
+            diagnostic.log_terminal(
+                ExecTerminalLogLifecycle::Supervised,
+                &guest_control_proto::DecodedExecResult {
+                    diagnostic: &transported,
+                    ..clean_terminal_result()
+                },
+                false,
+                false,
+            );
+        });
+        assert_eq!(
+            captured.entries()[0].level,
+            Level::WARN,
+            "stale route, wrong role, or exit zero without progress"
+        );
     }
 }
