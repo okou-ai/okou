@@ -354,6 +354,10 @@ def feed_usage(
                 )
 
     if not suppressed and usage_result:
+        if lifecycle is None or not lifecycle.is_terminal:
+            # Forward-compatible usage extraction does not prove that an
+            # uncorrelated response finished, even when the socket looks idle.
+            run_usage.mark(flow, "ambiguous_response")
         run_usage.observe(flow, usage_result, response_id=message_id)
         if has_message_id:
             usage_sources = flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE_SOURCES)

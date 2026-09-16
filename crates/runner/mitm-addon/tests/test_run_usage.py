@@ -709,3 +709,45 @@ async def test_websocket_close_keeps_known_usage_and_marks_unfinished_inference(
     assert result["outstandingResponses"] == 0
     assert "interrupted" in result["reasons"]
     assert result["complete"] is False
+
+
+@pytest.mark.parametrize("zero_usage", [False, True])
+async def test_websocket_usage_without_lifecycle_cannot_claim_complete_coverage(
+    tmp_path,
+    control,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    monkeypatch,
+    zero_usage,
+):
+    capture_deferred_websocket_trims(monkeypatch)
+    path = write_registration(tmp_path)
+    with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
+        flow = make_openai_responses_websocket_request_flow(real_flow)
+        await mitm_addon.request(flow)
+        flow.response = tutils.tresp(
+            status_code=101, headers=make_openai_responses_websocket_response_headers()
+        )
+        mitm_addon.responseheaders(flow)
+        feed_websocket_server_message(
+            flow,
+            json.dumps(
+                {
+                    "type": "provider.future_event",
+                    "response": payload(
+                        input_tokens=0 if zero_usage else 50,
+                        output_tokens=0 if zero_usage else 20,
+                    ),
+                }
+            ).encode(),
+        )
+        result = read_usage(control)
+        assert result["totals"]["total"] == (0 if zero_usage else 70)
+        assert result["observedResponses"] == 1
+        assert result["complete"] is False
+        assert "ambiguous_response" in result["reasons"]
+        mitm_addon.websocket_end(flow)
+    result = read_usage(control)
+    assert result["totals"]["total"] == (0 if zero_usage else 70)
+    assert result["complete"] is False
