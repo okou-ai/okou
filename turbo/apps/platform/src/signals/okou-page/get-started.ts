@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { timeout } from "signal-timers";
 import {
   GET_STARTED_REWARDS_CHANGED_EVENT,
   getStartedContract,
@@ -16,6 +17,7 @@ import {
   setDaemon,
   settle,
   waitForOperation,
+  waitLoopUntil,
   withCleanup,
 } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
@@ -167,35 +169,42 @@ export const submitSharePost$ = command(
   },
 );
 
+const resetRewardRefreshWait$ = resetSignal();
+
 /** Each wait owns its timer and focus listeners, all released on root cancellation. */
-async function waitForRewardRefresh(
-  milliseconds: number | null,
-  signal: AbortSignal,
-): Promise<void> {
-  signal.throwIfAborted();
-  const next = createDeferredPromise<void>(signal);
-  const wake = () => {
-    if (!next.settled()) {
-      next.resolve();
+const waitForRewardRefresh$ = command(
+  async (
+    { set },
+    milliseconds: number | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    // The wait signal releases the timer and both listeners together, whichever
+    // of them wakes first.
+    const waitSignal = set(resetRewardRefreshWait$, signal);
+    const next = createDeferredPromise<void>(waitSignal);
+    const wake = () => {
+      if (!next.settled()) {
+        next.resolve();
+      }
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") {
+        wake();
+      }
+    };
+    if (milliseconds !== null) {
+      timeout(wake, milliseconds, { signal: waitSignal });
     }
-  };
-  const visible = () => {
-    if (document.visibilityState === "visible") {
-      wake();
-    }
-  };
-  const timer =
-    milliseconds === null ? null : window.setTimeout(wake, milliseconds);
-  window.addEventListener("focus", wake);
-  document.addEventListener("visibilitychange", visible);
-  await withCleanup(next.promise, () => {
-    if (timer !== null) {
-      window.clearTimeout(timer);
-    }
-    window.removeEventListener("focus", wake);
-    document.removeEventListener("visibilitychange", visible);
-  });
-}
+    window.addEventListener("focus", wake, { signal: waitSignal });
+    document.addEventListener("visibilitychange", visible, {
+      signal: waitSignal,
+    });
+    await withCleanup(next.promise, () => {
+      set(resetRewardRefreshWait$);
+    });
+  },
+);
 
 const refreshAndCheckin$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -243,31 +252,43 @@ const refreshGetStartedFromRealtime$ = command(
 const refreshGetStartedOnFocusAndUtcDay$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     let previousEarnings: number | null = null;
-    while (!signal.aborted) {
-      const result = await settle(set(refreshAndCheckin$, signal), signal);
-      signal.throwIfAborted();
-      let nextReset: number | null = null;
-      if (result.ok) {
-        const data = result.value;
-        if (!data) {
-          return;
-        }
-        const earnings = data.quests.reduce((sum, quest) => {
-          return sum + quest.earnedCredits;
-        }, 0);
-        if (earnings !== previousEarnings) {
-          await settle(set(reloadAccountMenuCreditBalances$, signal), signal);
-          signal.throwIfAborted();
-        }
-        previousEarnings = earnings;
-        nextReset = Math.max(
-          250,
-          Date.parse(data.nextResetAt) - Date.parse(data.serverNow),
+    await waitLoopUntil(
+      async (loopSignal) => {
+        const result = await settle(
+          set(refreshAndCheckin$, loopSignal),
+          loopSignal,
         );
-      }
-      await waitForRewardRefresh(nextReset, signal);
-      signal.throwIfAborted();
-    }
+        loopSignal.throwIfAborted();
+        let nextReset: number | null = null;
+        if (result.ok) {
+          const data = result.value;
+          if (!data) {
+            return true;
+          }
+          const earnings = data.quests.reduce((sum, quest) => {
+            return sum + quest.earnedCredits;
+          }, 0);
+          if (earnings !== previousEarnings) {
+            await settle(
+              set(reloadAccountMenuCreditBalances$, loopSignal),
+              loopSignal,
+            );
+            loopSignal.throwIfAborted();
+          }
+          previousEarnings = earnings;
+          nextReset = Math.max(
+            250,
+            Date.parse(data.nextResetAt) - Date.parse(data.serverNow),
+          );
+        }
+        // The wait owns the pacing, so the loop itself needs no interval.
+        await set(waitForRewardRefresh$, nextReset, loopSignal);
+        loopSignal.throwIfAborted();
+        return false;
+      },
+      0,
+      signal,
+    );
   },
 );
 
