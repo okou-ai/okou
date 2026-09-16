@@ -119,6 +119,15 @@ pub const MSG_FILE_WRITE_STATUS: u8 = 0x20;
 /// Guest-to-host snapshot of the latest admitted file-write lifecycle stage.
 pub const MSG_FILE_WRITE_STATUS_RESULT: u8 = 0x21;
 
+/// Host-to-guest zstd request: codec tag (1), raw length (u32 BE), write-file metadata.
+pub const MSG_WRITE_FILE_STREAM_BEGIN: u8 = 0x22;
+/// Host-to-guest encoded data, at most 64 KiB and within granted credit.
+pub const MSG_WRITE_FILE_STREAM_DATA: u8 = 0x23;
+/// Host-to-guest explicit end of this request's encoded input; empty payload.
+pub const MSG_WRITE_FILE_STREAM_END: u8 = 0x24;
+/// Guest-to-host data-frame credit grant, one byte in 1..=4.
+pub const MSG_WRITE_FILE_STREAM_CREDIT: u8 = 0x25;
+
 /// Guest-to-host protocol error response.
 pub const MSG_ERROR: u8 = 0xFF;
 

@@ -4193,6 +4193,17 @@ mod tests {
             result
         }
 
+        async fn write_file_with_compression(
+            &self,
+            path: &str,
+            content: &[u8],
+            compression: sandbox::FileCompression,
+        ) -> sandbox::Result<()> {
+            self.inner
+                .write_file_with_compression(path, content, compression)
+                .await
+        }
+
         async fn write_private_file(&self, path: &str, content: &[u8]) -> sandbox::Result<()> {
             self.inner.write_private_file(path, content).await
         }
