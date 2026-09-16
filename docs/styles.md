@@ -78,7 +78,7 @@ Token and variant changes are reviewed at their owning layer together with affec
 
 Large editable surfaces use `border-surface-focus` to emphasize their existing border on focus: neutral gray in light themes and muted amber in dark themes. Keep the border width constant across interaction states. A shadow-only focus overlay may fade through opacity, but must not duplicate the surface border or depend on a negative inset to align its edge. The chat composer uses the default `border` width for its surface and connector circles; intentional badge overlap remains independent of border geometry. `data-slot="chat-composer-card"` identifies the editable card for keyboard positioning and page tests.
 
-The composer's focus overlay is `--okou-composer-focus-veil`. It is a runtime theme value, so it is owned at `:root`: `signals/theme.ts` writes the theme attributes onto the document element, and document scope keeps the token available to any surface that needs it, including portaled ones. Light carries a neutral veil, dark carries none, and the gradient themes tint it with the canonical state layer. Each override keys off `[data-theme="dark"]` and `[data-gradient-color-themes]` alone and wraps the theme test in `:where()`, so it stays at the specificity of the rule it refines and source order decides between them. Do not reach for the paired `.dark` class here: a class in the selector registers a new first-party class-selector declaration and fails the shrink-only baseline.
+The composer's focus overlay is `--okou-composer-focus-veil`. It is a runtime theme value, so it is owned at `:root`: `signals/theme.ts` writes the theme attributes onto the document element, and document scope keeps the token available to any surface that needs it, including portaled ones. Light carries a neutral veil, dark carries none, and the gradient themes tint it with the canonical state layer. Each override keys off `[data-theme="dark"]` and `[data-gradient-color-themes]` alone and wraps the theme test in `:where()`, so it stays at the specificity of the rule it refines and source order decides between them. Do not reach for the paired `.dark` class here: a class in the selector registers a new first-party class-selector declaration and fails the shrink-only baseline. The two document-level theme selectors that do spell it are `global-environment` entries in `turbo/style-allowlist.json`, not a precedent for a new rule.
 
 A focus overlay is also sized to the space its surface actually has. The composer sits 16px above the workspace pane's bottom edge, so the veil's offset and blur must bring its falloff back to the surface inside that gap. An overlay still painting when it meets a clipping ancestor or the pane edge ends in a visible straight seam instead of fading out, and the gap is not a place to absorb an arbitrarily wide shadow.
 
@@ -151,7 +151,7 @@ The pointer overlay reuses the shared `bg-state-hover-overlay` token rather than
 
 Integration and connector tests scope controls through the documented `data-slot="integration-card"`, `data-slot="connector-card"`, `data-slot="badge"`, and `data-slot="sidebar-thread-title"` component boundaries. These slots carry no styles; tests must not locate surfaces through utility or legacy class names.
 
-The `--okou-card-*` variables are consumed by the chat transcript card and by page-level surfaces that read them directly. They are not a supported API for new surfaces; reach for `surfaceVariants` instead.
+The `--okou-card-*` variables are read directly by page-level surfaces — the queue drawer's cards, the mail draft card, the onboarding pickers, and the composer variant. They are not a supported API for a new surface; reach for `surfaceVariants` instead. The chat transcript card reads its own `--okou-chat-card-*` siblings.
 
 ### Inline badges
 
@@ -551,6 +551,11 @@ token that falls back to what it already had:
 }
 ```
 
+A dark counterpart under
+`:root:is(.dark,[data-theme="dark"])[data-gradient-color-themes][data-color-theme]`
+carries the same four names at their dark values. Consumers read the registered
+token rather than either raw block:
+
 ```css
 --color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
 --color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
@@ -606,7 +611,8 @@ and `data-gradient-color-themes` onto the document element; each theme test
 wraps in `:where()` so it stays at the specificity of the rule it refines and
 source order decides between them. Do not add the paired `.dark` class: a class
 in the selector registers a first-party class-selector declaration against the
-shrink-only baseline.
+shrink-only baseline, and the document-level selectors that spell it are
+allowlisted rather than exemplary.
 
 Consumers spell `before:bg-[length:100%_100%]` beside the two background
 utilities. `background-size: 100% 100%` and the initial `auto auto` size a
@@ -705,7 +711,7 @@ styling one.
 ### Table header rules and the global scrollbar treatment
 
 The App stylesheet applies the scrollbar treatment — `scrollbar-width`,
-`scrollbar-color`, and the three `::-webkit-scrollbar*` rules — to `*`, and
+`scrollbar-color`, and the four `::-webkit-scrollbar*` rules — to `*`, and
 `@okouai/ui` is consumed only by the App, which imports that stylesheet. Do not
 restate those declarations on a surface. Reach for the scrollbar utilities only
 where a surface wants something other than the global treatment, as `DialogBody`
