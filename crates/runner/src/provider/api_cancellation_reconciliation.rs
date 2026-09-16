@@ -17,7 +17,7 @@ use reqwest::StatusCode;
 use tokio::sync::{Semaphore, watch};
 use tokio::time::{Instant, sleep_until, timeout};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::http::HttpClient;
 use crate::ids::RunId;
@@ -149,10 +149,7 @@ async fn read_loop(
         drop(permit);
         match result {
             Ok(Some(mode)) => {
-                debug!(%run_id, ?mode, queue_wait_ms = queue_wait.as_millis(),
-                    observation_ms = dispatched.elapsed().as_millis(),
-                    "cancellation reconciliation observed stop intent");
-                intent.send_if_modified(|pending| {
+                let changed = intent.send_if_modified(|pending| {
                     if pending.is_none_or(|previous| mode > previous) {
                         *pending = Some(mode);
                         true
@@ -160,6 +157,11 @@ async fn read_loop(
                         false
                     }
                 });
+                if changed {
+                    info!(%run_id, ?mode, queue_wait_ms = queue_wait.as_millis(),
+                        observation_ms = dispatched.elapsed().as_millis(),
+                        "cancellation reconciliation observed stop intent");
+                }
             }
             Ok(None) => {}
             Err(error) => {

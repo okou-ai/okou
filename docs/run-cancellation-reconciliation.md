@@ -151,6 +151,45 @@ Use the existing capable CI/staging infrastructure. Do not induce a production
 Ably outage or add a public fault-control endpoint. API cancelled status and a
 cancelled chat event alone do not prove the process stopped.
 
+### Isolated process verification (2026-09-16)
+
+An isolated Runner on `local-11` exercised real Firecracker VMs and Guest
+processes against the real API routes with a dedicated PostgreSQL database.
+External Clerk, object storage and Ably were test fixtures; the Agent used
+`claude-mock` running `sleep 900`. A test-only Ably server kept the subscription
+connected while withholding cancellation messages, then closed the connection
+for the recovery/escalation scenario. No production fault-control endpoint or
+job-admission change was introduced.
+
+The measured envelope was four simultaneous eligible registrations on a
+16-vCPU, 32-GiB shared host, with four unrelated Runner services left running.
+This establishes the four-Run integration case, not production fleet load or
+larger-host capacity. The controlled-clock tests separately exercise all eight
+HTTP slots, 32 initial registrations and continued arrivals.
+
+| Case                                           | Canonical decision (UTC)                                                                          | Runner observation (UTC)                            | Process and resource evidence                                                                                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cooperative, notification dropped              | 09:00:40.542                                                                                      | 09:01:09.879                                        | Guest checkpoint accepted; Guest completion at 09:01:12.011; Sandbox destroyed at 09:01:13.107.                                                                             |
+| Permitted physical deletion                    | 09:01:11.918                                                                                      | 09:01:40.454 (`gone`)                               | Process cancelled at 09:01:40.803; Sandbox destroyed at 09:01:40.933.                                                                                                       |
+| Disconnected observation, then hard escalation | Cooperative at 09:02:31.278; connection closed at 09:02:33.316; physical deletion at 09:03:09.712 | Cooperative at 09:02:41.823; `gone` at 09:03:11.733 | Holding the real checkpoint submission kept recovery active. Hard cancellation preempted recovery; process cancelled at 09:03:12.003 and Sandbox destroyed at 09:03:12.135. |
+| Member revocation, four notifications dropped  | 09:13:07.233                                                                                      | 09:13:28.093–09:13:29.520                           | All four processes cancelled 0.31–0.34 seconds after their respective observations; all four Sandboxes destroyed by 09:13:29.980.                                           |
+
+The healthy control retained its Guest, Agent and `sleep` processes through the
+first three cases; it stopped only after its own explicit cancellation. Observed
+stop reads took 222–320 ms including transport, with 0–1 ms queue wait and 0 ms
+transfer-gate wait. Delivery came from reconciliation before the Guest's
+consecutive-heartbeat-failure fallback. API and host clocks differed by about
+0.2 seconds; cross-host intervals are approximate. A temporary tunnel outage
+also produced inconclusive reads without stopping the healthy control, followed
+by recovery at the normal cadence.
+
+The Runner source was PR #34580 head `96f16f07b1c8` plus the bounded INFO
+observation-log correction; only test entry/Ably transport hooks differed from
+production. Guest artifacts came from that head's CI image build. The isolated
+API, Runner and tunnel were stopped after validation. Deployment still requires
+the API-writer rollout below; remeasure host peaks and latency before extending
+the measured load coverage.
+
 ## Rollout
 
 Apply migration 1143 before promoting the new API. The new column has no default,
