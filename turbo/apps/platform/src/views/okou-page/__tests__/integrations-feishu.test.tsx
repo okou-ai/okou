@@ -231,7 +231,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       expect(screen.getByText("Publish the app")).toBeVisible();
       click(getAction("button", "Done"));
       await waitFor(() => {
-        expect(getAction("button", "Done")).toBeDisabled();
+        expect(getAction("button", "Back")).toBeDisabled();
       });
       expect(pathname()).toBe(provider.settingsPath);
       completion.resolve();
@@ -255,6 +255,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       isConnected: false,
       setupCompleted: false,
       tenantName: "Pending bot",
+      oauthRedirectUrl: `https://app.okou.test${provider.callbackPath}`,
     });
     mockBot({
       isInstalled: true,
@@ -275,6 +276,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(
       screen.getByText("Configure the OAuth redirect URL"),
     ).toBeInTheDocument();
+    expect(getAction("button", "Next")).toBeEnabled();
     click(getAction("button", "Next"));
     expect(screen.getByText("Import user token scopes")).toBeInTheDocument();
     click(getAction("button", "Next"));
@@ -287,7 +289,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.findByText("Select an agent from this organization"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(getAction("button", "Done")).toBeEnabled();
+      expect(getAction("button", "Back")).toBeEnabled();
     });
     expect(screen.getByText("Publish the app")).toBeInTheDocument();
     expect(pathname()).toBe(provider.settingsPath);
