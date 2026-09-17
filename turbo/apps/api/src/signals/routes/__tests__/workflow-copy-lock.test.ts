@@ -15,6 +15,7 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { holdWorkflowCopyPublicationFixture } from "../../../test-fixtures/workflow-copy-publication-lock";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -140,7 +141,7 @@ async function scenario() {
 }
 
 function holdPreparation(phase: "KMS" | "upload") {
-  const entered = createDeferredPromise<void>(context.signal);
+  const entered = createDeferredPromise<string | undefined>(context.signal);
   const released = createDeferredPromise<void>(context.signal);
   if (phase === "KMS") {
     useSecretKmsProbe((request, callNumber) => {
@@ -148,7 +149,7 @@ function holdPreparation(phase: "KMS" | "upload") {
         return undefined;
       }
       return (async () => {
-        entered.resolve();
+        entered.resolve(undefined);
         await released.promise;
         return {
           keyId: request.keyId,
@@ -165,7 +166,7 @@ function holdPreparation(phase: "KMS" | "upload") {
     context.mocks.s3.send.mockImplementation(async (command: unknown) => {
       if (command instanceof PutObjectCommand) {
         if (!entered.settled()) {
-          entered.resolve();
+          entered.resolve(command.input.Key);
         }
         await released.promise;
       }
@@ -218,7 +219,214 @@ async function expectNoCopy(targetAgentId: string) {
   ).toBeFalsy();
 }
 
+async function startCopyAtPublication(
+  args: Awaited<ReturnType<typeof scenario>>,
+) {
+  const gate = holdPreparation("upload");
+  const cleanup: { releaseStorage?: () => void } = {};
+  const copying = startCopy(args, {
+    ...gate,
+    release: () => {
+      gate.release();
+      cleanup.releaseStorage?.();
+    },
+  });
+  const storageKey = await gate.entered;
+  if (!storageKey) {
+    throw new Error("Expected the prepared copy's object key");
+  }
+  const held = await holdWorkflowCopyPublicationFixture(
+    { storageKey },
+    context.signal,
+  );
+  cleanup.releaseStorage = held.release;
+  const heldDone = settleIncludingAbort(held.done);
+  onTestFinished(async () => {
+    held.release();
+    await heldDone;
+  });
+  gate.release();
+  await expect.poll(held.copyIsBlocked).toBeTruthy();
+  return { copying, held };
+}
+
 describe("workflow copy preparation lock isolation", () => {
+  it("publishes a consistent copy while its source automation thread is deleted", async () => {
+    const args = await scenario();
+    const sourceThreadId = args.automation.chatThreadId;
+    if (!sourceThreadId) {
+      throw new Error("Expected the source automation's bound thread");
+    }
+    const before = await chat.requestThreadEvents(args.actor, {}, [200]);
+    if (before.status !== 200) {
+      throw new Error("Expected the initial thread event feed");
+    }
+    const cursor = before.body.events.at(-1)?.seqId;
+    if (cursor === undefined) {
+      throw new Error("Expected a committed thread event cursor");
+    }
+    // APIs cannot hold a database row between source validation and publication.
+    // The fixture controls only scheduling; every outcome is checked via API.
+    const { copying, held } = await startCopyAtPublication(args);
+
+    const deleting = chat.deleteThread(args.actor, sourceThreadId);
+    const deletionDone = settleIncludingAbort(deleting);
+    onTestFinished(async () => {
+      held.release();
+      await deletionDone;
+    });
+    await expect
+      .poll(async () => {
+        return await held.operationIsBlocked("thread-deletion");
+      })
+      .toBeTruthy();
+    held.release();
+    await held.done;
+    const copied = await accept(copying, [201]);
+    await deleting;
+
+    const copiedAutomations = await accept(
+      automationClient().list({
+        headers: headers(),
+        params: { workflowId: copied.body.id },
+      }),
+      [200],
+    );
+    expect(copiedAutomations.body).toHaveLength(1);
+    const copiedAutomation = copiedAutomations.body[0];
+    expect(copiedAutomation?.enabled).toBeTruthy();
+    if (!copiedAutomation?.chatThreadId) {
+      throw new Error("Expected the copied automation's independent thread");
+    }
+    await chat.requestReadThread(
+      args.actor,
+      copiedAutomation.chatThreadId,
+      [200],
+    );
+    await chat.requestReadThread(args.actor, sourceThreadId, [404]);
+    const sourceAutomations = await accept(
+      automationClient().list({
+        headers: headers(),
+        params: { workflowId: args.workflowId },
+      }),
+      [200],
+    );
+    expect(sourceAutomations.body).toStrictEqual([
+      expect.objectContaining({ id: args.automation.id, enabled: false }),
+    ]);
+    const after = await chat.requestThreadEvents(
+      args.actor,
+      { sinceSeqId: cursor },
+      [200],
+    );
+    if (after.status !== 200) {
+      throw new Error("Expected the committed copy and deletion event feed");
+    }
+    expect(after.body.events).toStrictEqual([
+      expect.objectContaining({
+        kind: "created",
+        chatThreadId: copiedAutomation.chatThreadId,
+      }),
+      expect.objectContaining({
+        kind: "deleted",
+        chatThreadId: sourceThreadId,
+      }),
+    ]);
+  }, 30_000);
+
+  it("publishes a consistent copy while a deleted source automation thread is recreated", async () => {
+    const args = await scenario();
+    const originalThreadId = args.automation.chatThreadId;
+    if (!originalThreadId) {
+      throw new Error("Expected the source automation's bound thread");
+    }
+    await chat.deleteThread(args.actor, originalThreadId);
+    const before = await chat.requestThreadEvents(args.actor, {}, [200]);
+    if (before.status !== 200) {
+      throw new Error("Expected the initial thread event feed");
+    }
+    const cursor = before.body.events.at(-1)?.seqId;
+    if (cursor === undefined) {
+      throw new Error("Expected a committed thread event cursor");
+    }
+    // Reuse the infrastructure scheduling exception above: no API can suspend
+    // copy after source validation while another request recreates its thread.
+    const { copying, held } = await startCopyAtPublication(args);
+    const creating = automationClient().create({
+      headers: headers(),
+      params: { workflowId: args.workflowId },
+      body: { kind: "event", eventType: "webhook-received" },
+    });
+    const creationDone = settleIncludingAbort(creating);
+    onTestFinished(async () => {
+      held.release();
+      await creationDone;
+    });
+    await expect
+      .poll(async () => {
+        return await held.operationIsBlocked("automation-creation");
+      })
+      .toBeTruthy();
+    held.release();
+    await held.done;
+    const copied = await accept(copying, [201]);
+    const created = await accept(creating, [201]);
+    const copiedAutomations = await accept(
+      automationClient().list({
+        headers: headers(),
+        params: { workflowId: copied.body.id },
+      }),
+      [200],
+    );
+    expect(copiedAutomations.body).toHaveLength(1);
+    const copiedAutomation = copiedAutomations.body[0];
+    expect(copiedAutomation?.enabled).toBeFalsy();
+    if (!copiedAutomation?.chatThreadId || !created.body.chatThreadId) {
+      throw new Error("Expected independent copy and recreated source threads");
+    }
+    expect(created.body.chatThreadId).not.toBe(originalThreadId);
+    expect(created.body.enabled).toBeTruthy();
+    await chat.requestReadThread(
+      args.actor,
+      copiedAutomation.chatThreadId,
+      [200],
+    );
+    await chat.requestReadThread(args.actor, created.body.chatThreadId, [200]);
+    await chat.requestReadThread(args.actor, originalThreadId, [404]);
+    const sourceAutomations = await accept(
+      automationClient().list({
+        headers: headers(),
+        params: { workflowId: args.workflowId },
+      }),
+      [200],
+    );
+    expect(sourceAutomations.body).toHaveLength(2);
+    expect(sourceAutomations.body).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: args.automation.id, enabled: false }),
+        expect.objectContaining({ id: created.body.id, enabled: true }),
+      ]),
+    );
+    const after = await chat.requestThreadEvents(
+      args.actor,
+      { sinceSeqId: cursor },
+      [200],
+    );
+    if (after.status !== 200) {
+      throw new Error("Expected the committed thread event feed");
+    }
+    expect(after.body.events).toStrictEqual([
+      expect.objectContaining({
+        kind: "created",
+        chatThreadId: copiedAutomation.chatThreadId,
+      }),
+      expect.objectContaining({
+        kind: "created",
+        chatThreadId: created.body.chatThreadId,
+      }),
+    ]);
+  }, 30_000);
+
   it.each(["KMS", "upload"] as const)(
     "allows unrelated thread writes while %s is stalled and publishes a complete copy",
     async (phase) => {
