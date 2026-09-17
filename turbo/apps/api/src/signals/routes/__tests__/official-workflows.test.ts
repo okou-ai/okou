@@ -1739,6 +1739,7 @@ async function deliverClerkOrganizationCreated(
 async function deliverClerkOrganizationMembershipCreated(
   actor: ApiTestUser,
   createdAt: Date,
+  membershipId = `membership-${actor.userId}-${actor.orgId}`,
 ): Promise<void> {
   if (!actor.orgId || !actor.orgRole) {
     throw new Error("Expected organization-scoped Clerk member");
@@ -1747,11 +1748,27 @@ async function deliverClerkOrganizationMembershipCreated(
   webhooks.verifyNextClerkWebhook({
     type: "organizationMembership.created",
     data: {
-      id: `membership-${actor.userId}-${actor.orgId}`,
+      id: membershipId,
       organization: { id: actor.orgId },
       public_user_data: { user_id: actor.userId },
       role: actor.orgRole,
       created_at: createdAt.getTime(),
+    },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
+async function deliverClerkOrganizationMembershipDeleted(
+  actor: ApiTestUser,
+): Promise<void> {
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organizationMembership.deleted",
+    data: {
+      id: `membership-${actor.userId}-${actor.orgId}`,
+      organization: { id: actor.orgId },
+      public_user_data: { user_id: actor.userId },
     },
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
@@ -3344,13 +3361,17 @@ async function readMorningBriefAutomations(
 }
 
 function mockBriefMemberships(
-  entries: readonly { readonly actor: ApiTestUser; readonly createdAt: Date }[],
+  entries: readonly {
+    readonly actor: ApiTestUser;
+    readonly createdAt: Date;
+    readonly membershipId?: string;
+  }[],
 ): void {
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
-      data: entries.map(({ actor, createdAt }) => {
+      data: entries.map(({ actor, createdAt, membershipId }) => {
         return {
-          id: `membership-${actor.userId}-${actor.orgId}`,
+          id: membershipId ?? `membership-${actor.userId}-${actor.orgId}`,
           role: actor.orgRole ?? "org:member",
           createdAt: createdAt.getTime(),
           organization: { id: actor.orgId },
@@ -3428,10 +3449,12 @@ async function prepareBriefMember({
   actor = bdd.user(),
   createdAt = new Date("2030-01-01T00:00:00.000Z"),
   catalogAvailable = true,
+  bootstrap = true,
 }: {
   readonly actor?: ApiTestUser;
   readonly createdAt?: Date;
   readonly catalogAvailable?: boolean;
+  readonly bootstrap?: boolean;
 } = {}) {
   installCatalogStorageFixture();
   if (catalogAvailable) {
@@ -3440,7 +3463,9 @@ async function prepareBriefMember({
   mockBriefMemberships([{ actor, createdAt }]);
   await setOfficialWorkflowsEnabled(actor, false);
   await setMorningBriefEnabled(actor, true);
-  await deliverClerkOrganizationCreated(actor, createdAt);
+  if (bootstrap) {
+    await deliverClerkOrganizationCreated(actor, createdAt);
+  }
   onTestFinished(async () => {
     installCatalogStorageFixture();
     await cleanupCatalog();
@@ -3449,6 +3474,83 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief default onboarding", () => {
+  it("waits locally for a known member's timezone and installs as soon as initialization supplies it", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor);
+      await Promise.all([
+        initializeBriefMember(actor),
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+    });
+    await withMockNowForTest(startedAt + 60_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).not.toHaveBeenCalled();
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "preparing",
+        unavailableReason: "missing-timezone",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+        timezone: "Asia/Shanghai",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
+  });
+
+  it("waits locally for the default Agent and recovers after the organization bootstrap arrives", async () => {
+    const { actor, createdAt } = await prepareBriefMember({ bootstrap: false });
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
+    });
+    await withMockNowForTest(startedAt + 60_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "preparing",
+        unavailableReason: "missing-default-agent",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+
+      await deliverClerkOrganizationCreated(actor, createdAt);
+      await initializeBriefMember(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(2);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
+  });
+
   it("installs without any connected source and stays single across concurrent cron ticks", async () => {
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "Asia/Shanghai");
@@ -3548,46 +3650,203 @@ describe("Morning Brief default onboarding", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
 
-  it("recovers a transient installation failure without repeating onboarding", async () => {
-    const { actor } = await prepareBriefMember({ catalogAvailable: false });
-    await connectBriefSource(actor);
-    await initializeBriefMember(actor, "Asia/Shanghai");
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    await syncDeployedCatalog();
-    await tickBriefEnrollment(actor);
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      status: "enabled",
-      enabled: true,
+  it("waits locally for a known member's catalog and recovers on the next worker revisit", async () => {
+    const { actor, createdAt } = await prepareBriefMember({
+      catalogAvailable: false,
     });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      await Promise.all([
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).not.toHaveBeenCalled();
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+      await syncDeployedCatalog();
+    });
+    await withMockNowForTest(startedAt + 60_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        status: "enabled",
+        enabled: true,
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
   });
 
-  describe("membership verification after a transient Clerk outage", () => {
-    let prepared: Awaited<ReturnType<typeof prepareBriefMember>>;
-    beforeEach(async () => {
-      prepared = await prepareBriefMember();
-      await connectBriefSource(prepared.actor);
-    });
-
-    it("keeps membership verification retryable when Clerk is temporarily unavailable", async () => {
-      const { actor, createdAt } = prepared;
-      context.mocks.clerk.organizations.getOrganizationMembershipList.mockRejectedValueOnce(
-        new Error("Temporary Clerk outage"),
-      );
-      const failed = await setupApp({ context, routes: userPreferencesRoutes })(
-        userPreferencesContract,
-      ).initialize({
-        headers: authHeaders(actor),
-        body: { timezone: "Asia/Shanghai" },
+  it("shares an inline Clerk failure cooldown with repeated initialization and worker ticks", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    membershipReads.mockRejectedValue(new Error("Temporary Clerk outage"));
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      const initialized = await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(initialized.body).toMatchObject({ timezone: "Asia/Shanghai" });
+      await Promise.all([
+        initializeBriefMember(actor),
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "error",
       });
-      expect(failed.status).toBe(200);
-      expect(failed.body).toMatchObject({ timezone: "Asia/Shanghai" });
-      mockBriefMemberships([{ actor, createdAt }]);
-      await tickBriefEnrollment(actor);
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+    });
+    mockBriefMemberships([{ actor, createdAt }]);
+    await withMockNowForTest(startedAt + 59_999, async () => {
+      await Promise.all([
+        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+    });
+    await withMockNowForTest(startedAt + 60_000, async () => {
+      await Promise.all([
+        tickBriefEnrollment(actor),
+        tickBriefEnrollment(actor),
+      ]);
+      expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
         status: "enabled",
       });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
+  });
+
+  it("recovers an interrupted membership check after its five-minute claim expires", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const interrupted = new DOMException(
+      "Clerk request interrupted",
+      "AbortError",
+    );
+    membershipReads.mockRejectedValueOnce(interrupted);
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await expect(
+        setupApp({
+          context,
+          routes: userPreferencesRoutes,
+          rethrowErrors: true,
+        })(userPreferencesContract).initialize({
+          headers: authHeaders(actor),
+          body: { timezone: "Asia/Shanghai" },
+        }),
+      ).rejects.toBe(interrupted);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "preparing",
+        timezone: "Asia/Shanghai",
+      });
+    });
+    mockBriefMemberships([{ actor, createdAt }]);
+    await withMockNowForTest(startedAt + 299_999, async () => {
+      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+    });
+    await withMockNowForTest(startedAt + 300_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(2);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    });
+  });
+
+  it("shares worker failures with inline retries and caps the growing cooldown at fifteen minutes", async () => {
+    const { actor, createdAt } = await prepareBriefMember({
+      catalogAvailable: false,
+    });
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    const startedAt = now();
+    await withMockNowForTest(startedAt, async () => {
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      await syncDeployedCatalog();
+    });
+    membershipReads.mockClear();
+    membershipReads.mockRejectedValue(new Error("Temporary Clerk outage"));
+    let attemptedAt = startedAt + 60_000;
+    let attempts = 1;
+    await withMockNowForTest(attemptedAt, async () => {
+      await tickBriefEnrollment(actor);
+      await initializeBriefMember(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "error",
+      });
+    });
+    for (const retryDelay of [60_000, 120_000, 240_000, 480_000, 900_000]) {
+      await withMockNowForTest(attemptedAt + retryDelay - 1, async () => {
+        await Promise.all([
+          initializeBriefMember(actor),
+          tickBriefEnrollment(actor),
+        ]);
+        expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      });
+      attemptedAt += retryDelay;
+      attempts++;
+      await withMockNowForTest(attemptedAt, async () => {
+        await Promise.all([
+          initializeBriefMember(actor),
+          tickBriefEnrollment(actor),
+          tickBriefEnrollment(actor),
+        ]);
+        expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      });
+    }
+    mockBriefMemberships([{ actor, createdAt }]);
+    await withMockNowForTest(attemptedAt + 899_999, async () => {
+      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(attempts);
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        0,
+      );
+    });
+    await withMockNowForTest(attemptedAt + 900_000, async () => {
+      await tickBriefEnrollment(actor);
+      expect(membershipReads).toHaveBeenCalledTimes(attempts + 1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
     });
   });
 
@@ -3702,21 +3961,75 @@ describe("Morning Brief default onboarding", () => {
 
   it("cancels pending enrollment when membership is removed, including a late created event", async () => {
     const { actor, createdAt } = await prepareBriefMember();
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    membershipReads.mockRejectedValueOnce(new Error("Temporary Clerk outage"));
     await initializeBriefMember(actor);
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "organizationMembership.deleted",
-      data: {
-        id: `membership-${actor.userId}-${actor.orgId}`,
-        organization: { id: actor.orgId },
-        public_user_data: { user_id: actor.userId },
-      },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
+    expect(membershipReads).toHaveBeenCalledTimes(1);
+    await deliverClerkOrganizationMembershipDeleted(actor);
     mockBriefMemberships([]);
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
     await tickBriefEnrollment(actor);
+    expect(membershipReads).toHaveBeenCalledTimes(1);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+  });
+
+  it.each([
+    { label: "with its creation webhook", deliverCreatedEvent: true },
+    { label: "before its creation webhook", deliverCreatedEvent: false },
+  ])(
+    "enrolls a new membership generation $label after removal",
+    async ({ deliverCreatedEvent }) => {
+      const { actor, createdAt } = await prepareBriefMember();
+      await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+      await deliverClerkOrganizationMembershipDeleted(actor);
+      const membershipReads =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      membershipReads.mockClear();
+      const newMembershipId = `rejoined-${actor.userId}-${actor.orgId}`;
+      const rejoinedAt = new Date(createdAt.getTime() + 1000);
+      mockBriefMemberships([
+        { actor, createdAt: rejoinedAt, membershipId: newMembershipId },
+      ]);
+      if (deliverCreatedEvent) {
+        await deliverClerkOrganizationMembershipCreated(
+          actor,
+          rejoinedAt,
+          newMembershipId,
+        );
+      }
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      expect(membershipReads).toHaveBeenCalledTimes(1);
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+      await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
+        1,
+      );
+    },
+  );
+
+  it("refuses to install pending work for a different live membership generation", async () => {
+    const { actor, createdAt } = await prepareBriefMember();
+    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
+    mockBriefMemberships([
+      {
+        actor,
+        createdAt: new Date(createdAt.getTime() + 1000),
+        membershipId: `replacement-${actor.userId}-${actor.orgId}`,
+      },
+    ]);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    expect(membershipReads).toHaveBeenCalledTimes(1);
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: false,
       status: "paused",
@@ -3755,10 +4068,18 @@ describe("Morning Brief default onboarding", () => {
     const { actor } = await prepareBriefMember();
     await connectBriefSource(actor);
     await setMorningBriefEnabled(actor, false);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    membershipReads.mockClear();
     await initializeBriefMember(actor, "Asia/Shanghai");
+    expect(membershipReads).toHaveBeenCalledTimes(1);
+    await initializeBriefMember(actor);
+    await tickBriefEnrollment(actor);
+    expect(membershipReads).toHaveBeenCalledTimes(1);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
     await setMorningBriefEnabled(actor, true);
     await initializeBriefMember(actor);
+    expect(membershipReads).toHaveBeenCalledTimes(2);
     const [installed] = await listMorningBriefInstallations(actor);
     if (!installed) {
       throw new Error("Expected installed brief");

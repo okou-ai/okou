@@ -1,6 +1,6 @@
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, inArray, lte } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -13,10 +13,7 @@ import {
 import { ensureMorningBriefDefaultEnabled$ } from "./morning-brief-preference.service";
 
 const log = logger("MorningBriefEnrollment");
-const RETRY_DELAY_MS = 60_000;
-const CLAIM_LEASE_MS = 5 * 60_000;
-
-/** A claimed pending row becomes available again even if its request dies. */
+/** Shared enrollment admission owns the lease and backoff for every entry point. */
 const executeMorningBriefEnrollmentScope$ = command(
   async (
     { set },
@@ -42,28 +39,6 @@ const executeMorningBriefEnrollmentScope$ = command(
     for (const row of rows) {
       signal.throwIfAborted();
       const identity = { orgId: row.orgId, userId: row.userId };
-      const leaseExpiresAt = new Date(currentTime.getTime() + CLAIM_LEASE_MS);
-      const [claimed] = await db
-        .update(morningBriefEnrollments)
-        .set({
-          availableAt: leaseExpiresAt,
-          attemptCount: row.attemptCount + 1,
-          updatedAt: currentTime,
-        })
-        .where(
-          and(
-            morningBriefEnrollmentWhere(identity),
-            inArray(morningBriefEnrollments.state, ["checking", "pending"]),
-            eq(morningBriefEnrollments.attemptCount, row.attemptCount),
-            lte(morningBriefEnrollments.availableAt, currentTime),
-          ),
-        )
-        .returning({ userId: morningBriefEnrollments.userId });
-      signal.throwIfAborted();
-      if (!claimed) {
-        continue;
-      }
-      attempted++;
       const result = await settle(
         set(
           ensureMorningBriefDefaultEnabled$,
@@ -72,29 +47,19 @@ const executeMorningBriefEnrollmentScope$ = command(
         ),
         signal,
       );
+      if (
+        result.ok &&
+        result.value.outcome === "skipped" &&
+        result.value.reason === "retry-deferred"
+      ) {
+        continue;
+      }
+      attempted++;
       const lastError = !result.ok
         ? String(result.error)
         : result.value.outcome === "failed"
           ? result.value.message
           : null;
-      const availableAt = new Date(
-        nowDate().getTime() +
-          Math.min(
-            15 * RETRY_DELAY_MS,
-            RETRY_DELAY_MS * 2 ** Math.min(row.attemptCount, 4),
-          ),
-      );
-      await db
-        .update(morningBriefEnrollments)
-        .set({ lastError, availableAt, updatedAt: nowDate() })
-        .where(
-          and(
-            morningBriefEnrollmentWhere(identity),
-            eq(morningBriefEnrollments.availableAt, leaseExpiresAt),
-            inArray(morningBriefEnrollments.state, ["checking", "pending"]),
-          ),
-        );
-      signal.throwIfAborted();
       if (
         row.attemptCount === 0 ||
         lastError !== row.lastError ||
