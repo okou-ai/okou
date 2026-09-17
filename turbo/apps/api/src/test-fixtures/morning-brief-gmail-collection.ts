@@ -199,6 +199,23 @@ export async function requireConnectorReconnectFixture(
 }
 
 /**
+ * Move a stored token expiry inside the reader's refresh buffer.
+ *
+ * This is the shape of the ordinary Gmail credential a scheduled collection
+ * meets: still usable, close enough to expiry that the reader refreshes it
+ * before the first provider request. The connect flow stores an hour of
+ * validity, which never reaches that branch.
+ */
+export async function expireConnectorTokenFixture(
+  connectorId: string,
+): Promise<void> {
+  await db()
+    .update(connectors)
+    .set({ tokenExpiresAt: new Date(now() + 30_000) })
+    .where(eq(connectors.id, connectorId));
+}
+
+/**
  * Clear a stored token expiry, the shape of a credential that does not expire.
  *
  * GitHub OAuth tokens, personal access tokens and every manual method store
