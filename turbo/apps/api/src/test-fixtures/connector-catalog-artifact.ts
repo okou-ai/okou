@@ -1062,7 +1062,13 @@ const connectors = [
     firewall: generatedFirewall(
       [
         bearerApi("https://gmail.googleapis.com/gmail", "GMAIL_TOKEN", [
-          { name: "messages.read", rules: ["GET /v1/users/{userId}/messages"] },
+          {
+            name: "messages.read",
+            rules: [
+              "GET /v1/users/{userId}/messages",
+              "GET /v1/users/{userId}/messages/{messageId}",
+            ],
+          },
           {
             name: "messages.write",
             rules: ["POST /v1/users/{userId}/messages/send"],
