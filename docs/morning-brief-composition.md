@@ -132,6 +132,20 @@ away — leaving a title, heading or bullet that renders as nothing. Validation
 therefore runs against the escaped value that actually gets published, not the
 raw one.
 
+## The account a source is admitted with
+
+Every OAuth source's account choice is resolved **once, before any source of the
+attempt reads**, and the frozen choice decides both authorization and which
+credential is loaded. Resolving a selection when each reader happens to start
+lets an account chosen after admission decide what a later source reads, so the
+attempt would stop being the attempt that was admitted.
+
+Explicit absence is frozen too. A source the owner had not connected at
+admission does not acquire an account mid-attempt; connecting one belongs to the
+next attempt. A different account selected afterwards revokes the source — the
+material the previous account produced is not released, and the read never
+silently continues on the new one.
+
 ## Retained source authority
 
 A collection deadline does not make old authority valid forever. Result
@@ -141,11 +155,24 @@ authorizer whether that exact input is still allowed.
 
 What is retained for those questions is a credential-free descriptor: source,
 the exact selected connection and account reference, a digest of the
-authorization surface actually exercised, the membership generation, the Agent,
-when it was captured, **the containers the evidence actually came from**, and
-whether it entered the model input. At most one per source, at most 24
-containers, 2 KiB each and 8 KiB in total. No raw source body, prompt,
+authorization surface actually exercised, **one endpoint per permission whose
+result the input still holds**, the membership generation, the Agent, when it
+was captured, **the containers the evidence actually came from**, and whether it
+entered the model input. At most one per source, at most 24 containers, at most
+8 endpoints, 2 KiB each and 8 KiB in total. No raw source body, prompt,
 credential or unrestricted URL blob is persisted or logged.
+
+The digest is taken over the **effective permissions the read was admitted
+under**, never over constant method names: a digest of method names hashes
+identically after a grant is withdrawn, so it cannot detect the narrowing it
+exists to detect. The endpoints are the same representative URLs the shared
+reader's release fence already re-evaluates, which is what makes a later check a
+repeat of the same live check rather than a narrower question.
+
+A source that supplied material and cannot prove a connection, an account and an
+endpoint is **rejected**, not described. A null account is "not observed", never
+"any account": a descriptor without one would make every later check pass by
+having nothing to ask about.
 
 The containers matter: a digest of constant method names proves which API was
 called, not which channels, threads or mailboxes the owner's evidence came from,
@@ -157,6 +184,38 @@ pass by having nothing to check while the evidence went out anyway.
 It is evidence about an input, never a bearer capability and never a cached
 allow — every field exists so a later check can be re-run, and none of them can
 stand in for its answer.
+
+Revalidation runs on the composition path itself, after the last network await
+and before any reservation. It re-enters the **existing** authorizers rather
+than a second engine: connector sources re-run the shared reader's identity and
+URL-policy gates for the frozen account and every retained endpoint, native
+Slack re-runs the same shared-conversation enumeration its collector proves
+against, and Chat re-resolves the same ownership, visibility and provenance
+predicates its collector resolved. No credential is decrypted and no provider
+payload is fetched: whether an input may still be used is a permission question,
+not a reason to fetch it again.
+
+The whole phase is bounded at 5 seconds and further constrained by the attempt's
+own reservation, whichever is nearer; shared-channel and permission work is
+counted inside it rather than given a budget of its own. A check that does not
+finish inside the phase is not a proof of authority, so its source is withheld
+like a revoked one.
+
+Material whose authority was withdrawn is removed and the authorized siblings
+are planned again, with that source's day reported as failed rather than as a
+quiet morning. Whole-owner loss — a lost membership, a disabled or reinstalled
+brief, an Agent the member can no longer act through — yields no plan at all, and
+losing every supplied source is an authority change rather than an empty brief.
+
+Contribution is decided by the material the final request actually carries. An
+item dropped by allocation supplied nothing, and marking its source contributing
+would make a later check defend evidence the model never received.
+
+An external permission check **cannot** atomically prevent a revoke that lands
+after it answers. Network preflight therefore runs outside every transaction,
+and the consumer that finally releases the material re-evaluates its own local
+predicates inside its own fence. What is bounded here is that material whose
+authority is already gone never reaches that consumer.
 
 Everything that entered the model input is revalidated, **including material the
 model never cited**: it may have used a message without citing it, so reducing

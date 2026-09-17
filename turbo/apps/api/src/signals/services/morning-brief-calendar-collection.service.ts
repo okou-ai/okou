@@ -14,6 +14,7 @@ import {
   withMorningBriefConnectorReader,
   type MorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceAuthorityLedger,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
   type MorningBriefResponseMetadata,
@@ -1186,6 +1187,8 @@ export async function collectMorningBriefCalendar(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
+    /** The account choice frozen for this attempt, and this read's proof. */
+    readonly authority: MorningBriefSourceAuthorityLedger;
     /**
      * The source deadline the caller started before admitting this source. It
      * is spent, never restarted, so a slow admission shortens the collection
@@ -1243,6 +1246,7 @@ export async function collectMorningBriefCalendar(
       deadline: args.deadline,
       db: args.db,
       clerk: args.clerk,
+      authority: args.authority,
     },
     async (reader) => {
       return await collectCalendarsWithReader({ reader, window });

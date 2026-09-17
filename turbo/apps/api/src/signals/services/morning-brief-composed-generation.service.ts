@@ -16,6 +16,7 @@ import {
   startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
 } from "./morning-brief-connector-reader.service";
+import { admitCollectionCompletion } from "./morning-brief-collection-executor.service";
 import {
   claimMorningBriefCollection,
   collectionLeaseHeld,
@@ -506,19 +507,22 @@ async function resolveExisting(
  * before it: a caller-side look before the transaction could not exclude a
  * competitor that commits in between.
  */
-async function admitComposedGeneration(args: {
-  readonly db: Db;
-  readonly admission: MorningBriefCollectionAdmission;
-  readonly claim: MorningBriefCollectionClaim;
-  readonly completion: MorningBriefCollectionCompletion;
-  readonly composed: Extract<
-    MorningBriefCompositionOutcome,
-    { kind: "composed" | "empty" }
-  >;
-  readonly transport: MorningBriefCompositionTransport | null;
-  readonly coverage: "complete" | "partial" | "empty";
-  readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
-}): Promise<{
+async function admitComposedGeneration(
+  args: {
+    readonly db: Db;
+    readonly admission: MorningBriefCollectionAdmission;
+    readonly claim: MorningBriefCollectionClaim;
+    readonly completion: MorningBriefCollectionCompletion;
+    readonly composed: Extract<
+      MorningBriefCompositionOutcome,
+      { kind: "composed" | "empty" }
+    >;
+    readonly transport: MorningBriefCompositionTransport | null;
+    readonly coverage: "complete" | "partial" | "empty";
+    readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
+  },
+  signal: AbortSignal,
+): Promise<{
   readonly finalized: Awaited<
     ReturnType<typeof finalizeMorningBriefCollection>
   >;
@@ -535,7 +539,19 @@ async function admitComposedGeneration(args: {
       admission,
       args.claim,
       args.completion,
-      nowDate,
+      {
+        clock: nowDate,
+        // The same last check the Slack-only finalization takes, and it is
+        // kind-aware: a composed occurrence is proved against the authority it
+        // was admitted under rather than against a Slack binding it never read.
+        admit: async (finalizingTx, occurrence) => {
+          return await admitCollectionCompletion(
+            finalizingTx,
+            occurrence,
+            signal,
+          );
+        },
+      },
     );
     if (result.kind !== "finalized") {
       return result;
@@ -633,16 +649,19 @@ const reserveAndInvoke$ = command(
       coverage,
     );
 
-    const admitted = await admitComposedGeneration({
-      db,
-      admission,
-      claim,
-      completion,
-      composed,
-      transport,
-      coverage,
-      purpose: input.purpose,
-    });
+    const admitted = await admitComposedGeneration(
+      {
+        db,
+        admission,
+        claim,
+        completion,
+        composed,
+        transport,
+        coverage,
+        purpose: input.purpose,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const { finalized, generationAdmission, anchorConflict } = admitted;
 
