@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Lock,
   MoreHorizontal,
+  Plus,
   Search,
   Trash2,
   User,
@@ -46,7 +47,13 @@ import {
   updateCustomTemplate$,
   visibleCustomTemplates$,
 } from "../../signals/okou-page/custom-template-library.ts";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import {
+  PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
+  importPresentationTemplateDeck$,
+} from "../../signals/okou-page/presentation-template-import.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 /** The tile metrics the rest of the picker's grids already use. */
@@ -334,6 +341,72 @@ function CustomTemplateCard({
   );
 }
 
+/**
+ * The upload entry for this catalog.
+ *
+ * It sends the same message the Presentation tab's tile sends, so the reverse
+ * run is the same run; only the prompt differs, and that difference is what
+ * decides which catalog the result lands in. Rendering its own tile rather
+ * than reusing the composer's is deliberate: the composer already imports this
+ * pane, so importing the tile back would close a cycle.
+ */
+function CustomTemplateUploadCard({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const rootSignal = useGet(rootSignal$);
+  const importDeck = useSet(importPresentationTemplateDeck$);
+  const label = t(($) => {
+    return $.artifacts.templates.importDeck;
+  });
+  return (
+    <label className="group/tile flex cursor-pointer flex-col gap-2">
+      <span
+        className={cn(
+          CARD_MEDIA,
+          "bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+        )}
+      >
+        <Plus
+          className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
+          strokeWidth={1.5}
+          aria-hidden
+        />
+        <input
+          type="file"
+          className="sr-only"
+          accept={PRESENTATION_TEMPLATE_IMPORT_ACCEPT}
+          aria-label={label}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            // Clear the input so choosing the same file again still fires.
+            event.currentTarget.value = "";
+            if (!file) {
+              return;
+            }
+            detach(
+              importDeck({ signals, file }, rootSignal),
+              Reason.DomCallback,
+            );
+          }}
+        />
+      </span>
+      <span className="flex flex-col gap-0.5">
+        <span className="truncate text-sm font-medium text-foreground">
+          {label}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {t(($) => {
+            return $.artifacts.templates.importDeckHint;
+          })}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 function CustomTemplatesEmpty() {
   const { t } = useTranslation();
   return (
@@ -548,7 +621,11 @@ function CustomTemplateDetail() {
  * category rail because it answers "who made it", while the seven below it
  * answer "what am I making".
  */
-export function CustomTemplatePickerPane() {
+export function CustomTemplatePickerPane({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
   const { t } = useTranslation();
   const query = useGet(customTemplateSearchQuery$);
   const setQuery = useSet(setCustomTemplateSearchQuery$);
@@ -566,13 +643,21 @@ export function CustomTemplatePickerPane() {
         .length === 0 ? (
       // A query that matches nothing is a different event from having no
       // templates at all, and the picker already ships the panel that says so.
+      // Uploading cannot answer a failed search, so the tile only leads the
+      // empty catalog.
       query.trim().length > 0 ? (
         <TemplateEmptyPanel />
       ) : (
-        <CustomTemplatesEmpty />
+        <div className="flex flex-col gap-5">
+          <CustomTemplatesEmpty />
+          <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+            <CustomTemplateUploadCard signals={signals} />
+          </div>
+        </div>
       )
     ) : (
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+        <CustomTemplateUploadCard signals={signals} />
         {templatesLoadable.data.map((template) => {
           return <CustomTemplateCard key={template.id} template={template} />;
         })}

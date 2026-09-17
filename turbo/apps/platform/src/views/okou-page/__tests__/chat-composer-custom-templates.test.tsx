@@ -389,3 +389,38 @@ test("Deleting a custom template removes it from the panel", async () => {
   });
   expect(within(dialog).getByText("Renewal deck")).toBeInTheDocument();
 });
+
+test("Uploading moves to Custom once the switch is on", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+
+  // The Presentation tab is the built-in templates alone: the tile that starts
+  // an upload, and the decks a previous upload produced, belong to the catalog
+  // this member can now open.
+  click(tabByText("Presentation"));
+  await waitFor(() => {
+    expect(
+      dialog.querySelector("[data-presentation-template-import]"),
+    ).toBeNull();
+  });
+
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  expect(
+    within(dialog).getByLabelText("Import your own deck"),
+  ).toBeInTheDocument();
+});
+
+test("Uploading stays in Presentation while the switch is off", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { dialog } = await openCustomPanel(false);
+
+  click(tabByText("Presentation"));
+  await waitFor(() => {
+    expect(
+      dialog.querySelector("[data-presentation-template-import]"),
+    ).not.toBeNull();
+  });
+});
