@@ -155,7 +155,8 @@ test("Keep inline feedback tied to the source email", async () => {
   );
   const submittedComment = await screen.findByText(comment);
   expect(submittedComment).toBeVisible();
-  expect(screen.getByText(new RegExp(MAIL_DRAFT_ID, "u"))).toBeVisible();
+  expect(screen.getByText("Quoted from an email draft")).toBeVisible();
+  expect(screen.queryByText(new RegExp(MAIL_DRAFT_ID, "u"))).toBeNull();
 });
 
 test("Keep inline feedback tied to the sent source email", async () => {
@@ -190,8 +191,9 @@ test("Keep inline feedback tied to the sent source email", async () => {
       }),
     ]),
   );
-  const sentIdentity = await screen.findByText(new RegExp(SENT_MAIL_ID, "u"));
-  expect(sentIdentity).toBeVisible();
+  const sentHeading = await screen.findByText("Quoted from a sent email");
+  expect(sentHeading).toBeVisible();
+  expect(screen.queryByText(new RegExp(SENT_MAIL_ID, "u"))).toBeNull();
 });
 
 function configureSplitMailChats(): void {
