@@ -164,13 +164,13 @@ function memberKey(owner: MorningBriefCollectionOwner): SQL | undefined {
  * with the `FOR UPDATE` that revocation takes on the same row, the two
  * transactions cannot decide at the same time in either order.
  *
- * The stamp dies with the row, so it cannot answer the opposite case: a cleanup
- * that ran to completion, followed by a legitimate rejoin whose ordinary
- * preference write inserts an unstamped parent. `created_at` closes that one.
- * It is stable across every preference upsert and new for every recreated row,
- * so an admission resolved against the deleted generation is refused here
- * rather than claiming an attempt, reaching the provider, and leaving a stale
- * occurrence in the rejoined member's way.
+ * This is the shared owner fence every later stage uses. A stage that already
+ * holds a persisted occurrence — generation, its saved result, delivery —
+ * proves the owner with exactly this call rather than reimplementing the
+ * subject admission, the lock mode or the stamp comparison. It deliberately
+ * does not compare an admission's parent generation, because such a stage has
+ * no admission to compare: deleting the parent cascades its occurrence away, so
+ * a surviving occurrence is itself the proof that the parent never changed.
  */
 export async function lockCollectionOwner(
   tx: Tx,
@@ -205,11 +205,14 @@ async function lockOwnerRow(
 /**
  * The same lock, plus the parent generation this admission resolved against.
  *
- * Only admission can be stale this way: it resolves an external membership
- * answer that a completed cleanup may already have invalidated, and the rejoin
- * that follows inserts an unstamped replacement row. A later stage holding a
- * persisted occurrence needs no such check, because deleting the parent
- * cascades that occurrence away — its survival is the proof.
+ * The stamp dies with the row, so it cannot answer the case admission is
+ * exposed to: a cleanup that ran to completion, followed by a legitimate rejoin
+ * whose ordinary preference write inserts an unstamped replacement parent.
+ * `created_at` closes that one. It is stable across every preference upsert and
+ * new for every recreated row, so an admission resolved against the deleted
+ * generation is refused before it claims an attempt, reaches the provider, or
+ * leaves a stale occurrence in the rejoined member's way. Only admission can be
+ * stale this way, which is why the shared fence above stays narrower.
  */
 async function lockAdmittedCollectionOwner(
   tx: Tx,
