@@ -47,12 +47,10 @@ function onboardingNeeded() {
   });
 }
 
-async function expectOnboarding() {
-  await expect(
-    screen.findByRole("heading", {
-      name: "What do you want to make first",
-    }),
-  ).resolves.toBeInTheDocument();
+function onboardingHeading() {
+  return screen.findByRole("heading", {
+    name: "What do you want to make first",
+  });
 }
 
 function handoffEvents(): Record<string, unknown>[] {
@@ -92,7 +90,7 @@ test("Report a bodyless handoff acknowledgement with bounded operational context
     ...pageOptions,
     path: "/onboarding?gclid=private-click&utm_campaign=private-campaign",
   });
-  await expectOnboarding();
+  await expect(onboardingHeading()).resolves.toBeInTheDocument();
   await expectCompletion("acknowledged");
 
   const request = await received.promise;
@@ -143,7 +141,7 @@ test.each([200, 401, 500])(
     });
 
     await setupPage(pageOptions);
-    await expectOnboarding();
+    await expect(onboardingHeading()).resolves.toBeInTheDocument();
     await expectCompletion("http_error");
     expect(handoffEvents().at(-1)).toMatchObject({
       "attributes.http.response.status_code": status,
@@ -161,7 +159,7 @@ test("Report a network failure without blocking onboarding", async () => {
     return Response.error();
   });
   await setupPage(pageOptions);
-  await expectOnboarding();
+  await expect(onboardingHeading()).resolves.toBeInTheDocument();
   await expectCompletion("request_error");
 });
 
@@ -174,7 +172,7 @@ test("Distinguish a missing token from an attempted request", async () => {
       session: { token: "" },
     },
   });
-  await expectOnboarding();
+  await expect(onboardingHeading()).resolves.toBeInTheDocument();
   await expectCompletion("token_missing");
 });
 
@@ -182,7 +180,7 @@ test("Explain a persisted previous attempt without sending another request", asy
   onboardingNeeded();
   context.store.set(previousAttempts.set$, "test-user-123:org_default");
   await setupPage(pageOptions);
-  await expectOnboarding();
+  await expect(onboardingHeading()).resolves.toBeInTheDocument();
   await expectCompletion("duplicate_attempt");
 });
 
@@ -197,7 +195,7 @@ test("Record cancellation when the owning session changes during the request", a
   });
 
   await setupPage(pageOptions);
-  await expectOnboarding();
+  await expect(onboardingHeading()).resolves.toBeInTheDocument();
   await received.promise;
   const switched = window._okou?.switchClerkSession("another-test-session");
   await expectCompletion("aborted");
@@ -227,7 +225,7 @@ test.each(["Error", "AbortError"])(
     });
 
     await setupPage(pageOptions);
-    await expectOnboarding();
+    await expect(onboardingHeading()).resolves.toBeInTheDocument();
     const request = await received.promise;
     expect(request.headers.get("authorization")).toBe("Bearer test-token");
     await expect(request.text()).resolves.toBe("");
