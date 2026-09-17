@@ -1,0 +1,201 @@
+import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
+import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
+import { users } from "@okouai/db/schema/user";
+import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { and, eq } from "drizzle-orm";
+
+import type { Tx } from "../../lib/db-types";
+import { lockCollectionOwner } from "./morning-brief-collection-occurrence.service";
+import { loadMorningBriefMigrationState } from "./morning-brief-migration-state.service";
+
+/**
+ * Outbox template name of a native Morning Brief delivery.
+ *
+ * It is deliberately distinct from `official-automation-result`: the legacy
+ * template belongs to a real Run and Automation, while a native intent is
+ * owned by a delivery row. Keeping them apart is what lets the drain demand
+ * native provenance instead of treating a native row as generic email.
+ */
+export const MORNING_BRIEF_RESULT_EMAIL_TEMPLATE = "morning-brief-result";
+
+export type NativeMorningBriefEmailAdmission =
+  | { readonly kind: "admitted" }
+  | { readonly kind: "rejected"; readonly reason: string };
+
+function rejected(reason: string): NativeMorningBriefEmailAdmission {
+  return { kind: "rejected", reason };
+}
+
+/**
+ * Decide whether one native Morning Brief outbox row may still be sent.
+ *
+ * This runs inside the drain's own claim transaction, immediately before the
+ * provider request is committed, so it observes the owner's state as of the
+ * send rather than as of enqueue. Every failure is closed, and no path here
+ * can downgrade a native intent to a generic email.
+ *
+ * What it re-checks, and why each one is not implied by the others:
+ *
+ * - the delivery row itself, which is the only native provenance there is;
+ * - erasure admission and the durable member row, taken in the same order the
+ *   delivery transaction took them;
+ * - the **frozen** membership generation recorded on the occurrence, because a
+ *   member who left and rejoined is a different owner even though the
+ *   organization and user identifiers match;
+ * - the live canonical Morning Brief choice and its installation Agent, so a
+ *   member who disabled the brief or moved it to another Agent after enqueue
+ *   is not mailed;
+ * - the destination thread, still owned by that Agent and that user;
+ * - the recipient's current opt-out.
+ *
+ * Suppression stays with the shared drain, which checks the recipient address
+ * for every producer. An admission that has already handed a request to the
+ * provider cannot be retracted; this gate only decides whether a request is
+ * made at all.
+ */
+export async function admitNativeMorningBriefEmail(
+  tx: Tx,
+  outboxId: string,
+): Promise<NativeMorningBriefEmailAdmission> {
+  const [delivery] = await tx
+    .select({
+      orgId: morningBriefDeliveries.orgId,
+      userId: morningBriefDeliveries.userId,
+      scheduledFor: morningBriefDeliveries.scheduledFor,
+      collectionKind: morningBriefDeliveries.collectionKind,
+      collectionVersion: morningBriefDeliveries.collectionVersion,
+      membershipId: morningBriefDeliveries.membershipId,
+      workflowId: morningBriefDeliveries.workflowId,
+      automationId: morningBriefDeliveries.automationId,
+      agentId: morningBriefDeliveries.agentId,
+      chatThreadId: morningBriefDeliveries.chatThreadId,
+    })
+    .from(morningBriefDeliveries)
+    .where(eq(morningBriefDeliveries.emailOutboxId, outboxId))
+    .limit(1);
+  if (!delivery) {
+    return rejected("Morning Brief email has no native delivery provenance");
+  }
+
+  const owner = { orgId: delivery.orgId, userId: delivery.userId };
+  if (!(await lockCollectionOwner(tx, owner))) {
+    return rejected("Morning Brief delivery owner was revoked or erased");
+  }
+
+  const [occurrence] = await tx
+    .select({ membershipId: morningBriefCollectionOccurrences.membershipId })
+    .from(morningBriefCollectionOccurrences)
+    .where(
+      and(
+        eq(morningBriefCollectionOccurrences.orgId, delivery.orgId),
+        eq(morningBriefCollectionOccurrences.userId, delivery.userId),
+        eq(
+          morningBriefCollectionOccurrences.scheduledFor,
+          delivery.scheduledFor,
+        ),
+        eq(
+          morningBriefCollectionOccurrences.collectionKind,
+          delivery.collectionKind,
+        ),
+        eq(
+          morningBriefCollectionOccurrences.collectionVersion,
+          delivery.collectionVersion,
+        ),
+      ),
+    )
+    .limit(1);
+  if (!occurrence || occurrence.membershipId !== delivery.membershipId) {
+    return rejected(
+      "Morning Brief delivery no longer matches its frozen membership generation",
+    );
+  }
+
+  // The exact installation, schedule and Agent this delivery acted under, all
+  // still current and still enabled. Comparing the Agent alone would let a
+  // reinstalled brief on the same Agent authorize the previous installation's
+  // mail. The automation row is locked rather than read, so a disable that is
+  // mid-flight is waited for instead of missed.
+  const state = await loadMorningBriefMigrationState(tx, owner);
+  if (
+    state.kind !== "installed" ||
+    state.installation.id !== delivery.workflowId ||
+    state.installation.agentId !== delivery.agentId ||
+    state.automation.id !== delivery.automationId
+  ) {
+    return rejected(
+      "Morning Brief is no longer installed on the binding this delivery used",
+    );
+  }
+  const [automation] = await tx
+    .select({ enabled: workflowAutomations.enabled })
+    .from(workflowAutomations)
+    .where(
+      and(
+        eq(workflowAutomations.id, delivery.automationId),
+        eq(workflowAutomations.orgId, delivery.orgId),
+        eq(workflowAutomations.ownerUserId, delivery.userId),
+        eq(workflowAutomations.workflowId, delivery.workflowId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (!automation?.enabled) {
+    return rejected("Morning Brief is no longer enabled for this owner");
+  }
+
+  // The installation Agent must still be one this member may actually use: a
+  // deleted Agent, or a private Agent that now belongs to somebody else, is a
+  // missing Agent rather than a reason to send under a substitute.
+  const [agent] = await tx
+    .select({
+      id: agents.id,
+      owner: agents.owner,
+      visibility: agents.visibility,
+    })
+    .from(agents)
+    .where(
+      and(eq(agents.id, delivery.agentId), eq(agents.orgId, delivery.orgId)),
+    )
+    .limit(1);
+  if (
+    !agent ||
+    (agent.visibility === "private" && agent.owner !== delivery.userId)
+  ) {
+    return rejected("Morning Brief installation Agent is no longer usable");
+  }
+
+  const [destination] = await tx
+    .select({ threadId: chatThreads.id })
+    .from(chatThreads)
+    .innerJoin(
+      agents,
+      and(eq(agents.id, chatThreads.agentId), eq(agents.id, delivery.agentId)),
+    )
+    .where(
+      and(
+        eq(chatThreads.id, delivery.chatThreadId),
+        eq(chatThreads.userId, delivery.userId),
+      ),
+    )
+    .limit(1);
+  if (!destination) {
+    return rejected("Morning Brief delivery destination is no longer owned");
+  }
+
+  // The delivery transaction created this row before deciding, so the lock has
+  // something to take. Explicit unsubscribe and complaint handling upsert the
+  // same row, which is what serializes them with this decision.
+  const [preference] = await tx
+    .select({ emailUnsubscribed: users.emailUnsubscribed })
+    .from(users)
+    .where(eq(users.id, delivery.userId))
+    .for("update")
+    .limit(1);
+  if (preference?.emailUnsubscribed ?? false) {
+    return rejected("Recipient unsubscribed from optional email");
+  }
+
+  return { kind: "admitted" };
+}

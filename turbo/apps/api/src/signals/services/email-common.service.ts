@@ -22,6 +22,16 @@ import type { ClerkClient } from "../external/clerk";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
+import {
+  admitNativeMorningBriefEmail,
+  MORNING_BRIEF_RESULT_EMAIL_TEMPLATE,
+} from "./morning-brief-native-email-admission.service";
+import {
+  MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
+  MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
+  MorningBriefResultEmailRenderError,
+  renderMorningBriefResultEmail,
+} from "./morning-brief-result-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 
 type Transaction = Tx;
@@ -84,6 +94,18 @@ function unicodeCharacterCount(value: string): number {
   return Array.from(value).length;
 }
 
+function boundedUtf8String(maxBytes: number) {
+  return z
+    .string()
+    .min(1)
+    .refine(
+      (value) => {
+        return Buffer.byteLength(value, "utf8") <= maxBytes;
+      },
+      { message: `Must contain at most ${maxBytes} UTF-8 bytes` },
+    );
+}
+
 function boundedUnicodeString(maxCharacters: number) {
   return z
     .string()
@@ -128,6 +150,25 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
             OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS,
           ),
           runUrl: z.url().max(1024),
+          manageUrl: z.url().max(1024),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      template: z.literal(MORNING_BRIEF_RESULT_EMAIL_TEMPLATE),
+      props: z
+        .object({
+          title: boundedUnicodeString(
+            MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
+          ),
+          // Byte-bounded to match the accepted generation result exactly, so
+          // the brief Chat shows is the brief this email carries.
+          resultMarkdown: boundedUtf8String(
+            MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
+          ),
+          threadUrl: z.url().max(1024),
           manageUrl: z.url().max(1024),
         })
         .strict(),
@@ -353,6 +394,12 @@ function renderTemplate(
       }
       return { html: rendered.html, text: rendered.text };
     }
+    case MORNING_BRIEF_RESULT_EMAIL_TEMPLATE: {
+      return renderMorningBriefResultEmail(
+        template.props,
+        officialAutomationResultUnsubscribeUrl(headers),
+      );
+    }
   }
 }
 
@@ -364,7 +411,8 @@ function fromAddressForTemplate(template: EmailTemplate): string {
       return buildTeamFromAddress();
     }
     case "data-export-ready":
-    case "official-automation-result": {
+    case "official-automation-result":
+    case MORNING_BRIEF_RESULT_EMAIL_TEMPLATE: {
       return buildFromAddress();
     }
   }
@@ -568,6 +616,17 @@ async function prepareNextOutboxItem(
       );
     }
 
+    // A native Morning Brief intent is admitted only while its own delivery
+    // receipt and the owner's current policy still authorise it. Missing
+    // provenance fails closed here; it never falls through to the generic
+    // sender.
+    if (row.template.template === MORNING_BRIEF_RESULT_EMAIL_TEMPLATE) {
+      const admission = await admitNativeMorningBriefEmail(tx, itemId);
+      if (admission.kind === "rejected") {
+        return await resolveWithoutSending(tx, itemId, admission.reason);
+      }
+    }
+
     const toAddresses =
       typeof row.to_addresses === "string"
         ? [row.to_addresses]
@@ -584,9 +643,22 @@ async function prepareNextOutboxItem(
     // Render only for a row whose request is not committed yet. Once it is,
     // the provider may already hold this key, so the committed request is the
     // only payload that can be sent under it.
-    const request: ProviderRequest = hasCommittedRequest
-      ? providerRequestSchema.parse(committedRequest)
-      : buildProviderRequest(row);
+    let request: ProviderRequest;
+    if (hasCommittedRequest) {
+      request = providerRequestSchema.parse(committedRequest);
+    } else {
+      try {
+        request = buildProviderRequest(row);
+      } catch (error) {
+        // Only the native Morning Brief template reports this. It means the
+        // accepted body cannot be carried intact, which is an explicit
+        // delivery failure rather than a reason to mail a shorter brief.
+        if (!(error instanceof MorningBriefResultEmailRenderError)) {
+          throw error;
+        }
+        return await resolveWithoutSending(tx, itemId, error.message);
+      }
+    }
     // The committed key stays authoritative for the row it was written for,
     // even if the derivation below ever changes.
     const idempotencyKey =

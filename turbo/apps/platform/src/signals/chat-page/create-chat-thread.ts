@@ -135,6 +135,7 @@ import {
   subscribeChatThreadRealtime$,
 } from "./chat-thread-remote-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
+import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import {
   cardSlotUrl,
   classifyChatAttachment,
@@ -2338,6 +2339,38 @@ interface MarkThreadReadDeps {
   locallyMarkedReadAt$: State<string | undefined>;
 }
 
+/**
+ * The newest instant this open thread has to be read through.
+ *
+ * A Run leaves a terminal event in the local projection, so its timestamp is
+ * available without asking the server. A native Morning Brief delivery has no
+ * Run and no terminal event at all, so its unread state only exists in the
+ * server watermark. Taking the later of the two covers a thread whose only
+ * unread is native, a second native delivery arriving while the thread is
+ * open, and a Run finishing after a native delivery.
+ */
+function createUnreadThroughAt$(
+  threadId: string,
+  latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>,
+) {
+  const unreadAt$ = serverUnreadAt$(threadId);
+  return computed(async (get): Promise<string | undefined> => {
+    const [runFinishAt, serverUnreadAt] = await Promise.all([
+      get(latestRunFinishCreatedAt$),
+      get(unreadAt$),
+    ]);
+    if (runFinishAt === undefined) {
+      return serverUnreadAt;
+    }
+    if (serverUnreadAt === undefined) {
+      return runFinishAt;
+    }
+    return compareCreatedAt(serverUnreadAt, runFinishAt) > 0
+      ? serverUnreadAt
+      : runFinishAt;
+  });
+}
+
 function createMarkThreadReadIfNeeded({
   threadId,
   latestRunFinishCreatedAt$,
@@ -2345,8 +2378,12 @@ function createMarkThreadReadIfNeeded({
 }: MarkThreadReadDeps) {
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
+  const unreadThroughAt$ = createUnreadThroughAt$(
+    threadId,
+    latestRunFinishCreatedAt$,
+  );
   return command(async ({ get, set }, sig: AbortSignal) => {
-    const latestRunFinishCreatedAt = await get(latestRunFinishCreatedAt$);
+    const latestRunFinishCreatedAt = await get(unreadThroughAt$);
     sig.throwIfAborted();
     if (!latestRunFinishCreatedAt) {
       return;
@@ -2369,7 +2406,15 @@ function createMarkThreadReadIfNeeded({
 
     const newLastReadAt = await set(markChatThreadRead$, { threadId }, sig);
     sig.throwIfAborted();
-    if (newLastReadAt !== null) {
+    // A response that resolves after a newer delivery already arrived must not
+    // record a read mark past it, or the newer unread would be swallowed
+    // without ever being read.
+    const heldLastReadAt = get(locallyMarkedReadAt$);
+    if (
+      newLastReadAt !== null &&
+      (heldLastReadAt === undefined ||
+        compareCreatedAt(newLastReadAt, heldLastReadAt) > 0)
+    ) {
       set(locallyMarkedReadAt$, newLastReadAt);
     }
     // No sidebar reload needed: markRead$ records an optimistic read mark
