@@ -571,35 +571,58 @@ async function recordWorkflowAutomationRunStart(
   });
   signal.throwIfAborted();
 
-  // The automation row lock is the serialization boundary for this late write.
-  // Taking it first, then re-reading the journal in later statements, is what
-  // makes a claim that committed while this transaction waited visible here.
+  await recordWorkflowAutomationLastRun(db, {
+    automationId: automation.id,
+    runId,
+    recordLastRunId: args.recordLastRunId !== false,
+    recordLastRunAt: args.recordLastRunAt,
+    disableClaimedOnceSchedule:
+      args.due.allowClaimedOnceScheduleAutomation === true,
+  });
+  signal.throwIfAborted();
+}
+
+/**
+ * The late last-run write that follows the launch transaction.
+ *
+ * The automation row lock is the serialization boundary. Taking it first, then
+ * re-reading the journal in later statements, is what makes a claim that
+ * committed while this transaction waited visible here; folding that read into
+ * the UPDATE as a subquery would evaluate it against the pre-wait snapshot.
+ */
+export async function recordWorkflowAutomationLastRun(
+  db: Db,
+  args: {
+    readonly automationId: string;
+    readonly runId: string;
+    readonly recordLastRunId: boolean;
+    readonly recordLastRunAt: boolean;
+    readonly disableClaimedOnceSchedule: boolean;
+  },
+): Promise<void> {
   await db.transaction(async (tx) => {
     const [locked] = await tx
       .select({ id: workflowAutomations.id })
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, automation.id))
+      .where(eq(workflowAutomations.id, args.automationId))
       .limit(1)
       .for("update");
     if (!locked) {
       return;
     }
-    if (await morningBriefScheduleClaimSuperseded(tx, runId)) {
+    if (await morningBriefScheduleClaimSuperseded(tx, args.runId)) {
       return;
     }
     await tx
       .update(workflowAutomations)
       .set({
-        ...(args.recordLastRunId === false ? {} : { lastRunId: runId }),
+        ...(args.recordLastRunId ? { lastRunId: args.runId } : {}),
         ...(args.recordLastRunAt ? { lastRunAt: nowDate() } : {}),
-        ...(args.due.allowClaimedOnceScheduleAutomation
-          ? { enabled: false }
-          : {}),
+        ...(args.disableClaimedOnceSchedule ? { enabled: false } : {}),
         updatedAt: nowDate(),
       })
-      .where(eq(workflowAutomations.id, automation.id));
+      .where(eq(workflowAutomations.id, args.automationId));
   });
-  signal.throwIfAborted();
 }
 
 async function checkQueuedWorkflowLaunchReadiness(

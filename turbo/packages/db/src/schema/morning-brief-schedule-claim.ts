@@ -20,12 +20,19 @@ import { workflowAutomations } from "./workflow";
  */
 export type MorningBriefScheduleClaimQueueDisposition = "queued" | "claimed";
 
-/** Whether this occurrence already advanced the schedule. */
+/**
+ * Whether this occurrence already advanced the schedule. `revoked` is the
+ * terminal state an owner, organization or membership revocation leaves
+ * behind: the occurrence is scrubbed of owner identity but remains a recorded
+ * execution, so a callback that arrives afterwards settles nothing instead of
+ * looking like an execution this table never recorded.
+ */
 export type MorningBriefScheduleClaimSettlement =
   | "unsettled"
   | "completed"
   | "failed"
-  | "pre_run_failure";
+  | "pre_run_failure"
+  | "revoked";
 
 /**
  * Content-free execution journal for the legacy Morning Brief schedule.
@@ -61,8 +68,13 @@ export const morningBriefScheduleClaims = pgTable(
         },
         { onDelete: "cascade" },
       ),
-    orgId: text("org_id").notNull(),
-    ownerUserId: text("owner_user_id").notNull(),
+    /**
+     * Nullable so revocation can scrub owner identity while keeping the
+     * content-free execution marker a late callback must still fail closed
+     * against. Every live occurrence carries both.
+     */
+    orgId: text("org_id"),
+    ownerUserId: text("owner_user_id"),
     workflowId: uuid("workflow_id").notNull(),
     /** The exact `next_run_at` this claim consumed, read before it was cleared. */
     scheduledAnchorAt: timestamp("scheduled_anchor_at").notNull(),
@@ -127,8 +139,18 @@ export const morningBriefScheduleClaims = pgTable(
         sql`(
             ${table.settlement} = 'unsettled' AND ${table.settledAt} IS NULL
           ) OR (
-            ${table.settlement} IN ('completed', 'failed', 'pre_run_failure')
+            ${table.settlement} IN ('completed', 'failed', 'pre_run_failure', 'revoked')
             AND ${table.settledAt} IS NOT NULL
+          )`,
+      ),
+      check(
+        "chk_morning_brief_schedule_claims_owner",
+        sql`(
+            ${table.orgId} IS NOT NULL AND ${table.ownerUserId} IS NOT NULL
+          ) OR (
+            ${table.settlement} = 'revoked'
+            AND ${table.orgId} IS NULL
+            AND ${table.ownerUserId} IS NULL
           )`,
       ),
       check(

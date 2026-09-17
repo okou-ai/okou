@@ -276,30 +276,37 @@ function revocationWhere(scope: MorningBriefScheduleRevocationScope): SQL {
 }
 
 /**
- * Drop this scope's legacy schedule occurrences inside a cleanup transaction.
+ * Revoke this scope's legacy schedule occurrences inside a cleanup transaction.
  *
  * `workflows.owner_user_id` and `workflow_automations.owner_user_id` are plain
- * text with no users foreign key, and user cleanup only cascades Agents the
- * departing user owns. A member whose Morning Brief runs on a colleague's
- * shared or default Agent therefore keeps both automation and journal when the
- * automation cascade alone is relied on, so this is called from the same
- * owner, organization and membership revocation points the rest of Morning
- * Brief already uses.
+ * text with no users foreign key, and user cleanup only cascades the Agents the
+ * departing user owns, so a member whose Morning Brief runs on a colleague's
+ * shared or default Agent would keep this journal if the automation cascade
+ * were the only path. This runs at the same owner, organization and membership
+ * revocation points the rest of Morning Brief already uses.
  *
- * Scope limit: this deletes only this scope's occurrences. It deliberately
- * does not change any automation, workflow or other owner's rows. A callback
- * that arrives after revocation therefore no longer matches a recorded
- * occurrence and falls back to the unjournaled legacy branch, exactly as it
- * would for any execution this table never recorded. Closing that residual
- * replay window needs the owner and revocation epoch S7b owns; it is recorded
- * as a limit rather than papered over here.
+ * It scrubs owner identity rather than deleting the row. Deleting would make a
+ * callback that is still in flight look like an execution this table never
+ * recorded, which is exactly the untracked legacy branch that may advance a
+ * schedule. What remains is content-free: automation, workflow, occurrence
+ * identity and timestamps, with a terminal `revoked` settlement that makes any
+ * later callback a no-op. Only this scope's own occurrences change; no
+ * automation, workflow or other owner is touched.
  */
 export async function revokeMorningBriefScheduleOwnership(
-  executor: Pick<Db, "delete"> | Tx,
+  executor: Pick<Db, "update"> | Tx,
   scope: MorningBriefScheduleRevocationScope,
 ): Promise<void> {
+  const revokedAt = nowDate();
   await executor
-    .delete(morningBriefScheduleClaims)
+    .update(morningBriefScheduleClaims)
+    .set({
+      orgId: null,
+      ownerUserId: null,
+      settlement: "revoked",
+      settledAt: revokedAt,
+      updatedAt: revokedAt,
+    })
     .where(revocationWhere(scope));
 }
 

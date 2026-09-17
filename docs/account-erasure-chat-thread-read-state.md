@@ -123,6 +123,19 @@ request's own organization or a pre-admission label, and
 | Attempts exhausted                  | `ChatThreadContentOwnershipChangedError` propagates           |
 | Lock wait, statement timeout, abort | Original database error or cancellation, propagated unchanged |
 
+Cancellation has one exact boundary, and it is the operation signal rather than
+the client connection. `honoSignalHandler` hands the app's own signal to every
+route command; `requestSignal$` exposes `c.req.raw.signal` but neither route
+reads it, so a disconnecting client does not cancel an in-flight write. When
+that operation signal aborts **after** the cursor `UPDATE` and **before** the
+transaction callback returns, the check that follows the write throws, the
+transaction rolls back and nothing is published. Once the callback has returned,
+`COMMIT` is already on its way: a cancellation arriving then loses the race, the
+cursor stays committed, and only the post-transaction publication and response
+are dropped. That is an at-most-once publication property of the
+publish-after-commit order, shared with the unfenced code this slice replaced,
+not a rollback — and not something this slice may describe as one.
+
 Closure reuses the existing not-found disposition, so the endpoints stay
 non-oracular. Closure is **not** a success `200`, including on the mark-read
 no-advance path and the repeated mark-unread path that would otherwise both be
@@ -155,9 +168,12 @@ automatic client-side read gate is untouched.
 Local development PostgreSQL 18.6, real HTTP boundary. These are bounded local
 samples, not production throughput.
 
-Every statement the fence adds is a single-row index lookup, measured with
+Four of the statements the fence adds were measured with
 `EXPLAIN (ANALYZE, BUFFERS)` inside one transaction that already set the `1s`
-and `5s` deadlines:
+and `5s` deadlines. They are not every statement the fenced transaction runs:
+the two `SET LOCAL` calls, the shared `assertErasureSubjectWritable` lookup, the
+revalidating identity re-read and each route's own cursor `UPDATE` were not
+measured here.
 
 | Added statement              | Plan                                              | Rows | Buffers | Execution |
 | ---------------------------- | ------------------------------------------------- | ---: | ------: | --------: |
@@ -166,9 +182,15 @@ and `5s` deadlines:
 | `chat_threads` FOR KEY SHARE | LockRows over `chat_threads_pkey`                 |    1 |  5 hits |  0.104 ms |
 | Mark-read fallback cursor    | Index Scan on `chat_threads_pkey`                 |    1 |  3 hits |  0.038 ms |
 
-No statement scans, sorts or serializes, and each touches exactly one row. The
-identity read's first execution above includes a cold `Index Only Scan` heap
-fetch; its planning buffers dominate a first call and not steady state.
+Each of these four plans is a single-row index lookup with no sequential scan
+and no sort. That is a statement about these four plans only. It is not a
+concurrency claim: two requests writing the **same** `chat_threads` row do
+serialize, because the first `UPDATE` holds that row until it commits, and the
+second waits on it inside the `1s` `lock_timeout`. The retained `FOR KEY SHARE`
+locks are chosen so unrelated rows and the routes' own row updates are not
+serialized against each other, not to remove same-row contention. The identity
+read's first execution above includes a cold `Index Only Scan` heap fetch; its
+planning buffers dominate a first call and not steady state.
 
 End to end, 40 sequential requests on one thread (20 mark-read/mark-unread
 pairs), three samples after a warm-up pair, same process and database:
@@ -178,27 +200,64 @@ pairs), three samples after a warm-up pair, same process and database:
 | Baseline  | 220 / 339 / 292 ms | 292 ms |     ~7.3 ms |
 | Candidate | 478 / 339 / 329 ms | 339 ms |     ~8.5 ms |
 
-These samples overlap and the spread within each build is larger than the gap
-between them, so this run bounds the added cost at roughly one millisecond per
-request locally rather than resolving it precisely. What it does establish is
-the shape: the added work is round-trip count, not lock contention. Each write
-went from one statement to a transaction that also runs two `SET LOCAL` calls,
-the identity read, the closure lookup, two `FOR KEY SHARE` locks and the
-revalidating re-read, plus one `last_read_at` select on the mark-read path. A
-transaction retained through `COMMIT` is what the B1 barrier requires. The plans
-above show no scan, no serialization and no unbounded work; they do not
-establish production overhead, and combining round trips could be optimized
-separately without weakening transaction ownership.
+Three samples per build is too few to bound anything. The distributions overlap
+(the candidate's 329 ms and 339 ms sit inside the baseline's 220–292 ms to
+478 ms span), and the spread within each build is larger than the gap between
+their medians, so these numbers do **not** establish an upper bound of about one
+millisecond per request, or any other upper bound. They are six raw local
+timings, kept above exactly as observed; treat the ~7.3 ms and ~8.5 ms columns
+as arithmetic on those medians, not as a per-request cost.
+
+What the change does is known from its own shape rather than from these numbers:
+each write went from one statement to a transaction that also runs two
+`SET LOCAL` calls, the identity read, the closure lookup, two `FOR KEY SHARE`
+locks and the revalidating re-read, plus one `last_read_at` select on the
+mark-read path. A transaction retained through `COMMIT` is what the B1 barrier
+requires. The four measured plans show no scan and no unbounded work for those
+four statements; they do not establish production overhead, do not cover the
+statements omitted above, and do not speak to contention between callers.
+Combining round trips could be optimized separately without weakening
+transaction ownership.
 
 Admission is constant-size one-thread work and is independent of the response
 unread query, which already scanned the caller's threads under the Agent before
-this change. The parent epic's dated totals (156,947 threads at the September 16
-sample) are not deletion candidates and are not this slice's cost.
+this change. The parent epic's dated `chat_threads` totals — 156,947 in the
+September 14 foundation refresh and 158,712 in a separate September 16 sample —
+are non-atomic source-row counts. They are not deletion candidates and are not
+this slice's cost.
 
 Unrelated owners keep making progress while one writer holds its barrier: the
 writer-first tests complete an unrelated owner's read-cursor write while the
 admitted mark-read is paused at `COMMIT` with a closure already blocked behind
 it.
+
+## Test evidence
+
+Every case below runs against the real routes over HTTP and a real PostgreSQL,
+and reads results back through production endpoints. The table separates what
+the merged suite already covered from what this follow-up adds, because two
+adjacent claims are easy to overstate: a closure that is _blocked_ behind an
+admitted writer is not the same as the cursor being _invisible_ while that
+writer runs, and a failure taken _before_ the cursor `UPDATE` proves nothing
+about rolling that `UPDATE` back.
+
+| Contract clause                                               | Existing evidence                                                                                   | Added here                                                                                                                         |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| An admitted writer holds its subject barrier through `COMMIT` | Two writer-first cases: a closure blocks behind the paused writer, an unrelated owner keeps writing | unchanged                                                                                                                          |
+| The new cursor is invisible until `COMMIT`                    | none — both writer-first cases released the barrier before reading anything back                    | Both routes paused at `COMMIT` with the `UPDATE` applied: a separate HTTP reader still returns the old cursor and unread indicator |
+| Nothing is published before `COMMIT`                          | none — publication was only asserted after the writer finished                                      | The same two cases assert the outbound mock is untouched while paused, then assert the exact payload after release                 |
+| A cancelled write leaves no cursor mutation or publication    | none — the held-parent-lock case fails at the `chat_threads` lock, before any cursor `UPDATE`       | Both routes paused **after** their `UPDATE` (its own row count asserted), operation signal aborted, then rolled back and re-driven |
+| A commit that wins the race is not a rollback                 | none                                                                                                | Both routes cancelled while paused at `COMMIT`: the cursor stays committed, the response fails and no invalidation is published    |
+| A blocked parent lock is a failure, not a closure `404`       | Held `chat_threads` row lock propagates its own error                                               | unchanged                                                                                                                          |
+
+The cancellation cases drive the operation signal described in the failure
+contract, through an app the test owns, because that is the signal the route
+commands receive. They are pinned to the boundary they claim: moving the same
+pause to `COMMIT` reports no cursor row count and stops proving rollback, and
+leaving the cancellation out at the post-`UPDATE` pause commits and publishes.
+The barrier pauses the writer between statements, so no lock or statement
+deadline is running during any observation window and no case waits on a sleep
+or a widened budget.
 
 ## Residual work
 

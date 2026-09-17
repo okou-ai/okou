@@ -44,17 +44,29 @@ impl Cursor {
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
     }
+
+    pub(crate) fn snapshot(&self, budget: &Budget) -> Result<Self, Error> {
+        let mut pixels = budget.buffer(self.pixels.len())?;
+        pixels.copy_from_slice(&self.pixels);
+        Ok(Self {
+            width: self.width,
+            height: self.height,
+            hotspot_x: self.hotspot_x,
+            hotspot_y: self.hotspot_y,
+            pixels,
+        })
+    }
 }
 
 /// An owned, authenticated framebuffer decoder. It never spawns a task or
 /// reconnects. Updates consume ownership so failure or cancellation cannot leave
 /// a partially decoded connection available to a caller.
 pub struct FramebufferConnection<S> {
-    stream: TlsStream<S>,
+    pub(crate) stream: TlsStream<S>,
     frame: Frame,
     cursor: Option<Cursor>,
     inflater: Decompress,
-    budget: Budget,
+    pub(crate) budget: Budget,
     _decoder_memory: Reservation,
     sequence: u64,
     needs_full: bool,
@@ -337,7 +349,7 @@ async fn initialize<S: AsyncRead + AsyncWrite + Unpin>(
     })
 }
 
-async fn bounded<T>(
+pub(crate) async fn bounded<T>(
     deadline: Instant,
     future: impl Future<Output = Result<T, Error>>,
 ) -> Result<T, Error> {

@@ -1,5 +1,5 @@
 {
-  "id": "0604ba39-8cc0-40a6-bc08-7d51e3593664",
+  "id": "7b31e5a2-a333-4edb-9da0-9ef4435d66cd",
   "prevId": "97adf283-9230-4530-88ef-6cb1ffb99df8",
   "version": "7",
   "dialect": "postgresql",
@@ -19590,13 +19590,13 @@
           "name": "org_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "owner_user_id": {
           "name": "owner_user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "workflow_id": {
           "name": "workflow_id",
@@ -19791,7 +19791,11 @@
         },
         "chk_morning_brief_schedule_claims_settlement": {
           "name": "chk_morning_brief_schedule_claims_settlement",
-          "value": "(\n            \"morning_brief_schedule_claims\".\"settlement\" = 'unsettled' AND \"morning_brief_schedule_claims\".\"settled_at\" IS NULL\n          ) OR (\n            \"morning_brief_schedule_claims\".\"settlement\" IN ('completed', 'failed', 'pre_run_failure')\n            AND \"morning_brief_schedule_claims\".\"settled_at\" IS NOT NULL\n          )"
+          "value": "(\n            \"morning_brief_schedule_claims\".\"settlement\" = 'unsettled' AND \"morning_brief_schedule_claims\".\"settled_at\" IS NULL\n          ) OR (\n            \"morning_brief_schedule_claims\".\"settlement\" IN ('completed', 'failed', 'pre_run_failure', 'revoked')\n            AND \"morning_brief_schedule_claims\".\"settled_at\" IS NOT NULL\n          )"
+        },
+        "chk_morning_brief_schedule_claims_owner": {
+          "name": "chk_morning_brief_schedule_claims_owner",
+          "value": "(\n            \"morning_brief_schedule_claims\".\"org_id\" IS NOT NULL AND \"morning_brief_schedule_claims\".\"owner_user_id\" IS NOT NULL\n          ) OR (\n            \"morning_brief_schedule_claims\".\"settlement\" = 'revoked'\n            AND \"morning_brief_schedule_claims\".\"org_id\" IS NULL\n            AND \"morning_brief_schedule_claims\".\"owner_user_id\" IS NULL\n          )"
         },
         "chk_morning_brief_schedule_claims_sequence": {
           "name": "chk_morning_brief_schedule_claims_sequence",

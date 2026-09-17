@@ -536,7 +536,7 @@ test("Sync with the artifact's ready Drive account when the default needs attent
   await expectSyncedPreview();
 });
 
-test("Keep a reopened artifact usable after dismissing Drive OAuth progress", async () => {
+test("Keep a reopened artifact usable after cancelling the remaining Drive setup", async () => {
   mockWideScreen();
   const popup = installAuthorizationPopup();
   const syncing = context.mocks.deferred<void>();
@@ -583,20 +583,17 @@ test("Keep a reopened artifact usable after dismissing Drive OAuth progress", as
   });
   expect(within(reopened).queryByRole("status")).toBeNull();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(popup.window.closed).toBeFalsy();
+  expect(popup.window.closed).toBeTruthy();
   click(buttonNamed("Download options", reopened));
   await waitFor(() => {
-    expect(roleItemNamed("menuitem", "Connect Google Drive")).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(
+      roleItemNamed("menuitem", "Connect Google Drive"),
+    ).not.toHaveAttribute("aria-disabled", "true");
   });
   await userEvent.setup().keyboard("{Escape}");
 
   sync.resolve();
-  await expect(
-    screen.findByText("Synced to Google Drive"),
-  ).resolves.toBeVisible();
+  expect(screen.queryByText("Synced to Google Drive")).toBeNull();
   expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
   expect(buttonNamed("Download options", reopened)).toBeEnabled();
 });
@@ -662,23 +659,27 @@ test.each([
         await user.click(viewport);
       }
     }
+    const cancelled = dismiss === "Close" || dismiss === "Escape";
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-        dismiss ? 0 : 1,
+        cancelled ? 0 : 1,
       );
     });
-    expect(popup.window.closed).toBeFalsy();
+    expect(popup.window.closed).toBe(cancelled);
 
     drive.completeAuthorization();
+    expect(screen.queryByText("Synced to Google Drive")).toBeNull();
+    if (cancelled) {
+      sync.resolve();
+      return;
+    }
     await syncing.promise;
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      dismiss ? 0 : 1,
-    );
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(
       screen.queryAllByText(
         /Please wait while we finish setting up your connection/,
       ),
-    ).toHaveLength(dismiss ? 0 : 1);
+    ).toHaveLength(1);
     sync.resolve();
     await expect(
       screen.findByText("Synced to Google Drive"),
@@ -688,11 +689,9 @@ test.each([
         queryAllByRoleFast("button").filter((button) => {
           return button.getAttribute("aria-label") === "Download options";
         }),
-      ).toHaveLength(dismiss ? 0 : 1);
+      ).toHaveLength(1);
     });
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
-      dismiss ? 0 : 1,
-    );
+    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
     expect(
       screen.queryByText(
         /Please wait while we finish setting up your connection/,
