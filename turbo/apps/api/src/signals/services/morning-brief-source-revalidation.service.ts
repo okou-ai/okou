@@ -43,6 +43,7 @@ import {
   admitMorningBriefCollection,
   revalidateMorningBriefRetainedRead,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
 import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
 import type { MorningBriefRetainedSourceDescriptor } from "./morning-brief-source-authority";
@@ -121,12 +122,12 @@ export async function revalidateMorningBriefRetainedSources(
     readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
     readonly slack: MorningBriefSlackAuthority | null;
     /** The attempt's own reservation; the phase bound never outlives it. */
-    readonly deadlineAt: Date;
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefRevalidationOutcome> {
   const { db, clerk, scope } = input;
-  const remainingMs = input.deadlineAt.getTime() - nowDate().getTime();
+  const remainingMs = input.deadline.at - nowDate().getTime();
   if (remainingMs <= 0) {
     return { kind: "owner-lost", reason: "deadline-exceeded" };
   }
@@ -147,6 +148,9 @@ export async function revalidateMorningBriefRetainedSources(
         orgId: scope.orgId,
         userId: scope.userId,
         anchor: scope.anchor,
+        // The attempt's own reservation, never a fresh one: a slow check
+        // shortens what is left rather than earning a new allowance.
+        deadline: input.deadline,
       },
       bounded,
     ),

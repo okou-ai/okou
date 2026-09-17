@@ -37,6 +37,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -325,33 +326,42 @@ async function finish(
 }
 
 describe("personal subscription run identity", () => {
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "preserves proven recovery identity for pending and queued %s admissions",
-    async (type) => {
+  it.each([
+    ["claude-code-oauth-token", "pending"],
+    ["claude-code-oauth-token", "queued"],
+    ["codex-oauth-token", "pending"],
+    ["codex-oauth-token", "queued"],
+  ] as const)(
+    "preserves proven recovery identity for %s %s admission",
+    async (type, admissionStatus) => {
       const f = await fixture(type);
-      const first = await f.start();
-      const pending = await f.start();
-      const queued = await f.start();
-      await expect(runs.readRun(f.actor, pending)).resolves.toMatchObject({
-        status: "pending",
-        source: { account: { status: "connected", id: f.connected.id } },
+      const admitted: string[] = [];
+      const owner = createFixtureOperationOwner(async () => {
+        for (const runId of [...admitted].reverse()) {
+          await runs.requestCancelRun(f.actor, runId, [200]);
+        }
       });
-      await expect(runs.readRun(f.actor, queued)).resolves.toMatchObject({
-        status: "queued",
-        source: { account: { status: "connected", id: f.connected.id } },
-      });
+      await owner.run(async () => {
+        const admissionCount = admissionStatus === "queued" ? 3 : 2;
+        for (let index = 0; index < admissionCount; index += 1) {
+          admitted.push(await f.start());
+        }
+        const target = admitted.at(-1);
+        if (!target) {
+          throw new Error("Expected the target subscription admission");
+        }
+        await expect(runs.readRun(f.actor, target)).resolves.toMatchObject({
+          status: admissionStatus,
+          source: { account: { status: "connected", id: f.connected.id } },
+        });
 
-      await connect(f.actor, type, "identity-b");
-      for (const runId of [pending, queued]) {
+        await connect(f.actor, type, "identity-b");
         expect(
-          (await runs.readRun(f.actor, runId)).source?.account,
+          (await runs.readRun(f.actor, target)).source?.account,
         ).toStrictEqual({
           status: "unavailable",
         });
-      }
-      for (const runId of [queued, pending, first]) {
-        await runs.requestCancelRun(f.actor, runId, [200]);
-      }
+      });
     },
   );
 
@@ -510,194 +520,255 @@ describe("personal subscription run identity", () => {
       );
     },
   );
-  it.each([false, true])(
-    "recovers failed A after active B and API policy changes with accounts UI=%s",
-    async (accountsEnabled) => {
-      const f = await fixture("codex-oauth-token");
-      const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, f.type);
-      await finish(f.actor, runId, claim, "failed");
-      const auth = createAuthDeviceApiActions(context);
-      mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
-        accountId: "identity-b",
-      });
-      const started = await auth.requestCodexStart(f.actor, "personal", [200], {
-        mode: "add",
-      });
-      if (started.status !== 200) {
-        throw new Error("Expected device auth start");
-      }
-      const connected = await auth.requestCodexComplete(
-        f.actor,
-        started.body.sessionToken,
-        [200],
-      );
-      if (
-        !("status" in connected.body) ||
-        connected.body.status !== "complete"
-      ) {
-        throw new Error("Expected connected account B");
-      }
-      await support.activatePersonalModelProviderAccount(
-        f.actor,
-        connected.body.provider.id,
-      );
-      await configureOrganizationApi(f, "built-in");
-      await support.updateFeatureSwitches(f.actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
-      });
-      const listed = await support.listPersonalModelProviders(f.actor, [200]);
-      if (listed.status !== 200) {
-        throw new Error("Expected personal accounts");
-      }
-      if (!accountsEnabled) {
-        expect(listed.body.modelProviders).toHaveLength(1);
-        expect(listed.body.modelProviders[0]?.id).not.toBe(captured);
-        expect(listed.body.modelProviders[0]?.modelProviderId).toBeUndefined();
-      }
-      const observed: {
-        readonly path: string;
-        readonly account: string | null;
-      }[] = [];
-      for (const path of ["usage", "rate-limit-reset-credits"] as const) {
+  describe.each([false, true])(
+    "failed A after active B and API policy changes with accounts UI=%s",
+    (accountsEnabled) => {
+      async function recoveryFixture() {
+        const f = await fixture("codex-oauth-token");
+        const runId = await f.start();
+        const claim = await f.claim(runId);
+        const captured = accountId(claim, f.type);
+        await finish(f.actor, runId, claim, "failed");
+        const auth = createAuthDeviceApiActions(context);
+        mockCodexDeviceAuthProvider({
+          tokenScope: "personal",
+          accountId: "identity-b",
+        });
+        const started = await auth.requestCodexStart(
+          f.actor,
+          "personal",
+          [200],
+          {
+            mode: "add",
+          },
+        );
+        if (started.status !== 200) {
+          throw new Error("Expected device auth start");
+        }
+        const connected = await auth.requestCodexComplete(
+          f.actor,
+          started.body.sessionToken,
+          [200],
+        );
+        if (
+          !("status" in connected.body) ||
+          connected.body.status !== "complete"
+        ) {
+          throw new Error("Expected connected account B");
+        }
+        await support.activatePersonalModelProviderAccount(
+          f.actor,
+          connected.body.provider.id,
+        );
+        await configureOrganizationApi(f, "built-in");
+        await support.updateFeatureSwitches(f.actor, {
+          [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
+        });
+        const listed = await support.listPersonalModelProviders(f.actor, [200]);
+        if (listed.status !== 200) {
+          throw new Error("Expected personal accounts");
+        }
+        if (!accountsEnabled) {
+          expect(listed.body.modelProviders).toHaveLength(1);
+          expect(listed.body.modelProviders[0]?.id).not.toBe(captured);
+          expect(
+            listed.body.modelProviders[0]?.modelProviderId,
+          ).toBeUndefined();
+        }
+        const observed: {
+          readonly path: string;
+          readonly account: string | null;
+        }[] = [];
+        for (const path of ["usage", "rate-limit-reset-credits"] as const) {
+          server.use(
+            http.get(
+              `https://chatgpt.com/backend-api/wham/${path}`,
+              ({ request }) => {
+                observed.push({
+                  path,
+                  account: request.headers.get("chatgpt-account-id"),
+                });
+                return HttpResponse.json(
+                  path === "usage"
+                    ? {
+                        plan_type: "plus",
+                        rate_limit_reset_credits: { available_count: 1 },
+                      }
+                    : { credits: [] },
+                );
+              },
+            ),
+          );
+        }
+        const resetKeys: unknown[] = [];
         server.use(
-          http.get(
-            `https://chatgpt.com/backend-api/wham/${path}`,
-            ({ request }) => {
+          http.post(
+            "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+            async ({ request }) => {
               observed.push({
-                path,
+                path: "consume",
                 account: request.headers.get("chatgpt-account-id"),
               });
-              return HttpResponse.json(
-                path === "usage"
-                  ? {
-                      plan_type: "plus",
-                      rate_limit_reset_credits: { available_count: 1 },
-                    }
-                  : { credits: [] },
-              );
+              resetKeys.push(await request.json());
+              return HttpResponse.json({
+                code: resetKeys.length === 1 ? "reset" : "already_redeemed",
+                windows_reset: 1,
+              });
             },
           ),
         );
+        return { f, runId, captured, observed, resetKeys };
       }
-      const resetKeys: unknown[] = [];
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
-          async ({ request }) => {
-            observed.push({
-              path: "consume",
-              account: request.headers.get("chatgpt-account-id"),
-            });
-            resetKeys.push(await request.json());
-            return HttpResponse.json({
-              code: resetKeys.length === 1 ? "reset" : "already_redeemed",
-              windows_reset: 1,
-            });
-          },
-        ),
-      );
-      expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
-        providerType: f.type,
-        model: f.model,
-        credentialScope: "member",
-        account: { status: "connected", id: captured },
-      });
-      const exact = await support.readPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        runId,
-        [200],
-      );
-      expect(exact.body).toMatchObject({
-        id: captured,
-        subscriptionResetCredits: 1,
-      });
-      const idempotencyKey = randomUUID();
-      const first = await support.resetPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        idempotencyKey,
-        [200],
-        runId,
-      );
-      expect(first.body).toMatchObject({ outcome: "reset" });
-      const second = await support.resetPersonalModelProviderAccount(
-        f.actor,
-        captured,
-        idempotencyKey,
-        [200],
-        runId,
-      );
-      expect(second.body).toMatchObject({ outcome: "alreadyRedeemed" });
-      expect(resetKeys[1]).toStrictEqual(resetKeys[0]);
-      expect(
-        observed.map(({ account }) => {
-          return account;
-        }),
-      ).not.toContain("identity-b");
-      expect(
-        observed.some(({ path }) => {
-          return path === "consume";
-        }),
-      ).toBeTruthy();
 
-      const foreign = createBddApi(context).user({ orgId: f.actor.orgId });
-      expect(
-        (
-          await support.readPersonalModelProviderAccount(
-            foreign,
-            captured,
-            runId,
-            [404],
-          )
-        ).status,
-      ).toBe(404);
-      expect(
-        (
-          await support.resetPersonalModelProviderAccount(
-            foreign,
-            captured,
-            randomUUID(),
-            [404],
-            runId,
-          )
-        ).status,
-      ).toBe(404);
-      await support.updateFeatureSwitches(f.actor, {
-        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      async function expectCapturedAccountRecovery(
+        scenario: Awaited<ReturnType<typeof recoveryFixture>>,
+      ) {
+        const { f, runId, captured, observed } = scenario;
+        expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
+          providerType: f.type,
+          model: f.model,
+          credentialScope: "member",
+          account: { status: "connected", id: captured },
+        });
+        const exact = await support.readPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          runId,
+          [200],
+        );
+        expect(exact.body).toMatchObject({
+          id: captured,
+          subscriptionResetCredits: 1,
+        });
+        const reset = await support.resetPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          randomUUID(),
+          [200],
+          runId,
+        );
+        expect(reset.body).toMatchObject({ outcome: "reset" });
+        expect(
+          observed.map(({ account }) => {
+            return account;
+          }),
+        ).not.toContain("identity-b");
+      }
+
+      it("recovers the captured account and preserves reset idempotency", async () => {
+        const { f, runId, captured, observed, resetKeys } =
+          await recoveryFixture();
+        expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
+          providerType: f.type,
+          model: f.model,
+          credentialScope: "member",
+          account: { status: "connected", id: captured },
+        });
+        const exact = await support.readPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          runId,
+          [200],
+        );
+        expect(exact.body).toMatchObject({
+          id: captured,
+          subscriptionResetCredits: 1,
+        });
+        const idempotencyKey = randomUUID();
+        const first = await support.resetPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          idempotencyKey,
+          [200],
+          runId,
+        );
+        expect(first.body).toMatchObject({ outcome: "reset" });
+        const second = await support.resetPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          idempotencyKey,
+          [200],
+          runId,
+        );
+        expect(second.body).toMatchObject({ outcome: "alreadyRedeemed" });
+        expect(resetKeys[1]).toStrictEqual(resetKeys[0]);
+        expect(
+          observed.map(({ account }) => {
+            return account;
+          }),
+        ).not.toContain("identity-b");
+        expect(
+          observed.some(({ path }) => {
+            return path === "consume";
+          }),
+        ).toBeTruthy();
       });
-      await support.deletePersonalModelProviderAccount(f.actor, captured);
-      expect(
-        (await runs.readRun(f.actor, runId)).source?.account,
-      ).toStrictEqual({
-        status: "unavailable",
+
+      it("denies another member access to the captured account and reset", async () => {
+        const scenario = await recoveryFixture();
+        await expectCapturedAccountRecovery(scenario);
+        const { f, runId, captured } = scenario;
+        const foreign = createBddApi(context).user({ orgId: f.actor.orgId });
+        expect(
+          (
+            await support.readPersonalModelProviderAccount(
+              foreign,
+              captured,
+              runId,
+              [404],
+            )
+          ).status,
+        ).toBe(404);
+        expect(
+          (
+            await support.resetPersonalModelProviderAccount(
+              foreign,
+              captured,
+              randomUUID(),
+              [404],
+              runId,
+            )
+          ).status,
+        ).toBe(404);
       });
-      const beforeRejected = observed.length;
-      expect(
-        (
-          await support.readPersonalModelProviderAccount(
-            f.actor,
-            captured,
-            runId,
-            [404],
-          )
-        ).status,
-      ).toBe(404);
-      expect(
-        (
-          await support.resetPersonalModelProviderAccount(
-            f.actor,
-            captured,
-            randomUUID(),
-            [404],
-            runId,
-          )
-        ).status,
-      ).toBe(404);
-      expect(observed).toHaveLength(beforeRejected);
+
+      it("removes recovery after the captured account is deleted", async () => {
+        const scenario = await recoveryFixture();
+        await expectCapturedAccountRecovery(scenario);
+        const { f, runId, captured, observed } = scenario;
+        await support.updateFeatureSwitches(f.actor, {
+          [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+        });
+        await support.deletePersonalModelProviderAccount(f.actor, captured);
+        expect(
+          (await runs.readRun(f.actor, runId)).source?.account,
+        ).toStrictEqual({
+          status: "unavailable",
+        });
+        const beforeRejected = observed.length;
+        expect(
+          (
+            await support.readPersonalModelProviderAccount(
+              f.actor,
+              captured,
+              runId,
+              [404],
+            )
+          ).status,
+        ).toBe(404);
+        expect(
+          (
+            await support.resetPersonalModelProviderAccount(
+              f.actor,
+              captured,
+              randomUUID(),
+              [404],
+              runId,
+            )
+          ).status,
+        ).toBe(404);
+        expect(observed).toHaveLength(beforeRejected);
+      });
     },
   );
 
@@ -1102,46 +1173,82 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  it.each([
+  describe.each([
     ["claude-code-oauth-token", false],
     ["claude-code-oauth-token", true],
     ["codex-oauth-token", false],
     ["codex-oauth-token", true],
   ] as const)(
-    "keeps %s runtime credentials through singleton removal with accounts UI %s",
-    async (type, accountsEnabled) => {
-      const f = await fixture(type, accountsEnabled);
-      const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, type);
-      await expect(resolve(claim, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
+    "%s singleton removal with accounts UI %s",
+    (type, accountsEnabled) => {
+      async function removedSingletonFixture() {
+        const f = await fixture(type, accountsEnabled);
+        const admitted: string[] = [];
+        const owner = createFixtureOperationOwner(async () => {
+          for (const runId of admitted) {
+            await runs.requestCancelRun(f.actor, runId, [200]);
+          }
+        });
+        return await owner.run(async () => {
+          const runId = await f.start();
+          admitted.push(runId);
+          const claim = await f.claim(runId);
+          const captured = accountId(claim, type);
+          await expect(resolve(claim, type)).resolves.toMatchObject({
+            Authorization: `Bearer ${f.connected.token}`,
+          });
+          await support.deletePersonalModelProvider(f.actor, type, [204]);
+          expect(
+            (await support.listPersonalModelProviders(f.actor, [200])).body,
+          ).toMatchObject({ modelProviders: [] });
+          await expect(resolve(claim, type)).resolves.toMatchObject({
+            Authorization: `Bearer ${f.connected.token}`,
+          });
+          return { f, admitted, owner, claim, captured };
+        });
+      }
+
+      it("preserves both runtime identities when a replacement is connected", async () => {
+        const { f, admitted, owner, claim, captured } =
+          await removedSingletonFixture();
+        await owner.run(async () => {
+          const next = await connect(f.actor, type, "identity-b");
+          const nextRun = await f.start();
+          admitted.push(nextRun);
+          const nextClaim = await f.claim(nextRun);
+          expect(accountId(nextClaim, type)).not.toBe(captured);
+          await expect(resolve(nextClaim, type)).resolves.toMatchObject({
+            Authorization: `Bearer ${next.token}`,
+          });
+          await expect(resolve(claim, type)).resolves.toMatchObject({
+            Authorization: `Bearer ${f.connected.token}`,
+          });
+        });
       });
-      await support.deletePersonalModelProvider(f.actor, type, [204]);
-      expect(
-        (await support.listPersonalModelProviders(f.actor, [200])).body,
-      ).toMatchObject({ modelProviders: [] });
-      await expect(resolve(claim, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
+
+      it("denies the retained credentials to the replacement sandbox", async () => {
+        const { f, admitted, owner, claim, captured } =
+          await removedSingletonFixture();
+        await owner.run(async () => {
+          const next = await connect(f.actor, type, "identity-b");
+          const nextRun = await f.start();
+          admitted.push(nextRun);
+          const nextClaim = await f.claim(nextRun);
+          expect(accountId(nextClaim, type)).not.toBe(captured);
+          await expect(resolve(nextClaim, type)).resolves.toMatchObject({
+            Authorization: `Bearer ${next.token}`,
+          });
+          await expect(resolve(claim, type)).resolves.toMatchObject({
+            Authorization: `Bearer ${f.connected.token}`,
+          });
+          const denied = await firewall.requestFirewallAuth(
+            { authorization: `Bearer ${nextClaim.sandboxToken}` },
+            authBody(claim, type),
+            [424],
+          );
+          expect(denied.status).toBe(424);
+        });
       });
-      const next = await connect(f.actor, type, "identity-b");
-      const nextRun = await f.start();
-      const nextClaim = await f.claim(nextRun);
-      expect(accountId(nextClaim, type)).not.toBe(captured);
-      await expect(resolve(nextClaim, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${next.token}`,
-      });
-      await expect(resolve(claim, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-      });
-      const denied = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${nextClaim.sandboxToken}` },
-        authBody(claim, type),
-        [424],
-      );
-      expect(denied.status).toBe(424);
-      await runs.requestCancelRun(f.actor, runId, [200]);
-      await runs.requestCancelRun(f.actor, nextRun, [200]);
     },
   );
 

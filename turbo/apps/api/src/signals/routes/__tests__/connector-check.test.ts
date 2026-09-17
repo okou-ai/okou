@@ -72,6 +72,12 @@ const trackOrgMembershipFixture = createFixtureTracker<OrgMembershipFixture>(
     await store.set(deleteOrgMembership$, fixture, context.signal);
   },
 );
+const trackCustomFixture = createFixtureTracker<{
+  readonly actor: ApiTestUser;
+  readonly connectorId: string;
+}>(async ({ actor, connectorId }) => {
+  await connectorsApi.deleteCustomConnector(actor, connectorId, [204, 404]);
+});
 
 function client() {
   return setupApp({ context, routes: TEST_APP_ROUTES })(connectorCheckContract);
@@ -920,230 +926,312 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
   });
 
-  it("keeps legacy requests builtin-only and resolves admitted custom targets on explicit requests", async () => {
-    const actor = bdd.user();
-    await seedAdminMembership(actor);
-    const pinnedHost = "prod.api.reap.global";
-    const changedHost = "changed.api.reap.global";
-    const runBase = `https://${pinnedHost}/v1`;
-    await connectReap(actor, runBase);
+  describe("run-admitted custom connector diagnostics", () => {
+    async function prepareScenario() {
+      const actor = bdd.user();
+      await seedAdminMembership(actor);
+      const pinnedHost = "prod.api.reap.global";
+      const changedHost = "changed.api.reap.global";
+      const runBase = `https://${pinnedHost}/v1`;
+      await connectReap(actor, runBase);
 
-    const customBody = manualHttpCustomConnectorCreateBody({
-      displayName: "Run Reap Overlay",
-      slug: `_run-reap-overlay-${randomUUID().slice(0, 8)}`,
-      prefixTemplates: ["https://{{variables.host}}/v1/"],
-      permissionBundleRef: "builtin:slack@1",
-    });
-    const custom = await connectorsApi.createCustomConnector(actor, {
-      ...customBody,
-      fields: [
-        ...customBody.fields,
-        {
-          key: "host",
-          label: "Host",
-          kind: "variable",
-          required: true,
-        },
-      ],
-    });
-    const connectedCustom = await connectorsApi.setCustomConnectorValues(
-      actor,
-      custom.id,
-      [
-        { key: "secret", kind: "secret", value: "custom-secret-before" },
-        { key: "host", kind: "variable", value: pinnedHost },
-      ],
-    );
-    if (!connectedCustom.connectedAccountId) {
-      throw new Error("Expected a connected custom connector account");
-    }
-    const customConnectionId = connectedCustom.connectedAccountId;
-    const { runId, agentId } = await createOwnedRun(actor, {
-      builtinConnectorSlugs: ["reap"],
-      customConnectorIds: [custom.id],
-    });
-    const token = okouToken(actor, runId, ["connector:read", "agent-run:read"]);
-    const url = `${runBase}/chat.postMessage`;
-    context.mocks.axiom.query.mockRejectedValue(
-      new Error("Axiom connector diagnostics must not be queried"),
-    );
-
-    const legacy = await checkWithToken(token, {
-      mode: "url",
-      method: "POST",
-      url,
-    });
-    expect(legacy.body).toMatchObject({
-      outcome: "resolved",
-      connector: { connectorSlug: "reap" },
-    });
-    expect(JSON.stringify(legacy.body)).not.toContain(custom.id);
-
-    const customRequest = {
-      mode: "url" as const,
-      method: "POST",
-      url,
-      target: { kind: "custom" as const, customConnectorId: custom.id },
-    };
-    const selected = await checkWithToken(token, customRequest);
-    expect(selected.body).toMatchObject({
-      outcome: "resolved",
-      connector: {
-        target: { kind: "custom", customConnectorId: custom.id },
-        label: "Run Reap Overlay",
-        visibility: "available",
-        credentialResolution: "network-boundary",
-      },
-      run: { status: "configured", bases: [runBase] },
-      base: runBase,
-      relativePath: "/chat.postMessage",
-      permission: {
-        kind: "matched",
-        permissions: [
+      const customBody = manualHttpCustomConnectorCreateBody({
+        displayName: "Run Reap Overlay",
+        slug: `_run-reap-overlay-${randomUUID().slice(0, 8)}`,
+        prefixTemplates: ["https://{{variables.host}}/v1/"],
+        permissionBundleRef: "builtin:slack@1",
+      });
+      const custom = await connectorsApi.createCustomConnector(actor, {
+        ...customBody,
+        fields: [
+          ...customBody.fields,
           {
-            name: "chat:write",
-            policy: { outcome: "deny", basis: "deny-list" },
+            key: "host",
+            label: "Host",
+            kind: "variable",
+            required: true,
           },
         ],
-      },
-    });
-    const serialized = JSON.stringify(selected.body);
-    for (const forbidden of [
-      "custom-secret-before",
-      customConnectionId,
-      "Authorization",
-      "sourceId",
-      "baseUrlVars",
-      "networkPolicy",
-      "secrets.secret",
-    ]) {
-      expect(serialized).not.toContain(forbidden);
+      });
+      await trackCustomFixture(
+        Promise.resolve({ actor, connectorId: custom.id }),
+      );
+      const connectedCustom = await connectorsApi.setCustomConnectorValues(
+        actor,
+        custom.id,
+        [
+          { key: "secret", kind: "secret", value: "custom-secret-before" },
+          { key: "host", kind: "variable", value: pinnedHost },
+        ],
+      );
+      if (!connectedCustom.connectedAccountId) {
+        throw new Error("Expected a connected custom connector account");
+      }
+      const customConnectionId = connectedCustom.connectedAccountId;
+      const { runId, agentId } = await createOwnedRun(actor, {
+        builtinConnectorSlugs: ["reap"],
+        customConnectorIds: [custom.id],
+      });
+      const token = okouToken(actor, runId, [
+        "connector:read",
+        "agent-run:read",
+      ]);
+      const url = `${runBase}/chat.postMessage`;
+      context.mocks.axiom.query.mockRejectedValue(
+        new Error("Axiom connector diagnostics must not be queried"),
+      );
+      const customRequest = {
+        mode: "url" as const,
+        method: "POST",
+        url,
+        target: { kind: "custom" as const, customConnectorId: custom.id },
+      };
+      return {
+        actor,
+        pinnedHost,
+        changedHost,
+        runBase,
+        customBody,
+        custom,
+        connectedCustom,
+        customConnectionId,
+        agentId,
+        token,
+        url,
+        customRequest,
+      };
     }
 
-    const grantResponse =
-      await connectorsApi.requestUpdateAgentCustomConnectorGrants(
+    it("keeps legacy run requests builtin-only despite an admitted custom overlap", async () => {
+      const { token, url, custom } = await prepareScenario();
+      const legacy = await checkWithToken(token, {
+        mode: "url",
+        method: "POST",
+        url,
+      });
+      expect(legacy.body).toMatchObject({
+        outcome: "resolved",
+        connector: { connectorSlug: "reap" },
+      });
+      expect(JSON.stringify(legacy.body)).not.toContain(custom.id);
+      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
+    });
+
+    it("redacts explicit custom diagnostics and reflects permission changes and selection precedence", async () => {
+      const {
         actor,
         agentId,
+        token,
+        url,
+        custom,
+        customConnectionId,
+        runBase,
+        customRequest,
+      } = await prepareScenario();
+      const selected = await checkWithToken(token, customRequest);
+      expect(selected.body).toMatchObject({
+        outcome: "resolved",
+        connector: {
+          target: { kind: "custom", customConnectorId: custom.id },
+          label: "Run Reap Overlay",
+          visibility: "available",
+          credentialResolution: "network-boundary",
+        },
+        run: { status: "configured", bases: [runBase] },
+        base: runBase,
+        relativePath: "/chat.postMessage",
+        permission: {
+          kind: "matched",
+          permissions: [
+            {
+              name: "chat:write",
+              policy: { outcome: "deny", basis: "deny-list" },
+            },
+          ],
+        },
+      });
+      const serialized = JSON.stringify(selected.body);
+      for (const forbidden of [
+        "custom-secret-before",
+        customConnectionId,
+        "Authorization",
+        "sourceId",
+        "baseUrlVars",
+        "networkPolicy",
+        "secrets.secret",
+      ]) {
+        expect(serialized).not.toContain(forbidden);
+      }
+
+      const grantResponse =
+        await connectorsApi.requestUpdateAgentCustomConnectorGrants(
+          actor,
+          agentId,
+          [
+            {
+              customConnectorId: custom.id,
+              permissionNames: ["chat:write"],
+            },
+          ],
+          [200],
+        );
+      expect(grantResponse.status).toBe(200);
+      const allowed = await checkWithToken(token, customRequest);
+      expect(allowed.body).toMatchObject({
+        permission: {
+          permissions: [
+            {
+              name: "chat:write",
+              policy: { outcome: "allow", basis: "allow-list" },
+            },
+          ],
+        },
+      });
+      await runsApi.applyUserPermissionGrant(actor, {
+        agentId,
+        connectorSlug: "reap",
+        permission: "write",
+        action: "deny",
+      });
+      const includedCustom = await checkWithToken(token, {
+        mode: "url",
+        method: "POST",
+        url,
+        includeCustomConnectors: true,
+      });
+      expect(includedCustom.body).toMatchObject({
+        outcome: "resolved",
+        connector: {
+          target: { kind: "custom", customConnectorId: custom.id },
+          label: "Run Reap Overlay",
+        },
+        permission: {
+          permissions: [
+            {
+              name: "chat:write",
+              policy: { outcome: "allow", basis: "allow-list" },
+            },
+          ],
+        },
+      });
+      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
+    });
+
+    it("keeps admitted host values pinned across reconnection and live definition changes", async () => {
+      const {
+        actor,
+        custom,
+        customConnectionId,
+        connectedCustom,
+        customBody,
+        pinnedHost,
+        changedHost,
+        token,
+        customRequest,
+      } = await prepareScenario();
+      await connectorsApi.setCustomConnectorValues(
+        actor,
+        custom.id,
         [
-          {
-            customConnectorId: custom.id,
-            permissionNames: ["chat:write"],
-          },
+          { key: "secret", kind: "secret", value: "custom-secret-after" },
+          { key: "host", kind: "variable", value: changedHost },
         ],
-        [200],
+        { intent: "reconnect", connectionId: customConnectionId },
       );
-    expect(grantResponse.status).toBe(200);
-    const allowed = await checkWithToken(token, customRequest);
-    expect(allowed.body).toMatchObject({
-      permission: {
-        permissions: [
-          {
-            name: "chat:write",
-            policy: { outcome: "allow", basis: "allow-list" },
-          },
-        ],
-      },
+      await connectorsApi.updateCustomConnector(actor, custom.id, {
+        displayName: "Updated Run Reap Overlay",
+        prefixTemplates: ["https://{{variables.host}}/v2/"],
+        fields: connectedCustom.fields,
+        headerInjections: customBody.headerInjections,
+        queryInjections: customBody.queryInjections,
+        permissionBundleRef: customBody.permissionBundleRef,
+      });
+      const updatedCustomRequest = {
+        ...customRequest,
+        url: `https://${pinnedHost}/v2/chat.postMessage`,
+      };
+      const pinned = await checkWithToken(token, updatedCustomRequest);
+      expect(pinned.body).toMatchObject({
+        outcome: "resolved",
+        connector: { label: "Updated Run Reap Overlay" },
+        base: `https://${pinnedHost}/v2`,
+        run: {
+          status: "configured",
+          bases: [`https://${pinnedHost}/v2`],
+        },
+      });
+      const changedBase = await checkWithToken(token, {
+        ...updatedCustomRequest,
+        url: `https://${changedHost}/v2/chat.postMessage`,
+      });
+      expect(changedBase.body).toStrictEqual({
+        outcome: "no-match",
+        scope: "run",
+      });
+      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
-    await runsApi.applyUserPermissionGrant(actor, {
-      agentId,
-      connectorSlug: "reap",
-      permission: "write",
-      action: "deny",
+
+    it("rejects an explicit custom connector created after the run was admitted", async () => {
+      const { actor, token } = await prepareScenario();
+      const addedAfterLaunch = await connectorsApi.createCustomConnector(
+        actor,
+        manualHttpCustomConnectorCreateBody({
+          displayName: "Added After Launch",
+          slug: `_added-after-launch-${randomUUID().slice(0, 8)}`,
+          prefixTemplates: ["https://after-launch.example.test/"],
+        }),
+      );
+      await trackCustomFixture(
+        Promise.resolve({ actor, connectorId: addedAfterLaunch.id }),
+      );
+      const notAdmitted = await checkWithToken(token, {
+        mode: "url",
+        method: "GET",
+        url: "https://after-launch.example.test/items",
+        target: {
+          kind: "custom",
+          customConnectorId: addedAfterLaunch.id,
+        },
+      });
+      expect(notAdmitted.body).toStrictEqual({
+        outcome: "target-unavailable",
+        target: { kind: "custom", customConnectorId: addedAfterLaunch.id },
+        reason: "not-admitted",
+      });
+      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
-    const includedCustom = await checkWithToken(token, {
-      mode: "url",
-      method: "POST",
-      url,
-      includeCustomConnectors: true,
-    });
-    expect(includedCustom.body).toMatchObject({
-      outcome: "resolved",
-      connector: {
+
+    it("reports an admitted custom connector as unavailable after deletion", async () => {
+      const {
+        actor,
+        custom,
+        token,
+        customRequest,
+        pinnedHost,
+        connectedCustom,
+        customBody,
+      } = await prepareScenario();
+      await connectorsApi.updateCustomConnector(actor, custom.id, {
+        displayName: "Updated Run Reap Overlay",
+        prefixTemplates: ["https://{{variables.host}}/v2/"],
+        fields: connectedCustom.fields,
+        headerInjections: customBody.headerInjections,
+        queryInjections: customBody.queryInjections,
+        permissionBundleRef: customBody.permissionBundleRef,
+      });
+      const updatedCustomRequest = {
+        ...customRequest,
+        url: `https://${pinnedHost}/v2/chat.postMessage`,
+      };
+      await connectorsApi.deleteCustomConnector(actor, custom.id);
+      const deleted = await checkWithToken(token, updatedCustomRequest);
+      expect(deleted.body).toStrictEqual({
+        outcome: "target-unavailable",
         target: { kind: "custom", customConnectorId: custom.id },
-        label: "Run Reap Overlay",
-      },
-      permission: {
-        permissions: [
-          {
-            name: "chat:write",
-            policy: { outcome: "allow", basis: "allow-list" },
-          },
-        ],
-      },
+        reason: "connector-unavailable",
+      });
+      expect(context.mocks.axiom.query).not.toHaveBeenCalled();
     });
-
-    await connectorsApi.setCustomConnectorValues(
-      actor,
-      custom.id,
-      [
-        { key: "secret", kind: "secret", value: "custom-secret-after" },
-        { key: "host", kind: "variable", value: changedHost },
-      ],
-      { intent: "reconnect", connectionId: customConnectionId },
-    );
-    await connectorsApi.updateCustomConnector(actor, custom.id, {
-      displayName: "Updated Run Reap Overlay",
-      prefixTemplates: ["https://{{variables.host}}/v2/"],
-      fields: connectedCustom.fields,
-      headerInjections: customBody.headerInjections,
-      queryInjections: customBody.queryInjections,
-      permissionBundleRef: customBody.permissionBundleRef,
-    });
-    const updatedCustomRequest = {
-      ...customRequest,
-      url: `https://${pinnedHost}/v2/chat.postMessage`,
-    };
-    const pinned = await checkWithToken(token, updatedCustomRequest);
-    expect(pinned.body).toMatchObject({
-      outcome: "resolved",
-      connector: { label: "Updated Run Reap Overlay" },
-      base: `https://${pinnedHost}/v2`,
-      run: {
-        status: "configured",
-        bases: [`https://${pinnedHost}/v2`],
-      },
-    });
-    const changedBase = await checkWithToken(token, {
-      ...updatedCustomRequest,
-      url: `https://${changedHost}/v2/chat.postMessage`,
-    });
-    expect(changedBase.body).toStrictEqual({
-      outcome: "no-match",
-      scope: "run",
-    });
-
-    const addedAfterLaunch = await connectorsApi.createCustomConnector(
-      actor,
-      manualHttpCustomConnectorCreateBody({
-        displayName: "Added After Launch",
-        slug: `_added-after-launch-${randomUUID().slice(0, 8)}`,
-        prefixTemplates: ["https://after-launch.example.test/"],
-      }),
-    );
-    const notAdmitted = await checkWithToken(token, {
-      mode: "url",
-      method: "GET",
-      url: "https://after-launch.example.test/items",
-      target: {
-        kind: "custom",
-        customConnectorId: addedAfterLaunch.id,
-      },
-    });
-    expect(notAdmitted.body).toStrictEqual({
-      outcome: "target-unavailable",
-      target: { kind: "custom", customConnectorId: addedAfterLaunch.id },
-      reason: "not-admitted",
-    });
-
-    await connectorsApi.deleteCustomConnector(actor, custom.id);
-    const deleted = await checkWithToken(token, updatedCustomRequest);
-    expect(deleted.body).toStrictEqual({
-      outcome: "target-unavailable",
-      target: { kind: "custom", customConnectorId: custom.id },
-      reason: "connector-unavailable",
-    });
-    await connectorsApi.deleteCustomConnector(actor, addedAfterLaunch.id);
-    expect(context.mocks.axiom.query).not.toHaveBeenCalled();
   });
 
   it("propagates malformed registration and distinguishes missing from terminal state", async () => {

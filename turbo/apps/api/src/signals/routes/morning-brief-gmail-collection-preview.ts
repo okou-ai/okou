@@ -11,8 +11,12 @@ import type { RouteEntry } from "../route-entry";
 import {
   admitMorningBriefCollection,
   freezeMorningBriefSourceSelection,
+  startMorningBriefSourceDeadline,
 } from "../services/morning-brief-connector-reader.service";
-import { collectMorningBriefGmail } from "../services/morning-brief-gmail-collection.service";
+import {
+  collectMorningBriefGmail,
+  MORNING_BRIEF_GMAIL_SOURCE_BUDGET_MS,
+} from "../services/morning-brief-gmail-collection.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -42,6 +46,27 @@ function forbidden(message: string) {
   };
 }
 
+/**
+ * The source budget ran out before an installation was resolved.
+ *
+ * Admission is the one phase with no collection envelope to answer with: the
+ * timezone and window that envelope names are exactly what it had not read yet.
+ * A spent budget is not a refusal of authority, so it is reported as its own
+ * outcome instead of borrowing the denial status.
+ */
+function sourceDeadlineExceeded() {
+  return {
+    status: 504 as const,
+    body: {
+      error: {
+        message:
+          "Morning Brief Gmail preview is unavailable: deadline-exceeded",
+        code: "GATEWAY_TIMEOUT" as const,
+      },
+    },
+  };
+}
+
 const body$ = bodyResultOf(morningBriefGmailCollectionPreviewContract.collect);
 
 const collectGmailInner$ = command(
@@ -55,6 +80,12 @@ const collectGmailInner$ = command(
     // A legitimate credential refresh and the erasure-admission transaction both
     // write, so this reader needs the writable handle even though it collects.
     const db = set(writeDb$);
+    // The source deadline starts here, before the admission that reads the
+    // canonical installation and this member's live Clerk membership, so a slow
+    // preflight shortens the collection rather than handing it a fresh budget.
+    const deadline = startMorningBriefSourceDeadline(
+      MORNING_BRIEF_GMAIL_SOURCE_BUDGET_MS,
+    );
     // The anchor is the only caller input. Owner, Agent, installation, account
     // and every provider path are derived from canonical state.
     const admission = await admitMorningBriefCollection(
@@ -64,10 +95,14 @@ const collectGmailInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         anchor: new Date(body.data.anchor),
+        deadline,
       },
       signal,
     );
     signal.throwIfAborted();
+    if (admission.kind === "unavailable") {
+      return sourceDeadlineExceeded();
+    }
     if (admission.kind === "denied") {
       return forbidden(
         `Morning Brief Gmail preview is unavailable: ${admission.reason}`,
@@ -81,7 +116,7 @@ const collectGmailInner$ = command(
     );
     signal.throwIfAborted();
     const collection = await collectMorningBriefGmail(
-      { db, clerk: get(clerk$), scope: admission.scope, authority },
+      { db, clerk: get(clerk$), scope: admission.scope, authority, deadline },
       signal,
     );
     signal.throwIfAborted();

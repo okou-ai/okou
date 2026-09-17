@@ -37,8 +37,10 @@ import { writeDb$, type Db } from "../external/db";
 import {
   admitMorningBriefCollection,
   freezeMorningBriefSourceSelection,
+  startMorningBriefSourceDeadline,
   type MorningBriefCollectionScope,
   type MorningBriefSourceAuthorityLedger,
+  type MorningBriefSourceDeadline,
 } from "./morning-brief-connector-reader.service";
 import {
   allocateMorningBriefRequest,
@@ -196,9 +198,13 @@ export const composeMorningBrief$ = command(
     const db: Db = set(writeDb$);
     const clerk = get(clerk$);
     const phaseStartedAt = nowDate();
-    const phaseDeadlineAt = new Date(
-      phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS,
+    // One phase deadline, started before the admission that reads canonical
+    // state and this member's live membership, so the preflight spends the same
+    // budget the sources are allocated out of instead of running outside it.
+    const phaseDeadline = startMorningBriefSourceDeadline(
+      MORNING_BRIEF_COLLECTION_PHASE_MS,
     );
+    const phaseDeadlineAt = new Date(phaseDeadline.at);
 
     const admitted = await admitMorningBriefCollection(
       {
@@ -207,6 +213,7 @@ export const composeMorningBrief$ = command(
         orgId: args.orgId,
         userId: args.userId,
         anchor: args.anchor,
+        deadline: phaseDeadline,
       },
       signal,
     );
@@ -290,7 +297,7 @@ export const composeMorningBrief$ = command(
         collections: bounded.collections,
         descriptors,
         slack: slackBinding,
-        phaseDeadlineAt,
+        phaseDeadline,
       },
       signal,
     );
@@ -480,7 +487,14 @@ async function readMorningBriefSource(
   if (budgetMs === 0) {
     return null;
   }
-  const sourceSignal = AbortSignal.any([signal, AbortSignal.timeout(budgetMs)]);
+  // The composition already allocated this source's absolute deadline, so the
+  // reader is handed that exact instant rather than starting a second budget of
+  // its own.
+  const sourceDeadline: MorningBriefSourceDeadline = {
+    at: budget.deadlineAt.getTime(),
+    signal: AbortSignal.timeout(budgetMs),
+  };
+  const sourceSignal = AbortSignal.any([signal, sourceDeadline.signal]);
   if (source === "calendar") {
     return await readCalendarSource(
       {
@@ -489,6 +503,7 @@ async function readMorningBriefSource(
         scope,
         capturedAt,
         authority: ledgerFor(args.selections, "calendar"),
+        deadline: sourceDeadline,
       },
       sourceSignal,
     );
@@ -501,6 +516,7 @@ async function readMorningBriefSource(
         scope,
         capturedAt,
         authority: ledgerFor(args.selections, "github"),
+        deadline: sourceDeadline,
       },
       sourceSignal,
     );
@@ -519,6 +535,7 @@ async function readMorningBriefSource(
         scope,
         capturedAt,
         authority: ledgerFor(args.selections, "gmail"),
+        deadline: sourceDeadline,
       },
       sourceSignal,
     );
@@ -547,7 +564,7 @@ const planMorningBriefRequest$ = command(
       readonly collections: readonly MorningBriefSourceCollection[];
       readonly descriptors: readonly MorningBriefRetainedSourceDescriptor[];
       readonly slack: SlackBinding | null;
-      readonly phaseDeadlineAt: Date;
+      readonly phaseDeadline: MorningBriefSourceDeadline;
     },
     signal: AbortSignal,
   ): Promise<
@@ -570,7 +587,8 @@ const planMorningBriefRequest$ = command(
   > => {
     const db = set(writeDb$);
     const clerk = get(clerk$);
-    const { scope, phaseDeadlineAt } = input;
+    const { scope, phaseDeadline } = input;
+    const phaseDeadlineAt = new Date(phaseDeadline.at);
     const bounded = { collections: input.collections };
 
     const context = await set(
@@ -626,7 +644,7 @@ const planMorningBriefRequest$ = command(
         planned: first,
         language,
         instructions,
-        phaseDeadlineAt,
+        deadline: phaseDeadline,
       },
       signal,
     );
@@ -694,11 +712,12 @@ async function proveRetainedAuthority(
     readonly planned: MorningBriefAllocated;
     readonly language: MorningBriefLanguagePlan;
     readonly instructions: string | null;
-    readonly phaseDeadlineAt: Date;
+    /** The attempt's own reservation; the check never outlives it. */
+    readonly deadline: MorningBriefSourceDeadline;
   },
   signal: AbortSignal,
 ): Promise<RetainedAuthorityOutcome> {
-  if (nowDate().getTime() >= input.phaseDeadlineAt.getTime()) {
+  if (nowDate().getTime() >= input.deadline.at) {
     return { kind: "withdrawn" };
   }
   const supplied = new Set(
@@ -721,7 +740,7 @@ async function proveRetainedAuthority(
               botToken: input.slack.botToken,
               slackUserId: input.slack.slackUserId,
             },
-      deadlineAt: input.phaseDeadlineAt,
+      deadline: input.deadline,
     },
     signal,
   );
@@ -957,6 +976,8 @@ interface SourceReadArgs {
   readonly capturedAt: Date;
   /** The account choice frozen for this attempt, and this read's proof. */
   readonly authority: MorningBriefSourceAuthorityLedger;
+  /** The absolute deadline this composition allocated for the source. */
+  readonly deadline: MorningBriefSourceDeadline;
 }
 
 async function readCalendarSource(
@@ -969,6 +990,7 @@ async function readCalendarSource(
       clerk: args.clerk,
       scope: args.scope,
       authority: args.authority,
+      deadline: args.deadline,
     },
     signal,
   );
@@ -1072,6 +1094,7 @@ async function readGmailSource(
       clerk: args.clerk,
       scope: args.scope,
       authority: args.authority,
+      deadline: args.deadline,
     },
     signal,
   );

@@ -153,6 +153,11 @@ export const morningBriefGmailCollectionPreviewContract = c.router({
       403: apiErrorSchema,
       404: z.string(),
       500: apiErrorSchema,
+      // The source's single absolute deadline expired inside the preflight that
+      // admits it, before an installation and timezone were resolved. There is
+      // no collection envelope to answer with and nothing was refused, so the
+      // spent budget is reported as its own outcome rather than as a denial.
+      504: apiErrorSchema,
     },
     summary: "Collect Gmail for Simple Morning Brief in a developer preview",
   },
