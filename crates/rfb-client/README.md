@@ -35,6 +35,8 @@ SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer dat
 are not consumed. The returned object retains no password and starts no task.
 
 The earlier of the caller deadline and 30 seconds bounds the whole handshake.
+The deadline is rechecked before returning an authenticated connection, including
+when a ready server result and the timeout become observable together.
 Remote failure text is limited to 4 KiB, consumed by its declared length, discarded
 and never included in errors. Unsupported or malformed results fail closed.
 Failure, timeout, or cancellation drops the owned stream. Callers must not retain

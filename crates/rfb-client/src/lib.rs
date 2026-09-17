@@ -83,12 +83,18 @@ where
     if deadline <= Instant::now() {
         return Err(Error::DeadlineExceeded);
     }
-    tokio::time::timeout_at(
+    let authenticated = tokio::time::timeout_at(
         deadline,
         authentication::authenticate(stream, server_name, password, roots),
     )
     .await
-    .map_err(|_| Error::DeadlineExceeded)?
+    .map_err(|_| Error::DeadlineExceeded)??;
+    // A ready result wins timeout_at's poll even after its timer has elapsed.
+    // Never transfer a connection whose authentication deadline already passed.
+    if deadline <= Instant::now() {
+        return Err(Error::DeadlineExceeded);
+    }
+    Ok(authenticated)
 }
 
 /// Bounded local error categories. Server-provided error text is never retained

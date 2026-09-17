@@ -482,3 +482,39 @@ async fn dropping_authentication_after_tls_does_not_leave_a_password_reader() {
     assert!(task.await.err().unwrap().is_cancelled());
     disconnected(&mut server).await;
 }
+
+#[tokio::test]
+async fn rejects_a_ready_security_result_when_the_deadline_has_already_elapsed() {
+    let cert = Certificate::new(NAME, false, false);
+    let roots = cert.roots();
+    let (client, server) = sockets().await;
+    let end = deadline();
+    let mut authentication = Box::pin(authenticate(client, NAME, password(), roots, end));
+    let mut server = bounded(async {
+        tokio::select! {
+            _ = &mut authentication => {
+                panic!("authentication ended before the server sent SecurityResult");
+            }
+            server = async {
+                let mut server = secure(server, cert.config).await;
+                challenge(&mut server).await;
+                server
+            } => server,
+        }
+    })
+    .await;
+    server.write_u32(0).await.unwrap();
+    server.flush().await.unwrap();
+
+    // Deliberately leave the client future unpolled until its real deadline.
+    // This reproduces a delayed caller with both result and timeout ready;
+    // the timer is the behavior under test, not a synchronization delay.
+    tokio::time::sleep_until(end).await;
+    let result = authentication.await;
+    match result {
+        Err(Error::DeadlineExceeded) => {}
+        Err(error) => panic!("unexpected authentication failure: {error}"),
+        Ok(_) => panic!("returned an authenticated connection after its deadline"),
+    }
+    disconnected(&mut server).await;
+}
