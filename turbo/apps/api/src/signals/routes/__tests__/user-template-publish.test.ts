@@ -243,7 +243,7 @@ describe("POST /api/user-templates", () => {
     expect(listed.body[0]?.previewAssets).toStrictEqual([]);
   });
 
-  it("tells a document package which file it is missing, not a deck's", async () => {
+  it("takes a document package that carries its skill and nothing else", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
     await enableFor(actor);
@@ -265,7 +265,7 @@ describe("POST /api/user-templates", () => {
       actor,
       fixture,
       { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
-      tarGz([{ path: "SKILL.md", content: "# Only half\n" }]),
+      tarGz([{ path: "SKILL.md", content: "# Use this template\n" }]),
     );
 
     const response = await accept(
@@ -278,13 +278,14 @@ describe("POST /api/user-templates", () => {
           packageFileId,
         },
       }),
-      [400],
+      [200],
     );
-    // A document has no design-system.md to be missing. Naming a deck's file
-    // here would send the author looking for something their reverse skill
-    // never writes.
-    expect(response.body.error.message).toContain("reference.docx");
-    expect(response.body.error.message).not.toContain("design-system.md");
+
+    // The skill names the artifact it consumes and the command that consumes
+    // it, so what else the package carries is that account's business. Naming
+    // a second file here would let a reverse skill that changed its own output
+    // be refused by an endpoint that had not changed with it.
+    expect(response.body.kind).toBe("document");
   });
 
   it("rejects a package that is missing its required guidance", async () => {
