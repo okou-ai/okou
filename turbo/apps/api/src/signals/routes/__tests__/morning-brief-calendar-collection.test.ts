@@ -22,7 +22,7 @@ import {
   revokeAgentConnectorGrantFixture,
   setMorningBriefEnabledFixture,
 } from "../../../test-fixtures/morning-brief-gmail-collection";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
 import { morningBriefCalendarCollectionPreviewRoutes } from "../morning-brief-calendar-collection-preview";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -148,6 +148,7 @@ function stubCalendar(args: {
   readonly listStatus?: number;
   readonly pages?: ReadonlyMap<string, string>;
   readonly holdFirstEvents?: Promise<void>;
+  readonly onFirstEventsHeld?: () => void;
   /** Sent with a failing event response, as a real rate limit would be. */
   readonly retryAfterSeconds?: number;
 }): CalendarStub {
@@ -172,6 +173,7 @@ function stubCalendar(args: {
       const calendarId = decodeURIComponent(String(params["calendarId"]));
       if (args.holdFirstEvents && !held) {
         held = true;
+        args.onFirstEventsHeld?.();
         await args.holdFirstEvents;
       }
       const status = args.eventStatus?.get(calendarId);
@@ -651,7 +653,8 @@ describe("Morning Brief calendar collection preview", () => {
 
   it("stops a held calendar read and releases nothing when the grant is revoked", async () => {
     const fixture = await setupOwner();
-    const release = createDeferredPromise<void>(new AbortController().signal);
+    const arrived = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
     const stub = stubCalendar({
       calendars: [
         { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
@@ -672,32 +675,50 @@ describe("Morning Brief calendar collection preview", () => {
         ],
       ]),
       holdFirstEvents: release.promise,
+      onFirstEventsHeld: () => {
+        if (!arrived.settled()) {
+          arrived.resolve();
+        }
+      },
     });
 
     const collection = collectOk(fixture);
-    // Arrival, not a sleep: the stub has entered the held events request.
-    await expect
-      .poll(() => {
-        return eventCalls(stub).length;
-      })
-      .toBeGreaterThan(0);
-    const heldCalls = eventCalls(stub).length;
-    await revokeAgentConnectorGrantFixture(
-      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      { agentId: fixture.agentId, connectorSlug: "google-calendar" },
-    );
-    release.resolve();
+    async function expectRevokedCollection() {
+      // Observe an early request failure while waiting for the actual hold.
+      await Promise.race([arrived.promise, collection]);
+      const heldCalls = eventCalls(stub).length;
+      expect(heldCalls).toBeGreaterThan(0);
+      await revokeAgentConnectorGrantFixture(
+        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
+        { agentId: fixture.agentId, connectorSlug: "google-calendar" },
+      );
+      if (!release.settled()) {
+        release.resolve();
+      }
 
-    const response = await collection;
-    // The release fence discards everything collected before the withdrawal,
-    // including the calendars that had already answered.
-    expect(response.body).toMatchObject({
+      const response = await collection;
+      // The release fence discards everything collected before the withdrawal,
+      // including the calendars that had already answered.
+      // Nothing new was issued after the revocation landed.
+      expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
+      return response;
+    }
+    const result = await settleIncludingAbort(expectRevokedCollection());
+    if (!release.settled()) {
+      release.resolve();
+    }
+    if (!arrived.settled()) {
+      arrived.resolve();
+    }
+    await Promise.allSettled([collection]);
+    if (!result.ok) {
+      throw result.error;
+    }
+    expect(result.value.body).toMatchObject({
       status: "unavailable",
       failure: "source-revoked",
       items: [],
     });
-    // Nothing new was issued after the revocation landed.
-    expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
   });
 
   it("refuses a member whose Clerk membership is gone", async () => {
@@ -727,7 +748,8 @@ describe("Morning Brief calendar collection preview", () => {
 
   it("releases nothing when the member rejoins under a new membership while a request is held", async () => {
     const fixture = await setupOwner();
-    const release = createDeferredPromise<void>(new AbortController().signal);
+    const arrived = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
     const stub = stubCalendar({
       calendars: [
         { id: OWNER_CALENDAR, accessRole: "owner", primary: true },
@@ -748,27 +770,45 @@ describe("Morning Brief calendar collection preview", () => {
         ],
       ]),
       holdFirstEvents: release.promise,
+      onFirstEventsHeld: () => {
+        if (!arrived.settled()) {
+          arrived.resolve();
+        }
+      },
     });
 
     const collection = collectOk(fixture);
-    await expect
-      .poll(() => {
-        return eventCalls(stub).length;
-      })
-      .toBeGreaterThan(0);
-    const heldCalls = eventCalls(stub).length;
-    // A removal and rejoin issues a new immutable membership id. The new
-    // membership does not speak for what the previous one started.
-    await seedMembership(fixture.actor, `orgmem_${randomUUID()}`);
-    release.resolve();
+    async function expectRevokedCollection() {
+      await Promise.race([arrived.promise, collection]);
+      const heldCalls = eventCalls(stub).length;
+      expect(heldCalls).toBeGreaterThan(0);
+      // A removal and rejoin issues a new immutable membership id. The new
+      // membership does not speak for what the previous one started.
+      await seedMembership(fixture.actor, `orgmem_${randomUUID()}`);
+      if (!release.settled()) {
+        release.resolve();
+      }
 
-    const response = await collection;
-    expect(response.body).toMatchObject({
+      const response = await collection;
+      expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
+      return response;
+    }
+    const result = await settleIncludingAbort(expectRevokedCollection());
+    if (!release.settled()) {
+      release.resolve();
+    }
+    if (!arrived.settled()) {
+      arrived.resolve();
+    }
+    await Promise.allSettled([collection]);
+    if (!result.ok) {
+      throw result.error;
+    }
+    expect(result.value.body).toMatchObject({
       status: "unavailable",
       failure: "source-revoked",
       items: [],
     });
-    expect(eventCalls(stub).length).toBeLessThanOrEqual(heldCalls + 1);
   });
 
   it("never falls back to primary when the calendar list is denied", async () => {
