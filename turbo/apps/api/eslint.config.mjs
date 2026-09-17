@@ -633,6 +633,10 @@ export default [
       // cancellation can reach a provider body that is still streaming; every
       // other reader contract stays on the Gmail preview endpoint.
       "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
+      // #34866 joins a valid claimed PostgreSQL lifecycle, signed Runner route,
+      // built Guest environment filter and real CLI continuation. No production
+      // endpoint creates the default-off deferred source state for this boundary.
+      "src/signals/services/__tests__/pi-deferred-handoff.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       // Morning Brief composition reduces five providers to one bounded
       // request. The preview route can only exercise the sources an owner
@@ -816,6 +820,9 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
+      // #34866 must join private lifecycle setup to the public authenticated
+      // route and external Guest/CLI process; the dormant producer has no API.
+      "src/signals/services/__tests__/pi-deferred-handoff.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.
