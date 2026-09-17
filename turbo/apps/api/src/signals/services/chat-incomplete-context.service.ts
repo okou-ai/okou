@@ -18,9 +18,12 @@ import {
   notExists,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { z } from "zod";
 
+import { executeRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import type { Db } from "../external/db";
 import {
@@ -35,6 +38,11 @@ const INCOMPLETE_ROUND_LIMIT = 20;
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
 const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
 const earlierRunEvent = alias(chatEvents, "earlier_run_event");
+const incompleteRoundFrontierRowSchema = z.object({
+  runId: z.string(),
+  runStatus: z.string(),
+  isSuccess: z.boolean(),
+});
 
 type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
 
@@ -58,10 +66,11 @@ function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {
   return value === "cancelled" || value === "failed" || value === "timeout";
 }
 
-async function selectIncompleteRoundFrontier(
+function incompleteRoundAnchorQuery(
   db: Db,
   threadId: string,
-): Promise<readonly IncompleteRoundSelection[]> {
+  beforeSeq: SQL | undefined,
+) {
   const isSuccessfulRun = sql`COALESCE(
     ${and(
       sql`${agentRuns.result} ? 'agentSessionId'`,
@@ -76,17 +85,21 @@ async function selectIncompleteRoundFrontier(
   // revoked rows in this ordering fact; visibility only controls eligibility
   // and content. control.interrupt targets a run without belonging to it.
   // This reader remains hot-only: archival retention may remove its anchor.
-  const rows = await db
+  return db
     .select({
       runId: agentRuns.id,
       runStatus: agentRuns.status,
       isSuccess: isSuccessfulRun,
+      seqId: incompleteRunAnchor.seqId,
     })
     .from(incompleteRunAnchor)
     .innerJoin(agentRuns, eq(agentRuns.id, incompleteRunAnchor.runId))
     .where(
       and(
         eq(incompleteRunAnchor.chatThreadId, threadId),
+        beforeSeq === undefined
+          ? undefined
+          : lt(incompleteRunAnchor.seqId, beforeSeq),
         isNotNull(incompleteRunAnchor.runId),
         ne(incompleteRunAnchor.eventType, "control.interrupt"),
         or(
@@ -123,9 +136,45 @@ async function selectIncompleteRoundFrontier(
       ),
     )
     .orderBy(desc(incompleteRunAnchor.seqId))
-    // Bound candidate rounds before loading their text. The extra row can be
-    // the successful boundary after the maximum 20 incomplete rounds.
-    .limit(INCOMPLETE_ROUND_LIMIT + 1);
+    .limit(1);
+}
+
+async function selectIncompleteRoundFrontier(
+  db: Db,
+  threadId: string,
+): Promise<readonly IncompleteRoundSelection[]> {
+  const newestAnchor = incompleteRoundAnchorQuery(db, threadId, undefined);
+  const precedingAnchor = incompleteRoundAnchorQuery(
+    db,
+    threadId,
+    sql`incomplete_frontier.seq_id`,
+  );
+  // Keep the stop at the successful run inside this single statement. Loading
+  // 21 anchors first would scan older, unused history even after a success.
+  // The installed builder cannot express the recursive statement; its two
+  // candidate reads still use the typed builder and share one snapshot.
+  const rows = await executeRawRows(
+    db,
+    sql`
+      WITH RECURSIVE incomplete_frontier AS (
+        SELECT candidate.*, 1 AS depth
+        FROM (${newestAnchor}) AS candidate(run_id, run_status, is_success, seq_id)
+
+        UNION ALL
+
+        SELECT candidate.*, incomplete_frontier.depth + 1
+        FROM incomplete_frontier
+        CROSS JOIN LATERAL (${precedingAnchor})
+          AS candidate(run_id, run_status, is_success, seq_id)
+        WHERE incomplete_frontier.depth < ${INCOMPLETE_ROUND_LIMIT + 1}
+          AND NOT incomplete_frontier.is_success
+      )
+      SELECT run_id AS "runId", run_status AS "runStatus", is_success AS "isSuccess"
+      FROM incomplete_frontier
+      ORDER BY depth
+    `,
+    incompleteRoundFrontierRowSchema,
+  );
 
   const rounds: IncompleteRoundSelection[] = [];
   for (const row of rows) {

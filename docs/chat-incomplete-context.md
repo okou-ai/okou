@@ -16,10 +16,12 @@ predicate determines whether the run has visible history and which content can
 be included. Historical `input.goal` rows provide no queue or execution
 authority.
 
-The reader selects at most 21 candidate runs, stops at the newest successful
-run, and retains up to 20 subsequent incomplete runs. It then loads all visible
-text for those run IDs. There is no event-sequence cutoff based on the last
-event of the successful run: that event can arrive after a newer user input.
+The reader walks at most 21 candidate runs in one recursive SQL statement and
+stops querying older anchors as soon as it reaches a successful run. Each step
+seeks below the previous anchor's sequence. It retains up to 20 subsequent
+incomplete runs, then loads all visible text for those run IDs. There is no
+event-sequence cutoff based on the last event of the successful run: that event
+can arrive after a newer user input.
 Rounds render in their selected order, with events ordered by sequence within
 each round. Existing prompt projection and 4,000-character truncation remain
 unchanged.
@@ -57,7 +59,7 @@ be checked against `chat_events_thread_seq_unique`, `idx_chat_events_run_id`
 and the revocation index; a full-history aggregate or sort must not be assumed
 cheap because its output has a LIMIT.
 
-For #34924, the actual generated query was checked with PostgreSQL 18.6
+For #34924, the actual generated queries were checked with PostgreSQL 18.6
 `EXPLAIN (ANALYZE, BUFFERS)` on isolated temporary tables with the relevant
 production indexes, 10,000 runs and 400,000 events (40 per run, latest 30 runs
 failed). These are synthetic local measurements, not production latency or
@@ -65,14 +67,26 @@ inventory:
 
 | Scenario                                         | Candidate rows | Outer event rows examined | Execution time |
 | ------------------------------------------------ | -------------: | ------------------------: | -------------: |
-| Long thread                                      |             21 |                       840 |         1.7 ms |
-| Late success and old failure outputs             |             21 |                       842 |         1.7 ms |
-| Additional 10,000 usage events on the latest run |             21 |                    10,842 |        30.9 ms |
+| Long thread                                      |             21 |                       840 |         2.0 ms |
+| Late success and old failure outputs             |             21 |                       842 |         2.1 ms |
+| Additional 10,000 usage events on the latest run |             21 |                    10,842 |        32.0 ms |
 
 All three plans used a backward thread-sequence index scan, run-ID index
 lookups for earlier-event/visibility predicates, and the revocation index.
-None required a full-history aggregate or sort. Output-heavy tails still cost
-more index probes; the 20-round result bound is not a constant physical scan
-budget. The baseline reader was fast in the late-event cases because it
-incorrectly stopped at the old successful run, so its timing is not an
-equivalent-result performance comparison.
+The final depth sort covers at most 21 frontier rows; none requires a
+full-history aggregate or sort. Output-heavy tails still cost more index
+probes; the 20-round result bound is not a constant physical scan budget. The
+baseline reader was fast in the late-event cases because it incorrectly
+stopped at the old successful run, so its timing is not an equivalent-result
+performance comparison.
+
+The successful-history case must also be measured: an earlier flat query
+loaded 21 anchors before the application noticed the first success. On a
+thread with two events in its latest successful run and 20 older successful
+runs with 1,000 events each, it unnecessarily scanned 20,002 events (63.4 ms
+median). The recursive query scans only the latest two events (0.15 ms median)
+and does not execute its preceding-anchor branch. Both return empty context.
+With 10,000 events per older run, the recursive query still scans two events
+(0.15 ms median); the flat query exceeded a 45-second statement timeout in the
+initial synthetic sample. These timings establish the need for SQL early
+termination, not a production latency guarantee.
