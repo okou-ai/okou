@@ -113,7 +113,7 @@ function control(
 
 /** The advanced options layer, or null while it is closed. */
 function optionsPanel(dialog: HTMLElement) {
-  return dialog.querySelector("[data-intro-video-options]");
+  return dialog.querySelector<HTMLElement>("[data-intro-video-options]");
 }
 
 /**
@@ -452,20 +452,16 @@ test("The options layer opens from the keyboard and leaves the gallery selection
   click(control("Select style Minimalism", dialog));
   control("More options", dialog).focus();
   await user.keyboard("{Enter}");
-  expect(optionsPanel(dialog)).toHaveAttribute(
-    "data-intro-video-options",
-    "root",
-  );
+  const options = optionsPanel(dialog);
+  if (!options) {
+    throw new Error("The options layer did not open");
+  }
+  expect(within(options).getByText("Let Okou choose")).toBeInTheDocument();
+  expect(within(options).getByText("No avatar")).toBeInTheDocument();
   click(control("Voice", dialog));
-  expect(optionsPanel(dialog)).toHaveAttribute(
-    "data-intro-video-options",
-    "voice",
-  );
+  expect(within(options).getByText("Choose a voice")).toBeInTheDocument();
   click(control("Back", dialog));
-  expect(optionsPanel(dialog)).toHaveAttribute(
-    "data-intro-video-options",
-    "root",
-  );
+  expect(within(options).getByText("No avatar")).toBeInTheDocument();
   click(control("Close options", dialog));
   expect(optionsPanel(dialog)).toBeNull();
   // The gallery stays mounted behind the layer, so its selection survives.
