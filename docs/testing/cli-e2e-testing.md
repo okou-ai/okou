@@ -130,6 +130,32 @@ the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.
 Only the dedicated paid-onboarding spec exercises the video onboarding UI.
 
+Runner account preparation reads Clerk's Backend API
+`GET /v1/instance/organization_settings` once before creating its five identities.
+When the returned `creator_role` is `org:admin`, creation with `created_by`
+already assigns the required role. The preparation-scoped provisioner omits
+the five redundant membership PATCHes: successful setup uses 11 requests
+(one settings GET, five user POSTs, five organization POSTs), down from 15.
+This excludes authentication, onboarding, retries, and cleanup. Non-admin
+Creator Roles retain explicit admin PATCHes and their rollback behavior,
+using 16 setup requests. Unavailable settings, disabled organizations, or an
+invalid Creator Role response fail before creating identities. Single-organization
+callers retain explicit admin setup because an added settings read would not
+reduce their request count.
+
+The CI publishable-key variables identified `informed-calf-6.clerk.accounts.dev`
+on September 17, 2026. A read-only GET of that instance's `/v1/environment`
+at 09:06:09 UTC returned `organization_settings.enabled: true` and
+`organization_settings.creator_role: "org:admin"`. Clerk's
+[organization settings contract](https://github.com/clerk/openapi-specs/blob/a91bd1815277a236107ef325be6e138db32762cb/bapi/2026-05-12.yml)
+defines Creator Role as the role assigned after organization creation; its
+[roles documentation](https://clerk.com/docs/guides/organizations/control-access/roles-and-permissions)
+confirms that it is configurable. Every preparation reads current settings;
+the dated observation is not a permanent configuration guarantee. The observation
+is scoped to one short preparation, not cached across batches, and does not
+provide atomic isolation from administrator changes to Creator Roles or Role Sets
+during provisioning. No live configuration change is part of this optimization.
+
 Clerk resource creation records exact IDs in `E2E_CLERK_RESOURCE_DIR`. Normal
 cleanup verifies those IDs' ownership against Clerk and deletes organizations
 before users. Runner records travel with their workflow attempt so successful
