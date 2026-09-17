@@ -128,7 +128,7 @@ function occurrenceKey(
  * or has already committed and leaves nothing to write. This never creates the
  * parent.
  */
-async function lockCollectionOwner(
+export async function lockCollectionOwner(
   tx: Tx,
   owner: MorningBriefCollectionOwner,
 ): Promise<boolean> {

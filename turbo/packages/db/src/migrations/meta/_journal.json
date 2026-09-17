@@ -519,6 +519,13 @@
       "when": 1789616656879,
       "tag": "1151_morning_brief_collection_occurrences",
       "breakpoints": true
+    },
+    {
+      "idx": 1152,
+      "version": "7",
+      "when": 1789619821048,
+      "tag": "1152_morning_brief_platform_generation",
+      "breakpoints": true
     }
   ]
 }
