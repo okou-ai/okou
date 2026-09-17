@@ -39,11 +39,14 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import {
   assertUserStableContextGenerationUnlockedFixture,
   beginWorkflowStableContextPublicationFixture,
+  clearAgentStableContextLifecycleFixture,
   countAgentStableContextGenerationsFixture,
   countAgentStableContextPublicationsFixture,
+  countUserStableContextGenerationsFixture,
   holdAgentStableContextGenerationFixture,
   holdUserStableContextGenerationFixture,
 } from "../../../test-fixtures/pi-stable-context";
+import { holdAgentDeletionAfterStableContextCleanupFixture } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { createDeferredPromise } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -1275,6 +1278,71 @@ describe("workflows", () => {
     await expect(accept(publication, [200])).resolves.toMatchObject({
       body: { visibility: "public" },
     });
+  });
+
+  it("sweeps a generation initialized after Agent deletion's first lifecycle scan", async () => {
+    const actor = user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    const agent = await createAgent(actor, {
+      displayName: "Late Workflow Generation Agent",
+      visibility: "public",
+    });
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `late-generation-${randomUUID().slice(0, 8)}`,
+      instruction: "# before deletion",
+    });
+    // Model the supported additive-rollout state: the Workflow predates the
+    // new projection tables, so the lifecycle scan starts with no keys.
+    await clearAgentStableContextLifecycleFixture(agent.agentId);
+
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    holdAgentDeletionAfterStableContextCleanupFixture(
+      agent.agentId,
+      async () => {
+        entered.resolve();
+        await release.promise;
+      },
+    );
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+    });
+
+    const deletion = bdd.requestDeleteAgent(actor, agent.agentId, [204]);
+    await entered.promise;
+    await expect(
+      countUserStableContextGenerationsFixture({
+        agentId: agent.agentId,
+        userId: actor.userId,
+      }),
+    ).resolves.toBe(0);
+
+    await updateWorkflow(actor, workflow.body.id, {
+      instruction: "# published after the initial lifecycle scan",
+    });
+    await expect(
+      countUserStableContextGenerationsFixture({
+        agentId: agent.agentId,
+        userId: actor.userId,
+      }),
+    ).resolves.toBe(1);
+
+    release.resolve();
+    await deletion;
+    await expect(
+      countUserStableContextGenerationsFixture({
+        agentId: agent.agentId,
+        userId: actor.userId,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      countAgentStableContextPublicationsFixture(agent.agentId),
+    ).resolves.toBe(0);
   });
 
   it("retires an abandoned opposite-scope publication during a valid visibility transition", async () => {

@@ -27,6 +27,7 @@ import { createStore } from "ccstate";
 import type { Tx } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
 import { piResourceIndexHash } from "../../../lib/pi-resource-index";
+import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
 import { createDeferredPromise } from "../../utils";
 import {
   beginPiStableContextPublication,
@@ -357,9 +358,19 @@ describe("Pi stable context generation fences", () => {
     );
   });
 
-  it("locks global catalog generations before a two-scope Workflow waiter", async () => {
+  it("locks test-owned global catalog generations before a two-scope Workflow waiter", async () => {
     const fixture = await seed();
     const late = await seed();
+    const unrelated = await seed();
+    const unrelatedLeaseId = randomUUID();
+    await db
+      .update(piStableContextHeads)
+      .set({
+        status: "running",
+        leaseId: unrelatedLeaseId,
+        leaseExpiresAt: new Date("2026-09-18T02:00:00.000Z"),
+      })
+      .where(eq(piStableContextHeads.id, unrelated.headId));
     await db
       .delete(piStableContextHeads)
       .where(inArray(piStableContextHeads.id, [fixture.headId, late.headId]));
@@ -451,17 +462,25 @@ describe("Pi stable context generation fences", () => {
       .toBeTruthy();
 
     const catalogStarted = createDeferredPromise<number>(signal);
-    const catalog = db.transaction(async (tx) => {
-      const result = await tx.execute(
-        sql`SELECT pg_backend_pid()::int AS "pid"`,
-      );
-      const pid = Number(result.rows[0]?.pid);
-      if (!Number.isInteger(pid)) {
-        throw new Error("Expected catalog invalidator pid");
-      }
-      catalogStarted.resolve(pid);
-      await invalidateAllPiStableContexts(tx);
-    });
+    const catalog = withOwnedPiStableContextGlobalInvalidationFixture(
+      [
+        { orgId: fixture.orgId, agentId: fixture.agentId },
+        { orgId: late.orgId, agentId: late.agentId },
+      ],
+      async () => {
+        await db.transaction(async (tx) => {
+          const result = await tx.execute(
+            sql`SELECT pg_backend_pid()::int AS "pid"`,
+          );
+          const pid = Number(result.rows[0]?.pid);
+          if (!Number.isInteger(pid)) {
+            throw new Error("Expected catalog invalidator pid");
+          }
+          catalogStarted.resolve(pid);
+          await invalidateAllPiStableContexts(tx);
+        });
+      },
+    );
     const catalogPid = await catalogStarted.promise;
     await expect
       .poll(
@@ -515,6 +534,32 @@ describe("Pi stable context generation fences", () => {
           return row?.generation;
         }),
     ).resolves.toBe(1);
+    await expect(
+      db
+        .select({
+          generation: piStableContextHeads.generation,
+          status: piStableContextHeads.status,
+          leaseId: piStableContextHeads.leaseId,
+        })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, unrelated.headId)),
+    ).resolves.toStrictEqual([
+      {
+        generation: 1,
+        status: "running",
+        leaseId: unrelatedLeaseId,
+      },
+    ]);
+    await expect(
+      db
+        .select({ generation: piStableContextGenerations.generation })
+        .from(piStableContextGenerations)
+        .where(eq(piStableContextGenerations.agentId, unrelated.agentId)),
+    ).resolves.toStrictEqual([
+      { generation: 1 },
+      { generation: 1 },
+      { generation: 1 },
+    ]);
   });
 
   it("keeps a test catalog source from mutating another source's work", async () => {

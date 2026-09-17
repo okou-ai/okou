@@ -24,9 +24,36 @@ import { piStableContextInputDigest } from "../signals/services/pi-stable-contex
 import {
   beginPiStableContextPublication,
   invalidatePiStableContext,
+  withPiStableContextGlobalInvalidationOwnersForTest,
 } from "../signals/services/pi-stable-context-generation.service";
 
 const store = createStore();
+
+export async function withOwnedPiStableContextGlobalInvalidationFixture<T>(
+  owners: readonly { readonly orgId: string; readonly agentId: string }[],
+  work: () => Promise<T>,
+): Promise<T> {
+  return await withPiStableContextGlobalInvalidationOwnersForTest(owners, work);
+}
+
+export async function clearAgentStableContextLifecycleFixture(
+  agentId: string,
+): Promise<void> {
+  await store.set(writeDb$).transaction(async (tx) => {
+    await tx
+      .delete(piStableContextGenerations)
+      .where(eq(piStableContextGenerations.agentId, agentId));
+    await tx
+      .delete(piStableContextPublications)
+      .where(eq(piStableContextPublications.agentId, agentId));
+    await tx
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.agentId, agentId));
+    await tx
+      .delete(piStableContextArtifacts)
+      .where(eq(piStableContextArtifacts.agentId, agentId));
+  });
+}
 
 export async function seedAgentStableContextPublicationFixture(args: {
   readonly orgId: string;

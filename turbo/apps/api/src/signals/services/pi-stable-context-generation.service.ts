@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 import { PI_SKILLS_ROOT } from "@okouai/api-contracts/contracts/runners";
@@ -21,6 +22,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 
+import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import {
@@ -100,6 +102,35 @@ export interface PiStableContextScope {
   readonly agentId: string;
   /** Omit for agent-wide identity, public workflow, or shared resource writes. */
   readonly userId?: string;
+}
+
+type PiStableContextOwnerScope = Pick<
+  PiStableContextScope,
+  "orgId" | "agentId"
+>;
+
+const testGlobalInvalidationOwners = singleton(() => {
+  return new AsyncLocalStorage<readonly PiStableContextOwnerScope[]>();
+});
+
+/** Narrow a production-global invalidation to explicitly owned shared-DB fixtures. */
+export async function withPiStableContextGlobalInvalidationOwnersForTest<T>(
+  owners: readonly PiStableContextOwnerScope[],
+  work: () => Promise<T>,
+): Promise<T> {
+  const normalized = [
+    ...new Map(
+      owners.map((owner) => {
+        return [`${owner.orgId}\0${owner.agentId}`, owner] as const;
+      }),
+    ).values(),
+  ].sort((left, right) => {
+    return (
+      left.orgId.localeCompare(right.orgId) ||
+      left.agentId.localeCompare(right.agentId)
+    );
+  });
+  return await testGlobalInvalidationOwners().run(normalized, work);
 }
 
 export interface PiStableContextPublicationFence {
@@ -429,6 +460,41 @@ export async function invalidatePiStableContextsForOrg(
 
 /** Bulk invalidation for the shared official connector/workflow catalog. */
 export async function invalidateAllPiStableContexts(db: Db): Promise<void> {
+  const fixtureOwners = testGlobalInvalidationOwners.peek()?.getStore();
+  if (fixtureOwners !== undefined) {
+    if (fixtureOwners.length === 0) {
+      return;
+    }
+    await advanceGenerationSet(
+      db,
+      requireCondition(
+        or(
+          ...fixtureOwners.map((owner) => {
+            return and(
+              eq(piStableContextGenerations.orgId, owner.orgId),
+              eq(piStableContextGenerations.agentId, owner.agentId),
+            );
+          }),
+        ),
+        "test-owned global generation",
+      ),
+    );
+    await invalidateHeadSet(
+      db,
+      requireCondition(
+        or(
+          ...fixtureOwners.map((owner) => {
+            return and(
+              eq(piStableContextHeads.orgId, owner.orgId),
+              eq(piStableContextHeads.agentId, owner.agentId),
+            );
+          }),
+        ),
+        "test-owned global head",
+      ),
+    );
+    return;
+  }
   await advanceGenerationSet(db, sql`TRUE`);
   await invalidateHeadSet(db, sql`TRUE`);
 }

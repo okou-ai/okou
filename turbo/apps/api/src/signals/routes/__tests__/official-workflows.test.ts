@@ -73,8 +73,15 @@ import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-p
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
-import { countUserStableContextGenerationsFixture } from "../../../test-fixtures/pi-stable-context";
-import { holdOfficialWorkflowInstallationBeforeErasureAdmissionFixture } from "../../../test-fixtures/pi-stable-context-source-writers";
+import {
+  countAgentStableContextPublicationsFixture,
+  countUserStableContextGenerationsFixture,
+  withOwnedPiStableContextGlobalInvalidationFixture,
+} from "../../../test-fixtures/pi-stable-context";
+import {
+  holdOfficialWorkflowActivationBeforeErasureAdmissionFixture,
+  holdOfficialWorkflowInstallationBeforeErasureAdmissionFixture,
+} from "../../../test-fixtures/pi-stable-context-source-writers";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -1020,11 +1027,16 @@ function syncClient(candidate: unknown) {
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await accept(
-    syncClient(candidate).sync({
-      headers: { authorization: `Bearer ${CRON_SECRET}` },
-    }),
-    [200],
+  return await withOwnedPiStableContextGlobalInvalidationFixture(
+    [],
+    async () => {
+      return await accept(
+        syncClient(candidate).sync({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
+        }),
+        [200],
+      );
+    },
   );
 }
 
@@ -1047,11 +1059,16 @@ async function syncDeployedCatalog() {
       ]),
     ]),
   );
-  return await accept(
-    setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-      cronOfficialWorkflowCatalogContract,
-    ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-    [200],
+  return await withOwnedPiStableContextGlobalInvalidationFixture(
+    [],
+    async () => {
+      return await accept(
+        setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+          cronOfficialWorkflowCatalogContract,
+        ).sync({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+        [200],
+      );
+    },
   );
 }
 
@@ -4505,6 +4522,64 @@ describe("Official Workflow installations", () => {
         agentId,
         userId: installer.userId,
       }),
+    ).resolves.toBe(0);
+  });
+
+  it("cleans a committed installing Workflow without recreating state after signed erasure", async () => {
+    installCatalogStorageFixture();
+    const definitionName = `api-test-activation-erasure-${randomUUID()
+      .replaceAll("-", "")
+      .slice(0, 10)}`;
+    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+
+    const setup = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const installer = setup.actor;
+    if (!installer.orgId) {
+      throw new Error("Expected organization-scoped installer");
+    }
+    await setOfficialWorkflowsEnabled(installer, true);
+    const agentOwner = bdd.user({
+      orgId: installer.orgId,
+      orgRole: "org:member",
+    });
+    const { agentId } = await workflowBdd.createAgent(agentOwner, {
+      visibility: "public",
+    });
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.requestDeleteAgent(agentOwner, agentId, [204, 404]);
+      await cleanupCatalog();
+    });
+
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    holdOfficialWorkflowActivationBeforeErasureAdmissionFixture(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const install = officialClient().install({
+      headers: authHeaders(installer),
+      params: { definitionName },
+      body: { agentId, blueprints: [] },
+    });
+    await entered.promise;
+    await deliverSignedClerkUserDeleted(
+      installer.userId,
+      "official-workflow-activation-erasure",
+    );
+
+    release.resolve();
+    await accept(install, [404]);
+    await expect(
+      countUserStableContextGenerationsFixture({
+        agentId,
+        userId: installer.userId,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      countAgentStableContextPublicationsFixture(agentId),
     ).resolves.toBe(0);
   });
 

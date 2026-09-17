@@ -15,7 +15,10 @@ import { nowDate } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
-import { countUserStableContextGenerationsFixture } from "../../../test-fixtures/pi-stable-context";
+import {
+  countAgentStableContextPublicationsFixture,
+  countUserStableContextGenerationsFixture,
+} from "../../../test-fixtures/pi-stable-context";
 import { holdUserConnectorMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-connectors";
 import { holdUserPermissionGrantMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-permission-grants";
 import {
@@ -23,6 +26,8 @@ import {
   holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture,
   holdWorkflowCopyBeforeErasureAdmissionFixture,
   holdWorkflowCreationBeforeErasureAdmissionFixture,
+  holdWorkflowDeleteBeforeErasureAdmissionFixture,
+  holdWorkflowUpdateBeforeErasureAdmissionFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
@@ -451,6 +456,91 @@ test("does not recreate erased generation metadata from Workflow Copy", async ()
     }),
   ).resolves.toBe(0);
 });
+
+test.each(["update", "delete"] as const)(
+  "does not recreate erased generation metadata from private Workflow %s",
+  async (operation) => {
+    const orgId = `synthetic_org_${randomUUID()}`;
+    const survivingUserId = `synthetic_survivor_${randomUUID()}`;
+    const deletedUserId = `synthetic_deleted_${randomUUID()}`;
+    context.mocks.s3.send.mockResolvedValue({});
+    const headers = { authorization: "Bearer clerk-session" };
+
+    mocks.clerk.session(survivingUserId, orgId, "org:admin");
+    const agent = await accept(
+      setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
+        headers,
+        body: { displayName: "Surviving public agent", visibility: "public" },
+      }),
+      [201],
+    );
+
+    mocks.clerk.session(deletedUserId, orgId, "org:member");
+    const workflow = await accept(
+      setupApp({ context, routes: workflowsRoutes })(
+        workflowsCollectionContract,
+      ).create({
+        headers,
+        body: {
+          agentId: agent.body.agentId,
+          name: `late-${operation}-${randomUUID().slice(0, 8)}`,
+          visibility: "private",
+          instruction: "# before erasure",
+        },
+      }),
+      [201],
+    );
+
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const hold = async () => {
+      entered.resolve();
+      await release.promise;
+    };
+    if (operation === "update") {
+      holdWorkflowUpdateBeforeErasureAdmissionFixture(hold);
+    } else {
+      holdWorkflowDeleteBeforeErasureAdmissionFixture(hold);
+    }
+    const client = setupApp({ context, routes: workflowsRoutes })(
+      workflowsDetailContract,
+    );
+    const mutation =
+      operation === "update"
+        ? accept(
+            client.update({
+              headers,
+              params: { workflowId: workflow.body.id },
+              body: { instruction: "# must not survive erasure" },
+            }),
+            [409],
+          )
+        : accept(
+            client.delete({
+              headers,
+              params: { workflowId: workflow.body.id },
+            }),
+            [404],
+          );
+    await entered.promise;
+    await deleteUserWithSignedWebhook(
+      deletedUserId,
+      `workflow-${operation}-writer-erasure`,
+    );
+
+    release.resolve();
+    await mutation;
+    await expect(
+      countUserStableContextGenerationsFixture({
+        agentId: agent.body.agentId,
+        userId: deletedUserId,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      countAgentStableContextPublicationsFixture(agent.body.agentId),
+    ).resolves.toBe(0);
+  },
+);
 
 test("does not recreate erased generation metadata when clearing a thread connector selection", async () => {
   const orgId = `synthetic_org_${randomUUID()}`;

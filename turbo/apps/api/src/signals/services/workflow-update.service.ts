@@ -5,6 +5,8 @@ import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 
+import { testOverride } from "../../lib/singleton";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
@@ -13,16 +15,45 @@ import {
   SKILL_FILENAME,
 } from "./workflow-volume.service";
 import type { WorkflowRow } from "./workflow-data.service";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import {
   beginPiStableContextPublication,
   piStableContextWorkflowInvalidationOptions,
   piStableContextWorkflowPublicationKey,
 } from "./pi-stable-context-generation.service";
 
+interface WorkflowUpdateHooks {
+  readonly beforeAdmission?: () => Promise<void>;
+}
+
+const workflowUpdateHooks = testOverride<WorkflowUpdateHooks>(() => {
+  return {};
+});
+
+export function setWorkflowUpdateHooksForTest(
+  hooks: WorkflowUpdateHooks,
+): void {
+  workflowUpdateHooks.set(hooks);
+}
+
+export function clearWorkflowUpdateHooksForTest(): void {
+  workflowUpdateHooks.clear();
+}
+
 interface UpdateWorkflowInput {
   readonly workflow: WorkflowRow;
   readonly body: WorkflowUpdateRequest;
   readonly updatedByUserId: string;
+}
+
+async function admitWorkflowUpdate(
+  tx: Tx,
+  workflow: Pick<WorkflowRow, "orgId" | "ownerUserId">,
+): Promise<boolean> {
+  return await admitPiStableContextSubjects(tx, [
+    { subjectKind: "organization", subjectId: workflow.orgId },
+    { subjectKind: "user", subjectId: workflow.ownerUserId },
+  ]);
 }
 
 export const updateWorkflow$ = command(
@@ -52,7 +83,12 @@ export const updateWorkflow$ = command(
     const volumeChanged = body.files !== undefined || skillChanged;
     // Metadata and its pending generation commit together. The later volume
     // transaction may make only this exact generation ready.
+    await workflowUpdateHooks.get().beforeAdmission?.();
+    signal.throwIfAborted();
     const metadata = await writeDb.transaction(async (tx) => {
+      if (!(await admitWorkflowUpdate(tx, workflow))) {
+        return { updated: false as const };
+      }
       const [updated] = await tx
         .update(workflows)
         .set({

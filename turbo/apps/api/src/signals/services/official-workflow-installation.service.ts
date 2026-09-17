@@ -51,6 +51,7 @@ const STALE_INSTALLATION_AGE_MS = 5 * 60 * 1000;
 
 interface OfficialWorkflowInstallationHooks {
   readonly beforeInsertAdmission?: () => Promise<void>;
+  readonly beforeActivationAdmission?: () => Promise<void>;
 }
 
 const officialWorkflowInstallationHooks =
@@ -956,6 +957,7 @@ async function completeInstallation(
       return automationFailure(automation);
     }
   }
+  await officialWorkflowInstallationHooks.get().beforeActivationAdmission?.();
   const activation = await args.db.transaction(async (tx) => {
     if (
       !(await admitPiStableContextSubjects(tx, [
@@ -1057,6 +1059,7 @@ export const installOfficialWorkflow$ = command(
           allowOfficialInstallationDeletion: true,
           requiredOfficialInstallationState: "installing",
           serializeOfficialLifecycle: true,
+          allowClosedOwnerCleanupWithoutInvalidation: true,
         },
         cleanupSignal,
       );

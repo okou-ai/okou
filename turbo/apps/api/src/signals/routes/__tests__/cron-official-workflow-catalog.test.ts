@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { withOwnedPiStableContextGlobalInvalidationFixture } from "../../../test-fixtures/pi-stable-context";
 import { mockEnv } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -184,18 +185,28 @@ function syncClient(candidate: unknown) {
 }
 
 async function syncCatalog(candidate: unknown) {
-  return await accept(
-    syncClient(candidate).sync({ headers: cronHeaders() }),
-    [200],
+  return await withOwnedPiStableContextGlobalInvalidationFixture(
+    [],
+    async () => {
+      return await accept(
+        syncClient(candidate).sync({ headers: cronHeaders() }),
+        [200],
+      );
+    },
   );
 }
 
 async function syncDeployedCatalog() {
-  return await accept(
-    setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
-      cronOfficialWorkflowCatalogContract,
-    ).sync({ headers: cronHeaders() }),
-    [200],
+  return await withOwnedPiStableContextGlobalInvalidationFixture(
+    [],
+    async () => {
+      return await accept(
+        setupApp({ context, routes: cronOfficialWorkflowCatalogRoutes })(
+          cronOfficialWorkflowCatalogContract,
+        ).sync({ headers: cronHeaders() }),
+        [200],
+      );
+    },
   );
 }
 

@@ -303,6 +303,10 @@ export async function deleteClerkAgentLifecycleData(
             eq(agents.id, sql`ANY(${sql.param(agentIds)}::uuid[])`),
           ),
         );
+      // Agent cascades drain child-row writers that could initialize non-FK
+      // lifecycle metadata after the first sweep. Remove that late state while
+      // the erasure and canonical Agent locks are still held.
+      await deleteStableContextLifecycleData(tx, scope, agentIds);
     }
     return await releaseDeletedConversationReferences(tx, removed);
   });
