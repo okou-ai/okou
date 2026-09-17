@@ -66,29 +66,36 @@ survivor, and would also print the survivor's label on the sidebar event.
 
 ### Initiation: bounded capture and admission
 
-One bounded `READ COMMITTED` transaction through the accepted R3 helper:
+One bounded `READ COMMITTED` transaction, through a read-only sibling of the R3
+helper:
 
 1. `SET LOCAL lock_timeout` (`1s`) and `statement_timeout` (`5s`).
 2. Content-free identity resolution by primary key, left-joining Agents.
 3. The scheduling caller's own contract: its `userId` and `orgId` must equal the
    real persisted parents, and the Agent must resolve.
 4. Sorted shared `assertErasureSubjectWritable` over the distinct subjects.
-5. `agents` **FOR KEY SHARE**, then `chat_threads` **FOR KEY SHARE**.
-6. Re-read the same content-free identity under those locks and compare.
-7. Title eligibility (`title IS NULL AND renamed_at IS NULL`) and the bounded
-   prior-round context read.
+5. Title eligibility (`title IS NULL AND renamed_at IS NULL`) and the bounded
+   prior-round context read, then `COMMIT`.
 
 A subject already known closed therefore never begins another title generation,
-and the identity is fixed before any account content is read.
+and the identity is fixed before any account content is read. The transaction
+commits before the provider await: **no database transaction is held across the
+provider request.**
 
-The context read sits **inside** this admitted transaction deliberately. It is a
-single bounded query — the existing at most ten visible rows, with pending and
-queued rounds filtered out — under the same `5s` statement timeout, and running
-it under the retained locks makes it impossible for context acquisition to cross
-an ownership change. That removes the stale-pin window a separate unlocked
-context read would open, and with it the need for a second pin validation before
-generation. Every lock is released at `COMMIT`, strictly before the provider
-await: **no database transaction is held across the provider request.**
+This gate takes **no business lock**, and that is deliberate rather than an
+omission. This workflow is scheduled from inside the request that holds the chat
+queue's own `FOR UPDATE` on the same thread, which conflicts with `FOR KEY
+SHARE`. A gate that took the parent locks would contend with the very request
+that scheduled it and delay every eager title behind a bounded lock wait — long
+enough for the next scheduler on that thread to still observe it untitled and
+start a second, wasted provider call.
+
+The consequence is stated rather than glossed: taking no lock means this gate
+carries **no authority**, and the pin it returns is a candidate, not a
+permission. A canonical parent can move the instant it commits, and the bounded
+context read can cross that move. Nothing is written on its word. Every
+guarantee is re-established at completion, where the whole pin is compared again
+under retained locks before any row changes.
 
 This is a local initiation boundary only. It is not external-provider fencing
 and it proves nothing about provider-side deletion.
@@ -96,8 +103,8 @@ and it proves nothing about provider-side deletion.
 ### Completion: fresh admission under the frozen pin
 
 The late persistence starts a **fresh** bounded `READ COMMITTED` transaction
-through the same helper, with `authorize` comparing the entire frozen pin. The
-order is identical: deadlines -> identity -> pin comparison -> B1 admission ->
+through the full R3 write helper, with `authorize` comparing the entire frozen
+pin. The order is: deadlines -> identity -> pin comparison -> B1 admission ->
 `agents` KEY SHARE -> `chat_threads` KEY SHARE -> revalidation -> the title
 `UPDATE`, the durable sidebar sequence and the `renamed` event, all in that one
 transaction with every barrier retained through `COMMIT`.

@@ -208,6 +208,56 @@ async function lockChatThreadContentIdentity(
 }
 
 /**
+ * Admission for a read-only **initiation gate**: deadlines -> content-free
+ * identity -> the caller's own ownership check -> shared B1 admission -> the
+ * caller's bounded read, committed without taking any business lock.
+ *
+ * An optional background workflow uses this to refuse to start producing
+ * content for a subject already known closed. It deliberately takes neither
+ * `agents` nor `chat_threads` KEY SHARE: those conflict with the `FOR UPDATE`
+ * that the chat queue takes on the same thread, so a gate that acquired them
+ * would contend with the very request that scheduled the work and delay it
+ * behind that request's own bounded lock wait.
+ *
+ * The consequence is explicit: this gate carries **no authority**. Taking no
+ * lock means a canonical parent can move immediately after it commits, so a
+ * caller must revalidate the identity it captured here under
+ * {@link withChatThreadContentWrite} before writing anything. Closure observed
+ * here is a reason to stop early, never a licence to write later.
+ */
+export async function withChatThreadContentAdmission<T>(
+  db: Db,
+  args: {
+    readonly chatThreadId: string;
+    readonly authorize: (identity: ChatThreadContentIdentity) => boolean;
+  },
+  read: (tx: Tx, identity: ChatThreadContentIdentity) => Promise<T>,
+  signal: AbortSignal,
+): Promise<ChatThreadContentWriteOutcome<T>> {
+  signal.throwIfAborted();
+  const outcome = await db.transaction(
+    async (tx): Promise<ChatThreadContentWriteOutcome<T>> => {
+      await setChatThreadContentDeadlines(tx);
+      const selected = await loadChatThreadContentIdentity(
+        tx,
+        args.chatThreadId,
+      );
+      if (!selected || !args.authorize(selected)) {
+        return { outcome: "missing" };
+      }
+      if (!(await admitChatThreadContentSubjects(tx, selected))) {
+        return { outcome: "closed" };
+      }
+      signal.throwIfAborted();
+      return { outcome: "written", value: await read(tx, selected) };
+    },
+    { isolationLevel: "read committed" },
+  );
+  signal.throwIfAborted();
+  return outcome;
+}
+
+/**
  * Owns the transaction for a direct chat-thread content write: deadlines ->
  * content-free identity -> the route's own ownership check -> shared B1
  * admission -> Agent and thread identity locks -> revalidation -> the write,

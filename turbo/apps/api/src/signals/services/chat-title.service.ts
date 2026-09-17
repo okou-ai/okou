@@ -47,6 +47,7 @@ import {
 } from "./chat-recommended-followups.service";
 import {
   ChatThreadContentOwnershipChangedError,
+  withChatThreadContentAdmission,
   withChatThreadContentWrite,
   type ChatThreadContentIdentity,
 } from "./chat-thread-content-erasure-admission.service";
@@ -454,17 +455,21 @@ interface ChatTitleGenerationCapture {
  * only then reads this thread's title eligibility and its bounded prior-round
  * context. A subject already known closed therefore never starts another title
  * generation, and the content-free identity is fixed before any account content
- * is read.
+ * is read. The transaction commits before the provider await below: no database
+ * transaction is ever held across that request.
  *
- * The context read stays inside this admitted transaction deliberately. It is a
- * single bounded query under the same `5s` statement timeout, and running it
- * under the retained locks is what makes it impossible for context acquisition
- * to cross an ownership change, so no second pin validation is needed before
- * generation. Every lock is released at `COMMIT`, strictly before the provider
- * await below: no database transaction is ever held across that request.
+ * It takes no business lock, because this workflow is scheduled from inside the
+ * request that holds the chat queue's own `FOR UPDATE` on this thread. A gate
+ * that took `chat_threads` KEY SHARE would contend with that request and delay
+ * every eager title behind a bounded lock wait, which is long enough for the
+ * next scheduler to observe the thread still untitled and start a second,
+ * wasted generation.
  *
- * This is a local initiation boundary only. It is not external-provider fencing
- * and it proves nothing about provider-side deletion.
+ * So this gate carries no authority and the pin it returns is a candidate, not
+ * a permission: ownership can move the moment it commits. Every guarantee is
+ * re-established at completion, where the whole pin is compared again under
+ * retained locks. This is a local initiation boundary only — not
+ * external-provider fencing, and no proof of provider-side deletion.
  */
 async function captureChatThreadTitleGeneration(args: {
   readonly db: Db;
@@ -474,7 +479,7 @@ async function captureChatThreadTitleGeneration(args: {
   readonly includePriorRounds: boolean;
 }): Promise<ChatTitleGenerationCapture | null> {
   const captured = await discardOnOwnershipChange(
-    withChatThreadContentWrite(
+    withChatThreadContentAdmission(
       args.db,
       {
         chatThreadId: args.threadId,
