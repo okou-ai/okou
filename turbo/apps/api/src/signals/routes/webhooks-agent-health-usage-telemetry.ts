@@ -300,7 +300,7 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   // Prepared reader only: #34713 must replace this guard with the complete
-  // binding/receipt/claim/obligation transaction and lifecycle admission.
+  // source-ledger/resource transaction and two-date lifecycle admission.
   // Never pass resource observations (including mixed batches) to count billing.
   if (
     body.events.some((event) => {

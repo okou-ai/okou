@@ -32,7 +32,6 @@ describe("agent usage event webhook", () => {
         provider: "x" as const,
         category: "tweet.read" as const,
         quantity: 1,
-        bindingId: randomUUID(),
         observedAt: "2026-09-16T00:00:00.000Z",
         resources: [{ id: "9007199254740993", occurrences: 1 }],
         remainder: [],

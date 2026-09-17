@@ -10,7 +10,6 @@ function observation() {
     provider: "x",
     category: "tweet.read",
     quantity: 5,
-    bindingId: randomUUID(),
     observedAt: "2026-09-16T23:59:59.999Z",
     resources: [
       { id: "9007199254740993", occurrences: 2 },
@@ -122,7 +121,6 @@ describe("X resource observation wire contract", () => {
     { category: "followers.read" },
     { scopeId: randomUUID() },
     { netQuantity: 0 },
-    { bindingId: "unverified" },
     { observedAt: "2026-09-16T00:00:00+08:00" },
     { observedAt: "2026-02-30T00:00:00.000Z" },
     { observedAt: "2026-09-16T00:00:00.0001Z" },

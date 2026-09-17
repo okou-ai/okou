@@ -14,7 +14,7 @@ const remainderReasonSchema = z.enum([
 ]);
 
 /** Prepared reader only. The webhook rejects v1 until #34713 supplies the
- * complete binding-authorized accounting and lifecycle transaction. */
+ * complete accounting, two-date admission and cleanup transaction. */
 export const xResourceUsageEventSchema = z
   .object({
     protocol: z.literal("x-resource-v1"),
@@ -24,7 +24,6 @@ export const xResourceUsageEventSchema = z
     // The initial namespaces are derived: tweet.read -> post, user.read -> user.
     category: z.enum(["tweet.read", "user.read"]),
     quantity: quantitySchema,
-    bindingId: z.uuid(),
     observedAt: z.iso.datetime({ precision: 3 }),
     resources: z
       .array(
