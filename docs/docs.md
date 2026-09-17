@@ -70,6 +70,9 @@ surface; the index does not replace their detailed rules.
 - [Morning Brief platform-funded generation](./morning-brief-generation.md): the
   single-invocation reservation contract, the validated result shape, and the
   anonymous platform cost receipt kept outside every user ledger.
+- [Morning Brief thread provenance](./morning-brief-chat-provenance.md): the
+  sticky whole-thread exclusion, its producers and coverage limits, the bounded
+  unread Chat collection that consumes it, and the old-writer activation gate.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
