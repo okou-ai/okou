@@ -163,7 +163,21 @@ On September 17, 2026:
 
 Wide-code/table scrolling, link opening, image rendering, and further
 long-history performance checks remain outside the completed interactive sample.
-The conversation stack currently lays out all loaded messages eagerly.
+
+The transcript now uses a separate native `List` row for each message, instead
+of eagerly laying out the entire history in a `VStack`. Markdown, message
+grouping, context-menu copying, and the composer remain unchanged. Initial
+positioning follows the bottom while Markdown changes row heights; starting a
+manual scroll stops this following. A new message requests bottom positioning
+again. Keep these behaviors in local acceptance when changing the container.
+
+A local investigation of a long conversation observed approximately 1.3 GB of
+process physical footprint with the eager stack and approximately 269 MB with
+the list. These are diagnostic snapshots from separate runs, not a controlled
+frame-rate benchmark. Sampling also found repeated ISO-8601 formatter creation
+during list refresh. The decoder now reuses its formatters under a lock. A local
+3,000-timestamp comparison took approximately 0.79 seconds before and 0.40 seconds
+after, with identical decoded dates across UTC, offset, and SQL-style inputs.
 
 Also verify uncertain-send recovery, signing out or switching workspaces clears
 the previous workspace's chats and drafts, and Emoji render on the replacement
@@ -184,7 +198,19 @@ The `ci-gate-ios` check succeeds only after the required build/tests pass, or
 after change detection confirms they are unnecessary. Detection failures,
 cancelled builds, and unexpectedly skipped builds fail the gate. Register this
 check alongside the existing required checks after the workflow is on main.
-Turbo and Desktop workflow behavior is unchanged.
+Pure `ios/` pull requests and merge groups skip Turbo TypeScript lint, types,
+formatting, Knip, App/API/CLI and other JavaScript tests, benchmarks, and App/CLI
+preview artifacts, along with the runtime API schema report. Existing crates-only TypeScript exemptions remain in place.
+Mixed changes, root files, and workflow changes do not receive this exemption;
+main still builds release artifacts and runs the normal checks. E2E selection
+continues to use Turbo package hashes and CI input detection.
+
+The repository Security workflow also skips its JavaScript/TypeScript CodeQL
+scan and pnpm audit for pure iOS changes. Semgrep, secret scanning, workflow
+validation, and PR-title checks remain enabled. GitHub-managed Code Quality is
+configured separately and is not controlled by these workflow conditions.
+Detection must succeed before skipped jobs can pass a required gate; failed or
+cancelled jobs remain failures. Desktop and Rust retain their own input filters.
 
 Tests use HTTP-boundary fixtures and a loopback server. The CI build also clears
 the Clerk key and overrides service origins with reserved `.invalid` domains.

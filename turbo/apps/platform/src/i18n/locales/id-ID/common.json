@@ -6328,6 +6328,7 @@
     },
     "loadFailed": "Tidak dapat memuat templat.",
     "pageCount_other": "{{count}} halaman",
+    "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
     "visibility": {

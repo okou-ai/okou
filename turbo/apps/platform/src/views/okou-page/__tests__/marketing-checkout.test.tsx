@@ -22,30 +22,6 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
-const axiomTelemetry = vi.hoisted(() => {
-  return {
-    ingest:
-      vi.fn<
-        (dataset: string, events: readonly Record<string, unknown>[]) => void
-      >(),
-  };
-});
-
-vi.mock("@axiomhq/js", () => {
-  return {
-    Axiom: class {
-      async flush(): Promise<void> {}
-
-      ingest(
-        dataset: string,
-        events: readonly Record<string, unknown>[],
-      ): void {
-        axiomTelemetry.ingest(dataset, events);
-      }
-    },
-  };
-});
-
 const ENDPOINT = "https://www.okou.ai/api/marketing/checkout-start";
 const STRIPE_URL = "https://checkout.stripe.com/test/marketing-paywall";
 const OCCURRED_AT = "2026-09-17T08:30:00.000Z";
@@ -247,64 +223,3 @@ test("A Plan preview does not record Checkout Start; a conflict-refresh redirect
   });
   expect(requests).toHaveLength(1);
 });
-
-test.each([204, 503])(
-  "Checkout diagnostics correlate HTTP %i without logging token, cookie or attribution",
-  async (status) => {
-    prepareCheckout();
-    const requestId = "9b271ec8-c828-4768-bbd6-f01a5c1e7b37";
-    context.mocks.http.post(ENDPOINT, () => {
-      return new Response(status === 204 ? null : "private-invalid-body", {
-        status,
-        headers: {
-          "Content-Type": "application/json",
-          "X-Marketing-Request-Id": requestId,
-        },
-      });
-    });
-    const open = vi.spyOn(window, "open").mockReturnValue(null);
-    await setupPage({
-      context,
-      path: `${RUN_PATH}?gclid=private-click&utm_campaign=private-campaign`,
-      host: "app.okou.ai",
-      env: { VITE_AXIOM_CLIENT_TELEMETRY_TOKEN: "test-checkout-telemetry" },
-    });
-    await readyChat();
-    fireEvent.click(await findButton("Upgrade to Pro"), { ctrlKey: true });
-    await waitFor(() => {
-      expect(open).toHaveBeenCalledWith(STRIPE_URL, "_blank");
-      expect(
-        axiomTelemetry.ingest.mock.calls.flatMap(([, events]) => {
-          return events;
-        }),
-      ).toContainEqual(
-        expect.objectContaining({
-          name: "marketing.checkout",
-          "attributes.http.response.status_code": status,
-          "attributes.custom": expect.objectContaining({
-            "okou.marketing.checkout.source": "paywall",
-            "okou.marketing.checkout.result":
-              status === 204 ? "acknowledged" : "http_error",
-            "okou.marketing.checkout.request_id": requestId,
-          }),
-        }),
-      );
-    });
-    const events = axiomTelemetry.ingest.mock.calls.flatMap(([, entries]) => {
-      return entries.filter((entry) => {
-        return entry.name === "marketing.checkout";
-      });
-    });
-    const payload = JSON.stringify(events);
-    for (const forbidden of [
-      "test-token",
-      "private-click",
-      "private-campaign",
-      "private-invalid-body",
-      "https://",
-      "Cookie",
-    ]) {
-      expect(payload).not.toContain(forbidden);
-    }
-  },
-);

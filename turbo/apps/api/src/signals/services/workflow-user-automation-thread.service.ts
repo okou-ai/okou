@@ -10,7 +10,7 @@ import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { ReadonlyDb } from "../external/db";
 import {
@@ -109,6 +109,43 @@ async function resolveAutomationChatThreadTitle(
   );
 }
 
+interface WorkflowUserAutomationThreadOwner {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly workflowId: string;
+}
+
+/** The one binding row a workflow's automations share for this owner. */
+function workflowUserAutomationThreadOwnerCondition(
+  owner: WorkflowUserAutomationThreadOwner,
+) {
+  return and(
+    eq(workflowUserAutomationThreads.orgId, owner.orgId),
+    eq(workflowUserAutomationThreads.userId, owner.userId),
+    eq(workflowUserAutomationThreads.workflowId, owner.workflowId),
+  );
+}
+
+/**
+ * Read the binding without the lock thread deletion conflicts with.
+ *
+ * Deletion locks a thread and then every binding pointing at it. A reuse that
+ * found its destination under the binding lock could only lock that thread
+ * afterwards, which is the opposite order, so the destination is discovered
+ * with an ordinary read and revalidated once both locks are held.
+ */
+async function readWorkflowUserAutomationThreadBinding(
+  db: Pick<ReadonlyDb, "select">,
+  owner: WorkflowUserAutomationThreadOwner,
+): Promise<{ readonly chatThreadId: string | null } | null> {
+  const [binding] = await db
+    .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+    .from(workflowUserAutomationThreads)
+    .where(workflowUserAutomationThreadOwnerCondition(owner))
+    .limit(1);
+  return binding ?? null;
+}
+
 export async function loadWorkflowUserAutomationThreadId(
   db: Pick<ReadonlyDb, "select">,
   args: {
@@ -117,18 +154,8 @@ export async function loadWorkflowUserAutomationThreadId(
     readonly workflowId: string;
   },
 ): Promise<string | null> {
-  const [thread] = await db
-    .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-    .from(workflowUserAutomationThreads)
-    .where(
-      and(
-        eq(workflowUserAutomationThreads.orgId, args.orgId),
-        eq(workflowUserAutomationThreads.userId, args.userId),
-        eq(workflowUserAutomationThreads.workflowId, args.workflowId),
-      ),
-    )
-    .limit(1);
-  return thread?.chatThreadId ?? null;
+  const binding = await readWorkflowUserAutomationThreadBinding(db, args);
+  return binding?.chatThreadId ?? null;
 }
 
 /**
@@ -149,9 +176,11 @@ export async function disableThreadBoundWorkflowAutomations(
     "orgId" | "ownerUserId" | "eventType" | "eventConfig" | "eventConnectorId"
   >[]
 > {
-  // Automation creation locks the same binding before it returns. Taking that
-  // lock first ensures an automation cannot join this thread between the
-  // disable update and the thread delete.
+  // Automation creation locks the same binding before it returns, and only
+  // after locking the destination this caller already holds. Taking the binding
+  // lock here ensures an automation cannot join this thread between the disable
+  // update and the thread delete, without either side waiting on the other's
+  // first lock.
   const bindings = await db
     .select({ workflowId: workflowUserAutomationThreads.workflowId })
     .from(workflowUserAutomationThreads)
@@ -251,6 +280,72 @@ async function createAutomationChatThread(
   return thread.id;
 }
 
+/**
+ * Serialize one owner's binding resolution for the rest of the transaction.
+ *
+ * The row locks below follow thread deletion's thread → binding order, so the
+ * destination must be discovered before the binding row is locked. This key
+ * keeps a second resolution from binding a destination inside that window: a
+ * thread first seen under the binding lock could only be locked after it, which
+ * is the inversion this function exists to prevent. Deletion never takes this
+ * key, so it adds no new wait to that path.
+ */
+async function lockWorkflowUserAutomationThreadResolution(
+  db: ChatThreadEventTransaction,
+  owner: WorkflowUserAutomationThreadOwner,
+): Promise<void> {
+  const key = `workflow_user_automation_thread:${owner.orgId}:${owner.userId}:${owner.workflowId}`;
+  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
+}
+
+/**
+ * Make the binding row exist and report the destination it currently holds.
+ *
+ * A concurrent creator is waited out by the insert itself, which takes no row
+ * lock on the conflicting binding, so the destination it committed is visible
+ * to the ordinary read that follows and can still be locked first.
+ */
+async function discoverWorkflowUserAutomationThreadBinding(
+  db: ChatThreadEventTransaction,
+  args: WorkflowUserAutomationThreadOwner & { readonly currentTime: Date },
+): Promise<string | null> {
+  const existing = await readWorkflowUserAutomationThreadBinding(db, args);
+  if (existing) {
+    return existing.chatThreadId;
+  }
+  await db
+    .insert(workflowUserAutomationThreads)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.workflowId,
+      createdAt: args.currentTime,
+      updatedAt: args.currentTime,
+    })
+    .onConflictDoNothing({
+      target: [
+        workflowUserAutomationThreads.orgId,
+        workflowUserAutomationThreads.userId,
+        workflowUserAutomationThreads.workflowId,
+      ],
+    });
+  const inserted = await readWorkflowUserAutomationThreadBinding(db, args);
+  return inserted?.chatThreadId ?? null;
+}
+
+/** Lock a discovered destination exactly the way thread deletion locks it. */
+async function lockBoundAutomationChatThread(
+  db: ChatThreadEventTransaction,
+  chatThreadId: string,
+): Promise<string | null> {
+  const [thread] = await db
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, chatThreadId))
+    .for("update");
+  return thread?.id ?? null;
+}
+
 export async function ensureWorkflowUserAutomationThread(
   db: ChatThreadEventTransaction,
   args: {
@@ -283,71 +378,42 @@ export async function ensureWorkflowUserAutomationThread(
     )
     .for("key share");
 
-  const [existing] = await db
+  await lockWorkflowUserAutomationThreadResolution(db, args);
+
+  const discovered = await discoverWorkflowUserAutomationThreadBinding(
+    db,
+    args,
+  );
+  const lockedThreadId =
+    discovered === null
+      ? null
+      : await lockBoundAutomationChatThread(db, discovered);
+  // The binding lock still serializes creation; it is now taken after the
+  // destination it names, so it can no longer close a cycle with deletion.
+  const [binding] = await db
     .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
     .from(workflowUserAutomationThreads)
-    .where(
-      and(
-        eq(workflowUserAutomationThreads.orgId, args.orgId),
-        eq(workflowUserAutomationThreads.userId, args.userId),
-        eq(workflowUserAutomationThreads.workflowId, args.workflowId),
-      ),
-    )
+    .where(workflowUserAutomationThreadOwnerCondition(args))
     .limit(1)
     .for("update");
-  if (existing?.chatThreadId) {
+  if (binding?.chatThreadId) {
+    if (binding.chatThreadId !== lockedThreadId) {
+      // Only deleting a destination detaches a binding, and that deletion needs
+      // the row lock taken above; the resolution key keeps a concurrent rebind
+      // out of the window before it. Fail instead of locking out of order.
+      throw new Error(
+        "Workflow automation chat thread binding changed destination",
+      );
+    }
     // A reused binding is as much a Morning Brief destination as a fresh one,
     // and this thread may predate the classification column entirely.
     await recordOfficialWorkflowThreadProvenance(db, {
-      chatThreadId: existing.chatThreadId,
+      chatThreadId: binding.chatThreadId,
       userId: args.userId,
       orgId: args.orgId,
       workflowIds: [args.workflowId],
     });
-    return existing.chatThreadId;
-  }
-
-  if (!existing) {
-    const [inserted] = await db
-      .insert(workflowUserAutomationThreads)
-      .values({
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        createdAt: args.currentTime,
-        updatedAt: args.currentTime,
-      })
-      .onConflictDoNothing({
-        target: [
-          workflowUserAutomationThreads.orgId,
-          workflowUserAutomationThreads.userId,
-          workflowUserAutomationThreads.workflowId,
-        ],
-      })
-      .returning({ id: workflowUserAutomationThreads.id });
-    if (!inserted) {
-      const [conflicting] = await db
-        .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-        .from(workflowUserAutomationThreads)
-        .where(
-          and(
-            eq(workflowUserAutomationThreads.orgId, args.orgId),
-            eq(workflowUserAutomationThreads.userId, args.userId),
-            eq(workflowUserAutomationThreads.workflowId, args.workflowId),
-          ),
-        )
-        .limit(1)
-        .for("update");
-      if (conflicting?.chatThreadId) {
-        await recordOfficialWorkflowThreadProvenance(db, {
-          chatThreadId: conflicting.chatThreadId,
-          userId: args.userId,
-          orgId: args.orgId,
-          workflowIds: [args.workflowId],
-        });
-        return conflicting.chatThreadId;
-      }
-    }
+    return binding.chatThreadId;
   }
 
   const title = await resolveAutomationChatThreadTitle(db, {
@@ -376,13 +442,7 @@ export async function ensureWorkflowUserAutomationThread(
   const [updated] = await db
     .update(workflowUserAutomationThreads)
     .set({ chatThreadId, updatedAt: args.currentTime })
-    .where(
-      and(
-        eq(workflowUserAutomationThreads.orgId, args.orgId),
-        eq(workflowUserAutomationThreads.userId, args.userId),
-        eq(workflowUserAutomationThreads.workflowId, args.workflowId),
-      ),
-    )
+    .where(workflowUserAutomationThreadOwnerCondition(args))
     .returning({ chatThreadId: workflowUserAutomationThreads.chatThreadId });
   if (!updated?.chatThreadId) {
     throw new Error("Failed to persist workflow automation chat thread");

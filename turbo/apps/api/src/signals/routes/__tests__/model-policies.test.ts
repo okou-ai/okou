@@ -166,51 +166,57 @@ async function makeLimitedFreeWorkspace(
 }
 
 describe("GET/PUT /api/model-policies", () => {
-  it("keeps the successor usable after rejecting retired policy and preference writes", async () => {
-    const fixture = seedFixture();
-    useSession(fixture);
-    const client = apiClient();
-    const existing = await accept(
-      client.list({ headers: authHeaders() }),
-      [200],
-    );
-    const retired = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          policies: [
-            ...toUpdate(existing.body),
-            makeBuiltInPolicy("claude-fable-5"),
-          ],
-        },
-      }),
-      [400],
-    );
-    expect(retired.body.error.message).toBe(
-      "Claude Fable 5 has been retired. Select Claude Fable 5.1.",
-    );
+  it.each([
+    ["claude-fable-5", "claude-fable-5-1"],
+    ["gpt-5.5", "gpt-5.6-luna"],
+  ] as const)(
+    "rejects retired %s policy and preference writes while keeping %s usable",
+    async (retiredModel, activeModel) => {
+      const fixture = seedFixture();
+      useSession(fixture);
+      const client = apiClient();
+      const existing = await accept(
+        client.list({ headers: authHeaders() }),
+        [200],
+      );
+      const retired = await accept(
+        client.update({
+          headers: authHeaders(),
+          body: {
+            policies: [
+              ...toUpdate(existing.body),
+              makeBuiltInPolicy(retiredModel),
+            ],
+          },
+        }),
+        [400],
+      );
+      expect(retired.body.error.message).toBe(
+        "This model has been retired. Select another available model.",
+      );
 
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    const oldPreference = await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "claude-fable-5", serviceTier: null },
-      }),
-      [400],
-    );
-    expect(oldPreference.body.error.message).toBe(retired.body.error.message);
-    const successor = await accept(
-      preferences.update({
-        headers: authHeaders(),
-        body: { selectedModel: "claude-fable-5-1", serviceTier: null },
-      }),
-      [200],
-    );
-    expect(successor.body.selectedModel).toBe("claude-fable-5-1");
-  });
+      const preferences = setupApp({
+        context,
+        routes: userModelPreferenceRoutes,
+      })(userModelPreferenceContract);
+      const oldPreference = await accept(
+        preferences.update({
+          headers: authHeaders(),
+          body: { selectedModel: retiredModel, serviceTier: null },
+        }),
+        [400],
+      );
+      expect(oldPreference.body.error.message).toBe(retired.body.error.message);
+      const successor = await accept(
+        preferences.update({
+          headers: authHeaders(),
+          body: { selectedModel: activeModel, serviceTier: null },
+        }),
+        [200],
+      );
+      expect(successor.body.selectedModel).toBe(activeModel);
+    },
+  );
 
   it("returns 401 for unauthenticated reads and writes", async () => {
     const client = apiClient();
@@ -815,7 +821,7 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it("keeps recently active GPT 5.5 and Claude Sonnet 4.6 selectable", async () => {
+  it("keeps Claude Sonnet 4.6 selectable", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
     const client = apiClient();
@@ -830,7 +836,6 @@ describe("GET/PUT /api/model-policies", () => {
         body: {
           policies: [
             ...toUpdate(listResponse.body),
-            makeBuiltInPolicy("gpt-5.5"),
             makeBuiltInPolicy("claude-sonnet-4-6"),
           ],
         },
@@ -840,7 +845,6 @@ describe("GET/PUT /api/model-policies", () => {
 
     expect(response.body.policies).toStrictEqual(
       expect.arrayContaining([
-        expect.objectContaining({ model: "gpt-5.5" }),
         expect.objectContaining({ model: "claude-sonnet-4-6" }),
       ]),
     );

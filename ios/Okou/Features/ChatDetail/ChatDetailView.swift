@@ -4,6 +4,10 @@ struct ChatDetailView: View {
   @Bindable var store: WorkspaceStore
   let thread: ChatThread
   @FocusState private var isComposing: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var hasPositionedHistory = false
+  @State private var followsLatestMessage = true
+  @State private var isAwayFromBottom = false
 
   private var history: ChatHistory { store.histories[thread.id] ?? .empty }
   private var messages: [ChatMessage] { store.messages(for: thread.id) }
@@ -14,18 +18,21 @@ struct ChatDetailView: View {
   var body: some View {
     let displayedMessages = messages
     ScrollViewReader { proxy in
-      ScrollView {
+      List {
+        ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
+          let continuesAssistantGroup =
+            message.role == .assistant && index > 0
+            && displayedMessages[index - 1].role == .assistant
+          messageRow(message, showsAvatar: !continuesAssistantGroup)
+            .listRowInsets(
+              EdgeInsets(
+                top: index == 0 ? 20 : (continuesAssistantGroup ? 8 : 24),
+                leading: 20, bottom: 0, trailing: 20)
+            )
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        }
         VStack(alignment: .leading, spacing: 24) {
-          VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(displayedMessages.enumerated()), id: \.element.id) { index, message in
-              let continuesAssistantGroup =
-                message.role == .assistant && index > 0
-                && displayedMessages[index - 1].role == .assistant
-              messageRow(message, showsAvatar: !continuesAssistantGroup)
-                .padding(.top, index == 0 || continuesAssistantGroup ? 0 : 16)
-                .id(message.id)
-            }
-          }
           if history.executionState.isActive {
             HStack(spacing: 10) {
               ProgressView().controlSize(.small)
@@ -42,15 +49,66 @@ struct ChatDetailView: View {
             )
             .font(.caption).foregroundStyle(.secondary)
           }
-          Color.clear.frame(height: 1).id("conversation-bottom")
+          Color.clear.frame(height: 1)
         }
-        .padding(20)
+        .listRowInsets(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .id("conversation-bottom")
       }
-      .defaultScrollAnchor(.bottom, for: .initialOffset)
+      .listStyle(.plain)
+      .listRowSpacing(0)
+      .environment(\.defaultMinListRowHeight, 0)
+      .scrollContentBackground(.hidden)
       .scrollDismissesKeyboard(.interactively)
       .refreshable { await store.loadHistory(thread.id) }
-      .onChange(of: displayedMessages.last?.id) {
-        withAnimation { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+      .onScrollPhaseChange { _, phase in
+        if phase == .tracking || phase == .interacting { followsLatestMessage = false }
+      }
+      .onScrollGeometryChange(for: Bool.self) { geometry in
+        geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY > 20
+      } action: { _, awayFromBottom in
+        isAwayFromBottom = awayFromBottom
+      }
+      .overlay(alignment: .bottom) {
+        if isAwayFromBottom && hasPositionedHistory && !displayedMessages.isEmpty {
+          Button {
+            followsLatestMessage = true
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+              proxy.scrollTo("conversation-bottom", anchor: .bottom)
+            }
+          } label: {
+            Image(systemName: "arrow.down")
+              .font(.system(size: 18, weight: .medium))
+              .frame(width: 44, height: 44)
+              .background(.regularMaterial, in: Circle())
+              .overlay(Circle().strokeBorder(.quaternary, lineWidth: 0.5))
+              .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Scroll to bottom")
+          .accessibilityIdentifier("scroll-to-bottom")
+          .padding(.bottom, 16)
+        }
+      }
+      .onScrollGeometryChange(for: CGSize.self) { geometry in
+        geometry.contentSize
+      } action: { _, _ in
+        if followsLatestMessage && !displayedMessages.isEmpty {
+          proxy.scrollTo("conversation-bottom", anchor: .bottom)
+        }
+      }
+      .task(id: displayedMessages.last?.id) {
+        guard !displayedMessages.isEmpty else { return }
+        followsLatestMessage = true
+        await Task.yield()
+        guard !Task.isCancelled else { return }
+        if hasPositionedHistory {
+          withAnimation { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+        } else {
+          proxy.scrollTo("conversation-bottom", anchor: .bottom)
+          hasPositionedHistory = true
+        }
       }
     }
     .navigationTitle(thread.displayTitle)
