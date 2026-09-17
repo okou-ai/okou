@@ -91,11 +91,14 @@ export async function holdWorkflowCopyPublicationFixture(
       return result.blocked;
     },
     operationIsBlocked: async (operation) => {
+      // Webhook access revalidation can wait on FOR SHARE before thread
+      // creation reaches its FOR KEY SHARE or automation insert.
       const operationQuery =
         operation === "thread-deletion"
           ? sql`operation.query ILIKE '%update "workflow_automations"%'`
           : sql`(
               operation.query ILIKE '%insert into "workflow_automations"%'
+              OR operation.query ILIKE '%from "workflows"%for share%'
               OR operation.query ILIKE '%from "workflows"%for key share%'
             )`;
       const [result] = await executeRawRows(
