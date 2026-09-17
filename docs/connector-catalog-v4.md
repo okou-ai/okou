@@ -97,10 +97,9 @@ bootstrap target has an accepted v4 snapshot and the deployment/rollback window
 no longer needs v3 reads. Retaining immutable v3 objects and rows for older
 binaries is a separate obligation; removing this bridge does not delete them.
 
-The new diagnostics contract also accepts an omitted generation field from older
-serving/rollback APIs. The same cleanup issue owns removing that client tolerance
-after those APIs leave the supported window, along with any separately introduced
-client bridges. There is no serving selector or warm-up endpoint to retire.
+Diagnostics are staff-only behind `OkouDebug` and use the current v4 contract
+without an old-API compatibility bridge. There is no serving selector or warm-up
+endpoint to retire.
 
 ## Producer evidence
 

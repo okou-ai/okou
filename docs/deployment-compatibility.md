@@ -1867,8 +1867,6 @@ and rollback requirements. MCP execution and Automatic OAuth remain separate
 deliveries. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns v3 read
 bridge cleanup after every serving source and supported bootstrap target has
 accepted v4 and the deployment/rollback window no longer needs the bridge.
-That cleanup also removes the diagnostic contract's tolerance for older APIs
-omitting the generation field after those APIs leave the supported window.
 Historical v3 object and row retention for old binaries remains independent.
 
 ## PostHog CIMD OAuth
