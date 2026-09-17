@@ -37,8 +37,10 @@ import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import {
+  assertUserStableContextGenerationUnlockedFixture,
   beginWorkflowStableContextPublicationFixture,
   countAgentStableContextPublicationsFixture,
+  holdAgentStableContextGenerationFixture,
 } from "../../../test-fixtures/pi-stable-context";
 import { createDeferredPromise } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
@@ -1144,6 +1146,60 @@ describe("workflows", () => {
         [200],
       ),
     ).resolves.toMatchObject({ body: { visibility: "public" } });
+  });
+
+  it("takes both visibility generation scopes in canonical order", async () => {
+    const actor = user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    const agent = await createAgent(actor, {
+      displayName: "Visibility Lock Order Agent",
+      visibility: "public",
+    });
+    await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `public-lock-order-${randomUUID().slice(0, 8)}`,
+      visibility: "public",
+      instruction: "# settled public workflow",
+    });
+    const privateWorkflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `private-lock-order-${randomUUID().slice(0, 8)}`,
+      instruction: "# private workflow",
+    });
+    const signal = AbortSignal.timeout(10_000);
+    const held = await holdAgentStableContextGenerationFixture(
+      { orgId: actor.orgId, agentId: agent.agentId },
+      signal,
+    );
+    onTestFinished(async () => {
+      held.release();
+      await held.done;
+    });
+
+    const publication = visibilityClient().publish({
+      headers: authHeaders(actor),
+      params: { workflowId: privateWorkflow.body.id },
+    });
+    await expect
+      .poll(async () => {
+        return (await held.blockedPids()).length;
+      })
+      .toBeGreaterThan(0);
+    await expect(
+      assertUserStableContextGenerationUnlockedFixture({
+        orgId: actor.orgId,
+        agentId: agent.agentId,
+        userId: actor.userId,
+      }),
+    ).resolves.toBeUndefined();
+
+    held.release();
+    await expect(held.done).resolves.toBeUndefined();
+    await expect(accept(publication, [200])).resolves.toMatchObject({
+      body: { visibility: "public" },
+    });
   });
 
   it("retires an abandoned opposite-scope publication during a valid visibility transition", async () => {

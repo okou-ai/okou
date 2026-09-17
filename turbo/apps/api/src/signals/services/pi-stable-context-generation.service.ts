@@ -723,6 +723,52 @@ export async function completePiStableContextPublication(
 }
 
 /**
+ * Materialize and lock generation scopes in one global order. Multi-scope
+ * writers must call this before inspecting publication keys so they never
+ * retain a user generation while waiting for the shared Agent generation.
+ */
+export async function lockPiStableContextGenerationScopes(
+  db: Db,
+  scopes: readonly PiStableContextScope[],
+): Promise<void> {
+  const canonical = [
+    ...new Map(
+      scopes.map((scope) => {
+        return [
+          `${scope.orgId}\0${scope.agentId}\0${subjectForScope(scope)}`,
+          scope,
+        ] as const;
+      }),
+    ).entries(),
+  ]
+    .sort(([left], [right]) => {
+      return left.localeCompare(right);
+    })
+    .map(([, scope]) => {
+      return scope;
+    });
+  for (const scope of canonical) {
+    await db
+      .insert(piStableContextGenerations)
+      .values({
+        orgId: scope.orgId,
+        agentId: scope.agentId,
+        subject: subjectForScope(scope),
+      })
+      .onConflictDoNothing();
+    const [locked] = await db
+      .select({ generation: piStableContextGenerations.generation })
+      .from(piStableContextGenerations)
+      .where(generationScopeCondition(scope))
+      .for("update")
+      .limit(1);
+    if (!locked) {
+      throw new Error("Stable-context generation lock is unavailable");
+    }
+  }
+}
+
+/**
  * Lock and detect any unfinished publication for one source key. Callers that
  * mutate source ownership use this after locking the source row, so a metadata
  * commit cannot be retired before its matching Storage commit.

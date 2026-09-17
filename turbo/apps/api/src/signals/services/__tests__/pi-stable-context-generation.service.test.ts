@@ -35,6 +35,7 @@ import {
   invalidatePiStableContext,
   invalidatePiStableContextsForUser,
   lockPiStableContextPublication,
+  piStableContextWorkflowInvalidationOptions,
   PI_STABLE_CONTEXT_AGENT_SUBJECT,
   retirePiStableContextPublication,
 } from "../pi-stable-context-generation.service";
@@ -587,6 +588,221 @@ describe("Pi stable context generation fences", () => {
         preparePiStableContext(updatedArgs, AbortSignal.timeout(5000)),
       ),
     ).resolves.toMatchObject({ kind: "ready", prompt: updatedPrompt });
+  });
+
+  it("does not publish a captured V1 snapshot after recapturing Workflow V2", async () => {
+    const fixture = await seed();
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    const workflowId = randomUUID();
+    const storageId = randomUUID();
+    const v1 = randomUUID().replaceAll("-", "").repeat(2);
+    const v2 = randomUUID().replaceAll("-", "").repeat(2);
+    const workflowName = `recapture-${workflowId.slice(0, 8)}`;
+    const storageName = getCustomSkillStorageName(workflowId);
+    storageIds.push(storageId);
+    await db.insert(workflows).values({
+      id: workflowId,
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+      ownerUserId: fixture.userId,
+      name: workflowName,
+      instruction: "# Workflow V1",
+      visibility: "private",
+      createdBy: fixture.userId,
+      updatedBy: fixture.userId,
+    });
+    await db.insert(storages).values({
+      id: storageId,
+      orgId: fixture.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: storageName,
+      s3Prefix: `test/pi-stable-context/${storageId}`,
+    });
+    await db.insert(storageVersions).values([
+      {
+        id: v1,
+        storageId,
+        s3Key: `test/pi-stable-context/${storageId}/${v1}`,
+        archiveSize: 0,
+        fileCount: 0,
+        createdBy: fixture.userId,
+      },
+      {
+        id: v2,
+        storageId,
+        s3Key: `test/pi-stable-context/${storageId}/${v2}`,
+        archiveSize: 0,
+        fileCount: 0,
+        createdBy: fixture.userId,
+      },
+    ]);
+    await db
+      .update(storages)
+      .set({ headVersionId: v1 })
+      .where(eq(storages.id, storageId));
+    const mountPath = `/home/user/.claude/skills/${workflowName}`;
+    const v1Mount = {
+      orgId: fixture.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: storageName,
+      storageId,
+      versionId: v1,
+      mountPath,
+      archiveSize: 0,
+      empty: true,
+    } as const;
+    const semantic = {
+      promptInputs: {
+        privateArtifactsEnabled: false,
+        bankingEnabled: false,
+        larkEnabled: false,
+        deliveryFormatGuidanceEnabled: false,
+        introVideoEnabled: false,
+        customConnectorMcpEnabled: false,
+        triggerSource: "web" as const,
+        cloudBrowserEnabled: undefined,
+      },
+      feishuPlatform: null,
+      connectorScope: {
+        allowedConnectorSlugs: [],
+        allowedCustomConnectorIds: [],
+        customConnectorGrants: [],
+        customConnectorDefinitions: [],
+        workflows: [
+          { workflowId, name: workflowName, officialDefinitionName: null },
+        ],
+      },
+    } as const;
+    const variantDigest = "c".repeat(64);
+    const args = {
+      db,
+      owner: {
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        resourceOwner: {
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+        },
+      },
+      variantDigest,
+      buildPrompt: () => {
+        return {
+          agentIdentity: "captured V1 identity",
+          executionLimit: "captured limit",
+          tools: "captured tools",
+        };
+      },
+      semantic,
+      source: {
+        catalogIdentity: null,
+        agentIdentityDigest: "captured-agent",
+        featurePromptDigest: "captured-feature",
+        permissionDigest: "captured-permission",
+        connectorScopeDigest: "captured-workflow-v1",
+        validityHorizon: null,
+        promptSchemaVersion: 1,
+        runtimeSchemaVersion: 1,
+      },
+      mounts: [v1Mount],
+      persistedStorageMounts: [
+        {
+          orgId: v1Mount.orgId,
+          userId: v1Mount.userId,
+          name: v1Mount.name,
+          storageId: v1Mount.storageId,
+          version: v1,
+          mountPath,
+        },
+      ],
+      eligible: true,
+      checkedAt: new Date("2026-09-17T00:00:00.000Z"),
+      beforeSourceGenerationInitialization: async () => {
+        await db.transaction(async (tx) => {
+          await tx
+            .update(workflows)
+            .set({ instruction: "# Workflow V2" })
+            .where(eq(workflows.id, workflowId));
+          await tx
+            .update(storages)
+            .set({ headVersionId: v2 })
+            .where(eq(storages.id, storageId));
+          await invalidatePiStableContext(
+            tx,
+            {
+              orgId: fixture.orgId,
+              userId: fixture.userId,
+              agentId: fixture.agentId,
+            },
+            piStableContextWorkflowInvalidationOptions({
+              kind: "upsert",
+              workflow: {
+                workflowId,
+                name: workflowName,
+                officialDefinitionName: null,
+              },
+            }),
+          );
+        });
+      },
+    } as const;
+
+    await expect(
+      createStore().get(
+        preparePiStableContext(args, AbortSignal.timeout(5000)),
+      ),
+    ).resolves.toMatchObject({ kind: "missing" });
+    const [pending] = await db
+      .select({
+        id: piStableContextHeads.id,
+        status: piStableContextHeads.status,
+        input: piStableContextHeads.input,
+        artifactDigest: piStableContextHeads.artifactDigest,
+      })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.variantDigest, variantDigest));
+    expect(pending).toMatchObject({
+      status: "pending",
+      artifactDigest: null,
+      input: { storageMounts: [{ storageId, versionId: v2 }] },
+    });
+
+    await expect(
+      executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
+    ).resolves.toMatchObject({ claimed: 1, ready: 1 });
+    const [ready] = await db
+      .select({
+        status: piStableContextHeads.status,
+        input: piStableContextHeads.input,
+        artifactDigest: piStableContextHeads.artifactDigest,
+      })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.variantDigest, variantDigest));
+    expect(ready).toMatchObject({
+      status: "ready",
+      input: { storageMounts: [{ storageId, versionId: v2 }] },
+    });
+    expect(ready?.artifactDigest).not.toBeNull();
+    if (!ready?.artifactDigest) {
+      throw new Error("Expected recaptured Workflow V2 artifact");
+    }
+    await expect(
+      db
+        .select({
+          storageId: piStableContextArtifactResources.storageId,
+          storageVersionId:
+            piStableContextArtifactResources.storageVersionId,
+        })
+        .from(piStableContextArtifactResources)
+        .where(
+          eq(
+            piStableContextArtifactResources.artifactDigest,
+            ready.artifactDigest,
+          ),
+        ),
+    ).resolves.toStrictEqual([{ storageId, storageVersionId: v2 }]);
   });
 
   it("coalesces two Storage writes while aggregate demand is pending", async () => {

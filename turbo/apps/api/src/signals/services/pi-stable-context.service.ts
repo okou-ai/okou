@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   piResourceSnapshotSchema,
@@ -801,6 +802,17 @@ function indexedProjection(
   return piStableContextProjectionFromInput(input, snapshot);
 }
 
+function canonicalSnapshotMatchesDemand(
+  args: PreparePiStableContextArgs,
+  generations: SourceGenerations,
+  demand: StableContextDemand,
+): boolean {
+  return isDeepStrictEqual(
+    buildInputIdentity(args, generations).storageMounts,
+    demand.input.storageMounts,
+  );
+}
+
 async function publishCanonicalRepair(
   db: Db,
   demand: StableContextDemand,
@@ -899,7 +911,8 @@ export function preparePiStableContext(
     const canonical = await get(prepareCanonical(args, signal));
     signal?.throwIfAborted();
     const published =
-      demand === null
+      demand === null ||
+      !canonicalSnapshotMatchesDemand(args, generations, demand)
         ? false
         : await publishCanonicalRepair(args.db, demand, canonical.snapshot);
     signal?.throwIfAborted();

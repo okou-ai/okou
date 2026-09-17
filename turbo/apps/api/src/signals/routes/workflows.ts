@@ -115,8 +115,10 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
+import { admitPiStableContextSubjects } from "../services/pi-stable-context-erasure.service";
 import {
   invalidatePiStableContext,
+  lockPiStableContextGenerationScopes,
   lockPiStableContextPublicationKey,
   piStableContextWorkflowInvalidationOptions,
   piStableContextWorkflowPublicationKey,
@@ -1964,6 +1966,14 @@ async function applyVisibilityUpdate(
   },
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.workflow.orgId },
+        { subjectKind: "user", subjectId: args.workflow.ownerUserId },
+      ]))
+    ) {
+      return false;
+    }
     const workflowCondition = and(
       eq(workflows.id, args.workflow.id),
       eq(workflows.orgId, args.workflow.orgId),
@@ -1990,6 +2000,7 @@ async function applyVisibilityUpdate(
         userId: args.workflow.ownerUserId,
       },
     ] as const;
+    await lockPiStableContextGenerationScopes(tx, scopes);
     const publicationKey = piStableContextWorkflowPublicationKey(
       args.workflow.id,
     );

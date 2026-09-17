@@ -9,10 +9,13 @@ import {
 } from "@okouai/db/schema/pi-stable-context";
 import { storages } from "@okouai/db/schema/storage";
 import { createStore } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { onTestFinished } from "vitest";
+import { z } from "zod";
 
+import { executeRawRows } from "../lib/db-raw-rows";
 import { writeDb$ } from "../signals/external/db";
+import { createDeferredPromise } from "../signals/utils";
 import {
   clearStableAgentPromptBuildHookForTest,
   setStableAgentPromptBuildHookForTest,
@@ -68,6 +71,100 @@ export async function countAgentStableContextPublicationsFixture(
     .from(piStableContextPublications)
     .where(eq(piStableContextPublications.agentId, agentId));
   return rows.length;
+}
+
+export async function countUserStableContextGenerationsFixture(args: {
+  readonly agentId: string;
+  readonly userId: string;
+}): Promise<number> {
+  const rows = await store
+    .set(writeDb$)
+    .select({ subject: piStableContextGenerations.subject })
+    .from(piStableContextGenerations)
+    .where(
+      and(
+        eq(piStableContextGenerations.agentId, args.agentId),
+        eq(piStableContextGenerations.subject, args.userId),
+      ),
+    );
+  return rows.length;
+}
+
+const backendPidSchema = z.object({ pid: z.int() });
+
+export async function holdAgentStableContextGenerationFixture(
+  args: { readonly orgId: string; readonly agentId: string },
+  signal: AbortSignal,
+) {
+  const started = createDeferredPromise<number>(signal);
+  const released = createDeferredPromise<void>(signal);
+  const db = store.set(writeDb$);
+  const done = db.transaction(async (tx) => {
+    const [generation] = await tx
+      .select({ generation: piStableContextGenerations.generation })
+      .from(piStableContextGenerations)
+      .where(
+        and(
+          eq(piStableContextGenerations.orgId, args.orgId),
+          eq(piStableContextGenerations.agentId, args.agentId),
+          eq(piStableContextGenerations.subject, "@agent"),
+        ),
+      )
+      .for("update")
+      .limit(1);
+    if (!generation) {
+      throw new Error("Expected Agent stable-context generation fixture");
+    }
+    const [backend] = await executeRawRows(
+      tx,
+      sql`SELECT pg_backend_pid() AS pid`,
+      backendPidSchema,
+    );
+    if (!backend) {
+      throw new Error("Expected generation-lock backend fixture");
+    }
+    started.resolve(backend.pid);
+    await released.promise;
+  });
+  const holderPid = await started.promise;
+  return {
+    done,
+    release() {
+      if (!released.settled()) {
+        released.resolve();
+      }
+    },
+    async blockedPids(): Promise<readonly number[]> {
+      const rows = await executeRawRows(
+        db,
+        sql`SELECT pid FROM pg_stat_activity WHERE ${holderPid} = ANY(pg_blocking_pids(pid))`,
+        backendPidSchema,
+      );
+      return rows.map((row) => {
+        return row.pid;
+      });
+    },
+  };
+}
+
+export async function assertUserStableContextGenerationUnlockedFixture(args: {
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly userId: string;
+}): Promise<void> {
+  await store.set(writeDb$).transaction(async (tx) => {
+    await tx
+      .select({ generation: piStableContextGenerations.generation })
+      .from(piStableContextGenerations)
+      .where(
+        and(
+          eq(piStableContextGenerations.orgId, args.orgId),
+          eq(piStableContextGenerations.agentId, args.agentId),
+          eq(piStableContextGenerations.subject, args.userId),
+        ),
+      )
+      .for("update", { noWait: true });
+  });
 }
 
 export async function seedPiStableContextStorageDemandFixture(args: {
