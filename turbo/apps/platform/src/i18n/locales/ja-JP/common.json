@@ -1462,6 +1462,7 @@
           "slack": {
             "confirm": "Slack に追加",
             "description": "Slack なら {{assistantName}} は誰でも @ で呼べる同僚です。",
+            "sampleChannel": "# growth",
             "scopeChannels": "招待したチャンネルしか見えません。",
             "scopeOrganization": "アカウントがチームのものになり、ワークフローは共有されます。",
             "scopeReward": "報酬はチームの残高に入ります。",

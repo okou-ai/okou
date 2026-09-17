@@ -1487,6 +1487,7 @@
           "slack": {
             "confirm": "Adicionar ao Slack",
             "description": "No Slack, o {{assistantName}} é um colega que qualquer um chama com @.",
+            "sampleChannel": "# growth",
             "scopeChannels": "Ele só enxerga os canais para os quais você o convida.",
             "scopeOrganization": "Sua conta passa a ser do time e os workflows são compartilhados.",
             "scopeReward": "A recompensa vai para o saldo do time.",

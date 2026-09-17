@@ -246,47 +246,51 @@ function ConnectorFigure() {
  * channel and who is talking in it.
  */
 function SlackFigure({ assistantName }: { assistantName: string }) {
+  const { t } = useTranslation();
   // Slack's own aubergine, so the card is recognised before it is read.
   const accent = "#4A154B";
   const mention = `@${assistantName.toLowerCase()}`;
   return (
     <TileRow>
       <span
-        className={`w-[268px] overflow-hidden ${NODE_CLASS}`}
+        className={`w-[264px] overflow-hidden ${NODE_CLASS}`}
         style={{ borderColor: `${accent}${LINE_ALPHA}` }}
       >
+        {/* A hairline, not a filled bar: the channel name is the only thing
+            that has to carry this row, and text reads as a channel where a
+            grey band reads as something still loading. */}
         <span
-          className="flex items-center gap-[6px] border-b px-[12px] py-[8px]"
-          style={{
-            borderColor: `${accent}${LINE_ALPHA}`,
-            backgroundColor: `${accent}${BAND_ALPHA}`,
-          }}
+          className="flex items-center gap-[6px] border-b px-[12px] py-[9px]"
+          style={{ borderColor: `${accent}${LINE_ALPHA}` }}
         >
-          <SlackMark size={12} />
+          <SlackMark size={13} />
           <span
             className="text-[11px] font-semibold leading-none"
             style={{ color: accent }}
           >
-            #
+            {t(($) => {
+              return $.chat.agentPage.getStarted.intro.slack.sampleChannel;
+            })}
           </span>
-          <span
-            className="h-[5px] w-[44px] rounded-full"
-            style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-          />
         </span>
         <span className="flex items-start gap-[9px] px-[12px] py-[11px]">
           <OkouAvatar size={30} />
-          <span className="flex flex-col gap-[6px] pt-[2px]">
-            <span
-              className="w-fit rounded-[3px] px-[5px] py-[2px] text-[9px] font-semibold leading-none"
-              style={{
-                backgroundColor: `${accent}${BAND_ALPHA}`,
-                color: accent,
-              }}
-            >
-              {mention}
+          <span className="flex flex-col gap-[6px] pt-[1px]">
+            <span className="flex items-center gap-[6px]">
+              <span className="text-[11px] font-semibold leading-none">
+                {assistantName}
+              </span>
+              <span
+                className="rounded-[3px] px-[5px] py-[2px] text-[9px] font-semibold leading-none"
+                style={{
+                  backgroundColor: `${accent}${BAND_ALPHA}`,
+                  color: accent,
+                }}
+              >
+                {mention}
+              </span>
             </span>
-            <Lines accent={accent} width={158} count={2} height={4} />
+            <Lines accent={accent} width={150} count={2} height={4} />
           </span>
         </span>
       </span>
@@ -319,10 +323,12 @@ function InviteFigure() {
             return (
               <span
                 key={id}
-                style={{ marginLeft: index === 0 ? 0 : -8 }}
-                className="rounded-full bg-card"
+                // A ring of paper between the busts; overlapped without it,
+                // three of them read as one shape.
+                style={{ marginLeft: index === 0 ? 0 : -7 }}
+                className="rounded-full bg-card p-[2px]"
               >
-                <Person accent={accent} size={26} />
+                <Person accent={accent} size={24} />
               </span>
             );
           })}

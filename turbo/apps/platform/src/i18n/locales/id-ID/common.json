@@ -1462,6 +1462,7 @@
           "slack": {
             "confirm": "Tambahkan ke Slack",
             "description": "Di Slack, {{assistantName}} jadi rekan kerja yang bisa di-@ siapa saja.",
+            "sampleChannel": "# growth",
             "scopeChannels": "Ia hanya melihat kanal tempat Anda mengundangnya.",
             "scopeOrganization": "Akun Anda menjadi akun tim, sehingga workflow ikut dibagikan.",
             "scopeReward": "Hadiahnya masuk ke saldo tim.",

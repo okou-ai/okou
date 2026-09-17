@@ -1462,6 +1462,7 @@
           "slack": {
             "confirm": "Slack에 추가",
             "description": "Slack에서는 {{assistantName}}이(가) 누구나 @로 부를 수 있는 동료입니다.",
+            "sampleChannel": "# growth",
             "scopeChannels": "초대한 채널만 볼 수 있습니다.",
             "scopeOrganization": "계정이 팀 계정이 되고, 워크플로가 공유됩니다.",
             "scopeReward": "보상은 팀 잔액으로 들어갑니다.",

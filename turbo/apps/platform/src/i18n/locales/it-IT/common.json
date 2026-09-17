@@ -1487,6 +1487,7 @@
           "slack": {
             "confirm": "Aggiungi a Slack",
             "description": "Su Slack {{assistantName}} è un collega che chiunque può richiamare con @.",
+            "sampleChannel": "# growth",
             "scopeChannels": "Vede solo i canali in cui lo inviti.",
             "scopeOrganization": "Il tuo account diventa del team e i workflow sono condivisi.",
             "scopeReward": "La ricompensa va sul saldo del team.",
