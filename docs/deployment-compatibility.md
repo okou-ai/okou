@@ -1672,6 +1672,28 @@ Run-lifetime missed-notification window includes observed outages; this introduc
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
 
+## Integration source links
+
+Telegram bot DMs, Teams chats, and AgentPhone DMs store their return link in
+the existing optional `source.href` field of the V1 user-message document.
+No new document fields, context columns, or migrations are introduced. Older
+Apps and APIs already accept these URLs, including `sms:`; older Apps may
+label a conversation link as an original-message link until refreshed.
+
+New Apps distinguish message links from conversation links by the provider's
+documented URL shape. Events already stored without `href` remain unlinked;
+their immutable user-message documents and archived snapshots are not rewritten.
+Telegram DMs open the bot conversation. Teams Bot Framework `a:` IDs open
+the bot chat using its `28:` recipient rather than pretending to be Graph
+`19:` chat IDs. AgentPhone DMs open Messages addressed to the inbound destination
+(the assistant number); group events do not expose a single-recipient link.
+
+Desktop adds a narrow external-navigation allowance for single-recipient
+`sms:+E164` links without query parameters or fragments. Older Desktop builds
+continue to deny these links until the Desktop update is installed; browser
+delivery does not upgrade the Electron navigation policy. Opening Messages
+requires a registered handler on the user's device and does not send a message.
+
 ## Integration input attachments
 
 New Feishu/Lark, Teams, Telegram, and AgentPhone trigger attachments use the
