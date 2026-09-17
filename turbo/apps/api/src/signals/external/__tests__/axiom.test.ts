@@ -99,7 +99,7 @@ describe("shared SDK ingestion", () => {
       session_history_requests_ms: 1200,
       session_history_encoder_pipeline_ms: 1000,
       session_history_publication_ms: 0,
-    };
+    } as const;
     const emptyTransfer = {
       ...transfer,
       session_history_transfer_source: "inline",
@@ -109,21 +109,21 @@ describe("shared SDK ingestion", () => {
       session_history_wire_codec: "none",
       session_history_codec_reason: "below_threshold",
       session_history_encoder_pipeline_ms: 0,
-    };
+    } as const;
     const failedTransfer = {
       ...operation,
       action_type: "session_history_transfer",
       success: false,
       session_history_framework: "codex",
       session_history_transfer_source: "downloaded",
-    };
+    } as const;
     const largeInlineTransfer = {
       ...transfer,
       session_history_transfer_source: "inline",
       session_history_transfer_bytes: 256 * 1024 * 1024,
       session_history_wire_bytes: 288 * 1024 * 1024,
       session_history_write_requests: 18,
-    };
+    } as const;
     const response = await accept(
       setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
         webhookTelemetryContract,
