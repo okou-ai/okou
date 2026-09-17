@@ -121,6 +121,19 @@ async function deleteScopedUsageData(
   }
 }
 
+async function revokeOwnedAgentMorningBriefDeliveries(
+  tx: Tx,
+  agentIds: readonly string[],
+): Promise<void> {
+  for (const agentId of agentIds) {
+    // Revoke unsent Morning Brief mail ownership before the Agent cascade.
+    await revokeMorningBriefDeliveryOwnership(tx, {
+      kind: "agent",
+      agentId,
+    });
+  }
+}
+
 export async function deleteClerkAgentLifecycleData(
   db: NodePgDatabase,
   scope: ClerkDeletionScope,
@@ -128,8 +141,7 @@ export async function deleteClerkAgentLifecycleData(
   const resourceBillingEnabled =
     env("X_RESOURCE_BILLING_START_DATE") !== undefined;
   if (!resourceBillingEnabled) {
-    // Keep the existing separately committed cleanup during the API rollout.
-    // Activation requires settlers and ordinary Run deleters to share admission.
+    // Keep rollout cleanup separate until settlers and Run deleters share admission.
     await deleteScopedUsageData(db, scope);
   }
   const receipt = await db.transaction(async (tx) => {
@@ -167,8 +179,7 @@ export async function deleteClerkAgentLifecycleData(
     for (const agent of candidates) {
       await lockCanonicalAgentMutation(tx, agent.id);
     }
-    // Revalidate ownership after canonical mutation locks. Lock parents before
-    // discovering children so FK inserts cannot escape the accounted cascade.
+    // Revalidate locked ownership before children can escape the accounted cascade.
     const ownedAgents =
       candidates.length === 0
         ? []
@@ -213,8 +224,7 @@ export async function deleteClerkAgentLifecycleData(
           ? eq(agentRuns.orgId, scope.orgId)
           : eq(agentRuns.userId, scope.userId),
       );
-    // UNION deduplicates direct ownership and indirect, possibly cross-user,
-    // Agent -> Session -> Run cascades while retaining indexed scope lookups.
+    // UNION deduplicates direct and cross-user Agent -> Session -> Run ownership.
     const targetRuns = directRuns.union(
       tx
         .select({ id: agentRuns.id })
@@ -242,14 +252,7 @@ export async function deleteClerkAgentLifecycleData(
       }
     }
     if (agentIds.length > 0) {
-      for (const agentId of agentIds) {
-        // The cascade would drop the association to this Agent's unsent native
-        // Morning Brief mail, so the intent goes first.
-        await revokeMorningBriefDeliveryOwnership(tx, {
-          kind: "agent",
-          agentId,
-        });
-      }
+      await revokeOwnedAgentMorningBriefDeliveries(tx, agentIds);
       await tx
         .delete(agents)
         .where(
