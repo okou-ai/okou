@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.911.2](https://github.com/vm0-ai/okou/compare/app-v0.911.1...app-v0.911.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **app:** keep the failure card element across recovery ([#35037](https://github.com/vm0-ai/okou/issues/35037)) ([7f85682](https://github.com/vm0-ai/okou/commit/7f85682cd417308ba28397eba6b291e50cf1cb05))
+* **platform:** stop overlapping template title saves on both picker surfaces ([#35007](https://github.com/vm0-ai/okou/issues/35007)) ([df90baa](https://github.com/vm0-ai/okou/commit/df90baa7b418eb4c64a5bc4026c6743c2a2242f3))
+* retire gpt 5.5 from run models ([#34450](https://github.com/vm0-ai/okou/issues/34450)) ([d68750c](https://github.com/vm0-ai/okou/commit/d68750c8cfea642e0c94ab547ec1c683ecbab41e))
+
+
+### Refactoring
+
+* **platform:** remove marketing handoff diagnostics ([#35035](https://github.com/vm0-ai/okou/issues/35035)) ([e6f5875](https://github.com/vm0-ai/okou/commit/e6f5875c0bc785b36f919d37d8d4e080a68d4e27))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.460.0
+    * @okouai/core bumped to 8.676.2
+
 ## [0.911.1](https://github.com/vm0-ai/okou/compare/app-v0.911.0...app-v0.911.1) (2026-09-17)
 
 
