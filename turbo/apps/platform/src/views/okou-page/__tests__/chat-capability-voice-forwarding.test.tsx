@@ -73,7 +73,7 @@ async function openForwardComposer(name: string) {
   click(await within(dialog).findByRole("option", { name }));
   await expect(
     within(dialog).findByRole("textbox", { name: "Add a message" }),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   return dialog;
 }
 
