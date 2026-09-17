@@ -427,6 +427,8 @@ describe("durable Pi API producer", () => {
           );
         }),
       );
+      const usagePricingResolution =
+        await createPiApiFirstTurnUsagePricingResolution(selectedModel);
       const run = await sendChatRun(
         actor,
         {
@@ -440,7 +442,7 @@ describe("durable Pi API producer", () => {
             ? {}
             : { runOptions: { codexServiceTier: "fast" as const } }),
         },
-        await createPiApiFirstTurnUsagePricingResolution(selectedModel),
+        usagePricingResolution,
       );
       onTestFinished(async () => {
         await flushWaitUntilForTest();
@@ -448,7 +450,9 @@ describe("durable Pi API producer", () => {
       });
       if (scenario.execution === "sandbox" && "message" in scenario) {
         await flushWaitUntilForTest();
-        await expect(cleanupRun(run.runId, orgId)).resolves.toMatchObject({
+        await expect(
+          cleanupRun(run.runId, orgId, usagePricingResolution),
+        ).resolves.toMatchObject({
           body: { errors: 0 },
         });
         const { claim } = await claimDeferredPiRun(run.runId, runnerGroup);
