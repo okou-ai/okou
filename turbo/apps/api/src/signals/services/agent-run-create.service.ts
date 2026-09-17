@@ -439,7 +439,8 @@ import {
   retainPiInferenceObjects,
 } from "./pi-inference-object.service";
 import {
-  builtInModelRuntimeTarget,
+  isBuiltInModelRuntimeRoutePermitted,
+  resolveBuiltInModelRuntimeRoute,
   type BuiltInModelRuntimeRoute,
 } from "./built-in-model-runtime-route.service";
 
@@ -2647,43 +2648,27 @@ async function builtInModelProviderEnvironment(
   if (resolvedRoute && resolvedRoute.selectedModel !== selectedModel) {
     return null;
   }
-  let route: BuiltInModelRuntimeRoute;
-  let key:
-    | {
-        readonly id: string;
-        readonly apiKey: string;
-      }
-    | undefined;
-  if (resolvedRoute) {
-    [key] = await db
-      .select({
-        id: builtInModelKeys.id,
-        apiKey: builtInModelKeys.apiKey,
-      })
-      .from(builtInModelKeys)
-      .where(eq(builtInModelKeys.id, resolvedRoute.modelKeyId))
-      .limit(1);
-    route = resolvedRoute;
-  } else {
-    const target = builtInModelRuntimeTarget(selectedModel);
-    [key] = await db
-      .select({
-        id: builtInModelKeys.id,
-        apiKey: builtInModelKeys.apiKey,
-      })
-      .from(builtInModelKeys)
-      .where(eq(builtInModelKeys.vendor, target.vendor))
-      .limit(1);
-    if (!key) {
-      return null;
-    }
-    route = {
-      selectedModel: target.selectedModel,
-      providerType: target.providerType,
-      upstreamModel: target.upstreamModel,
-      modelKeyId: key.id,
-    };
+  const route =
+    resolvedRoute ??
+    (await resolveBuiltInModelRuntimeRoute(
+      db,
+      selectedModel,
+      featureSwitchContext,
+    ));
+  if (
+    !route ||
+    !isBuiltInModelRuntimeRoutePermitted(route, featureSwitchContext)
+  ) {
+    return null;
   }
+  const [key] = await db
+    .select({
+      id: builtInModelKeys.id,
+      apiKey: builtInModelKeys.apiKey,
+    })
+    .from(builtInModelKeys)
+    .where(eq(builtInModelKeys.id, route.modelKeyId))
+    .limit(1);
   if (!key?.apiKey) {
     return null;
   }
