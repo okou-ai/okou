@@ -117,8 +117,10 @@ an arbitrary bracketed width, or a literal width inside a `style` prop, is a
 second registry for a decision this token already owns, and the two round to
 different device-pixel counts wherever the device scale is odd.
 `no-restricted-syntax` in `eslint.style.config.mjs` rejects both, and the three
-files that legitimately pin a whole pixel turn the rule off by name with their
-reason.
+files that legitimately spell a width turn the rule off by name with their own
+reason: two pin a whole pixel against the repaint a fractional border shows when
+a box's content resolves, and the 404 page's `border-[24px]` is a mat around
+artwork rather than a border on anything.
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one
 device pixel where 1px paints two, so every bare border carries half the ink it
@@ -155,17 +157,18 @@ branch carries the same width in `border-transparent` and only the colour is
 stateful; a token named for the state would invite `selected &&
 "border-[1.5px]"`, which reflows the tile and shifts its siblings. This is the
 same rule that keeps a selected chip's font weight on its base class, and the
-same one the focus guidance above states for interaction states.
+generalization of "Keep the border width constant across interaction states"
+below from focus to selection.
 
 Everything that is text plus a fill — pills, chips, menu rows, table rows, plan
 cards — keeps the shared hairline in both states and recolours it to
 `border-primary`. Selection is never a ring: `ring-*` belongs to the focus
-indicator, which 67 of its 80 usages already spell as `focus-visible:ring-2`, and
-a selected row that also draws a ring gives a keyboard user two rings fighting on
-one element. Selection owns the border, focus owns the ring. A ring on an element
-that has no selected state is not a selection ring and is unaffected — the
-account avatar's halo stays, because nothing about it changes when the user picks
-something.
+indicator, which the large majority of its usages already spell as
+`focus-visible:ring-2`, and a selected row that also draws a ring gives a
+keyboard user two rings fighting on one element. Selection owns the border,
+focus owns the ring. A ring on an element that has no selected state is not a
+selection ring and is unaffected — the account avatar's halo stays, because
+nothing about it changes when the user picks something.
 
 `border-0` stays available, and so does a literal `border-2` for geometry that is
 not a boundary at all — a dashed drop target, a spinner's ring, the inset that
