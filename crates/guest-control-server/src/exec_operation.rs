@@ -2422,7 +2422,12 @@ fn exec_terminal_log_message_for_diagnostic(
             evidence.operation_sequence() == Some(request.seq)
                 && evidence.proves_contained_tool_oom()
         });
-    let level = if contained_tool_oom && !notable {
+    let clean_storage_download = slow
+        && request.label == "storage-download"
+        && request.lifecycle == ExecOperationLifecycle::OneShot
+        && matches!(termination, ExecTermination::Exited { exit_code: 0 })
+        && !split.has_proof();
+    let level = if !notable && (contained_tool_oom || clean_storage_download) {
         "INFO"
     } else {
         "WARN"
@@ -2924,6 +2929,146 @@ mod tests {
             assert!(
                 message.contains("diagnostic_present=false"),
                 "message={message}"
+            );
+        }
+    }
+
+    #[test]
+    fn slow_storage_download_log_is_informational_only_for_clean_success() {
+        let mut request = request(7, "private command must not be logged");
+        request.label = "storage-download".into();
+        let clean = BoundedDrainResult::default();
+        let truncated = BoundedDrainResult {
+            capture_truncated: true,
+            ..Default::default()
+        };
+        let overflowed = BoundedDrainResult {
+            stream_truncated: true,
+            ..Default::default()
+        };
+        let proof = format!(
+            "{}{}",
+            guest_contracts::oom_evidence::EVIDENCE_PREFIX,
+            serde_json::from_str::<serde_json::Value>(include_str!(
+                "../../guest-contracts/tests/fixtures/oom-evidence-v1.json"
+            ))
+            .unwrap(),
+        );
+        assert!(guest_contracts::oom_evidence::split_diagnostic(&proof).has_proof());
+        let malformed = format!("{}bad", guest_contracts::oom_evidence::EVIDENCE_PREFIX);
+        for (termination, stdout, stderr, diagnostic, expected) in [
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &clean,
+                &clean,
+                "",
+                "INFO",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 1 },
+                &clean,
+                &clean,
+                "",
+                "WARN",
+            ),
+            (ExecTermination::TimedOut, &clean, &clean, "", "WARN"),
+            (ExecTermination::Cancelled, &clean, &clean, "", "WARN"),
+            (ExecTermination::StartFailed, &clean, &clean, "", "WARN"),
+            (ExecTermination::WaitFailed, &clean, &clean, "", "WARN"),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &truncated,
+                &clean,
+                "",
+                "WARN",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &clean,
+                &truncated,
+                "",
+                "WARN",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &overflowed,
+                &clean,
+                "",
+                "WARN",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &clean,
+                &overflowed,
+                "",
+                "WARN",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &clean,
+                &clean,
+                "cleanup failed",
+                "WARN",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &clean,
+                &clean,
+                proof.as_str(),
+                "WARN",
+            ),
+            (
+                ExecTermination::Exited { exit_code: 0 },
+                &clean,
+                &clean,
+                malformed.as_str(),
+                "WARN",
+            ),
+        ] {
+            let (level, message) = exec_terminal_log_message_for_diagnostic(
+                &request,
+                Duration::from_millis(5226),
+                termination,
+                stdout,
+                stderr,
+                diagnostic,
+            )
+            .unwrap();
+            assert_eq!(level, expected, "{message}");
+            assert!(message.contains("label=storage-download"));
+            assert!(!message.contains(&request.command));
+            if level == "INFO" {
+                assert!(
+                    message
+                        .contains("elapsed_ms=5226 slow=true notable=false terminal_reason=slow")
+                );
+            }
+        }
+        assert!(
+            exec_terminal_log_message_for_diagnostic(
+                &request,
+                Duration::from_millis(10),
+                ExecTermination::Exited { exit_code: 0 },
+                &clean,
+                &clean,
+                "",
+            )
+            .is_none()
+        );
+        for label in ["storage-download-extra", "workspace-unmount"] {
+            request.label = label.into();
+            assert_eq!(
+                exec_terminal_log_message_for_diagnostic(
+                    &request,
+                    Duration::from_secs(6),
+                    ExecTermination::Exited { exit_code: 0 },
+                    &clean,
+                    &clean,
+                    "",
+                )
+                .unwrap()
+                .0,
+                "WARN"
             );
         }
     }

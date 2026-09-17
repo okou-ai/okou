@@ -2,36 +2,78 @@ import type {
   PiLaunchConfig,
   PiApiFirstTurnConfig,
   PiModelConfig,
+  PiResourceSnapshot,
   StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
-export interface PiApiFirstTurnActivation {
+type PiApiFirstTurnLaunchConfig = Pick<
+  PiLaunchConfig,
+  "schemaVersion" | "memoryRecall"
+> & {
+  readonly apiFirstTurn: Pick<
+    PiApiFirstTurnConfig,
+    | "schemaVersion"
+    | "resourceSnapshotDigest"
+    | "deadlineAt"
+    | "baseSession"
+    | "sandboxEventSequenceStart"
+  >;
+};
+
+/** Only model-visible inputs and the selected credential namespace cross the
+ * direct-inference boundary. The durable variant never manufactures a Runner
+ * environment, signed URL, executable job, or Sandbox notification. */
+interface PiApiFirstTurnExecutionContext {
+  readonly apiStartTime: number;
+  readonly billableFirewalls: readonly string[];
+  readonly encryptedSecrets: StoredExecutionContext["encryptedSecrets"];
+  readonly modelUsageProvider: StoredExecutionContext["modelUsageProvider"];
+  readonly platformEnvironment: StoredExecutionContext["platformEnvironment"];
+  readonly secretConnectorMap: StoredExecutionContext["secretConnectorMap"];
+  readonly secretConnectorMetadataMap: StoredExecutionContext["secretConnectorMetadataMap"];
+  readonly piLaunchConfig: PiApiFirstTurnLaunchConfig;
+  readonly piModelConfig: PiModelConfig;
+  readonly piSessionId: string;
+  readonly resumeSession?: StoredExecutionContext["resumeSession"];
+  readonly storageMounts?: StoredExecutionContext["storageMounts"];
+  readonly resourceSnapshot?: PiResourceSnapshot;
+  readonly h0SessionHistory?: string;
+}
+
+export interface PiApiFirstTurnActivationBase {
   readonly runId: string;
-  readonly runnerGroup: string;
   readonly userId: string;
   readonly orgId: string;
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
-  readonly executionContext: Pick<
-    StoredExecutionContext,
-    | "encryptedSecrets"
-    | "environment"
-    | "modelUsageProvider"
-    | "platformEnvironment"
-    | "resumeSession"
-    | "secretConnectorMap"
-    | "secretConnectorMetadataMap"
-    | "storageMounts"
-  > & {
-    readonly apiStartTime: number;
-    readonly billableFirewalls: readonly string[];
-    readonly piLaunchConfig: PiLaunchConfig & {
-      readonly apiFirstTurn: PiApiFirstTurnConfig;
-    };
-    readonly piModelConfig: PiModelConfig;
-    readonly piSessionId: string;
-  };
+  readonly executionContext: PiApiFirstTurnExecutionContext;
+}
+
+export type PiApiFirstTurnActivation = PiApiFirstTurnActivationBase &
+  (
+    | {
+        readonly executionMode: "legacy-sandbox-race";
+        readonly runnerGroup: string;
+      }
+    | {
+        readonly executionMode: "durable-inference";
+        readonly inference: {
+          readonly ownerEpoch: number;
+          readonly providerAttemptId: string;
+          readonly configurationHash: string;
+          readonly contextHash: string;
+        };
+      }
+  );
+
+export function isDurablePiApiFirstTurnActivation(
+  activation: PiApiFirstTurnActivation,
+): activation is Extract<
+  PiApiFirstTurnActivation,
+  { readonly executionMode: "durable-inference" }
+> {
+  return activation.executionMode === "durable-inference";
 }
 
 export const PI_API_FIRST_TURN_API_OWNERSHIP_TIMEOUT_MS = 45_000;
@@ -47,7 +89,6 @@ export function requirePiApiFirstTurnExecutionContext(
     | "apiStartTime"
     | "billableFirewalls"
     | "encryptedSecrets"
-    | "environment"
     | "modelUsageProvider"
     | "piLaunchConfig"
     | "platformEnvironment"
@@ -73,11 +114,21 @@ export function requirePiApiFirstTurnExecutionContext(
     apiStartTime: context.apiStartTime,
     billableFirewalls: context.billableFirewalls,
     encryptedSecrets: context.encryptedSecrets,
-    environment: context.environment,
     modelUsageProvider: context.modelUsageProvider,
     piLaunchConfig: {
-      ...context.piLaunchConfig,
-      apiFirstTurn: context.piLaunchConfig.apiFirstTurn,
+      schemaVersion: context.piLaunchConfig.schemaVersion,
+      ...(context.piLaunchConfig.memoryRecall
+        ? { memoryRecall: context.piLaunchConfig.memoryRecall }
+        : {}),
+      apiFirstTurn: {
+        schemaVersion: context.piLaunchConfig.apiFirstTurn.schemaVersion,
+        resourceSnapshotDigest:
+          context.piLaunchConfig.apiFirstTurn.resourceSnapshotDigest,
+        deadlineAt: context.piLaunchConfig.apiFirstTurn.deadlineAt,
+        baseSession: context.piLaunchConfig.apiFirstTurn.baseSession,
+        sandboxEventSequenceStart:
+          context.piLaunchConfig.apiFirstTurn.sandboxEventSequenceStart,
+      },
     },
     platformEnvironment: context.platformEnvironment,
     piModelConfig: context.piModelConfig,

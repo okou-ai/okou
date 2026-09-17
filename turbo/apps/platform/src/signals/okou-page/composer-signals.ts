@@ -59,6 +59,7 @@ import {
 } from "./chat-composer.ts";
 import { videoRunOptionsForSend } from "./video-run-options.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
@@ -124,6 +125,26 @@ export interface ComposerSubmission {
    * composers carry their settings in the message's additional_info part.
    */
   readonly videoRunOptions: ChatRunVideoOptionsRequest | undefined;
+  /**
+   * What the composer is set to make. A send inside a thread keeps it, so a
+   * send that creates one hands it to the thread it opens.
+   */
+  readonly taskSelection: ComposerTaskSelection;
+  /**
+   * Leave the member where they are rather than opening the thread this
+   * submission creates.
+   *
+   * A submission the member typed is the thing they want to watch, so the
+   * default is to follow it. One made on their behalf by a surface they are
+   * still using — a template upload started from the picker — is not, and
+   * pulling them out of that surface takes away the work they were doing.
+   */
+  readonly stayOnPage: boolean;
+}
+
+/** How a submission is delivered, as distinct from what it contains. */
+interface ComposerSubmissionOptions {
+  readonly stayOnPage: boolean;
 }
 
 export type ComposerSubmissionAction = "send" | "queue";
@@ -231,7 +252,7 @@ interface ComposerSubmissionSignals {
   readonly hasCurrentInvocation$: Computed<boolean>;
   readonly submitCurrentInput$: Command<
     Promise<boolean>,
-    [ComposerPrimaryAction, AbortSignal]
+    [ComposerPrimaryAction, ComposerSubmissionOptions, AbortSignal]
   >;
   readonly activatePrimaryAction$: Command<
     Promise<boolean>,
@@ -296,6 +317,7 @@ interface CreateComposerSignalsOptions {
   readonly voiceDraftTarget: string;
   readonly connector?: ComposerConnectorSignals;
   readonly singleLineOnMobile: boolean;
+  readonly forwardComposer?: boolean;
   readonly modelSelection$: ComposerModelSignals["modelSelection$"];
   readonly selectedModelOauthAvailable$: ComposerModelSignals["selectedModelOauthAvailable$"];
   readonly setModelSelection$: ComposerModelSignals["setModelSelection$"];
@@ -314,6 +336,12 @@ interface CreateComposerSignalsOptions {
   readonly cancellationRecoveryPending$: ComposerQueueSignals["cancellationRecoveryPending$"];
   readonly removeQueuedMessage$: ComposerQueueSignals["removeQueuedMessage$"];
   readonly removeAutomationEvent$: ComposerQueueSignals["removeAutomationEvent$"];
+}
+
+function forwardFeedbackPlaceholder(): string {
+  return i18n.t(($) => {
+    return $.chat.forward.composerPlaceholder;
+  });
 }
 
 function createComposerFileInputSignals() {
@@ -547,6 +575,9 @@ export function createComposerSignals(
     agentId$,
     {
       autoFocus: true,
+      ...(options.forwardComposer
+        ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
+        : {}),
     },
     feedback,
   );
@@ -846,6 +877,7 @@ function createSubmitCurrentInput({
     async (
       { get, set },
       action: ComposerPrimaryAction,
+      submissionOptions: ComposerSubmissionOptions,
       signal: AbortSignal,
     ): Promise<boolean> => {
       signal.throwIfAborted();
@@ -924,6 +956,12 @@ function createSubmitCurrentInput({
           generationTemplate: get(draft.generationTemplate$),
           editorDocument,
           videoRunOptions: additionalInfo ? undefined : videoRunOptions,
+          taskSelection: {
+            task: get(taskChips.task$) ?? mode,
+            presentationSlideCount: get(create.presentationSlideCount$),
+            visualization: get(taskChips.visualization.preferences$),
+          },
+          stayOnPage: submissionOptions.stayOnPage,
         },
         signal,
       );
@@ -989,7 +1027,14 @@ function createComposerSubmissionSignals(
         await set(options.cancelRun$, signal);
         return true;
       }
-      return await set(submitCurrentInput$, action, signal);
+      // The member pressed the button, so the thread this opens is the thing
+      // they are waiting for.
+      return await set(
+        submitCurrentInput$,
+        action,
+        { stayOnPage: false },
+        signal,
+      );
     },
   );
 

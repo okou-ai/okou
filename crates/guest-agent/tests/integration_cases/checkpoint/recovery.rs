@@ -8,7 +8,7 @@ async fn recovery_checkpoint_uploads_valid_session_history() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let history = r#"{"type":"system"}"#.to_string() + "\n" + r#"{"type":"assistant"}"# + "\n";
     let _history_dir =
@@ -66,7 +66,7 @@ async fn recovery_checkpoint_does_not_prune_eligible_claude_history() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, _) = write_prunable_claude_history(&mut runtime, session_id).unwrap();
@@ -101,7 +101,7 @@ async fn recovery_checkpoint_does_not_prune_eligible_codex_history() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -153,7 +153,7 @@ async fn assert_recovery_checkpoint_ignores_legacy_history_marker(
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env()?;
+    let mut runtime = checkpoint_runtime()?;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "derived-history-session";
     let history = r#"{"type":"system"}"#.to_string() + "\n" + r#"{"type":"assistant"}"# + "\n";
@@ -225,7 +225,7 @@ async fn recovery_checkpoint_continues_without_partial_jsonl_history() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let _history_dir = write_literal_session_history(
         &mut runtime,
@@ -273,7 +273,7 @@ async fn recovery_checkpoint_continues_without_non_utf8_session_history() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let _history_dir = write_literal_session_history(
         &mut runtime,
@@ -321,7 +321,7 @@ async fn recovery_checkpoint_skips_when_session_id_is_missing() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let runtime = runtime_from_process_env().unwrap();
+    let runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
 
     let prepare_mock = server.mock(|when, then| {
@@ -360,7 +360,7 @@ async fn recovery_checkpoint_continues_when_derived_history_is_missing() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let runtime = runtime_from_process_env().unwrap();
+    let runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     guest_agent::paths::write_private(session_id_file(), "missing-history").unwrap();
 
@@ -403,7 +403,7 @@ async fn recovery_checkpoint_continues_without_invalid_history_source() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let runtime = runtime_from_process_env().unwrap();
+    let runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     guest_agent::paths::write_private(session_id_file(), "../unsafe-session").unwrap();
 

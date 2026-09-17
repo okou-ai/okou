@@ -112,7 +112,14 @@ async function prepareRunnerAccounts(
       ...runnerAccounts,
     });
   } catch (cause) {
-    await cleanupRunnerAccountGeneration();
+    try {
+      await cleanupRecordedClerkTestResources(RUNNER_TEST_ROLES);
+    } catch (cleanupCause) {
+      console.error(
+        "Recorded runner cleanup failed; deferring to the stale sweep",
+        cleanupCause,
+      );
+    }
     throw cause;
   }
 }

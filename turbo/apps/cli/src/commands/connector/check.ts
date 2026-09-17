@@ -35,7 +35,7 @@ import {
 import { getAgentUserConnectors } from "../../lib/api/domains/agents";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../lib/okou-env";
-import { toPlatformUrl } from "../doctor/platform-url";
+import { toPlatformUrl } from "../../lib/platform-url";
 import {
   computerUsePermissionGuidance,
   printComputerUsePermissionGuidance,

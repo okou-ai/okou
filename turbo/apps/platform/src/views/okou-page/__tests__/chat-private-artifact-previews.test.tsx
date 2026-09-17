@@ -30,9 +30,11 @@ const THUMBNAIL_PREFIX =
   "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/";
 const THUMBNAIL_URL = `${THUMBNAIL_PREFIX}${FIRST_URL}`;
 
-function mockPrivateImage(content?: string) {
+function mockPrivateImage(
+  content?: string,
+  canonical = artifactReferencePath(FILE_ID, "photo.png"),
+) {
   mockNow(NOW, context.signal);
-  const canonical = artifactReferencePath(FILE_ID, "photo.png");
   mockAttachmentChat(context, {
     artifacts: [
       artifactFile("photo.png", {
@@ -83,29 +85,37 @@ async function closePreview() {
   });
 }
 
-test("production thread thumbnails use a.okou.io and open the same original", async () => {
-  mockPrivateImage();
-  await setupPage({
-    context,
-    path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  const image = await screen.findByAltText("photo.png");
-  await waitFor(() => {
-    expect(image).toHaveAttribute(
-      "src",
-      THUMBNAIL_URL.replace("https://cdn.vm7.io/", "https://a.okou.io/"),
-    );
-  });
-  fireEvent.load(image);
-  click(image);
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "src",
-      FIRST_URL,
-    );
-  });
-});
+test.each([
+  artifactReferencePath(FILE_ID, "photo.png"),
+  `https://app.okou.ai${artifactReferencePath(FILE_ID, "photo.png")}`,
+  "https://app.okou.ai/artifacts/abcxyz1234.png#detail",
+])(
+  "production thread resolves %s to a thumbnail and opens the original",
+  async (url) => {
+    const fragment = new URL(url, "https://app.okou.ai").hash;
+    mockPrivateImage(undefined, url);
+    await setupPage({
+      context,
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+    const image = await screen.findByAltText("photo.png");
+    await waitFor(() => {
+      expect(image).toHaveAttribute(
+        "src",
+        `${THUMBNAIL_URL.replace("https://cdn.vm7.io/", "https://a.okou.io/")}${fragment}`,
+      );
+    });
+    fireEvent.load(image);
+    click(image);
+    await waitFor(() => {
+      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+        "src",
+        `${FIRST_URL}${fragment}`,
+      );
+    });
+  },
+);
 
 test("opening and reopening an image uses the same presign as its thread thumbnail", async () => {
   mockPrivateImage();

@@ -13,16 +13,22 @@ import { accept } from "../../lib/accept.ts";
 import { capturePaidOnboardingEvent } from "../../lib/posthog.ts";
 import { now } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
-import { user$ } from "../auth.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
-import { readStoredAdAttributionMetadata$ } from "./ad-attribution.ts";
+import {
+  createAttributionRequest,
+  readAttributionContext$,
+  type AttributionContext,
+} from "./attribution-request.ts";
 import {
   fireGoogleAdsConversion,
   GOOGLE_ADS_ADSMARCH_SIGNUP_SEND_TO,
   GOOGLE_ADS_SIGNUP_SEND_TO,
 } from "./google-ads-conversion.ts";
 
-import { resolveGoogleAdsAccount$ } from "./google-ads-account.ts";
+import {
+  invalidateGoogleAdsAccount$,
+  resolveGoogleAdsAccount$,
+} from "./google-ads-account.ts";
 
 const SIGNUP_ATTRIBUTION_RECORDED_KEY = "vm0.signupAttributionRecorded";
 const SIGNUP_CONVERSION_RECORDED_KEY = "vm0.googleAdsSignupConversionRecorded";
@@ -66,59 +72,72 @@ function isRecentlyCreatedUser(user: {
   return ageMs >= 0 && ageMs <= SIGNUP_CONVERSION_MAX_USER_AGE_MS;
 }
 
+const submitSignupAttribution$ = command(
+  async ({ get, set }, context: AttributionContext, signal: AbortSignal) => {
+    const client = get(apiClient$)(acquisitionAttributionContract, {
+      getTokenGuard: context.getTokenGuard,
+    });
+    const result = await accept(
+      client.recordSignup({
+        body: {
+          attribution: context.attribution ?? { source_type: "unknown" },
+        },
+        fetchOptions: { signal },
+      }),
+      [200],
+    );
+    signal.throwIfAborted();
+    context.assertCurrent();
+    // The check can establish a first touch after an earlier ownership read.
+    set(invalidateGoogleAdsAccount$);
+    if (result.body.recorded && context.user) {
+      const attribution: AdAttributionMetadata = context.attribution ?? {
+        source_type: "unknown",
+      };
+      const attributionFingerprint = `${context.user.id}:${JSON.stringify(attribution)}`;
+      set(signupAttributionRecordedStorage.set$, attributionFingerprint);
+      capturePaidOnboardingEvent("SignupAttributionRecorded", {
+        landing_host: window.location.host,
+        landing_path: window.location.pathname,
+        source_type: attribution.source_type ?? "unknown",
+        ...compatibleGoogleAdsAttribution({
+          okou_campaign_id: attribution.okou_campaign_id,
+          okou_ad_group_id: attribution.okou_ad_group_id,
+        }),
+      });
+    }
+    return result.body;
+  },
+);
+
+const signupRequest = createAttributionRequest(submitSignupAttribution$, () => {
+  return true;
+});
+
 export const recordSignupAttribution$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const user = await get(user$);
-    signal.throwIfAborted();
+    const context = await set(readAttributionContext$, signal);
+    const user = context.user;
     if (!user) {
       return;
     }
-
-    const storedAttribution = set(readStoredAdAttributionMetadata$);
     const recentlyCreatedUser = isRecentlyCreatedUser(user);
     const attribution: AdAttributionMetadata | undefined =
-      storedAttribution ??
+      context.attribution ??
       (recentlyCreatedUser ? { source_type: "unknown" } : undefined);
     if (!attribution) {
       return;
     }
-
+    const result = await set(signupRequest.request$, context, signal);
     const attributionFingerprint = `${user.id}:${JSON.stringify(attribution)}`;
-    let recorded =
+    // A completed no-op check is not permission to send a signup conversion.
+    const recorded =
       get(signupAttributionRecordedStorage.get$) === attributionFingerprint;
-
-    let googleAdsAccountId: string | null = null;
-    if (!recorded) {
-      const createClient = get(apiClient$);
-      const client = createClient(acquisitionAttributionContract);
-      const result = await accept(
-        client.recordSignup({
-          body: {
-            attribution,
-          },
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
-      signal.throwIfAborted();
-      recorded = result.body.recorded;
-      googleAdsAccountId = result.body.googleAdsAccountId;
-      if (recorded) {
-        set(signupAttributionRecordedStorage.set$, attributionFingerprint);
-        capturePaidOnboardingEvent("SignupAttributionRecorded", {
-          landing_host: window.location.host,
-          landing_path: window.location.pathname,
-          source_type: attribution.source_type ?? "unknown",
-          ...compatibleGoogleAdsAttribution({
-            okou_campaign_id: attribution.okou_campaign_id,
-            okou_ad_group_id: attribution.okou_ad_group_id,
-          }),
-        });
-      }
-    }
+    let googleAdsAccountId = result.googleAdsAccountId;
 
     if (recorded && recentlyCreatedUser) {
       googleAdsAccountId ??= await set(resolveGoogleAdsAccount$, signal);
+      context.assertCurrent();
       const config =
         googleAdsAccountId === GOOGLE_ADS_LEGACY_ACCOUNT_ID
           ? {

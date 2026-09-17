@@ -1,13 +1,9 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { gzipSync } from "node:zlib";
 
-import {
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
-} from "@aws-sdk/client-s3";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+
 import {
   MAX_PRESENTATION_TEMPLATE_PACKAGE_BYTES,
   PRESENTATION_TEMPLATE_PACKAGE_CONTENT_TYPE,
@@ -20,223 +16,24 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
+import {
+  installS3Fixture,
+  tarGz,
+  uploadTemplateFile,
+  type Fixture,
+} from "./helpers/template-publish-fixture";
 import { presentationTemplatesRoutes } from "../presentation-templates";
 
 const context = testContext();
 const bdd = createBddApi(context);
-const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
 const ARTIFACTS_BUCKET = "test-user-artifacts";
 
 const SOURCE_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const LEGACY_SOURCE_CONTENT_TYPE = "application/vnd.ms-powerpoint";
-
-interface StoredObject {
-  readonly body: Buffer;
-  readonly contentType: string | undefined;
-  readonly metadata: Readonly<Record<string, string>>;
-}
-
-function commandInput(command: unknown): Record<string, unknown> {
-  return typeof command === "object" &&
-    command !== null &&
-    "input" in command &&
-    typeof command.input === "object" &&
-    command.input !== null
-    ? (command.input as Record<string, unknown>)
-    : {};
-}
-
-function objectId(bucket: string, key: string): string {
-  return `${bucket}\0${key}`;
-}
-
-function notFoundError(key: string): Error {
-  return Object.assign(new Error(`Missing S3 object: ${key}`), {
-    name: "NotFound",
-    $metadata: { httpStatusCode: 404 },
-  });
-}
-
-function byteStream(body: Buffer): AsyncIterable<Uint8Array> {
-  return {
-    async *[Symbol.asyncIterator]() {
-      yield body;
-    },
-  };
-}
-
-/** A minimal ustar archive, so the test exercises the real tar reader. */
-function tarGz(files: readonly { path: string; content: string }[]): Buffer {
-  const blocks: Buffer[] = [];
-  for (const file of files) {
-    const content = Buffer.from(file.content, "utf8");
-    const header = Buffer.alloc(512);
-    header.write(file.path, 0, 100, "utf8");
-    header.write("0000644\0", 100, 8, "utf8");
-    header.write("0000000\0", 108, 8, "utf8");
-    header.write("0000000\0", 116, 8, "utf8");
-    header.write(`${content.length.toString(8).padStart(11, "0")}\0`, 124, 12);
-    header.write("00000000000\0", 136, 12, "utf8");
-    header.write("        ", 148, 8, "utf8");
-    header.write("0", 156, 1, "utf8");
-    header.write("ustar\0", 257, 6, "utf8");
-    header.write("00", 263, 2, "utf8");
-    let checksum = 0;
-    for (const byte of header) {
-      checksum += byte;
-    }
-    header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "utf8");
-    blocks.push(header);
-    const padding = (512 - (content.length % 512)) % 512;
-    blocks.push(content, Buffer.alloc(padding));
-  }
-  blocks.push(Buffer.alloc(1024));
-  return gzipSync(Buffer.concat(blocks));
-}
-
-function installS3Fixture() {
-  const objects = new Map<string, StoredObject>();
-  const signedPuts = new Map<
-    string,
-    {
-      bucket: string;
-      key: string;
-      metadata: Readonly<Record<string, string>>;
-    }
-  >();
-  let signature = 0;
-
-  function readMetadata(input: Record<string, unknown>) {
-    return typeof input.Metadata === "object" && input.Metadata !== null
-      ? (input.Metadata as Readonly<Record<string, string>>)
-      : {};
-  }
-
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    const input = commandInput(command);
-    const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
-    const key = typeof input.Key === "string" ? input.Key : "";
-    const id = objectId(bucket, key);
-
-    if (command instanceof PutObjectCommand) {
-      const body = input.Body;
-      objects.set(id, {
-        body: Buffer.isBuffer(body)
-          ? Buffer.from(body)
-          : Buffer.from(String(body ?? ""), "utf8"),
-        contentType:
-          typeof input.ContentType === "string" ? input.ContentType : undefined,
-        metadata: readMetadata(input),
-      });
-      return Promise.resolve({});
-    }
-    if (command instanceof ListObjectsV2Command) {
-      const prefix = typeof input.Prefix === "string" ? input.Prefix : "";
-      return Promise.resolve({
-        Contents: [...objects.entries()].flatMap(([storedId, object]) => {
-          const separator = storedId.indexOf("\0");
-          const storedKey = storedId.slice(separator + 1);
-          return storedId.slice(0, separator) === bucket &&
-            storedKey.startsWith(prefix)
-            ? [
-                {
-                  Key: storedKey,
-                  Size: object.body.length,
-                  LastModified: nowDate(),
-                },
-              ]
-            : [];
-        }),
-      });
-    }
-    if (command instanceof HeadObjectCommand) {
-      const object = objects.get(id);
-      // The SDK rejects on a missing object; it does not throw synchronously.
-      return object
-        ? Promise.resolve({
-            ContentLength: object.body.length,
-            ContentType: object.contentType,
-            Metadata: object.metadata,
-            LastModified: nowDate(),
-          })
-        : Promise.reject(notFoundError(key));
-    }
-    if (command instanceof GetObjectCommand) {
-      const object = objects.get(id);
-      return object
-        ? Promise.resolve({
-            Body: byteStream(object.body),
-            ContentLength: object.body.length,
-            ContentType: object.contentType,
-          })
-        : Promise.reject(notFoundError(key));
-    }
-    return Promise.resolve({});
-  });
-
-  context.mocks.s3.getSignedUrl.mockImplementation(
-    (_client: unknown, command: unknown) => {
-      const input = commandInput(command);
-      signature += 1;
-      const url = `https://r2.example.test/signed/${signature.toString()}`;
-      if (command instanceof PutObjectCommand) {
-        signedPuts.set(url, {
-          bucket: typeof input.Bucket === "string" ? input.Bucket : "",
-          key: typeof input.Key === "string" ? input.Key : "",
-          metadata: readMetadata(input),
-        });
-      }
-      return Promise.resolve(url);
-    },
-  );
-
-  return {
-    put(uploadUrl: string, body: Buffer, contentType: string): void {
-      const target = signedPuts.get(uploadUrl);
-      if (!target) {
-        throw new Error(`Unknown presigned PUT: ${uploadUrl}`);
-      }
-      objects.set(objectId(target.bucket, target.key), {
-        body,
-        contentType,
-        metadata: target.metadata,
-      });
-    },
-    keys(): readonly string[] {
-      return [...objects.keys()].map((id) => {
-        return id.slice(id.indexOf("\0") + 1);
-      });
-    },
-  };
-}
-
-type Fixture = ReturnType<typeof installS3Fixture>;
-
-/** Run the ordinary three-step upload the CLI would run, and return its id. */
-async function upload(
-  actor: ApiTestUser,
-  fixture: Fixture,
-  file: { readonly filename: string; readonly contentType: string },
-  body: Buffer,
-): Promise<string> {
-  const prepared = await chat.prepareUpload(actor, {
-    filename: file.filename,
-    contentType: file.contentType,
-    size: body.length,
-  });
-  if (!("uploadUrl" in prepared)) {
-    throw new Error("Expected a single-part upload");
-  }
-  fixture.put(prepared.uploadUrl, body, file.contentType);
-  const completed = await chat.completeUpload(actor, { id: prepared.id });
-  return completed.id;
-}
 
 function templateClient() {
   return setupApp({ context, routes: presentationTemplatesRoutes })(
@@ -268,7 +65,8 @@ async function uploadInputs(
   readonly pageFileIds: string[];
   readonly packageFileId: string;
 }> {
-  const sourceFileId = await upload(
+  const sourceFileId = await uploadTemplateFile(
+    context,
     actor,
     fixture,
     source,
@@ -277,7 +75,8 @@ async function uploadInputs(
   const pageFileIds: string[] = [];
   for (const index of [0, 1]) {
     pageFileIds.push(
-      await upload(
+      await uploadTemplateFile(
+        context,
         actor,
         fixture,
         {
@@ -288,7 +87,8 @@ async function uploadInputs(
       ),
     );
   }
-  const packageFileId = await upload(
+  const packageFileId = await uploadTemplateFile(
+    context,
     actor,
     fixture,
     {
@@ -307,7 +107,7 @@ beforeEach(() => {
 describe("presentation template publish", () => {
   it("publishes an analysed deck as a ready template", async () => {
     const actor = bdd.user();
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
 
     mocks.clerk.session(actor.userId, actor.orgId);
@@ -400,7 +200,7 @@ describe("presentation template publish", () => {
     await updateFeatureSwitchesForUser(context, flagActor, {
       [FeatureSwitchKey.PrivateArtifacts]: true,
     });
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
     await updateFeatureSwitchesForUser(context, flagActor, {
       [FeatureSwitchKey.PrivateArtifacts]: false,
@@ -452,7 +252,7 @@ describe("presentation template publish", () => {
 
   it("publishes a legacy PowerPoint source without conversion", async () => {
     const actor = bdd.user();
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(actor, fixture, tarGz(guidance()), {
       filename: "legacy-deck.ppt",
       contentType: LEGACY_SOURCE_CONTENT_TYPE,
@@ -482,7 +282,7 @@ describe("presentation template publish", () => {
       orgId: owner.orgId,
       orgRole: "org:member",
     });
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
 
     mocks.clerk.session(owner.userId, owner.orgId);
@@ -639,7 +439,7 @@ describe("presentation template publish", () => {
 
   it("deletes a template exactly once when two requests race", async () => {
     const actor = bdd.user();
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
 
     mocks.clerk.session(actor.userId, actor.orgId);
@@ -690,7 +490,7 @@ describe("presentation template publish", () => {
 
   it("refuses a package that omits its required guidance", async () => {
     const actor = bdd.user();
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(
       actor,
       fixture,
@@ -717,7 +517,7 @@ describe("presentation template publish", () => {
 
   it("refuses a package path that escapes its root", async () => {
     const actor = bdd.user();
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(
       actor,
       fixture,
@@ -737,7 +537,7 @@ describe("presentation template publish", () => {
 
   it("refuses a package that unpacks past the size cap", async () => {
     const actor = bdd.user();
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     // Compresses to a few hundred kilobytes, so the stored object clears every
     // size check that reads the upload's own size. Only a cap on the
     // decompressed output can reject it.
@@ -766,7 +566,7 @@ describe("presentation template publish", () => {
   it("refuses uploads that belong to someone else", async () => {
     const owner = bdd.user();
     const stranger = bdd.user();
-    const fixture = installS3Fixture();
+    const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(owner, fixture, tarGz(guidance()));
 
     mocks.clerk.session(stranger.userId, stranger.orgId);

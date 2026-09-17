@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 
 import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 
@@ -634,46 +634,70 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
   });
 
-  it.each(modelResumeScenarios)(
+  describe.each(modelResumeScenarios)(
     "resumes $model in its own $channel DM session (conversation: $withConversation)",
-    async (scenario) => {
-      const { send, complete, sends } = await modelSessionScenario(scenario);
-      if (scenario.model !== "claude-sonnet-5") {
-        await send(`/model ${scenario.model}`);
-        expect(lastSend(sends).body).toContain("Switched to");
+    (scenario) => {
+      async function prepareScenario() {
+        const { send, complete, sends } = await modelSessionScenario(scenario);
+        return { send, sends, complete };
       }
-      const originalSession = await complete(
-        "start the selected model session",
-      );
-      await send(`/model ${scenario.otherModel}`);
-      expect(lastSend(sends).body).toContain("Switched to");
-      const alternateSession = await complete("start the other model session");
-      expect(alternateSession).not.toBe(originalSession);
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
+      });
+      it("preserves the complete scenario", async () => {
+        const { send, sends, complete } = preparedScenario;
+        if (scenario.model !== "claude-sonnet-5") {
+          await send(`/model ${scenario.model}`);
+          expect(lastSend(sends).body).toContain("Switched to");
+        }
+        const originalSession = await complete(
+          "start the selected model session",
+        );
+        await send(`/model ${scenario.otherModel}`);
+        expect(lastSend(sends).body).toContain("Switched to");
+        const alternateSession = await complete(
+          "start the other model session",
+        );
+        expect(alternateSession).not.toBe(originalSession);
 
-      await send(`/model ${scenario.model}`);
-      await expect(
-        complete("return to the selected model session"),
-      ).resolves.toBe(originalSession);
+        await send(`/model ${scenario.model}`);
+        await expect(
+          complete("return to the selected model session"),
+        ).resolves.toBe(originalSession);
+      });
     },
   );
 
-  it.each(modelSessionScenarios)(
+  describe.each(modelSessionScenarios)(
     "resets the selected model's $channel DM session (conversation: $withConversation)",
-    async (scenario) => {
-      const { send, complete, sends } = await modelSessionScenario(scenario);
-      const originalSession = await complete("start the default model session");
-      await send("/model claude-opus-4-8");
-      expect(lastSend(sends).body).toContain("Switched to");
-      const alternateSession = await complete(
-        "start the alternate model session",
-      );
-      expect(alternateSession).not.toBe(originalSession);
+    (scenario) => {
+      async function prepareScenario() {
+        const { send, complete, sends } = await modelSessionScenario(scenario);
+        return { complete, send, sends };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
+      });
+      it("preserves the complete scenario", async () => {
+        const { complete, send, sends } = preparedScenario;
+        const originalSession = await complete(
+          "start the default model session",
+        );
+        await send("/model claude-opus-4-8");
+        expect(lastSend(sends).body).toContain("Switched to");
+        const alternateSession = await complete(
+          "start the alternate model session",
+        );
+        expect(alternateSession).not.toBe(originalSession);
 
-      await send("/new_session");
-      expect(lastSend(sends).body).toContain("New session started");
-      await expect(
-        complete("start again after resetting the DM"),
-      ).resolves.not.toBe(alternateSession);
+        await send("/new_session");
+        expect(lastSend(sends).body).toContain("New session started");
+        await expect(
+          complete("start again after resetting the DM"),
+        ).resolves.not.toBe(alternateSession);
+      });
     },
   );
 

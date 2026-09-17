@@ -42,6 +42,7 @@ export const setupAgentChatPage$ = command(
     set(setChatAgentId$, agentId);
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
+    set(get(agentChatComposerSignals$).voice.setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
     set(reloadTagline$);
     set(resetChatPageModelSelection$);

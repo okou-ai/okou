@@ -277,6 +277,85 @@ test("The original start cards remain when task chips are disabled", async () =>
   ).toBeNull();
 });
 
+test("The selected task states the run in the action row", async () => {
+  mockTemplateChat();
+  const editor = await setupChips();
+  click(
+    button(
+      "Presentation",
+      screen.getByRole("group", { name: "Choose a task" }),
+    ),
+  );
+  /*
+    The type is composer state: a send leaves it standing, while everything in
+    the lane above the input is per-message and clears with the draft. Every
+    other case here resolves the chip by accessible name, which stayed green
+    through the old placement, so this pins the band it sits in.
+  */
+  const chip = selectedTask(editor, "Presentation");
+  expect(editor.compareDocumentPosition(chip)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(button("Attach").compareDocumentPosition(chip)).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(chip.compareDocumentPosition(button("Send"))).toBe(
+    Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  // The slide count is a parameter of the type, so it follows it on that row.
+  expect(
+    chip.compareDocumentPosition(
+      screen.getByRole("combobox", { name: "Slide count" }),
+    ),
+  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+});
+
+test("A send carries the task and its slide count into the thread it opens", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupChips();
+  click(
+    button(
+      "Presentation",
+      screen.getByRole("group", { name: "Choose a task" }),
+    ),
+  );
+  click(screen.getByRole("combobox", { name: "Slide count" }));
+  click(await screen.findByRole("option", { name: "16–20 slides" }));
+  await fill(editor, "Our launch deck");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining("- Slide count: 16-20"),
+  });
+  // The send lands in a composer of its own, one that has never been told what
+  // the run is making, so the selection has to travel with it.
+  const threadEditor = await findComposerEditor();
+  expect(selectedTask(threadEditor, "Presentation")).toBeVisible();
+  expect(
+    screen.getByRole("combobox", { name: "Slide count" }),
+  ).toHaveTextContent("16–20 slides");
+});
+
+// Workflow is not a create mode, so it travels as the task chips' own
+// selection rather than through the type the slash panel also sets.
+test("A send carries a general task into the thread it opens", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupChips();
+  click(
+    button("Workflow", screen.getByRole("group", { name: "Choose a task" })),
+  );
+  await fill(editor, "Draft a weekly digest");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  const threadEditor = await findComposerEditor();
+  expect(selectedTask(threadEditor, "Workflow")).toBeVisible();
+});
+
 test("Visualization starts with no selected preferences", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();

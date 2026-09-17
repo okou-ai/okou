@@ -121,6 +121,24 @@ pub(crate) fn validate_dir(path: &Path, mode: DirMode, context: &str) -> io::Res
     open_dir_components(path, mode, context, false).map(|_| ())
 }
 
+/// Open the validated directory itself without creating missing components.
+///
+/// Keeping the descriptor preserves the directory identity for callers that
+/// coordinate filesystem operations with a lock on that inode.
+pub(crate) fn open_dir(path: &Path, mode: DirMode, context: &str) -> io::Result<File> {
+    let dir = open_dir_components(path, mode, context, false)?;
+    // The Linux walk uses O_PATH, which cannot be flocked. Reopen "."
+    // relative to that descriptor, preserving the validated directory inode.
+    openat(
+        &dir,
+        ".",
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|e| wrap_io(e.into(), format!("open {context} {}", path.display())))
+}
+
 pub(crate) fn open_private_append_file(path: &Path, read: bool) -> io::Result<File> {
     validate_file_parent(path, "log directory")?;
 
@@ -724,6 +742,14 @@ fn dir_component_error(
     error: nix::errno::Errno,
 ) -> io::Error {
     match error {
+        nix::errno::Errno::ENOENT => io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "{operation} {context} component {} for {}: {error}",
+                name.to_string_lossy(),
+                full_path.display()
+            ),
+        ),
         nix::errno::Errno::ELOOP => permission_denied(format!(
             "{} contains symlink component {}; refusing to use it as {context}",
             full_path.display(),
@@ -801,6 +827,7 @@ mod tests {
             )
             .unwrap_err();
 
+            assert_eq!(error.kind(), io::ErrorKind::NotFound);
             assert!(error.to_string().contains("missing"));
             assert!(!dir.path().join("missing").exists());
         }

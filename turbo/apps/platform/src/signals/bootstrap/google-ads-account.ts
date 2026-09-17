@@ -3,22 +3,25 @@ import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/
 import { googleAdsAccountForAttribution } from "@okouai/core/google-ads-account";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { user$ } from "../auth.ts";
-import { readStoredAdAttributionMetadata$ } from "./ad-attribution.ts";
+import {
+  createAttributionRequest,
+  readAttributionContext$,
+  type AttributionContext,
+} from "./attribution-request.ts";
 
-export const resolveGoogleAdsAccount$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<string | null> => {
-    const user = await get(user$);
-    signal.throwIfAborted();
-    const attribution = set(readStoredAdAttributionMetadata$);
-    if (!user) {
-      return googleAdsAccountForAttribution(attribution);
-    }
-    const client = get(apiClient$)(acquisitionAttributionContract);
+const fetchGoogleAdsAccount$ = command(
+  async (
+    { get },
+    context: AttributionContext,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const client = get(apiClient$)(acquisitionAttributionContract, {
+      getTokenGuard: context.getTokenGuard,
+    });
     const result = await accept(
       client.resolveGoogleAdsAccount({
         body: {
-          attribution,
+          attribution: context.attribution,
         },
         fetchOptions: { signal },
       }),
@@ -26,5 +29,24 @@ export const resolveGoogleAdsAccount$ = command(
     );
     signal.throwIfAborted();
     return result.body.googleAdsAccountId;
+  },
+);
+
+const accountRequest = createAttributionRequest(
+  fetchGoogleAdsAccount$,
+  (id) => {
+    return id !== null;
+  },
+);
+
+export const invalidateGoogleAdsAccount$ = accountRequest.invalidate$;
+
+export const resolveGoogleAdsAccount$ = command(
+  async ({ set }, signal: AbortSignal): Promise<string | null> => {
+    const context = await set(readAttributionContext$, signal);
+    if (!context.user) {
+      return googleAdsAccountForAttribution(context.attribution);
+    }
+    return await set(accountRequest.request$, context, signal);
   },
 );

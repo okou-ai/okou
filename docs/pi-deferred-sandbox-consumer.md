@@ -2,8 +2,8 @@
 
 This is the default-off consumer for the typed launch snapshot v4 and inference
 contract v1. It does not create API inference Runs or enable `piDeferredSandbox`.
-The API producer is tracked separately in #34244. A legacy encrypted full job
-must never be substituted for a v4 waiting intent.
+The API producer delivered separately in #34750 remains default-off. A legacy
+encrypted full job must never be substituted for a v4 waiting intent.
 
 ## Durable objects and producer interface
 
@@ -104,15 +104,55 @@ contains the claimed epoch/generation. Checkpoints and completion use this fence
 terminal/cancelled completion can reconcile the immutable claim identity without
 regaining execution authority.
 
-The claim response contains no inline H1. The CLI reads
-`GET /api/runners/jobs/:id/pi-handoff/:offset` with the Run's Sandbox token. Each
-response contains at most 1 MiB of continuation bytes, below the deployed Vercel
-function response limit. The source is stable and has no signed-URL expiry.
-Each request validates current ownership; cancellation fences later chunks. The
-CLI bounds the assembled content, checks the history and resource hashes,
+The claim response contains no inline H1. The Guest reads
+`GET /api/runners/jobs/:id/pi-handoff/:offset` with its private Sandbox control
+token from `OKOU_API_TOKEN`. Each response contains at most 1 MiB of continuation
+bytes, below the deployed Vercel function response limit. The source is stable
+and has no signed-URL expiry. Each request validates the exact Run, user,
+organization, owner epoch, intent generation and claimed lease; cancellation
+fences later chunks.
+
+The Guest bounds and assembles the chunks before spawning the CLI, then writes
+the exact serialized handoff to a 0600 run-scoped file. The child receives only
+`OKOU_PI_DEFERRED_HANDOFF_FILE`; `OKOU_API_TOKEN` remains Guest-private and the
+ordinary `OKOU_TOKEN` retains its agent scope. The CLI opens that file without
+following a symlink, bounds and parses it, checks the history and resource hashes,
 canonical session, pending tool IDs and event sequence, then installs the exact
 history atomically before entering the existing pending-tool or settled-session
-RPC continuation. It never substitutes an initial prompt for H1.
+RPC continuation. An authenticated read failure stops before child spawn. A file
+or integrity failure stops before the private boundary control, so no RPC, tool,
+provider request or accounting side effect starts. The continuation never
+substitutes an initial prompt for H1.
+
+The file pointer is additive child environment. An older CLI ignores it and its
+legacy ordinary-token GET fails closed; a newer CLI under an older Guest has no
+authenticated file and also fails closed. Enablement therefore requires a
+capable co-built Runner/Guest plus newly captured commit-addressed CLI contexts.
+Drain v4 claims and contexts before rollback below either reader. No dual-token
+fallback is supported.
+
+### Executable handoff size contract
+
+Publication, demand admission, materialization, the chunk API and the CLI reader
+share one size contract. Session history is bounded by the CLI's own 16 MiB
+session ceiling, measured in UTF-8 bytes rather than UTF-16 code units, so a
+multibyte history cannot satisfy a string-length check and then overflow the
+reader. The serialized `{sessionHistory, resourceSnapshot}` aggregate the chunk
+API streams is bounded at 32 MiB, which individually valid objects can otherwise
+exceed together while each still fits the per-object envelope.
+
+Both bounds are applied before a continuation can become executable: immutable
+object publication rejects an oversized history, demand admission re-checks the
+aggregate once both objects are durable, and materialization checks it again
+before the job row exists. The same schema validates durable objects when they
+are read. No migration is required for that read-side tightening because no
+production publisher is enabled and `piDeferredSandbox` remains off, including
+for staff. This credential repair does not enable that writer. An unsupported
+continuation is rejected or finalized truthfully; already-incurred inference
+usage, diagnostic locators and pending tool identity are retained, and history
+is never truncated nor the original prompt or provider request replayed. A
+producer calling the demand interface observes `false` and an already terminal
+Run rather than queued executable work.
 
 ## Physical release proof and uncertain claims
 
@@ -147,10 +187,41 @@ unreadable evidence remains unknown. Official Runner startup already requires
 managed CPU cgroups and rejects nonempty old guest groups. Local unmanaged
 Runners cannot supply this recovery proof.
 
-Claim-directory scans keep a cursor across bounded heartbeat batches. Release
-HTTP failures retain their outbox receipt for retry. Stale acknowledged receipts
-are quarantined without changing another owner's capacity. A corrupt ownership
-record is retained; it is never interpreted as release proof.
+Claim and release scans keep cursors across bounded heartbeat batches and across
+an active foreign-process recovery scope. A release batch scans at most 100
+entries, makes at most eight sequential HTTP requests and owns at most five
+seconds. An inconclusive response, transport failure or timeout advances only
+the selection cursor; the receipt and claim barrier remain durable and the same
+cycle can service later receipts. A local process restart reconstructs the scan
+from the retained directory. Foreign recovery retains its scoped outbox until
+both release and claim scan cycles complete, rather than recreating a cursor on
+every heartbeat. A corrupt ownership record is retained; it is never interpreted
+as release proof.
+
+The release response has one explicit `outcome`. `released` means matched proof
+changed capacity. `stale` is a definitive acknowledgement that the proof owns no
+capacity here, so the receipt is quarantined and the claim barrier is removed
+without changing another owner's capacity. `inconclusive` means the API could
+not reconstruct the owner, so an obligation may remain: the Runner retains both
+the receipt and the claim barrier for another cycle, and capacity is never freed
+without a matched proof. A missing, malformed or unknown outcome fails response
+decoding and retains the same responsibility; it cannot be converted to stale.
+
+There is no old-response fallback for this non-GA path. No production publisher
+is enabled and `piDeferredSandbox` remains off, so an old API cannot produce a
+v4 job for a new Runner and old Runners remain excluded from v4 jobs. The
+capable API, Runner/Guest and commit-addressed CLI become one reader floor
+before any activation; after activation, existing v4 obligations must drain
+before rollback below that floor.
+
+Cleanup identity is independent of a still-live execution binding. A threadless
+private maintenance Run is otherwise discoverable only through the live
+`pi_memory_phase2_jobs.maintenance_run_id` mapping, which normal checkpoint
+settlement, success and failure retire. Cleanup therefore resolves the resource
+from the Run's retained, hash- and namespace-verified captured configuration and
+still requires that storage to belong to both the Run owner and the captured
+cleanup owner. Execution admission is unchanged and continues to validate the
+live maintenance lease.
 
 ## Migration and verification boundaries
 
@@ -166,8 +237,9 @@ lease tables, so their cardinality was unknown, not zero. Migration numbering is
 generated from the current Drizzle journal, never reserved against another PR.
 
 Focused verification uses real PostgreSQL persistence, a separate terminated H1
-publisher process, actual queue/Runner HTTP handlers, bounded CLI fetch
-interception, existing native RPC continuation tests and Runner compile/tests.
+publisher process, actual queue/Runner HTTP handlers, Guest-private authenticated
+chunk reads with child-environment isolation, bounded CLI file reads, existing
+native RPC continuation tests and Runner compile/tests.
 These are implementation checks. A real production Sandbox, provider traffic,
 usage reconciliation, deployment and the sub-300ms performance target require the
 controller's separate acceptance and release process.

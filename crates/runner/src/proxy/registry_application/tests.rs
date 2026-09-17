@@ -7,6 +7,8 @@ use tokio::net::{UnixListener, UnixStream};
 
 use super::*;
 
+mod observer;
+
 fn receipt(digest: &RegistryDigest) -> Value {
     json!({
         "expectedDigest": digest,

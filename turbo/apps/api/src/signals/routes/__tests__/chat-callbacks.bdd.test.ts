@@ -14,7 +14,10 @@ import {
   type GenerationTemplateRequest,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+  CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
@@ -1611,11 +1614,17 @@ describe("CHAT-02: completed chat callback", () => {
       }),
     ).toBeTruthy();
 
+    expect(requestsBySite.get("title")).toStrictEqual({
+      model: "google/gemini-3.1-flash-lite",
+      max_tokens: 2048,
+      reasoning: { effort: "minimal" },
+    });
+
     // Reasoning tokens are drawn from the same budget as the answer, so a
     // budget sized for a non-reasoning model starves the answer entirely. This
     // model cannot disable thinking and "low" is already its floor, so the
     // shared ceiling is the only lever that keeps the answer from being lost.
-    for (const site of ["title", "followups", "notification", "runSummary"]) {
+    for (const site of ["followups", "notification", "runSummary"]) {
       expect(requestsBySite.get(site)).toStrictEqual({
         model: "google/gemini-3.8-flash",
         max_tokens: 2048,
@@ -4517,6 +4526,13 @@ describe("CHAT-02: failed chat callbacks", () => {
         expectedError: CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
         failureReason: "execution_timeout",
       },
+      {
+        prompt: "safety refusal",
+        error:
+          "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
+        expectedError: CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
+        failureReason: "safety_policy_refusal",
+      },
     ];
 
     let threadId: string | undefined;
@@ -4988,7 +5004,7 @@ describe("CHAT-02: auto-send after failures", () => {
     };
     const templatePrompt = `[Template #1: ${style.title} (illustration)]`;
     const feedbackPrompt =
-      "Feedback on this part of your reply:\n\n" +
+      "The user quoted this part of your reply:\n\n" +
       "> The failed response omitted the owner\n\nName the responsible owner";
 
     const failedForNormal = await startChatRun(actor, {

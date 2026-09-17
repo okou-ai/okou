@@ -21,6 +21,7 @@ import { clampThinkingLevel } from "@earendil-works/pi-ai";
 
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 import { streamWithModelRequestDiagnostics } from "./model-request-diagnostics";
+import { observePiUsageFetch } from "./usage-transport";
 import {
   observePiResponseStatus,
   type PiAgentStreamOptions,
@@ -372,7 +373,13 @@ export function piAgentStreamForConfig(
       );
     };
     const fetch = observePiResponseStatus(
-      configuredOptions.fetch ?? globalThis.fetch,
+      observePiUsageFetch(
+        configuredOptions.fetch ?? globalThis.fetch,
+        config.dialect === "openai-codex-responses"
+          ? "codex-responses"
+          : "responses",
+        configuredOptions.usageObserver,
+      ),
       configuredOptions.onObservedResponseStatus,
     );
     return streamWithModelRequestDiagnostics(

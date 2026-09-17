@@ -13922,7 +13922,7 @@ describe("usage pack allocation management", () => {
     });
   });
 
-  it.each([
+  describe.each([
     {
       label: "exclusive tax",
       lineAmountCents: 1000,
@@ -13946,54 +13946,58 @@ describe("usage pack allocation management", () => {
     },
   ])(
     "keeps invitation credits time-based with $label",
-    async ({
+    ({
       lineAmountCents,
       subtotalCents,
       exclusiveTaxCents,
       expectedAmountCents,
     }) => {
-      const { fixture, email } =
-        await setupInvitationPreviewContext("priced-invite");
-      mockInvitationChargePreview({
-        lines: [{ lineAmountCents, subtotalCents, exclusiveTaxCents }],
-        periodEnd: fixture.billingPeriod.end,
+      let prepared: Awaited<ReturnType<typeof setupInvitationPreviewContext>>;
+      beforeEach(async () => {
+        prepared = await setupInvitationPreviewContext("priced-invite");
+        mockInvitationChargePreview({
+          lines: [{ lineAmountCents, subtotalCents, exclusiveTaxCents }],
+          periodEnd: prepared.fixture.billingPeriod.end,
+        });
       });
+      it("previews and persists time-based invitation credits", async () => {
+        const { fixture, email } = prepared;
+        const response = await accept(
+          setupApp({ context, routes: orgInviteRoutes })(
+            orgInviteContract,
+          ).previewPurchase({
+            headers: { authorization: "Bearer clerk-session" },
+            body: { email, role: "member", usagePackUsd: 20 },
+          }),
+          [200],
+        );
 
-      const response = await accept(
-        setupApp({ context, routes: orgInviteRoutes })(
-          orgInviteContract,
-        ).previewPurchase({
-          headers: { authorization: "Bearer clerk-session" },
-          body: { email, role: "member", usagePackUsd: 20 },
-        }),
-        [200],
-      );
-
-      expect(response.body).toStrictEqual({
-        purchaseId: expect.any(String),
-        usagePackUsd: 20,
-        immediateAmountCents: expectedAmountCents,
-        currency: "usd",
-        purchasedCredits: 10_000,
-        bonusCredits: 200,
-        totalCredits: 10_200,
-        currentPeriodEnd: new Date(
-          fixture.billingPeriod.end * 1000,
-        ).toISOString(),
-        expiresAt: expect.any(String),
-      });
-      const state = await readUsagePackState(
-        fixture.orgId,
-        fixture.usagePackSubscriptionId,
-      );
-      expect(state.invitationPurchases).toContainEqual(
-        expect.objectContaining({
-          id: response.body.purchaseId,
-          expectedAmountCents,
+        expect(response.body).toStrictEqual({
+          purchaseId: expect.any(String),
+          usagePackUsd: 20,
+          immediateAmountCents: expectedAmountCents,
+          currency: "usd",
           purchasedCredits: 10_000,
           bonusCredits: 200,
-        }),
-      );
+          totalCredits: 10_200,
+          currentPeriodEnd: new Date(
+            fixture.billingPeriod.end * 1000,
+          ).toISOString(),
+          expiresAt: expect.any(String),
+        });
+        const state = await readUsagePackState(
+          fixture.orgId,
+          fixture.usagePackSubscriptionId,
+        );
+        expect(state.invitationPurchases).toContainEqual(
+          expect.objectContaining({
+            id: response.body.purchaseId,
+            expectedAmountCents,
+            purchasedCredits: 10_000,
+            bonusCredits: 200,
+          }),
+        );
+      });
     },
   );
 

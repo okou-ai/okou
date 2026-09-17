@@ -104,7 +104,7 @@ export function piApiFirstTurnError(
   );
 }
 
-export type PiSandboxFallbackReason =
+type PiSandboxFallbackReason =
   | "PI_API_COMPACTION_PREFLIGHT_REQUIRED"
   | "PI_API_NATIVE_INPUT_REQUIRED"
   | "PI_API_PREHEAT_FAILED"
@@ -208,9 +208,7 @@ interface ApiFirstTurnRecoveryFacts {
 
 type ApiFirstTurnRecoveryDecision = {
   readonly modelFailure: PiApiModelFailureDiagnostic | undefined;
-  readonly resourceFallbackReason: PiSandboxFallbackReason | null;
   readonly logAttemptTimeout: boolean;
-  readonly suppressCompletionFailureLog: boolean;
 } & (
   | { readonly outcome: "sandbox-first"; readonly reason: PiSandboxFirstReason }
   | { readonly outcome: "arbitrate-terminal" }
@@ -276,9 +274,7 @@ export function decideApiFirstTurnRecovery(
     coordinationRemains;
   const diagnostics = {
     modelFailure,
-    resourceFallbackReason: resourceReason,
     logAttemptTimeout: apiOwnershipExpired && coordinationRemains,
-    suppressCompletionFailureLog: apiOwnershipExpired || apiModelFailed,
   };
   // Publication may have succeeded even when its response was lost. Only the
   // guarded terminal effect can arbitrate failure after this irreversible edge.

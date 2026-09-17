@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use super::ActiveInputForwarder;
 use crate::active_input::{ActiveInputSource, local_active_input_delivery_id};
 use crate::ids::RunId;
-use crate::local_queue::{ActiveInputEntry, LocalQueue};
+use crate::local_queue::{self, ActiveInputEntry, LocalQueue};
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -22,6 +22,14 @@ async fn assert_cancelled_local_batch(cancellation: CancelForwarding) {
     let dir = tempfile::tempdir().unwrap();
     let run_id = RunId::new_v4();
     let queue = LocalQueue::new(dir.path().to_path_buf());
+    let profile = crate::profile::DEFAULT_PROFILE;
+    local_queue::ensure_profile_jobs_dir(dir.path(), profile).unwrap();
+    local_queue::write_private_file(
+        &local_queue::job_path(dir.path(), profile, run_id).unwrap(),
+        b"{}",
+        "test local job",
+    )
+    .unwrap();
     for (sequence, text) in [(1, "first"), (2, "second"), (3, "third")] {
         queue
             .write_active_input_sync(&ActiveInputEntry {

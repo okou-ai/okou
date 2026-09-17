@@ -4,7 +4,12 @@ import { expect, onTestFinished } from "vitest";
 import { db } from "../lib/db";
 import type { Tx } from "../lib/db-types";
 import { executeRawRows } from "../lib/db-raw-rows";
-import { createDeferredPromise, settle } from "../signals/utils";
+import {
+  createDeferredPromise,
+  isAbortError,
+  onRejection,
+  settleIncludingAbort,
+} from "../signals/utils";
 
 export async function holdDeferredRow(
   signal: AbortSignal,
@@ -13,40 +18,55 @@ export async function holdDeferredRow(
 ) {
   const entered = createDeferredPromise<number>(signal);
   const release = createDeferredPromise<void>(signal);
-  let released = false;
   const releaseOnce = () => {
-    if (!released) {
-      released = true;
+    if (!release.settled()) {
       release.resolve();
     }
   };
-  const transaction = db().transaction(async (tx) => {
-    await lock(tx);
-    const [row] = await executeRawRows(
-      tx,
-      sql`SELECT pg_backend_pid() AS pid`,
-      z.object({ pid: z.number() }),
-    );
-    if (!row) {
-      throw new Error("Missing backend identity");
-    }
-    entered.resolve(row.pid);
-    await release.promise;
-    await beforeCommit?.(tx);
-  });
-  onTestFinished(async () => {
+  // Observe rejection immediately: afterEach aborts the signal before
+  // onTestFinished joins the transaction and releases its database connection.
+  const transaction = settleIncludingAbort(
+    onRejection(
+      db().transaction(async (tx) => {
+        signal.throwIfAborted();
+        await lock(tx);
+        signal.throwIfAborted();
+        const [row] = await executeRawRows(
+          tx,
+          sql`SELECT pg_backend_pid() AS pid`,
+          z.object({ pid: z.number() }),
+        );
+        signal.throwIfAborted();
+        if (!row) {
+          throw new Error("Missing backend identity");
+        }
+        entered.resolve(row.pid);
+        await release.promise;
+        signal.throwIfAborted();
+        await beforeCommit?.(tx);
+        signal.throwIfAborted();
+      }),
+      (error) => {
+        if (!entered.settled()) {
+          entered.reject(error);
+        }
+      },
+    ),
+  );
+  const releaseLock = async () => {
     releaseOnce();
-    await settle(transaction);
-  });
+    const result = await transaction;
+    if (!result.ok && !(signal.aborted && isAbortError(result.error))) {
+      throw result.error;
+    }
+  };
+  onTestFinished(releaseLock);
   const pid = await entered.promise;
   return {
     waitForBlocked: () => {
       return waitForDeferredBlocker(pid);
     },
-    release: async () => {
-      releaseOnce();
-      await transaction;
-    },
+    release: releaseLock,
   };
 }
 

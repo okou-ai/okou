@@ -1,5 +1,4 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { webFileUrlRoutes } from "../web-file-url";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -14,7 +13,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
 
 import {
   findManagedSocialKitTool,
@@ -3106,8 +3105,8 @@ describe("managed SocialKit route", () => {
         },
       });
       if (privateFiles) {
-        expect(completed.body.artifact?.url).toBe(
-          artifactReferencePath(created.body.downloadId, "Public _ 视频.mp4"),
+        expect(completed.body.artifact?.url).toMatch(
+          /^\/artifacts\/[a-z0-9]{10}\.mp4$/u,
         );
         context.mocks.s3.send.mockImplementation((command) => {
           expect(command).toBeInstanceOf(HeadObjectCommand);
@@ -3809,36 +3808,54 @@ describe("managed SocialKit route", () => {
     });
   });
 
-  it.each([
+  describe.each([
     { format: "mp4", contentType: "video/mp4" },
     { format: "m4a", contentType: "audio/mp4" },
     { format: "mp3", contentType: "audio/mpeg" },
   ] as const)(
     "keeps requested $format hints and unknown delivery for an unrecognized container",
-    async ({ format, contentType }) => {
-      const actor = createBddApi(context).user();
-      configureProvider();
-      const pricing = await setupConfiguredPricing();
-      await fundActor(actor);
-      const payload = new Uint8Array([
-        0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-      ]);
-
-      const body = await completeDownloadWithPayload(actor, pricing, payload, {
-        format,
-        creditsCost: 2,
+    ({ format, contentType }) => {
+      async function prepareScenario() {
+        const actor = createBddApi(context).user();
+        configureProvider();
+        const pricing = await setupConfiguredPricing();
+        await fundActor(actor);
+        const payload = new Uint8Array([
+          0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00,
+        ]);
+        return { actor, pricing, payload };
+      }
+      let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+      beforeEach(async () => {
+        preparedScenario = await prepareScenario();
       });
+      it("preserves the complete scenario", async () => {
+        const { actor, pricing, payload } = preparedScenario;
 
-      expect(body).toMatchObject({
-        status: "completed",
-        delivered: { quality: format === "mp4" ? "720p" : null, format: null },
-        artifact: {
-          filename: `Public clip.${format}`,
-          contentType,
-          sizeBytes: payload.byteLength,
-          format: null,
-        },
+        const body = await completeDownloadWithPayload(
+          actor,
+          pricing,
+          payload,
+          {
+            format,
+            creditsCost: 2,
+          },
+        );
+
+        expect(body).toMatchObject({
+          status: "completed",
+          delivered: {
+            quality: format === "mp4" ? "720p" : null,
+            format: null,
+          },
+          artifact: {
+            filename: `Public clip.${format}`,
+            contentType,
+            sizeBytes: payload.byteLength,
+            format: null,
+          },
+        });
       });
     },
   );

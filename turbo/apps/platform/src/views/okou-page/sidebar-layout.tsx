@@ -50,7 +50,7 @@ import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subsc
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
 import {
-  colorTheme$,
+  paletteColorTheme$,
   shellDocumentAttributesRef$,
 } from "../../signals/theme.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
@@ -120,7 +120,8 @@ function MobileArtifactsButtonInner({ thread }: { thread: ChatPanelSignals }) {
       size="icon-sm"
       className={cn(
         "shrink-0",
-        open && "bg-primary/10 text-brand-text hover:text-brand-text",
+        open &&
+          "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
       )}
       aria-label={t(($) => {
         return $.appShell.sidebar.mobile.openArtifacts;
@@ -384,10 +385,7 @@ function MobileSidebarMount() {
 }
 
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
-  const colorTheme = useGet(colorTheme$);
-  const features = useGet(featureSwitch$);
-  const gradientColorThemesEnabled =
-    features[FeatureSwitchKey.GradientColorThemes] ?? false;
+  const paletteColorTheme = useGet(paletteColorTheme$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
 
@@ -396,8 +394,10 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       ref={shellDocumentAttributesRef}
       data-slot="app-shell"
       className="box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0 md:bg-sidebar"
-      data-gradient-color-themes={gradientColorThemesEnabled || undefined}
-      data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
+      data-gradient-color-themes={
+        paletteColorTheme === undefined ? undefined : true
+      }
+      data-color-theme={paletteColorTheme}
     >
       <SettingsDialogMount />
       <ChatShortcutHelpDialog />

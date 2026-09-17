@@ -4,7 +4,7 @@ import { listConnectorCatalogStatus } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { findConnectorBySelector } from "./connector-selector";
 import { resolveAgentContext, resolveConnectorAgentId } from "./agent-context";
-import { getPlatformOrigin } from "../doctor/platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   availableConnectorSlugs,
   findConnectorStatusItem,

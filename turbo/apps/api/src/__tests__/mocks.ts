@@ -1384,7 +1384,12 @@ export async function withRealAxiomLoggingForTest(
 type AxiomSdkTelemetryFailure =
   // `datasets` lists exact Axiom dataset names, including the
   // `AXIOM_DATASET_SUFFIX`. Omit it to fail every ingest.
-  | { readonly mode: "ingest"; readonly datasets?: readonly string[] }
+  | {
+      readonly mode: "ingest";
+      readonly datasets?: readonly string[];
+      readonly eventTypes?: readonly string[];
+      readonly error?: Error;
+    }
   // The SDK flushes a client, not a dataset, so this mode takes no filter.
   | { readonly mode: "flush" };
 
@@ -1398,16 +1403,26 @@ export function mockAxiomSdkTelemetryFailure(
     );
     return;
   }
-  const datasets = failure.datasets;
-  apiTestMocks.axiom.sdkIngest.mockImplementation((dataset: unknown) => {
-    if (
-      datasets === undefined ||
-      (typeof dataset === "string" && datasets.includes(dataset))
-    ) {
-      throw new Error("Axiom SDK ingest failed");
-    }
-    return undefined;
-  });
+  const { datasets, eventTypes, error } = failure;
+  apiTestMocks.axiom.sdkIngest.mockImplementation(
+    (dataset: unknown, events: unknown) => {
+      const matchesDataset =
+        datasets === undefined ||
+        (typeof dataset === "string" && datasets.includes(dataset));
+      const matchesEvent =
+        eventTypes === undefined ||
+        z
+          .array(z.object({ type: z.string().optional() }))
+          .parse(events)
+          .some((entry) => {
+            return entry.type !== undefined && eventTypes.includes(entry.type);
+          });
+      if (matchesDataset && matchesEvent) {
+        throw error ?? new Error("Axiom SDK ingest failed");
+      }
+      return undefined;
+    },
+  );
 }
 
 /**

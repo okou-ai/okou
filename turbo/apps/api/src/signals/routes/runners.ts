@@ -3398,15 +3398,15 @@ const deferredReleaseInner$ = command(
       return body.response;
     }
     const { id } = get(pathParamsOf(runnersJobClaimContract.release));
-    const released = await releaseDeferredPiSandbox(set(writeDb$), {
+    const outcome = await releaseDeferredPiSandbox(set(writeDb$), {
       ...body.data,
       runId: id,
     });
     signal.throwIfAborted();
-    if (released) {
+    if (outcome === "released") {
       await set(settleDeferredPiTerminal$, id, signal);
     }
-    return { status: 200 as const, body: { released } };
+    return { status: 200 as const, body: { outcome } };
   },
 );
 

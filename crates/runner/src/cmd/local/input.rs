@@ -92,6 +92,9 @@ fn run_input_with_home(args: InputArgs, home: HomePaths) -> RunnerResult<ExitCod
         )));
     }
 
+    #[cfg(test)]
+    race_tests::pre_publication_checkpoint();
+
     queue
         .write_active_input_sync(&ActiveInputEntry {
             run_id: args.run,
@@ -103,6 +106,19 @@ fn run_input_with_home(args: InputArgs, home: HomePaths) -> RunnerResult<ExitCod
     eprintln!("active input {} written for {}", args.sequence, args.run);
     Ok(ExitCode::SUCCESS)
 }
+
+#[cfg(test)]
+pub(crate) fn active_input_publication_locked_for_test() {
+    race_tests::publication_locked_checkpoint();
+}
+
+#[cfg(test)]
+pub(crate) fn active_input_lock_attempt_for_test(file: &std::fs::File) {
+    race_tests::lock_attempt_checkpoint(file);
+}
+
+#[cfg(test)]
+mod race_tests;
 
 #[cfg(test)]
 mod tests {

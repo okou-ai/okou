@@ -7,7 +7,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
@@ -27,6 +27,15 @@ export interface ComputeRunOwner extends Owner {
   readonly resourceOwner?: Owner;
   /** Cleanup retains the captured B1 subjects even after resource transfer. */
   readonly capturedCleanupOwner?: Owner;
+  /**
+   * Durable resource identity captured when the run was admitted. A threadless
+   * private maintenance run is otherwise discoverable only through the live
+   * `pi_memory_phase2_jobs.maintenance_run_id` binding, which normal checkpoint
+   * settlement, success and failure retire. Cleanup callers pass the captured
+   * identity so a later physical-release proof still finds the exact resource;
+   * execution admission keeps validating the live lease separately.
+   */
+  readonly capturedMaintenanceStorageId?: string;
 }
 
 interface ResourceOwner extends Owner {
@@ -134,6 +143,54 @@ async function lockResource(tx: Tx, observed: ResourceOwner): Promise<void> {
   }
 }
 
+async function readNewComputeOwners(
+  tx: Tx,
+  identity: Pick<ResourceOwner, "kind" | "id">,
+  existingSessionId: string | undefined,
+) {
+  if (identity.kind === "agent" && existingSessionId !== undefined) {
+    const [observed] = await tx
+      .select({
+        resource: {
+          id: agents.id,
+          userId: agents.owner,
+          orgId: agents.orgId,
+        },
+        session: {
+          userId: agentSessions.userId,
+          orgId: agentSessions.orgId,
+          agentId: agentSessions.agentId,
+        },
+      })
+      // Each observation survives independently, even if the other row is gone.
+      .from(sql`(SELECT 1) AS admission`)
+      .leftJoin(agents, eq(agents.id, identity.id))
+      .leftJoin(agentSessions, eq(agentSessions.id, existingSessionId));
+    if (!observed) {
+      throw new Error("Missing new-run ownership observation");
+    }
+    return {
+      resource: observed.resource
+        ? { ...observed.resource, kind: identity.kind }
+        : undefined,
+      session: observed.session ?? undefined,
+    };
+  }
+  const resource = await readResource(tx, identity, false);
+  const [session] =
+    existingSessionId === undefined
+      ? []
+      : await tx
+          .select({
+            userId: agentSessions.userId,
+            orgId: agentSessions.orgId,
+            agentId: agentSessions.agentId,
+          })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, existingSessionId));
+  return { resource, session };
+}
+
 /** First operation in each new-run persistence transaction, including failures. */
 export async function admitNewComputeRun(
   tx: Tx,
@@ -153,18 +210,11 @@ export async function admitNewComputeRun(
   if (!identity) {
     return false;
   }
-  const resource = await readResource(tx, identity, false);
-  const [session] =
-    args.existingSessionId === undefined
-      ? []
-      : await tx
-          .select({
-            userId: agentSessions.userId,
-            orgId: agentSessions.orgId,
-            agentId: agentSessions.agentId,
-          })
-          .from(agentSessions)
-          .where(eq(agentSessions.id, args.existingSessionId));
+  const { resource, session } = await readNewComputeOwners(
+    tx,
+    identity,
+    args.existingSessionId,
+  );
   const expected = { userId: args.ownerUserId, orgId: args.agentOrgId };
   const allowed = await writable(tx, [
     args,
@@ -189,27 +239,101 @@ export async function admitNewComputeRun(
   );
 }
 
-export async function validateNewComputeSession(
+const lockedComputeSessionTransaction = Symbol(
+  "lockedComputeSessionTransaction",
+);
+
+export interface LockedComputeSessionSnapshot extends Owner {
+  readonly id: string;
+  readonly agentId: string | null;
+  readonly conversationId: string | null;
+  readonly [lockedComputeSessionTransaction]: Tx;
+}
+
+/** Only this locked read can establish the observation's transaction provenance. */
+export async function lockComputeSessionSnapshot(
   tx: Tx,
-  args: ComputeRunOwner & { readonly existingSessionId: string | undefined },
-): Promise<boolean> {
-  if (args.existingSessionId === undefined) {
-    return true;
-  }
+  sessionId: string,
+): Promise<LockedComputeSessionSnapshot | undefined> {
   const [session] = await tx
     .select({
+      id: agentSessions.id,
+      conversationId: agentSessions.conversationId,
       userId: agentSessions.userId,
       orgId: agentSessions.orgId,
       agentId: agentSessions.agentId,
     })
     .from(agentSessions)
-    .where(eq(agentSessions.id, args.existingSessionId))
-    .for("update");
+    .where(eq(agentSessions.id, sessionId))
+    .for("update")
+    .limit(1);
+  return session
+    ? Object.freeze({ ...session, [lockedComputeSessionTransaction]: tx })
+    : undefined;
+}
+
+export async function validateNewComputeSession(
+  tx: Tx,
+  args: ComputeRunOwner & { readonly existingSessionId: string | undefined },
+  observedSession?: LockedComputeSessionSnapshot,
+): Promise<boolean> {
+  if (args.existingSessionId === undefined) {
+    return true;
+  }
+  const [session] =
+    observedSession?.[lockedComputeSessionTransaction] === tx &&
+    observedSession.id === args.existingSessionId
+      ? [observedSession]
+      : await tx
+          .select({
+            userId: agentSessions.userId,
+            orgId: agentSessions.orgId,
+            agentId: agentSessions.agentId,
+          })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, args.existingSessionId))
+          .for("update");
   return (
     session !== undefined &&
     sameOwner(session, args) &&
     session.agentId === args.agentId
   );
+}
+
+/**
+ * Only a cleanup caller that carries a captured cleanup owner may recover a
+ * retired private maintenance identity. Execution admission never does.
+ */
+function recoveredMaintenanceId(
+  expected: ComputeRunOwner,
+  run: { readonly agentId: string | null; readonly bound: boolean },
+): string | undefined {
+  if (run.agentId !== null || run.bound) {
+    return undefined;
+  }
+  return expected.capturedCleanupOwner === undefined
+    ? undefined
+    : expected.capturedMaintenanceStorageId;
+}
+
+/**
+ * A live binding stays authoritative when it exists. A recovered identity is
+ * accepted only when the storage still belongs to both the Run owner and the
+ * captured cleanup owner.
+ */
+function maintenanceResourceOwned(args: {
+  readonly resource: ResourceOwner;
+  readonly owner: Owner;
+  readonly bound: Owner | undefined;
+  readonly capturedCleanupOwner: Owner | undefined;
+}): boolean {
+  if (!sameOwner(args.resource, args.owner)) {
+    return false;
+  }
+  if (args.capturedCleanupOwner === undefined) {
+    return args.bound !== undefined && sameOwner(args.bound, args.owner);
+  }
+  return sameOwner(args.resource, args.capturedCleanupOwner);
 }
 
 /** Resolve without business locks, then acquire the complete sorted B1 set. */
@@ -228,9 +352,15 @@ export async function prepareComputeRunAdmission(
         userId: agentSessions.userId,
         orgId: agentSessions.orgId,
       },
+      agentOwner: {
+        id: agents.id,
+        userId: agents.owner,
+        orgId: agents.orgId,
+      },
     })
     .from(agentRuns)
     .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
     .where(eq(agentRuns.id, runId));
   if (!owner) {
     return undefined;
@@ -247,15 +377,24 @@ export async function prepareComputeRunAdmission(
           .where(eq(piMemoryPhase2Jobs.maintenanceRunId, runId))
           .limit(1)
       : [];
-  const identity =
-    owner.agentId !== null
-      ? { kind: "agent" as const, id: owner.agentId }
-      : maintenance
-        ? { kind: "maintenance" as const, id: maintenance.id }
-        : undefined;
-  const resource = identity
-    ? await readResource(tx, identity, false)
-    : undefined;
+  // A retired maintenance binding is not proof that no obligation remains. Fall
+  // back to the caller's captured identity, which only cleanup supplies.
+  const capturedMaintenance = recoveredMaintenanceId(expected, {
+    agentId: owner.agentId,
+    bound: maintenance !== undefined,
+  });
+  const maintenanceId = maintenance?.id ?? capturedMaintenance;
+  // This join only discovers subjects. The resource still needs its locked
+  // reread below, and maintenance keeps its independent job/Storage authority.
+  const resource = owner.agentOwner
+    ? { ...owner.agentOwner, kind: "agent" as const }
+    : maintenanceId === undefined
+      ? undefined
+      : await readResource(
+          tx,
+          { kind: "maintenance", id: maintenanceId },
+          false,
+        );
   const allowed = await writable(tx, [
     owner,
     owner.sessionOwner,
@@ -277,9 +416,14 @@ export async function prepareComputeRunAdmission(
   }
   if (
     resource.kind === "maintenance" &&
-    (!maintenance ||
-      !sameOwner(maintenance, owner) ||
-      !sameOwner(resource, owner))
+    !maintenanceResourceOwned({
+      resource,
+      owner,
+      bound: maintenance,
+      capturedCleanupOwner: capturedMaintenance
+        ? expected.capturedCleanupOwner
+        : undefined,
+    })
   ) {
     return undefined;
   }

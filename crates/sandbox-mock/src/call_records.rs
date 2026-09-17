@@ -192,6 +192,8 @@ pub struct ProcessControlCall {
 /// Captured `write_file` request fields recorded for test assertions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WriteFileCall {
+    /// Caller-selected compression; content remains the final raw file bytes.
+    pub compression: sandbox::FileCompression,
     /// Guest path passed to `write_file`.
     pub path: String,
     /// Content bytes passed to `write_file`.

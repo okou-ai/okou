@@ -1,6 +1,12 @@
 import { randomBytes } from "node:crypto";
 
 import {
+  assertClerkCleanupCanRequest,
+  fetchClerkRequest,
+  waitForClerkRequest,
+  withClerkCleanupBudget,
+} from "./clerk-cleanup-budget";
+import {
   forgetClerkResource,
   readClerkResourceRecords,
   recordClerkResource,
@@ -350,7 +356,14 @@ export async function createOrganization(
       "org:admin",
     );
   } catch (cause) {
-    await deleteOrganizationById(data.id);
+    try {
+      await withClerkCleanupBudget(() => deleteOrganizationById(data.id));
+    } catch (cleanupCause) {
+      console.error(
+        "Clerk organization rollback failed; retaining its owner",
+        cleanupCause,
+      );
+    }
     throw cause;
   }
   return data.id;
@@ -426,6 +439,13 @@ export async function cleanupClerkTestJobRef(
 export async function cleanupRecordedClerkTestResources(
   roles: readonly ClerkTestRole[],
   scope: "generation" | "run" = "generation",
+): Promise<void> {
+  await withClerkCleanupBudget(() => cleanupRecordedResources(roles, scope));
+}
+
+async function cleanupRecordedResources(
+  roles: readonly ClerkTestRole[],
+  scope: "generation" | "run",
 ): Promise<void> {
   assertCleanupRoles(roles);
   const records = (await readClerkResourceRecords()).map(parseResourceRecord);
@@ -569,6 +589,15 @@ export async function cleanupStaleClerkTestResources(
 }
 
 async function cleanupClerkTestResources(
+  selection: ClerkCleanupSelection,
+  options: ClerkCleanupOptions,
+): Promise<ClerkCleanupResult> {
+  return await withClerkCleanupBudget(() =>
+    reconcileClerkTestResources(selection, options),
+  );
+}
+
+async function reconcileClerkTestResources(
   selection: ClerkCleanupSelection,
   options: ClerkCleanupOptions,
 ): Promise<ClerkCleanupResult> {
@@ -876,16 +905,17 @@ export async function deleteOrganizationById(
 export async function deleteClerkTestOwnerResources(
   email: string,
   organizationId: string | undefined,
-  role: ClerkTestRole,
 ): Promise<void> {
   if (!organizationId) {
     // Organization creation may have committed even when its response was lost.
-    // Reconcile the owner scope so the user is never deleted ahead of that org.
-    await cleanupCurrentClerkTestGeneration([role]);
+    // Keep its owner for recorded finalization and the existing strict-marker
+    // stale sweep; a failed setup must not start another instance-wide scan.
     return;
   }
-  await deleteOrganizationById(organizationId);
-  await deleteUserByEmail(email);
+  await withClerkCleanupBudget(async () => {
+    await deleteOrganizationById(organizationId);
+    await deleteUserByEmail(email);
+  });
 }
 
 export async function deleteUserByEmail(email: string): Promise<void> {
@@ -961,10 +991,12 @@ async function requestClerkWithRetry(
 ): Promise<Response> {
   const url = `${getClerkApiBase()}${path}`;
   for (let attempt = 0; attempt <= CLERK_RETRY_DELAYS_MS.length; attempt += 1) {
+    assertClerkCleanupCanRequest();
     let response: Response;
     try {
-      response = await fetch(url, init);
+      response = await fetchClerkRequest(url, init);
     } catch (cause) {
+      assertClerkCleanupCanRequest();
       const fallbackDelayMs = CLERK_RETRY_DELAYS_MS[attempt];
       if (fallbackDelayMs === undefined) {
         throw new Error(
@@ -1100,7 +1132,7 @@ function clerkRetryDelayMs(
 }
 
 async function wait(delayMs: number): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  await waitForClerkRequest(delayMs);
 }
 
 async function readClerkJson(

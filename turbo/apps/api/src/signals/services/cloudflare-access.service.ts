@@ -13,6 +13,7 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { lockSshOwner, sshCredentialFailure } from "./ssh-credential.service";
+import { checkSshCreationId } from "./ssh-creation.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 
 interface Owner {
@@ -145,10 +146,12 @@ export async function insertCloudflareAccessConfig(
   tx: Transaction,
   owner: Owner,
   prepared: Awaited<ReturnType<typeof prepareCloudflareAccessConfig>>,
+  id?: string,
 ) {
   const [created] = await tx
     .insert(cloudflareAccessConfigs)
     .values({
+      id,
       orgId: owner.orgId,
       userId: owner.userId,
       ...prepared,
@@ -163,6 +166,7 @@ export async function createCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Owner;
   readonly body: CreateCloudflareAccessRequest;
+  readonly id: string;
   readonly featureContext: FeatureSwitchContext;
 }) {
   const prepared = await prepareCloudflareAccessConfig(
@@ -171,9 +175,29 @@ export async function createCloudflareAccessConfig(args: {
   );
   const config = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
-    return insertCloudflareAccessConfig(tx, args.owner, prepared);
+    const creation = await checkSshCreationId(
+      tx,
+      args.owner,
+      cloudflareAccessConfigs,
+      args.id,
+    );
+    if (!creation.ok) {
+      return creation;
+    }
+    if (!creation.value) {
+      return { ok: true as const, value: undefined };
+    }
+    const value = await insertCloudflareAccessConfig(
+      tx,
+      args.owner,
+      prepared,
+      args.id,
+    );
+    return { ok: true as const, value };
   });
-  await publishSshClientInvalidation(args.owner);
+  if (config.ok && config.value) {
+    await publishSshClientInvalidation(args.owner);
+  }
   return config;
 }
 function lockReferencingHosts(tx: Transaction, owner: Owner, configId: string) {

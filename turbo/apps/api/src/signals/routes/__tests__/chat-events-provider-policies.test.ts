@@ -886,8 +886,10 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       pricing,
     );
-    await waitForRunStatus(actor, traced.runId, "completed");
+    // API-first execution can outlive the send response; join its owned work
+    // before asserting completion or changing the tracing configuration.
     await flushWaitUntilForTest();
+    expect((await api.readRun(actor, traced.runId)).status).toBe("completed");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -909,8 +911,8 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       pricing,
     );
-    await waitForRunStatus(actor, untraced.runId, "completed");
     await flushWaitUntilForTest();
+    expect((await api.readRun(actor, untraced.runId)).status).toBe("completed");
     await expect(
       api.readRun(actor, untraced.runId),
     ).resolves.not.toHaveProperty("langfuseTraceUrl");

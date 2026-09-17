@@ -13,6 +13,7 @@ import { Buffer } from "node:buffer";
 
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
@@ -5554,78 +5555,89 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
-  it("forks Feishu DM threads without replacing the main session", async () => {
-    const fixture = await setupFeishuRunFixture();
-    const { actor, runnerGroup, appId, callbackUrl } = fixture;
-    await connectFixtureUser(fixture);
-    const mainMessageId = `om_${randomUUID()}`;
-    await postEvent(
-      callbackUrl,
-      directMessage(appId, "start the main Feishu DM", "ou_feishu_user", {
-        messageId: mainMessageId,
-      }),
-      { encrypted: true },
-    );
-    await flushWaitUntilForTest();
-    const initialRun = await findRun(actor, "start the main Feishu DM");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const initialClaim = await runsApi.claimRunnerJob(initialRun.id);
-    expect(initialClaim.resumeSession).toBeNull();
-    const mainSessionId = randomUUID();
-    await completeRunSession({
-      runId: initialRun.id,
-      sandboxToken: initialClaim.sandboxToken,
-      sessionId: mainSessionId,
-      history: `bdd main feishu history ${initialRun.id}`,
+  describe("with a connected integration actor", () => {
+    async function prepareScenario() {
+      const fixture = await setupFeishuRunFixture();
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
+      await connectFixtureUser(fixture);
+      return { callbackUrl, appId, actor, runnerGroup, fixture };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
+    it("forks Feishu DM threads without replacing the main session", async () => {
+      const { callbackUrl, appId, actor, runnerGroup, fixture } =
+        preparedScenario;
+      const mainMessageId = `om_${randomUUID()}`;
+      await postEvent(
+        callbackUrl,
+        directMessage(appId, "start the main Feishu DM", "ou_feishu_user", {
+          messageId: mainMessageId,
+        }),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      const initialRun = await findRun(actor, "start the main Feishu DM");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const initialClaim = await runsApi.claimRunnerJob(initialRun.id);
+      expect(initialClaim.resumeSession).toBeNull();
+      const mainSessionId = randomUUID();
+      await completeRunSession({
+        runId: initialRun.id,
+        sandboxToken: initialClaim.sandboxToken,
+        sessionId: mainSessionId,
+        history: `bdd main feishu history ${initialRun.id}`,
+      });
 
-    const feishuThreadId = `omt_${randomUUID()}`;
-    const threadMessageId = `om_${randomUUID()}`;
-    await postEvent(
-      callbackUrl,
-      directMessage(appId, "open a new Feishu thread", "ou_feishu_user", {
-        messageId: threadMessageId,
-        rootId: mainMessageId,
-        threadId: feishuThreadId,
-      }),
-      { encrypted: true },
-    );
-    await flushWaitUntilForTest();
-    const threadRun = await findRun(actor, "open a new Feishu thread");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const threadClaim = await runsApi.claimRunnerJob(threadRun.id);
-    expect(threadClaim.resumeSession).toBeNull();
-    const threadSessionId = randomUUID();
-    await completeRunSession({
-      runId: threadRun.id,
-      sandboxToken: threadClaim.sandboxToken,
-      sessionId: threadSessionId,
-      history: `bdd feishu thread history ${threadRun.id}`,
+      const feishuThreadId = `omt_${randomUUID()}`;
+      const threadMessageId = `om_${randomUUID()}`;
+      await postEvent(
+        callbackUrl,
+        directMessage(appId, "open a new Feishu thread", "ou_feishu_user", {
+          messageId: threadMessageId,
+          rootId: mainMessageId,
+          threadId: feishuThreadId,
+        }),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      const threadRun = await findRun(actor, "open a new Feishu thread");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const threadClaim = await runsApi.claimRunnerJob(threadRun.id);
+      expect(threadClaim.resumeSession).toBeNull();
+      const threadSessionId = randomUUID();
+      await completeRunSession({
+        runId: threadRun.id,
+        sandboxToken: threadClaim.sandboxToken,
+        sessionId: threadSessionId,
+        history: `bdd feishu thread history ${threadRun.id}`,
+      });
+
+      await postEvent(
+        callbackUrl,
+        directMessage(appId, "return to the main Feishu DM"),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      const mainDmRun = await findRun(actor, "return to the main Feishu DM");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const mainDmClaim = await runsApi.claimRunnerJob(mainDmRun.id);
+      expect(mainDmClaim.resumeSession?.sessionId).toBe(mainSessionId);
+      await runsApi.requestCancelRun(actor, mainDmRun.id, [200]);
+      await flushWaitUntilForTest();
+
+      const client = setupApp({ context, routes: feishuConnectRoutes })(
+        connectContract,
+      );
+      await accept(
+        client.removeInstallation({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { installationId: fixture.installationId },
+        }),
+        [200],
+      );
     });
-
-    await postEvent(
-      callbackUrl,
-      directMessage(appId, "return to the main Feishu DM"),
-      { encrypted: true },
-    );
-    await flushWaitUntilForTest();
-    const mainDmRun = await findRun(actor, "return to the main Feishu DM");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const mainDmClaim = await runsApi.claimRunnerJob(mainDmRun.id);
-    expect(mainDmClaim.resumeSession?.sessionId).toBe(mainSessionId);
-    await runsApi.requestCancelRun(actor, mainDmRun.id, [200]);
-    await flushWaitUntilForTest();
-
-    const client = setupApp({ context, routes: feishuConnectRoutes })(
-      connectContract,
-    );
-    await accept(
-      client.removeInstallation({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { installationId: fixture.installationId },
-      }),
-      [200],
-    );
   });
 
   it("resumes Feishu DM thread sessions and keeps control replies in-thread", async () => {

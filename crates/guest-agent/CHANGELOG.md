@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.91.11](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.10...guest-agent-v0.91.11) (2026-09-17)
+
+
+### Bug Fixes
+
+* unify agent failure classification and completion handling ([#34802](https://github.com/vm0-ai/okou/issues/34802)) ([8cf6c83](https://github.com/vm0-ai/okou/commit/8cf6c836cda07808f7536fc9ee35dcf36e71036b))
+
+## [0.91.10](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.9...guest-agent-v0.91.10) (2026-09-17)
+
+
+### Bug Fixes
+
+* **pi:** authenticate deferred handoff in guest ([#34845](https://github.com/vm0-ai/okou/issues/34845)) ([2562612](https://github.com/vm0-ai/okou/commit/2562612020484e515569c2cb78d11f672b5bff5d))
+
+## [0.91.9](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.8...guest-agent-v0.91.9) (2026-09-17)
+
+## [0.91.8](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.7...guest-agent-v0.91.8) (2026-09-17)
+
+## [0.91.7](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.6...guest-agent-v0.91.7) (2026-09-16)
+
 ## [0.91.6](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.5...guest-agent-v0.91.6) (2026-09-16)
 
 ## [0.91.5](https://github.com/vm0-ai/okou/compare/guest-agent-v0.91.4...guest-agent-v0.91.5) (2026-09-16)

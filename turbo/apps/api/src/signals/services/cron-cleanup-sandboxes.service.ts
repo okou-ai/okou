@@ -1,3 +1,7 @@
+import {
+  hasDurablePiApiRecoveryOwner,
+  recoverDurablePiApiInference$,
+} from "./pi-api-inference-recovery.service";
 import { recoverDeferredPiRuns$ } from "./pi-deferred-sandbox.service";
 import { reclaimPiInferenceObjects } from "./pi-inference-object.service";
 import {
@@ -388,6 +392,9 @@ async function commitStaleRunTimeout(
           lockedRun.launchSnapshot,
         );
         if (lifecycle) {
+          if (hasDurablePiApiRecoveryOwner(lifecycle.inference)) {
+            return { kind: "skipped" };
+          }
           const deadlineExpired =
             piInferenceDeadline(lifecycle).getTime() <= now();
           const heartbeatExpired =
@@ -782,6 +789,24 @@ const cleanupFixtureMaintenance$ = command(
   },
 );
 
+const recoverPiExecutionOwners$ = command(
+  async (
+    { set },
+    db: Db,
+    runIds: readonly string[] | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(recoverDurablePiApiInference$, runIds, signal);
+    signal.throwIfAborted();
+    await set(recoverDeferredPiRuns$, runIds, signal);
+    signal.throwIfAborted();
+    if (runIds === null) {
+      await reclaimPiInferenceObjects(db);
+      signal.throwIfAborted();
+    }
+  },
+);
+
 export const cleanupSandboxes$ = command(
   async (
     { set },
@@ -790,10 +815,8 @@ export const cleanupSandboxes$ = command(
   ): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const runIds = scope.kind === "global" ? null : scope.runIds;
-    await set(recoverDeferredPiRuns$, runIds, signal);
-    if (runIds === null) {
-      await reclaimPiInferenceObjects(db);
-    }
+    await set(recoverPiExecutionOwners$, db, runIds, signal);
+    signal.throwIfAborted();
     const orgIds = scope.kind === "global" ? null : scope.orgIds;
     const currentTime = now();
     const cutoffs = {

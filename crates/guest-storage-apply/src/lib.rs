@@ -113,7 +113,10 @@ pub fn run_storage_files_bytes(input: &[u8]) -> bool {
         let manifest = manifest::parse(json)
             .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))?;
         let files = guest_contracts::storage_files::decode(payload)?;
-        files::validate_bindings(&manifest, &files)?;
+        guest_contracts::storage_files::validate_bindings(
+            &manifest,
+            files.iter().map(|group| group.mount_path.as_str()),
+        )?;
         Ok::<_, std::io::Error>((manifest, files))
     })();
     match parsed {

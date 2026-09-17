@@ -573,6 +573,7 @@ function ArtifactSidebarPreviewActions({
       {kind === "html" && <ArtifactOpenExternalAction url={url} />}
       {shareAvailable && (
         <ArtifactShareButton
+          surface="sidebar"
           shareUrl={shareUrl}
           ariaLabel={t(($) => {
             return $.artifacts.actions.shareArtifact;

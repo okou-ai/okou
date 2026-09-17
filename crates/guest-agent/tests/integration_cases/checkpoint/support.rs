@@ -1,18 +1,75 @@
 use crate::support::*;
 use httpmock::prelude::*;
 use serde_json::json;
-use std::{
-    ffi::OsString,
-    io::{Seek, SeekFrom, Write},
-};
+use std::io::{Seek, SeekFrom, Write};
 
 pub(super) const LARGE_SESSION_HISTORY_SIZE_BYTES: usize = 1024 * 1024 + 1;
 pub(super) const CHECKPOINT_TEST_CANDIDATE_MAX_BYTES: u64 =
     api_contracts::generated::constants::runners::SESSION_HISTORY_GZIP_MIN_BYTES;
 pub(super) const CHECKPOINT_TEST_MAX_BYTES: u64 = CHECKPOINT_TEST_CANDIDATE_MAX_BYTES * 2;
 
-pub(super) fn runtime_from_process_env() -> Result<guest_agent::run_context::GuestRuntime, String> {
-    guest_agent::run_context::GuestRuntime::from_process_env()
+pub(super) fn checkpoint_runtime() -> Result<guest_agent::run_context::GuestRuntime, String> {
+    Ok(guest_agent::run_context::GuestRuntime {
+        config: shared_guest_config()?,
+        paths: shared_guest_paths(),
+        http: http_client!(),
+        workload_containment: None,
+        process_control_endpoint: None,
+    })
+}
+
+// The shared API fixture owns both these files and the producer lock. Clear
+// the process-global sink before that fixture cleans its files or unlocks.
+pub(super) struct CheckpointTelemetryGuard<'a> {
+    _api: &'a SharedApiMock,
+}
+
+impl<'a> CheckpointTelemetryGuard<'a> {
+    pub(super) fn new(api: &'a SharedApiMock) -> Self {
+        guest_telemetry::telemetry::set_sandbox_ops_log_file(
+            shared_guest_paths().sandbox_ops_file(),
+        );
+        Self { _api: api }
+    }
+}
+
+impl Drop for CheckpointTelemetryGuard<'_> {
+    fn drop(&mut self) {
+        guest_telemetry::telemetry::clear_sandbox_ops_log_file();
+    }
+}
+
+pub(super) fn checkpoint_child_command(
+    test_name: &str,
+) -> std::io::Result<tokio::process::Command> {
+    let mut command = tokio::process::Command::new(std::env::current_exe()?);
+    command
+        .args(["--exact", test_name, "--ignored", "--nocapture"])
+        .env_clear();
+    if let Some(profile_file) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", profile_file);
+    }
+    Ok(command)
+}
+
+pub(super) async fn run_checkpoint_child(
+    command: &mut tokio::process::Command,
+) -> std::io::Result<()> {
+    let output = crate::common::command_output_with_timeout(
+        command,
+        std::time::Duration::from_secs(30),
+        "checkpoint child did not finish",
+    )
+    .await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() || !stdout.contains("test result: ok. 1 passed;") {
+        return Err(std::io::Error::other(format!(
+            "checkpoint child failed or did not execute exactly one test ({})\nstdout:\n{stdout}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        )));
+    }
+    Ok(())
 }
 
 pub(super) async fn create_bounded_checkpoint(
@@ -108,31 +165,6 @@ pub(super) fn use_test_codex_home(
 
 pub(super) fn session_id_file() -> String {
     shared_guest_paths().session_id_file().to_string()
-}
-
-pub(super) struct EnvVarRestore {
-    key: &'static str,
-    value: Option<OsString>,
-}
-
-impl EnvVarRestore {
-    pub(super) fn capture(key: &'static str) -> Self {
-        Self {
-            key,
-            value: std::env::var_os(key),
-        }
-    }
-}
-
-impl Drop for EnvVarRestore {
-    fn drop(&mut self) {
-        unsafe {
-            match &self.value {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
-        }
-    }
 }
 
 pub(super) fn write_literal_session_history(

@@ -170,6 +170,18 @@ impl ApiRequestBuilder {
 }
 
 impl PreparedApiRequest {
+    pub(crate) fn query(mut self, pairs: &[(&str, &str)]) -> Self {
+        self.request
+            .url_mut()
+            .query_pairs_mut()
+            .extend_pairs(pairs.iter().copied());
+        self
+    }
+
+    pub(crate) fn url(&self) -> &url::Url {
+        self.request.url()
+    }
+
     pub(crate) fn context(&self) -> &ApiRequestContext {
         &self.context
     }

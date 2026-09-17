@@ -69,15 +69,24 @@ class RootfsUsageTests(unittest.TestCase):
         self.assertEqual(sparse.stat().st_size, 128 * 1024 * 1024)
 
     def test_large_tmp_keeps_partial_bytes_and_pi_still_gets_observed(self):
+        allocated = []
         for index in range(6000):
-            (self.root / "tmp" / str(index)).touch()
+            payload = self.root / "tmp" / str(index)
+            # Every entry needs payload: directory blocks can be zero and
+            # traversal order is unspecified.
+            payload.write_bytes(b"x" * 4096)
+            allocated.append(payload.stat().st_blocks * 512)
+        minimum_allocated = min(allocated)
+        self.assertGreater(minimum_allocated, 0)
         (self.root / "home/user/.pi/session").write_bytes(b"history" * 1024)
         output = self.sample()
         observed = self.observation(output, "/tmp")
         self.assertEqual(observed["status"], "partial")
         self.assertIn(observed["reason"], ("entries", "time"))
-        self.assertGreater(int(observed["bytes"]), 0)
-        self.assertLessEqual(int(observed["entries"]), 4096)
+        entries = int(observed["entries"])
+        self.assertGreater(entries, 0)
+        self.assertLessEqual(entries, 4096)
+        self.assertGreaterEqual(int(observed["bytes"]), entries * minimum_allocated)
         self.assertEqual(
             self.observation(output, "/home/user/.pi")["status"], "complete"
         )
@@ -150,7 +159,7 @@ class RootfsUsageTests(unittest.TestCase):
             self.skipTest("requires Linux mount namespace tools")
         namespace = ["unshare", "--user", "--map-root-user", "--mount"]
         probe = subprocess.run(
-            namespace + ["true"], capture_output=True, text=True, timeout=5
+            namespace + ["true"], capture_output=True, text=True, timeout=5, check=False
         )
         if probe.returncode != 0:
             if (

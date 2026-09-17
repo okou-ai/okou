@@ -8,6 +8,7 @@
 
 mod exec;
 mod exec_control;
+mod file_stream;
 mod file_write_status;
 mod read_file;
 mod shutdown;

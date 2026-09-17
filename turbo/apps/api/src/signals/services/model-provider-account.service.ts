@@ -1819,14 +1819,22 @@ async function subscriptionBundlesMatch(
     }
     // The bounded KMS rotation also rewrites these tables independently. Equal
     // plaintext is the same bundle, not evidence of a legacy credential write.
-    if (
-      encrypted !== secret.encryptedValue &&
-      (await decryptStoredSecretValue(encrypted, featureSwitchContext)) !==
-        (await decryptStoredSecretValue(
-          secret.encryptedValue,
-          featureSwitchContext,
-        ))
-    ) {
+    if (encrypted === secret.encryptedValue) {
+      continue;
+    }
+    // Join the pair before returning to its snapshot/transaction owner. Inspect
+    // errors in input order and never start a later field after failure.
+    const [canonicalResult, mirrorResult] = await Promise.allSettled([
+      decryptStoredSecretValue(encrypted, featureSwitchContext),
+      decryptStoredSecretValue(secret.encryptedValue, featureSwitchContext),
+    ]);
+    if (canonicalResult.status === "rejected") {
+      throw canonicalResult.reason;
+    }
+    if (mirrorResult.status === "rejected") {
+      throw mirrorResult.reason;
+    }
+    if (canonicalResult.value !== mirrorResult.value) {
       return false;
     }
   }

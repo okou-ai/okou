@@ -1430,6 +1430,12 @@ test.each([
 ])(
   "Onboarding and checkout route only to $accountId",
   async ({ accountId, onboarding, checkout }) => {
+    const marketing = "https://www.okou.ai/api/marketing";
+    const requests: Request[] = [];
+    context.mocks.http.post(`${marketing}/finish-onboarding`, ({ request }) => {
+      requests.push(request);
+      return new Response(null, { status: 204 });
+    });
     context.mocks.api(
       acquisitionAttributionContract.resolveGoogleAdsAccount,
       ({ respond }) => {
@@ -1449,6 +1455,7 @@ test.each([
     await setupPage({
       context,
       path: "/onboarding/video-template?choice=video",
+      host: "app.okou.ai",
     });
 
     await expect(
@@ -1479,5 +1486,7 @@ test.each([
       expect(window.location.href).toContain("checkout.stripe.com");
       expect(sentConversions(gtag)).toStrictEqual([...onboarding, ...checkout]);
     });
+    expect(requests).toHaveLength(1);
+    await expect(requests[0]?.text()).resolves.toBe("");
   },
 );

@@ -29,6 +29,7 @@ import { piLangfuseTracesContract } from "@okouai/api-contracts/contracts/pi-lan
 const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
+const PI_DEFERRED_HANDOFF_FILE_ENV = "OKOU_PI_DEFERRED_HANDOFF_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
 const PI_API_FIRST_TURN_BOUNDARY_CONTROL_TYPE =
   "vm0_pi_api_first_turn_boundary";
@@ -62,6 +63,7 @@ export interface PiSandboxAgentConfig {
   readonly runId: string;
   readonly sessionId: string;
   readonly launchPayload: PiLaunchPayload;
+  readonly deferredHandoffFile?: string;
   readonly model: PiAgentModelConfig;
   readonly langfuseConfig?: PiLangfuseRuntimeConfig;
 }
@@ -124,6 +126,7 @@ export async function piSandboxAgentConfigFromEnv(
 ): Promise<PiSandboxAgentConfig> {
   const runId = requiredEnv(env, RUN_ID_ENV);
   const langfuseConfig = piLangfuseRelayConfig(env, runId);
+  const deferredHandoffFile = env[PI_DEFERRED_HANDOFF_FILE_ENV];
   const parsedModel = piModelConfigSchema.parse(
     parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
   );
@@ -131,6 +134,7 @@ export async function piSandboxAgentConfigFromEnv(
     runId,
     sessionId: requiredEnv(env, PI_SESSION_ID_ENV),
     launchPayload: await readLaunchPayload(env),
+    ...(deferredHandoffFile ? { deferredHandoffFile } : {}),
     model: await materializePiAgentModelConfig({
       config: parsedModel,
       target: "sandbox-firewall",
@@ -241,6 +245,9 @@ export async function runPiSandboxAgentLoop(args: {
     config: args.config.launchPayload.launchConfig.apiFirstTurn,
     sessionDir,
     sessionId: args.config.sessionId,
+    ...(args.config.deferredHandoffFile
+      ? { deferredHandoffFile: args.config.deferredHandoffFile }
+      : {}),
   });
   await writePiApiFirstTurnBoundaryControl(handoff.boundaryControl);
   const startedAt = Date.now();

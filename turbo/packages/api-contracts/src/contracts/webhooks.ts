@@ -6,6 +6,10 @@ import { apiErrorSchema } from "./errors";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import { piMemoryCitationSchema } from "./pi-memory-citations";
 import {
+  X_RESOURCE_USAGE_MAX_IDS,
+  xResourceUsageEventSchema,
+} from "./x-resource-usage";
+import {
   artifactMissingRootPolicySchema,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   runnerHostnameSchema,
@@ -1081,6 +1085,33 @@ const sandboxOperationSchema = z.object({
   session_history_restore_reason: z
     .enum(["raw_source", "retained_zstd", "codex_pruning_guard"])
     .optional(),
+  session_history_transfer_source: z
+    .enum(["workspace_cache", "downloaded", "inline"])
+    .optional(),
+  session_history_wire_codec: z.enum(["none", "zstd"]).optional(),
+  session_history_codec_reason: z
+    .enum([
+      "native_zstd",
+      "below_threshold",
+      "sample_rejected",
+      "sample_accepted",
+    ])
+    .optional(),
+  // These also describe inline history, whose existing contract has no
+  // reference-size ceiling. Keep safe integer measurements without imposing
+  // the local/ref 128 MiB limit on that separate restore path.
+  session_history_transfer_bytes: z.number().int().nonnegative().optional(),
+  session_history_wire_bytes: z.number().int().nonnegative().optional(),
+  session_history_write_requests: z.number().int().positive().optional(),
+  session_history_selection_ms: z.number().int().nonnegative().optional(),
+  session_history_file_gate_wait_ms: z.number().int().nonnegative().optional(),
+  session_history_requests_ms: z.number().int().nonnegative().optional(),
+  session_history_encoder_pipeline_ms: z
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
+  session_history_publication_ms: z.number().int().nonnegative().optional(),
 });
 
 /**
@@ -1278,9 +1309,38 @@ export const webhookUsageEventContract = c.router({
     body: z
       .object({
         runId: z.string().min(1, "runId is required"),
-        events: z.array(webhookUsageEventItemSchema).min(1).max(100),
+        events: z
+          .array(
+            z.union([webhookUsageEventItemSchema, xResourceUsageEventSchema]),
+          )
+          .min(1)
+          .max(100),
       })
-      .strict(),
+      .strict()
+      .superRefine((body, ctx) => {
+        let resourceCount = 0;
+        let hasResourceObservation = false;
+        for (const event of body.events) {
+          if ("protocol" in event) {
+            hasResourceObservation = true;
+            resourceCount += event.resources.length;
+          }
+        }
+        if (resourceCount > X_RESOURCE_USAGE_MAX_IDS) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["events"],
+            message: "At most 1000 resource identities are allowed per batch",
+          });
+        }
+        if (hasResourceObservation && !z.uuid().safeParse(body.runId).success) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["runId"],
+            message: "Resource observations require a UUID run ID",
+          });
+        }
+      }),
     responses: {
       200: z.object({
         success: z.boolean(),

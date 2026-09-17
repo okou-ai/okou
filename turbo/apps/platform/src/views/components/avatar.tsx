@@ -42,10 +42,12 @@ const THUMBNAIL_INITIAL_TEXT = {
 
 type ThumbnailSize = keyof typeof THUMBNAIL_SIZE;
 
-// `okou-thumb-border` is the 0.5px hairline every thumbnail carries so its
-// bounds stay readable against the sidebar, cards, and menus alike — including
-// avatars whose artwork fades out at the edge.
-const THUMBNAIL_BASE = "shrink-0 okou-thumb-border";
+// The shared hairline every thumbnail carries so its bounds stay readable
+// against the sidebar, cards, and menus alike — including avatars whose artwork
+// fades out at the edge. `border` reads `--default-border-width`, which is the
+// 0.5px this treatment has always drawn, and `border-surface-border` is the
+// registered name for its `hsl(var(--gray-400))` stroke.
+const THUMBNAIL_BASE = "shrink-0 border border-surface-border";
 
 /**
  * A person: a circle by default, so it never reads as a workspace or an app

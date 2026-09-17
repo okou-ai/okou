@@ -1,5 +1,7 @@
 """Shared hostname identity policy tests."""
 
+import sys
+import unicodedata
 from unittest.mock import patch
 
 import pytest
@@ -95,11 +97,57 @@ def test_ascii_label_contract(label, expected):
     assert host_normalization.normalize_idna_label(label) == expected
 
 
-def test_decomposed_unicode_label_at_dns_limit_is_accepted():
-    normalized = host_normalization.normalize_idna_label("e\u0301" * 57)
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        pytest.param("e\u0301" * 57, f"xn--9c{'a' * 57}", id="decomposed-latin"),
+        pytest.param(
+            "\u1100\u1161\u11a8" * 56,
+            f"xn--p39{'a' * 56}",
+            id="decomposed-hangul",
+        ),
+    ],
+)
+def test_decomposed_unicode_label_at_dns_limit_is_accepted(label, expected):
+    normalized = host_normalization.normalize_idna_label(label)
 
-    assert normalized == f"xn--9c{'a' * 57}"
+    assert normalized == expected
     assert len(normalized) == 63
+    assert host_normalization.normalize_idna_label(normalized) == normalized
+
+
+def test_unicode_database_preserves_canonical_composition_bound():
+    # The early raw-label limit must remain conservative after Unicode upgrades.
+    maximum_decomposition = max(
+        len(unicodedata.normalize("NFD", chr(codepoint))) for codepoint in range(sys.maxunicode + 1)
+    )
+
+    assert maximum_decomposition <= host_normalization._MAX_CANONICAL_DECOMPOSITION_LENGTH
+
+
+@pytest.mark.parametrize("mark_count", [118, 128, 256, 512, 1023])
+def test_impossible_combining_label_is_rejected_before_unicode_normalization(mark_count):
+    # 237 code points is the first impossible raw length; 4,093 UTF-8 bytes
+    # remains within the HTTP Host budget at the largest size.
+    label = "a" + "\u0315" * mark_count + "\u0300" * mark_count
+
+    with (
+        patch.object(
+            host_normalization,
+            "normalize",
+            side_effect=AssertionError("impossible label reached Unicode normalization"),
+        ),
+        pytest.raises(UnicodeError, match="IDNA label too long"),
+    ):
+        host_normalization.normalize_idna_label(label)
+
+
+def test_combining_label_within_raw_budget_still_has_to_fit_dns_limit():
+    label = "ab" + "\u0315" * 117 + "\u0300" * 117
+    assert len(label) == 236
+
+    with pytest.raises(UnicodeError, match="IDNA label too long"):
+        host_normalization.normalize_idna_label(label)
 
 
 @pytest.mark.parametrize("hostname", INVALID_IDNA_HOSTNAME_CASES)

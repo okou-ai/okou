@@ -25,9 +25,9 @@ limitation does not establish that all matching content was retrieved.
 
 `okou social status [platform] --json` calls authenticated
 `GET /api/social/status?platform=<platform>`. The CLI accepts `x` as an alias for
-`twitter`. The route requires an organization, `social:read` for capability
-tokens, and the `socialStatus` feature switch, initially enabled for staff.
-Status guidance appears in agent instructions only when that switch is enabled.
+`twitter`. The route is available to all authenticated users with an
+organization and requires `social:read` for capability tokens. Status guidance
+is included in agent instructions for all organizations.
 
 The endpoint performs one unauthenticated read of the provider's public status
 feed. It sends no caller/provider credentials, queries no account-credit
@@ -56,8 +56,8 @@ network failures, and an unavailable status store. Upstream HTTP 503 means the
 status store could not be read; it does not prove all operations are down.
 Raw upstream messages and extra fields are not returned.
 
-An unknown diagnostic is a successful status-query result with HTTP 200; auth,
-validation and rollout denials retain their normal HTTP error statuses. Public
+An unknown diagnostic is a successful status-query result with HTTP 200; auth
+and validation failures retain their normal HTTP error statuses. Public
 service health does not prove caller access, quota, balance or request success.
 
 ## Contract ownership and rollout
@@ -71,6 +71,13 @@ is additive; existing CLI request/download routes and response shapes are
 unchanged. A new CLI reaching an older API reports its normal error rather
 than manufacturing status data. There is no persisted-state migration or
 cross-version fallback.
+
+Full rollout changes eligibility and agent guidance only; request and response
+shapes, token capabilities, and persisted formats are unchanged. Existing runs
+retain their captured instructions. Retired switch overrides are ignored by the
+existing registered-key filter, so no database cleanup is required. Older serving
+or rollback APIs retain their rollout gate until upgraded; they do not gain full
+availability from a newer client.
 
 Provider evidence: [OpenAPI](https://api.socialkit.dev/openapi.json) and
 [public status](https://api.socialkit.dev/status), reviewed September 14, 2026.

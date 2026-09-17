@@ -84,7 +84,6 @@ import { bankingRoutes } from "./routes/banking";
 import { chatThreadRoutes } from "./routes/chat-threads";
 import { welcomeChatThreadRoutes } from "./routes/welcome-chat-threads";
 import { chatEventsRoutes } from "./routes/chat-events";
-import { chatTranslationRoutes } from "./routes/chat-translation";
 import { sharedThreadRoutes } from "./routes/shared-threads";
 import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
@@ -148,6 +147,8 @@ import { browserAuthorizationRoutes } from "./routes/browser-authorization";
 import { workflowsRoutes } from "./routes/workflows";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
+import { morningBriefCollectionPreviewRoutes } from "./routes/morning-brief-collection-preview";
+import { morningBriefGmailCollectionPreviewRoutes } from "./routes/morning-brief-gmail-collection-preview";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { integrationsGithubRoutes } from "./routes/integrations-github";
@@ -193,6 +194,7 @@ import { uploadsCompleteRoutes } from "./routes/uploads-complete";
 import { uploadsMultipartRoutes } from "./routes/uploads-multipart";
 import { uploadsPrepareRoutes } from "./routes/uploads-prepare";
 import { presentationTemplatesRoutes } from "./routes/presentation-templates";
+import { userTemplatesRoutes } from "./routes/user-templates";
 import { usageMembersRoutes } from "./routes/usage-members";
 import { usageRecordRoutes } from "./routes/usage-record";
 import { userPreferencesRoutes } from "./routes/user-preferences";
@@ -292,7 +294,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...chatThreadRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
-  ...chatTranslationRoutes,
   ...sharedThreadRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...computerUseAuthorizationRoutes,
@@ -369,6 +370,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userPreferencesRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
+  ...morningBriefCollectionPreviewRoutes,
+  ...morningBriefGmailCollectionPreviewRoutes,
   ...emailSubscriptionRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
@@ -416,6 +419,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...uploadsMultipartRoutes,
   ...uploadsPrepareRoutes,
   ...presentationTemplatesRoutes,
+  ...userTemplatesRoutes,
   ...registryResourceDownloadRoutes,
   ...usageMembersRoutes,
   ...usageRecordRoutes,

@@ -2031,6 +2031,8 @@ describe("conditional organization model policy writes", () => {
     async ({ model, addedModel, subscription, api }) => {
       const fixture = seedFixture();
       useSession(fixture);
+      // Keep the built-in policy's live route stable across response snapshots.
+      await seedBuiltInModelCandidateKeys(context, "gpt-5.6-luna");
       const providerId = await createOrgProvider(fixture, api);
       const initial = await accept(
         apiClient().update({
@@ -2127,6 +2129,10 @@ describe("conditional organization model policy writes", () => {
         credentialScope: "member",
         isDefault: true,
       });
+      const concurrentKey = await seedBuiltInModelCandidateKeys(
+        context,
+        "gpt-5.6-luna",
+      );
       for (const revision of [undefined, saved.body.revision]) {
         await accept(
           apiClient().update({
@@ -2141,6 +2147,12 @@ describe("conditional organization model policy writes", () => {
         [200],
       );
       expect(unchanged.body.policies).toStrictEqual(edited.body.policies);
+      await concurrentKey.release();
+      const afterKeyRelease = await accept(
+        apiClient().list({ headers: authHeaders() }),
+        [200],
+      );
+      expect(afterKeyRelease.body.policies).toStrictEqual(edited.body.policies);
       const preference = await accept(
         preferences.get({ headers: authHeaders() }),
         [200],

@@ -52,6 +52,12 @@ function localizedCredentialError(message: string): string | undefined {
 
 function localizedRunErrorText(message: string): string | undefined {
   switch (message) {
+    case "AUTONOMY_BUDGET_EXHAUSTED":
+    case "autonomy_budget_exhausted": {
+      return i18n.t(($) => {
+        return $.chat.errors.recovery.autonomyLimitDescription;
+      });
+    }
     case PROVIDER_INSUFFICIENT_CREDITS_MESSAGE: {
       return i18n.t(($) => {
         return $.runErrors.providerBalance;

@@ -14,6 +14,11 @@ import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { imageCommand } from "../image";
 import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
+import {
+  AVAILABILITY_URL,
+  GENERATION_ARTIFACT_ID,
+  serveGenerationVisibility,
+} from "./artifact-visibility-fixtures";
 
 const IMAGE_URL = "http://localhost:3000/api/image-io/generate";
 const IMAGE_GENERATION_ID = "00000000-0000-4000-8000-000000000001";
@@ -65,12 +70,113 @@ describe("okou generate image command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, undefined);
+    imageCommand.setOptionValue("visibility", undefined);
   });
 
   afterEach(() => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
     vi.unstubAllEnvs();
+  });
+
+  it.each(["only-me", "org", "public"] as const)(
+    "creates a private image and presents its requested %s visibility",
+    async (visibility) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const artifact = serveGenerationVisibility("image.png", visibility);
+      server.use(
+        http.post(`${IMAGE_URL}/private`, async ({ request }) => {
+          expect(await request.json()).toMatchObject({
+            requirePrivateArtifact: true,
+          });
+          return HttpResponse.json({
+            ...IMAGE_RESULT,
+            id: GENERATION_ARTIFACT_ID,
+            url: artifact.reference,
+          });
+        }),
+      );
+
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A watercolor fox",
+        "--visibility",
+        visibility,
+        "--json",
+      ]);
+
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject({
+        url: artifact.url,
+        ownerUrl: artifact.ownerUrl,
+        visibility,
+        inlineMarkdownLink: `[${IMAGE_RESULT.filename}](<${artifact.url}>)`,
+        previewMarkdownBlock: `![${IMAGE_RESULT.filename}](<${artifact.url}>)`,
+      });
+    },
+  );
+
+  it("rejects explicit visibility before billing when private artifacts are disabled", async () => {
+    let generated = false;
+    server.use(
+      http.get(AVAILABILITY_URL, () => {
+        return HttpResponse.json({ enabled: false });
+      }),
+      http.post(`${IMAGE_URL}/private`, () => {
+        generated = true;
+        return HttpResponse.json(IMAGE_RESULT);
+      }),
+    );
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A watercolor fox",
+        "--visibility",
+        "only-me",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(generated).toBe(false);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "--visibility requires privateArtifacts to be enabled",
+    );
+  });
+
+  it.each([
+    { mode: "provider listing", args: [] },
+    { mode: "connector guidance", args: ["--provider", "replicate"] },
+    {
+      mode: "prompt compilation",
+      args: [
+        "--style",
+        "image-style:ink-storefront",
+        "--prompt",
+        "A storefront",
+        "--compile",
+      ],
+    },
+  ])("rejects visibility during $mode", async ({ args }) => {
+    await expect(
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        ...args,
+        "--visibility",
+        "public",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "--visibility is only available for direct built-in generation",
+    );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
   it("should generate an image and print the /f file URL", async () => {
@@ -371,17 +477,59 @@ describe("okou generate image command", () => {
   });
 
   it.each([
-    "/artifacts/00000000000040008000000000000021.png",
-    "http://localhost:3000/api/web/download-file?file_id=00000000-0000-4000-8000-000000000021&filename=Launch%20v2.png",
+    {
+      url: "/artifacts/abcxyz1234.png#detail",
+      appUrl: "https://app.okou.ai",
+      apiUrl: "http://localhost:3000",
+      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.png#detail",
+    },
+    {
+      url: "/artifacts/00000000000040008000000000000021.png",
+      appUrl: "https://pr-123-app.omby.ai/ignored-path",
+      apiUrl: "http://localhost:3000",
+      expectedUrl:
+        "https://pr-123-app.omby.ai/artifacts/00000000000040008000000000000021.png",
+    },
+    {
+      url: "/artifacts/abcxyz1234.png",
+      appUrl: undefined,
+      apiUrl: undefined,
+      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.png",
+    },
+    {
+      url: "/artifacts/abcxyz1234.png",
+      appUrl: undefined,
+      apiUrl: "https://pr-123-api.vm6.ai",
+      expectedUrl: "https://pr-123-app.omby.ai/artifacts/abcxyz1234.png",
+    },
+    {
+      url: "https://app.okou.ai/artifacts/abcxyz1234.png",
+      appUrl: "https://app.okou.ai",
+      apiUrl: "http://localhost:3000",
+      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.png",
+    },
+    {
+      url: "http://localhost:3000/api/web/download-file?file_id=00000000-0000-4000-8000-000000000021&filename=Launch%20v2.png",
+      appUrl: "https://app.okou.ai",
+      apiUrl: "http://localhost:3000",
+      expectedUrl:
+        "http://localhost:3000/api/web/download-file?file_id=00000000-0000-4000-8000-000000000021&filename=Launch%20v2.png",
+    },
   ])(
-    "preserves the private artifact reference %s and escapes its label",
-    async (url) => {
+    "prints a complete artifact URL for $url and escapes its label",
+    async ({ url, appUrl, apiUrl, expectedUrl }) => {
+      vi.stubEnv("OKOU_APP_URL", appUrl);
+      vi.stubEnv("OKOU_API_BACKEND_URL", apiUrl);
       const filename = String.raw`Launch [v2]\image.png`;
       const label = String.raw`Launch \[v2\]\\image.png`;
       server.use(
-        http.post(IMAGE_URL, () => {
-          return HttpResponse.json({ ...IMAGE_RESULT, filename, url });
-        }),
+        http.post(
+          new URL("/api/image-io/generate", apiUrl ?? "https://api.okou.ai")
+            .href,
+          () => {
+            return HttpResponse.json({ ...IMAGE_RESULT, filename, url });
+          },
+        ),
       );
       await generateCommand.parseAsync([
         "node",
@@ -395,9 +543,9 @@ describe("okou generate image command", () => {
         JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])),
       ).toMatchObject({
         filename,
-        url,
-        inlineMarkdownLink: `[${label}](<${url}>)`,
-        previewMarkdownBlock: `![${label}](<${url}>)`,
+        url: expectedUrl,
+        inlineMarkdownLink: `[${label}](<${expectedUrl}>)`,
+        previewMarkdownBlock: `![${label}](<${expectedUrl}>)`,
         artifactPresentationContext: expect.stringContaining(
           "own Markdown paragraph",
         ),
@@ -790,58 +938,68 @@ describe("okou generate image command", () => {
     expect(stderr).toContain("--style can only be used with --compile");
   });
 
-  it("should wait for an accepted async generation result", async () => {
-    let statusRequested = false;
-    server.use(
-      http.post(IMAGE_URL, () => {
-        return HttpResponse.json(
-          {
-            generationId: IMAGE_GENERATION_ID,
-            type: "image",
-            status: "queued",
-            realtime: {
-              channelName: "user:user-1",
-              eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
-              tokenRequest: {
-                keyName: "test-key",
-                timestamp: 1_700_000_000_000,
-                capability: '{"user:user-1":["subscribe"]}',
-                clientId: "user-1",
-                nonce: "test-nonce",
-                mac: "test-mac",
+  it.each([IMAGE_RESULT.url, "/artifacts/abcxyz1234.png"])(
+    "waits for an async generation and prints a complete URL for %s",
+    async (url) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const expectedUrl = url.startsWith("/artifacts/")
+        ? `https://app.okou.ai${url}`
+        : url;
+      let statusRequested = false;
+      server.use(
+        http.post(IMAGE_URL, () => {
+          return HttpResponse.json(
+            {
+              generationId: IMAGE_GENERATION_ID,
+              type: "image",
+              status: "queued",
+              realtime: {
+                channelName: "user:user-1",
+                eventName: `built-in-generation:${IMAGE_GENERATION_ID}`,
+                tokenRequest: {
+                  keyName: "test-key",
+                  timestamp: 1_700_000_000_000,
+                  capability: '{"user:user-1":["subscribe"]}',
+                  clientId: "user-1",
+                  nonce: "test-nonce",
+                  mac: "test-mac",
+                },
               },
             },
-          },
-          { status: 202 },
-        );
-      }),
-      http.get(IMAGE_STATUS_URL, ({ request }) => {
-        statusRequested = true;
-        expect(request.headers.get("authorization")).toBe("Bearer test-token");
-        return HttpResponse.json({
-          generationId: IMAGE_GENERATION_ID,
-          type: "image",
-          status: "completed",
-          result: IMAGE_RESULT,
-          createdAt: "2026-05-15T00:00:00.000Z",
-          startedAt: "2026-05-15T00:00:01.000Z",
-          completedAt: "2026-05-15T00:00:02.000Z",
-        });
-      }),
-    );
+            { status: 202 },
+          );
+        }),
+        http.get(IMAGE_STATUS_URL, ({ request }) => {
+          statusRequested = true;
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-token",
+          );
+          return HttpResponse.json({
+            generationId: IMAGE_GENERATION_ID,
+            type: "image",
+            status: "completed",
+            result: { ...IMAGE_RESULT, url },
+            createdAt: "2026-05-15T00:00:00.000Z",
+            startedAt: "2026-05-15T00:00:01.000Z",
+            completedAt: "2026-05-15T00:00:02.000Z",
+          });
+        }),
+      );
 
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "image",
-      "--raw-prompt",
-      "Async please",
-    ]);
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "Async please",
+      ]);
 
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(statusRequested).toBe(true);
-    expect(stdout).toContain(`Image generated: ${IMAGE_RESULT.url}`);
-  });
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(statusRequested).toBe(true);
+      expect(stdout).toContain(`Image generated: ${expectedUrl}`);
+      expect(stdout).toContain(`![${IMAGE_RESULT.filename}](<${expectedUrl}>)`);
+    },
+  );
 
   it("should explain an async output safety block with manual retry guidance", async () => {
     let statusRequested = false;

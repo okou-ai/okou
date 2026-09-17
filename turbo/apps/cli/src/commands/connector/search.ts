@@ -7,7 +7,7 @@ import {
   listCustomConnectors,
 } from "../../lib/api/domains/connectors";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { getPlatformOrigin } from "../doctor/platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   resolveConnectorAgentId,
   resolveConnectorDiscoveryAgentContext,

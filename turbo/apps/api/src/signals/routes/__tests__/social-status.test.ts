@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { socialContract } from "@okouai/api-contracts/contracts/social";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -17,7 +16,7 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { socialRoutes } from "../social";
 import { billingStatusRoutes } from "../billing-status";
 import { createBddApi } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const STATUS_URL = "https://api.socialkit.dev/status";
@@ -63,16 +62,12 @@ function client() {
   return setupApp({ context, routes: socialRoutes })(socialContract);
 }
 
-async function actorWithSwitch(enabled = true) {
+function statusActor() {
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Social status tests require an organization");
   }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.SocialStatus]: enabled },
-  );
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
   mockNow(new Date(OBSERVED_AT));
   return { ...actor, orgId: actor.orgId };
 }
@@ -83,9 +78,9 @@ describe("GET /api/social/status", () => {
     ["yellow", "degraded"],
     ["red", "unavailable"],
   ])(
-    "maps %s to %s and projects only selected public operations",
+    "maps %s to %s for ordinary users and projects only selected public operations",
     async (color, health) => {
-      await actorWithSwitch();
+      statusActor();
       server.use(
         http.get(STATUS_URL, () => {
           return HttpResponse.json(twitterFeed(color));
@@ -119,7 +114,7 @@ describe("GET /api/social/status", () => {
   );
 
   it("retains service-wide degradation when filtering healthy operations", async () => {
-    await actorWithSwitch();
+    statusActor();
     server.use(
       http.get(STATUS_URL, () => {
         return HttpResponse.json({
@@ -141,7 +136,7 @@ describe("GET /api/social/status", () => {
   });
 
   it("uses async download health and excludes unsupported upstream capabilities", async () => {
-    await actorWithSwitch();
+    statusActor();
     server.use(
       http.get(STATUS_URL, () => {
         return HttpResponse.json(
@@ -186,7 +181,7 @@ describe("GET /api/social/status", () => {
   ])(
     "keeps %s unknown without hiding other fresh operations",
     async (reason, entries) => {
-      await actorWithSwitch();
+      statusActor();
       const otherTools = TWITTER_IDS.filter((id) => {
         return id !== "tweet";
       }).map((id) => {
@@ -227,7 +222,7 @@ describe("GET /api/social/status", () => {
   ])(
     "checks %s freshness at offset %s",
     async (scope, offset, status, reason) => {
-      await actorWithSwitch();
+      statusActor();
       const shifted = new Date(
         Date.parse(OBSERVED_AT) + Number(offset),
       ).toISOString();
@@ -332,7 +327,7 @@ describe("GET /api/social/status", () => {
   ])(
     "reports %s when the status feed cannot establish health",
     async (reason, responseFactory) => {
-      await actorWithSwitch();
+      statusActor();
       server.use(http.get(STATUS_URL, responseFactory));
       const response = await accept(
         client().status({ headers: HEADERS, query: { platform: "twitter" } }),
@@ -355,7 +350,7 @@ describe("GET /api/social/status", () => {
   );
 
   it("does not forward credentials, expose account data, or charge an empty balance", async () => {
-    const actor = await actorWithSwitch();
+    const actor = statusActor();
     await createBddApi(context).completeOnboarding(actor);
     await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 0 });
     mockEnv("OKOU_SOCIAL_SOCIALKIT_TOKEN", "status-must-not-forward");
@@ -398,17 +393,18 @@ describe("GET /api/social/status", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("rejects a disabled rollout switch before external work", async () => {
-    await actorWithSwitch(false);
+  it("requires an organization for authenticated callers", async () => {
+    const actor = createBddApi(context).user({ orgId: null });
+    createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
     const response = await accept(
       client().status({ headers: HEADERS, query: {} }),
-      [403],
+      [401],
     );
-    expect(response.body.error.message).toBe("Social status is not enabled");
+    expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
   it("requires social:read for sandbox callers", async () => {
-    const actor = await actorWithSwitch();
+    const actor = statusActor();
     const seconds = Date.parse(OBSERVED_AT) / 1000;
     const token = signSandboxJwtForTests({
       scope: "okou",
@@ -431,8 +427,8 @@ describe("GET /api/social/status", () => {
     );
   });
 
-  it("accepts a sandbox caller with social:read and the enabled feature", async () => {
-    const actor = await actorWithSwitch();
+  it("accepts a sandbox caller with social:read", async () => {
+    const actor = statusActor();
     await createBddApi(context).completeOnboarding(actor);
     const seconds = Date.parse(OBSERVED_AT) / 1000;
     const token = signSandboxJwtForTests({
@@ -461,7 +457,7 @@ describe("GET /api/social/status", () => {
   });
 
   it("propagates caller cancellation instead of returning a status observation", async () => {
-    await actorWithSwitch();
+    statusActor();
     const controller = new AbortController();
     let providerAborted = false;
     server.use(

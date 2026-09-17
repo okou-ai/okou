@@ -19,6 +19,11 @@ interface WorkflowRecommendationDraft {
   readonly prompt: string;
 }
 
+// Every card's connectors must offer OAuth in the live catalog, the same rule
+// the workflow catalog follows. A null templateId means the card contributes
+// its prompt without attaching a built-in template: `reply` never had one, and
+// the catalog dropped the templates behind `recap`, `competitors`, and
+// `metrics` when their work still needed an API-key connector.
 export const WORKFLOW_RECOMMENDATIONS = [
   {
     id: "morning",
@@ -42,8 +47,8 @@ export const WORKFLOW_RECOMMENDATIONS = [
   },
   {
     id: "recap",
-    templateId: "workflow-template:meeting-recaps-slack",
-    connectors: ["fireflies"],
+    templateId: null,
+    connectors: ["google-meet"],
   },
   {
     id: "invoices",
@@ -52,13 +57,13 @@ export const WORKFLOW_RECOMMENDATIONS = [
   },
   {
     id: "competitors",
-    templateId: "workflow-template:competitive-intel-monitor",
-    connectors: ["firecrawl", "notion"],
+    templateId: null,
+    connectors: ["notion"],
   },
   {
     id: "metrics",
-    templateId: "workflow-template:post-daily-metrics-slack",
-    connectors: ["plausible", "slack"],
+    templateId: null,
+    connectors: ["posthog", "slack"],
   },
   { id: "reply", templateId: null, connectors: ["gmail"] },
 ] as const satisfies readonly {

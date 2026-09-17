@@ -791,6 +791,22 @@ export const PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS =
 export const PI_SKILLS_ROOT = `${PI_AGENT_DIR}/skills`;
 export const PI_API_FIRST_TURN_SESSION_MAX_BYTES = 16 * 1024 * 1024;
 
+/**
+ * What the API established about a deferred Sandbox release proof.
+ * `released` changed capacity. `stale` is a definitive acknowledgement that the
+ * proof owns no capacity here, so the Runner may close its receipt.
+ * `inconclusive` means the owner could not be reconstructed, so an obligation
+ * may remain and the receipt and claim barrier must be retained for a retry.
+ */
+export const deferredSandboxReleaseOutcomeSchema = z.enum([
+  "released",
+  "stale",
+  "inconclusive",
+]);
+export type DeferredSandboxReleaseOutcome = z.infer<
+  typeof deferredSandboxReleaseOutcomeSchema
+>;
+
 export const piSessionCheckpointSchema = z
   .object({
     sessionId: z.uuid(),
@@ -1637,7 +1653,9 @@ export const runnersJobClaimContract = c.router({
       }),
     ]),
     responses: {
-      200: z.object({ released: z.boolean() }),
+      200: z.strictObject({
+        outcome: deferredSandboxReleaseOutcomeSchema,
+      }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

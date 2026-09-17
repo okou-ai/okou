@@ -18,6 +18,7 @@ import { updateDocumentTitle$ } from "./document-title.ts";
 import {
   createSharedArtifactPreview,
   createSharedArtifactViewerSignals,
+  type SharedArtifactContent,
 } from "./shared-artifact-page.ts";
 import { SharedArtifactPage } from "../views/shared-artifact-page/shared-artifact-page.tsx";
 
@@ -26,8 +27,47 @@ const sharedArtifactViewer$ = computed((get) => {
   return createSharedArtifactViewerSignals();
 });
 
-// Keep authorization on the existing resolver. Preview URLs stay inside the
-// viewer while the app URL remains the address recipients can copy.
+const resolveSharedArtifact$ = command(
+  async (
+    { get },
+    reference: string,
+    signedIn: boolean,
+    signal: AbortSignal,
+  ): Promise<SharedArtifactContent | null> => {
+    if (signedIn) {
+      const result = await accept(
+        get(apiClient$)(artifactReferencesContract).resolve({
+          params: { reference },
+          fetchOptions: { signal, cache: "no-store" },
+        }),
+        [200, 400, 401, 403, 404],
+        signal,
+      );
+      if (result.status === 200) {
+        return result.body;
+      }
+    }
+    const result = await accept(
+      get(apiClient$)(artifactReferencesContract, {
+        getToken: () => {
+          return Promise.resolve(null);
+        },
+      }).publicUrl({
+        params: { reference },
+        fetchOptions: { signal, cache: "no-store" },
+      }),
+      [200, 400, 404],
+      signal,
+    );
+    if (result.status !== 200) {
+      return null;
+    }
+    return { ...result.body.preview, url: result.body.url };
+  },
+);
+
+// This route owns access checks so signed-out visitors can preview public
+// artifacts and choose when to sign in for unavailable ones.
 export const setupSharedArtifact$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const requestedId = String(get(pathParams$)?.artifactShareId ?? "");
@@ -40,70 +80,44 @@ export const setupSharedArtifact$ = command(
     if (!clerk.loaded) {
       return;
     }
-    if (!clerk.user) {
-      const returnUrl = new URL(
-        `/artifacts/${encodeURIComponent(id)}`,
-        location.origin,
-      );
-      returnUrl.hash = location.hash;
-      window.location.replace(
-        clerk.buildSignInUrl({ redirectUrl: returnUrl.href }),
-      );
-      return;
-    }
-    const switches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    const result = await accept(
-      get(apiClient$)(artifactReferencesContract).resolve({
-        params: { reference: id },
-        fetchOptions: { signal, cache: "no-store" },
-      }),
-      [200, 400, 403, 404],
+    const content = await set(
+      resolveSharedArtifact$,
+      id,
+      Boolean(clerk.user),
       signal,
     );
-    if (switches[FeatureSwitchKey.PrivateArtifacts]) {
-      const referenceUrl = new URL(
-        `/artifacts/${encodeURIComponent(id)}`,
-        location.origin,
-      );
-      referenceUrl.hash = location.hash;
-      const artifact =
-        result.status === 200
-          ? createSharedArtifactPreview(result.body, referenceUrl.href)
-          : null;
-      set(
-        updateDocumentTitle$,
-        artifact?.filename ??
-          i18n.t(($) => {
-            return $.artifacts.title;
-          }),
-      );
-      set(
-        updatePage$,
-        createElement(SharedArtifactPage, {
-          key: id,
-          artifact,
-          viewer: get(sharedArtifactViewer$),
+    if (content?.expiresAt !== undefined) {
+      const switches = await get(featureSwitches$);
+      signal.throwIfAborted();
+      if (!switches[FeatureSwitchKey.PrivateArtifacts]) {
+        const contentUrl = new URL(content.url);
+        contentUrl.hash = location.hash;
+        window.location.replace(contentUrl.href);
+        return;
+      }
+    }
+    const referenceUrl = new URL(
+      `/artifacts/${encodeURIComponent(id)}`,
+      location.origin,
+    );
+    referenceUrl.hash = location.hash;
+    const artifact = content
+      ? createSharedArtifactPreview(content, referenceUrl.href)
+      : null;
+    set(
+      updateDocumentTitle$,
+      artifact?.filename ??
+        i18n.t(($) => {
+          return $.artifacts.title;
         }),
-      );
-      await set(hideAppSkeleton$, signal);
-      return;
-    }
-    if (result.status === 200) {
-      const contentUrl = new URL(result.body.url);
-      contentUrl.hash = location.hash;
-      window.location.replace(contentUrl.href);
-      return;
-    }
+    );
     set(
       updatePage$,
-      createElement(
-        "p",
-        { className: "p-8 text-muted-foreground" },
-        i18n.t(($) => {
-          return $.artifacts.sharing.unavailable;
-        }),
-      ),
+      createElement(SharedArtifactPage, {
+        key: id,
+        artifact,
+        viewer: get(sharedArtifactViewer$),
+      }),
     );
     await set(hideAppSkeleton$, signal);
   },

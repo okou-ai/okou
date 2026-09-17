@@ -14,6 +14,7 @@ import { describe, expect, it, onTestFinished, test } from "vitest";
 import {
   countBlockedPersonalSubscriptionMutationsFixture,
   countWaitingPersonalSubscriptionMutationsFixture,
+  observePreparedLaunchAdmissionFixture,
 } from "../../../test-fixtures/personal-subscription";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
@@ -324,6 +325,49 @@ async function finish(
 }
 
 describe("personal subscription run identity", () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "preserves proven recovery identity for pending and queued %s admissions",
+    async (type) => {
+      const f = await fixture(type);
+      const first = await f.start();
+      const pending = await f.start();
+      const queued = await f.start();
+      await expect(runs.readRun(f.actor, pending)).resolves.toMatchObject({
+        status: "pending",
+        source: { account: { status: "connected", id: f.connected.id } },
+      });
+      await expect(runs.readRun(f.actor, queued)).resolves.toMatchObject({
+        status: "queued",
+        source: { account: { status: "connected", id: f.connected.id } },
+      });
+
+      await connect(f.actor, type, "identity-b");
+      for (const runId of [pending, queued]) {
+        expect(
+          (await runs.readRun(f.actor, runId)).source?.account,
+        ).toStrictEqual({
+          status: "unavailable",
+        });
+      }
+      for (const runId of [queued, pending, first]) {
+        await runs.requestCancelRun(f.actor, runId, [200]);
+      }
+    },
+  );
+
+  it("keeps recovery identity unknown when launch preparation fails", async () => {
+    const f = await fixture("codex-oauth-token");
+    context.mocks.s3.getSignedUrl.mockRejectedValue(
+      new Error("Archive signing failed"),
+    );
+    const runId = await f.start();
+    await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
+      status: "failed",
+      error: "Archive signing failed",
+      source: { account: { status: "unknown" } },
+    });
+  });
+
   it("preserves proven singleton recovery while both UI switches remain off", async () => {
     const f = await fixture("codex-oauth-token", false, false);
     const runId = await f.start();
@@ -815,19 +859,39 @@ describe("personal subscription run identity", () => {
         orgId: f.actor.orgId,
         signal: context.signal,
       });
+      const holdingSettled = Promise.allSettled([lock.done]);
+      const admission = observePreparedLaunchAdmissionFixture({
+        orgId: f.actor.orgId,
+        signal: context.signal,
+      });
+      const sending = admission.track(() => {
+        return createChatFilesBddApi(context).requestSendEvent(
+          f.actor,
+          { agentId: f.agentId, prompt: "admission race", model: f.model },
+          [409],
+        );
+      });
+      const sendingSettled = Promise.allSettled([sending]);
       onTestFinished(async () => {
         lock.release();
-        await lock.done;
+        await Promise.all([holdingSettled, sendingSettled]);
       });
-      const sending = createChatFilesBddApi(context).requestSendEvent(
-        f.actor,
-        { agentId: f.agentId, prompt: "admission race", model: f.model },
-        [409],
-      );
-      await expect.poll(lock.waiterCount).toBe(1);
+      // The held PostgreSQL lock prevents final validation/insertion after
+      // this request finishes preparation, even before its waiter is visible.
+      // Surface early HTTP errors instead of timing out waiting for admission.
+      await Promise.race([
+        admission.attempted,
+        (async () => {
+          const early = await sending;
+          throw new Error(
+            `Chat request completed before final admission: ${early.status}`,
+          );
+        })(),
+      ]);
       await support.deletePersonalModelProviderAccount(f.actor, f.connected.id);
       await connect(f.actor, f.type, "identity-b");
       lock.release();
+      await lock.done;
       const denied = await sending;
       expect(denied.status).toBe(409);
       expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
@@ -3439,71 +3503,95 @@ describe("personal effective provider entitlement", () => {
 });
 
 describe("subscription bundle decryption ownership", () => {
-  it("joins a failed KMS batch before releasing the provider to disconnect", async () => {
-    const f = await fixture("codex-oauth-token");
-    const runId = await f.start();
-    const claim = await f.claim(runId);
-    const captured = accountId(claim, f.type);
-    if (!f.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    const orgId = f.actor.orgId;
-    const batch = holdSubscriptionKmsBatch(context.signal);
-    const requests: Promise<unknown>[] = [];
-    onTestFinished(async () => {
-      batch.release();
-      await Promise.allSettled(requests);
-      useSecretKmsProbe();
-      await runs.requestCancelRun(f.actor, runId, [200]);
-    });
-    let responded = false;
-    const reading = firewall
-      .requestFirewallAuthRaw(JSON.stringify(authBody(claim, f.type)), {
-        authorization: `Bearer ${claim.sandboxToken}`,
-      })
-      .then((response) => {
-        responded = true;
-        return response;
+  it.each([
+    ["codex-oauth-token", "materialization", "first"],
+    ["codex-oauth-token", "equivalence", "first"],
+    ["codex-oauth-token", "equivalence", "second"],
+    ["claude-code-oauth-token", "equivalence", "first"],
+    ["claude-code-oauth-token", "equivalence", "second"],
+  ] as const)(
+    "joins %s %s after a %s decrypt failure before disconnect",
+    async (type, phase, failure) => {
+      const f = await fixture(type);
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      const captured = accountId(claim, f.type);
+      if (!f.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const orgId = f.actor.orgId;
+      if (phase === "equivalence") {
+        // Infrastructure-only KMS rotation independently rewrites the two stores;
+        // no production endpoint can create this equal-plaintext/different-cell state.
+        await reencryptSubscriptionStoresFixture(f.actor, f.type);
+      }
+      const batch = holdSubscriptionKmsBatch(context.signal);
+      const requests: Promise<unknown>[] = [];
+      onTestFinished(async () => {
+        batch.release();
+        await Promise.allSettled(requests);
+        useSecretKmsProbe();
+        await runs.requestCancelRun(f.actor, runId, [200]);
       });
-    requests.push(reading);
-    await batch.entered;
-    batch.failFirst();
-    const disconnecting = support.deletePersonalModelProviderAccount(
-      f.actor,
-      captured,
-    );
-    requests.push(disconnecting);
-    // Infrastructure-only synchronization: the API does not expose DB waiters.
-    await expect
-      .poll(async () => {
-        return await countWaitingPersonalSubscriptionMutationsFixture({
-          orgId,
-          userId: f.actor.userId,
-          type: f.type,
+      let responded = false;
+      const reading = firewall
+        .requestFirewallAuthRaw(JSON.stringify(authBody(claim, f.type)), {
+          authorization: `Bearer ${claim.sandboxToken}`,
+        })
+        .then((response) => {
+          responded = true;
+          return response;
         });
-      })
-      .toBeGreaterThan(0);
-    expect(responded).toBeFalsy();
-    expect(batch.active).toBe(1);
-    expect(batch.calls).toBe(3);
-    batch.release();
-    const denied = await reading;
-    await disconnecting;
-    expect(denied.status).toBe(500);
-    expect(denied.body).toStrictEqual({ error: "Internal server error" });
-    expect(batch.active).toBe(0);
-    expect(batch.peak).toBe(2);
-    expect(batch.calls).toBe(3);
-    useSecretKmsProbe();
-    // The failed read neither exposed credentials nor poisoned the next owner.
-    await expect(resolve(claim, f.type)).resolves.toMatchObject({
-      Authorization: `Bearer ${f.connected.token}`,
-      "ChatGPT-Account-ID": "identity-a",
-    });
-    expect(
-      (await support.listPersonalModelProviders(f.actor, [200])).body,
-    ).toMatchObject({ modelProviders: [] });
-  });
+      requests.push(reading);
+      await batch.entered;
+      if (failure === "first") {
+        batch.failFirst();
+      } else {
+        batch.failSecond();
+      }
+      const disconnecting = support.deletePersonalModelProviderAccount(
+        f.actor,
+        captured,
+      );
+      requests.push(disconnecting);
+      // Infrastructure-only synchronization: the API does not expose DB waiters.
+      await expect
+        .poll(async () => {
+          return await countWaitingPersonalSubscriptionMutationsFixture({
+            orgId,
+            userId: f.actor.userId,
+            type: f.type,
+          });
+        })
+        .toBeGreaterThan(0);
+      expect(responded).toBeFalsy();
+      expect(batch.active).toBe(1);
+      expect(batch.calls).toBe(3);
+      batch.release();
+      const denied = await reading;
+      await disconnecting;
+      expect(denied.status).toBe(500);
+      expect(denied.body).toStrictEqual({ error: "Internal server error" });
+      expect(batch.active).toBe(0);
+      expect(batch.peak).toBe(2);
+      // A disconnect can independently prove the re-encrypted mirror after
+      // this failed reader releases ownership; those are a new operation's calls.
+      if (phase === "materialization") {
+        expect(batch.calls).toBe(3);
+      }
+      useSecretKmsProbe();
+      // The failed read neither exposed credentials nor poisoned the next owner.
+      await expect(resolve(claim, f.type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+        ...(type === "codex-oauth-token"
+          ? { "ChatGPT-Account-ID": "identity-a" }
+          : {}),
+      });
+      expect(
+        (await support.listPersonalModelProviders(f.actor, [200])).body,
+      ).toMatchObject({ modelProviders: [] });
+    },
+  );
 
   it.each([
     "reconnect",

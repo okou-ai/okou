@@ -2,7 +2,7 @@ import { Command, Option } from "commander";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import type { ConnectorCheckPolicy } from "@okouai/api-contracts/contracts/connector-check";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { getPlatformOrigin } from "../doctor/platform-url";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import {
   isComputerUsePermissionTarget,
   printComputerUsePermissionGuidance,

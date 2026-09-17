@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { chromium, expect, type Browser, type Page } from "@playwright/test";
 
 import { resolveApiBackendUrl } from "./api-backend-url";
-import { refreshClerkSessionToken, signInWithClerkEmailCode } from "./lib/auth";
+import { refreshClerkSessionToken } from "./lib/auth";
 import { issueCliToken } from "./lib/cli-token";
 import { runnerTestAccounts } from "./lib/clerk-api";
 import { formatErrorReport } from "./lib/error-report";
@@ -16,6 +16,7 @@ import {
   readRunnerPaidEntitlement,
 } from "./lib/runner-onboarding";
 import { seedPreviewBypassCookie } from "./lib/preview-bypass";
+import { signInRunnerWithDiagnostics } from "./lib/runner-sign-in";
 import {
   collectStripeCheckoutState,
   fillStripeCheckout,
@@ -161,11 +162,18 @@ async function provisionRunnerCredential(
       vercelAutomationBypassSecret,
     );
     const page = await context.newPage();
-    let clerkSessionToken = await signInWithClerkEmailCode(
+    let clerkSessionToken = await signInRunnerWithDiagnostics(
       page,
       target.email,
       appUrl,
-      { activeOrganizationId: target.organizationId },
+      {
+        activeOrganizationId: target.organizationId,
+        diagnosticPath: join(
+          outputDirectory,
+          "e2e-runner-sign-in-diagnostics",
+          target.fileName,
+        ),
+      },
     );
     await ensureRunnerOrganizationReady({
       apiUrl,

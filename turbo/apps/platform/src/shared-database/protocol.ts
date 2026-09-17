@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { ApiError } from "../lib/api-error.ts";
 import { SharedDatabaseHttpError } from "./http-error.ts";
 import { computedKeySchema } from "./computed-key.ts";
@@ -92,44 +91,8 @@ const disconnectRequestSchema = z
   .object({ type: z.literal("disconnect") })
   .strict();
 
-const userRealtimeTopicSchema = z.union([
-  z.literal("agentphone:changed"),
-  z.literal("billing:changed"),
-  z.literal("browserSessionChanged"),
-  z.literal("connector:changed"),
-  z.literal("ssh:changed"),
-  z.literal("connectorPermissionUpdated"),
-  z.literal("customConnectorListChanged"),
-  z.literal("feishu:changed"),
-  z.literal(GET_STARTED_REWARDS_CHANGED_EVENT),
-  z.literal("github:changed"),
-  z.literal("modelPoliciesChanged"),
-  z.literal("presentationTemplatesChanged"),
-  z.literal("slack:changed"),
-  z.literal("teams:changed"),
-  z.literal("telegram:changed"),
-  z.literal("userPreferenceChanged"),
-  z
-    .string()
-    .regex(
-      /^chatThread(?:Artifacts|Automations|Detail|Workflows)Changed:[^:]+$/u,
-    ),
-]);
-
-function isSharedDatabaseAppRealtimeSubscription(
-  scope: SharedDatabaseRealtimeScope,
-  topic: string,
-): boolean {
-  return (
-    (scope === "run-output" && z.uuid().safeParse(topic).success) ||
-    (scope === "user" && userRealtimeTopicSchema.safeParse(topic).success) ||
-    (scope === "credential" && topic === "morningBriefChanged") ||
-    (scope === "org" &&
-      (topic === "presentationTemplatesChanged" ||
-        topic === "modelPoliciesChanged"))
-  );
-}
-
+// Channel access belongs to the authenticated Worker identity and Ably token.
+// Event names are filters within those channels, not a transport registry.
 const realtimeSubscribeRequestSchema = z
   .object({
     type: z.literal("realtime-subscribe"),
@@ -140,9 +103,9 @@ const realtimeSubscribeRequestSchema = z
   .strict()
   .refine(
     ({ scope, topic }) => {
-      return isSharedDatabaseAppRealtimeSubscription(scope, topic);
+      return scope !== "run-output" || z.uuid().safeParse(topic).success;
     },
-    { message: "Realtime subscription is not supported" },
+    { message: "Run-output subscriptions require a run UUID" },
   );
 
 const realtimeUnsubscribeRequestSchema = z

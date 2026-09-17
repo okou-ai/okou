@@ -1,4 +1,10 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  screen,
+  waitFor,
+  waitForElementToBeRemoved,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
@@ -1248,42 +1254,62 @@ test("Sign out from the account menu", async () => {
   });
 });
 
-test("Keep an active session open when provider loading remains unauthorized", async () => {
-  mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([connectedPersonalCodexProvider()]);
+test.each([null, "en-US"] as const)(
+  "Keep an active session open when provider loading remains unauthorized (saved locale: %s)",
+  async (locale) => {
+    mockAdminAccountSidebar();
+    context.mocks.data.userPreferences({ locale });
+    const providerResponse = context.mocks.deferred<void>();
+    let menuOpened = false;
 
-  context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {
-    return respond(401, {
-      error: {
-        code: "UNAUTHORIZED",
-        message: "Unauthorized",
+    context.mocks.api(
+      personalModelProvidersMainContract.list,
+      async ({ respond }) => {
+        if (menuOpened) {
+          await providerResponse.promise;
+        }
+        return respond(401, {
+          error: {
+            code: "UNAUTHORIZED",
+            message: "Unauthorized",
+          },
+        });
       },
-    });
-  });
-  mockedClerk.sessionGetToken.mockImplementation((options) => {
-    return Promise.resolve(options?.skipCache ? "fresh-token" : "test-token");
-  });
+    );
 
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
+    await setupPage({
+      context,
+      path: "/workflows",
+      auth: {
+        user: {
+          id: "test-user-123",
+          fullName: "Alex Rivera",
+          email: "alex.rivera@example.test",
+        },
       },
-    },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
-  });
-
-  const chatList = await screen.findByTestId("chat-list-column");
-  await waitFor(() => {
-    expect(mockedClerk.sessionGetToken).toHaveBeenCalledWith({
-      skipCache: true,
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
-  });
-  expect(chatList).toBeInTheDocument();
-  expect(mockedClerk.redirectToSignIn).not.toHaveBeenCalled();
-  expect(screen.queryByText("Unauthorized")).not.toBeInTheDocument();
-});
+
+    const workflows = await screen.findByRole("heading", { name: "Workflows" });
+    menuOpened = true;
+    const menu = await openAccountMenu();
+    const loadingSubscriptions = await within(menu).findByTestId(
+      "account-menu-subscriptions",
+    );
+
+    providerResponse.resolve();
+    await waitForElementToBeRemoved(loadingSubscriptions);
+    await expect(
+      within(menu).findByText("12,500 credits"),
+    ).resolves.toBeInTheDocument();
+    expect(workflows).toBeInTheDocument();
+    expect(mockedClerk.redirectToSignIn).not.toHaveBeenCalled();
+    expect(mockedClerk.signOut).not.toHaveBeenCalled();
+    expect(screen.queryByText("Unauthorized")).not.toBeInTheDocument();
+
+    click(within(menu).getByText("Settings"));
+    await expect(
+      screen.findByRole("dialog", { name: "Settings" }),
+    ).resolves.toBeInTheDocument();
+  },
+);

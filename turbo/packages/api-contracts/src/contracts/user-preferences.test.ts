@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  CHAT_TRANSLATION_LANGUAGE_BY_USER_LOCALE,
   SUPPORTED_USER_LOCALES,
-  chatTranslationLanguageSchema,
   updateUserPreferencesRequestSchema,
   userLocaleSchema,
   userPreferencesResponseSchema,
@@ -14,7 +12,6 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "id-ID",
-      translationLanguage: null,
       supportedLocales: ["en-US", "pt-BR", "id-ID"],
       pinnedAgentIds: [],
       sendMode: "enter",
@@ -34,7 +31,6 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "ja-JP",
-        translationLanguage: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP"],
         pinnedAgentIds: [],
         sendMode: "enter",
@@ -46,7 +42,6 @@ describe("user preferences contract", () => {
       }),
     ).toMatchObject({
       locale: "ja-JP",
-      translationLanguage: null,
       supportedLocales: ["en-US", "pt-BR", "ja-JP"],
     });
   });
@@ -57,7 +52,6 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "ko-KR",
-        translationLanguage: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP", "ko-KR"],
         pinnedAgentIds: [],
         sendMode: "enter",
@@ -69,7 +63,6 @@ describe("user preferences contract", () => {
       }),
     ).toMatchObject({
       locale: "ko-KR",
-      translationLanguage: null,
       supportedLocales: ["en-US", "pt-BR", "ja-JP", "ko-KR"],
     });
   });
@@ -80,7 +73,6 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "es-ES",
-        translationLanguage: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP", "es-ES"],
         pinnedAgentIds: [],
         sendMode: "enter",
@@ -92,7 +84,6 @@ describe("user preferences contract", () => {
       }),
     ).toMatchObject({
       locale: "es-ES",
-      translationLanguage: null,
       supportedLocales: ["en-US", "pt-BR", "ja-JP", "es-ES"],
     });
   });
@@ -105,7 +96,6 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "it-IT",
-      translationLanguage: null,
       supportedLocales: ["en-US", "it-IT"],
       pinnedAgentIds: [],
       sendMode: "enter",
@@ -137,7 +127,6 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "hi-IN",
-      translationLanguage: null,
       supportedLocales: [...SUPPORTED_USER_LOCALES],
       pinnedAgentIds: [],
       sendMode: "enter",
@@ -152,18 +141,5 @@ describe("user preferences contract", () => {
     expect(preferences.supportedLocales).toStrictEqual([
       ...SUPPORTED_USER_LOCALES,
     ]);
-  });
-
-  it("supports chat translation for every current user locale", () => {
-    expect(Object.keys(CHAT_TRANSLATION_LANGUAGE_BY_USER_LOCALE)).toStrictEqual(
-      [...SUPPORTED_USER_LOCALES],
-    );
-    expect(
-      Object.values(CHAT_TRANSLATION_LANGUAGE_BY_USER_LOCALE).every(
-        (language) => {
-          return chatTranslationLanguageSchema.safeParse(language).success;
-        },
-      ),
-    ).toBe(true);
   });
 });

@@ -12,7 +12,7 @@ import {
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
 import { getOkouAgentId } from "../../../lib/okou-env";
 import { isUuid } from "../../../lib/utils/uuid";
-import { getPlatformOrigin } from "../../doctor/platform-url";
+import { getPlatformOrigin } from "../../../lib/platform-url";
 import { connectorAccountCliLabel } from "../account-label";
 import { finalizeActionUrl, printCallbackTurnInstruction } from "../action-url";
 import {

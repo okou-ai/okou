@@ -15,6 +15,7 @@ import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
+  configureNativeCliArtifact,
   createChatEventsFixture,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
   expectNoBuiltInModelUsage,
@@ -97,7 +98,13 @@ describe("CHAT-02: run-level model overrides", () => {
       return { requests, alternateRequests };
     }
 
-    async function prepareHeldSubscription(accountsEnabled = true) {
+    async function prepareHeldSubscription(
+      accountsEnabled = true,
+      durableInference = false,
+    ) {
+      if (durableInference) {
+        configureNativeCliArtifact();
+      }
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const identity = `held-subscription-${randomUUID()}`;
       const captured = await configureSubscriptionPiModel(actor, {
@@ -107,6 +114,9 @@ describe("CHAT-02: run-level model overrides", () => {
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
+        ...(durableInference
+          ? { [FeatureSwitchKey.PiDeferredSandbox]: true }
+          : {}),
       });
       await configureOrganizationGptModel(actor);
       const instructions = await publishPendingPiInstructions(actor, agentId);
@@ -143,6 +153,39 @@ describe("CHAT-02: run-level model overrides", () => {
         ...observed,
       };
     }
+
+    it("keeps the transaction-validated account for durable provider dispatch", async () => {
+      const f = await prepareHeldSubscription(true, true);
+      await expect(api.readRun(f.actor, f.run.runId)).resolves.toMatchObject({
+        status: "pending",
+        source: {
+          providerType: "codex-oauth-token",
+          account: { status: "connected", id: f.captured.accountSourceId },
+        },
+      });
+      await authDeviceSupport.deletePersonalModelProviderAccount(
+        f.actor,
+        f.captured.accountSourceId,
+      );
+
+      f.sdk.release();
+      await waitForRunStatus(f.actor, f.run.runId, "completed");
+      await f.sdk.disposed;
+      await flushWaitUntilForTest();
+      expect(f.requests).toHaveLength(1);
+      expect(f.requests[0]).toMatchObject({
+        authorization: `Bearer ${f.captured.oauth.oauthTokenResponses[0]?.access_token}`,
+        accountId: f.identity,
+        body: {
+          model: "gpt-5.6-terra",
+          service_tier: "priority",
+          stream: true,
+          store: false,
+        },
+      });
+      expect(f.alternateRequests).toHaveLength(0);
+      await expectNoBuiltInModelUsage(f.run.runId);
+    }, 30_000);
 
     it.each([
       { change: "ordinary disconnect", accountsEnabled: true },

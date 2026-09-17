@@ -3,7 +3,7 @@ import { safeSqlStateCode } from "../../lib/pg-errors";
 import { piDeferredSecretsSchema } from "./pi-deferred-sandbox-contract";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { and, asc, eq, lt, inArray, notExists } from "drizzle-orm";
+import { and, asc, eq, lt, inArray, notExists, or } from "drizzle-orm";
 import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import {
   agentRunInferenceObjects,
@@ -27,17 +27,20 @@ interface ObjectOwner {
   readonly orgId: string;
   readonly userId: string;
 }
+
+interface ObjectReference {
+  readonly kind: ObjectKind;
+  readonly hash: string;
+}
+
 const MAX_OBJECT_BYTES = 32 * 1024 * 1024;
 
-/** No executable environment or signed URL belongs in this immutable envelope.
- * Secret callers supply the persistent-secret ciphertext, never plaintext. */
-export async function publishPiInferenceObject<T>(
-  db: Db,
+function serializePiInferenceObject<T>(
   owner: ObjectOwner,
   kind: ObjectKind,
   schema: z.ZodType<T>,
   value: T,
-): Promise<string> {
+): { readonly content: string; readonly hash: string } {
   if (kind === "secrets") {
     piDeferredSecretsSchema.parse(value);
   }
@@ -51,7 +54,38 @@ export async function publishPiInferenceObject<T>(
   if (Buffer.byteLength(content) > MAX_OBJECT_BYTES) {
     throw new Error("Pi inference object exceeds its byte limit");
   }
-  const hash = createHash("sha256").update(content).digest("hex");
+  return {
+    content,
+    hash: createHash("sha256").update(content).digest("hex"),
+  };
+}
+
+/** Derive the exact durable reference before publication so speculative SDK
+ * preparation can overlap DB object writes without weakening integrity. */
+export function piInferenceObjectHash<T>(
+  owner: ObjectOwner,
+  kind: ObjectKind,
+  schema: z.ZodType<T>,
+  value: T,
+): string {
+  return serializePiInferenceObject(owner, kind, schema, value).hash;
+}
+
+/** No executable environment or signed URL belongs in this immutable envelope.
+ * Secret callers supply the persistent-secret ciphertext, never plaintext. */
+export async function publishPiInferenceObject<T>(
+  db: Db,
+  owner: ObjectOwner,
+  kind: ObjectKind,
+  schema: z.ZodType<T>,
+  value: T,
+): Promise<string> {
+  const { content, hash } = serializePiInferenceObject(
+    owner,
+    kind,
+    schema,
+    value,
+  );
   await db.transaction(async (tx) => {
     await assertErasureSubjectWritable(tx, [
       { subjectKind: "organization", subjectId: owner.orgId },
@@ -72,16 +106,43 @@ export async function publishPiInferenceObject<T>(
   return hash;
 }
 
-/** Caller owns the run's complete admission/lifecycle locks. Attach in the SAME
- * transaction as the inference input/publication. FK locks serialize with GC. */
-export async function retainPiInferenceObject(
+function objectReferenceKey(
+  owner: ObjectOwner,
+  reference: { readonly kind: string; readonly hash: string },
+): string {
+  return JSON.stringify([
+    reference.kind,
+    reference.hash,
+    owner.orgId,
+    owner.userId,
+  ]);
+}
+
+/** Caller owns the run's complete admission/lifecycle locks. Attach the exact
+ * immutable tuples in the SAME transaction as the inference input/publication.
+ * Sorted KEY SHARE locks serialize the bounded batch with GC. */
+export async function retainPiInferenceObjects(
   tx: Tx,
   args: ObjectOwner & {
     readonly runId: string;
-    readonly kind: ObjectKind;
-    readonly hash: string;
+    readonly references: readonly ObjectReference[];
   },
 ): Promise<void> {
+  const references = [
+    ...new Map(
+      args.references.map((reference) => {
+        return [objectReferenceKey(args, reference), reference];
+      }),
+    ).values(),
+  ].sort((left, right) => {
+    if (left.hash !== right.hash) {
+      return left.hash < right.hash ? -1 : 1;
+    }
+    return left.kind === right.kind ? 0 : left.kind < right.kind ? -1 : 1;
+  });
+  if (references.length === 0) {
+    throw new Error("Pi inference object retention requires a reference");
+  }
   const [run] = await tx
     .select({ id: agentRuns.id })
     .from(agentRuns)
@@ -92,25 +153,72 @@ export async function retainPiInferenceObject(
         eq(agentRuns.userId, args.userId),
       ),
     );
-  const [object] = await tx
-    .select({ hash: piInferenceObjects.hash })
+  const objects = await tx
+    .select({
+      hash: piInferenceObjects.hash,
+      kind: piInferenceObjects.kind,
+      orgId: piInferenceObjects.orgId,
+      userId: piInferenceObjects.userId,
+    })
     .from(piInferenceObjects)
     .where(
-      and(
-        eq(piInferenceObjects.hash, args.hash),
-        eq(piInferenceObjects.kind, args.kind),
-        eq(piInferenceObjects.orgId, args.orgId),
-        eq(piInferenceObjects.userId, args.userId),
+      or(
+        ...references.map((reference) => {
+          return and(
+            eq(piInferenceObjects.hash, reference.hash),
+            eq(piInferenceObjects.kind, reference.kind),
+            eq(piInferenceObjects.orgId, args.orgId),
+            eq(piInferenceObjects.userId, args.userId),
+          );
+        }),
       ),
     )
+    .orderBy(
+      asc(piInferenceObjects.hash),
+      asc(piInferenceObjects.kind),
+      asc(piInferenceObjects.orgId),
+      asc(piInferenceObjects.userId),
+    )
     .for("key share");
-  if (!run || !object) {
+  const lockedReferences = new Set(
+    objects.map((object) => {
+      return objectReferenceKey(object, object);
+    }),
+  );
+  if (
+    !run ||
+    references.some((reference) => {
+      return !lockedReferences.has(objectReferenceKey(args, reference));
+    })
+  ) {
     throw new Error("Pi inference object is unavailable for this owner");
   }
   await tx
     .insert(agentRunInferenceObjects)
-    .values({ runId: args.runId, kind: args.kind, hash: args.hash })
+    .values(
+      references.map((reference) => {
+        return { runId: args.runId, ...reference };
+      }),
+    )
     .onConflictDoNothing();
+}
+
+/** Preserve the single-object H1 and fixture boundary on the same exact batch
+ * validator rather than creating a second retention authority. */
+export async function retainPiInferenceObject(
+  tx: Tx,
+  args: ObjectOwner & {
+    readonly runId: string;
+    readonly kind: ObjectKind;
+    readonly hash: string;
+  },
+): Promise<void> {
+  await retainPiInferenceObjects(tx, {
+    runId: args.runId,
+    orgId: args.orgId,
+    userId: args.userId,
+    references: [{ kind: args.kind, hash: args.hash }],
+  });
 }
 
 /** Reading is scoped and integrity checked; it does not grant execution. */

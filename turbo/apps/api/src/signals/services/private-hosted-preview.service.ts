@@ -5,16 +5,11 @@ import {
   privateHostedDeployments,
   hostedSites,
 } from "@okouai/db/schema/hosted-site";
-import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { db$ } from "../external/db";
 import { putHostedSitesS3Object } from "../external/s3";
-
-export function privateHostedArtifactUrl(deploymentId: string): string {
-  return artifactReferencePath(deploymentId, "index.html");
-}
 
 /** An isolated, temporary origin authorizes every resource without cookies. */
 export const createPrivateHostedPreview$ = command(

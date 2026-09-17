@@ -787,98 +787,132 @@ describe("Official Automation result email callbacks", () => {
     );
   });
 
-  it("delivers cancellation callbacks without an outbox retry loop", async () => {
-    const cancelledScenario = await setupScenario();
+  describe("with a seeded cancellation callback", () => {
+    async function prepareScenario() {
+      const cancelledScenario = await setupScenario();
 
-    const cancelledRunId = await startRun(cancelledScenario);
-    await seedResultCallback({
-      runId: cancelledRunId,
-      automationId: cancelledScenario.automationId,
-      publicBrand: "vm0",
+      const cancelledRunId = await startRun(cancelledScenario);
+      await seedResultCallback({
+        runId: cancelledRunId,
+        automationId: cancelledScenario.automationId,
+        publicBrand: "vm0",
+      });
+      return { cancelledScenario, cancelledRunId };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    await runs.requestCancelRun(cancelledScenario.actor, cancelledRunId, [200]);
-    await flushWaitUntilForTest();
-    await expect(
-      resultCallbackState(cancelledScenario, cancelledRunId),
-    ).resolves.toMatchObject([{ status: "delivered", attempts: 1 }]);
-    const cancellationRetryCallbackId = await seedResultCallback({
-      runId: cancelledRunId,
-      automationId: cancelledScenario.automationId,
-      publicBrand: "vm0",
-      status: "failed",
-    });
-    const cancellationRedrive = await accept(
-      executionClient().dispatchCallbacks({
-        body: {
-          run_id: cancelledRunId,
-          status: "failed",
-          error: "Run cancelled",
-          dispatch_count: 8,
-        },
-      }),
-      [200],
-    );
-    expect(cancellationRedrive.body.successful_callbacks).toBeGreaterThan(0);
-    await expect(
-      resultCallbackState(cancelledScenario, cancelledRunId),
-    ).resolves.toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: cancellationRetryCallbackId,
-          status: "delivered",
+    it("delivers cancellation callbacks without an outbox retry loop", async () => {
+      const { cancelledScenario, cancelledRunId } = preparedScenario;
+      await runs.requestCancelRun(
+        cancelledScenario.actor,
+        cancelledRunId,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await expect(
+        resultCallbackState(cancelledScenario, cancelledRunId),
+      ).resolves.toMatchObject([{ status: "delivered", attempts: 1 }]);
+      const cancellationRetryCallbackId = await seedResultCallback({
+        runId: cancelledRunId,
+        automationId: cancelledScenario.automationId,
+        publicBrand: "vm0",
+        status: "failed",
+      });
+      const cancellationRedrive = await accept(
+        executionClient().dispatchCallbacks({
+          body: {
+            run_id: cancelledRunId,
+            status: "failed",
+            error: "Run cancelled",
+            dispatch_count: 8,
+          },
         }),
-      ]),
-    );
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: cancelledRunId,
-        sourceWorkflowAutomationId: cancelledScenario.automationId,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
+        [200],
+      );
+      expect(cancellationRedrive.body.successful_callbacks).toBeGreaterThan(0);
+      await expect(
+        resultCallbackState(cancelledScenario, cancelledRunId),
+      ).resolves.toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: cancellationRetryCallbackId,
+            status: "delivered",
+          }),
+        ]),
+      );
+      await expect(
+        outbox.findSourceState({
+          sourceRunId: cancelledRunId,
+          sourceWorkflowAutomationId: cancelledScenario.automationId,
+        }),
+      ).resolves.toStrictEqual({ items: [], claim: null });
+    });
   });
 
-  it("delivers terminal-failure callbacks without an outbox retry loop", async () => {
-    const failedScenario = await setupScenario();
-    const failedRunId = await startRun(failedScenario);
-    await seedResultCallback({
-      runId: failedRunId,
-      automationId: failedScenario.automationId,
-      publicBrand: "vm0",
+  describe("with a seeded failure callback", () => {
+    async function prepareScenario() {
+      const failedScenario = await setupScenario();
+      const failedRunId = await startRun(failedScenario);
+      await seedResultCallback({
+        runId: failedRunId,
+        automationId: failedScenario.automationId,
+        publicBrand: "vm0",
+      });
+      return { failedScenario, failedRunId };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    await completeRun(failedScenario, failedRunId, { exitCode: 1 });
-    await expect(
-      resultCallbackState(failedScenario, failedRunId),
-    ).resolves.toMatchObject([{ status: "delivered", attempts: 1 }]);
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: failedRunId,
-        sourceWorkflowAutomationId: failedScenario.automationId,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
+    it("delivers terminal-failure callbacks without an outbox retry loop", async () => {
+      const { failedScenario, failedRunId } = preparedScenario;
+      await completeRun(failedScenario, failedRunId, { exitCode: 1 });
+      await expect(
+        resultCallbackState(failedScenario, failedRunId),
+      ).resolves.toMatchObject([{ status: "delivered", attempts: 1 }]);
+      await expect(
+        outbox.findSourceState({
+          sourceRunId: failedRunId,
+          sourceWorkflowAutomationId: failedScenario.automationId,
+        }),
+      ).resolves.toStrictEqual({ items: [], claim: null });
+    });
   });
 
-  it("honors account unsubscribe for successful result callbacks", async () => {
-    const unsubscribedScenario = await setupScenario();
-    const unsubscribedRunId = await startRun(unsubscribedScenario);
-    await seedResultCallback({
-      runId: unsubscribedRunId,
-      automationId: unsubscribedScenario.automationId,
-      publicBrand: "vm0",
+  describe("with a seeded successful callback", () => {
+    async function prepareScenario() {
+      const unsubscribedScenario = await setupScenario();
+      const unsubscribedRunId = await startRun(unsubscribedScenario);
+      await seedResultCallback({
+        runId: unsubscribedRunId,
+        automationId: unsubscribedScenario.automationId,
+        publicBrand: "vm0",
+      });
+      return { unsubscribedScenario, unsubscribedRunId };
+    }
+    let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+    beforeEach(async () => {
+      preparedScenario = await prepareScenario();
     });
-    await misc.requestEmailUnsubscribe(
-      unsubscribeToken(unsubscribedScenario.actor.userId),
-      [200],
-    );
-    await completeRun(unsubscribedScenario, unsubscribedRunId, {
-      exitCode: 0,
-      output: "Unsubscribed result",
+    it("honors account unsubscribe for successful result callbacks", async () => {
+      const { unsubscribedScenario, unsubscribedRunId } = preparedScenario;
+      await misc.requestEmailUnsubscribe(
+        unsubscribeToken(unsubscribedScenario.actor.userId),
+        [200],
+      );
+      await completeRun(unsubscribedScenario, unsubscribedRunId, {
+        exitCode: 0,
+        output: "Unsubscribed result",
+      });
+      await expect(
+        outbox.findSourceState({
+          sourceRunId: unsubscribedRunId,
+          sourceWorkflowAutomationId: unsubscribedScenario.automationId,
+        }),
+      ).resolves.toStrictEqual({ items: [], claim: null });
     });
-    await expect(
-      outbox.findSourceState({
-        sourceRunId: unsubscribedRunId,
-        sourceWorkflowAutomationId: unsubscribedScenario.automationId,
-      }),
-    ).resolves.toStrictEqual({ items: [], claim: null });
   });
 
   it("rechecks an absent preference row after concurrent unsubscribe commits", async () => {

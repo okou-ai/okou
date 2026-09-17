@@ -241,9 +241,9 @@ test("Return to the conversation that started a chat message", async () => {
     "https://slack.com/archives/C123/p456",
   );
 
-  const agentPhoneLabel = screen.getByText("AgentPhone");
-  expect(agentPhoneLabel).toBeVisible();
-  expect(agentPhoneLabel.closest("a")).toBeNull();
+  const iMessageLabel = screen.getByText("iMessage");
+  expect(iMessageLabel).toBeInTheDocument();
+  expect(iMessageLabel.closest("a")).toBeNull();
 });
 
 test("Show the current usage settlement on the correct run", async () => {

@@ -17,7 +17,8 @@ optional `users` table is never consulted. Sharing an agent does not transfer
 ownership, and closing a member does not close the organization.
 
 Each transaction uses the existing READ COMMITTED connection and real
-`assertErasureSubjectWritable`. Sorted transaction advisory locks precede
+`assertErasureSubjectWritable`. Ordinary writers acquire shared subject locks;
+closure and erasure mutations retain exclusive locks. Sorted transaction advisory locks precede
 resource, catalog, organization-concurrency, thread, run, session and provider
 business locks and remain held through COMMIT. Agent/Storage `FOR KEY SHARE`
 protects their composite identity/organization/owner unique keys against transfer
@@ -85,7 +86,7 @@ settlement are unchanged, including exactly-once usage identities.
 
 ## Verification and cost boundaries
 
-Tests use PostgreSQL 18.6 in an isolated local database, the actual B1 projector,
+Initial B2b1 verification used PostgreSQL 18.6 in an isolated local database, the actual B1 projector,
 actual create/promotion services and actual Runner HTTP routes. Only synthetic
 identities and infrastructure fixtures are used. The exact-file ESLint exception
 documents why the dormant projector and PostgreSQL lock observations have no
@@ -115,16 +116,149 @@ claim, used that index with one search/one shared buffer (0.129 ms execution).
 Existing [B1-S scale evidence](account-erasure-claim-scale.md) remains the source
 for its separate worker/index workload; it is not a compute throughput result.
 
-The finite actual-claim experiment measures two concurrent requests, twice with
+The original finite actual-claim experiment measured two concurrent requests, twice with
 shared user/org subjects and twice with separate subjects. It reports local
 end-to-end durations, including HTTP/fixture network overhead, without a CI
 latency threshold. On 2026-09-15 the two shared-subject pairs took 49.51/29.14 ms;
 the two separate-subject pairs took 49.01/24.41 ms (eight successful claims).
 This sample cannot isolate the guard's incremental cost or establish a
-production percentile. Existing exclusive subject locks necessarily serialize work
-for the same user **or organization**, including polls. No global lock, wider
-runtime timeout, historical scan, or unmeasured production-throughput claim is
-introduced. Controller acceptance must evaluate production contention separately.
+production percentile. That experiment predates the shared-admission correction
+in [#34441](https://github.com/vm0-ai/okou/pull/34441). Ordinary writers now share
+subject locks; independent work can still contend on its actual business rows.
+
+### Admission query consolidation (#34570)
+
+Ordinary Agent admission reads run/session/Agent ownership together, using a
+LEFT JOIN so a missing Agent does not discard the observed run/session. This
+read only discovers subjects. Agent/Storage KEY SHARE and run/session FOR UPDATE
+rereads still validate ownership in the original order; a changed owner retries
+in a fresh transaction with a new complete subject set. Null-Agent maintenance
+keeps its separate job/Storage authority and live-lease checks. Expected resource
+and captured cleanup owners remain subjects, including deferred Pi cleanup.
+
+After **all** sorted subject locks complete, one separate READ COMMITTED SELECT
+checks for any matching closure job. It matches complete kind/ID pairs and does
+not filter out any job state or generation. Keeping it separate from lock
+acquisition gives it a new statement snapshot after a blocking closure commits.
+All matching closure/retirement mutations require the same exclusive locks, so
+they cannot change those subjects until the admitted transaction finishes.
+
+| Prelude before the ordinary claim CTE         | Before | After |
+| --------------------------------------------- | -----: | ----: |
+| Initial run/session and Agent ownership reads |      2 |     1 |
+| Isolation check                               |      1 |     1 |
+| Sorted subject locks                          |      S |     S |
+| Closure reads                                 |      S |     1 |
+| Resource, run and session locked rereads      |      3 |     3 |
+| Total                                         | 6 + 2S | 6 + S |
+
+For two distinct subjects, this is **10 to 8 statements**. Counts describe the
+successful ordinary Agent path and exclude BEGIN/COMMIT, response preparation,
+the final claim CTE and maintenance/deferred-specific work. The claim timestamp,
+queue ownership/expiry, retry policy, terminal disposition, billing and cleanup
+locators are unchanged. Shared-helper consumers also include late run content
+and Pi inference-object publication. No protocol, schema, cache, lock namespace
+or hash changes; old shared/exclusive participants still coordinate and rollback
+restores the extra reads.
+
+Local PostgreSQL 17.11 measurements on 2026-09-16 compared baseline
+`c26dba999576111eed64fefa08d3e4684255fa23` with this change using identical
+temporary instrumentation: two warmups and ten real admission transactions on
+API-created fixtures. Every sample confirmed 10 versus 8 prelude statements.
+Finite HTTP claim-pair samples varied substantially; they do not establish a
+latency improvement or separate RTT, execution and lock waiting. No timing
+threshold, production logging or instrumentation is added to CI/runtime.
+
+The initial join retained point-index lookups on run/session and the Agent owner
+index (12 shared buffer hits versus 8 + 4 for separate reads in a same-session
+probe). A 4,096-row transaction-local closure fixture used two existing-index
+bitmap probes for the common two-subject predicate (0.015 ms execution). The
+maximum 64-subject probe chose a local sequential scan (1.226 ms); query count
+reduction does not imply constant execution cost. The fixture was rolled back;
+these synthetic plans and single samples are not production throughput evidence.
+There is no global lock, timeout increase or production operation.
+
+### Locked session observation reuse (#34720)
+
+Successful thread snapshot validation reads the expected session's conversation
+and user/org/Agent ownership together under the existing `FOR UPDATE` lock.
+Final new-run ownership validation reuses that observation only when its opaque
+transaction identity and session ID match the current transaction and actual
+insertion session. The observation is immutable, local to that admission, and
+never derived from preparation or the initial pre-lock subject discovery.
+
+Ordinary reused-session admission therefore performs one locked session SELECT
+instead of two. Both snapshot and ownership predicates still run. Stale binding
+or conversation results, missing prepared resolution, different insertion
+sessions and threadless launches retain independent ownership reads. New
+sessions retain their existing no-owner-read behavior; rotation still validates
+the old expected session. Failed-preparation persistence and private maintenance
+retain their separate admission. A queued-payload retry creates a fresh
+transaction and cannot reuse the earlier observation.
+
+Subject/resource/catalog/org/thread/session/provider ordering, account-closure
+checks and ownership-error precedence over stale-snapshot retry are unchanged.
+No schema, persisted proof, credential cache or client/Runner contract changes;
+rollback restores the extra query. Query-count reduction does not establish a
+production latency improvement.
+
+Local PostgreSQL 18.6 statement capture compared main
+`d1312dca7973bcd5615ca7a55123e4e5ee4906da` with this change on September 16.
+Ten successful reused-session admissions in each suite run executed two locked
+session SELECTs before the change and one afterward. Rotation retained its
+expected-session read. API/Runner regressions cover queued reuse through
+promotion and user/org/Agent changes committed while admission waits on the
+session lock, both with and without a concurrent conversation change. Query
+capture stays outside runtime and CI assertions; no timing threshold is added.
+
+### New-run ownership observation (#34721)
+
+Ordinary new-run persistence with an existing session observes the Agent and
+session in one statement. A singleton `SELECT 1` independently LEFT JOINs their
+requested primary keys, so either missing row still preserves the other owner
+and its subjects. Structured schema-column selections decode each missing
+object as null; a present session with a null Agent binding remains present.
+New-session admission retains its one resource read. Null-Agent maintenance
+retains its independent Storage/session reads and lease authority.
+
+The observation only discovers subjects. Actual and expected owners still
+contribute domain-separated user/organization locks, acquired individually in
+sorted order. The closure query remains a separate READ COMMITTED statement
+after all locks. Resource KEY SHARE rereads, bounded fresh-transaction retries,
+prepared-owner rejection and the later session FOR UPDATE validation are
+unchanged in both successful and failed-launch persistence. No schema, protocol,
+cache, lock identity, concurrency or fairness change is involved.
+
+For a writable ordinary Agent and existing session, admission changes from
+`5 + S` to `4 + S` statements, where `S` is the distinct subject count. With two
+subjects this is **7 to 6**. New-session admission stays at **6**. These counts
+exclude BEGIN/COMMIT and subsequent launch persistence, including the later
+session validation; they are not counts for the complete create-run request.
+
+A finite local PostgreSQL 18.6 experiment on 2026-09-16 compared baseline
+`d1312dca7973bcd5615ca7a55123e4e5ee4906da` with the candidate using identical
+synthetic Agent/session fixtures, three warmups per variant/path and twenty
+alternating samples. All samples confirmed the counts above. Existing-session
+transaction medians were 5.352 ms baseline and 4.651 ms candidate; no-session
+medians were 1.869 and 2.215 ms. These include local transaction/driver overhead
+and are not a production percentile or a reliable savings estimate.
+
+The generated candidate SQL bound Agent ID first and session ID second. Runtime
+probes verified all four present/missing combinations and a present unbound
+session. `EXPLAIN (ANALYZE, BUFFERS)` retained the Agent owner index and session
+primary-key index, with five shared buffer hits versus three plus two for the
+separate reads. The join adds two singleton LEFT nested loops. Single execution
+samples were 0.144 ms combined versus 0.014 and 0.019 ms separately; fewer
+statements do not mean identical planning/execution costs. No latency threshold
+or experiment instrumentation is added to production or CI.
+
+Behavioral coverage extends closure-first/writer-first and Agent-transfer races
+to both existing-session persistence consumers, and checks the later session
+ownership reread. Narrow infrastructure cases additionally prove that missing
+and unbound observations still wait for closure on the surviving actual or
+expected subjects. Preparation prechecks cannot expose those intermediate
+missing/mismatched pairs through an endpoint; these cases use the existing
+real-database admission exception rather than mocking the query or locks.
 
 ## Remaining boundaries and activation gates
 

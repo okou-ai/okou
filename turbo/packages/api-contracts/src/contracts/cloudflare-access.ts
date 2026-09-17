@@ -60,8 +60,14 @@ export const cloudflareAccessContract = c.router({
     method: "POST",
     path: "/api/ssh/cloudflare-access/configs",
     headers: authHeadersSchema,
-    body: createCloudflareAccessRequestSchema,
-    responses: { 201: cloudflareAccessConfigSchema, ...errors },
+    body: createCloudflareAccessRequestSchema.extend({
+      id: z.uuid(),
+    }),
+    responses: {
+      201: cloudflareAccessConfigSchema,
+      204: c.noBody(),
+      ...errors,
+    },
   },
   update: {
     method: "PATCH",
@@ -96,7 +102,7 @@ export type CloudflareAccessConfig = z.infer<
   typeof cloudflareAccessConfigSchema
 >;
 export type CreateCloudflareAccessRequest = z.infer<
-  typeof cloudflareAccessContract.create.body
+  typeof createCloudflareAccessRequestSchema
 >;
 export type UpdateCloudflareAccessRequest = z.infer<
   typeof cloudflareAccessContract.update.body

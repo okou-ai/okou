@@ -771,6 +771,7 @@ async function fetchUserProfileMap(
 async function fetchOrgMemberDirectory(
   client: ReturnType<typeof clerk$.read>,
   orgId: string,
+  callerRole: OrgRole,
   context: ClerkReadContext,
   signal: AbortSignal,
 ) {
@@ -791,12 +792,14 @@ async function fetchOrgMemberDirectory(
         context,
         readSignal,
       ),
-      listAllPendingOrganizationInvitations(
-        client.organizations,
-        orgId,
-        context,
-        readSignal,
-      ),
+      callerRole === "admin"
+        ? listAllPendingOrganizationInvitations(
+            client.organizations,
+            orgId,
+            context,
+            readSignal,
+          )
+        : [],
     ]),
     () => {
       controller.abort();
@@ -854,7 +857,13 @@ export const orgMembersList$ = command(
     const readContext = createClerkReadContext(now);
 
     const { organization, memberships, invitations } =
-      await fetchOrgMemberDirectory(client, args.orgId, readContext, signal);
+      await fetchOrgMemberDirectory(
+        client,
+        args.orgId,
+        args.callerRole,
+        readContext,
+        signal,
+      );
     signal.throwIfAborted();
 
     const membersWithUserIds = memberships.map((membership) => {

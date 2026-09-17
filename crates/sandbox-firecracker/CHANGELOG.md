@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.43.2](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.43.1...sandbox-firecracker-v0.43.2) (2026-09-17)
+
+## [0.43.1](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.43.0...sandbox-firecracker-v0.43.1) (2026-09-17)
+
+
+### Performance Improvements
+
+* **runner:** preserve active guest memory capacity ([#34832](https://github.com/vm0-ai/okou/issues/34832)) ([4ad43f1](https://github.com/vm0-ai/okou/commit/4ad43f174745f327493b26104d44296aec1b7d49))
+
+## [0.43.0](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.15...sandbox-firecracker-v0.43.0) (2026-09-17)
+
+
+### Features
+
+* **runner:** expose history transfer measurements ([#34805](https://github.com/vm0-ai/okou/issues/34805)) ([445a170](https://github.com/vm0-ai/okou/commit/445a170a81a2fac9b1d42f361866c2ea70cfb7e7))
+
+## [0.42.15](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.14...sandbox-firecracker-v0.42.15) (2026-09-17)
+
+## [0.42.14](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.13...sandbox-firecracker-v0.42.14) (2026-09-16)
+
+
+### Performance Improvements
+
+* **runner:** stream compressed session history with caller-owned policy ([#34603](https://github.com/vm0-ai/okou/issues/34603)) ([1376434](https://github.com/vm0-ai/okou/commit/1376434b697f5e39be6d569c6b20a4e33ed12342))
+
 ## [0.42.13](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.12...sandbox-firecracker-v0.42.13) (2026-09-16)
 
 ## [0.42.12](https://github.com/vm0-ai/okou/compare/sandbox-firecracker-v0.42.11...sandbox-firecracker-v0.42.12) (2026-09-16)

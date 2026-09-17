@@ -2808,7 +2808,7 @@ describe("workflow owner profile cancellation and capacity", () => {
       const { owner, workflow, agent } = await ownerProfileFixture();
       // Construct the large fixture through production APIs before exercising
       // cache behavior. The measured TTL starts after fixture creation.
-      // Independent agents avoid serializing all writes on one agent row lock.
+      // Keep the capacity cohort spread across independent public agents.
       const agents = [
         agent,
         ...(await Promise.all(
@@ -2836,7 +2836,7 @@ describe("workflow owner profile cancellation and capacity", () => {
         },
       );
       const client = collectionClient();
-      const others = await Promise.all(
+      const creating = Promise.allSettled(
         Array.from({ length: 512 }, async (_, index) => {
           const targetAgent = agents[index % agents.length];
           if (!targetAgent) {
@@ -2844,9 +2844,7 @@ describe("workflow owner profile cancellation and capacity", () => {
           }
           const another = user({ orgId: owner.orgId });
           const authorization = `Bearer ${another.userId}`;
-          // Bind auth to the request, rather than changing one shared session
-          // while other fixture requests are still in flight. Await the entire
-          // fixture together; production row locks and the DB pool bound writes.
+          // Bind auth to the request while other creations are in flight.
           actors.set(authorization, another);
           const created = await accept(
             client.create({
@@ -2867,6 +2865,17 @@ describe("workflow owner profile cancellation and capacity", () => {
           return { owner: another, workflowId: created.body.id };
         }),
       );
+      onTestFinished(async () => {
+        // A hook timeout aborts the owned requests; drain them before the
+        // database pool closes, including requests still cleaning up volumes.
+        await creating;
+      });
+      const others = (await creating).map((result) => {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
+        return result.value;
+      });
       profiles = [{ owner, workflowId: workflow.id }, ...others];
       mockNow(now() + 16 * 60 * 1000);
     });

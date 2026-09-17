@@ -249,12 +249,12 @@ export function clearPassageSelection(): void {
 
 export async function quoteSelectedPassage(): Promise<HTMLElement> {
   const existingNotes = screen.queryAllByRole("textbox", {
-    name: "What should change about this?",
+    name: "Ask or comment on this quote",
   }).length;
   click(await findButton("Quote"));
   return await waitFor(() => {
     const notes = screen.queryAllByRole("textbox", {
-      name: "What should change about this?",
+      name: "Ask or comment on this quote",
     });
     const addedNote = notes[existingNotes];
     if (!addedNote) {
@@ -266,7 +266,7 @@ export async function quoteSelectedPassage(): Promise<HTMLElement> {
 
 export function feedbackNotes(): HTMLElement[] {
   return screen.getAllByRole("textbox", {
-    name: "What should change about this?",
+    name: "Ask or comment on this quote",
   });
 }
 

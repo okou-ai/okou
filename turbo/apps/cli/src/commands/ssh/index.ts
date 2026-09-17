@@ -117,12 +117,22 @@ export const sshCommand = new Command("ssh")
     `
 Connections use the owner's saved Direct or Cloudflare Access configuration; credentials stay outside the sandbox and no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
 
+Command guide (read the relevant subcommand's --help before use):
+  - Find hosts: okou ssh host list --json
+  - Run one command: okou ssh exec <connection-id> --command <command> --json
+  - Long commands or persistent shells: okou ssh session --help
+    Start with okou ssh session start <connection-id> --command <command> --json, or use --shell instead of --command; add --pty when a terminal is needed.
+    Read output and observed state with okou ssh session read <session-id>; no separate status poll is needed. Run okou ssh session read --help for read limits and continuation.
+    Close finished sessions with okou ssh session close <session-id> --json.
+  - Upload: okou ssh upload <connection-id> <local-file> <remote-file> --json
+  - Download: okou ssh download <connection-id> <remote-file> <local-file> --json
+
 Operational safety:
   - Start with okou ssh host list --json and use an exact current connection ID. Never invent an ID or automatically replay an uncertain command.
   - The owner enables SSH access in Agent settings for all configured hosts; agents cannot grant access. Ask for a least-privilege remote SSH user. Configured does not mean connectivity tested.
   - First contact learns a host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings, never automatic acceptance.
   - Inspect structured failure_reason and effects instead of matching error text. effects=unknown means the remote operation may have run.
-  - Host inventory is live, while execution authority is cached for this Run and invalidated by notifications. End active Runs when immediate revocation is required.
+  - Host inventory is live, while execution authority is cached for this Run and invalidated by notifications. A missed notification can leave stale authority until this Run ends. Ask the owner to end active Runs when immediate revocation is required.
   - Ask the owner to check connection diagnostics in /connectors/ssh when setup fails.
 
 File transfers (upload/download): ${FILE_LIMIT_HELP}

@@ -968,7 +968,7 @@ async fn run_start_with_home(
         network_log_drain,
         mitm_jsonl_flush: Some(mitm.jsonl_flush_handle()),
         connector_runtime_sync,
-        ssh,
+        guest_rpc: ssh.map(|ssh| crate::guest_rpc::Runtime { ssh: Some(ssh) }),
         session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
         session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),

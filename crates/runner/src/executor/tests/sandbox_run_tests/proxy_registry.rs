@@ -147,7 +147,7 @@ async fn proxy_registration_accepts_canonical_targets() {
 }
 
 #[tokio::test]
-async fn proxy_registration_attributes_network_logs_before_waiting_for_application() {
+async fn proxy_registration_completes_and_attributes_logs_without_application_reply() {
     use std::os::unix::fs::PermissionsExt;
     use tokio::io::AsyncReadExt;
 
@@ -187,12 +187,17 @@ async fn proxy_registration_attributes_network_logs_before_waiting_for_applicati
         .network_log_manager
         .append_for_ip(source_ip, row.clone())
         .await;
-    drop(peer);
     let session = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, registration)
         .await
         .unwrap()
         .unwrap()
         .unwrap();
+    // Registration must finish while the original receipt is still withheld.
+    assert!(
+        peer.read(&mut [0]).now_or_never().is_none(),
+        "registration must not wait for the observation exchange to time out"
+    );
+    drop(peer);
     session
         .close_for_upload(run_id, &config.network_log_drain)
         .await;

@@ -11,7 +11,7 @@ export const sharedThreadArtifactPolicySchema = z
     publicBrand: z.enum(["vm0", "okou"]),
     status: z.enum(["preparing", "active", "revoked"]),
     resources: z.record(
-      z.string().regex(/^[a-f0-9]{24}$/u),
+      z.string().regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u),
       artifactSharePolicySchema.shape.target,
     ),
   })

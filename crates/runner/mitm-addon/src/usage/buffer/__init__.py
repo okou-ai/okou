@@ -136,11 +136,19 @@ def flush_usage_events(*, trigger: UsageFlushTrigger) -> int:
     timer.
 
     Return the number of webhook batches admitted by this invocation. Zero
-    does not prove that the buffer is empty. Admission does not wait for final
-    delivery or retained-retry completion. Non-shutdown triggers schedule
-    retained work for a later timer when timers are enabled, until the first
-    shutdown flush begins. Shutdown stops timer scheduling and leaves retained
-    work for the final post-executor drain.
+    does not prove that the buffer is empty. Admission does not guarantee
+    successful delivery or completion of all retained retries.
+
+    Normal asynchronous submission does not wait for final delivery. If
+    executor submission raises ``RuntimeError`` during shutdown or worker
+    startup, delivery runs synchronously on the flushing thread unless a
+    worker already claimed the payload. This fallback includes HTTP retries,
+    the outcome callback, and counter cleanup.
+
+    Non-shutdown triggers schedule retained work for a later timer when
+    timers are enabled, until the first shutdown flush begins. Shutdown
+    stops timer scheduling and leaves retained work for the final
+    post-executor drain.
     """
     return _usage_event_buffer.flush_usage_events(trigger=trigger)
 

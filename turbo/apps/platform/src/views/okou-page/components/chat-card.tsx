@@ -20,18 +20,15 @@ type ChatCardProps = useRender.ComponentProps<"div">;
  *
  * The border is deliberately `border-[1px] border-gray-400` rather than the
  * shared `border` hairline and a semantic border token that `docs/styles.md`
- * would otherwise ask for. The retired rule pinned a whole pixel because
- * fractional borders visibly repaint when card contents resolve, so a card
- * flickers at its edge as an image or an iframe lands. Preserving that is the
- * point of this change; unifying the transcript's border width and colour with
- * the rest of the product is a separate, separately reviewed decision.
+ * would otherwise ask for. A fractional border visibly repaints when card
+ * contents resolve, so a card flickers at its edge as an image or an iframe
+ * lands; a whole pixel does not. Unifying the transcript's border width and
+ * colour with the rest of the product is a separate, separately reviewed
+ * decision.
  *
- * The retired rule lived in `@layer components` so that a caller's composed
- * `border-*`, `bg-*` or `hover:*` utility could still win over it. A component
- * does not need that arrangement: `cn()` merges the base with the caller's
- * `className`, so a conflicting base utility is dropped rather than outranked,
- * and the browser-session card's hover and selected borders apply without any
- * layer ordering.
+ * `cn()` merges this base with the caller's `className`, so a conflicting base
+ * utility is dropped rather than outranked, and the browser-session card's
+ * hover and selected borders apply without any layer ordering.
  *
  * Renders a `div` unless `render` supplies another element.
  */

@@ -45,6 +45,8 @@ import {
   openSshDialog$,
   closeSshDialog$,
   saveSsh$,
+  sshSaveUncertain$,
+  sshSaveMessage$,
   cancelSshPrivateKeyFile$,
   importSshPrivateKeyFile$,
   mountSshPrivateKey$,
@@ -73,6 +75,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
+import { localizedSshError } from "../../lib/ssh-error.ts";
 import { SshAttention, SshHostWarning } from "./ssh-connection-status.tsx";
 import {
   DetailPageBreadcrumbBar,
@@ -598,7 +601,28 @@ function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
 interface SshFormProps {
   readonly dialog: SshDialogState;
   readonly isSaving: boolean;
-  readonly save: (form: FormData, signal: AbortSignal) => Promise<void>;
+  readonly save: (form: HTMLFormElement, signal: AbortSignal) => Promise<void>;
+}
+
+function SshSaveNotice({ isSaving }: { readonly isSaving: boolean }) {
+  const { t } = useTranslation();
+  const uncertain = useGet(sshSaveUncertain$);
+  const message = useGet(sshSaveMessage$);
+  if (isSaving || (!uncertain && !message)) {
+    return null;
+  }
+  return (
+    <p role="alert" className="text-sm text-muted-foreground">
+      {uncertain
+        ? t(($) => {
+            return $.ssh.saveRecovery.uncertain;
+          })
+        : (localizedSshError(message ?? "") ??
+          t(($) => {
+            return $.ssh.errors.invalidInput;
+          }))}
+    </p>
+  );
 }
 
 function SshFormActions({
@@ -614,6 +638,7 @@ function SshFormActions({
 }) {
   const { t } = useTranslation();
   const close = useSet(closeSshDialog$);
+  const uncertain = useGet(sshSaveUncertain$);
   return (
     <div className="flex shrink-0 justify-end gap-2">
       <Button
@@ -628,18 +653,22 @@ function SshFormActions({
       </Button>
       <Button
         type="submit"
-        disabled={blocked}
+        disabled={isSaving || (!uncertain && blocked)}
         variant={destructive ? "destructive" : "default"}
       >
         {isSaving
           ? t(($) => {
               return $.connectors.actions.saving;
             })
-          : destructive
-            ? title
-            : t(($) => {
-                return $.ssh.save;
-              })}
+          : uncertain
+            ? t(($) => {
+                return $.ssh.retry;
+              })
+            : destructive
+              ? title
+              : t(($) => {
+                  return $.ssh.save;
+                })}
       </Button>
     </div>
   );
@@ -692,6 +721,8 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
 }
 
 function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
+  const uncertain = useGet(sshSaveUncertain$);
+  const fieldsDisabled = isSaving || uncertain;
   const transport = useGet(sshTransportEditor$);
   const mountForm = useSet(mountSshForm$);
   const signal = useGet(pageSignal$);
@@ -709,37 +740,34 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
       aria-busy={isSaving}
       onSubmit={(event) => {
         event.preventDefault();
-        if (blocked) {
+        if (isSaving || (!uncertain && blocked)) {
           return;
         }
         // Keep retryable input only in this form, never in ccstate or caches.
-        detach(
-          save(new FormData(event.currentTarget), signal),
-          Reason.DomCallback,
-        );
+        detach(save(event.currentTarget, signal), Reason.DomCallback);
       }}
     >
       <DialogBody className="grid gap-4">
         {!destructive && (
           <fieldset
-            disabled={isSaving}
+            disabled={fieldsDisabled}
             className={hostEditor ? "grid min-w-0 gap-6" : "grid min-w-0 gap-4"}
           >
             {hostEditor ? (
               <>
                 <EndpointFields
                   connection={dialog.connection}
-                  disabled={isSaving}
+                  disabled={fieldsDisabled}
                 />
                 {transport.mode === "cloudflare_access" && (
-                  <AccessSelection disabled={isSaving} />
+                  <AccessSelection disabled={fieldsDisabled} />
                 )}
-                <CredentialSelection disabled={isSaving} />
+                <CredentialSelection disabled={fieldsDisabled} />
               </>
             ) : (
               <CredentialFields
                 credential={dialog.credential}
-                disabled={isSaving}
+                disabled={fieldsDisabled}
               />
             )}
           </fieldset>
@@ -748,6 +776,7 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
           <CredentialImpact credential={dialog.credential} />
         )}
         <SshConflictReview />
+        <SshSaveNotice isSaving={isSaving} />
       </DialogBody>
       <SshFormActions
         isSaving={isSaving}
@@ -760,6 +789,7 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
 }
 
 function SshAccessForm({ dialog, isSaving, save }: SshFormProps) {
+  const uncertain = useGet(sshSaveUncertain$);
   const mountForm = useSet(mountSshAccessForm$);
   const signal = useGet(pageSignal$);
   const conflict = useGet(sshConflict$);
@@ -773,22 +803,23 @@ function SshAccessForm({ dialog, isSaving, save }: SshFormProps) {
       aria-busy={isSaving}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!isSaving && !conflict) {
-          detach(
-            save(new FormData(event.currentTarget), signal),
-            Reason.DomCallback,
-          );
+        if (!isSaving && (uncertain || !conflict)) {
+          detach(save(event.currentTarget, signal), Reason.DomCallback);
         }
       }}
     >
       <DialogBody className="grid gap-4">
         {!destructive && (
-          <fieldset disabled={isSaving} className="grid min-w-0 gap-4">
+          <fieldset
+            disabled={isSaving || uncertain}
+            className="grid min-w-0 gap-4"
+          >
             <AccessFields config={dialog.config} />
           </fieldset>
         )}
         {dialog.config && <AccessImpact config={dialog.config} />}
         <SshConflictReview />
+        <SshSaveNotice isSaving={isSaving} />
       </DialogBody>
       <SshFormActions
         isSaving={isSaving}

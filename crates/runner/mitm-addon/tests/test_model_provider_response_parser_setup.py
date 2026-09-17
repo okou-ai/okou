@@ -492,7 +492,7 @@ class TestResponseHeadersSseParser:
         assert isinstance(flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE], dict)
         assert "model_sse_usage_finish" in flow.metadata
 
-    def test_non_billable_model_provider_skips_sse_usage_parser(self, real_flow, headers):
+    def test_non_billable_model_provider_extracts_sse_usage(self, real_flow, headers):
         flow = real_flow(with_response=False, host="api.anthropic.com")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
@@ -503,8 +503,11 @@ class TestResponseHeadersSseParser:
 
         mitm_addon.responseheaders(flow)
 
-        assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
-        assert "model_sse_usage_finish" not in flow.metadata
+        data = (
+            b'event: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":7}}\n\n'
+        )
+        assert response_stream(flow)(data) == data
+        assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == 7
 
     def test_no_sse_parser_without_firewall_name(self, real_flow, headers):
         flow = real_flow(with_response=False, host="api.anthropic.com")

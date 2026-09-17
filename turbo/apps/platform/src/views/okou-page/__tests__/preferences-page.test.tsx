@@ -8,6 +8,7 @@ import {
   userModelPreferenceContract,
   type UpdateUserModelPreferenceRequest,
 } from "@okouai/api-contracts/contracts/user-model-preference";
+import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -17,6 +18,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 
 const context = testContext();
 
@@ -91,7 +93,6 @@ function defaultPreferences(): UserPreferencesResponse {
   return {
     timezone: "Etc/UTC",
     locale: "en-US",
-    translationLanguage: null,
     supportedLocales: ["en-US", "pt-BR"],
     pinnedAgentIds: [],
     sendMode: "enter",
@@ -149,6 +150,190 @@ function expectSelected(element: HTMLElement): void {
     element.getAttribute("aria-pressed");
   expect(selectionAttribute).toBe("true");
 }
+
+function mockUnavailableTokenRefresh(): void {
+  mockedClerk.sessionGetToken.mockImplementation((options) => {
+    return options?.skipCache
+      ? Promise.reject(new Error("Token refresh is unavailable"))
+      : Promise.resolve("test-token");
+  });
+}
+
+test("Chat preferences save when Clerk token refresh is unavailable", async () => {
+  mockPreferences({ cloudBrowserEnabledByDefault: false });
+  mockUnavailableTokenRefresh();
+  await setupPage({
+    context,
+    path: "/agents?settings=chat",
+    featureSwitches: { [FeatureSwitchKey.ChatPreference]: true },
+  });
+
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const cloudBrowser = within(dialog).getByRole("switch", {
+    name: "Cloud browser",
+  });
+  expect(cloudBrowser).not.toBeChecked();
+  click(cloudBrowser);
+  await waitFor(() => {
+    expect(cloudBrowser).toBeChecked();
+    expect(cloudBrowser).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  click(getFastRole("button", "⌘ Enter", dialog));
+  await waitFor(() => {
+    expectSelected(getFastRole("button", "⌘ Enter", dialog));
+    expect(getFastRole("button", "⌘ Enter", dialog)).toBeEnabled();
+  });
+});
+
+test("Timezone saves refresh Morning Brief when Clerk token refresh is unavailable", async () => {
+  let preferences = defaultPreferences();
+  const nextRunAt = "2030-01-02T14:00:00.000Z";
+  mockUnavailableTokenRefresh();
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, preferences);
+  });
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+    preferences = { ...preferences, ...body };
+    return respond(200, preferences);
+  });
+  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+    return respond(200, {
+      enabled: true,
+      status: "enabled",
+      nextRunAt,
+      timezone: preferences.timezone,
+      unavailableReason: null,
+    });
+  });
+  await setupPage({
+    context,
+    path: "/agents?settings=preference",
+    featureSwitches: { [FeatureSwitchKey.MorningBrief]: true },
+  });
+
+  const card = await screen.findByTestId("morning-brief-preference");
+  await expect(
+    within(card).findByText(/Next brief .*\(Etc\/UTC\)/u),
+  ).resolves.toBeInTheDocument();
+  const timezone = getFastRole("combobox", /UTC/u);
+  click(timezone);
+  click(await screen.findByRole("option", { name: /Eastern Time \(ET\)$/u }));
+
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/New_York",
+  }).format(new Date(nextRunAt));
+  await expect(
+    within(card).findByText(`Next brief ${formatted} (America/New_York)`),
+  ).resolves.toBeInTheDocument();
+  expect(timezone).toHaveTextContent("Eastern Time (ET)");
+  expect(timezone).toBeEnabled();
+});
+
+test("A failed preference save shows its error and can be retried", async () => {
+  let preferences = defaultPreferences();
+  let unavailable = true;
+  const releaseFailure = context.mocks.deferred<void>();
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, preferences);
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      if (unavailable) {
+        await withSignal(releaseFailure.promise);
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Preferences could not be saved",
+          },
+        });
+      }
+      preferences = { ...preferences, ...body };
+      return respond(200, preferences);
+    },
+  );
+  await setupPage({ context, path: "/agents?settings=preference" });
+
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const sendMode = getFastRole("button", "⌘ Enter", dialog);
+  click(sendMode);
+  await waitFor(() => {
+    expect(sendMode).toBeDisabled();
+  });
+  releaseFailure.resolve();
+  await expect(
+    screen.findByText("Preferences could not be saved"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(sendMode).toBeEnabled();
+    expectSelected(getFastRole("button", "Enter", dialog));
+  });
+
+  unavailable = false;
+  click(sendMode);
+  await waitFor(() => {
+    expectSelected(sendMode);
+    expect(sendMode).toBeEnabled();
+  });
+});
+
+test("Navigating away cancels a pending preference save", async () => {
+  let preferences = defaultPreferences();
+  let holdUpdate = true;
+  const requested = context.mocks.deferred<AbortSignal>();
+  const releaseUpdate = context.mocks.deferred<void>();
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, preferences);
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, request, respond, withSignal }) => {
+      if (holdUpdate) {
+        requested.resolve(request.signal);
+        await withSignal(releaseUpdate.promise);
+      }
+      preferences = { ...preferences, ...body };
+      return respond(200, preferences);
+    },
+  );
+  await setupPage({ context, path: "/agents?settings=preference" });
+
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  click(getFastRole("button", "⌘ Enter", dialog));
+  const requestSignal = await requested.promise;
+  expect(getFastRole("button", "⌘ Enter", dialog)).toBeDisabled();
+  click(getFastRole("button", "Close", dialog));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Settings" }),
+    ).not.toBeInTheDocument();
+  });
+  click(getFastRole("link", "Workflows"));
+  await expect(
+    screen.findByRole("heading", { name: "Workflows" }),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(requestSignal.aborted).toBeTruthy();
+  });
+  releaseUpdate.resolve();
+  holdUpdate = false;
+
+  window.history.back();
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
+  window.history.back();
+  const reopened = await screen.findByRole("dialog", { name: "Settings" });
+  expectSelected(getFastRole("button", "Enter", reopened));
+  click(getFastRole("button", "⌘ Enter", reopened));
+  await waitFor(() => {
+    expectSelected(getFastRole("button", "⌘ Enter", reopened));
+    expect(getFastRole("button", "⌘ Enter", reopened)).toBeEnabled();
+  });
+});
 
 test("Theme preferences initialize from the shared cookie", async () => {
   const updates = mockPreferences({ theme: null });
@@ -296,21 +481,21 @@ test("Cookie theme and account-backed color theme are restored and saved", async
   expectSelected(getFastRole("button", selectedAppearance));
   expect(document.documentElement).toHaveAttribute("data-theme", resolvedTheme);
 
-  click(getFastRole("button", "Limelight", colorTheme));
+  click(getFastRole("button", "Deep lagoon", colorTheme));
 
   await waitFor(() => {
-    expect(updates).toContainEqual({ colorTheme: "limelight" });
-    expectSelected(getFastRole("button", "Limelight", colorTheme));
+    expect(updates).toContainEqual({ colorTheme: "deep-lagoon" });
+    expectSelected(getFastRole("button", "Deep lagoon", colorTheme));
   });
   expect(document.documentElement).toHaveAttribute("data-theme", "dark");
   expect(document.documentElement).toHaveAttribute(
     "data-color-theme",
-    "limelight",
+    "deep-lagoon",
   );
   expect(cookieWrites).toContain(
     "__Secure-okou-theme=v1.dark; Domain=.okou.ai; Path=/; Max-Age=31536000; SameSite=Lax; Secure",
   );
-  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|limelight/u);
+  expect(cookieWrites.join("\n")).not.toMatch(/golden-hour|deep-lagoon/u);
 });
 
 test("A user can select a gradient color theme when available", async () => {
@@ -334,6 +519,54 @@ test("A user can select a gradient color theme when available", async () => {
   expect(document.documentElement).toHaveAttribute(
     "data-color-theme",
     "golden-hour",
+  );
+});
+
+test("A user can return to the default palette from a gradient color theme", async () => {
+  const updates = mockPreferences({ colorTheme: "blue-horizon" });
+
+  await setupPage({
+    context,
+    path: "/settings",
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
+  });
+
+  const colorTheme = await screen.findByRole("group", { name: "Color theme" });
+  expect(document.documentElement).toHaveAttribute(
+    "data-color-theme",
+    "blue-horizon",
+  );
+  click(getFastRole("button", "Default", colorTheme));
+
+  await waitFor(() => {
+    expect(updates).toContainEqual({ colorTheme: "default" });
+    expectSelected(getFastRole("button", "Default", colorTheme));
+  });
+  expect(document.documentElement).not.toHaveAttribute("data-color-theme");
+  expect(document.documentElement).not.toHaveAttribute(
+    "data-gradient-color-themes",
+  );
+});
+
+test("A workspace without a saved color theme starts on the default palette", async () => {
+  const updates = mockPreferences({ colorTheme: null });
+
+  await setupPage({
+    context,
+    path: "/settings",
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
+  });
+
+  const colorTheme = await screen.findByRole("group", { name: "Color theme" });
+  expectSelected(getFastRole("button", "Default", colorTheme));
+  await waitFor(() => {
+    expect(updates).toContainEqual({ colorTheme: "default" });
+  });
+  expect(document.documentElement).not.toHaveAttribute("data-color-theme");
+  expect(document.documentElement).not.toHaveAttribute(
+    "data-gradient-color-themes",
   );
 });
 

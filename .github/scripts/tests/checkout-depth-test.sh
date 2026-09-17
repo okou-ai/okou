@@ -38,7 +38,7 @@ expected=$(
     $'turbo\tdetect-turbo-ts-checks\t2' \
     $'turbo\tfile-size-check\t2' \
     $'turbo\tlint-eslint\t1' \
-    $'turbo\tlint-style\t2' \
+    $'turbo\tlint-style\t1' \
     $'turbo\tprepare\t2' \
     $'turbo\ttest-migrate\t2' \
     $'turbo\tvalidate-release-presence\t0' |

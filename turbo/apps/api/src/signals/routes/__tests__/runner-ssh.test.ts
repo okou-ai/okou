@@ -121,6 +121,7 @@ async function fixture(runtimeOverrides: Partial<RuntimeBody> = {}) {
     config().create({
       headers: sessionHeaders,
       body: {
+        id: randomUUID(),
         displayName: "SSH fixture",
         host: "ssh.example.com",
         credential: inlineSshKey("deploy", privateKey, passphrase),
@@ -173,7 +174,10 @@ describe("SSH authority invalidation", () => {
         config().update({
           headers: sessionHeaders,
           params: { connectionId: f.connectionId },
-          body: { expectedGeneration: generation, ...update },
+          body: {
+            expectedGeneration: generation,
+            ...update,
+          },
         }),
         [200],
       );
@@ -399,6 +403,7 @@ describe("shared credential runtime authority", () => {
       config().create({
         headers: sessionHeaders,
         body: {
+          id: randomUUID(),
           displayName: "Shared host",
           host: "shared.example.com",
           credential: { id: f.credentialId },
@@ -410,6 +415,7 @@ describe("shared credential runtime authority", () => {
       config().create({
         headers: sessionHeaders,
         body: {
+          id: randomUUID(),
           displayName: "Unrelated",
           host: "unrelated.example.com",
           credential: inlineSshKey("other", "unrelated-key"),
@@ -601,6 +607,7 @@ describe("SSH connection observations", () => {
         config().create({
           headers: sessionHeaders,
           body: {
+            id: randomUUID(),
             displayName: "Independent login",
             host: "SSH.example.com.",
             credential: inlineSshKey(
@@ -1098,6 +1105,7 @@ describe("official Runner SSH authority", () => {
       config().create({
         headers: sessionHeaders,
         body: {
+          id: randomUUID(),
           displayName: "Hidden host",
           host: "hidden.example.com",
           credential: inlineSshKey("deploy", privateKey),
@@ -1312,7 +1320,10 @@ describe("official Runner SSH authority", () => {
       config().update({
         params: { connectionId: f.connectionId },
         headers: sessionHeaders,
-        body: { expectedGeneration: 1, host: "new.example.com" },
+        body: {
+          expectedGeneration: 1,
+          host: "new.example.com",
+        },
       }),
       [200],
     );

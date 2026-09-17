@@ -1,3 +1,4 @@
+import { getDefaults, Lexer, type Token, type Tokens } from "marked";
 import { resolveApiBase } from "../api-base.ts";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
@@ -637,40 +638,8 @@ function hasUrlTokenBoundary(value: string, index: number): boolean {
   return URL_TOKEN_OPENING_PREFIX_PATTERN.test(tokenPrefix);
 }
 
-function extractUrlTokens(value: string): string[] {
-  return Array.from(
-    value.matchAll(new RegExp(URL_TOKEN_PATTERN, "g")),
-    (match) => {
-      return match.index !== undefined &&
-        hasUrlTokenBoundary(value, match.index)
-        ? trimPreviewUrl(match[0])
-        : "";
-    },
-  ).filter((url, index, list) => {
-    return url.length > 0 && list.indexOf(url) === index;
-  });
-}
-
-function extractActionUrlFromLine(line: string): string | null {
-  const candidate = stripMarkdownLineDecorations(line);
-  const markdownLinkMatch = candidate.match(
-    new RegExp(String.raw`^\[([^\]]+)\]\((${URL_TOKEN_PATTERN})\)$`),
-  );
-  const bareUrlMatch = candidate.match(new RegExp(`^(${URL_TOKEN_PATTERN})$`));
-  if (markdownLinkMatch?.[2]) {
-    return trimPreviewUrl(markdownLinkMatch[2]);
-  }
-  if (bareUrlMatch?.[1]) {
-    return trimPreviewUrl(bareUrlMatch[1]);
-  }
-
-  const urls = extractUrlTokens(candidate);
-
-  return urls.length === 1 ? urls[0]! : null;
-}
-
-function createActionBlockFromLine(
-  line: string,
+function createActionBlockFromUrl(
+  url: string,
   chatActionContext: ChatActionContext | undefined,
 ): Extract<
   ParsedBodyBlock,
@@ -687,11 +656,6 @@ function createActionBlockFromLine(
       | "browser-session";
   }
 > | null {
-  const url = extractActionUrlFromLine(line);
-  if (!url) {
-    return null;
-  }
-
   const connectorAction = parseConnectorAuthorizeUrl(url, chatActionContext);
   if (connectorAction.status === "valid") {
     return {
@@ -803,27 +767,253 @@ function createActionBlockFromLine(
   return null;
 }
 
+interface ActionLinkMatch {
+  readonly source: string;
+  readonly block: CardDescriptorBlock;
+}
+
+interface ActionText {
+  readonly markdown: string;
+  readonly matches: readonly ActionLinkMatch[];
+}
+
+function isLinkToken(token: Token): token is Tokens.Link {
+  return token.type === "link";
+}
+
+function isEmphasisToken(
+  token: Token,
+): token is Tokens.Strong | Tokens.Em | Tokens.Del {
+  return token.type === "strong" || token.type === "em" || token.type === "del";
+}
+
+function retainedActionLabel(tokens: readonly Token[]): string {
+  return tokens
+    .map((token) => {
+      if (isEmphasisToken(token)) {
+        const start = token.raw.indexOf(token.text);
+        return (
+          token.raw.slice(0, start) +
+          retainedActionLabel(token.tokens) +
+          token.raw.slice(start + token.text.length)
+        );
+      }
+      // Link labels are already tokenized in a link's context. Their text must
+      // not turn into headings, reference links or autolinks when moved out.
+      return token.type === "text"
+        ? token.raw.replace(
+            /&#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6});|[\\`*_[\]{}()#+\-.!<>~|:@$=]/gu,
+            (character) => {
+              // Preserve existing entities; newly encoded punctuation must not
+              // create backslash-delimited chat math syntax.
+              return character.startsWith("&")
+                ? character
+                : `&#${character.charCodeAt(0)};`;
+            },
+          )
+        : token.raw;
+    })
+    .join("");
+}
+
+function actionLinksFromTokens(
+  source: string,
+  tokens: readonly Token[],
+  chatActionContext: ChatActionContext | undefined,
+): ActionText {
+  const matches: ActionLinkMatch[] = [];
+  const parts: string[] = [];
+  let offset = 0;
+  for (const token of tokens) {
+    let retained = token.raw;
+    if (
+      isLinkToken(token) &&
+      (token.raw.startsWith("[") ||
+        hasUrlTokenBoundary(
+          source,
+          offset + (token.raw.startsWith("<") ? 1 : 0),
+        ))
+    ) {
+      const isBareLink =
+        !token.raw.startsWith("[") && !token.raw.startsWith("<");
+      // GFM autolinks can include adjacent Chinese punctuation and prose.
+      // Keep the established URL boundary when extracting a bare action.
+      const candidate = isBareLink
+        ? new RegExp(`^${URL_TOKEN_PATTERN}`).exec(token.raw)?.[0]
+        : token.href;
+      if (candidate !== undefined) {
+        const url = trimPreviewUrl(candidate);
+        const block = createActionBlockFromUrl(url, chatActionContext);
+        if (block) {
+          const suffix = isBareLink ? token.raw.slice(url.length) : "";
+          matches.push({
+            source: token.raw.slice(0, token.raw.length - suffix.length),
+            block,
+          });
+          retained =
+            (token.raw.startsWith("[")
+              ? retainedActionLabel(token.tokens)
+              : "") + suffix;
+        }
+      }
+    } else if (isEmphasisToken(token)) {
+      const inner = actionLinksFromTokens(
+        token.text,
+        token.tokens,
+        chatActionContext,
+      );
+      matches.push(...inner.matches);
+      if (inner.matches.length > 0) {
+        const text = inner.markdown.trim();
+        const start = token.raw.indexOf(token.text);
+        // Removing a bare URL can empty the emphasis or leave whitespace at
+        // its edges. Keep the remaining prose formatted, without orphan marks.
+        retained = text
+          ? inner.markdown.slice(0, inner.markdown.indexOf(text)) +
+            token.raw.slice(0, start) +
+            text +
+            token.raw.slice(start + token.text.length) +
+            inner.markdown.slice(inner.markdown.indexOf(text) + text.length)
+          : inner.markdown;
+      }
+    } else if (token.type === "text") {
+      // Bare relative platform paths are text to Markdown, but remain valid
+      // action candidates. Never scan code spans, images, or ordinary links.
+      retained = token.raw.replace(
+        new RegExp(URL_TOKEN_PATTERN, "g"),
+        (match: string, index: number) => {
+          if (!hasUrlTokenBoundary(source, offset + index)) {
+            return match;
+          }
+          const url = trimPreviewUrl(match);
+          const block = createActionBlockFromUrl(url, chatActionContext);
+          if (!block) {
+            return match;
+          }
+          matches.push({ source: url, block });
+          return match.slice(url.length);
+        },
+      );
+    }
+    parts.push(retained);
+    offset += token.raw.length;
+  }
+  return { markdown: parts.join(""), matches };
+}
+
+function actionLinksFromMarkdown(
+  source: string,
+  chatActionContext: ChatActionContext | undefined,
+): ActionText {
+  if (!new RegExp(URL_TOKEN_PATTERN).test(source)) {
+    return { markdown: source, matches: [] };
+  }
+  // Use original defaults: Tiptap adds editor tokenizers to global Marked.
+  return actionLinksFromTokens(
+    source,
+    Lexer.lexInline(source, getDefaults()),
+    chatActionContext,
+  );
+}
+
 function retainedActionMarkdown(
   line: string,
-  originalUrl: string,
+  actionLine: ActionText,
 ): string | null {
-  const candidate = stripMarkdownLineDecorations(line);
-  const standaloneMarkdownLink = candidate.match(
-    new RegExp(String.raw`^\[([^\]]+)\]\((${URL_TOKEN_PATTERN})\)$`),
-  );
-  const standaloneBareUrl = candidate.match(
-    new RegExp(`^(${URL_TOKEN_PATTERN})$`),
-  );
-  if (standaloneMarkdownLink || standaloneBareUrl) {
+  const first = actionLine.matches[0];
+  if (
+    actionLine.matches.length === 1 &&
+    first &&
+    stripMarkdownLineDecorations(line) ===
+      stripMarkdownLineDecorations(first.source)
+  ) {
     return null;
   }
 
-  return line.replace(
-    new RegExp(String.raw`\[([^\]]+)\]\((${URL_TOKEN_PATTERN})\)`),
-    (match: string, label: string, url: string) => {
-      return trimPreviewUrl(url) === originalUrl ? label : match;
-    },
+  return actionLine.markdown;
+}
+
+function isMarkdownContainer(
+  token: Token,
+): token is Tokens.List | Tokens.Blockquote {
+  return token.type === "list" || token.type === "blockquote";
+}
+
+function isInlineBlockToken(
+  token: Token,
+): token is Tokens.Paragraph | Tokens.Heading | Tokens.Text {
+  return (
+    token.type === "paragraph" ||
+    token.type === "heading" ||
+    token.type === "text"
   );
+}
+
+function hasMultilineCodeSpan(tokens: readonly Token[]): boolean {
+  return tokens.some((token) => {
+    if (token.type === "codespan") {
+      return token.raw.includes("\n");
+    }
+    return (
+      (isEmphasisToken(token) || isLinkToken(token)) &&
+      hasMultilineCodeSpan(token.tokens)
+    );
+  });
+}
+
+function markdownCodeBoundaries(content: string): {
+  readonly rows: ReadonlySet<number>;
+  readonly inlineBlockEndRows: ReadonlyMap<number, number>;
+} {
+  const rows = new Set<number>();
+  const inlineBlockEndRows = new Map<number, number>();
+  if (
+    (!/^(?: {4}| {0,3}[\t>])/mu.test(content) &&
+      !(content.includes("`") && content.includes("\n"))) ||
+    !new RegExp(URL_TOKEN_PATTERN).test(content)
+  ) {
+    return { rows, inlineBlockEndRows };
+  }
+
+  // Indentation alone cannot distinguish nested list prose from code. Block
+  // tokens retain line breaks even when a container removes its line prefixes.
+  const visit = (tokens: readonly Token[], firstRow: number): void => {
+    let row = firstRow;
+    for (const token of tokens) {
+      const lineBreaks = token.raw.split("\n").length - 1;
+      if (token.type === "code") {
+        const count = lineBreaks + (token.raw.endsWith("\n") ? 0 : 1);
+        for (let index = 0; index < count; index += 1) {
+          rows.add(row + index);
+        }
+      } else if (isMarkdownContainer(token)) {
+        if (token.type === "list") {
+          let itemRow = row;
+          for (const item of token.items) {
+            visit(item.tokens, itemRow);
+            itemRow += item.raw.split("\n").length - 1;
+          }
+        } else {
+          visit(token.tokens, row);
+        }
+      } else if (
+        isInlineBlockToken(token) &&
+        token.tokens &&
+        hasMultilineCodeSpan(token.tokens)
+      ) {
+        // Keep the containing inline block together so the line scanner cannot
+        // turn a URL inside a multiline code span into an action. Real actions
+        // before or after the span are still recognized within the same block.
+        inlineBlockEndRows.set(
+          row,
+          row + lineBreaks - (token.raw.endsWith("\n") ? 1 : 0),
+        );
+      }
+      row += lineBreaks;
+    }
+  };
+  visit(Lexer.lex(content, getDefaults()), 0);
+  return { rows, inlineBlockEndRows };
 }
 
 function splitMarkdownTableRow(line: string): string[] | null {
@@ -922,8 +1112,10 @@ function parseBodyBlocks(
   const blocks: ParsedBodyBlock[] = [];
   const lines = content.split("\n");
   const tableRowIndexes = markdownTableRowIndexes(lines);
+  const codeBoundaries = markdownCodeBoundaries(content);
   const keptLines: string[] = [];
   const markdownBuffer: string[] = [];
+  let firstMarkdownLineIsCode: boolean | null = null;
   let blockSequence = 0;
   let openFence: OpenMarkdownFence | null = null;
   const nextMarkdownBlockId = () => {
@@ -932,7 +1124,12 @@ function parseBodyBlocks(
   };
 
   const flushMarkdownBuffer = () => {
-    const joined = markdownBuffer.join("\n").trim();
+    const source = markdownBuffer.join("\n");
+    // Code must keep its indentation. Retained list prose starts a new
+    // Markdown fragment after a card and keeps the existing dedenting behavior.
+    const joined = firstMarkdownLineIsCode
+      ? source.replace(/^(?:[ \t]*\r?\n)+/u, "").trimEnd()
+      : source.trim();
     if (joined) {
       blocks.push({
         type: "markdown",
@@ -941,14 +1138,28 @@ function parseBodyBlocks(
       });
     }
     markdownBuffer.length = 0;
+    firstMarkdownLineIsCode = null;
   };
 
-  const pushMarkdownLines = (nextLines: readonly string[]) => {
+  const pushMarkdownLines = (nextLines: readonly string[], isCode = false) => {
+    if (
+      firstMarkdownLineIsCode === null &&
+      nextLines.some((line) => {
+        return /\S/u.test(line);
+      })
+    ) {
+      firstMarkdownLineIsCode = isCode;
+    }
     markdownBuffer.push(...nextLines);
     keptLines.push(...nextLines);
   };
 
-  for (const [lineIndex, line] of lines.entries()) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]!;
+    if (codeBoundaries.rows.has(lineIndex)) {
+      pushMarkdownLines([line], true);
+      continue;
+    }
     const nextFence = nextMarkdownFence(line, openFence);
     if (openFence !== null || nextFence !== null) {
       openFence = nextFence;
@@ -956,31 +1167,37 @@ function parseBodyBlocks(
       continue;
     }
 
-    if (tableRowIndexes.has(lineIndex)) {
-      markdownBuffer.push(line);
-      keptLines.push(line);
+    const inlineBlockEnd = codeBoundaries.inlineBlockEndRows.get(lineIndex);
+    if (inlineBlockEnd === undefined && tableRowIndexes.has(lineIndex)) {
+      pushMarkdownLines([line]);
       continue;
     }
 
-    const actionBlock = previews
-      ? createActionBlockFromLine(line, options.chatActionContext)
+    const actionSource =
+      inlineBlockEnd === undefined
+        ? line
+        : lines.slice(lineIndex, inlineBlockEnd + 1).join("\n");
+    if (inlineBlockEnd !== undefined) {
+      lineIndex = inlineBlockEnd;
+    }
+    const actionLine = previews
+      ? actionLinksFromMarkdown(actionSource, options.chatActionContext)
       : null;
-    if (actionBlock) {
-      if (actionBlock.type === "connector-action") {
-        const retainedMarkdown = retainedActionMarkdown(
-          line,
-          actionBlock.descriptor.originalUrl,
-        );
-        if (retainedMarkdown) {
-          pushMarkdownLines([retainedMarkdown]);
-        }
+    if (actionLine && actionLine.matches.length > 0) {
+      const retainedMarkdown = retainedActionMarkdown(actionSource, actionLine);
+      if (retainedMarkdown) {
+        pushMarkdownLines([retainedMarkdown]);
       }
       flushMarkdownBuffer();
-      blocks.push(actionBlock);
+      blocks.push(
+        ...actionLine.matches.map((match) => {
+          return match.block;
+        }),
+      );
       continue;
     }
 
-    pushMarkdownLines([line]);
+    pushMarkdownLines([actionSource]);
   }
 
   flushMarkdownBuffer();

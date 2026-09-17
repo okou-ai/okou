@@ -19,7 +19,7 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
   click,
@@ -329,7 +329,7 @@ function installAuthorizationPopup(): AuthorizationPopupMock {
   };
 }
 
-function useWideScreen(): void {
+function mockWideScreen(): void {
   context.mocks.browser.matchMedia((query) => {
     return (
       query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
@@ -387,36 +387,46 @@ async function expectSyncedPreview(): Promise<void> {
   });
 }
 
-test("Authorize the agent and sync an artifact to connected Google Drive", async () => {
-  useWideScreen();
-  const drive = installDriveMocks(context, "connected");
+describe("with a Drive artifact menu", () => {
+  async function prepareScenario() {
+    mockWideScreen();
+    const drive = installDriveMocks(context, "connected");
 
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    host: "app.okou.ai",
+    await setupPage({
+      context,
+      path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+
+    await openDriveArtifactMenu();
+    return { drive };
+  }
+  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
+  beforeEach(async () => {
+    preparedScenario = await prepareScenario();
   });
+  it("authorize the agent and sync an artifact to connected Google Drive", async () => {
+    const { drive } = preparedScenario;
+    click(roleItemNamed("menuitem", "Connect Google Drive"));
 
-  await openDriveArtifactMenu();
-  click(roleItemNamed("menuitem", "Connect Google Drive"));
-
-  await waitFor(() => {
-    expect(drive.authorizationUpdates).toStrictEqual([
-      {
-        enabledConnectorSlugs: ["google-drive"],
-        operation: "add",
-      },
-    ]);
-    expect(drive.syncRequests).toStrictEqual([
-      { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
-    ]);
-    expect(drive.oauthRequests).toHaveLength(0);
+    await waitFor(() => {
+      expect(drive.authorizationUpdates).toStrictEqual([
+        {
+          enabledConnectorSlugs: ["google-drive"],
+          operation: "add",
+        },
+      ]);
+      expect(drive.syncRequests).toStrictEqual([
+        { runId: NAVIGATION_ARTIFACT_RUN_ID, fileId: DRIVE_FILE_ID },
+      ]);
+      expect(drive.oauthRequests).toHaveLength(0);
+    });
+    await expectSyncedPreview();
   });
-  await expectSyncedPreview();
 });
 
 test("Connect Google Drive and sync an artifact", async () => {
-  useWideScreen();
+  mockWideScreen();
   const authorizationPopup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "not-connected");
 
@@ -457,7 +467,7 @@ test("Connect Google Drive and sync an artifact", async () => {
 });
 
 test("Reconnect the Google Drive account selected for the artifact", async () => {
-  useWideScreen();
+  mockWideScreen();
   const authorizationPopup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "reconnect-required");
 
@@ -501,7 +511,7 @@ test("Reconnect the Google Drive account selected for the artifact", async () =>
 });
 
 test("Sync with the artifact's ready Drive account when the default needs attention", async () => {
-  useWideScreen();
+  mockWideScreen();
   const drive = installDriveMocks(context, "reconnect-required", {
     selectedAccountReady: true,
     agentAuthorized: true,
@@ -527,7 +537,7 @@ test("Sync with the artifact's ready Drive account when the default needs attent
 });
 
 test("Keep a reopened artifact usable after dismissing Drive OAuth progress", async () => {
-  useWideScreen();
+  mockWideScreen();
   const popup = installAuthorizationPopup();
   const syncing = context.mocks.deferred<void>();
   const sync = context.mocks.deferred<void>();
@@ -600,7 +610,7 @@ test.each([
 ] as const)(
   "Reuse the artifact preview for Drive OAuth ($state, dismissal: $dismiss)",
   async ({ state, dismiss }) => {
-    useWideScreen();
+    mockWideScreen();
     // Native outside-press needs complete pointer sequences to detect drags.
     const user = userEvent.setup();
     const popup = installAuthorizationPopup();

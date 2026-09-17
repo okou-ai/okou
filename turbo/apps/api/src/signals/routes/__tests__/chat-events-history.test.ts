@@ -859,9 +859,9 @@ describe("CHAT-02: prior rounds and thread titles", () => {
     expect(titleRequests).toBe(1);
     expect(upstreamAuthorization).toBe("Bearer title-key");
     expect(titleRequestBody).toMatchObject({
-      model: "google/gemini-3.8-flash",
+      model: "google/gemini-3.1-flash-lite",
       max_tokens: 2048,
-      reasoning: { effort: "low" },
+      reasoning: { effort: "minimal" },
     });
 
     const firstClaim = await claimChatRun(runnerGroup, first.runId);

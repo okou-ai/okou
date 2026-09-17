@@ -1,7 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
+import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
+import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
+import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { server } from "../../../mocks/server";
+import { encryptPersistentSecretValue } from "../crypto.utils";
 import {
   assertErasureSubjectWritable,
   projectErasureDecision,
+  lockErasureSubjects,
   type ErasureDecision,
 } from "@okouai/db/operations/account-erasure";
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
@@ -25,9 +32,19 @@ import { runOutputMaterializations } from "@okouai/db/schema/run-output-material
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { runActivitySnapshots } from "@okouai/db/schema/run-activity-snapshot";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
+import { HttpResponse, http } from "msw";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { createStore } from "ccstate";
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  getTableColumns,
+  inArray,
+  sql,
+} from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool, type PoolClient } from "pg";
 import { z } from "zod";
@@ -36,7 +53,13 @@ import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { chatThreadActivitySummaryRoutes } from "../../routes/chat-threads-activity-summary";
+import {
+  withActivityCommitBarrierFixture,
+  advanceRunActivityClockFixture,
+} from "../../../test-fixtures/run-activity";
+import { closeDbPool } from "../../../lib/db";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate, mockNow, clearMockNow } from "../../../lib/time";
 import {
   seedOrgMetadata,
@@ -58,6 +81,7 @@ import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import type { Tx } from "../../../lib/db-types";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
+import { createAuthOrgAgentsBddApi } from "../../routes/__tests__/helpers/api-bdd-auth-org";
 import { createChatCallbacksApi } from "../../routes/__tests__/helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import {
@@ -71,18 +95,29 @@ import {
   cleanupExpiredQueueEntries$,
 } from "../run-queue.service";
 import { COMPUTE_CLOSURE_ERROR } from "../agent-run-terminal-transition.service";
+import { admitNewComputeRun } from "../compute-erasure-admission.service";
 
 import { generateSandboxToken } from "../../auth/tokens";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
+import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
 import { insertAssistantEvents } from "../chat-event-shared.service";
-import { readRunContentOwnership } from "../run-content-erasure-admission.service";
+import {
+  readRunContentOwnership,
+  withRunContentWrite,
+  RunOutputDiagnostics,
+} from "../run-content-erasure-admission.service";
+import { materializeRunOutputEvents$ } from "../agent-event-consumer-run-output.service";
+import { isLockNotAvailable, safeSqlStateCode } from "../../../lib/pg-errors";
 import {
   handleChatInternalCallback$,
   handleChatInternalCallbackWithoutCcstate,
 } from "../internal-chat-run-callback.service";
 import { dispatchRunCallbacks$ } from "../agent-run-callback.service";
-import { receiveAgentEvents$ } from "../agent-webhook-events.service";
+import {
+  receiveAgentEvents$,
+  dispatchOptionalAgentEventConsumers$,
+} from "../agent-webhook-events.service";
 import type { AgentEvent } from "../../../lib/event-consumer/verify";
 
 // B2b1 explicitly requires the real dormant projector and actual writers, plus
@@ -93,6 +128,7 @@ describe("actual compute transactions versus the B1 projector", () => {
   const context = testContext();
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
+  const agentsApi = createAuthOrgAgentsBddApi(context);
   const webhooks = createWebhookCallbackApi(context);
   const chat = createChatFilesBddApi(context);
   const callbackApi = createChatCallbacksApi(context);
@@ -369,6 +405,8 @@ describe("actual compute transactions versus the B1 projector", () => {
     "pending-create",
     "queued-create",
     "failed-create",
+    "existing-session-create",
+    "failed-existing-session-create",
     "promotion",
     "claim",
     "invalid-context",
@@ -379,28 +417,81 @@ describe("actual compute transactions versus the B1 projector", () => {
   async function writerFixture(kind: WriterKind): Promise<{
     readonly f: Fixture;
     readonly runId: string | undefined;
+    readonly sessionId?: string;
     readonly invoke: () => Promise<unknown>;
   }> {
     const f = await fixture();
-    if (kind === "failed-create") {
+    if (kind === "failed-create" || kind === "failed-existing-session-create") {
+      const agentName = `synthetic-${randomUUID().slice(0, 8)}`;
       const agent = await api.createDirectAgent(f.actor, {
         version: "1",
         agents: {
-          [`synthetic-${randomUUID().slice(0, 8)}`]: {
+          [agentName]: {
             framework: "claude-code",
             environment: { ANTHROPIC_API_KEY: "synthetic-key" },
-            experimental_runner: { group: "other/synthetic" },
+            experimental_runner: {
+              group:
+                kind === "failed-existing-session-create"
+                  ? f.runnerGroup
+                  : "other/synthetic",
+            },
           },
         },
       });
       f.agentId = agent.agentId;
+      const initial =
+        kind === "failed-existing-session-create"
+          ? await api.createDirectRun(f.actor, {
+              agentId: f.agentId,
+              prompt: "Synthetic initial session",
+            })
+          : undefined;
+      if (initial) {
+        // A failed first preparation has no canonical session Storage mounts.
+        // Create a usable session, then make its continuation fail preparation.
+        await api.createDirectAgent(f.actor, {
+          version: "1",
+          agents: {
+            [agentName]: {
+              framework: "claude-code",
+              environment: { ANTHROPIC_API_KEY: "synthetic-key" },
+              experimental_runner: { group: "other/synthetic" },
+            },
+          },
+        });
+      }
       return {
         f,
         runId: undefined,
+        sessionId: initial?.sessionId,
         invoke: () => {
           return api.requestDirectRun(
             f.actor,
-            { agentId: f.agentId, prompt: "Synthetic failed preparation" },
+            {
+              agentId: f.agentId,
+              sessionId: initial?.sessionId,
+              prompt: "Synthetic failed preparation",
+            },
+            [201, 409],
+          );
+        },
+      };
+    }
+    if (kind === "existing-session-create") {
+      const initial = await pending(f);
+      return {
+        f,
+        runId: undefined,
+        sessionId: initial.sessionId,
+        invoke: () => {
+          return api.requestCreateRun(
+            f.actor,
+            {
+              agentId: f.agentId,
+              sessionId: initial.sessionId,
+              prompt: "Synthetic session continuation",
+              modelProvider: "anthropic-api-key",
+            },
             [201, 409],
           );
         },
@@ -485,33 +576,43 @@ describe("actual compute transactions versus the B1 projector", () => {
     };
   }
 
-  it.each(["shared", "separate"] as const)(
-    "measures bounded concurrent actual claims for %s subject sets",
-    async (mode) => {
-      const samples: Record<"shared" | "separate", number[]> = {
-        shared: [],
-        separate: [],
-      };
-      for (let round = 0; round < 2; round++) {
-        const first = await fixture();
-        const second = mode === "shared" ? first : await fixture();
-        const runs = [await pending(first), await pending(second)];
-        const started = performance.now();
-        const results = await Promise.all(
-          runs.map((run) => {
-            return api.requestClaimRunnerJob(true, run.runId, [200]);
-          }),
-        );
-        samples[mode].push(performance.now() - started);
-        expect(
-          results.map((result) => {
-            return result.status;
-          }),
-        ).toStrictEqual([200, 200]);
-      }
-      // Local end-to-end observations, deliberately no global throughput claim
-      // or latency threshold tied to a shared CI machine.
-      process.stdout.write(`B2B1_CLAIM_PAIR_MS ${JSON.stringify(samples)}\n`);
+  describe.each(["shared", "separate"] as const)(
+    "concurrent actual claims for %s subject sets",
+    (mode) => {
+      let rounds: Awaited<ReturnType<typeof pending>>[][];
+
+      beforeEach(async () => {
+        rounds = [];
+        for (let round = 0; round < 2; round++) {
+          const first = await fixture();
+          const second = mode === "shared" ? first : await fixture();
+          rounds.push([await pending(first), await pending(second)]);
+        }
+      });
+
+      it("measures bounded concurrent actual claims", async () => {
+        const samples: Record<"shared" | "separate", number[]> = {
+          shared: [],
+          separate: [],
+        };
+        for (const runs of rounds) {
+          const started = performance.now();
+          const results = await Promise.all(
+            runs.map((run) => {
+              return api.requestClaimRunnerJob(true, run.runId, [200]);
+            }),
+          );
+          samples[mode].push(performance.now() - started);
+          expect(
+            results.map((result) => {
+              return result.status;
+            }),
+          ).toStrictEqual([200, 200]);
+        }
+        // Local end-to-end observations, deliberately no global throughput claim
+        // or latency threshold tied to a shared CI machine.
+        process.stdout.write(`B2B1_CLAIM_PAIR_MS ${JSON.stringify(samples)}\n`);
+      });
     },
   );
 
@@ -769,7 +870,12 @@ describe("actual compute transactions versus the B1 projector", () => {
     await expect(counts(w.f)).resolves.toStrictEqual(before);
   });
 
-  it.each(["pending-create", "claim"] as const)(
+  it.each([
+    "pending-create",
+    "existing-session-create",
+    "failed-existing-session-create",
+    "claim",
+  ] as const)(
     "rejects stale %s after agent ownership transfers under the business lock",
     async (kind) => {
       const w = await writerFixture(kind);
@@ -794,6 +900,140 @@ describe("actual compute transactions versus the B1 projector", () => {
       }
     },
   );
+
+  it.each([
+    "existing-session-create",
+    "failed-existing-session-create",
+  ] as const)(
+    "rejects %s when the session organization changes before its locked reread",
+    async (kind) => {
+      const w = await writerFixture(kind);
+      const sessionId = w.sessionId;
+      if (!sessionId) {
+        throw new Error("Missing synthetic existing session");
+      }
+      const before = await counts(w.f);
+      // Ownership transfer during admission has no production test control.
+      const held = await holdBusinessRow(
+        (tx) => {
+          return tx
+            .select({ id: agentSessions.id })
+            .from(agentSessions)
+            .where(eq(agentSessions.id, sessionId))
+            .for("update");
+        },
+        (tx) => {
+          return tx
+            .update(agentSessions)
+            .set({ orgId: `synthetic-session-org-${randomUUID()}` })
+            .where(eq(agentSessions.id, sessionId));
+        },
+      );
+      const writing = settle(w.invoke());
+      await waitForBlockedBy(held.pid);
+      await held.release();
+      await expect(writing).resolves.toMatchObject({
+        ok: true,
+        value: { status: 409 },
+      });
+      await expect(counts(w.f)).resolves.toStrictEqual(before);
+    },
+  );
+
+  it.each([
+    { resource: false, session: true, unbound: false },
+    { resource: true, session: false, unbound: false },
+    { resource: false, session: false, unbound: false },
+    { resource: true, session: true, unbound: true },
+  ])(
+    "locks surviving admission subjects before rejecting $resource/$session/$unbound observations",
+    async ({ resource, session, unbound }) => {
+      const resourceFixture = await fixture();
+      const sessionFixture = await fixture();
+      const initial = await pending(sessionFixture);
+      if (unbound) {
+        await db
+          .update(agentSessions)
+          .set({ agentId: null })
+          .where(eq(agentSessions.id, initial.sessionId));
+      }
+      const caller = bdd.user();
+      if (!caller.orgId) {
+        throw new Error("Synthetic caller requires an organization");
+      }
+      const callerOrgId = caller.orgId;
+      const expectedOwner = `synthetic-expected-owner-${randomUUID()}`;
+      const closedSubject = session
+        ? sessionFixture.actor.userId
+        : resource
+          ? resourceFixture.actor.userId
+          : expectedOwner;
+      const held = await holdClosure(decision(closedSubject));
+      // Production prechecks reject missing/mismatched IDs before persistence;
+      // no endpoint can pause between preparation and this first observation.
+      // Exercise that infrastructure race directly with real DB locks. Distinct
+      // expected/actual owners prove surviving rows still contribute subjects.
+      const writing = settle(
+        db.transaction((tx) => {
+          return admitNewComputeRun(tx, {
+            userId: caller.userId,
+            orgId: callerOrgId,
+            agentId: resource ? resourceFixture.agentId : randomUUID(),
+            ownerUserId: expectedOwner,
+            agentOrgId: resourceFixture.orgId,
+            existingSessionId: session ? initial.sessionId : randomUUID(),
+          });
+        }),
+      );
+      await waitForBlockedBy(held.pid);
+      await held.release();
+      await expect(writing).resolves.toStrictEqual({ ok: true, value: false });
+    },
+  );
+
+  it("fences an existing session when its distinct shared Agent owner closes", async () => {
+    const f = await fixture();
+    const member = bdd.user({ orgId: f.orgId });
+    const initial = await api.createRun(member, {
+      agentId: f.agentId,
+      prompt: "Synthetic shared session",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.requestCancelRun(member, initial.runId, [200]);
+    const continued = await api.createRun(member, {
+      agentId: f.agentId,
+      sessionId: initial.sessionId,
+      prompt: "Synthetic writable shared continuation",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(continued).toMatchObject({
+      status: "pending",
+      sessionId: initial.sessionId,
+    });
+    const before = await counts({ ...f, actor: member });
+    const held = await holdClosure(decision(f.actor.userId));
+    const writing = settle(
+      api.requestCreateRun(
+        member,
+        {
+          agentId: f.agentId,
+          sessionId: initial.sessionId,
+          prompt: "Synthetic shared continuation",
+          modelProvider: "anthropic-api-key",
+        },
+        [409],
+      ),
+    );
+    await waitForBlockedBy(held.pid);
+    await held.release();
+    await expect(writing).resolves.toMatchObject({
+      ok: true,
+      value: { status: 409 },
+    });
+    await expect(counts({ ...f, actor: member })).resolves.toStrictEqual(
+      before,
+    );
+  });
 
   it("resolves a changed run owner in a fresh transaction without releasing prepared credentials", async () => {
     const w = await writerFixture("claim");
@@ -829,6 +1069,76 @@ describe("actual compute transactions versus the B1 projector", () => {
         .from(agentRuns)
         .where(eq(agentRuns.id, runId)),
     ).resolves.toStrictEqual([{ status: "pending" }]);
+  });
+
+  it("rechecks a changed session owner against closure before claiming", async () => {
+    const w = await writerFixture("claim");
+    if (!w.runId) {
+      throw new Error("Missing synthetic run");
+    }
+    const runId = w.runId;
+    const [run] = await db
+      .select({ sessionId: agentRuns.sessionId })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId));
+    if (!run) {
+      throw new Error("Missing synthetic session");
+    }
+    const nextOwner = `synthetic-session-owner-${randomUUID()}`;
+    await close(decision(nextOwner));
+    const held = await holdBusinessRow(
+      (tx) => {
+        return tx
+          .select({ id: agentSessions.id })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, run.sessionId))
+          .for("update");
+      },
+      (tx) => {
+        return tx
+          .update(agentSessions)
+          .set({ userId: nextOwner })
+          .where(eq(agentSessions.id, run.sessionId));
+      },
+    );
+    const writing = settle(w.invoke());
+    await waitForBlockedBy(held.pid);
+    await held.release();
+    await expect(writing).resolves.toMatchObject({
+      ok: true,
+      value: { status: 404 },
+    });
+    await expect(
+      db
+        .select({ status: agentRuns.status, error: agentRuns.error })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runId)),
+    ).resolves.toStrictEqual([
+      { status: "cancelled", error: COMPUTE_CLOSURE_ERROR },
+    ]);
+  });
+
+  it("does not claim a resource deleted after its initial ownership read", async () => {
+    const w = await writerFixture("claim");
+    const held = await holdBusinessRow(
+      (tx) => {
+        return tx
+          .select({ id: agents.id })
+          .from(agents)
+          .where(eq(agents.id, w.f.agentId))
+          .for("update");
+      },
+      (tx) => {
+        return tx.delete(agents).where(eq(agents.id, w.f.agentId));
+      },
+    );
+    const writing = settle(w.invoke());
+    await waitForBlockedBy(held.pid);
+    await held.release();
+    await expect(writing).resolves.toMatchObject({
+      ok: true,
+      value: { status: 404 },
+    });
   });
 
   it("preserves subject domains and does not require the optional users registry", async () => {
@@ -957,6 +1267,15 @@ describe("actual compute transactions versus the B1 projector", () => {
         expect(written.value).toMatchObject({
           status: kind.endsWith("create") ? 201 : kind === "claim" ? 200 : 400,
         });
+        if (kind === "failed-existing-session-create") {
+          expect(written.value).toMatchObject({
+            body: { status: "failed", sessionId: w.sessionId },
+          });
+        } else if (kind === "existing-session-create") {
+          expect(written.value).toMatchObject({
+            body: { status: "pending", sessionId: w.sessionId },
+          });
+        }
       }
     }
   });
@@ -1030,7 +1349,10 @@ describe("actual compute transactions versus the B1 projector", () => {
   // citations/ack fields. Setup still creates runs through the actual API.
   describe("late run content admission", () => {
     async function outputFixture(orgId?: string) {
-      const f = await fixture(orgId);
+      return await outputForFixture(await fixture(orgId));
+    }
+
+    async function outputForFixture(f: Fixture) {
       const sent = await chat.requestSendEvent(
         f.actor,
         {
@@ -1119,6 +1441,193 @@ describe("actual compute transactions versus the B1 projector", () => {
         [200],
       );
     }
+
+    describe("Agent mutation isolation", () => {
+      it.each(["updateAgent", "updateAgentMetadata"] as const)(
+        "completes a run while a sibling %s waits on its own resource",
+        async (operation) => {
+          const first = await outputFixture();
+          const second = await outputFixture(first.orgId);
+          // The old organization scan locks rows in UUID order. Choose the
+          // lower resource for the run, so its lock precedes the blocked row.
+          const [running, sibling] =
+            first.agentId < second.agentId ? [first, second] : [second, first];
+          mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+          const claimed = await api.claimRunnerJob(running.runId);
+          await sendOutput(running);
+          await flushWaitUntilForTest();
+
+          // Infrastructure-only exception: production APIs cannot retain a
+          // row lock. The mutation, completion and observations use real APIs.
+          const held = await holdResource(sibling.agentId);
+          const updating = settle(
+            bdd[operation](sibling.actor, sibling.agentId, {
+              displayName: "Updated sibling",
+            }),
+          );
+          onTestFinished(async () => {
+            await settle(held.release());
+            await updating;
+          });
+          await waitForBlockedBy(held.pid);
+
+          const completed = await webhooks.requestAgentComplete(
+            {
+              runId: running.runId,
+              exitCode: 0,
+              lastEventSequence: 3,
+              checkpoint: {
+                cliAgentType: "claude-code",
+                cliAgentSessionId: `synthetic-${running.runId}`,
+                cliAgentSessionHistoryHash: createHash("sha256")
+                  .update(`bdd session history ${running.runId}`)
+                  .digest("hex"),
+              },
+            },
+            { authorization: `Bearer ${claimed.sandboxToken}` },
+            [200],
+          );
+          await flushWaitUntilForTest();
+          const result = await chat.listThreadEvents(
+            running.actor,
+            running.threadId,
+          );
+          await held.release();
+          const updated = await updating;
+          expect(completed.body).toMatchObject({ status: "completed" });
+          expect(
+            result.events.filter((event) => {
+              return (
+                event.runId === running.runId &&
+                event.eventType === "run.completed"
+              );
+            }),
+          ).toHaveLength(1);
+          expect(updated).toMatchObject({
+            ok: true,
+            value: { displayName: "Updated sibling" },
+          });
+        },
+      );
+
+      it("creates an Agent while an unrelated resource row is held", async () => {
+        const f = await fixture();
+        const held = await holdResource(f.agentId);
+        let finished = false;
+        const creating = (async () => {
+          const result = await settle(
+            bdd.createAgent(f.actor, { displayName: "Independent Agent" }),
+          );
+          finished = true;
+          return result;
+        })();
+        onTestFinished(async () => {
+          await settle(held.release());
+          await creating;
+        });
+        // Observe either the response or this fixture's exact lock waiter;
+        // this makes the old broad scan fail without a guessed delay.
+        await expect
+          .poll(async () => {
+            const waiters = await executeRawRows(
+              db,
+              sql`SELECT pid FROM pg_stat_activity WHERE ${held.pid} = ANY(pg_blocking_pids(pid))`,
+              z.object({ pid: z.number() }),
+            );
+            return finished || waiters.length > 0;
+          })
+          .toBe(true);
+        const completedWhileHeld = finished;
+        await held.release();
+        const created = await creating;
+        expect(completedWhileHeld).toBeTruthy();
+        expect(created).toMatchObject({
+          ok: true,
+          value: { displayName: "Independent Agent", visibility: "public" },
+        });
+      });
+
+      it.each(["requestUpdateAgent", "requestUpdateAgentMetadata"] as const)(
+        "preserves the public quota across concurrent creation and %s",
+        async (operation) => {
+          const f = await fixture();
+          const existingPublic = (await bdd.listAgents(f.actor)).filter(
+            (agent) => {
+              return agent.visibility === "public";
+            },
+          ).length;
+          for (let index = existingPublic; index < 6; index++) {
+            await bdd.createAgent(f.actor, { displayName: `Public ${index}` });
+          }
+          const privateAgent = await bdd.createAgent(f.actor, {
+            displayName: "Private contender",
+            visibility: "private",
+          });
+          // Retain the exact quota key shared with previously deployed API
+          // writers, then release both real requests from this explicit gate.
+          const held = await holdBusinessRow(async (tx) => {
+            await tx.execute(
+              sql`SELECT pg_advisory_xact_lock(hashtextextended('canonical-agent-public-limit:' || ${f.orgId}::text, 0))`,
+            );
+          });
+          const requests = Promise.all([
+            settle(
+              bdd.requestCreateAgent(
+                f.actor,
+                { displayName: "New public" },
+                [201, 409],
+              ),
+            ),
+            settle(
+              agentsApi[operation](
+                f.actor,
+                privateAgent.agentId,
+                { visibility: "public" },
+                [200, 409],
+              ),
+            ),
+          ]);
+          onTestFinished(async () => {
+            await settle(held.release());
+            await requests;
+          });
+          await expect
+            .poll(async () => {
+              const waiters = await executeRawRows(
+                db,
+                sql`SELECT pid FROM pg_stat_activity WHERE ${held.pid} = ANY(pg_blocking_pids(pid))`,
+                z.object({ pid: z.number() }),
+              );
+              return waiters.length;
+            })
+            .toBe(2);
+          await held.release();
+          const results = await requests;
+          const responses = results.map((result) => {
+            if (!result.ok) {
+              throw result.error;
+            }
+            return result.value;
+          });
+          expect(
+            responses.map((response) => {
+              return response.status;
+            }),
+          ).toContain(409);
+          expect(
+            responses.filter((response) => {
+              return response.status !== 409;
+            }),
+          ).toHaveLength(1);
+          const listed = await bdd.listAgents(f.actor);
+          expect(
+            listed.filter((agent) => {
+              return agent.visibility === "public";
+            }),
+          ).toHaveLength(7);
+        },
+      );
+    });
 
     it("completes an independent chat run while another member retains normal admission", async () => {
       const holder = await outputFixture();
@@ -1232,56 +1741,64 @@ describe("actual compute transactions versus the B1 projector", () => {
       return { content, materialization, citations, run, thread };
     }
 
-    describe.each(["webhook", "callback"] as const)(
-      "%s transaction",
-      (kind) => {
-        it("closure first blocks the actual transaction with no partial content", async () => {
-          const f = await outputFixture();
-          const before = await contentState(f);
-          const closure = await holdClosure(decision(f.actor.userId));
-          const writing =
-            kind === "webhook"
-              ? settle(sendOutput(f))
-              : settle(insertHistory(f));
-          await waitForBlockedBy(closure.pid);
-          await expect(contentState(f)).resolves.toStrictEqual(before);
-          await closure.release();
-          expect((await writing).ok).toBeTruthy();
-          await flushWaitUntilForTest();
-          await expect(contentState(f)).resolves.toStrictEqual(before);
-        });
+    describe.each([
+      ["webhook", "user"],
+      ["callback", "user"],
+      ["webhook", "organization"],
+      ["callback", "organization"],
+    ] as const)("%s transaction with %s closure", (kind, subjectKind) => {
+      it("closure first blocks the actual transaction with no partial content", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const closure = await holdClosure(
+          decision(
+            subjectKind === "user" ? f.actor.userId : f.orgId,
+            subjectKind,
+          ),
+        );
+        const writing =
+          kind === "webhook" ? settle(sendOutput(f)) : settle(insertHistory(f));
+        await waitForBlockedBy(closure.pid);
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+        await closure.release();
+        expect((await writing).ok).toBeTruthy();
+        await flushWaitUntilForTest();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
 
-        it("writer first commits before B1 closure", async () => {
-          const f = await outputFixture();
-          const resource = await holdResource(f.agentId);
-          const writing =
-            kind === "webhook"
-              ? settle(sendOutput(f))
-              : settle(insertHistory(f));
-          const writerPid = await waitForBlockedBy(resource.pid);
-          const closing = close(decision(f.actor.userId));
-          await waitForBlockedBy(writerPid);
-          await resource.release();
-          expect((await writing).ok).toBeTruthy();
-          await closing;
-          await flushWaitUntilForTest();
-          const after = await contentState(f);
-          expect(after.content).toHaveLength(kind === "webhook" ? 2 : 1);
-          expect(after.thread?.sequence).toBeGreaterThan(0);
-          if (kind === "webhook") {
-            expect(after.materialization).toMatchObject([
-              { latestResultText: "result 1" },
-            ]);
-            expect(after.citations).toMatchObject([{ citation }]);
-            expect(after.run?.ack).toBeInstanceOf(Date);
-          }
-          const beforeRetry = await contentState(f);
-          await (kind === "webhook" ? sendOutput(f, 8) : insertHistory(f, 8));
-          await flushWaitUntilForTest();
-          await expect(contentState(f)).resolves.toStrictEqual(beforeRetry);
-        });
-      },
-    );
+      it("writer first commits before B1 closure", async () => {
+        const f = await outputFixture();
+        const resource = await holdResource(f.agentId);
+        const writing =
+          kind === "webhook" ? settle(sendOutput(f)) : settle(insertHistory(f));
+        const writerPid = await waitForBlockedBy(resource.pid);
+        const closing = close(
+          decision(
+            subjectKind === "user" ? f.actor.userId : f.orgId,
+            subjectKind,
+          ),
+        );
+        await waitForBlockedBy(writerPid);
+        await resource.release();
+        expect((await writing).ok).toBeTruthy();
+        await closing;
+        await flushWaitUntilForTest();
+        const after = await contentState(f);
+        expect(after.content).toHaveLength(kind === "webhook" ? 2 : 1);
+        expect(after.thread?.sequence).toBeGreaterThan(0);
+        if (kind === "webhook") {
+          expect(after.materialization).toMatchObject([
+            { latestResultText: "result 1" },
+          ]);
+          expect(after.citations).toMatchObject([{ citation }]);
+          expect(after.run?.ack).toBeInstanceOf(Date);
+        }
+        const beforeRetry = await contentState(f);
+        await (kind === "webhook" ? sendOutput(f, 8) : insertHistory(f, 8));
+        await flushWaitUntilForTest();
+        await expect(contentState(f)).resolves.toStrictEqual(beforeRetry);
+      });
+    });
 
     it("reacquires closure admission for fallback after a committed history transaction", async () => {
       const f = await outputFixture();
@@ -1406,6 +1923,467 @@ describe("actual compute transactions versus the B1 projector", () => {
           .from(runActivitySnapshots)
           .where(eq(runActivitySnapshots.runId, f.runId)),
       ).resolves.toHaveLength(0);
+    });
+
+    // B2b2-P uses the existing infrastructure exception: production APIs cannot
+    // hold PostgreSQL locks, project dormant B1 decisions or expose a rejection
+    // before HTTP classification. The receipt below is the handler's actual
+    // invocation-owned capture; no logger or Axiom calls are observed.
+    describe("required-output failure provenance", () => {
+      function projectOutput(
+        f: OutputFixture,
+        diagnostics: RunOutputDiagnostics,
+        signal: AbortSignal,
+      ) {
+        return createStore().set(
+          materializeRunOutputEvents$,
+          {
+            diagnostics,
+            payload: {
+              runId: f.runId,
+              context: { userId: f.actor.userId, orgId: f.orgId },
+              events: events(10),
+            },
+            suppliedCitations: [{ sequenceNumber: 10, citation }],
+          },
+          signal,
+        );
+      }
+
+      function expectReceipt(
+        diagnostics: RunOutputDiagnostics,
+        error: unknown,
+        phase: string,
+      ) {
+        const receipt = diagnostics.takeFailure(error);
+        expect(receipt?.outputPhase).toBe(phase);
+        for (const elapsed of [
+          receipt?.outputPhaseElapsedMs,
+          receipt?.outputAttemptElapsedMs,
+        ]) {
+          expect(Number.isInteger(elapsed)).toBeTruthy();
+          expect(elapsed).toBeGreaterThanOrEqual(0);
+          expect(elapsed).toBeLessThanOrEqual(60_000);
+        }
+        expect(receipt?.outputAttemptElapsedMs).toBeGreaterThanOrEqual(
+          receipt!.outputPhaseElapsedMs!,
+        );
+        expect(diagnostics.takeFailure(error)).toBeUndefined();
+      }
+
+      it.each([
+        "user",
+        "organization",
+        "resource_identity_locks",
+        "output_advisory_lock",
+        "thread_lock",
+        "run_lock",
+        "session_lock",
+        "projection_write",
+      ] as const)(
+        "attributes a real %s timeout after rollback and allows an idempotent HTTP retry",
+        async (phase) => {
+          const f = await outputFixture();
+          await sendOutput(f);
+          await flushWaitUntilForTest();
+          const before = await contentState(f);
+          const held = await holdBusinessRow((tx) => {
+            switch (phase) {
+              case "user":
+              case "organization": {
+                return lockErasureSubjects(tx, [
+                  {
+                    subjectKind: phase,
+                    subjectId: phase === "user" ? f.actor.userId : f.orgId,
+                  },
+                ]);
+              }
+              case "resource_identity_locks": {
+                return tx
+                  .select()
+                  .from(agents)
+                  .where(eq(agents.id, f.agentId))
+                  .for("update");
+              }
+              case "output_advisory_lock": {
+                return tx.execute(
+                  sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${f.runId}`}, 0))`,
+                );
+              }
+              case "thread_lock": {
+                return tx
+                  .select()
+                  .from(chatThreads)
+                  .where(eq(chatThreads.id, f.threadId))
+                  .for("update");
+              }
+              case "run_lock": {
+                return tx
+                  .select()
+                  .from(agentRuns)
+                  .where(eq(agentRuns.id, f.runId))
+                  .for("update");
+              }
+              case "session_lock": {
+                return tx
+                  .select()
+                  .from(agentSessions)
+                  .where(eq(agentSessions.id, f.sessionId))
+                  .for("update");
+              }
+              case "projection_write": {
+                return tx
+                  .select()
+                  .from(runOutputMaterializations)
+                  .where(eq(runOutputMaterializations.runId, f.runId))
+                  .for("update");
+              }
+            }
+          });
+          const diagnostics = new RunOutputDiagnostics();
+          const writing = settle(projectOutput(f, diagnostics, context.signal));
+          await waitForBlockedBy(held.pid);
+          const result = await writing;
+          expect(result.ok).toBeFalsy();
+          if (result.ok) {
+            throw new Error("Expected a real lock timeout");
+          }
+          expect(isLockNotAvailable(result.error)).toBeTruthy();
+          expectReceipt(
+            diagnostics,
+            result.error,
+            phase === "user" || phase === "organization"
+              ? "subject_admission"
+              : phase,
+          );
+          await expect(contentState(f)).resolves.toStrictEqual(before);
+          await webhooks.requestAgentEvents(
+            outputBody(f, 10),
+            outputHeaders(f),
+            [503],
+          );
+          await expect(contentState(f)).resolves.toStrictEqual(before);
+          await held.release();
+          await sendOutput(f, 10);
+          await flushWaitUntilForTest();
+          const accepted = await contentState(f);
+          expect(accepted.content).toHaveLength(4);
+          expect(accepted.materialization).toMatchObject([
+            { latestResultText: "result 10" },
+          ]);
+          await sendOutput(f, 10);
+          await flushWaitUntilForTest();
+          // Existing insertion reserves sequence numbers before deduplication.
+          // Replays keep the same durable output, while sequence gaps are legal.
+          await expect(contentState(f)).resolves.toMatchObject({
+            content: accepted.content,
+            citations: accepted.citations,
+            run: accepted.run,
+            materialization: [{ latestResultText: "result 10" }],
+          });
+        },
+      );
+
+      it("progresses same-org and unrelated writers around a blocked invocation", async () => {
+        const f = await outputFixture();
+        const peer = await outputFixture(f.orgId);
+        const unrelated = await outputFixture();
+        const held = await holdResource(f.agentId);
+        const firstDiagnostics = new RunOutputDiagnostics();
+        const peerDiagnostics = new RunOutputDiagnostics();
+        const unrelatedDiagnostics = new RunOutputDiagnostics();
+        const first = settle(
+          projectOutput(f, firstDiagnostics, context.signal),
+        );
+        await waitForBlockedBy(held.pid);
+        // Ordinary writers share subject admission, so a same-organization
+        // member owning different resources no longer waits behind this
+        // blocked invocation; only its own business rows serialize it.
+        for (const [fixture, capture] of [
+          [peer, peerDiagnostics],
+          [unrelated, unrelatedDiagnostics],
+        ] as const) {
+          await expect(
+            projectOutput(fixture, capture, context.signal),
+          ).resolves.toMatchObject({ outcome: "accepted" });
+        }
+        const failed = await first;
+        if (failed.ok) {
+          throw new Error("Expected held resource timeout");
+        }
+        expectReceipt(
+          firstDiagnostics,
+          failed.error,
+          "resource_identity_locks",
+        );
+        for (const capture of [peerDiagnostics, unrelatedDiagnostics]) {
+          expect(capture.takeFailure(failed.error)).toBeUndefined();
+        }
+        await held.release();
+        await sendOutput(f, 10);
+        await flushWaitUntilForTest();
+      });
+
+      it("attributes both same-org members to admission while an unrelated subject progresses", async () => {
+        const f = await outputFixture();
+        const peer = await outputFixture(f.orgId);
+        const unrelated = await outputFixture();
+        // Erasure mutations and first closure keep exclusive subject locks, so
+        // both members wait in admission rather than at a business row.
+        const held = await holdBusinessRow((tx) => {
+          return lockErasureSubjects(tx, [
+            { subjectKind: "organization", subjectId: f.orgId },
+          ]);
+        });
+        const firstDiagnostics = new RunOutputDiagnostics();
+        const peerDiagnostics = new RunOutputDiagnostics();
+        const unrelatedDiagnostics = new RunOutputDiagnostics();
+        const first = settle(
+          projectOutput(f, firstDiagnostics, context.signal),
+        );
+        const second = settle(
+          projectOutput(peer, peerDiagnostics, context.signal),
+        );
+        await waitForBlockedBy(held.pid);
+        await expect(
+          projectOutput(unrelated, unrelatedDiagnostics, context.signal),
+        ).resolves.toMatchObject({ outcome: "accepted" });
+        const failed = await first;
+        const peerFailed = await second;
+        if (failed.ok || peerFailed.ok) {
+          throw new Error("Expected held organization admission timeouts");
+        }
+        expect(isLockNotAvailable(failed.error)).toBeTruthy();
+        expect(isLockNotAvailable(peerFailed.error)).toBeTruthy();
+        // Each receipt stays bound to its own rejected invocation.
+        expect(failed.error).not.toBe(peerFailed.error);
+        expectReceipt(peerDiagnostics, peerFailed.error, "subject_admission");
+        expectReceipt(firstDiagnostics, failed.error, "subject_admission");
+        expect(unrelatedDiagnostics.takeFailure(failed.error)).toBeUndefined();
+        await held.release();
+        await sendOutput(f, 10);
+        await sendOutput(peer, 10);
+        await flushWaitUntilForTest();
+      });
+
+      it("clears an aborted invocation and preserves the exact abort reason", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        const controller = new AbortController();
+        onTestFinished(() => {
+          controller.abort();
+        });
+        const reason = Object.freeze(
+          new DOMException("Synthetic cancellation", "AbortError"),
+        );
+        const held = await holdResource(f.agentId);
+        const writing = settleIncludingAbort(
+          projectOutput(f, diagnostics, controller.signal),
+        );
+        await waitForBlockedBy(held.pid);
+        controller.abort(reason);
+        await held.release();
+        const result = await writing;
+        if (result.ok) {
+          throw new Error("Expected cancellation");
+        }
+        expect(result.error).toBe(reason);
+        expect(diagnostics.takeFailure(reason)).toBeUndefined();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+        await expect(
+          projectOutput(f, diagnostics, context.signal),
+        ).resolves.toMatchObject({ outcome: "accepted" });
+        expect(diagnostics.takeFailure(reason)).toBeUndefined();
+      });
+
+      it.each([false, true])(
+        "resets an actual ownership retry before its next outcome (timeout: %s)",
+        async (timeout) => {
+          const f = await outputFixture();
+          const resourceOwner = `synthetic-resource-${randomUUID()}`;
+          await db
+            .update(agents)
+            .set({ owner: resourceOwner })
+            .where(eq(agents.id, f.agentId));
+          const ownership = await readRunContentOwnership(db, f.runId);
+          await db
+            .update(agents)
+            .set({ owner: `synthetic-transient-${randomUUID()}` })
+            .where(eq(agents.id, f.agentId));
+          const held = await holdResource(f.agentId, resourceOwner);
+          const subject = timeout
+            ? await holdBusinessRow((tx) => {
+                return lockErasureSubjects(tx, [
+                  { subjectKind: "user", subjectId: resourceOwner },
+                ]);
+              })
+            : undefined;
+          const diagnostics = new RunOutputDiagnostics();
+          const writing = settle(
+            withRunContentWrite(
+              db,
+              { runId: f.runId, ownership, diagnostics },
+              async (tx) => {
+                await tx.insert(runOutputMaterializations).values({
+                  runId: f.runId,
+                  latestResultText: "retry accepted",
+                });
+              },
+              context.signal,
+            ),
+          );
+          await waitForBlockedBy(held.pid);
+          await held.release();
+          if (subject) {
+            await waitForBlockedBy(subject.pid);
+          }
+          const result = await writing;
+          if (timeout) {
+            if (result.ok) {
+              throw new Error("Expected second-attempt subject timeout");
+            }
+            expect(isLockNotAvailable(result.error)).toBeTruthy();
+            expectReceipt(diagnostics, result.error, "subject_admission");
+            expect((await contentState(f)).materialization).toHaveLength(0);
+          } else {
+            expect(result).toMatchObject({
+              ok: true,
+              value: { outcome: "written" },
+            });
+            expect((await contentState(f)).materialization).toMatchObject([
+              { latestResultText: "retry accepted" },
+            ]);
+            expect(diagnostics.takeFailure(undefined)).toBeUndefined();
+          }
+          await subject?.release();
+        },
+      );
+
+      it("retains a real non-55P03 error object through rollback", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        let original: unknown;
+        const result = await settle(
+          withRunContentWrite(
+            db,
+            { runId: f.runId, ownership: f.ownership, diagnostics },
+            async (tx) => {
+              await tx
+                .insert(runOutputMaterializations)
+                .values({ runId: f.runId });
+              const failed = await settle(tx.execute(sql`SELECT 1 / 0`));
+              if (failed.ok) {
+                throw new Error("Expected PostgreSQL division failure");
+              }
+              original = failed.error;
+              Object.freeze(original);
+              throw original;
+            },
+            context.signal,
+          ),
+        );
+        if (result.ok) {
+          throw new Error("Expected projection failure");
+        }
+        expect(result.error).toBe(original);
+        expect(isLockNotAvailable(result.error)).toBeFalsy();
+        expectReceipt(diagnostics, result.error, "projection_write");
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
+
+      it("attributes a deferred PostgreSQL commit failure to finalization", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        // A connection-local deferred constraint is an infrastructure-only
+        // commit failure. It does not modify any shared schema or production row.
+        const result = await settle(
+          withRunContentWrite(
+            db,
+            { runId: f.runId, ownership: f.ownership, diagnostics },
+            async (tx) => {
+              await tx
+                .insert(runOutputMaterializations)
+                .values({ runId: f.runId });
+              await tx.execute(
+                sql`CREATE TEMP TABLE output_phase_commit_fixture (id integer UNIQUE DEFERRABLE INITIALLY DEFERRED) ON COMMIT DROP`,
+              );
+              await tx.execute(
+                sql`INSERT INTO output_phase_commit_fixture VALUES (1), (1)`,
+              );
+            },
+            context.signal,
+          ),
+        );
+        if (result.ok) {
+          throw new Error("Expected deferred constraint rejection");
+        }
+        expectReceipt(diagnostics, result.error, "transaction_finalize");
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
+
+      it("omits body provenance when a disconnected transaction replaces the body error", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        const diagnostics = new RunOutputDiagnostics();
+        const client = await pool.connect();
+        const disconnected = createDeferredPromise<Error>(context.signal);
+        // A terminated backend reports the server FATAL and the closed socket
+        // separately; keep one listener so neither becomes an unhandled error.
+        client.on("error", (error) => {
+          if (!disconnected.settled()) {
+            disconnected.resolve(error);
+          }
+        });
+        onTestFinished(() => {
+          client.release(true);
+        });
+        let original: unknown;
+        // Only this test-owned connection is terminated, after capturing a real
+        // query rejection. Production APIs cannot construct a failed rollback.
+        const result = await settle(
+          withRunContentWrite(
+            drizzle(client),
+            { runId: f.runId, ownership: f.ownership, diagnostics },
+            async (tx) => {
+              const pid = await backendPid(tx);
+              await tx
+                .insert(runOutputMaterializations)
+                .values({ runId: f.runId });
+              const failed = await settle(tx.execute(sql`SELECT 1 / 0`));
+              if (failed.ok) {
+                throw new Error("Expected PostgreSQL division failure");
+              }
+              original = failed.error;
+              await db.execute(sql`SELECT pg_terminate_backend(${pid})`);
+              await disconnected.promise;
+              throw original;
+            },
+            context.signal,
+          ),
+        );
+        if (result.ok) {
+          throw new Error("Expected rollback rejection");
+        }
+        expect(result.error).not.toBe(original);
+        expect(diagnostics.takeFailure(result.error)).toBeUndefined();
+        expect(diagnostics.takeFailure(original)).toBeUndefined();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
+
+      it("clears a closed admission without an accepted batch or receipt", async () => {
+        const f = await outputFixture();
+        const before = await contentState(f);
+        await close(decision(f.actor.userId));
+        const diagnostics = new RunOutputDiagnostics();
+        await expect(
+          projectOutput(f, diagnostics, context.signal),
+        ).resolves.toStrictEqual({ outcome: "ignored-closure" });
+        expect(diagnostics.takeFailure(undefined)).toBeUndefined();
+        await expect(contentState(f)).resolves.toStrictEqual(before);
+      });
     });
 
     it("preserves infrastructure lock failures and rejects mismatched sandbox identity", async () => {
@@ -1794,6 +2772,696 @@ describe("actual compute transactions versus the B1 projector", () => {
       );
     });
 
+    // B2b2-R1: the real route/optional consumer versus dormant B1. Only PG
+    // transaction delivery, held rows, closure and ownership transfers require
+    // infrastructure control; every account/agent/thread/run is API-created.
+    describe("activity copy admission", () => {
+      async function activityFixture(orgId?: string) {
+        mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+        const f = await outputFixture(orgId);
+        await updateFeatureSwitchesForUser(context, f, {
+          [FeatureSwitchKey.ThreadActivitySummary]: true,
+        });
+        onTestFinished(() => {
+          return deleteFeatureSwitchesForUser(context, f);
+        });
+        return f;
+      }
+
+      function snapshot(f: OutputFixture) {
+        return db
+          .select()
+          .from(runActivitySnapshots)
+          .where(eq(runActivitySnapshots.runId, f.runId));
+      }
+
+      function summarize(f: OutputFixture) {
+        createRouteMocks(context).clerk.session(f.userId, f.orgId);
+        return setupApp({ context, routes: chatThreadActivitySummaryRoutes })(
+          chatThreadActivitySummaryContract,
+        ).summarize({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { id: f.threadId },
+          body: { runId: f.runId },
+        });
+      }
+
+      function activityProvider(
+        reply: () => string | Response | Promise<string | Response> = () => {
+          return "Checking launch materials";
+        },
+      ) {
+        mockOptionalEnv("OPENROUTER_API_KEY", "synthetic-activity-key");
+        const requests: unknown[] = [];
+        server.use(
+          http.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            async ({ request }) => {
+              const body = z
+                .object({
+                  messages: z.array(
+                    z.object({ role: z.string(), content: z.string() }),
+                  ),
+                })
+                .parse(await request.json());
+              if (
+                !body.messages[0]?.content.startsWith(
+                  "Write three short, distinct, user-visible progress messages",
+                )
+              ) {
+                return HttpResponse.json({
+                  choices: [
+                    {
+                      finish_reason: "stop",
+                      message: { content: "Opening copy" },
+                    },
+                  ],
+                });
+              }
+              requests.push(body);
+              const result = await reply();
+              return typeof result === "string"
+                ? HttpResponse.json({
+                    choices: [
+                      { finish_reason: "stop", message: { content: result } },
+                    ],
+                  })
+                : result;
+            },
+          ),
+        );
+        return requests;
+      }
+
+      async function acceptedActivity(f: OutputFixture, sequence = 30) {
+        const store = createStore();
+        const result = await store.set(
+          receiveAgentEvents$,
+          {
+            auth: { userId: f.userId, orgId: f.orgId, runId: f.runId },
+            body: {
+              runId: f.runId,
+              events: [
+                {
+                  type: "assistant",
+                  sequenceNumber: sequence,
+                  message: {
+                    content: [
+                      { type: "text", text: `Required answer ${sequence}` },
+                      {
+                        type: "tool_use",
+                        id: `tool-${sequence}`,
+                        name: "bash",
+                        input: { command: `inspect launch ${sequence}` },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+          context.signal,
+        );
+        expect(result.response.status).toBe(200);
+        if (!("acceptedEvents" in result) || !result.acceptedEvents) {
+          throw new Error("Expected admitted required output");
+        }
+        const accepted = result.acceptedEvents;
+        return {
+          accepted,
+          dispatch: (signal = context.signal) => {
+            return store.set(
+              dispatchOptionalAgentEventConsumers$,
+              accepted,
+              signal,
+            );
+          },
+        };
+      }
+
+      async function capture(f: OutputFixture, sequence = 30) {
+        await (await acceptedActivity(f, sequence)).dispatch();
+      }
+
+      function ineligible(f: OutputFixture) {
+        return {
+          status: 200,
+          body: { runId: f.runId, status: "ineligible", messages: [] },
+        };
+      }
+
+      it.each([
+        "capture",
+        "claim",
+        "completion",
+        "cooldown",
+        "response",
+      ] as const)(
+        "%s commits before closure can project and retains activity deadlines",
+        async (stage) => {
+          const f = await activityFixture();
+          const accepted =
+            stage === "capture" ? await acceptedActivity(f) : undefined;
+          const requests = activityProvider(() => {
+            return stage === "cooldown" ? "" : "Checking launch materials";
+          });
+          await withActivityCommitBarrierFixture(
+            {
+              runId: f.runId,
+              stage: stage === "cooldown" ? "completion" : stage,
+              position: "before",
+              work: async (barrier) => {
+                const writing = accepted
+                  ? settle(accepted.dispatch())
+                  : settle(summarize(f));
+                const settings = await barrier.entered;
+                expect(settings).toMatchObject({
+                  lockTimeout: "250ms",
+                  statementTimeout: "3s",
+                });
+                const closing = close(decision(f.userId));
+                await waitForBlockedBy(settings.pid);
+                if (stage === "claim") {
+                  expect(requests).toHaveLength(0);
+                }
+                barrier.release();
+                const [written] = await Promise.all([writing, closing]);
+                expect(written.ok).toBeTruthy();
+                const rows = await snapshot(f);
+                expect(rows).toHaveLength(1);
+                if (stage === "capture") {
+                  expect(rows[0]?.entries).toHaveLength(2);
+                } else if (stage === "claim") {
+                  expect(rows[0]?.claimId).not.toBeNull();
+                  expect(rows[0]?.summary).toBeNull();
+                } else if (stage === "cooldown") {
+                  expect(rows[0]?.claimId).toBeNull();
+                  expect(rows[0]?.summary).toBeNull();
+                  expect(rows[0]?.nextAttemptAt).toBeInstanceOf(Date);
+                } else {
+                  expect(rows[0]?.summary).toBe("Checking launch materials");
+                }
+                if (stage === "response") {
+                  expect(written).toMatchObject({
+                    ok: true,
+                    value: {
+                      status: 200,
+                      body: {
+                        status: "available",
+                        messages: [{ text: "Checking launch materials" }],
+                      },
+                    },
+                  });
+                } else if (stage !== "capture") {
+                  expect(written).toMatchObject({
+                    ok: true,
+                    value: ineligible(f),
+                  });
+                }
+              },
+            },
+            context.signal,
+          );
+        },
+      );
+
+      it.each(["capture", "claim"] as const)(
+        "closure first blocks %s without any snapshot or provider request",
+        async (stage) => {
+          const f = await activityFixture();
+          const accepted =
+            stage === "capture" ? await acceptedActivity(f) : undefined;
+          const required = await contentState(f);
+          const requests = activityProvider();
+          const closure = await holdClosure(decision(f.userId));
+          const writing = accepted
+            ? settle(accepted.dispatch())
+            : settle(summarize(f));
+          await waitForBlockedBy(closure.pid);
+          await closure.release();
+          const result = await writing;
+          expect(result.ok).toBeTruthy();
+          if (stage === "claim") {
+            expect(result).toMatchObject({ ok: true, value: ineligible(f) });
+          }
+          await expect(snapshot(f)).resolves.toHaveLength(0);
+          await expect(contentState(f)).resolves.toStrictEqual(required);
+          expect(requests).toHaveLength(0);
+        },
+      );
+
+      it.each(["success", "unusable", "failure", "deadline"] as const)(
+        "rejects %s completion and final resurrection after closure commits during an admitted provider request",
+        async (outcome) => {
+          const f = await activityFixture();
+          const entered = createDeferredPromise<void>(context.signal);
+          const release = createDeferredPromise<void>(context.signal);
+          const deadline = new AbortController();
+          onTestFinished(() => {
+            deadline.abort();
+          });
+          context.mocks.abortSignal.timeout.mockImplementation(
+            (milliseconds) => {
+              return milliseconds === 10_000 ? deadline.signal : undefined;
+            },
+          );
+          const requests = activityProvider(async () => {
+            entered.resolve();
+            await release.promise;
+            return outcome === "failure"
+              ? HttpResponse.json(
+                  { error: { message: "Synthetic upstream failure" } },
+                  { status: 503 },
+                )
+              : outcome === "unusable"
+                ? ""
+                : "Late private phrase";
+          });
+          const pending = settle(summarize(f));
+          await entered.promise;
+          // Keep the provider pending until closure commits. Polling for a DB
+          // waiter here races the activity writer's 250 ms lock deadline.
+          await close(decision(f.userId));
+          // Physical collector deletion has no exposed API while B1 is dormant.
+          await db
+            .delete(runActivitySnapshots)
+            .where(eq(runActivitySnapshots.runId, f.runId));
+          if (outcome === "deadline") {
+            deadline.abort(
+              new DOMException("Synthetic deadline", "TimeoutError"),
+            );
+          }
+          release.resolve();
+          await expect(pending).resolves.toMatchObject({
+            ok: true,
+            value: ineligible(f),
+          });
+          await expect(snapshot(f)).resolves.toHaveLength(0);
+          expect(requests).toHaveLength(1);
+        },
+      );
+
+      it.each([
+        "close",
+        "close-retained",
+        "transfer",
+        "current-run",
+        "remove-run",
+      ] as const)(
+        "reacquires the final INSERT/response barrier after completion: %s",
+        async (change) => {
+          const f = await activityFixture();
+          activityProvider();
+          await withActivityCommitBarrierFixture(
+            {
+              runId: f.runId,
+              stage: "completion",
+              position: "after",
+              work: async (barrier) => {
+                const pending = summarize(f);
+                await barrier.entered;
+                const closure =
+                  change === "close" || change === "close-retained"
+                    ? await holdClosure(decision(f.userId))
+                    : undefined;
+                if (change === "transfer") {
+                  await db
+                    .update(agents)
+                    .set({ owner: `survivor-${randomUUID()}` })
+                    .where(eq(agents.id, f.agentId));
+                } else if (change === "current-run") {
+                  await db
+                    .update(chatThreads)
+                    .set({ agentSessionRunId: null })
+                    .where(eq(chatThreads.id, f.threadId));
+                } else if (change === "remove-run") {
+                  await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
+                }
+                const before = await snapshot(f);
+                if (change !== "close-retained") {
+                  await db
+                    .delete(runActivitySnapshots)
+                    .where(eq(runActivitySnapshots.runId, f.runId));
+                }
+                barrier.release();
+                if (closure) {
+                  await waitForBlockedBy(closure.pid);
+                  await closure.release();
+                }
+                await expect(pending).resolves.toMatchObject(ineligible(f));
+                if (change === "close-retained") {
+                  await expect(snapshot(f)).resolves.toStrictEqual(before);
+                } else {
+                  await expect(snapshot(f)).resolves.toHaveLength(0);
+                }
+              },
+            },
+            context.signal,
+          );
+        },
+      );
+
+      const transfers = [
+        "run",
+        "session",
+        "thread",
+        "resource",
+        "organization",
+      ] as const;
+      async function transfer(
+        f: OutputFixture,
+        target: (typeof transfers)[number],
+      ) {
+        const survivor = `survivor-${randomUUID()}`;
+        if (target === "run") {
+          await db
+            .update(agentRuns)
+            .set({ userId: survivor })
+            .where(eq(agentRuns.id, f.runId));
+        } else if (target === "session") {
+          await db
+            .update(agentSessions)
+            .set({ userId: survivor })
+            .where(eq(agentSessions.id, f.sessionId));
+        } else if (target === "thread") {
+          await db
+            .update(chatThreads)
+            .set({ userId: survivor })
+            .where(eq(chatThreads.id, f.threadId));
+        } else if (target === "resource") {
+          await db
+            .update(agents)
+            .set({ owner: survivor })
+            .where(eq(agents.id, f.agentId));
+        } else {
+          await db
+            .update(agents)
+            .set({ orgId: survivor })
+            .where(eq(agents.id, f.agentId));
+        }
+      }
+
+      it.each(transfers)(
+        "does not repin accepted optional activity after %s transfer",
+        async (target) => {
+          const f = await activityFixture();
+          await capture(f);
+          const before = await snapshot(f);
+          const accepted = await acceptedActivity(f, 40);
+          const required = await contentState(f);
+          expect(Object.isFrozen(accepted.accepted.ownership)).toBeTruthy();
+          expect(
+            Object.isFrozen(accepted.accepted.ownership.resources),
+          ).toBeTruthy();
+          await transfer(f, target);
+          await accepted.dispatch();
+          await expect(snapshot(f)).resolves.toStrictEqual(before);
+          await expect(contentState(f)).resolves.toStrictEqual(required);
+        },
+      );
+
+      it.each(transfers)(
+        "does not repin provider content after %s transfer",
+        async (target) => {
+          const f = await activityFixture();
+          const entered = createDeferredPromise<void>(context.signal);
+          const release = createDeferredPromise<string>(context.signal);
+          activityProvider(async () => {
+            entered.resolve();
+            return await release.promise;
+          });
+          const pending = summarize(f);
+          await entered.promise;
+          const before = await snapshot(f);
+          await transfer(f, target);
+          release.resolve("Do not attach to another owner");
+          await expect(pending).resolves.toMatchObject(ineligible(f));
+          await expect(snapshot(f)).resolves.toStrictEqual(before);
+        },
+      );
+
+      it.each([
+        "user",
+        "organization",
+        "session-user",
+        "session-org",
+        "resource-user",
+        "resource-org",
+      ] as const)(
+        "fences the complete %s subject in capture and claim while preserving an independent survivor",
+        async (subject) => {
+          const f = await activityFixture();
+          const independent = await activityFixture();
+          let foreignId = `distinct-${randomUUID()}`;
+          if (subject === "session-user" || subject === "session-org") {
+            await db
+              .update(agentSessions)
+              .set(
+                subject === "session-user"
+                  ? { userId: foreignId }
+                  : { orgId: foreignId },
+              )
+              .where(eq(agentSessions.id, f.sessionId));
+          } else if (subject === "resource-org") {
+            const resource = await fixture();
+            foreignId = resource.orgId;
+            await db
+              .update(agentSessions)
+              .set({ agentId: resource.agentId })
+              .where(eq(agentSessions.id, f.sessionId));
+          } else if (subject === "resource-user") {
+            await db
+              .update(agents)
+              .set({ owner: foreignId })
+              .where(eq(agents.id, f.agentId));
+          }
+          const accepted = await acceptedActivity(f);
+          await close(
+            decision(
+              subject === "user"
+                ? f.userId
+                : subject === "organization"
+                  ? f.orgId
+                  : foreignId,
+              subject === "organization" || subject.endsWith("-org")
+                ? "organization"
+                : "user",
+            ),
+          );
+          await accepted.dispatch();
+          const requests = activityProvider();
+          await expect(summarize(f)).resolves.toMatchObject(ineligible(f));
+          await expect(snapshot(f)).resolves.toHaveLength(0);
+          expect(requests).toHaveLength(0);
+          await expect(summarize(independent)).resolves.toMatchObject({
+            status: 200,
+            body: { status: "available" },
+          });
+          expect(requests).toHaveLength(1);
+        },
+      );
+
+      it("keeps cooldown and expiry unchanged when closure wins after claim", async () => {
+        const f = await activityFixture();
+        const entered = createDeferredPromise<void>(context.signal);
+        const release = createDeferredPromise<string>(context.signal);
+        activityProvider(async () => {
+          entered.resolve();
+          return await release.promise;
+        });
+        const pending = summarize(f);
+        await entered.promise;
+        const before = await snapshot(f);
+        await close(decision(f.userId));
+        release.resolve("");
+        await expect(pending).resolves.toMatchObject(ineligible(f));
+        await expect(snapshot(f)).resolves.toStrictEqual(before);
+      });
+
+      it.each(["organization", "session", "resource"] as const)(
+        "rejects late %s closure without returning the previous stored phrase",
+        async (owner) => {
+          const f = await activityFixture();
+          const subjectId =
+            owner === "organization" ? f.orgId : `distinct-${randomUUID()}`;
+          // Distinct persisted ownership is a dormant-B1 infrastructure case.
+          if (owner === "session") {
+            await db
+              .update(agentSessions)
+              .set({ userId: subjectId })
+              .where(eq(agentSessions.id, f.sessionId));
+          } else if (owner === "resource") {
+            await db
+              .update(agents)
+              .set({ owner: subjectId })
+              .where(eq(agents.id, f.agentId));
+          }
+          activityProvider();
+          await accept(summarize(f), [200]);
+          await capture(f);
+          await advanceRunActivityClockFixture(f.runId, 16_000);
+          const entered = createDeferredPromise<void>(context.signal);
+          const release = createDeferredPromise<string>(context.signal);
+          activityProvider(async () => {
+            entered.resolve();
+            return await release.promise;
+          });
+          const pending = summarize(f);
+          await entered.promise;
+          const before = await snapshot(f);
+          expect(before[0]?.summary).toBe("Checking launch materials");
+          await close(
+            decision(
+              subjectId,
+              owner === "organization" ? "organization" : "user",
+            ),
+          );
+          release.resolve("Late provider phrase");
+          await expect(pending).resolves.toMatchObject(ineligible(f));
+          await expect(snapshot(f)).resolves.toStrictEqual(before);
+        },
+      );
+
+      it("keeps admitted output and other optional publication after closure in the capture gap", async () => {
+        const f = await activityFixture();
+        const accepted = await acceptedActivity(f);
+        const required = await contentState(f);
+        expect(required.content).toHaveLength(1);
+        await close(decision(f.userId));
+        context.mocks.ably.publish.mockClear();
+        await accepted.dispatch();
+        await expect(contentState(f)).resolves.toStrictEqual(required);
+        await expect(snapshot(f)).resolves.toHaveLength(0);
+        expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+          `chatThreadMessageCreated:${f.threadId}`,
+          null,
+        );
+      });
+
+      it("absorbs a missing run in the accepted optional gap", async () => {
+        const f = await activityFixture();
+        const accepted = await acceptedActivity(f);
+        await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
+        await expect(accepted.dispatch()).resolves.toBeUndefined();
+        await expect(snapshot(f)).resolves.toHaveLength(0);
+      });
+
+      it("propagates the original optional abort instead of converting it to ineligibility", async () => {
+        const f = await activityFixture();
+        const accepted = await acceptedActivity(f);
+        const controller = new AbortController();
+        const error = new Error("Synthetic owned cancellation");
+        controller.abort(error);
+        await expect(accepted.dispatch(controller.signal)).rejects.toBe(error);
+        await expect(snapshot(f)).resolves.toHaveLength(0);
+      });
+
+      it("retains silent capture contention, degrades the summary claim and preserves the row", async () => {
+        const f = await activityFixture();
+        await capture(f);
+        const before = await snapshot(f);
+        const accepted = await acceptedActivity(f, 40);
+        const held = await holdBusinessRow((tx) => {
+          return tx
+            .select()
+            .from(runActivitySnapshots)
+            .where(eq(runActivitySnapshots.runId, f.runId))
+            .for("update");
+        });
+        await expect(accepted.dispatch()).resolves.toBeUndefined();
+        await expect(snapshot(f)).resolves.toStrictEqual(before);
+        await expect(summarize(f)).resolves.toMatchObject({
+          status: 200,
+          body: { runId: f.runId, status: "unavailable", messages: [] },
+        });
+        // The API intentionally hides SQLSTATE. At the real PG infrastructure
+        // boundary verify the original error, rather than inspecting a log.
+        const failure = await settle(
+          withRunContentWrite(
+            db,
+            {
+              runId: f.runId,
+              ownership: f.ownership,
+              deadlineProfile: "activity",
+            },
+            async (tx) => {
+              return await tx
+                .select()
+                .from(runActivitySnapshots)
+                .where(eq(runActivitySnapshots.runId, f.runId))
+                .for("update");
+            },
+            context.signal,
+          ),
+        );
+        expect(failure.ok).toBeFalsy();
+        if (!failure.ok) {
+          expect(safeSqlStateCode(failure.error)).toBe("55P03");
+        }
+        await held.release();
+        await expect(snapshot(f)).resolves.toStrictEqual(before);
+      });
+
+      it("keeps the actual required-output default at one/five seconds", async () => {
+        const f = await activityFixture();
+        await withActivityCommitBarrierFixture(
+          {
+            runId: f.runId,
+            stage: "output",
+            position: "before",
+            work: async (barrier) => {
+              const pending = sendOutput(f);
+              await expect(barrier.entered).resolves.toMatchObject({
+                lockTimeout: "1s",
+                statementTimeout: "5s",
+              });
+              barrier.release();
+              await pending;
+              await flushWaitUntilForTest();
+            },
+          },
+          context.signal,
+        );
+      });
+
+      it("cleans closed snapshots and skips a held expired row without blocking another owner", async () => {
+        const f = await activityFixture();
+        const other = await activityFixture();
+        await capture(f);
+        await capture(other);
+        await advanceRunActivityClockFixture(f.runId, 25 * 60 * 60 * 1000);
+        await advanceRunActivityClockFixture(other.runId, 25 * 60 * 60 * 1000);
+        await close(decision(f.userId));
+        await close(decision(other.userId));
+        const held = await holdBusinessRow((tx) => {
+          return tx
+            .select()
+            .from(runActivitySnapshots)
+            .where(eq(runActivitySnapshots.runId, f.runId))
+            .for("update");
+        });
+        const cleanup = () => {
+          return setupApp({
+            context,
+            routes: testCronCleanupSandboxesStateRoutes,
+          })(testCronCleanupSandboxesStateContract).cleanup({
+            body: {
+              runIds: [f.runId, other.runId],
+              chatThreadIds: [],
+              orgIds: [],
+              exportJobIds: [],
+            },
+          });
+        };
+        await accept(cleanup(), [200]);
+        await expect(snapshot(f)).resolves.toHaveLength(1);
+        await expect(snapshot(other)).resolves.toHaveLength(0);
+        await held.release();
+        await accept(cleanup(), [200]);
+        await expect(snapshot(f)).resolves.toHaveLength(0);
+      });
+    });
+
     describe("terminal callback content admission", () => {
       type TerminalKind = "completed" | "failed" | "cancelled";
 
@@ -1923,6 +3591,27 @@ describe("actual compute transactions versus the B1 projector", () => {
         await startTerminal(...args);
         await flushWaitUntilForTest();
       }
+
+      it("keeps the actual terminal writer default at one/five seconds", async () => {
+        const f = await terminalFixture("failed");
+        await withActivityCommitBarrierFixture(
+          {
+            runId: f.runId,
+            stage: "output",
+            position: "before",
+            work: async (barrier) => {
+              const pending = invokeTerminal(f, "failed");
+              await expect(barrier.entered).resolves.toMatchObject({
+                lockTimeout: "1s",
+                statementTimeout: "5s",
+              });
+              barrier.release();
+              await pending;
+            },
+          },
+          context.signal,
+        );
+      });
 
       async function terminalState(f: OutputFixture) {
         const events = await db
@@ -2601,6 +4290,485 @@ describe("actual compute transactions versus the B1 projector", () => {
         ).toHaveLength(1);
       });
 
+      // The synthetic multi-integration callback gap has no public setup path.
+      // Bind only this API-created run/thread to unique persisted cleanup targets.
+      async function terminalCleanupTargets(f: OutputFixture) {
+        const workspaceId = `T${randomUUID()}`;
+        const connectionId = randomUUID();
+        const installationId = randomUUID();
+        const secret = await encryptPersistentSecretValue(
+          "synthetic-cleanup-token",
+          { orgId: f.orgId },
+        );
+        await db.insert(slackOrgInstallations).values({
+          slackWorkspaceId: workspaceId,
+          orgId: f.orgId,
+          encryptedBotToken: secret,
+          botUserId: `B${randomUUID()}`,
+        });
+        await db.insert(slackOrgConnections).values({
+          id: connectionId,
+          slackWorkspaceId: workspaceId,
+          userId: f.userId,
+          slackUserId: `U${randomUUID()}`,
+        });
+        const slackDelivery = {
+          channelId: `C${randomUUID()}`,
+          threadTs: "123.456",
+        };
+        await db.insert(slackChatThreadRoutes).values({
+          connectionId,
+          ...slackDelivery,
+          userId: f.userId,
+          chatThreadId: f.threadId,
+        });
+        await db.insert(feishuOrgInstallations).values({
+          id: installationId,
+          orgId: f.orgId,
+          appId: `cli_${randomUUID()}`,
+          encryptedAppSecret: secret,
+          encryptedEncryptKey: secret,
+          encryptedVerificationToken: secret,
+          encryptedTenantAccessToken: secret,
+          tenantAccessTokenExpiresAt: new Date("2099-01-01T00:00:00Z"),
+        });
+        const feishuDelivery = {
+          ...deliveries(f).feishuDelivery,
+          installationId,
+          messageId: randomUUID(),
+          reactionId: randomUUID(),
+        };
+        let removedReactions = 0;
+        server.use(
+          http.delete(
+            `https://open.feishu.cn/open-apis/im/v1/messages/${feishuDelivery.messageId}/reactions/${feishuDelivery.reactionId}`,
+            ({ request }) => {
+              expect(request.headers.get("authorization")).toBe(
+                "Bearer synthetic-cleanup-token",
+              );
+              removedReactions += 1;
+              return HttpResponse.json({ code: 0 });
+            },
+          ),
+        );
+        context.mocks.slack.assistant.threads.setStatus.mockResolvedValue({
+          ok: true,
+        });
+        onTestFinished(async () => {
+          await db
+            .delete(slackChatThreadRoutes)
+            .where(eq(slackChatThreadRoutes.connectionId, connectionId));
+          await db
+            .delete(slackOrgConnections)
+            .where(eq(slackOrgConnections.id, connectionId));
+          await db
+            .delete(slackOrgInstallations)
+            .where(eq(slackOrgInstallations.slackWorkspaceId, workspaceId));
+          await db
+            .delete(feishuOrgInstallations)
+            .where(eq(feishuOrgInstallations.id, installationId));
+        });
+        return {
+          slackDelivery,
+          feishuDelivery,
+          removedReactions: () => {
+            return removedReactions;
+          },
+        };
+      }
+
+      // A SELECT fault cannot be injected through the public API. Only this
+      // worker's connection search_path sees the unique, temporary session view.
+      // The real capture query blocks inside PostgreSQL; all other workers keep
+      // using public tables. Healing the view queues behind that exact backend
+      // before cancellation, so recovery sees the ordinary writable relation.
+      async function holdTerminalCapture(f: OutputFixture) {
+        const schema = `capture_${f.sessionId.replaceAll("-", "")}`;
+        const schemaId = sql.identifier(schema);
+        await db.execute(sql`CREATE SCHEMA ${schemaId}`);
+        await db.execute(sql`CREATE FUNCTION ${schemaId}.capture(id uuid, value text)
+          RETURNS text LANGUAGE plpgsql AS $$
+          BEGIN
+            PERFORM pg_advisory_xact_lock(hashtextextended(id::text, 0));
+            RETURN value;
+          END $$`);
+        const columns = Object.values(getTableColumns(agentSessions)).map(
+          (column) => {
+            const name = sql.identifier(column.name);
+            return column.name === "org_id"
+              ? sql`${schemaId}.capture(id, ${name}) AS ${name}`
+              : name;
+          },
+        );
+        await db.execute(sql`CREATE VIEW ${schemaId}.agent_sessions AS
+          SELECT ${sql.join(columns, sql`, `)} FROM public.agent_sessions`);
+        const held = await holdBusinessRow((tx) => {
+          return tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${f.sessionId}, 0))`,
+          );
+        });
+        const originalUrl = env("DATABASE_URL");
+        const url = new URL(originalUrl);
+        url.searchParams.set("options", `-csearch_path=${schema},public`);
+        const plainPool = new Pool({
+          connectionString: url.toString(),
+          max: 2,
+        });
+        await closeDbPool();
+        mockEnv("DATABASE_URL", url.toString());
+        onTestFinished(async () => {
+          await plainPool.end();
+          await closeDbPool();
+          mockEnv("DATABASE_URL", originalUrl);
+          await db.execute(sql`DROP SCHEMA ${schemaId} CASCADE`);
+        });
+        return {
+          plainDb: drizzle(plainPool),
+          captured: async () => {
+            const pid = await waitForBlockedBy(held.pid);
+            const [backend] = await executeRawRows(
+              db,
+              sql`SELECT query FROM pg_stat_activity WHERE pid = ${pid}`,
+              z.object({ query: z.string() }),
+            );
+            // This is the ownership SELECT, before prompt/error/history reads
+            // and before any writer acquires B1 subjects or resource locks.
+            expect(backend?.query).toBe(
+              'select "user_id", "org_id", "agent_id" from "agent_sessions" where "agent_sessions"."id" = $1',
+            );
+            return pid;
+          },
+          resume: async (pid: number) => {
+            const healed = db
+              .execute(sql`DROP VIEW ${schemaId}.agent_sessions`)
+              .execute();
+            await waitForBlockedBy(pid);
+            await held.release();
+            await healed;
+          },
+          cancel: async (pid: number) => {
+            const healed = db
+              .execute(sql`DROP VIEW ${schemaId}.agent_sessions`)
+              .execute();
+            await waitForBlockedBy(pid);
+            const stopped = await executeRawRows(
+              db,
+              sql`SELECT pg_cancel_backend(${pid}) AS stopped`,
+              z.object({ stopped: z.boolean() }),
+            );
+            expect(stopped).toStrictEqual([{ stopped: true }]);
+            await healed;
+            await held.release();
+          },
+        };
+      }
+
+      it.each(["completed", "failed", "cancelled"] as const)(
+        "early ACK capture failure recovers a transferred survivor: %s",
+        async (kind) => {
+          const f = await outputFixture();
+          const survivor = await outputFixture(f.orgId);
+          const queuedId = randomUUID();
+          await chat.requestSendEvent(
+            survivor.actor,
+            {
+              agentId: survivor.agentId,
+              threadId: survivor.threadId,
+              prompt: "Recover after early ownership capture fails",
+              clientEventId: queuedId,
+            },
+            [201],
+          );
+          await flushWaitUntilForTest();
+          await db
+            .update(agentRuns)
+            .set({ status: kind, completedAt: nowDate() })
+            .where(inArray(agentRuns.id, [f.runId, survivor.runId]));
+          await close(decision(f.userId));
+          const targets = await terminalCleanupTargets(f);
+          await db
+            .update(agentRunCallbacks)
+            .set({
+              payload: {
+                threadId: f.threadId,
+                agentId: f.agentId,
+                publicBrand: "okou",
+                slackDelivery: targets.slackDelivery,
+                feishuDelivery: targets.feishuDelivery,
+              },
+            })
+            .where(
+              and(
+                eq(agentRunCallbacks.runId, f.runId),
+                eq(agentRunCallbacks.internalKind, "chat"),
+              ),
+            );
+          if (kind === "failed") {
+            context.mocks.slack.assistant.threads.setStatus.mockRejectedValueOnce(
+              new Error("Synthetic Slack cleanup failure"),
+            );
+          }
+          const before = await terminalState(f);
+          const capture = await holdTerminalCapture(f);
+          const result = await createStore().set(
+            dispatchRunCallbacks$,
+            {
+              db,
+              runId: f.runId,
+              status: kind === "completed" ? "completed" : "failed",
+              error:
+                kind === "cancelled" ? "Run cancelled" : "Synthetic failure",
+            },
+            context.signal,
+          );
+          expect(result).toContainEqual(
+            expect.objectContaining({ success: true }),
+          );
+          const processing = flushWaitUntilForTest();
+          const pid = await capture.captured();
+          await db
+            .update(agentRuns)
+            .set({ chatThreadId: survivor.threadId })
+            .where(eq(agentRuns.id, f.runId));
+          await capture.cancel(pid);
+          await processing;
+          await expect(terminalState(f)).resolves.toStrictEqual(before);
+          expect(
+            context.mocks.slack.assistant.threads.setStatus,
+          ).toHaveBeenCalledWith({
+            channel_id: targets.slackDelivery.channelId,
+            thread_ts: targets.slackDelivery.threadTs,
+            status: "",
+          });
+          expect(targets.removedReactions()).toBe(1);
+          const page = await chat.listThreadEvents(
+            survivor.actor,
+            survivor.threadId,
+          );
+          const claimed = page.events.filter((event) => {
+            return (
+              event.eventType === "input.prompt" &&
+              event.revokesEventId === queuedId
+            );
+          });
+          expect(claimed).toHaveLength(1);
+          const nextRunId = claimed[0]?.runId;
+          if (!nextRunId) {
+            throw new Error(
+              "The real scheduler must create the surviving candidate",
+            );
+          }
+          await expect(
+            api.readRun(survivor.actor, nextRunId),
+          ).resolves.toMatchObject({ status: "pending" });
+        },
+      );
+
+      it.each([
+        "closed",
+        "deleted-run",
+        "deleted-thread",
+        "deleted-run-load-miss",
+        "deleted-thread-load-miss",
+        "unmapped",
+        "duplicate",
+      ] as const)(
+        "capture recovery respects a %s destination",
+        async (change) => {
+          const f = await outputFixture();
+          const queuedId = randomUUID();
+          await chat.requestSendEvent(
+            f.actor,
+            {
+              agentId: f.agentId,
+              threadId: f.threadId,
+              prompt: "Candidate owned by the surviving thread",
+              clientEventId: queuedId,
+            },
+            [201],
+          );
+          await flushWaitUntilForTest();
+          await db
+            .update(agentRuns)
+            .set({ status: "completed", completedAt: nowDate() })
+            .where(eq(agentRuns.id, f.runId));
+          if (change === "duplicate") {
+            await invokeTerminal(f, "completed");
+          }
+          if (change === "closed") {
+            await close(decision(f.userId));
+          }
+          const decoy =
+            change === "unmapped" ? await outputFixture(f.orgId) : undefined;
+          const decoyQueuedId = randomUUID();
+          if (decoy) {
+            await chat.requestSendEvent(
+              decoy.actor,
+              {
+                agentId: decoy.agentId,
+                threadId: decoy.threadId,
+                prompt: "Payload is not scheduler authority",
+                clientEventId: decoyQueuedId,
+              },
+              [201],
+            );
+            await flushWaitUntilForTest();
+            await db
+              .update(agentRuns)
+              .set({ status: "completed" })
+              .where(eq(agentRuns.id, decoy.runId));
+            await db
+              .update(agentRunCallbacks)
+              .set({
+                payload: {
+                  threadId: decoy.threadId,
+                  agentId: decoy.agentId,
+                },
+              })
+              .where(
+                and(
+                  eq(agentRunCallbacks.runId, f.runId),
+                  eq(agentRunCallbacks.internalKind, "chat"),
+                ),
+              );
+          }
+          const before = await terminalState(f);
+          const capture = await holdTerminalCapture(f);
+          await createStore().set(
+            dispatchRunCallbacks$,
+            {
+              db,
+              runId: f.runId,
+              status: "completed",
+            },
+            context.signal,
+          );
+          const processing = flushWaitUntilForTest();
+          const pid = await capture.captured();
+          if (change === "deleted-run" || change === "deleted-run-load-miss") {
+            await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
+          } else if (
+            change === "deleted-thread" ||
+            change === "deleted-thread-load-miss"
+          ) {
+            await db.delete(chatThreads).where(eq(chatThreads.id, f.threadId));
+          } else if (change === "unmapped") {
+            await db
+              .update(agentRuns)
+              .set({ chatThreadId: null })
+              .where(eq(agentRuns.id, f.runId));
+          }
+          if (change.endsWith("load-miss")) {
+            await capture.resume(pid);
+          } else {
+            await capture.cancel(pid);
+          }
+          await processing;
+          if (decoy) {
+            const decoyPage = await chat.listThreadEvents(
+              decoy.actor,
+              decoy.threadId,
+            );
+            expect(
+              decoyPage.events.filter((event) => {
+                return event.revokesEventId === decoyQueuedId;
+              }),
+            ).toHaveLength(0);
+          }
+          if (
+            change === "deleted-thread" ||
+            change === "deleted-thread-load-miss"
+          ) {
+            await chat.requestReadThread(f.actor, f.threadId, [404]);
+            await expect(
+              db
+                .select({ id: chatThreads.id })
+                .from(chatThreads)
+                .where(eq(chatThreads.id, f.threadId)),
+            ).resolves.toStrictEqual([]);
+            return;
+          }
+          const page = await chat.listThreadEvents(f.actor, f.threadId);
+          const claimed = page.events.filter((event) => {
+            return (
+              event.eventType === "input.prompt" &&
+              event.revokesEventId === queuedId
+            );
+          });
+          expect(claimed).toHaveLength(
+            change === "deleted-run" || change === "deleted-run-load-miss"
+              ? 1
+              : 0,
+          );
+          if (change === "deleted-run" || change === "deleted-run-load-miss") {
+            const runId = claimed[0]?.runId;
+            if (!runId) {
+              throw new Error("Missing recovered run");
+            }
+            await expect(api.readRun(f.actor, runId)).resolves.toMatchObject({
+              status: "pending",
+            });
+          } else {
+            await expect(terminalState(f)).resolves.toStrictEqual(before);
+          }
+        },
+      );
+
+      it.each(["completed", "failed"] as const)(
+        "plain %s capture failure clears integrations without content or scheduler work",
+        async (kind) => {
+          const f = await terminalFixture(kind);
+          const targets = await terminalCleanupTargets(f);
+          await callbackApi.registerPushSubscription(f.actor);
+          callbackApi.enableVapid();
+          mockOptionalEnv("OPENROUTER_API_KEY", "synthetic-capture-test");
+          let completions = 0;
+          callbackApi.mockOpenRouterCompletions(() => {
+            completions += 1;
+            return "No terminal preparation should reach the provider";
+          });
+          const before = await terminalState(f);
+          const capture = await holdTerminalCapture(f);
+          context.mocks.ably.publish.mockClear();
+          context.mocks.s3.send.mockClear();
+          context.mocks.webpush.sendNotification.mockClear();
+          await expect(
+            handleChatInternalCallbackWithoutCcstate(
+              capture.plainDb,
+              {
+                runId: f.runId,
+                status: kind,
+                error: "Synthetic source failure",
+                payload: {
+                  threadId: f.threadId,
+                  agentId: f.agentId,
+                  slackDelivery: targets.slackDelivery,
+                  feishuDelivery: targets.feishuDelivery,
+                },
+              },
+              context.signal,
+            ),
+          ).resolves.toStrictEqual({ success: true });
+          const processing = flushWaitUntilForTest();
+          const pid = await capture.captured();
+          await capture.cancel(pid);
+          await processing;
+          await expect(terminalState(f)).resolves.toStrictEqual(before);
+          expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+          expect(context.mocks.s3.send).not.toHaveBeenCalled();
+          expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+          expect(completions).toBe(0);
+          expect(
+            context.mocks.slack.assistant.threads.setStatus,
+          ).toHaveBeenCalledWith({
+            channel_id: targets.slackDelivery.channelId,
+            thread_ts: targets.slackDelivery.threadTs,
+            status: "",
+          });
+          expect(targets.removedReactions()).toBe(1);
+        },
+      );
+
       it("a source callback invariant failure retains the real dispatcher's recovery drain", async () => {
         const f = await outputFixture();
         const queuedId = randomUUID();
@@ -2942,6 +5110,43 @@ describe("actual compute transactions versus the B1 projector", () => {
       // Finite local observations, with no CI latency or production-throughput claim.
       process.stdout.write(`B2B2_OUTPUT_PAIR_MS ${JSON.stringify(samples)}\n`);
       expect(samples).toHaveLength(4);
+    });
+
+    it("measures bounded output diagnostic overhead on four subject layouts", async () => {
+      const f = await outputFixture();
+      const sameUserAgent = await bdd.createAgent(f.actor, {
+        displayName: "Synthetic same-user peer",
+        visibility: "public",
+      });
+      const sameUser = await outputForFixture({
+        ...f,
+        agentId: sameUserAgent.agentId,
+      });
+      const sameOrg = await outputFixture(f.orgId);
+      const unrelated = await outputFixture();
+      const samples: { layout: string; elapsedMs: number }[] = [];
+      for (const [layout, peer] of [
+        ["uncontended", undefined],
+        ["same-user", sameUser],
+        ["same-org", sameOrg],
+        ["unrelated", unrelated],
+      ] as const) {
+        for (let sample = 0; sample < 3; sample++) {
+          const sequence = 100 + samples.length * 10;
+          const start = performance.now();
+          await Promise.all([
+            sendOutput(f, sequence),
+            ...(peer ? [sendOutput(peer, sequence)] : []),
+          ]);
+          samples.push({ layout, elapsedMs: performance.now() - start });
+          // Await owned consumers outside the measured HTTP completion interval.
+          await flushWaitUntilForTest();
+        }
+      }
+      process.stdout.write(
+        `B2B2_OUTPUT_DIAGNOSTIC_MS ${JSON.stringify(samples)}\n`,
+      );
+      expect(samples).toHaveLength(12);
     });
   });
 });

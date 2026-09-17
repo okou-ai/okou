@@ -1,427 +1,197 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-# Keep these expectations aligned with balloon.rs: the controller polls every
-# 5 seconds, deflates below 192 MiB available, and inflates above 384 MiB free.
-PRESSURE_AVAILABLE_BOUNDARY_MIB=192
-PRESSURE_TARGET_AVAILABLE_MIB=128
-MAX_PRESSURE_ALLOC_MIB=512
-
-pressure_allocation_mib() {
-  local available_mib=$1
-  local allocation_mib=$(( available_mib - PRESSURE_TARGET_AVAILABLE_MIB ))
-
-  if [ "$allocation_mib" -gt "$MAX_PRESSURE_ALLOC_MIB" ]; then
-    allocation_mib=$MAX_PRESSURE_ALLOC_MIB
-  fi
-  if [ $(( available_mib - allocation_mib )) -ge "$PRESSURE_AVAILABLE_BOUNDARY_MIB" ]; then
-    return 1
-  fi
-
-  printf '%s\n' "$allocation_mib"
-}
-
-if [ "${BASH_SOURCE[0]}" != "$0" ]; then
-  return 0
-fi
-
-BIN_DIR=$1; JOB_REF=$2
+BIN_DIR=$1
+JOB_REF=$2
 RUNNER_DIR="/var/lib/vm0-runner/runners/${JOB_REF}-balloon"
 SVC="${JOB_REF}-balloon"
 GROUP="vm0/balloon-${JOB_REF}"
+CHAT_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 SUBMIT_PID=""
 ALLOC_PID=""
+API_SOCK=""
+FIRECRACKER_PID=""
 
 fail() {
   echo "FAIL: $1"
-  echo "--- Diagnostics ---"
-  echo "Balloon stats:"
-  sudo curl -sf --unix-socket "$API_SOCK" http://localhost/balloon/statistics 2>/dev/null \
-    | jq . 2>/dev/null || echo "(unavailable)"
-  echo "Host dmesg (last 10 lines):"
-  sudo dmesg | tail -10 2>/dev/null || true
+  sudo curl -sf --max-time 3 --unix-socket "$API_SOCK" \
+    http://localhost/balloon/statistics | jq . || true
   exit 1
 }
 
 cleanup() {
-  echo "--- Cleanup ---"
-  if [ -n "$ALLOC_PID" ]; then
-    kill "$ALLOC_PID" 2>/dev/null || true
-  fi
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force || true
-  if [ -n "$ALLOC_PID" ]; then
-    wait "$ALLOC_PID" 2>/dev/null || true
-  fi
-  if [ -n "$SUBMIT_PID" ]; then
-    kill "$SUBMIT_PID" 2>/dev/null || true
-    wait "$SUBMIT_PID" 2>/dev/null || true
-  fi
+  for pid in "$ALLOC_PID" "$SUBMIT_PID"; do
+    if [ -n "$pid" ]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
 }
 trap cleanup EXIT
 
-# Clean up any residual transient unit from a previous CI run.
-# stop() returns Ok when no service exists, so any non-zero exit is
-# a real cleanup failure.
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force \
   || fail "failed to stop residual balloon service"
-
-# Start transient runner service
-echo "--- Starting runner ---"
 sudo "$BIN_DIR/runner" service start --name "$SVC" \
-  --config "$RUNNER_DIR/runner.yaml" --local --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
+  --config "$RUNNER_DIR/runner.yaml" --local \
+  --env USE_MOCK_CLAUDE=true --env USE_MOCK_CODEX=true \
   || fail "failed to start balloon service"
 
-# Submit a long-running job in background (keeps sandbox alive during tests)
-echo "--- Submitting long-running job ---"
-sudo "$BIN_DIR/runner" local submit --group "$GROUP" --prompt 'sleep 360 && echo done' &
-SUBMIT_PID=$!
-
-# Helper: fail fast if the keepalive job exits before the balloon
-# assertions finish. Otherwise a dead sandbox can look like
-# actual_mib=0 and produce misleading follow-on failures.
 ensure_submit_running() {
   if ! kill -0 "$SUBMIT_PID" 2>/dev/null; then
     wait "$SUBMIT_PID" 2>/dev/null || true
     SUBMIT_PID=""
-    fail "keepalive submit exited before balloon test completed"
+    fail "keepalive job exited before assertions completed"
   fi
 }
 
-# Wait for sandbox control socket. Socket and api.sock paths use
-# sandbox_id (distinct from run_id after #9552). `runner exec`
-# resolves its CLI arg against sandbox_id sock dirs, so SANDBOX_ID
-# is what we need here.
-echo "--- Waiting for sandbox control socket ---"
-for _ in $(seq 1 60); do
-  ensure_submit_running
-  SANDBOX_ID=$(sudo jq -r '.active_runs[0].sandbox_id // empty' \
-    "$RUNNER_DIR/status.json" 2>/dev/null)
-  [ -n "$SANDBOX_ID" ] && [ -S "/run/vm0/sock/$SANDBOX_ID/control.sock" ] && break
+start_turn() {
+  local prompt=$1
+  sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+    --chat-thread-id "$CHAT_THREAD_ID" --prompt "$prompt" &
+  SUBMIT_PID=$!
+  local deadline=$(( SECONDS + 60 ))
   SANDBOX_ID=""
-  sleep 1
-done
-[ -z "$SANDBOX_ID" ] && fail "control socket not found after 60s"
-echo "Found sandbox: $SANDBOX_ID"
-
-API_SOCK="/run/vm0/sock/$SANDBOX_ID/api.sock"
-
-# The retired controller physically relieved at most its 256 MiB free-memory
-# deficit. A larger physical drop distinguishes full relief without requiring
-# an external poll to observe the transient target-zero interval.
-RETIRED_PARTIAL_RELIEF_MAX_MIB=256
-DEFLATE_POLL_SECONDS=2
-DEFLATE_TIMEOUT_SECONDS=60
-PRESSURE_EXEC_TIMEOUT_SECONDS=$(( DEFLATE_TIMEOUT_SECONDS + 30 ))
-PRESSURE_HOLD_SECONDS=$(( PRESSURE_EXEC_TIMEOUT_SECONDS + 30 ))
-INFLATE_FREE_BOUNDARY_MIB=384
-CONTROLLER_OBSERVATION_SECONDS=12
-RECOVERY_POLL_SECONDS=2
-RECOVERY_TIMEOUT_SECONDS=60
-
-# Helper: read current balloon actual_mib (returns 0 if VM is dead)
-balloon_mib() {
-  local val
-  val=$(sudo curl -sf --unix-socket "$API_SOCK" http://localhost/balloon/statistics \
-    | jq -r '.actual_mib // 0' 2>/dev/null)
-  echo "${val:-0}"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    ensure_submit_running
+    # Preparing entries may still refer to a paused reuse candidate.
+    SANDBOX_ID=$(sudo jq -r '.active_runs[] | select(.phase == "running") | .sandbox_id' \
+      "$RUNNER_DIR/status.json" 2>/dev/null) || true
+    if [ -n "$SANDBOX_ID" ] && [ -S "/run/vm0/sock/$SANDBOX_ID/control.sock" ]; then
+      API_SOCK="/run/vm0/sock/$SANDBOX_ID/api.sock"
+      FIRECRACKER_PID=$(sudo ps -ww -C firecracker -o pid=,args= | awk -v socket="$API_SOCK" '
+        { for (i = 2; i < NF; i++) if ($i == "--api-sock" && $(i + 1) == socket) { print $1; break } }')
+      [[ "$FIRECRACKER_PID" =~ ^[0-9]+$ ]] \
+        || fail "expected exactly one Firecracker process for the active sandbox"
+      return
+    fi
+    sleep 1
+  done
+  fail "running sandbox control socket unavailable"
 }
 
-# Helper: read a validated target/actual/free-memory snapshot from one
-# Firecracker response. The controller also truncates free_memory to MiB.
-balloon_snapshot() {
-  sudo curl -sf --unix-socket "$API_SOCK" http://localhost/balloon/statistics \
-    | jq -er '
-      [.target_mib, .actual_mib, .free_memory] as $values
-      | select(all($values[]; type == "number" and . >= 0 and . == floor))
-      | [
-          $values[0],
-          $values[1],
-          ($values[2] / 1048576 | floor)
-        ]
-      | @tsv
-    ' 2>/dev/null
+snapshot() {
+  sudo curl -fsS --max-time 3 --unix-socket "$API_SOCK" \
+    http://localhost/balloon/statistics | jq -er '
+      [.target_pages, .actual_pages] as $v
+      | select(all($v[]; type == "number" and . >= 0 and . == floor))
+      | $v | @tsv'
 }
 
-# Helper: read the controller state and inputs needed during the pressure
-# assertion from one Firecracker response. available_memory is reported in
-# bytes.
-pressure_snapshot() {
-  sudo curl -sf --unix-socket "$API_SOCK" http://localhost/balloon/statistics \
-    | jq -er '
-      [.target_mib, .actual_mib, .available_memory] as $values
-      | select(all($values[]; type == "number" and . >= 0 and . == floor))
-      | [
-          $values[0],
-          $values[1],
-          ($values[2] / 1048576 | floor)
-        ]
-      | @tsv
-    ' 2>/dev/null
+rss_kib() {
+  sudo awk '/^VmRSS:/ { print $2; found=1 } END { if (!found) exit 1 }' \
+    "/proc/$FIRECRACKER_PID/status"
 }
 
-# Helper: read guest MemAvailable in kB.
-guest_avail_kb() {
-  local output
-  local val
-  output=$(sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- grep MemAvailable /proc/meminfo 2>/dev/null) || return 1
-  val=$(printf '%s\n' "$output" | awk '/^MemAvailable:/ { print $2; exit }')
-  case "$val" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  echo "$val"
+assert_active_capacity() {
+  local deadline=$(( SECONDS + 12 ))
+  local target actual sample
+  # Cover more than two former controller intervals under each live condition.
+  # Running means actual memory is already returned; do not wait away a defect.
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    ensure_submit_running
+    sample=$(snapshot) || fail "balloon statistics unavailable"
+    IFS=$'\t' read -r target actual <<< "$sample"
+    [[ "$target" -eq 0 && "$actual" -eq 0 ]] \
+      || fail "active capacity changed: target=$target actual=$actual"
+    sleep 2
+  done
 }
 
-# Helper: check if VM is still alive
-vm_alive() {
-  sudo curl -sf --unix-socket "$API_SOCK" http://localhost/ >/dev/null 2>&1
+finish_turn() {
+  sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 5 -- \
+    touch /tmp/balloon-test-finish || fail "failed to release keepalive"
+  wait "$SUBMIT_PID" || fail "keepalive job failed"
+  SUBMIT_PID=""
 }
 
-# Test 1: idle inflate — balloon controller gradually reclaims idle guest memory
-# With per-tick cap (256 MiB), balloon inflates over multiple ticks.
-echo "--- Test 1: balloon idle inflate ---"
-ACTUAL=0
-for _ in $(seq 1 30); do
-  ensure_submit_running
-  ACTUAL=$(balloon_mib)
-  [ "${ACTUAL:-0}" -gt 0 ] && break
-  sleep 1
-done
-[ "$ACTUAL" -gt 0 ] || fail "balloon did not inflate: actual_mib=$ACTUAL"
-echo "PASS: balloon idle inflate (actual_mib=$ACTUAL)"
+KEEPALIVE='for i in {1..180}; do test ! -f /tmp/balloon-test-finish || exit 0; sleep 1; done; exit 1'
+# Read the real kernel accounting in the first tool command, before any sleep.
+# A missing counter or any held balloon page fails the submitted job itself.
+FIRST_MEMORY="uname -r; awk '/^(MemTotal|MemFree|MemAvailable|Balloon):/ { print } /^Balloon:/ { seen=1; if (\$2 != 0) exit 1 } END { if (!seen) exit 1 }' /proc/meminfo || exit 1"
+start_turn "$FIRST_MEMORY; touch /tmp/balloon-test-marker; $KEEPALIVE"
+FIRST_SANDBOX_ID=$SANDBOX_ID
+sudo curl -fsS --max-time 3 --unix-socket "$API_SOCK" http://localhost/balloon \
+  | jq -e '.free_page_reporting == true and .deflate_on_oom == true' \
+  || fail "reporting and OOM deflation must stay enabled"
+assert_active_capacity
+echo "PASS: active idle Guest retains configured capacity with reporting enabled"
 
-# Wait for balloon to stabilize (enters hysteresis band)
-echo "--- Waiting for balloon to stabilize ---"
-PREV=0
-STABLE_COUNT=0
-STABLE_TARGET=""
-for _ in $(seq 1 30); do
-  ensure_submit_running
-  vm_alive || fail "VM exited during balloon stabilization"
-  if ! SNAPSHOT=$(balloon_snapshot); then
-    fail "failed to read valid balloon stabilization statistics"
-  fi
-  IFS=$'\t' read -r STABLE_TARGET ACTUAL _ <<< "$SNAPSHOT"
-  if [ "$STABLE_TARGET" -eq "$ACTUAL" ] \
-    && [ "$ACTUAL" -eq "$PREV" ] \
-    && [ "$ACTUAL" -gt 0 ]; then
-    STABLE_COUNT=$((STABLE_COUNT + 1))
-    [ "$STABLE_COUNT" -ge 2 ] && break
-  else
-    STABLE_COUNT=0
-  fi
-  PREV=$ACTUAL
-  sleep 3
-done
-[ "$STABLE_COUNT" -ge 2 ] \
-  || fail "balloon target and actual did not stabilize before pressure: target=${STABLE_TARGET:-unknown}MiB actual=${ACTUAL:-unknown}MiB"
-INFLATE_MIB=$ACTUAL
-[ "$INFLATE_MIB" -gt 0 ] || fail "balloon stabilized at zero; VM may have exited"
-[ "$INFLATE_MIB" -gt "$RETIRED_PARTIAL_RELIEF_MAX_MIB" ] \
-  || fail "balloon stabilized too low to distinguish full from retired partial relief: actual=${INFLATE_MIB}MiB required_above=${RETIRED_PARTIAL_RELIEF_MAX_MIB}MiB"
-echo "Balloon target and actual stabilized at ${INFLATE_MIB} MiB"
-
-# Verify guest-side: MemAvailable decreased
-ensure_submit_running
-AVAIL=$(guest_avail_kb) || fail "failed to read guest MemAvailable"
-[ "$AVAIL" -gt 0 ] || fail "guest MemAvailable unavailable"
-[ "$AVAIL" -lt 1536000 ] || fail "MemAvailable too high after balloon: ${AVAIL}kB (expected < 1536000kB)"
-echo "PASS: guest MemAvailable reduced (${AVAIL}kB)"
-
-# Test 2: deflate under memory pressure — allocate anonymous memory
-# in the guest to push available below deflate threshold (192 MiB).
-# Scale the allocator down when the idle balloon state already leaves
-# limited guest headroom; otherwise the allocator can starve the
-# keepalive job and mask the assertion as "cancelled by user".
-# Trailing `# BALLOON_ALLOC_MARKER` is a unique string pkill can
-# match on to terminate the guest-side allocator below.
-echo "--- Test 2: balloon deflate under memory pressure ---"
-PRESSURE_TARGET_AVAILABLE_KB=$(( PRESSURE_TARGET_AVAILABLE_MIB * 1024 ))
-ensure_submit_running
-PRE_PRESSURE_AVAIL_KB=$(guest_avail_kb) || fail "failed to read guest MemAvailable before pressure allocation"
-if [ "$PRE_PRESSURE_AVAIL_KB" -le "$PRESSURE_TARGET_AVAILABLE_KB" ]; then
-  fail "guest MemAvailable too low before pressure allocation: ${PRE_PRESSURE_AVAIL_KB}kB (need > ${PRESSURE_TARGET_AVAILABLE_KB}kB)"
-fi
-PRE_PRESSURE_AVAIL_MIB=$(( PRE_PRESSURE_AVAIL_KB / 1024 ))
-if ! PRESSURE_ALLOC_MIB=$(pressure_allocation_mib "$PRE_PRESSURE_AVAIL_MIB"); then
-  PROJECTED_AVAILABLE_MIB=$(( PRE_PRESSURE_AVAIL_MIB - MAX_PRESSURE_ALLOC_MIB ))
-  fail "maximum pressure allocation cannot cross controller boundary: available=${PRE_PRESSURE_AVAIL_MIB}MiB cap=${MAX_PRESSURE_ALLOC_MIB}MiB projected=${PROJECTED_AVAILABLE_MIB}MiB boundary=${PRESSURE_AVAILABLE_BOUNDARY_MIB}MiB"
-fi
-[ "$PRESSURE_ALLOC_MIB" -gt 0 ] || fail "pressure allocation would be zero: ${PRE_PRESSURE_AVAIL_KB}kB available"
-echo "Pre-pressure guest MemAvailable: ${PRE_PRESSURE_AVAIL_KB}kB; allocating ${PRESSURE_ALLOC_MIB}MiB"
-sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" \
-  --timeout "$PRESSURE_EXEC_TIMEOUT_SECONDS" -- \
-  python3 -c "import ctypes,time; b=bytearray(${PRESSURE_ALLOC_MIB}*1024*1024); ctypes.memset((ctypes.c_char*len(b)).from_buffer(b),1,len(b)); time.sleep(${PRESSURE_HOLD_SECONDS})  # BALLOON_ALLOC_MARKER" &
+# Touch real anonymous pages, retain them while observing policy, then release.
+sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 60 -- \
+  python3 -c '
+import pathlib, time
+data = bytearray(512 * 1024 * 1024)
+for offset in range(0, len(data), 4096):
+    data[offset] = 1
+pathlib.Path("/tmp/balloon-alloc-ready").touch()
+deadline = time.monotonic() + 45
+while not pathlib.Path("/tmp/balloon-alloc-release").exists():
+    if time.monotonic() >= deadline:
+        raise TimeoutError("host did not release bounded allocation")
+    time.sleep(0.1)
+assert sum(data[::4096]) == len(data) // 4096
+' &
 ALLOC_PID=$!
-
-# Wait for physical balloon memory to return beyond the retired controller's
-# maximum partial-relief decrement. This durable outcome remains observable
-# even when the polling client misses the transient target-zero interval.
-DEFLATED=0
-MIN_PRESSURE_ACTUAL_MIB=$INFLATE_MIB
-FULL_RELIEF_ACTUAL_THRESHOLD_MIB=$(( INFLATE_MIB - RETIRED_PARTIAL_RELIEF_MAX_MIB ))
-LAST_PRESSURE_TARGET_MIB=""
-LAST_AVAILABLE_MIB=""
-DEFLATE_DEADLINE=$(( SECONDS + DEFLATE_TIMEOUT_SECONDS ))
-while [ "$SECONDS" -lt "$DEFLATE_DEADLINE" ]; do
-  ensure_submit_running
-  vm_alive || fail "VM exited during balloon deflate test"
-
-  if ! kill -0 "$ALLOC_PID" 2>/dev/null; then
-    if wait "$ALLOC_PID"; then
-      ALLOC_STATUS=0
-    else
-      ALLOC_STATUS=$?
-    fi
-    ALLOC_PID=""
-    fail "pressure allocator exec exited before balloon deflated: status=$ALLOC_STATUS"
-  fi
-
-  if ! SNAPSHOT=$(pressure_snapshot); then
-    fail "failed to read valid balloon pressure statistics"
-  fi
-  IFS=$'\t' read -r LAST_PRESSURE_TARGET_MIB ACTUAL LAST_AVAILABLE_MIB <<< "$SNAPSHOT"
-  echo "Pressure snapshot: target=${LAST_PRESSURE_TARGET_MIB}MiB actual=${ACTUAL}MiB available=${LAST_AVAILABLE_MIB}MiB"
-
-  if [ "$ACTUAL" -lt "$MIN_PRESSURE_ACTUAL_MIB" ]; then
-    MIN_PRESSURE_ACTUAL_MIB=$ACTUAL
-  fi
-  if [ "$MIN_PRESSURE_ACTUAL_MIB" -lt "$FULL_RELIEF_ACTUAL_THRESHOLD_MIB" ]; then
-    DEFLATED=1
+for _ in $(seq 1 20); do
+  kill -0 "$ALLOC_PID" 2>/dev/null || fail "allocator exited before readiness"
+  if sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 3 -- \
+    test -f /tmp/balloon-alloc-ready; then
     break
   fi
-  sleep "$DEFLATE_POLL_SECONDS"
+  sleep 1
 done
-if [ "$DEFLATED" -ne 1 ]; then
-  fail "balloon physical relief did not exceed retired partial bound: initial=${INFLATE_MIB}MiB min_actual=${MIN_PRESSURE_ACTUAL_MIB}MiB required_below=${FULL_RELIEF_ACTUAL_THRESHOLD_MIB}MiB target=${LAST_PRESSURE_TARGET_MIB:-unknown}MiB available=${LAST_AVAILABLE_MIB:-unknown}MiB"
-fi
-DEFLATE_TARGET_MIB=$LAST_PRESSURE_TARGET_MIB
-DEFLATE_MIB=$MIN_PRESSURE_ACTUAL_MIB
-echo "PASS: balloon physically deflated beyond retired partial bound from ${INFLATE_MIB} to ${DEFLATE_MIB} MiB (current_target=${DEFLATE_TARGET_MIB}MiB available=${LAST_AVAILABLE_MIB}MiB)"
-
-# Test 3: re-inflate after pressure released — kill the host-side
-# exec first (prevents further output), then kill the guest-side
-# allocator. The host kill does NOT propagate to the guest process
-# because guest-control-server spawns it independently.
-echo "--- Test 3: balloon re-inflate after pressure release ---"
-kill "$ALLOC_PID" 2>/dev/null || true
-wait "$ALLOC_PID" 2>/dev/null || true
+sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 3 -- \
+  test -f /tmp/balloon-alloc-ready || fail "allocator did not become ready"
+assert_active_capacity
+allocated_rss=$(rss_kib) || fail "allocated Guest RSS unavailable"
+sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" --timeout 5 -- \
+  touch /tmp/balloon-alloc-release || fail "failed to release allocator"
+wait "$ALLOC_PID" || fail "bounded allocation failed"
 ALLOC_PID=""
+assert_active_capacity
+echo "PASS: allocation and release retain active capacity"
 
-# Verify VM survived the memory pressure test
-vm_alive || fail "VM crashed during memory pressure test"
-
-# Kill guest-side allocator — Test 2 passing means the controller has
-# already returned memory to the guest, enough for pkill exec.
-sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- pkill -f '[B]ALLOON_ALLOC_MARKER' 2>/dev/null || true
-
-# A failed runner exec must not masquerade as allocator absence, so probe
-# through a guest command that reports state while always exiting successfully.
-ALLOCATOR_STOPPED=0
-for _ in $(seq 1 5); do
-  if ! ALLOCATOR_STATE=$(sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- \
-    sh -c 'pgrep -f "[B]ALLOON_ALLOC_MARKER" >/dev/null; status=$?; if [ "$status" -eq 0 ]; then printf "running\n"; elif [ "$status" -eq 1 ]; then printf "stopped\n"; else exit "$status"; fi' \
-    2>/dev/null); then
-    fail "failed to verify guest pressure allocator state"
-  fi
-  case "$ALLOCATOR_STATE" in
-    stopped)
-      ALLOCATOR_STOPPED=1
-      break
-      ;;
-    running)
-      sleep 1
-      ;;
-    *)
-      fail "unexpected guest pressure allocator state: $ALLOCATOR_STATE"
-      ;;
-  esac
-done
-[ "$ALLOCATOR_STOPPED" -eq 1 ] || fail "guest pressure allocator remained running"
-
-# Accept either realized re-inflation from the lowest state observed across the
-# pressure-to-recovery transition or a stable state inside the controller's
-# hysteresis band. Both sides must persist for a complete observation window so
-# a single boundary crossing cannot determine the result.
-RECOVERY_DEADLINE=$(( SECONDS + RECOVERY_TIMEOUT_SECONDS ))
-HIGH_FREE_SINCE=""
-LOW_FREE_SINCE=""
-TARGET_RAISED=0
-RECOVERY_RESULT=""
-# Test 2 may miss target zero, so initialize recovery only from observed state.
-MIN_TARGET_MIB=$DEFLATE_TARGET_MIB
-MIN_ACTUAL_MIB=$DEFLATE_MIB
-LAST_TARGET=$DEFLATE_TARGET_MIB
-LAST_ACTUAL=$DEFLATE_MIB
-LAST_FREE_MIB=""
-while [ "$SECONDS" -lt "$RECOVERY_DEADLINE" ]; do
+# Verify real host backing return while the workload remains active. A partial
+# 256-MiB drop leaves room for Guest/runtime cache; zero target alone proves no
+# reclamation, and reporting does not promise to return every free page at once.
+deadline=$(( SECONDS + 30 ))
+while true; do
   ensure_submit_running
-  vm_alive || fail "VM exited during balloon re-inflate test"
-
-  if ! SNAPSHOT=$(balloon_snapshot); then
-    fail "failed to read valid balloon recovery statistics"
-  fi
-  IFS=$'\t' read -r LAST_TARGET LAST_ACTUAL LAST_FREE_MIB <<< "$SNAPSHOT"
-  echo "Recovery snapshot: target=${LAST_TARGET}MiB actual=${LAST_ACTUAL}MiB free=${LAST_FREE_MIB}MiB"
-
-  if [ "$LAST_TARGET" -lt "$MIN_TARGET_MIB" ]; then
-    MIN_TARGET_MIB=$LAST_TARGET
-  fi
-  if [ "$LAST_ACTUAL" -lt "$MIN_ACTUAL_MIB" ]; then
-    MIN_ACTUAL_MIB=$LAST_ACTUAL
-  fi
-
-  if [ "$LAST_TARGET" -gt "$MIN_TARGET_MIB" ]; then
-    TARGET_RAISED=1
-  fi
-  if [ "$LAST_ACTUAL" -gt "$MIN_ACTUAL_MIB" ]; then
-    RECOVERY_RESULT="re-inflated"
+  sample=$(snapshot) || fail "balloon statistics unavailable during reporting"
+  IFS=$'\t' read -r target actual <<< "$sample"
+  [[ "$target" -eq 0 && "$actual" -eq 0 ]] \
+    || fail "runtime reclamation used inflation: target=$target actual=$actual"
+  reported_rss=$(rss_kib) || fail "released Guest RSS unavailable"
+  if [ "$((allocated_rss - reported_rss))" -ge "$((256 * 1024))" ]; then
     break
   fi
-
-  NOW=$SECONDS
-  if [ "$LAST_FREE_MIB" -gt "$INFLATE_FREE_BOUNDARY_MIB" ]; then
-    LOW_FREE_SINCE=""
-    if [ -z "$HIGH_FREE_SINCE" ]; then
-      HIGH_FREE_SINCE=$NOW
-    fi
-    if [ "$TARGET_RAISED" -eq 0 ] \
-      && [ $(( NOW - HIGH_FREE_SINCE )) -ge "$CONTROLLER_OBSERVATION_SECONDS" ]; then
-      fail "balloon controller did not respond above inflate boundary: target=${LAST_TARGET}MiB actual=${LAST_ACTUAL}MiB min_target=${MIN_TARGET_MIB}MiB min_actual=${MIN_ACTUAL_MIB}MiB free=${LAST_FREE_MIB}MiB boundary=${INFLATE_FREE_BOUNDARY_MIB}MiB"
-    fi
-  else
-    HIGH_FREE_SINCE=""
-    if [ -z "$LOW_FREE_SINCE" ]; then
-      LOW_FREE_SINCE=$NOW
-    fi
-    if [ $(( NOW - LOW_FREE_SINCE )) -ge "$CONTROLLER_OBSERVATION_SECONDS" ] \
-      && [ "$LAST_TARGET" -eq "$LAST_ACTUAL" ]; then
-      RECOVERY_RESULT="hysteresis-settled"
-      break
-    fi
-  fi
-
-  sleep "$RECOVERY_POLL_SECONDS"
+  [ "$SECONDS" -lt "$deadline" ] \
+    || fail "free-page reporting did not return backing: before=${allocated_rss}KiB after=${reported_rss}KiB"
+  sleep 2
 done
+echo "PASS: running Guest returned backing (${allocated_rss}KiB -> ${reported_rss}KiB)"
 
-case "$RECOVERY_RESULT" in
-  re-inflated)
-    echo "PASS: balloon re-inflated from observed minimum ${MIN_ACTUAL_MIB} to ${LAST_ACTUAL} MiB (pressure_deflated=${DEFLATE_MIB}MiB target=${LAST_TARGET}MiB min_target=${MIN_TARGET_MIB}MiB free=${LAST_FREE_MIB}MiB)"
-    ;;
-  hysteresis-settled)
-    echo "PASS: balloon settled inside inflate hysteresis (pressure_deflated=${DEFLATE_MIB}MiB target=${LAST_TARGET}MiB actual=${LAST_ACTUAL}MiB min_target=${MIN_TARGET_MIB}MiB min_actual=${MIN_ACTUAL_MIB}MiB free=${LAST_FREE_MIB}MiB boundary=${INFLATE_FREE_BOUNDARY_MIB}MiB)"
-    ;;
-  *)
-    if [ "$TARGET_RAISED" -eq 1 ]; then
-      fail "balloon target increase was not realized before timeout: pressure_deflated=${DEFLATE_MIB}MiB target=${LAST_TARGET}MiB actual=${LAST_ACTUAL}MiB min_target=${MIN_TARGET_MIB}MiB min_actual=${MIN_ACTUAL_MIB}MiB free=${LAST_FREE_MIB:-unknown}MiB"
-    fi
-    fail "balloon recovery did not reach a stable outcome: pressure_deflated=${DEFLATE_MIB}MiB target=${LAST_TARGET}MiB actual=${LAST_ACTUAL}MiB min_target=${MIN_TARGET_MIB}MiB min_actual=${MIN_ACTUAL_MIB}MiB free=${LAST_FREE_MIB:-unknown}MiB"
-    ;;
-esac
+finish_turn
+deadline=$(( SECONDS + 30 ))
+while ! sudo jq -e --arg id "$SANDBOX_ID" \
+  'any(.idle_sandboxes[]?; .sandbox_id == $id)' "$RUNNER_DIR/status.json" >/dev/null; do
+  [ "$SECONDS" -lt "$deadline" ] || fail "sandbox was not retained for reuse"
+  sleep 1
+done
+sudo curl -fsS --max-time 3 --unix-socket "$API_SOCK" http://localhost/ \
+  | jq -e '.state == "Paused"' || fail "parked Guest vCPUs are not paused"
+IFS=$'\t' read -r target actual <<< "$(snapshot)"
+[[ "$target" -eq $((3072 * 256)) && "$actual" -gt 0 ]] \
+  || fail "default-profile park did not reclaim: target=$target actual=$actual"
+echo "PASS: used sandbox park still requests bounded reclamation and pauses vCPUs"
 
-# Stop transient service
+start_turn "$FIRST_MEMORY; test -f /tmp/balloon-test-marker || exit 1; rm /tmp/balloon-test-finish || exit 1; $KEEPALIVE"
+[ "$SANDBOX_ID" = "$FIRST_SANDBOX_ID" ] || fail "second turn did not reuse sandbox"
+assert_active_capacity
+finish_turn
+echo "PASS: reused Guest returns to active capacity"
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force \
   || fail "failed to stop balloon service"
-kill "$SUBMIT_PID" 2>/dev/null || true
-wait "$SUBMIT_PID" 2>/dev/null || true
 trap - EXIT
-
 echo "=== Balloon test passed ==="
