@@ -110,6 +110,7 @@ import { mailRoutes } from "./routes/mail";
 import { mapsRoutes } from "./routes/maps";
 import { mcpConnectorsRoutes } from "./routes/mcp-connectors";
 import { mcpOAuthClientMetadataRoutes } from "./routes/mcp-oauth-client-metadata";
+import { morningBriefPreviewGithubCollectionRoutes } from "./routes/morning-brief-preview-github-collection";
 import { weatherRoutes } from "./routes/weather";
 import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
@@ -323,6 +324,9 @@ export const ROUTES: readonly RouteEntry[] = [
   ...mapsRoutes,
   ...mcpConnectorsRoutes,
   ...mcpOAuthClientMetadataRoutes,
+  // Registered here so the protected preview has real application ingress. It
+  // is 404 in production: the environment gate runs before authentication.
+  ...morningBriefPreviewGithubCollectionRoutes,
   ...weatherRoutes,
   ...scrapeRoutes,
   ...peopleSearchRoutes,

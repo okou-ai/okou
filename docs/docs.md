@@ -59,6 +59,9 @@ surface; the index does not replace their detailed rules.
 - [Morning Brief migration state](./morning-brief-migration-state.md): the
   canonical reader for a member's existing brief, its ownership and thread
   invariants, and the boundary the `simple-morning-brief` cutover must respect.
+- [Morning Brief GitHub collection](./morning-brief-github-collection.md): the
+  protected preview entrypoint, live connector authorization, GitHub branch
+  semantics, budgets, and coverage/failure classification.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload

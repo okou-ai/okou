@@ -1000,9 +1000,38 @@ const connectors = [
         scopes: ["repo", "project", "workflow"],
       }),
     ],
-    firewall: generatedFirewall([
-      bearerApi("https://api.github.com", "GITHUB_TOKEN"),
-    ]),
+    firewall: generatedFirewall(
+      [
+        // The read routes Morning Brief's GitHub priorities collector needs,
+        // each behind its own permission so a test can allow one branch and
+        // deny another.
+        bearerApi("https://api.github.com", "GITHUB_TOKEN", [
+          { name: "user:read", rules: ["GET /user"] },
+          { name: "notifications:read", rules: ["GET /notifications"] },
+          { name: "search:read", rules: ["GET /search/issues"] },
+          {
+            name: "pull_requests:read",
+            rules: ["GET /repos/{owner}/{repo}/pulls/{pull_number}"],
+          },
+          {
+            name: "checks:read",
+            rules: [
+              "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
+              "GET /repos/{owner}/{repo}/commits/{ref}/status",
+            ],
+          },
+        ]),
+      ],
+      {
+        defaultAllowed: [
+          "user:read",
+          "notifications:read",
+          "search:read",
+          "pull_requests:read",
+          "checks:read",
+        ],
+      },
+    ),
   }),
   connector({
     connectorSlug: "gitlab",
