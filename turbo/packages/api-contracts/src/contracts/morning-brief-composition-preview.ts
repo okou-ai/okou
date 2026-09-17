@@ -80,7 +80,10 @@ const compositionResultSchema = z.object({
       source: morningBriefCompositionSourceSchema,
       connectionId: z.string().nullable(),
       accountRef: z.string().nullable(),
+      /** Digested from the permissions the read was actually admitted under. */
       scopeDigest: z.string(),
+      /** One endpoint per exercised permission, so a later check can re-ask. */
+      endpoints: z.array(z.string()),
       membershipId: z.string(),
       agentId: z.string(),
       capturedAt: z.string().datetime(),
@@ -110,6 +113,10 @@ const composeResponseSchema = z.discriminatedUnion("result", [
     result: z.literal("incomplete"),
     reason: z.enum([
       "language-context-unavailable",
+      /**
+       * The retained proof could not be represented inside its declared bounds,
+       * or a supplied source could not prove the authority it was read under.
+       */
       "retained-authority-unbounded",
       "no-item-fits",
     ]),

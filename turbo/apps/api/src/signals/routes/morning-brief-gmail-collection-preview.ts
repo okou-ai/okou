@@ -8,7 +8,10 @@ import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { admitMorningBriefCollection } from "../services/morning-brief-connector-reader.service";
+import {
+  admitMorningBriefCollection,
+  freezeMorningBriefSourceSelection,
+} from "../services/morning-brief-connector-reader.service";
 import { collectMorningBriefGmail } from "../services/morning-brief-gmail-collection.service";
 import {
   isTestEndpointAllowed,
@@ -70,8 +73,15 @@ const collectGmailInner$ = command(
         `Morning Brief Gmail preview is unavailable: ${admission.reason}`,
       );
     }
+    // One source, so admission is also the moment its account choice freezes.
+    const authority = await freezeMorningBriefSourceSelection(
+      db,
+      admission.scope,
+      "gmail",
+    );
+    signal.throwIfAborted();
     const collection = await collectMorningBriefGmail(
-      { db, clerk: get(clerk$), scope: admission.scope },
+      { db, clerk: get(clerk$), scope: admission.scope, authority },
       signal,
     );
     signal.throwIfAborted();

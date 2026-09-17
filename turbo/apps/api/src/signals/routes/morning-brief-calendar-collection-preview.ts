@@ -9,7 +9,10 @@ import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { collectMorningBriefCalendar } from "../services/morning-brief-calendar-collection.service";
-import { admitMorningBriefCollection } from "../services/morning-brief-connector-reader.service";
+import {
+  admitMorningBriefCollection,
+  freezeMorningBriefSourceSelection,
+} from "../services/morning-brief-connector-reader.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -73,8 +76,15 @@ const collectCalendarInner$ = command(
         `Morning Brief calendar preview is unavailable: ${admission.reason}`,
       );
     }
+    // One source, so admission is also the moment its account choice freezes.
+    const authority = await freezeMorningBriefSourceSelection(
+      db,
+      admission.scope,
+      "google-calendar",
+    );
+    signal.throwIfAborted();
     const collection = await collectMorningBriefCalendar(
-      { db, clerk: get(clerk$), scope: admission.scope },
+      { db, clerk: get(clerk$), scope: admission.scope, authority },
       signal,
     );
     signal.throwIfAborted();

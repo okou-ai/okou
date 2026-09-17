@@ -15,6 +15,7 @@ import type { Db } from "../external/db";
 import {
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceAuthorityLedger,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
 } from "./morning-brief-connector-reader.service";
@@ -782,6 +783,8 @@ export async function collectMorningBriefGmail(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
+    /** The account choice frozen for this attempt, and this read's proof. */
+    readonly authority: MorningBriefSourceAuthorityLedger;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefGmailCollection> {
@@ -816,6 +819,7 @@ export async function collectMorningBriefGmail(
       },
       db: args.db,
       clerk: args.clerk,
+      authority: args.authority,
     },
     async (reader) => {
       const recent = await collectBranchCandidates(

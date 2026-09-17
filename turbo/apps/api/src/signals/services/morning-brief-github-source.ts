@@ -17,7 +17,8 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 
 import {
-  morningBriefScopeDigest,
+  morningBriefProvenAuthority,
+  type MorningBriefSourceAuthorityProof,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
 import type {
@@ -26,13 +27,6 @@ import type {
   MorningBriefSourceItem,
   MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
-
-/** The GitHub authorization surface a Morning Brief read exercises. */
-const MORNING_BRIEF_GITHUB_READ_SURFACE: readonly string[] = [
-  "notifications",
-  "repo",
-  "read:user",
-];
 
 /**
  * Whether this record is window activity or standing obligation.
@@ -126,18 +120,21 @@ export function normalizeMorningBriefGithub(
  */
 export function morningBriefGithubDescriptor(args: {
   readonly login: string;
-  readonly connectionId: string | null;
+  /** What this source's reads were actually authorized by, or null. */
+  readonly proof: MorningBriefSourceAuthorityProof | null;
   readonly membershipId: string;
   readonly agentId: string;
   readonly capturedAt: Date;
   readonly contributed: boolean;
   readonly containers: readonly string[];
 }): MorningBriefRetainedSourceDescriptor {
+  const proven = morningBriefProvenAuthority(args.proof);
   return {
     source: "github",
-    connectionId: args.connectionId,
+    connectionId: proven.connectionId,
     accountRef: args.login,
-    scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_GITHUB_READ_SURFACE),
+    scopeDigest: proven.scopeDigest,
+    endpoints: proven.endpoints,
     membershipId: args.membershipId,
     agentId: args.agentId,
     capturedAt: args.capturedAt.toISOString(),

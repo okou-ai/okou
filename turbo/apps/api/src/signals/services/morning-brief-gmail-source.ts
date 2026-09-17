@@ -18,7 +18,8 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 
 import {
-  morningBriefScopeDigest,
+  morningBriefProvenAuthority,
+  type MorningBriefSourceAuthorityProof,
   type MorningBriefRetainedSourceDescriptor,
 } from "./morning-brief-source-authority";
 import type {
@@ -27,17 +28,6 @@ import type {
   MorningBriefSourceItem,
   MorningBriefTimeSemantics,
 } from "./morning-brief-source-item";
-
-/**
- * The Gmail authorization surface a Morning Brief read exercises.
- *
- * These are the read scopes the shared connector reader's Gmail calls require.
- * Digesting them is how a later narrowing becomes detectable without the
- * descriptor describing what a token can still do.
- */
-const MORNING_BRIEF_GMAIL_READ_SURFACE: readonly string[] = [
-  "https://www.googleapis.com/auth/gmail.readonly",
-];
 
 /**
  * Whether this message is window evidence or standing backlog.
@@ -140,18 +130,21 @@ export function morningBriefGmailDescriptor(args: {
    * rather than allowed.
    */
   readonly accountEmail: string | null;
-  readonly connectionId: string | null;
+  /** What this source's reads were actually authorized by, or null. */
+  readonly proof: MorningBriefSourceAuthorityProof | null;
   readonly membershipId: string;
   readonly agentId: string;
   readonly capturedAt: Date;
   readonly contributed: boolean;
   readonly containers: readonly string[];
 }): MorningBriefRetainedSourceDescriptor {
+  const proven = morningBriefProvenAuthority(args.proof);
   return {
     source: "gmail",
-    connectionId: args.connectionId,
-    accountRef: args.accountEmail,
-    scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_GMAIL_READ_SURFACE),
+    connectionId: proven.connectionId,
+    accountRef: args.accountEmail ?? args.proof?.accountRef ?? null,
+    scopeDigest: proven.scopeDigest,
+    endpoints: proven.endpoints,
     membershipId: args.membershipId,
     agentId: args.agentId,
     capturedAt: args.capturedAt.toISOString(),

@@ -16,8 +16,10 @@ import { safeUrlParse } from "../utils";
 import type { ClerkClient } from "../external/clerk";
 import {
   admitMorningBriefCollection,
+  freezeMorningBriefSourceSelection,
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceAuthorityLedger,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
   type MorningBriefResponseMetadata,
@@ -1456,6 +1458,14 @@ export async function executeMorningBriefGithubCollection(
     readonly clerk: ClerkClient;
     readonly owner: { readonly orgId: string; readonly userId: string };
     readonly anchor: Date;
+    /**
+     * The account choice frozen for this attempt, and this read's proof.
+     *
+     * Null lets this collector own its own admission and freeze the choice
+     * itself, which is what its single-source preview does. The composition
+     * freezes every source before any of them reads and supplies it here.
+     */
+    readonly authority: MorningBriefSourceAuthorityLedger | null;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefGithubExecution> {
@@ -1480,6 +1490,18 @@ export async function executeMorningBriefGithubCollection(
     return { kind: "not-executed", reason: admitted.reason };
   }
 
+  // A caller that reads several sources freezes every account choice before any
+  // of them starts; this single-source entry point has nothing to read beside
+  // it, so its own admission is that moment.
+  const authority =
+    args.authority ??
+    (await freezeMorningBriefSourceSelection(
+      args.db,
+      admitted.scope,
+      GITHUB_CONNECTOR_SLUG,
+    ));
+  signal.throwIfAborted();
+
   // The shared reader owns the absolute deadline for the whole source, so this
   // passes the caller's signal and lets the wrapper bound it.
   const access = await withMorningBriefConnectorReader(
@@ -1497,6 +1519,7 @@ export async function executeMorningBriefGithubCollection(
       },
       db: args.db,
       clerk: args.clerk,
+      authority,
     },
     async (reader) => {
       return await collectMorningBriefGithubPriorities(

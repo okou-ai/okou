@@ -12,6 +12,7 @@ import type { Db } from "../external/db";
 import {
   withMorningBriefConnectorReader,
   type MorningBriefCollectionScope,
+  type MorningBriefSourceAuthorityLedger,
   type MorningBriefConnectorReader,
   type MorningBriefReadOutcome,
   type MorningBriefResponseMetadata,
@@ -836,6 +837,8 @@ export async function collectMorningBriefCalendar(
     readonly db: Db;
     readonly clerk: ClerkClient;
     readonly scope: MorningBriefCollectionScope;
+    /** The account choice frozen for this attempt, and this read's proof. */
+    readonly authority: MorningBriefSourceAuthorityLedger;
   },
   signal: AbortSignal,
 ): Promise<MorningBriefCalendarCollection> {
@@ -887,6 +890,7 @@ export async function collectMorningBriefCalendar(
       },
       db: args.db,
       clerk: args.clerk,
+      authority: args.authority,
     },
     async (reader) => {
       return await collectCalendarsWithReader({ reader, window });
