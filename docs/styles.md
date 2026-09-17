@@ -909,6 +909,22 @@ Consumers spell `before:bg-[length:100%_100%]` beside the two background
 utilities. `background-size: 100% 100%` and the initial `auto auto` size a
 gradient to the same box, so it is a stated rather than a load-bearing value.
 
+Chrome inside the pane lets that canvas through. The thread header, the chat
+composer's footer, the sharing bar and the shared thread's handoff bar all stay
+transparent; only the cards inside them carry a fill. A pane-width surface that
+paints `--background` instead assumes the canvas is a flat fill of that colour,
+which holds in the neutral themes and does not under a gradient palette, where
+the canvas is `--card` plus two corner gradients: the composer footer used to
+paint `--background` and ended in a visible band across the pane in every dark
+palette. A surface that genuinely has to cover the canvas — the transcript's
+loading overlay — takes `bg-workspace-canvas` so it covers with the canvas's own
+fill.
+
+Softening the transcript's bottom edge belongs to the transcript, for the same
+reason: a gradient painted over the pane can only fade toward one flat colour.
+`CHAT_THREAD_SCROLL_EDGE_FADE_CLASS` masks the scroll viewport instead, so the
+content fades and the canvas behind it is left untouched in every theme.
+
 ### Chat message bubbles
 
 A Markdown frame inside a bubble asks for the bubble's block treatment by name:
