@@ -1178,6 +1178,10 @@ export async function resumeMorningBriefNativeOccurrence(
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
         eq(morningBriefNativeOccurrences.ownerEpoch, schedule.ownerEpoch),
         sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        // The same receipt-first invariant, enforced on the mutation and not
+        // only on the discovery query, so no other caller can bypass it.
+        sql`${morningBriefNativeOccurrences.generationAttemptId} IS NULL`,
+        sql`NOT ${morningBriefNativeOccurrences.deliveryPending}`,
         // Either its deferral is due, or its lease lapsed. A live lease held by
         // another tick is never taken over here.
         sql`(
@@ -1214,6 +1218,15 @@ export async function loadResumableOccurrences(
     .where(
       and(
         sql`${morningBriefNativeOccurrences.settledAt} IS NULL`,
+        // Receipt-first is a per-occurrence invariant, not a property of one
+        // scan happening to fit in one batch. A slot that already bound an
+        // attempt is reachable only through the receipt pass, which resolves
+        // its durable receipt by occurrence identity. Resuming it would call S5
+        // first, and after the real result sweep a completed collection with no
+        // generation reads as a healthy empty day — bypassing a Chat receipt
+        // that has already committed.
+        sql`${morningBriefNativeOccurrences.generationAttemptId} IS NULL`,
+        sql`NOT ${morningBriefNativeOccurrences.deliveryPending}`,
         sql`(
           (${morningBriefNativeOccurrences.state} = 'deferred'
             AND ${morningBriefNativeOccurrences.deferredUntil} IS NOT NULL
@@ -1360,13 +1373,34 @@ export async function loadPendingDeliveryOccurrences(
     .limit(args.limit);
 }
 
-/** Clear the delivery obligation once a durable receipt proves it delivered. */
-export async function clearMorningBriefDeliveryObligation(
+/**
+ * Close one recovered delivery obligation, in the documented lock order.
+ *
+ * The schedule row is locked **first**, exactly as the ordinary settlement path
+ * does, so a returning worker and a recovering tick can never hold one row each
+ * and deadlock. The occurrence update is fenced on the claim the caller
+ * observed, so a slot reclaimed in the meantime keeps its new owner's flag.
+ *
+ * Clearing and settling are one mutation: the clear can no longer commit while
+ * the settlement that should accompany it is refused.
+ */
+export async function closeRecoveredMorningBriefDelivery(
   tx: MorningBriefNativeWriter,
   owner: MorningBriefMemberIdentity,
-  args: { readonly scheduledFor: Date; readonly at: Date },
-): Promise<void> {
-  await tx
+  args: {
+    readonly scheduledFor: Date;
+    readonly expectedEpoch: number;
+    readonly leaseToken: string | null;
+    /** Non-null when this slot still owes its one settlement. */
+    readonly settleAs: MorningBriefNativeOutcome | null;
+    readonly at: Date;
+  },
+): Promise<"closed" | "stale-claimant" | "absent"> {
+  if ((await lockMorningBriefNativeSchedule(tx, owner)) === undefined) {
+    return "absent";
+  }
+
+  const cleared = await tx
     .update(morningBriefNativeOccurrences)
     .set({ deliveryPending: false, updatedAt: args.at })
     .where(
@@ -1374,8 +1408,31 @@ export async function clearMorningBriefDeliveryObligation(
         eq(morningBriefNativeOccurrences.orgId, owner.orgId),
         eq(morningBriefNativeOccurrences.userId, owner.userId),
         eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
+        eq(morningBriefNativeOccurrences.ownerEpoch, args.expectedEpoch),
+        args.leaseToken === null
+          ? sql`${morningBriefNativeOccurrences.leaseToken} IS NULL`
+          : eq(morningBriefNativeOccurrences.leaseToken, args.leaseToken),
       ),
-    );
+    )
+    .returning({ scheduledFor: morningBriefNativeOccurrences.scheduledFor });
+  if (cleared.length === 0) {
+    return "stale-claimant";
+  }
+
+  if (args.settleAs !== null && args.leaseToken !== null) {
+    // The slot bound its attempt but crashed before its own settlement. It is
+    // settled here, once, from the durable receipt, under the same schedule
+    // lock this function already holds.
+    await settleMorningBriefNativeOccurrence(tx, owner, {
+      scheduledFor: args.scheduledFor,
+      outcome: args.settleAs,
+      deliveryPending: false,
+      expectedEpoch: args.expectedEpoch,
+      leaseToken: args.leaseToken,
+      at: args.at,
+    });
+  }
+  return "closed";
 }
 
 /**

@@ -25,6 +25,8 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { seedInstalledMorningBrief } from "../../../test-fixtures/morning-brief-collection";
+import { expireMorningBriefGenerationRetention } from "../../../test-fixtures/morning-brief-generation";
+import { loadResumableOccurrences } from "../../services/morning-brief-native-schedule.service";
 import { cronExecuteMorningBriefsRoutes } from "../cron-execute-morning-briefs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
@@ -438,6 +440,23 @@ describe("native Morning Brief cron", () => {
     // the claimant's lease is still held, which is exactly what a process that
     // died between the Chat COMMIT and its own settlement leaves behind.
     const crashedLease = randomUUID();
+    // The schedule obligation is still held by the occurrence, exactly as the
+    // claim left it before the settlement that never ran.
+    await db()
+      .update(morningBriefNativeSchedules)
+      .set({ nextRunAt: null, scheduleOwner: null })
+      .where(
+        and(
+          eq(morningBriefNativeSchedules.orgId, f.orgId),
+          eq(morningBriefNativeSchedules.userId, f.userId),
+        ),
+      );
+    // And the accepted result is past its retention, so recovery cannot lean on
+    // it: only the durable receipt can prove the brief was delivered.
+    await expireMorningBriefGenerationRetention(
+      { orgId: f.orgId, userId: f.userId },
+      new Date(now() - 1000),
+    );
     await db()
       .update(morningBriefNativeOccurrences)
       .set({
@@ -447,7 +466,7 @@ describe("native Morning Brief cron", () => {
         state: "claimed",
         deliveryPending: true,
         leaseToken: crashedLease,
-        leaseExpiresAt: new Date(now() + 5 * 60 * 1000),
+        leaseExpiresAt: new Date(now() - 60 * 1000),
       })
       .where(
         and(
@@ -463,7 +482,6 @@ describe("native Morning Brief cron", () => {
     // Recovered from the durable receipt: no second model request, no second
     // Chat event, no second delivery, and the slot settles exactly once.
     expect(calls.generation).toHaveLength(1);
-    await expect(readGenerations(f)).resolves.toHaveLength(1);
     const deliveries = await readDeliveries(f);
     expect(deliveries).toHaveLength(1);
     const events = await db()
@@ -476,6 +494,68 @@ describe("native Morning Brief cron", () => {
     expect(settled[0]?.outcome).toBe("delivered");
     expect(settled[0]?.settledAt).not.toBeNull();
     expect(settled[0]?.deliveryPending).toBeFalsy();
+    // The member owes a future occurrence again, from the settlement clock.
+    const after = await readSchedule(f);
+    expect(after?.nextRunAt?.getTime()).toBeGreaterThan(now());
+  });
+
+  // The counterexample the receipt pass cannot answer on its own: a bound,
+  // unsettled slot whose receipt recovery has not resolved yet — in production
+  // because it fell beyond the bounded recovery batch. Resuming such a slot
+  // would call S5 first, and after the real result sweep a completed collection
+  // with no generation reads as a healthy empty day, bypassing a Chat receipt
+  // that has already committed. It must therefore never be resumable.
+  it("never resumes a bound unsettled slot into generation", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+
+    await tickUntilNative(f);
+    const due = await makeNativeDue(f);
+    await accept(tick(), [200]);
+    expect(calls.generation).toHaveLength(1);
+
+    // Put the slot back into the bound-but-unsettled state, with its lease
+    // expired so the resume scan would otherwise pick it up, and sweep the
+    // result so a resumed slot would misclassify it.
+    await expireMorningBriefGenerationRetention(
+      { orgId: f.orgId, userId: f.userId },
+      new Date(now() - 1000),
+    );
+    await db()
+      .update(morningBriefNativeOccurrences)
+      .set({
+        settledAt: null,
+        settledNextRunAt: null,
+        outcome: null,
+        state: "claimed",
+        deliveryPending: true,
+        leaseToken: randomUUID(),
+        leaseExpiresAt: new Date(now() - 60 * 1000),
+      })
+      .where(
+        and(
+          eq(morningBriefNativeOccurrences.orgId, f.orgId),
+          eq(morningBriefNativeOccurrences.userId, f.userId),
+          eq(morningBriefNativeOccurrences.scheduledFor, due),
+        ),
+      );
+
+    // The occurrence is not reachable by resume at all, whether or not the
+    // receipt pass handled it this tick.
+    await expect(
+      loadResumableOccurrences(db(), { now: new Date(now()), limit: 50 }),
+    ).resolves.toStrictEqual([]);
+
+    await accept(tick(), [200]);
+
+    // Whatever the recovery pass decided, no second generation was started and
+    // the committed receipt was never re-read as an empty day.
+    expect(calls.generation).toHaveLength(1);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
+    const rows = await readOccurrences(f);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.outcome).not.toBe("empty-skip");
   });
 
   it("does not contact the provider twice for the same slot across ticks", async () => {

@@ -12,7 +12,7 @@ import { currentMembershipId$ } from "./morning-brief-collection-executor.servic
 import {
   advanceMorningBriefExecutionPhase,
   claimMorningBriefNativeOccurrence,
-  clearMorningBriefDeliveryObligation,
+  closeRecoveredMorningBriefDelivery,
   deferMorningBriefNativeOccurrence,
   loadBootstrapCandidates,
   loadDueNativeOwners,
@@ -300,27 +300,27 @@ async function runDeliveryRecoveryPass(args: {
     if (resolution === "pending") {
       continue;
     }
-    await db.transaction(async (tx) => {
-      await clearMorningBriefDeliveryObligation(tx, owner, {
+    const closed = await db.transaction(async (tx) => {
+      return await closeRecoveredMorningBriefDelivery(tx, owner, {
         scheduledFor: occurrence.scheduledFor,
+        expectedEpoch: occurrence.ownerEpoch,
+        leaseToken: occurrence.leaseToken,
+        // A slot that bound its attempt but crashed before its own settlement
+        // still owes that settlement; one already settled only owes the clear.
+        settleAs:
+          occurrence.settledAt !== null
+            ? null
+            : resolution === "delivered"
+              ? "delivered"
+              : "generation-unknown",
         at: nowDate(),
       });
-      // A slot that bound its attempt but crashed before its own settlement is
-      // settled here, once, from the durable receipt. Its stored lease is still
-      // the claimant's, so the same exact-claimant fence applies and a slot that
-      // was reclaimed in the meantime is left alone.
-      if (occurrence.settledAt === null && occurrence.leaseToken !== null) {
-        await settleMorningBriefNativeOccurrence(tx, owner, {
-          scheduledFor: occurrence.scheduledFor,
-          outcome:
-            resolution === "delivered" ? "delivered" : "generation-unknown",
-          deliveryPending: false,
-          expectedEpoch: occurrence.ownerEpoch,
-          leaseToken: occurrence.leaseToken,
-          at: nowDate(),
-        });
-      }
     });
+    if (closed !== "closed") {
+      // Reclaimed or revoked between the receipt read and this mutation. The
+      // new owner keeps its own obligation; nothing is cleared behind it.
+      continue;
+    }
     counters.deliveriesRecovered += 1;
     if (resolution === "terminal-failure") {
       log.warn("Morning Brief delivery exhausted its retention", {
