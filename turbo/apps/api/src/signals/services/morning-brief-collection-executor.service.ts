@@ -23,7 +23,6 @@ import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   claimMorningBriefCollection,
-  collectionLeaseExpiry,
   collectionLeaseHeld,
   finalizeMorningBriefCollection,
   type MorningBriefCollectionAdmission,
@@ -416,7 +415,6 @@ function completionOf(
 async function claimAttempt(
   db: Db,
   admission: MorningBriefCollectionAdmission,
-  at: Date,
 ): Promise<
   | { readonly kind: "claimed"; readonly claim: MorningBriefCollectionClaim }
   | { readonly kind: "already-completed"; readonly occurrence: OccurrenceRow }
@@ -425,13 +423,17 @@ async function claimAttempt(
       readonly reason: MorningBriefCollectionConflict;
     }
 > {
-  const requested: MorningBriefCollectionClaim = {
-    attempt: 1,
-    leaseToken: randomUUID(),
-    leaseExpiresAt: collectionLeaseExpiry(at),
-  };
+  // The lease, retry and lifetime instants belong to the admitted transition,
+  // not to the request that started before admission resolved, so the clock is
+  // handed to the guarded transition instead of being sampled here.
+  const leaseToken = randomUUID();
   const claimed = await db.transaction(async (tx) => {
-    return await claimMorningBriefCollection(tx, admission, requested, at);
+    return await claimMorningBriefCollection(
+      tx,
+      admission,
+      leaseToken,
+      nowDate,
+    );
   });
   if (claimed.kind === "rejected") {
     return { kind: "conflict", reason: claimed.reason };
@@ -472,7 +474,7 @@ export const executeMorningBriefSlackCollection$ = command(
     }
     const { admission, botToken } = admitted.admitted;
 
-    const claimed = await claimAttempt(db, admission, startedAt);
+    const claimed = await claimAttempt(db, admission);
     signal.throwIfAborted();
     if (claimed.kind === "conflict") {
       return claimed;
@@ -527,15 +529,16 @@ export const executeMorningBriefSlackCollection$ = command(
     // The guarded write is the lease check immediately before completion: it
     // matches the exact occurrence, attempt, token, running status and an
     // unexpired deadline in one statement, so no separate check can disagree
-    // with it. Equality with the deadline is already expired.
-    const finalizedAt = nowDate();
+    // with it. Equality with the deadline is already expired. The instant it
+    // compares is read inside that transition, after its owner and row locks,
+    // because waiting for them can outlast the lease this attempt holds.
     const finalized = await db.transaction(async (tx) => {
       return await finalizeMorningBriefCollection(
         tx,
         admission,
         claim,
         completion,
-        finalizedAt,
+        nowDate,
       );
     });
     signal.throwIfAborted();

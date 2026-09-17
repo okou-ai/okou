@@ -14,9 +14,14 @@ import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   deleteMorningBriefAgent,
+  holdCleanupAfterRevocation,
   holdMorningBriefCollectionClaim,
+  holdMorningBriefCollectionOccurrence,
+  holdMorningBriefMembershipLookup,
   pauseMorningBriefAutomation,
   readMorningBriefCollectionOccurrences,
+  readMorningBriefCollectionOwnerRow,
+  repointMorningBriefInstallationAgent,
   seedInstalledMorningBrief,
 } from "../../../test-fixtures/morning-brief-collection";
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
@@ -27,6 +32,7 @@ import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
+  deleteSlackIntegrationFixture$,
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
 } from "./helpers/integrations-slack";
@@ -67,6 +73,7 @@ interface Fixture {
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
+  readonly workflowId: string;
   readonly automationId: string;
   readonly botToken: string;
   readonly slackUserId: string;
@@ -93,12 +100,14 @@ function collectionClient() {
  * A native agent credential carrying the Slack read capability.
  *
  * It is signed against the real clock so a test that moves the service clock to
- * exercise a lease boundary cannot accidentally expire its own credential.
+ * exercise a lease boundary cannot accidentally expire its own credential. A
+ * test that crosses the occurrence's whole lifetime asks for a longer one.
  */
 function agentToken(
   userId: string,
   orgId: string,
   capabilities: readonly Capability[] = ["slack:read"],
+  lifetimeSeconds = 3600,
 ): { readonly authorization: string } {
   const seconds = Math.floor(now() / 1000);
   return {
@@ -109,7 +118,7 @@ function agentToken(
       runId: randomUUID(),
       capabilities,
       iat: seconds,
-      exp: seconds + 3600,
+      exp: seconds + lifetimeSeconds,
     })}`,
   };
 }
@@ -168,6 +177,7 @@ async function fixture(
     orgId,
     userId,
     agentId: brief.agentId,
+    workflowId: brief.workflowId,
     automationId: brief.automationId,
     botToken,
     slackUserId: connection?.slackUserId ?? "",
@@ -249,6 +259,47 @@ function channelPage(
 function noMessages(): SlackReply {
   return () => {
     return { ok: true, messages: [] };
+  };
+}
+
+/**
+ * Script Slack so the first enumeration call parks until it is released.
+ *
+ * The attempt has already claimed its occurrence by the time that call is made,
+ * so this is the live window a concurrent reclaim, revocation or lease expiry
+ * has to be decided against.
+ */
+function scriptSuspendedSlack(messages: readonly unknown[] = []): {
+  readonly arrived: Promise<void>;
+  readonly release: () => void;
+} {
+  const arrived = createDeferredPromise<void>(context.signal);
+  const released = createDeferredPromise<void>(context.signal);
+  let suspended = false;
+  server.use(
+    http.get(SLACK_USER_CONVERSATIONS_URL, async () => {
+      if (!suspended) {
+        suspended = true;
+        arrived.resolve();
+        await released.promise;
+      }
+      return HttpResponse.json({
+        ok: true,
+        channels: [{ id: "C1", name: "general", is_private: false }],
+        response_metadata: { next_cursor: "" },
+      });
+    }),
+    http.get(SLACK_HISTORY_URL, () => {
+      return HttpResponse.json({ ok: true, messages });
+    }),
+  );
+  return {
+    arrived: arrived.promise,
+    release: () => {
+      if (!released.settled()) {
+        released.resolve();
+      }
+    },
   };
 }
 
@@ -594,6 +645,78 @@ describe("Morning Brief Slack collection preview", () => {
     expect(traffic.requests).toStrictEqual([]);
   });
 
+  it.each([
+    [
+      "its membership generation changed",
+      async (f: Fixture) => {
+        await store.set(
+          seedOrgMembership$,
+          {
+            userId: f.userId,
+            orgId: f.orgId,
+            role: "admin",
+            membershipId: `orgmem_rejoined_${randomUUID()}`,
+          },
+          context.signal,
+        );
+      },
+    ],
+    [
+      "its installation moved to another Agent",
+      async (f: Fixture) => {
+        await repointMorningBriefInstallationAgent(f);
+      },
+    ],
+    [
+      "its native Slack binding changed",
+      async (f: Fixture) => {
+        await store.set(
+          deleteSlackIntegrationFixture$,
+          { orgId: f.orgId, slackWorkspaceId: f.workspaceId },
+          context.signal,
+        );
+        const installation = await store.set(
+          seedSlackOrgInstallation$,
+          { orgId: f.orgId, botToken: `xoxb-test-${randomUUID()}` },
+          context.signal,
+        );
+        await store.set(
+          seedSlackOrgConnection$,
+          {
+            slackWorkspaceId: installation.slackWorkspaceId,
+            userId: f.userId,
+          },
+          context.signal,
+        );
+      },
+    ],
+  ])(
+    "refuses to reuse a completed occurrence once %s",
+    async (_name, rebind) => {
+      const f = await fixture();
+      scriptSlack({
+        channels: channelPage([{ id: "C1", name: "general" }]),
+        history: noMessages(),
+      });
+      const collected = await accept(collect(f), [200]);
+      expect(collected.body.result).toBe("collected");
+      const [before] = await readMorningBriefCollectionOccurrences(f);
+
+      await rebind(f);
+      const traffic = scriptSlack({});
+      const rejected = await accept(collect(f), [409]);
+      expect(rejected.body.error.code).toBe(
+        "MORNING_BRIEF_COLLECTION_BINDING_CHANGED",
+      );
+      // The terminal metadata of the old binding is neither reused nor
+      // replaced, and nothing new is read or recorded under it.
+      expect(traffic.requests).toStrictEqual([]);
+      const [after, ...extra] = await readMorningBriefCollectionOccurrences(f);
+      expect(extra).toHaveLength(0);
+      expect(after).toStrictEqual(before);
+    },
+  );
+
   it("admits a single claimant when two invocations race the same occurrence", async () => {
     const f = await fixture();
     scriptSlack({
@@ -623,28 +746,9 @@ describe("Morning Brief Slack collection preview", () => {
   it("lets a newer claimant take an exactly expired lease and discards the old attempt's bundle", async () => {
     const f = await fixture();
     mockNow(ANCHOR_MS);
-    const firstCall = createDeferredPromise<void>(context.signal);
-    const arrived = createDeferredPromise<void>(context.signal);
-    let holding = false;
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, async () => {
-        if (!holding) {
-          holding = true;
-          arrived.resolve();
-          await firstCall.promise;
-        }
-        return HttpResponse.json({
-          ok: true,
-          channels: [{ id: "C1", name: "general", is_private: false }],
-          response_metadata: { next_cursor: "" },
-        });
-      }),
-      http.get(SLACK_HISTORY_URL, () => {
-        return HttpResponse.json({ ok: true, messages: [] });
-      }),
-    );
+    const suspended = scriptSuspendedSlack();
     const stale = collect(f);
-    await arrived.promise;
+    await suspended.arrived;
 
     // The lease is already expired at its own deadline, so the next explicit
     // invocation may reclaim at exactly that instant.
@@ -655,13 +759,105 @@ describe("Morning Brief Slack collection preview", () => {
     }
     expect(newer.body.occurrence.attempt).toBe(2);
 
-    firstCall.resolve();
+    suspended.release();
     const discarded = await accept(stale, [409]);
     expect(discarded.body.error.code).toBe(
       "MORNING_BRIEF_COLLECTION_CLAIM_LOST",
     );
     const [row] = await readMorningBriefCollectionOccurrences(f);
     expect(row).toMatchObject({ attempt: 2, status: "completed" });
+  });
+
+  it("refuses a completion whose lease expires while it waits for the occurrence row", async () => {
+    const f = await fixture();
+    mockNow(ANCHOR_MS);
+    const suspended = scriptSuspendedSlack();
+    const stale = collect(f);
+    await suspended.arrived;
+
+    // The claim is committed, so taking its row is the same wait the guarded
+    // completion has to queue behind.
+    const held = await holdMorningBriefCollectionOccurrence(f, context.signal);
+    suspended.release();
+    await held.waitForArrival();
+    // Exactly the lease deadline, reached while the transition was blocked. A
+    // timestamp sampled before that wait would still admit this completion.
+    mockNow(ANCHOR_MS + 60_000);
+    await held.release();
+
+    const lost = await accept(stale, [409]);
+    expect(lost.body.error.code).toBe("MORNING_BRIEF_COLLECTION_CLAIM_LOST");
+    const [row] = await readMorningBriefCollectionOccurrences(f);
+    expect(row).toMatchObject({ status: "running", attempt: 1 });
+    expect(row?.leaseToken).not.toBeNull();
+    expect(row?.finishedAt).toBeNull();
+    expect(row?.outcome).toBeNull();
+
+    // A sibling whose own lease is intact is unaffected by that boundary.
+    const sibling = await fixture();
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: noMessages(),
+    });
+    const collected = await accept(collect(sibling), [200]);
+    expect(collected.body.result).toBe("collected");
+  });
+
+  it("reclaims an occurrence whose lease expires while the reclaim waits for its row", async () => {
+    const f = await fixture();
+    mockNow(ANCHOR_MS);
+    const suspended = scriptSuspendedSlack();
+    const stale = collect(f);
+    await suspended.arrived;
+
+    const held = await holdMorningBriefCollectionOccurrence(f, context.signal);
+    const reclaim = collect(f);
+    // Prove the reclaim really queued on that row before the clock moves.
+    await held.waitForArrival();
+    mockNow(ANCHOR_MS + 60_000);
+    await held.release();
+
+    const newer = await accept(reclaim, [200]);
+    if (newer.body.result !== "collected") {
+      throw new Error(
+        `Expected the reclaim to collect, got ${newer.body.result}`,
+      );
+    }
+    expect(newer.body.occurrence.attempt).toBe(2);
+
+    suspended.release();
+    const discarded = await accept(stale, [409]);
+    expect(discarded.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_CLAIM_LOST",
+    );
+    const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+    expect(extra).toHaveLength(0);
+    expect(row).toMatchObject({ attempt: 2, status: "completed" });
+  });
+
+  it("stops an occurrence past its lifetime before any provider call", async () => {
+    const f = await fixture();
+    // The lifetime is a day, so the operator's own credential has to outlive
+    // the clock move rather than expire with it.
+    const aged = {
+      headers: agentToken(f.userId, f.orgId, ["slack:read"], 48 * 3600),
+    };
+    mockNow(ANCHOR_MS);
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: () => {
+        return { ok: false, error: "internal_error" };
+      },
+    });
+    await accept(collect(aged), [200]);
+
+    mockNow(ANCHOR_MS + 24 * 60 * 60 * 1000 + 1);
+    const traffic = scriptSlack({});
+    const expired = await accept(collect(aged), [409]);
+    expect(expired.body.error.code).toBe("MORNING_BRIEF_COLLECTION_EXPIRED");
+    expect(traffic.requests).toStrictEqual([]);
+    const [row] = await readMorningBriefCollectionOccurrences(f);
+    expect(row).toMatchObject({ attempt: 1, status: "failed" });
   });
 
   it("refuses a retry whose membership generation changed", async () => {
@@ -878,6 +1074,138 @@ describe("Morning Brief collection ownership lifetime", () => {
     return webhooks.requestClerkWebhook("{}", {}, [200]);
   }
 
+  function deleteClerkSubject(type: string, f: Fixture) {
+    const webhooks = createWebhookCallbackApi(context);
+    webhooks.configureClerkWebhookSecret();
+    webhooks.verifyNextClerkWebhook({
+      type,
+      data: { id: type === "user.deleted" ? f.userId : f.orgId },
+    });
+    return webhooks.requestClerkWebhook("{}", {}, [200]);
+  }
+
+  it("refuses a claim whose membership answer predates revocation, before the parent is deleted", async () => {
+    const f = await fixture();
+    const survivor = await fixture();
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: noMessages(),
+    });
+    await accept(collect(survivor), [200]);
+
+    // A positive exact-member answer is resolved and then held, so the claim
+    // that resumes below is genuinely one admitted before revocation.
+    const lookup = holdMorningBriefMembershipLookup(f, context.signal);
+    const traffic = scriptSlack({});
+    const request = collect(f);
+    await lookup.waitForArrival();
+
+    const remainder = await holdCleanupAfterRevocation(f, context.signal);
+    await removeMembership(f);
+    // Arrival here means the cleanup's first transaction has committed and the
+    // rest of it is parked, so the durable member row still exists.
+    await remainder.waitForArrival();
+    await expect(readMorningBriefCollectionOwnerRow(f)).resolves.toMatchObject({
+      timezone: "Asia/Shanghai",
+      revokedAt: expect.any(Date),
+    });
+
+    lookup.release();
+    const refused = await accept(request, [409]);
+    expect(refused.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+    );
+    // Revocation had no occurrence to delete, yet nothing was inserted after
+    // it, and no source request was made on the revoked claim.
+    expect(traffic.requests).toStrictEqual([]);
+    await expect(
+      readMorningBriefCollectionOccurrences(f),
+    ).resolves.toStrictEqual([]);
+
+    await remainder.release();
+    await flushWaitUntilForTest();
+    await expect(
+      readMorningBriefCollectionOccurrences(survivor),
+    ).resolves.toHaveLength(1);
+    await expect(
+      readMorningBriefCollectionOwnerRow(survivor),
+    ).resolves.toMatchObject({ revokedAt: null });
+  });
+
+  it("revokes a committed occurrence inside the cleanup's first transaction", async () => {
+    const f = await fixture();
+    const survivor = await fixture();
+    scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: noMessages(),
+    });
+    await accept(collect(survivor), [200]);
+
+    const held = await holdMorningBriefCollectionClaim(f, context.signal);
+    const request = collect(f);
+    const claimant = await held.waitForArrival();
+
+    const remainder = await holdCleanupAfterRevocation(f, context.signal);
+    await removeMembership(f);
+    // The revoking transaction has to queue behind the uncommitted claim's
+    // FOR KEY SHARE, which is what closes the opposite commit order.
+    await waitForDeferredBlocker(claimant);
+    await held.release();
+
+    const revoked = await accept(request, [409]);
+    expect(revoked.body.error.code).toBe(
+      "MORNING_BRIEF_COLLECTION_OWNER_REVOKED",
+    );
+    await remainder.waitForArrival();
+    // The occurrence is already gone while its durable parent still exists, so
+    // this is the revoking transaction rather than the eventual cascade.
+    await expect(
+      readMorningBriefCollectionOccurrences(f),
+    ).resolves.toStrictEqual([]);
+    await expect(readMorningBriefCollectionOwnerRow(f)).resolves.toMatchObject({
+      revokedAt: expect.any(Date),
+    });
+
+    await remainder.release();
+    await flushWaitUntilForTest();
+    await expect(
+      readMorningBriefCollectionOccurrences(survivor),
+    ).resolves.toHaveLength(1);
+  });
+
+  it.each(["user.deleted", "organization.deleted"])(
+    "revokes collection ownership in the first transaction of %s",
+    async (type) => {
+      const f = await fixture();
+      const survivor = await fixture();
+      scriptSlack({
+        channels: channelPage([{ id: "C1", name: "general" }]),
+        history: noMessages(),
+      });
+      await accept(collect(f), [200]);
+      await accept(collect(survivor), [200]);
+
+      const remainder = await holdCleanupAfterRevocation(f, context.signal);
+      await deleteClerkSubject(type, f);
+      await remainder.waitForArrival();
+      // Both deletions revoke inside the run-cancellation transaction they
+      // already commit, so the occurrence is gone and the refusal is durable
+      // long before the member row it hangs from is removed.
+      await expect(
+        readMorningBriefCollectionOccurrences(f),
+      ).resolves.toStrictEqual([]);
+      await expect(
+        readMorningBriefCollectionOwnerRow(f),
+      ).resolves.toMatchObject({ revokedAt: expect.any(Date) });
+
+      await remainder.release();
+      await flushWaitUntilForTest();
+      await expect(
+        readMorningBriefCollectionOccurrences(survivor),
+      ).resolves.toHaveLength(1);
+    },
+  );
+
   it("cascades a claim that commits before membership cleanup", async () => {
     const f = await fixture();
     const survivor = await fixture();
@@ -937,42 +1265,20 @@ describe("Morning Brief collection ownership lifetime", () => {
     });
     await accept(collect(survivor), [200]);
 
-    const held = createDeferredPromise<void>(context.signal);
-    const arrived = createDeferredPromise<void>(context.signal);
-    let holding = false;
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, async () => {
-        if (!holding) {
-          holding = true;
-          arrived.resolve();
-          await held.promise;
-        }
-        return HttpResponse.json({
-          ok: true,
-          channels: [{ id: "C1", name: "general", is_private: false }],
-          response_metadata: { next_cursor: "" },
-        });
-      }),
-      http.get(SLACK_HISTORY_URL, () => {
-        return HttpResponse.json({
-          ok: true,
-          messages: [
-            {
-              type: "message",
-              ts: FIRST_IN_WINDOW,
-              user: "U1",
-              text: "collected before revocation",
-            },
-          ],
-        });
-      }),
-    );
+    const suspended = scriptSuspendedSlack([
+      {
+        type: "message",
+        ts: FIRST_IN_WINDOW,
+        user: "U1",
+        text: "collected before revocation",
+      },
+    ]);
     const request = collect(f);
-    await arrived.promise;
+    await suspended.arrived;
 
     await removeMembership(f);
     await flushWaitUntilForTest();
-    held.resolve();
+    suspended.release();
 
     const revoked = await accept(request, [409]);
     expect(revoked.body.error.code).toBe(

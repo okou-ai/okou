@@ -70,7 +70,11 @@ export const MORNING_BRIEF_COLLECTION_STATUSES = [
  * invalidates the installation the occurrence was admitted against. Claiming
  * and finalizing lock and recheck that member row with `FOR KEY SHARE`, so a
  * cleanup either waits for the writer and then cascades its row away, or has
- * already removed the parent and leaves nothing to write.
+ * already removed the parent and leaves nothing to write. Because that lock
+ * does not outlive either transaction, the same row also carries
+ * `morning_brief_collection_revoked_at`, which each cleanup stamps in its first
+ * committed transaction so a later claim refuses even when there was no
+ * occurrence to delete.
  *
  * This is explicit-invocation ownership only. It certifies no autonomous
  * scheduler, grants no execution permission by itself, and transfers no

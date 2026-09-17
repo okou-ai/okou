@@ -2090,3 +2090,37 @@ only that no result of such a request is accepted, persisted or returned after
 the revoking transaction commits. See
 [the collection contract](morning-brief-collection.md) for the source contract,
 lease semantics, finite budgets and declared coverage limits.
+
+## Morning Brief collection revocation stamp (#34860)
+
+Migration 1152 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
+column. It is additive, has no default and needs no backfill, scan or
+`LOCK TABLE`, so it applies as an ordinary short transaction.
+
+`FOR KEY SHARE` on the member row only orders two transactions; it does not
+outlive either of them. The revocation decision now persists in this column, so
+a claim admitted against an external membership answer resolved before
+revocation still loses after that cleanup commits — including when the cleanup
+found no occurrence to delete, and long before the member row itself is removed.
+
+- **Old code after migration** never reads or writes the column. It stays `NULL`
+  for every member an old artifact touches, which is exactly the unrevoked
+  state, and the older collector keeps its previous behavior.
+- **New code before migration** must not be promoted. Membership, user and
+  organization cleanup write this column **unconditionally**, in the same
+  transaction that already revokes run authority, with no feature check in front
+  of it; the default-off `simpleMorningBrief` switch does not protect it.
+  Promoting the API artifact before migration 1152 has shipped would make those
+  Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
+  column in the same unconditional statement that locks the member row.
+- **Rollback** leaves stamped rows behind. An older artifact ignores them, so a
+  member whose cleanup was interrupted after revocation simply keeps their
+  pre-existing behavior; the rows themselves are deleted with the member row at
+  the end of each cleanup path. There is no dual-write window and nothing to
+  contract later.
+
+This repair changes no route registration, environment gate, feature switch,
+schedule, Run, credit, Chat or email behavior, and it does not activate the
+still-unregistered Clerk erasure bridge. It is a local serialization boundary
+for one owner's collection authority; durable membership and materialization
+ownership and global deletion finality remain S7 gates.
