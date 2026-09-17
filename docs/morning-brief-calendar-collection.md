@@ -52,12 +52,24 @@ is never taken from the request.
   omitted.
 - `freeBusyReader` grants busy blocks, not event detail. Such a calendar is
   reported as `free-busy-only` coverage and is never requested.
+- A missing or unrecognized access role is reported as `unknown-access`
+  coverage. Whether such a calendar holds anything is unknown, and an entry
+  that was silently skipped would make an account this reader cannot interpret
+  look like an account with nothing on it.
+- A calendar whose ID cannot be carried — longer than the identity ceiling, or
+  not encodable as a URL component, as a lone surrogate is — is never requested
+  and is reported through an `oversized-identity` truncation. It gets no
+  coverage entry of its own, because naming it would require a clipped ID that
+  identifies a different calendar.
 - If the list itself is denied, `coverage.calendarList` is `denied` and no
   events are read. The collector does not fall back to `primary`: that would
   claim coverage the account never proved.
 - The readable set is ordered primary-first _within the calendars actually
   enumerated_, then by stable calendar ID, and capped. Calendars beyond the cap
   are reported as `not-read` with a `calendars` truncation.
+- An account with **no** readable calendar read nothing, so it is never
+  `empty`. It reports `unavailable`, and `not-authorized` once the whole list
+  was enumerated and nothing in it grants event detail.
 
 ## Budgets
 
@@ -81,6 +93,44 @@ there, so a failing provider cannot buy extra attempts.
 A cap, an unfollowed continuation token, an unread calendar or a dropped event
 is always explicit coverage; it is never reported as a complete empty read.
 
+### The final text budget
+
+A provider byte ceiling is not a final-text ceiling. Five small responses stay
+far inside 256 KiB and 2 MiB while carrying 200 events whose ordinary displayed
+fields — a summary, an organizer and a repeated calendar name — are already
+100,000 characters. The 40,000-character budget is therefore charged against
+the **real retained representation** of each item: every provider-derived string
+that can reach composition, including the provenance repeated on each item, the
+organizer, recurrence metadata, response statuses and the display link.
+
+Fields the provider can make arbitrarily long are projected to their own
+ceilings before being charged, so no single transport-valid value can carry the
+result past the aggregate bound:
+
+| Retained field                       | Ceiling |
+| ------------------------------------ | ------- |
+| Calendar/event ID, `iCalUID`, series | 512     |
+| Original start instant               | 64      |
+| Timezone name                        | 64      |
+| Response status                      | 64      |
+| Display link                         | 2,048   |
+
+These ceilings only decide how much of an arrived response is kept; none of
+them widens a request, byte, event or deadline cap.
+
+Identities and links are different in kind from presentation text. Clipping an
+event ID, a recurrence ID or a URL does not shorten a value — it names a
+different event or a different page — so those are kept whole or dropped:
+
+- An event whose identity cannot be carried is dropped whole, with an
+  `oversized-identity` truncation. Valid siblings in the same response survive,
+  and no prefix is ever retained as a new, possibly colliding identity.
+- A display link past its ceiling is dropped to `null` with an `oversized-link`
+  truncation. A URL is never rebuilt from a prefix.
+
+When the shared caps are reached, items are dropped rather than presented
+half-accounted, and the owning calendar becomes `truncated`.
+
 ## Result envelope
 
 The result is memory-only. It carries the fixed anchor, `collectedAt`, the
@@ -96,10 +146,16 @@ count and a sanitized source failure.
 - `unavailable` — no usable content was produced.
 
 `coverage.calendarList` reports whether the account's calendar list itself was
-`complete`, `truncated`, `denied` or `failed`. Each readable calendar then
-carries its own outcome: `complete`, `free-busy-only`, `denied`, `not-found`,
-`rate-limited`, `truncated`, `failed`, or `not-read` when it was enumerated but
-never requested.
+`complete`, `truncated`, `denied` or `failed`. Each calendar the list named then
+carries its own outcome: `complete`, `free-busy-only`, `unknown-access`,
+`denied`, `not-found`, `rate-limited`, `truncated`, `failed`, or `not-read` when
+it was enumerated but never requested.
+
+These stay distinguishable from one another, and all of them from a genuinely
+quiet day: a fully read calendar holding nothing is `empty` with a `complete`
+entry and no failure, while free-busy-only scope, an uninterpretable role, a
+denied list and an account with no calendars at all each report `unavailable`
+with their own coverage and failure.
 
 A single calendar's denial, `404`, rate limit, malformed body or oversized body
 is local: a valid sibling calendar survives it. The shared reader reports a
@@ -117,6 +173,29 @@ explicit `429`, and from a provider `403` that is really a secondary rate limit,
 lands on the calendar's coverage entry and on the envelope. The collector never
 sleeps on it and never retries inside a collection.
 
+The source-level failure is classified from what the collection observed, never
+from the presence of that hint. A `429` is `rate-limited` whether or not the
+provider said for how long, and a `403` that volunteered a wait is still a
+denial rather than throttling.
+
+## Concurrent worker lifetime
+
+The per-calendar reads run at concurrency two. Two properties follow from that,
+and neither may depend on network timing:
+
+- **The shared caps are allocated once, deterministically.** A worker that
+  spent the 200-event and 40,000-character budgets as its pages arrived would
+  let response order decide which calendars reach the brief. Each calendar
+  therefore collects only up to what the shared caps could ever grant it, and
+  the allocation happens after every worker has been joined, walking calendars
+  in the stable selection order.
+- **Every started read is joined.** Both workers are started, so both are
+  awaited through `joinAll`, and the collection never settles while a read it
+  issued is still running. The first error still propagates and caller
+  cancellation is never masked: a cancelled caller receives the cancellation
+  rather than a partial day, and no further provider request is issued after
+  the cancellation reaches the started reads.
+
 ## What is retained
 
 Bounded summary, location, a description excerpt, start/end and all-day flag,
@@ -125,6 +204,10 @@ and at most 20 attendees, with truncation flagged. Recurrence identity (`id`,
 `recurringEventId`, `originalStartTime`) and `iCalUID` are kept so instances
 stay distinguishable; the same meeting seen on two calendars keeps both
 provenances rather than being collapsed without evidence.
+
+Every one of those strings is charged to the final text budget above, the
+calendar identity and name repeated on each item included. A field retained for
+free is still text the brief has to carry.
 
 Only absolute HTTP(S) display links survive, and they are never fetched.
 Description, meeting and attachment URLs are not followed. Raw provider bodies,
@@ -159,10 +242,15 @@ production regardless of it. Existing Settings and the legacy scheduler remain
 authoritative; nothing here changes a user's preference, schedule, timezone or
 thread.
 
-One collection issues at most 18 provider requests and holds at most 200
-normalized events and 40,000 characters in memory, so a single read is bounded
-independently of how many calendars the owner can see. Concurrency is 2 per
-collection, and the read holds no database transaction across a network call.
+One collection issues at most 18 provider requests and releases at most 200
+normalized events and 40,000 characters, so a single read is bounded
+independently of how many calendars the owner can see. Each calendar's
+candidates are held until the shared caps are allocated, which is bounded by
+the same 2 MiB cumulative response ceiling the reader already enforces: a
+calendar cannot offer more than the two pages of 50 events it was allowed to
+fetch, and it stops collecting once it alone reaches a shared cap. Concurrency
+is 2 per collection, and the read holds no database transaction across a
+network call.
 
 There is no schema change, no migration and no persisted output, so old and new
 application versions can run side by side: an older deployment simply does not
