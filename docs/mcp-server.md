@@ -1,0 +1,119 @@
+# External MCP server
+
+The Hono API exposes a Streamable HTTP resource server at `/mcp`. It uses the
+official MCP SDK and serves `get_indicators`, a read-only tool backed by the same
+user/organization projection as the app's indicators endpoint. This is the first
+slice of #34890, tracked by #34931. Thread history and mutations are separate slices.
+
+`get_indicators` accepts an empty object and returns `agents` and `threads` maps.
+Each entry is `active` or `unread`; absent entries have no indicator. These sparse
+maps are not a list of all runs or an authoritative terminal run status. Results
+include both structured content and a JSON text representation.
+Active threads are complete; unread threads use the existing projection's latest
+50 terminal markers from the last seven days. An unread agent indicator takes
+precedence when another thread of that agent is active.
+
+## Configuration and authorization
+
+The `McpServer` feature switch defaults to off. Standard per-user/per-organization
+overrides apply to the verified OAuth principal. Metadata is public; discovery and
+tool calls require authorization and the feature override.
+
+Configure these optional API environment variables before enabling an account:
+
+| Variable              | Value                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `MCP_RESOURCE_URL`    | Exact HTTPS resource identifier ending in `/mcp`, including the deployment's real origin.                           |
+| `MCP_OAUTH_ISSUER`    | Exact trusted HTTPS Clerk OAuth issuer for that deployment.                                                         |
+| `MCP_ALLOWED_ORIGINS` | Comma-separated exact HTTPS browser origins, with no paths or trailing slashes. Omit if all clients send no Origin. |
+
+Missing resource/issuer configuration makes the MCP surface return 503 and does
+not change first-party API authentication. Resource and issuer are never derived
+from the request Host or an unverified token. Configure the deployed environment
+through its normal deployment process; this code does not configure Clerk or
+activate production.
+
+The resource server accepts only `Authorization: Bearer` OAuth access JWTs signed
+by the configured Clerk instance. It requires an access-token header type
+(`at+jwt` or `application/at+jwt`), exact issuer, the configured resource in `aud`,
+unexpired `exp`, a user `sub`, selected `org_id`, `client_id`, and scopes from
+`scope` or `scp`. If both scope claims are present they must agree. Session/ID
+tokens, API/PAT tokens, machine subjects and opaque access tokens are not accepted.
+The existing first-party token parser is unchanged.
+
+The signed organization is the organization selected at consent. Every request
+checks current membership using the existing membership service; positive cached
+membership can remain valid for up to 60 seconds. A removed member is rejected;
+a Clerk/key-service outage returns 503 rather than pretending the user is invalid.
+Local JWT verification does not provide immediate provider token revocation:
+an already issued token can remain usable until expiry, subject to membership and
+feature checks. Short token lifetimes and the provider's actual revoke/refresh
+behavior must be verified before rollout.
+
+`user:org:read` and `okou:chat:read` are required for the current endpoint and
+`get_indicators`. Both appear in the authentication challenge so clients request
+organization selection along with read access.
+Metadata also reserves `okou:chat:send`, `okou:chat:manage`, and `okou:run:cancel`
+for the remaining planned tools. Do not grant these scopes merely to read
+indicators. A tool argument cannot select or override the organization.
+
+## Provider setup gate
+
+Clerk is the authorization server; this API does not implement authorization,
+token exchange, client registration or a consent UI. Before hosted acceptance:
+
+1. Configure a development/staging OAuth application/resource with authorization
+   code + PKCE, the exact resource audience, supported scopes and intended client
+   redirect URIs. Verify issuer metadata and the registration mechanism supported
+   by each client; do not assume dynamic client registration is available.
+2. Configure organization selection during consent and the provider's organization
+   permission (`user:org:read` where required). Obtain a real grant and establish
+   that its signed access JWT includes the selected `org_id`, resource `aud`,
+   `client_id` and intended custom scopes. An ordinary Clerk session JWT is not
+   a substitute. If the provider cannot issue this contract, keep the feature off
+   and resolve the authorization design before rollout.
+3. Verify reauthorization into a different organization, token refresh, expiry,
+   revoked grants and membership removal using that actual application.
+
+Synthetic signed-token tests prove verification and isolation, not provider-side
+consent or token issuance. Do not treat their success as completing this gate.
+
+## HTTP behavior
+
+Clients start with `/.well-known/oauth-protected-resource/mcp`, or follow the
+`resource_metadata` URL in a 401 `WWW-Authenticate: Bearer` challenge. The metadata
+publishes the resource and authorization server. A valid token without the read
+scope receives 403 `insufficient_scope`; a disabled account receives 403
+`access_denied`. Authenticated responses use `Cache-Control: no-store`.
+
+The SDK handles JSON-RPC discovery (`tools/list`), invocation (`tools/call`),
+initialization and protocol errors. 2025 protocol traffic uses stateless Streamable
+HTTP with SSE responses. The 2026-07-28 protocol uses the SDK's envelope and
+`MCP-Method`/`MCP-Name` headers with automatic JSON/SSE response selection. Clients
+should use a conforming SDK instead of implementing these envelopes themselves.
+No persistent MCP session, standalone event feed, subscription, or resumability
+is offered; stateless GET/DELETE requests return 405. POST bodies are limited to
+64 KiB. Transport/request cancellation stops request work and never cancels a
+business run.
+
+Browser Origins must exactly match the MCP allowlist; `null` and other Origins
+are rejected before authentication. Native clients without an Origin work.
+Preflight allows bearer/protocol headers and responses expose the authentication
+challenge and protocol headers. Cookie credentials are not used. Protected-resource
+metadata supports public cross-origin discovery.
+
+## Acceptance evidence
+
+Automated route tests use real Hono routing, SDK transport, RSA signature checks,
+the membership service, feature overrides and the indicators projection. Only
+external provider/network boundaries are simulated. They cover both protocol
+eras, complete response consumption, invalid grants, scope/membership isolation,
+Origin checks and provider outages.
+
+Before enabling broader access, record a generic MCP client/Inspector check
+against a real hosted preview or staging endpoint, including complete JSON and
+SSE response delivery. Then record basic OAuth, discovery and indicators results
+for Claude, ChatGPT, Claude Code and Codex, with client version/account conditions.
+Local HTTP tests do not establish hosted-client reachability. The four-client
+matrix for the full tool set remains #34936; provider and first-tool acceptance
+for #34931 remains open until supported by actual evidence.

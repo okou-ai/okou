@@ -35,6 +35,7 @@
     "@langfuse/otel": "5.10.0",
     "@langfuse/tracing": "5.10.0",
     "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",

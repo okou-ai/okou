@@ -36,6 +36,9 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [External MCP server](./mcp-server.md): OAuth resource setup, organization
+  authority, Streamable HTTP behavior and hosted-client acceptance gates.
+
 - [Social download discovery](./social-download-discovery.md): bounded task
   listing, scoped recovery hints, pagination, and CLI/API compatibility.
 - [Social errors and download recovery](./social-errors.md): stable error

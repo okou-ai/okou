@@ -43,6 +43,7 @@
     "src/lib/secret-kms-client.ts",
     "src/lib/singleton.ts",
     "src/signals/external/clerk.ts",
+    "src/signals/external/mcp-server.ts",
     "src/signals/external/s3.ts",
     "src/signals/external/stripe-client.ts",
     "src/signals/external/slack-block-kit.ts",
