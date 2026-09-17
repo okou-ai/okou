@@ -6266,6 +6266,18 @@
     "manage": "SSH 호스트 관리",
     "notLearned": "아직 저장된 호스트 키 없음",
     "passphrase": "암호문구(선택 사항)",
+    "placeholders": {
+      "accessName": "예: 프로덕션 액세스",
+      "clientId": "Service Token의 Client ID 붙여넣기",
+      "clientSecret": "Service Token의 Client Secret 붙여넣기",
+      "credentialName": "예: 배포용 로그인",
+      "displayName": "예: 프로덕션 서버",
+      "host": "예: ssh.example.com",
+      "passphrase": "키가 암호화되지 않았다면 비워 두세요",
+      "password": "SSH 사용자 비밀번호 입력",
+      "privateKey": "전체 개인 키 붙여넣기",
+      "username": "예: ubuntu"
+    },
     "port": "포트",
     "privateKey": "개인 키",
     "reset": "호스트 키 재설정",

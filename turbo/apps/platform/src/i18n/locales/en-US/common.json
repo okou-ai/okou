@@ -6277,6 +6277,18 @@
     "manage": "Manage SSH hosts",
     "notLearned": "Host key not learned yet",
     "passphrase": "Passphrase (optional)",
+    "placeholders": {
+      "accessName": "e.g. Production access",
+      "clientId": "Paste the Service Token Client ID",
+      "clientSecret": "Paste the Service Token Client Secret",
+      "credentialName": "e.g. Deployment login",
+      "displayName": "e.g. Production server",
+      "host": "e.g. ssh.example.com",
+      "passphrase": "Leave blank if not encrypted",
+      "password": "Enter the SSH user's password",
+      "privateKey": "Paste the complete private key",
+      "username": "e.g. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Private key",
     "reset": "Reset host key",

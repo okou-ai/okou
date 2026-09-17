@@ -6352,6 +6352,18 @@
     "manage": "Gestionar hosts SSH",
     "notLearned": "Aún no se ha guardado la clave del host",
     "passphrase": "Frase de contraseña (opcional)",
+    "placeholders": {
+      "accessName": "p. ej., Acceso a producción",
+      "clientId": "Pega el Client ID del Service Token",
+      "clientSecret": "Pega el Client Secret del Service Token",
+      "credentialName": "p. ej., Acceso de despliegue",
+      "displayName": "p. ej., Servidor de producción",
+      "host": "p. ej., ssh.example.com",
+      "passphrase": "Déjalo vacío si no está cifrada",
+      "password": "Introduce la contraseña del usuario SSH",
+      "privateKey": "Pega la clave privada completa",
+      "username": "p. ej., ubuntu"
+    },
     "port": "Puerto",
     "privateKey": "Clave privada",
     "reset": "Restablecer clave del host",

@@ -6266,6 +6266,18 @@
     "manage": "Kelola host SSH",
     "notLearned": "Kunci host belum tersimpan",
     "passphrase": "Frasa sandi (opsional)",
+    "placeholders": {
+      "accessName": "mis. Akses produksi",
+      "clientId": "Tempel Client ID Service Token",
+      "clientSecret": "Tempel Client Secret Service Token",
+      "credentialName": "mis. Login deployment",
+      "displayName": "mis. Server produksi",
+      "host": "mis. ssh.example.com",
+      "passphrase": "Kosongkan jika kunci tidak dienkripsi",
+      "password": "Masukkan kata sandi pengguna SSH",
+      "privateKey": "Tempel seluruh kunci privat",
+      "username": "mis. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Kunci privat",
     "reset": "Reset kunci host",

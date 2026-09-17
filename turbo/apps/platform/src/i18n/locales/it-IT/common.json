@@ -6352,6 +6352,18 @@
     "manage": "Gestisci host SSH",
     "notLearned": "Chiave host non ancora memorizzata",
     "passphrase": "Passphrase (facoltativa)",
+    "placeholders": {
+      "accessName": "ad es. Accesso produzione",
+      "clientId": "Incolla il Client ID del Service Token",
+      "clientSecret": "Incolla il Client Secret del Service Token",
+      "credentialName": "ad es. Accesso deployment",
+      "displayName": "ad es. Server di produzione",
+      "host": "ad es. ssh.example.com",
+      "passphrase": "Lascia vuoto se la chiave non è cifrata",
+      "password": "Inserisci la password dell'utente SSH",
+      "privateKey": "Incolla la chiave privata completa",
+      "username": "ad es. ubuntu"
+    },
     "port": "Porta",
     "privateKey": "Chiave privata",
     "reset": "Reimposta chiave host",

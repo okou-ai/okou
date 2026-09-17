@@ -6266,6 +6266,18 @@
     "manage": "SSH ホストを管理",
     "notLearned": "ホスト鍵はまだ記憶されていません",
     "passphrase": "パスフレーズ（任意）",
+    "placeholders": {
+      "accessName": "例: 本番環境へのアクセス",
+      "clientId": "Service Token の Client ID を貼り付け",
+      "clientSecret": "Service Token の Client Secret を貼り付け",
+      "credentialName": "例: デプロイ用ログイン",
+      "displayName": "例: 本番サーバー",
+      "host": "例: ssh.example.com",
+      "passphrase": "鍵が暗号化されていなければ空欄",
+      "password": "SSH ユーザーのパスワードを入力",
+      "privateKey": "秘密鍵全体を貼り付け",
+      "username": "例: ubuntu"
+    },
     "port": "ポート",
     "privateKey": "秘密鍵",
     "reset": "ホスト鍵をリセット",

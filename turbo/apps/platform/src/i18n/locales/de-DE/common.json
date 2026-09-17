@@ -6285,6 +6285,18 @@
     "manage": "SSH-Hosts verwalten",
     "notLearned": "Noch kein Hostschlüssel gespeichert",
     "passphrase": "Passphrase (optional)",
+    "placeholders": {
+      "accessName": "z. B. Produktionszugriff",
+      "clientId": "Client-ID des Service-Tokens einfügen",
+      "clientSecret": "Client-Secret des Service-Tokens einfügen",
+      "credentialName": "z. B. Deployment-Zugang",
+      "displayName": "z. B. Produktionsserver",
+      "host": "z. B. ssh.example.com",
+      "passphrase": "Leer lassen, wenn unverschlüsselt",
+      "password": "Passwort des SSH-Benutzers eingeben",
+      "privateKey": "Vollständigen privaten Schlüssel einfügen",
+      "username": "z. B. ubuntu"
+    },
     "port": "Port",
     "privateKey": "Privater Schlüssel",
     "reset": "Hostschlüssel zurücksetzen",

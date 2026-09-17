@@ -109,6 +109,9 @@ function EndpointFields({
         })}
         <Input
           name="displayName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.displayName;
+          })}
           required
           pattern=".*\S.*"
           maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
@@ -155,6 +158,9 @@ function EndpointFields({
           })}
           <Input
             name="host"
+            placeholder={t(($) => {
+              return $.ssh.placeholders.host;
+            })}
             required
             pattern=".*\S.*"
             maxLength={SSH_HOST_MAX_LENGTH}
@@ -243,6 +249,9 @@ function PrivateKeyFields() {
           id="ssh-private-key"
           ref={mountPrivateKey}
           name="privateKey"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.privateKey;
+          })}
           required
           maxLength={SSH_PRIVATE_KEY_MAX_LENGTH}
           autoComplete="off"
@@ -276,6 +285,9 @@ function PrivateKeyFields() {
         })}
         <Input
           name="passphrase"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.passphrase;
+          })}
           type="password"
           maxLength={SSH_PASSPHRASE_MAX_LENGTH}
           autoComplete="new-password"
@@ -304,6 +316,9 @@ function CredentialFields({
         })}
         <Input
           name="credentialName"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.credentialName;
+          })}
           required
           pattern=".*\S.*"
           maxLength={SSH_DISPLAY_NAME_MAX_LENGTH}
@@ -316,6 +331,9 @@ function CredentialFields({
         })}
         <Input
           name="username"
+          placeholder={t(($) => {
+            return $.ssh.placeholders.username;
+          })}
           required
           pattern=".*\S.*"
           maxLength={SSH_USERNAME_MAX_LENGTH}
@@ -370,6 +388,9 @@ function CredentialFields({
               })}
               <Input
                 name="password"
+                placeholder={t(($) => {
+                  return $.ssh.placeholders.password;
+                })}
                 type="password"
                 required
                 maxLength={SSH_PASSWORD_MAX_LENGTH}

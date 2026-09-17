@@ -6285,6 +6285,18 @@
     "manage": "SSH होस्ट प्रबंधित करें",
     "notLearned": "होस्ट कुंजी अभी सहेजी नहीं गई है",
     "passphrase": "पासफ़्रेज़ (वैकल्पिक)",
+    "placeholders": {
+      "accessName": "जैसे, प्रोडक्शन एक्सेस",
+      "clientId": "Service Token का Client ID पेस्ट करें",
+      "clientSecret": "Service Token का Client Secret पेस्ट करें",
+      "credentialName": "जैसे, डिप्लॉयमेंट लॉगिन",
+      "displayName": "जैसे, प्रोडक्शन सर्वर",
+      "host": "जैसे, ssh.example.com",
+      "passphrase": "कुंजी एन्क्रिप्टेड न हो तो खाली छोड़ें",
+      "password": "SSH उपयोगकर्ता का पासवर्ड दर्ज करें",
+      "privateKey": "पूरी निजी कुंजी पेस्ट करें",
+      "username": "जैसे, ubuntu"
+    },
     "port": "पोर्ट",
     "privateKey": "निजी कुंजी",
     "reset": "होस्ट कुंजी रीसेट करें",
