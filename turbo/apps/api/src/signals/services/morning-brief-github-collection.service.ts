@@ -344,6 +344,11 @@ class BranchCoverage {
     return this.status === "complete";
   }
 
+  /** Nothing to do is not a coverage gap: no relevant work existed. */
+  get healthyOrEmpty(): boolean {
+    return this.status === "complete" || this.status === "skipped";
+  }
+
   view(): MorningBriefGithubBranchCoverage {
     return {
       status: this.status,
@@ -982,7 +987,7 @@ class GithubPrioritiesCollector {
     const complete =
       branches.every((branch) => {
         return branch.healthy;
-      }) && this.checks.healthy;
+      }) && this.checks.healthyOrEmpty;
     if (!complete) {
       return "partial";
     }

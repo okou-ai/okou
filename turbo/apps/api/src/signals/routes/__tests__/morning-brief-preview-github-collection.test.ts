@@ -22,6 +22,7 @@ import {
   seedMorningBriefAgent,
   seedMorningBriefThread,
   selectMorningBriefConnectorAccount,
+  revokeMorningBriefMembership,
 } from "../../../test-fixtures/morning-brief-github-collection";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createDeferredPromise } from "../../utils";
@@ -104,25 +105,39 @@ function agentToken(
   };
 }
 
-/** The live Clerk membership the execution boundary re-resolves. */
-function mockMembership(
-  orgId: string,
-  userId: string,
-  membershipId: string | null,
-): void {
-  getApiTestMocks().clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    {
-      data:
-        membershipId === null
-          ? []
-          : [
-              {
-                id: membershipId,
-                organization: { id: orgId },
-                publicUserData: { userId },
-              },
-            ],
-    },
+/**
+ * Keep the caller authenticated at the Clerk boundary.
+ *
+ * Request authentication falls back to Clerk when the durable member row is
+ * missing, so this keeps the *token* valid. Collection admission reads the
+ * durable `org_members_cache` row instead, which is what
+ * `revokeMorningBriefMembership` removes: an authenticated caller whose
+ * organization membership is gone.
+ */
+function mockClerkMembership(orgId: string, userId: string): void {
+  const mocks = getApiTestMocks();
+  const membership = {
+    id: `orgmem_${userId}`,
+    organization: { id: orgId },
+    role: "org:admin",
+    createdAt: 1,
+    publicUserData: { userId },
+  };
+  mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue({
+    data: [membership],
+  });
+  mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+    data: [membership],
+  });
+}
+
+/** A stable, distinct GitHub external identity per connected account. */
+function githubExternalUserId(code: string): number {
+  return (
+    1000 +
+    [...code].reduce((total, character) => {
+      return total + (character.codePointAt(0) ?? 0);
+    }, 0)
   );
 }
 
@@ -148,7 +163,9 @@ async function connectGithubAccount(
   agentId: string,
   login = LOGIN,
 ): Promise<void> {
-  mockGitHubConnectorOAuth({ userId: 42, login });
+  // A distinct external identity per account; reusing one updates the first
+  // account in place instead of adding a second.
+  mockGitHubConnectorOAuth({ userId: githubExternalUserId(code), login });
   const start = await connectorApi.startOauth(
     actor,
     "github",
@@ -197,7 +214,7 @@ async function fixture(
     { orgId, userId },
     { [FeatureSwitchKey.SimpleMorningBrief]: options.feature !== false },
   );
-  mockMembership(orgId, userId, `orgmem_${randomUUID()}`);
+  mockClerkMembership(orgId, userId);
   return {
     orgId,
     userId,
@@ -411,17 +428,23 @@ describe("Morning Brief GitHub collection preview", () => {
     expect(traffic.requests).toHaveLength(0);
   });
 
-  it("does not read GitHub once the membership is gone", async () => {
+  it("does not read GitHub once the member is removed from the organization", async () => {
     const f = await fixture();
-    mockMembership(f.orgId, f.userId, null);
+    // The durable member row is an evictable projection that authentication
+    // refills from Clerk, so a real removal has to be gone from both.
+    getApiTestMocks().clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [] },
+    );
+    getApiTestMocks().clerk.users.getOrganizationMembershipList.mockResolvedValue(
+      { data: [] },
+    );
+    await revokeMorningBriefMembership({ orgId: f.orgId, userId: f.userId });
     const traffic = scriptGithub({});
 
     const response = await collect(f);
 
-    expect(response.body).toMatchObject({
-      result: "not-executed",
-      reason: "no-membership",
-    });
+    // A removed member never reaches the collection at all.
+    expect([401, 403]).toContain(response.status);
     expect(traffic.requests).toHaveLength(0);
   });
 
@@ -494,7 +517,7 @@ describe("Morning Brief GitHub collection preview", () => {
       connectorSlug: "github",
       connectorId: selected.id,
     });
-    mockMembership(f.orgId, f.userId, `orgmem_${randomUUID()}`);
+    mockClerkMembership(f.orgId, f.userId);
     const traffic = scriptGithub({});
 
     const response = await collect(f);
@@ -539,7 +562,7 @@ describe("Morning Brief GitHub collection preview", () => {
       connectorSlug: "github",
       connectorId: foreign.id,
     });
-    mockMembership(f.orgId, f.userId, `orgmem_${randomUUID()}`);
+    mockClerkMembership(f.orgId, f.userId);
     const traffic = scriptGithub({});
 
     const response = await collect(f);
@@ -877,7 +900,7 @@ describe("Morning Brief GitHub collection preview", () => {
       permission: "search:read",
       action: "deny",
     });
-    mockMembership(f.orgId, f.userId, `orgmem_${randomUUID()}`);
+    mockClerkMembership(f.orgId, f.userId);
     const traffic = scriptGithub({
       notifications: () => {
         return [
@@ -919,7 +942,7 @@ describe("Morning Brief GitHub collection preview", () => {
       permission: "notifications:read",
       action: "deny",
     });
-    mockMembership(f.orgId, f.userId, `orgmem_${randomUUID()}`);
+    mockClerkMembership(f.orgId, f.userId);
     const traffic = scriptGithub({
       search: searchByBranch({
         assigned: searchPage([
@@ -985,7 +1008,8 @@ describe("Morning Brief GitHub collection preview", () => {
     const bundle = collectedBundle((await collect(f)).body);
 
     expect(now() - started).toBeLessThan(10_000);
-    expect(bundle.retryAfterMs).toBe(120_000);
+    // The shared reader clamps the provider hint to its own bounded maximum.
+    expect(bundle.retryAfterMs).toBe(60_000);
     expect(bundle.branches.notifications.status).toBe("failed");
     expect(bundle.branches.notifications.limits).toContain("rate-limited");
     expect(bundle.outcome).toBe("partial");
@@ -1050,7 +1074,7 @@ describe("Morning Brief GitHub collection preview", () => {
     // The owner loses the organization membership while one GitHub request is
     // still in flight. Nothing after it may be issued, and the bundle that
     // request belongs to may not be released.
-    mockMembership(f.orgId, f.userId, null);
+    await revokeMorningBriefMembership({ orgId: f.orgId, userId: f.userId });
     held.resolve();
     const response = await pending;
 

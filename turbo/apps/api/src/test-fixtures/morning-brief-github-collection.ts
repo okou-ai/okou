@@ -186,20 +186,13 @@ export async function selectMorningBriefConnectorAccount(options: {
       chatThreadId: options.chatThreadId,
     })
     .onConflictDoNothing();
-  await db()
-    .insert(chatThreadConnectorSelections)
-    .values({
-      chatThreadId: options.chatThreadId,
-      connectorSlug: options.connectorSlug,
-      connectorId: options.connectorId,
-    })
-    .onConflictDoUpdate({
-      target: [
-        chatThreadConnectorSelections.chatThreadId,
-        chatThreadConnectorSelections.connectorSlug,
-      ],
-      set: { connectorId: options.connectorId },
-    });
+  // The thread/slug uniqueness is a partial index, so an upsert cannot infer
+  // it. Each test seeds a fresh thread, so a plain insert is the real shape.
+  await db().insert(chatThreadConnectorSelections).values({
+    chatThreadId: options.chatThreadId,
+    connectorSlug: options.connectorSlug,
+    connectorId: options.connectorId,
+  });
 }
 
 /** A bare canonical destination thread for the installation to bind to. */
@@ -263,4 +256,24 @@ export async function seedMorningBriefAgent(options: {
     await db().delete(agents).where(eq(agents.id, agentId));
   });
   return agentId;
+}
+
+/**
+ * Remove the member's durable organization membership.
+ *
+ * This is the row the collection boundary actually re-reads, so deleting it is
+ * what a real removal or account erasure looks like to a running collection.
+ */
+export async function revokeMorningBriefMembership(options: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Promise<void> {
+  await db()
+    .delete(orgMembersCache)
+    .where(
+      and(
+        eq(orgMembersCache.orgId, options.orgId),
+        eq(orgMembersCache.userId, options.userId),
+      ),
+    );
 }

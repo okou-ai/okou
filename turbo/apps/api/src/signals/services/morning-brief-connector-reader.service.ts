@@ -349,15 +349,21 @@ async function requestIsAllowed(args: {
     [args.connectorSlug],
     args.snapshot,
   );
-  const policies: NetworkPolicies = Object.fromEntries(
-    refreshes.map((refresh) => {
-      return [refresh.connectorSlug, refresh.networkPolicy];
-    }),
-  );
   const target = {
     kind: "builtin" as const,
     connectorSlug: args.connectorSlug,
   };
+  const policies: NetworkPolicies = Object.fromEntries(
+    refreshes.map((refresh) => {
+      return [
+        connectorRuntimeTargetKey({
+          kind: "builtin",
+          connectorSlug: refresh.connectorSlug,
+        }),
+        refresh.networkPolicy,
+      ];
+    }),
+  );
   const decision = matchFirewallRequestDecision(
     [
       {
@@ -566,7 +572,7 @@ const CREDENTIAL_REFRESH_BUFFER_MS = 60_000;
 
 function credentialNeedsRefresh(tokenExpiresAt: Date | null): boolean {
   return (
-    tokenExpiresAt === null ||
+    tokenExpiresAt !== null &&
     tokenExpiresAt.getTime() <= Date.now() + CREDENTIAL_REFRESH_BUFFER_MS
   );
 }
@@ -623,6 +629,114 @@ function readerUrl(
 }
 
 /**
+ * The bounded reader closure handed to one collector.
+ *
+ * Extracted only to keep `withMorningBriefConnectorReader` inside the
+ * repository's function-size limit; every gate, budget and outcome is
+ * unchanged.
+ */
+function createSourceReader(args: {
+  readonly request: MorningBriefReaderRequest;
+  readonly state: ReaderState;
+  readonly pinned: PinnedAccount;
+  readonly accessToken: string;
+  readonly deadlineAt: number;
+}): MorningBriefConnectorReader {
+  const { request, state, pinned, deadlineAt } = args;
+  const credential = { accessToken: args.accessToken };
+  return {
+    accountEmail: pinned.externalEmail,
+    async getJson({ pathname, query, schema }) {
+      if (state.revoked !== null) {
+        return { kind: "revoked" };
+      }
+      const limit = budgetLimit(state, request, deadlineAt);
+      if (limit !== null) {
+        return { kind: "budget-exhausted", limit };
+      }
+      const url = readerUrl(request, pathname, query);
+      const decision = await authorize(request, pinned, url);
+      if (decision.kind === "revoked") {
+        state.revoked = decision.reason;
+        return { kind: "revoked" };
+      }
+      if (decision.kind === "denied") {
+        return { kind: "denied" };
+      }
+      // A revocation observed while this request waited for authorization must
+      // stop it, even though the gate itself passed.
+      if (state.revoked !== null) {
+        return { kind: "revoked" };
+      }
+      request.signal.throwIfAborted();
+
+      // Every attempt is charged, so a failing provider cannot buy retries.
+      state.requests += 1;
+      const settled = await settle(
+        fetch(url, {
+          method: "GET",
+          // A redirect would carry this credential to an unauthorized host.
+          redirect: "error",
+          signal: request.signal,
+          headers: {
+            Authorization: `Bearer ${credential.accessToken}`,
+            Accept: "application/json",
+          },
+        }),
+        request.signal,
+      );
+      if (!settled.ok) {
+        return { kind: "provider-failed" };
+      }
+      const response = settled.value;
+      if (response.status === 404) {
+        void response.body?.cancel();
+        return { kind: "not-found" };
+      }
+      if (response.status === 429) {
+        const retryAfter = retryAfterMs(response);
+        void response.body?.cancel();
+        return { kind: "rate-limited", retryAfterMs: retryAfter };
+      }
+      if (!response.ok) {
+        void response.body?.cancel();
+        // 401 and 403 mean this credential lost the access it was granted;
+        // never a healthy empty read.
+        if (response.status === 401 || response.status === 403) {
+          state.revoked = "reconnect-required";
+          return { kind: "revoked" };
+        }
+        return { kind: "provider-failed" };
+      }
+
+      const body = await readBoundedResponseText(
+        response,
+        Math.min(
+          request.budget.maxResponseBytes,
+          Math.max(0, request.budget.maxTotalResponseBytes - state.totalBytes),
+        ),
+      );
+      request.signal.throwIfAborted();
+      if (body.kind === "too_large") {
+        state.truncatedTotalBytes = true;
+        return { kind: "too-large" };
+      }
+      state.totalBytes += Buffer.byteLength(body.text, "utf8");
+      const parsed = schema.safeParse(safeJsonParse(body.text));
+      if (!parsed.success) {
+        // Provider payloads never reach a log; only the shape failed.
+        L.warn("Morning Brief source returned an unusable payload", {
+          connectorSlug: request.connectorSlug,
+          orgId: request.scope.orgId,
+        });
+        return { kind: "malformed" };
+      }
+      return { kind: "ok", value: parsed.data };
+    },
+  };
+}
+
+/**
  * Run `collect` against an authorized, bounded reader for one source.
  *
  * The final payload is fenced: the same authority is re-derived after `collect`
@@ -675,96 +789,13 @@ export async function withMorningBriefConnectorReader<T>(
   args.signal.throwIfAborted();
   const pinned = credential.pinned;
 
-  const reader: MorningBriefConnectorReader = {
-    accountEmail: pinned.externalEmail,
-    async getJson({ pathname, query, schema }) {
-      if (state.revoked !== null) {
-        return { kind: "revoked" };
-      }
-      const limit = budgetLimit(state, request, deadlineAt);
-      if (limit !== null) {
-        return { kind: "budget-exhausted", limit };
-      }
-      const url = readerUrl(request, pathname, query);
-      const decision = await authorize(request, pinned, url);
-      if (decision.kind === "revoked") {
-        state.revoked = decision.reason;
-        return { kind: "revoked" };
-      }
-      if (decision.kind === "denied") {
-        return { kind: "denied" };
-      }
-      // A revocation observed while this request waited for authorization must
-      // stop it, even though the gate itself passed.
-      if (state.revoked !== null) {
-        return { kind: "revoked" };
-      }
-      args.signal.throwIfAborted();
-
-      // Every attempt is charged, so a failing provider cannot buy retries.
-      state.requests += 1;
-      const settled = await settle(
-        fetch(url, {
-          method: "GET",
-          // A redirect would carry this credential to an unauthorized host.
-          redirect: "error",
-          signal: args.signal,
-          headers: {
-            Authorization: `Bearer ${credential.accessToken}`,
-            Accept: "application/json",
-          },
-        }),
-        args.signal,
-      );
-      if (!settled.ok) {
-        return { kind: "provider-failed" };
-      }
-      const response = settled.value;
-      if (response.status === 404) {
-        void response.body?.cancel();
-        return { kind: "not-found" };
-      }
-      if (response.status === 429) {
-        const retryAfter = retryAfterMs(response);
-        void response.body?.cancel();
-        return { kind: "rate-limited", retryAfterMs: retryAfter };
-      }
-      if (!response.ok) {
-        void response.body?.cancel();
-        // 401 and 403 mean this credential lost the access it was granted;
-        // never a healthy empty read.
-        if (response.status === 401 || response.status === 403) {
-          state.revoked = "reconnect-required";
-          return { kind: "revoked" };
-        }
-        return { kind: "provider-failed" };
-      }
-
-      const body = await readBoundedResponseText(
-        response,
-        Math.min(
-          request.budget.maxResponseBytes,
-          Math.max(0, request.budget.maxTotalResponseBytes - state.totalBytes),
-        ),
-      );
-      args.signal.throwIfAborted();
-      if (body.kind === "too_large") {
-        state.truncatedTotalBytes = true;
-        return { kind: "too-large" };
-      }
-      state.totalBytes += Buffer.byteLength(body.text, "utf8");
-      const parsed = schema.safeParse(safeJsonParse(body.text));
-      if (!parsed.success) {
-        // Provider payloads never reach a log; only the shape failed.
-        L.warn("Morning Brief source returned an unusable payload", {
-          connectorSlug: args.connectorSlug,
-          orgId: args.scope.orgId,
-        });
-        return { kind: "malformed" };
-      }
-      return { kind: "ok", value: parsed.data };
-    },
-  };
+  const reader = createSourceReader({
+    request,
+    state,
+    pinned,
+    accessToken: credential.accessToken,
+    deadlineAt,
+  });
 
   const value = await collect(reader);
   args.signal.throwIfAborted();
