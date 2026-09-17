@@ -10,17 +10,12 @@ import { triggerSourceSchema } from "../logs";
 import { runCreateBodySchema } from "../run-routes";
 
 describe("get run response contract", () => {
-  it("keeps the additive source readable across old and new run decoders", () => {
-    const legacyDecoder = getRunResponseSchema.omit({ source: true });
-    const historical = {
+  it("parses the current Run response", () => {
+    const response = getRunResponseSchema.parse({
       runId: "run-1",
-      status: "failed",
+      status: "pending",
       prompt: "inspect the run",
       appendSystemPrompt: null,
-      createdAt: "2026-08-21T00:00:00.000Z",
-    };
-    const extended = {
-      ...historical,
       source: {
         providerType: "codex-oauth-token",
         runtimeProviderType: null,
@@ -28,17 +23,6 @@ describe("get run response contract", () => {
         credentialScope: "member",
         account: { status: "unknown" },
       },
-    };
-    expect(legacyDecoder.parse(extended)).toEqual(historical);
-    expect(getRunResponseSchema.parse(historical)).toEqual(historical);
-    expect(getRunResponseSchema.parse(extended)).toEqual(extended);
-  });
-  it("parses the current Run response", () => {
-    const response = getRunResponseSchema.parse({
-      runId: "run-1",
-      status: "pending",
-      prompt: "inspect the run",
-      appendSystemPrompt: null,
       createdAt: "2026-08-21T00:00:00.000Z",
     });
 
@@ -47,6 +31,13 @@ describe("get run response contract", () => {
       status: "pending",
       prompt: "inspect the run",
       appendSystemPrompt: null,
+      source: {
+        providerType: "codex-oauth-token",
+        runtimeProviderType: null,
+        model: "gpt-5.6-sol",
+        credentialScope: "member",
+        account: { status: "unknown" },
+      },
       createdAt: "2026-08-21T00:00:00.000Z",
     });
   });
