@@ -62,6 +62,19 @@ async function setupChipsWithSlashPanel(): Promise<HTMLElement> {
   return await findComposerEditor();
 }
 
+/** Custom is its own switch, so the chips reach members on either side of it. */
+async function setupChipsWithCustomTemplates(): Promise<HTMLElement> {
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+      [FeatureSwitchKey.CustomTemplates]: true,
+    },
+  });
+  return await findComposerEditor();
+}
+
 // The selected task is one control: the chip itself removes the selection, so
 // it is addressed by that action rather than by a wrapping group.
 function selectedTask(editor: HTMLElement, task: string): HTMLElement {
@@ -901,6 +914,23 @@ test("Browsing the catalog opens the existing library in the matching category",
   expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
+});
+
+test("The presentation shelf browses Presentation even once Custom exists", async () => {
+  mockTemplateChat();
+  await setupChipsWithCustomTemplates();
+  click(
+    button(
+      "Presentation",
+      screen.getByRole("group", { name: "Choose a task" }),
+    ),
+  );
+  click(button("More templates"));
+  await screen.findByRole("dialog");
+  // Custom is on the nav, so landing on Presentation is the shelf's choice
+  // rather than the only tab the picker could have opened.
+  expect(tabByText("Custom")).toHaveAttribute("aria-selected", "false");
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
 });
 
 test.each([
