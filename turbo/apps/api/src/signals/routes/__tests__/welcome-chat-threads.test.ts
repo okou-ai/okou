@@ -312,8 +312,11 @@ describe("POST /api/welcome-chat-threads", () => {
       "**[Recording to explainer video]",
       "Open **Template** in the chat composer",
       "**Share it with the team.**",
-      "Run it:",
-      "Try it:",
+      // Each example prompt is copyable on its own, with a short link that
+      // prefills the composer rather than a paragraph-long URL.
+      "```\nFind the creators talking about",
+      "[Try it](",
+      "[Run it](",
     ]) {
       expect(content).toContain(expected);
     }
@@ -420,13 +423,14 @@ describe("POST /api/welcome-chat-threads", () => {
       for (const filename of [
         "workflow-template-picker.png",
         "new-agent.png",
-        "quick-start/cover.png",
         "quick-start/okou-quick-start.html",
         "quick-start/assets/okou-quick-start.pptx",
       ]) {
         expect(content).toContain(`${WELCOME_STEP_BASE}/${filename}`);
       }
       expect(content).toContain("`okou-quick-start.pptx`");
+      // The deck renders its own preview, so no hand-made cover screenshot.
+      expect(content).not.toContain("quick-start/cover.png");
       // Every example is runnable: the prompt deep link prefills the composer.
       expect(content).toContain("https://pr-33252-app.omby.ai/?prompt=");
       expect(content).toContain("https://pr-33252-app.omby.ai/agents");
