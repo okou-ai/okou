@@ -1212,6 +1212,10 @@ async function validateGenerationTemplatePrompt(
     orgId: args.orgId,
     userId: args.userId,
     templateIds: selectedCustomIds,
+    enabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomTemplates,
+      featureSwitches.featureSwitchContext,
+    ),
   });
   if (authorizedCustom.length !== selectedCustomIds.length) {
     return badRequestMessage("Custom template not found");

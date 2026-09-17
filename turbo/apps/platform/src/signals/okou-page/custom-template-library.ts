@@ -6,8 +6,11 @@ import {
   type UserTemplateDetail,
 } from "@okouai/api-contracts/contracts/user-templates";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { retryTransientLoad, waitForOperation } from "../utils.ts";
 
 const catalogVersion$ = state(0);
@@ -21,6 +24,14 @@ const catalogVersion$ = state(0);
 export const customTemplateCatalog$ = computed(
   async (get): Promise<readonly UserTemplateCatalogEntry[]> => {
     get(catalogVersion$);
+    // A member without the feature has no catalog, and the routes refuse them
+    // anyway. Answering here rather than at each reader is what keeps the
+    // composer honest: the selected-template chip resolves against this on
+    // every render, for every member, so a reader-side guard would still have
+    // to subscribe — and subscribing is what issues the request.
+    if (get(featureSwitch$)[FeatureSwitchKey.CustomTemplates] !== true) {
+      return [];
+    }
     const client = get(apiClient$)(userTemplatesContract);
     const result = await retryTransientLoad(() => {
       return accept(client.list(), [200]);

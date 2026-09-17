@@ -3231,6 +3231,10 @@ async function resolveQueuedMessageTemplateContext(args: {
     orgId: args.orgId,
     userId: args.userId,
     templateIds: selectedUserTemplateIds(selectedTemplates),
+    enabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomTemplates,
+      args.featureSwitchContext,
+    ),
   });
   const generationTemplates =
     await resolveQueuedMessageGenerationTemplatePrompt({

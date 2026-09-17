@@ -159,6 +159,21 @@ test("The Custom category stays hidden while the switch is off", async () => {
   expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
 });
 
+test("The switch decides whether the catalog is requested at all", async () => {
+  let listed = 0;
+  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+    listed += 1;
+    return respond(200, []);
+  });
+
+  await openCustomPanel(false);
+
+  // The composer resolves the selected-template chip against this catalog on
+  // every render, for every member. Hiding the Custom tab is not enough — a
+  // member without the feature must not have asked for it.
+  expect(listed).toBe(0);
+});
+
 test("The Custom category lists every reachable template", async () => {
   mockCustomTemplates([
     customTemplate(),

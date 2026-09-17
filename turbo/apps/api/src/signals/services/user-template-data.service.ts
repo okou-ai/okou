@@ -203,9 +203,16 @@ export async function authorizedUserTemplates(
     readonly orgId: string;
     readonly userId: string;
     readonly templateIds: readonly string[];
+    /**
+     * Whether this member has the feature. Required rather than read here, so
+     * every caller states it: the routes that read and write this catalog are
+     * gated, but a send is not, and a crafted selection would otherwise reach
+     * the table through a path with no gate of its own.
+     */
+    readonly enabled: boolean;
   },
 ): Promise<readonly MountedUserTemplate[]> {
-  if (args.templateIds.length === 0) {
+  if (!args.enabled || args.templateIds.length === 0) {
     return [];
   }
   const rows = await db
