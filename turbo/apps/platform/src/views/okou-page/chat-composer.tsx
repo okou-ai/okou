@@ -159,6 +159,17 @@ import type {
   AvatarVideoAvatar,
   AvatarVideoVoice,
 } from "@okouai/api-contracts/contracts/avatar-video";
+import {
+  TEMPLATE_CARD_SHADOW,
+  TEMPLATE_TILE_CAPTION,
+  TEMPLATE_TILE_MEDIA,
+  TEMPLATE_TILE_NAME,
+  TEMPLATE_TILE_RING,
+  TEMPLATE_TILE_RING_SELECTED,
+  TEMPLATE_TILE_SCRIM,
+  TEMPLATE_TILE_USE,
+  TEMPLATE_TILE_WRAPPER,
+} from "./template-tile.ts";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
@@ -955,46 +966,8 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
   );
 }
 
-/**
- * Soft, cool-tinted card shadow for the template picker. It reads as the home
- * chat composer's elevation but is not that value: the blue-grey `220 12% 50%`
- * here is a different tint from `--okou-card-shadow`'s warm `30 6% 45%`, and it
- * carries slightly less alpha. Replaces Tailwind `shadow-sm`, whose hard black
- * tint reads muddy on white.
- *
- * The picker renders through a Base UI portal on `document.body`, which used to
- * force the literal because the token was scoped to `.okou-app`. That scope is
- * gone — `--okou-card-shadow` is declared at `:root` and would resolve here —
- * so keeping the literal is now a colour decision rather than a constraint.
- * Adopting the token would also pick up its gradient-palette override, which
- * this surface has never had.
- */
-const TEMPLATE_CARD_SHADOW =
-  "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";
-
-/**
- * Gallery tile. Hover feedback comes from the scrim and the Use pill alone —
- * the card already carries a hairline border, so a hover ring only doubled it.
- * The ring is reserved for the selected state, offset so it is drawn outside
- * the card and keeps a gap from the artwork.
- */
-const TEMPLATE_TILE_WRAPPER = "group/tile relative cursor-pointer";
-const TEMPLATE_TILE_RING =
-  "rounded-xl ring-offset-1 ring-offset-card transition-shadow duration-150";
-const TEMPLATE_TILE_RING_SELECTED = "ring-1 ring-primary";
-const TEMPLATE_TILE_MEDIA =
-  "relative overflow-hidden border border-border bg-muted";
-const TEMPLATE_TILE_SCRIM =
-  "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 group-hover/tile:opacity-100";
-const TEMPLATE_TILE_USE =
-  "absolute bottom-2 right-2 z-20 h-[30px] rounded-lg bg-primary px-3 text-[12.5px] font-medium text-primary-foreground opacity-100 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-hover/tile:opacity-100";
-// Caption metrics track the illustration card: same text size, and enough
-// breathing room under the artwork that the title never crowds it.
-const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
 /** The cover width every type's shelf uses, so the rows line up across tabs. */
 const PRESENTATION_SHELF_COVER = "w-[200px]";
-const TEMPLATE_TILE_NAME =
-  "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
 
 function VideoTemplateCard({
   item,
