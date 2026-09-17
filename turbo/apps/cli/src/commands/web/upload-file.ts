@@ -2,11 +2,18 @@ import { Command } from "commander";
 import { uploadWebFile } from "../../lib/api/domains/web";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createArtifactPresentation } from "../shared/artifact-return";
+import {
+  applyArtifactVisibility,
+  createArtifactVisibilityOption,
+  prepareArtifactVisibility,
+  type ArtifactVisibility,
+} from "../shared/artifact-visibility";
 
 interface UploadFileOptions {
   readonly file: string;
   readonly contentType?: string;
   readonly json?: boolean;
+  readonly visibility?: ArtifactVisibility;
 }
 
 export const uploadFileCommand = new Command()
@@ -15,6 +22,7 @@ export const uploadFileCommand = new Command()
   .requiredOption("-f, --file <path>", "Local file path to upload")
   .option("--content-type <mime>", "Override inferred content type")
   .option("--json", "Output metadata and Markdown return forms as JSON")
+  .addOption(createArtifactVisibilityOption())
   .addHelpText(
     "after",
     `
@@ -22,6 +30,7 @@ Examples:
   Upload a file:           okou web upload-file -f /tmp/report.pdf
   Override content-type:   okou web upload-file -f /tmp/data --content-type text/csv
   Machine-readable output: okou web upload-file -f /tmp/report.pdf --json
+  Share to organization:   okou web upload-file -f /tmp/report.pdf --visibility org
 
 Output:
   By default, prints artifact presentation context with inline-link and rich-preview Markdown forms.
@@ -34,6 +43,8 @@ Notes:
   - Authenticates via OKOU_TOKEN (requires file:write capability)
   - Persist the returned stable URL in chat messages
   - Private file URLs require the owner's authentication; they do not grant public access
+  - With privateArtifacts enabled, uploads default to only-me; --visibility org or public explicitly shares the completed file
+  - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
   - Use okou web download-file <id> to retrieve a private file
   - Max file size: 1 GB
   - Markdown, TXT, CSV and TSV files use UTF-8 unless --content-type declares a charset
@@ -46,10 +57,19 @@ Notes:
   )
   .action(
     withErrorHandler(async (options: UploadFileOptions) => {
-      const result = await uploadWebFile(options.file, {
+      const requirePrivateArtifact = await prepareArtifactVisibility(
+        options.visibility,
+      );
+      const uploaded = await uploadWebFile(options.file, {
         contentType: options.contentType,
         purpose: "artifact",
+        requirePrivateArtifact,
       });
+      const result = await applyArtifactVisibility(
+        uploaded,
+        { kind: "file", id: uploaded.id },
+        options.visibility,
+      );
       const presentation = createArtifactPresentation(
         result.filename,
         result.url,

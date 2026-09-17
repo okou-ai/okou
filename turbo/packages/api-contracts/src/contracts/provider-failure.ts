@@ -63,13 +63,25 @@ function providerTextFailureReason(
     "we were unable to start processing your request within the 900-second timeout limit. please try again later."
   )
     return "provider_queue_timeout";
+  // Responses SDKs prefix code-less stream failures with `unknown:`. Strip
+  // only their generic request wrappers before matching an exact provider phrase.
+  const semanticMessage = normalized.replace(
+    /^(?:error code )?(?:unknown|invalid_request_error): /u,
+    "",
+  );
   if (
-    normalized ===
+    semanticMessage ===
       "our servers are currently overloaded. please try again later." ||
-    normalized ===
+    semanticMessage ===
       "selected model is at capacity. please try a different model."
   )
     return "provider_overloaded";
+  if (
+    semanticMessage.startsWith(
+      "invalid prompt: your prompt was flagged as potentially violating our usage policy. please try again with a different prompt: ",
+    )
+  )
+    return "safety_policy_refusal";
   if (
     /^(?:you(?:'ve| have) hit your (?:chatgpt )?usage limit|you(?:'ve| have) hit your (?:session|weekly) limit)\b/u.test(
       normalized,

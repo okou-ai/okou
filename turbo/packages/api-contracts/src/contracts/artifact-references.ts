@@ -72,13 +72,16 @@ export const artifactReferencesContract = c.router({
         .regex(/^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u),
     }),
     responses: {
-      200: z.object({ url: z.url() }),
+      200: z.object({
+        url: z.url(),
+        preview: z.object({ filename: z.string(), contentType: z.string() }),
+      }),
       400: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary:
-      "Resolve an explicitly public artifact to its current public delivery URL",
+      "Resolve an explicitly public artifact to its delivery URL and preview metadata",
   },
   resolve: {
     method: "GET",

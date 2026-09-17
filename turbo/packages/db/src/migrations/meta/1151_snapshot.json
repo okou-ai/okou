@@ -1,5 +1,5 @@
 {
-  "id": "d7d49214-8d7b-411a-9b94-58f036f0cce9",
+  "id": "50f0f2d9-ddcd-4b05-8588-461e425369a1",
   "prevId": "54b4ded1-a104-4313-a673-829ab9571f6d",
   "version": "7",
   "dialect": "postgresql",
@@ -18493,6 +18493,283 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.morning_brief_collection_occurrences": {
+      "name": "morning_brief_collection_occurrences",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "collection_kind": {
+          "name": "collection_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "collection_version": {
+          "name": "collection_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "window_start": {
+          "name": "window_start",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "window_end": {
+          "name": "window_end",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "membership_id": {
+          "name": "membership_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_id": {
+          "name": "workflow_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "automation_id": {
+          "name": "automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slack_workspace_id": {
+          "name": "slack_workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slack_user_id": {
+          "name": "slack_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retry_after_seconds": {
+          "name": "retry_after_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel_count": {
+          "name": "channel_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thread_count": {
+          "name": "thread_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message_count": {
+          "name": "message_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_count": {
+          "name": "request_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "truncated": {
+          "name": "truncated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claimed_at": {
+          "name": "claimed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_morning_brief_collection_occurrences_user": {
+          "name": "idx_morning_brief_collection_occurrences_user",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_morning_brief_collection_occurrences_agent": {
+          "name": "idx_morning_brief_collection_occurrences_agent",
+          "columns": [
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_morning_brief_collection_occurrences_member": {
+          "name": "fk_morning_brief_collection_occurrences_member",
+          "tableFrom": "morning_brief_collection_occurrences",
+          "tableTo": "org_members_metadata",
+          "columnsFrom": [
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_morning_brief_collection_occurrences_agent": {
+          "name": "fk_morning_brief_collection_occurrences_agent",
+          "tableFrom": "morning_brief_collection_occurrences",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "morning_brief_collection_occurrences_pk": {
+          "name": "morning_brief_collection_occurrences_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "scheduled_for",
+            "collection_kind",
+            "collection_version"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_morning_brief_collection_occurrence_window": {
+          "name": "chk_morning_brief_collection_occurrence_window",
+          "value": "\"morning_brief_collection_occurrences\".\"window_end\" > \"morning_brief_collection_occurrences\".\"window_start\""
+        },
+        "chk_morning_brief_collection_occurrence_attempt": {
+          "name": "chk_morning_brief_collection_occurrence_attempt",
+          "value": "\"morning_brief_collection_occurrences\".\"attempt\" >= 1"
+        },
+        "chk_morning_brief_collection_occurrence_lease": {
+          "name": "chk_morning_brief_collection_occurrence_lease",
+          "value": "(\"morning_brief_collection_occurrences\".\"status\" = 'running') = (\"morning_brief_collection_occurrences\".\"lease_token\" IS NOT NULL)\n          AND (\"morning_brief_collection_occurrences\".\"lease_token\" IS NULL) = (\"morning_brief_collection_occurrences\".\"lease_expires_at\" IS NULL)"
+        },
+        "chk_morning_brief_collection_occurrence_outcome": {
+          "name": "chk_morning_brief_collection_occurrence_outcome",
+          "value": "(\"morning_brief_collection_occurrences\".\"status\" = 'running') = (\"morning_brief_collection_occurrences\".\"outcome\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.morning_brief_enrollments": {
       "name": "morning_brief_enrollments",
       "schema": "",
@@ -23786,598 +24063,6 @@
         "pi_resource_version_indexes_attempt_check": {
           "name": "pi_resource_version_indexes_attempt_check",
           "value": "\"pi_resource_version_indexes\".\"attempt_count\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.pi_stable_context_artifact_resources": {
-      "name": "pi_stable_context_artifact_resources",
-      "schema": "",
-      "columns": {
-        "artifact_digest": {
-          "name": "artifact_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ordinal": {
-          "name": "ordinal",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage_id": {
-          "name": "storage_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "storage_version_id": {
-          "name": "storage_version_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "pi_stable_context_artifact_resources_version_idx": {
-          "name": "pi_stable_context_artifact_resources_version_idx",
-          "columns": [
-            {
-              "expression": "artifact_digest",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "storage_version_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "ordinal",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pi_stable_context_artifact_resources_storage_idx": {
-          "name": "pi_stable_context_artifact_resources_storage_idx",
-          "columns": [
-            {
-              "expression": "storage_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "pi_stable_context_artifact_resources_artifact_fk": {
-          "name": "pi_stable_context_artifact_resources_artifact_fk",
-          "tableFrom": "pi_stable_context_artifact_resources",
-          "tableTo": "pi_stable_context_artifacts",
-          "columnsFrom": [
-            "artifact_digest"
-          ],
-          "columnsTo": [
-            "digest"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "pi_stable_context_artifact_resources_storage_fk": {
-          "name": "pi_stable_context_artifact_resources_storage_fk",
-          "tableFrom": "pi_stable_context_artifact_resources",
-          "tableTo": "storages",
-          "columnsFrom": [
-            "storage_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "pi_stable_context_artifact_resources_version_fk": {
-          "name": "pi_stable_context_artifact_resources_version_fk",
-          "tableFrom": "pi_stable_context_artifact_resources",
-          "tableTo": "storage_versions",
-          "columnsFrom": [
-            "storage_version_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "pi_stable_context_artifact_resources_pk": {
-          "name": "pi_stable_context_artifact_resources_pk",
-          "columns": [
-            "artifact_digest",
-            "ordinal"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pi_stable_context_artifact_resources_ordinal_check": {
-          "name": "pi_stable_context_artifact_resources_ordinal_check",
-          "value": "\"pi_stable_context_artifact_resources\".\"ordinal\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.pi_stable_context_artifacts": {
-      "name": "pi_stable_context_artifacts",
-      "schema": "",
-      "columns": {
-        "digest": {
-          "name": "digest",
-          "type": "varchar(64)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "projection": {
-          "name": "projection",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "pi_stable_context_artifacts_owner_idx": {
-          "name": "pi_stable_context_artifacts_owner_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pi_stable_context_artifacts_created_at_idx": {
-          "name": "pi_stable_context_artifacts_created_at_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "pi_stable_context_artifacts_agent_fk": {
-          "name": "pi_stable_context_artifacts_agent_fk",
-          "tableFrom": "pi_stable_context_artifacts",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.pi_stable_context_generations": {
-      "name": "pi_stable_context_generations",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "publication_state": {
-          "name": "publication_state",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'ready'"
-        },
-        "publication_token": {
-          "name": "publication_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "pi_stable_context_generations_pk": {
-          "name": "pi_stable_context_generations_pk",
-          "columns": [
-            "org_id",
-            "agent_id",
-            "subject"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pi_stable_context_generations_state_check": {
-          "name": "pi_stable_context_generations_state_check",
-          "value": "\"pi_stable_context_generations\".\"publication_state\" IN ('pending', 'ready')"
-        },
-        "pi_stable_context_generations_token_check": {
-          "name": "pi_stable_context_generations_token_check",
-          "value": "(\"pi_stable_context_generations\".\"publication_state\" = 'pending' AND \"pi_stable_context_generations\".\"publication_token\" IS NOT NULL) OR (\"pi_stable_context_generations\".\"publication_state\" = 'ready' AND \"pi_stable_context_generations\".\"publication_token\" IS NULL)"
-        },
-        "pi_stable_context_generations_generation_check": {
-          "name": "pi_stable_context_generations_generation_check",
-          "value": "\"pi_stable_context_generations\".\"generation\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.pi_stable_context_heads": {
-      "name": "pi_stable_context_heads",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "variant_digest": {
-          "name": "variant_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "agent_generation": {
-          "name": "agent_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "user_generation": {
-          "name": "user_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "input_digest": {
-          "name": "input_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'missing'"
-        },
-        "input": {
-          "name": "input",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "artifact_digest": {
-          "name": "artifact_digest",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "validity_horizon": {
-          "name": "validity_horizon",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_id": {
-          "name": "lease_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "lease_expires_at": {
-          "name": "lease_expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "available_at": {
-          "name": "available_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "attempt_count": {
-          "name": "attempt_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "last_error_class": {
-          "name": "last_error_class",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "pi_stable_context_heads_owner_variant_idx": {
-          "name": "pi_stable_context_heads_owner_variant_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "variant_digest",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pi_stable_context_heads_pending_idx": {
-          "name": "pi_stable_context_heads_pending_idx",
-          "columns": [
-            {
-              "expression": "available_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"pi_stable_context_heads\".\"status\" IN ('pending', 'failed')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "pi_stable_context_heads_lease_idx": {
-          "name": "pi_stable_context_heads_lease_idx",
-          "columns": [
-            {
-              "expression": "lease_expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"pi_stable_context_heads\".\"status\" = 'running'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "pi_stable_context_heads_artifact_digest_pi_stable_context_artifacts_digest_fk": {
-          "name": "pi_stable_context_heads_artifact_digest_pi_stable_context_artifacts_digest_fk",
-          "tableFrom": "pi_stable_context_heads",
-          "tableTo": "pi_stable_context_artifacts",
-          "columnsFrom": [
-            "artifact_digest"
-          ],
-          "columnsTo": [
-            "digest"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "pi_stable_context_heads_agent_fk": {
-          "name": "pi_stable_context_heads_agent_fk",
-          "tableFrom": "pi_stable_context_heads",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pi_stable_context_heads_status_check": {
-          "name": "pi_stable_context_heads_status_check",
-          "value": "\"pi_stable_context_heads\".\"status\" IN ('missing', 'pending', 'running', 'ready', 'unindexable', 'failed')"
-        },
-        "pi_stable_context_heads_generation_check": {
-          "name": "pi_stable_context_heads_generation_check",
-          "value": "\"pi_stable_context_heads\".\"generation\" > 0 AND \"pi_stable_context_heads\".\"agent_generation\" > 0 AND \"pi_stable_context_heads\".\"user_generation\" > 0"
-        },
-        "pi_stable_context_heads_input_check": {
-          "name": "pi_stable_context_heads_input_check",
-          "value": "(\"pi_stable_context_heads\".\"status\" = 'missing' AND \"pi_stable_context_heads\".\"input\" IS NULL AND \"pi_stable_context_heads\".\"input_digest\" IS NULL) OR (\"pi_stable_context_heads\".\"status\" <> 'missing' AND \"pi_stable_context_heads\".\"input\" IS NOT NULL AND \"pi_stable_context_heads\".\"input_digest\" IS NOT NULL)"
-        },
-        "pi_stable_context_heads_artifact_check": {
-          "name": "pi_stable_context_heads_artifact_check",
-          "value": "(\"pi_stable_context_heads\".\"status\" = 'ready' AND \"pi_stable_context_heads\".\"artifact_digest\" IS NOT NULL) OR (\"pi_stable_context_heads\".\"status\" <> 'ready' AND \"pi_stable_context_heads\".\"artifact_digest\" IS NULL)"
-        },
-        "pi_stable_context_heads_lease_check": {
-          "name": "pi_stable_context_heads_lease_check",
-          "value": "(\"pi_stable_context_heads\".\"status\" = 'running' AND \"pi_stable_context_heads\".\"lease_id\" IS NOT NULL AND \"pi_stable_context_heads\".\"lease_expires_at\" IS NOT NULL) OR (\"pi_stable_context_heads\".\"status\" <> 'running' AND \"pi_stable_context_heads\".\"lease_id\" IS NULL AND \"pi_stable_context_heads\".\"lease_expires_at\" IS NULL)"
-        },
-        "pi_stable_context_heads_attempt_check": {
-          "name": "pi_stable_context_heads_attempt_check",
-          "value": "\"pi_stable_context_heads\".\"attempt_count\" >= 0"
         }
       },
       "isRLSEnabled": false

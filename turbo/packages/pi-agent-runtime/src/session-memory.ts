@@ -393,6 +393,7 @@ export async function runPiFirstModelTurn<TApi extends Api>(
       error,
       options.model.provider,
       responseStatus,
+      options.streamOptions?.usageObserver?.snapshot(true),
     );
   }
   options.session.appendMessage(assistantMessage);

@@ -93,6 +93,26 @@ export async function transferAgentOwnerFixture(args: {
   }
 }
 
+/** Reassigns one Agent's organization, the other half of the same unique
+ * `(id, org_id, owner)` key. No production writer updates this column today,
+ * and it is the canonical parent a read-cursor publication targets, so moving
+ * it is the change a writer's retained KEY SHARE must turn into a reselection
+ * instead of a stale-organization notification.
+ */
+export async function transferAgentOrganizationFixture(args: {
+  readonly agentId: string;
+  readonly orgId: string;
+}): Promise<void> {
+  const updated = await db()
+    .update(agents)
+    .set({ orgId: args.orgId })
+    .where(eq(agents.id, args.agentId))
+    .returning({ id: agents.id });
+  if (updated.length !== 1) {
+    throw new Error("Expected one Agent organization to transfer");
+  }
+}
+
 export function barrierQueryText(queryArgs: unknown[]): string {
   const parsed = z
     .union([z.string(), z.object({ text: z.string() })])

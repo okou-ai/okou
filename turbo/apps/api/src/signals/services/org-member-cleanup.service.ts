@@ -14,6 +14,7 @@ import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
 import { tapError } from "../utils";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
 
 import type { Db } from "../external/db";
 
@@ -117,6 +118,14 @@ async function revokeOrgMemberRunAuthority(
         eq(agentRuns.userId, args.userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
+    });
+    // A Morning Brief collection attempt is the same kind of authority, so it
+    // loses its occurrence here rather than surviving until the member row it
+    // hangs from is removed further down this cleanup.
+    await revokeMorningBriefCollectionOwnership(tx, {
+      kind: "membership",
+      orgId: args.orgId,
+      userId: args.userId,
     });
     await tx
       .delete(agentRunQueue)

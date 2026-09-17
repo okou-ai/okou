@@ -241,6 +241,19 @@ function publicShareUrl(policy: ArtifactSharePolicy): string {
   return `${scheme}://${policy.publicSlug ?? policy.publicToken}.${domain}/`;
 }
 
+function publicSharePreview(policy: ArtifactSharePolicy) {
+  return {
+    url: publicShareUrl(policy),
+    preview:
+      policy.target.kind === "file"
+        ? {
+            filename: policy.target.filename,
+            contentType: policy.target.contentType,
+          }
+        : { filename: "index.html", contentType: "text/html" },
+  };
+}
+
 function shortShareUrl(policy: ArtifactSharePolicy | null): string | null {
   if (!policy || policy.status !== "active") {
     return null;
@@ -651,7 +664,7 @@ export const resolveArtifactTargetShare$ = command(
   },
 );
 
-/** Public references disclose only an already published URL, never private bytes. */
+/** Public references disclose only published delivery and preview metadata. */
 export const resolvePublicArtifactUrl$ = command(
   async (
     { get },
@@ -722,6 +735,6 @@ export const resolvePublicArtifactUrl$ = command(
       ownedShareTarget(policy.target, row.userId, row.orgId),
     );
     signal.throwIfAborted();
-    return target ? { url: publicShareUrl(policy) } : null;
+    return target ? publicSharePreview(policy) : null;
   },
 );

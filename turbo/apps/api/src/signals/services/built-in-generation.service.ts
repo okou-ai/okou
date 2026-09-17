@@ -40,6 +40,7 @@ interface CreateBuiltInGenerationJobArgs {
   readonly userId: string;
   readonly runId: string | undefined;
   readonly request: Record<string, unknown>;
+  readonly privateArtifacts?: boolean;
 }
 
 interface BuiltInGenerationRequestInternal {
@@ -349,8 +350,9 @@ export const createBuiltInGenerationJob$ = command(
     signal: AbortSignal,
   ) => {
     const privateArtifacts =
-      (args.type === "image" || args.type === "video") &&
-      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
+      args.privateArtifacts ??
+      ((args.type === "image" || args.type === "video") &&
+        (await get(privateArtifactCreationEnabled(args.orgId, args.userId))));
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [job] = await writeDb
