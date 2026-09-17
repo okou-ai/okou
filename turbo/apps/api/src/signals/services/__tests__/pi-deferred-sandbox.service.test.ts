@@ -37,11 +37,12 @@ import {
 } from "../pi-deferred-sandbox.service";
 import { promoteNextQueuedRun$ } from "../run-queue.service";
 import { drainOrgQueueToCapacity$ } from "../agent-run-lifecycle.service";
-import { cleanupSandboxes$ } from "../cron-cleanup-sandboxes.service";
 import { setTimeout as delay } from "node:timers/promises";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
+import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { runsCancelRoutes } from "../../routes/runs-cancel";
+import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import {
@@ -1156,20 +1157,22 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     await flushWaitUntilForTest();
     context.mocks.ably.channelGet.mockClear();
     context.mocks.ably.publish.mockClear();
-    const cleanup = await createStore().set(
-      cleanupSandboxes$,
-      {
-        kind: "fixtures",
-        runIds: [deferred.runId],
-        orgIds: [actor.orgId],
-        chatThreadIds: [deferred.threadId],
-        exportJobIds: [],
-      },
-      context.signal,
+    const cleanup = await accept(
+      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
+        testCronCleanupSandboxesStateContract,
+      ).cleanup({
+        body: {
+          runIds: [deferred.runId],
+          orgIds: [actor.orgId],
+          chatThreadIds: [deferred.threadId],
+          exportJobIds: [],
+        },
+      }),
+      [200],
     );
     await flushWaitUntilForTest();
 
-    expect(cleanup.cleaned).toBe(1);
+    expect(cleanup.body.cleaned).toBe(1);
     const after = await api.readRunQueue(actor);
     expect(after.body.concurrency).toMatchObject({
       active: 1,
