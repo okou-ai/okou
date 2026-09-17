@@ -113,6 +113,13 @@ export function OnboardingSourcesPage() {
             return connector.slug;
           })
       : [];
+  // A source connected through search belongs in the grid too, so an enabled
+  // Continue always has something visibly connected behind it.
+  const extraConnectedSlugs = connectedSlugs.filter((slug) => {
+    return !FEATURED_SOURCE_SLUGS.some((featured) => {
+      return featured === slug;
+    });
+  });
 
   return (
     <OnboardingShell
@@ -136,7 +143,7 @@ export function OnboardingSourcesPage() {
       }
     >
       <OnboardingConnectorSetup
-        connectorSlugs={FEATURED_SOURCE_SLUGS}
+        connectorSlugs={[...FEATURED_SOURCE_SLUGS, ...extraConnectedSlugs]}
         variant="prompt"
       >
         <Button

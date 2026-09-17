@@ -21,6 +21,7 @@ import {
   cn,
 } from "@okouai/ui";
 import {
+  nextSourcesFirstStep,
   sourcesFirstUi$,
   updateSourcesFirstDraft$,
   updateSourcesFirstUi$,
@@ -197,10 +198,16 @@ export function OnboardingExperiencePage() {
   const { welcomeDialog, openWelcome } = useWelcomeHandoff();
   const flow = useSourcesFirstFlow("experience", openWelcome);
 
-  // The answer decides the branch, so it is recorded before moving on.
+  // The answer decides the branch, so the next step is resolved from the new
+  // answer instead of the one this render was built from.
   const choose = (experienced: boolean): void => {
     updateDraft({ experienced });
-    flow.goNext();
+    const next = nextSourcesFirstStep("experience", flow.flow, experienced);
+    if (next) {
+      flow.goTo(next);
+      return;
+    }
+    openWelcome();
   };
 
   return (
