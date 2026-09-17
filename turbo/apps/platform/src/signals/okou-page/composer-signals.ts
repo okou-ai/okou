@@ -143,7 +143,7 @@ export interface ComposerSubmission {
 }
 
 /** How a submission is delivered, as distinct from what it contains. */
-export interface ComposerSubmissionOptions {
+interface ComposerSubmissionOptions {
   readonly stayOnPage: boolean;
 }
 

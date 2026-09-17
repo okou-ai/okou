@@ -3,7 +3,7 @@ import {
   type UserTemplateDetail,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -521,13 +521,11 @@ test("Uploading leaves the member in the picker they started from", async () => 
   expect(window.location.pathname).toBe(`/agents/${AGENT_ID}/chat`);
   // A tile that swallows a click and changes nothing visible reads as broken,
   // so the send has to say it happened.
-  await waitFor(() => {
-    expect(
-      document.body.textContent?.includes(
-        "Analysing brand-report.docx. It will appear under Custom when it is ready.",
-      ),
-    ).toBe(true);
-  });
+  await expect(
+    screen.findByText(
+      "Analysing brand-report.docx. It will appear under Custom when it is ready.",
+    ),
+  ).resolves.toBeVisible();
 });
 
 test("A deck uploaded from the same entry keeps the presentation command", async () => {
@@ -578,13 +576,11 @@ test("A source no kind is made from is refused before it is uploaded", async () 
     },
   });
 
-  await waitFor(() => {
-    expect(
-      document.body.textContent?.includes(
-        "Choose a .pptx, .ppt, .pdf, .docx, .doc file to make a template.",
-      ),
-    ).toBe(true);
-  });
+  await expect(
+    screen.findByText(
+      "Choose a .pptx, .ppt, .pdf, .docx, .doc file to make a template.",
+    ),
+  ).resolves.toBeVisible();
   // Refused before the bytes are spent, not after a run has already started on
   // a file that cannot become a template.
   expect(capture.runPrompts).toStrictEqual([]);
