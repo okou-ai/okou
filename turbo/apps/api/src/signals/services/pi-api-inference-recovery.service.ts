@@ -193,7 +193,7 @@ async function readRecoveryApiInferenceContext(
   };
 }
 
-function classifyRecovery(args: {
+interface RecoverableInferenceState {
   readonly phase:
     | "admitted"
     | "ready"
@@ -207,7 +207,11 @@ function classifyRecovery(args: {
   readonly providerAttemptState: "not-started" | "may-have-started" | "settled";
   readonly publication: PiInferencePublication | null;
   readonly usageSettled: boolean;
-}): RecoveryClaim["kind"] | null {
+}
+
+function classifyRecovery(
+  args: RecoverableInferenceState,
+): RecoveryClaim["kind"] | null {
   if (args.phase === "ready" && args.providerAttemptState === "not-started") {
     return "activate";
   }
@@ -230,6 +234,21 @@ function classifyRecovery(args: {
     args.providerAttemptState === "may-have-started"
     ? "uncertain"
     : null;
+}
+
+/** Producer-owned expired phases stay with bounded recovery even when they are
+ * beyond one maintenance batch. Generic timeout must not discard recoverable H1. */
+export function hasDurablePiApiRecoveryOwner(
+  args: RecoverableInferenceState & {
+    readonly activationReady: boolean;
+    readonly input: PiInferenceInput;
+  },
+): boolean {
+  return (
+    args.activationReady &&
+    args.input.deferredSecrets.kind === "encrypted" &&
+    classifyRecovery(args) !== null
+  );
 }
 
 async function claimExpiredRecovery(
@@ -276,7 +295,7 @@ async function claimExpiredRecovery(
     }
     // Only the producer writes the encrypted activation envelope. Foundation
     // and consumer-only fixtures retain their established timeout owner.
-    if (row.input.deferredSecrets.kind !== "encrypted") {
+    if (!hasDurablePiApiRecoveryOwner(row)) {
       return null;
     }
     const kind = classifyRecovery(row);
@@ -487,7 +506,7 @@ export const recoverDurablePiApiInference$ = command(
     let recovered = 0;
     for (const candidate of candidates) {
       signal.throwIfAborted();
-      const claim = await claimExpiredRecovery(db, candidate.runId, at);
+      const claim = await claimExpiredRecovery(db, candidate.runId, nowDate());
       signal.throwIfAborted();
       if (!claim) {
         continue;

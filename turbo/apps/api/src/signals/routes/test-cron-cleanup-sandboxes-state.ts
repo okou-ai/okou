@@ -13,9 +13,15 @@ import { agents } from "@okouai/db/schema/agent";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { browserSessions } from "@okouai/db/schema/browser-session";
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  agentRunInference,
+  agentRunSandboxIntent,
+  agentRunSandboxLease,
+} from "@okouai/db/schema/agent-run-inference";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -36,7 +42,9 @@ import { and, eq, inArray, notExists, sql } from "drizzle-orm";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
+import { singleton } from "../../lib/singleton";
 import { nowDate } from "../../lib/time";
+import type { Tx } from "../../lib/db-types";
 import type { RouteEntry } from "../route-entry";
 import {
   encryptQueuedRunnerJobPayload,
@@ -48,12 +56,22 @@ import {
 } from "../services/agent-run-metadata-write.service";
 import { transitionAgentRunsToTerminal } from "../services/agent-run-terminal-transition.service";
 import { cleanupSandboxes$ } from "../services/cron-cleanup-sandboxes.service";
+import {
+  piDeferredConfigurationSchema,
+  piDeferredContextSchema,
+} from "../services/pi-deferred-sandbox-contract";
+import {
+  publishPiInferenceObject,
+  readPiInferenceObject,
+  retainPiInferenceObject,
+} from "../services/pi-inference-object.service";
 import { insertChatEvent } from "../services/chat-event.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
+import { createDeferredPromise, settle } from "../utils";
 
 const actionBody$ = bodyResultOf(testCronCleanupSandboxesStateContract.action);
 const cleanupBody$ = bodyResultOf(
@@ -81,6 +99,19 @@ type CronCleanupSandboxesActionHandler = (
   body: Record<string, unknown>,
   signal: AbortSignal,
 ) => Promise<CronCleanupSandboxesActionResponse>;
+
+interface HeldPiTestLock {
+  held: boolean;
+  readonly release: {
+    readonly promise: Promise<void>;
+    readonly resolve: (value: void) => void;
+    readonly settled: () => boolean;
+  };
+}
+
+const heldPiTestLocks = singleton(() => {
+  return new Map<string, HeldPiTestLock>();
+});
 
 function readString(body: Record<string, unknown>, key: string): string | null {
   const value = body[key];
@@ -1049,6 +1080,431 @@ async function getExportJobForAction(
   return actionOk({ export_job: job ?? null });
 }
 
+async function getPiInferenceForAction(
+  db: Db,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+) {
+  const runId = readString(body, "run_id");
+  if (!runId) {
+    return actionBadRequest("run_id is required");
+  }
+  const [state] = await db
+    .select({
+      status: agentRuns.status,
+      runnerGroup: agentRuns.runnerGroup,
+      launchSnapshot: agentRuns.launchSnapshot,
+      phase: agentRunInference.phase,
+      ownerEpoch: agentRunInference.ownerEpoch,
+      deadlineAt: agentRunInference.deadlineAt,
+      providerAttemptState: agentRunInference.providerAttemptState,
+      usageSettled: agentRunInference.usageSettled,
+      publication: agentRunInference.publication,
+    })
+    .from(agentRuns)
+    .innerJoin(agentRunInference, eq(agentRunInference.runId, agentRuns.id))
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
+  const [jobs, intents, leases] = await Promise.all([
+    db
+      .select({ runId: runnerJobQueue.runId })
+      .from(runnerJobQueue)
+      .where(eq(runnerJobQueue.runId, runId)),
+    db
+      .select({ runId: agentRunSandboxIntent.runId })
+      .from(agentRunSandboxIntent)
+      .where(eq(agentRunSandboxIntent.runId, runId)),
+    db
+      .select({ runId: agentRunSandboxLease.runId })
+      .from(agentRunSandboxLease)
+      .where(eq(agentRunSandboxLease.runId, runId)),
+  ]);
+  signal.throwIfAborted();
+  return actionOk({
+    inference: state
+      ? {
+          ...state,
+          deadlineAt: state.deadlineAt.toISOString(),
+          jobs: jobs.length,
+          intents: intents.length,
+          leases: leases.length,
+        }
+      : null,
+  });
+}
+
+type AgentRunRow = typeof agentRuns.$inferSelect;
+type AgentRunInferenceRow = typeof agentRunInference.$inferSelect;
+type PiRecoveryFixtureKind = "ready" | "publishing";
+
+async function preparePiRecoveryObjectHashes(
+  db: Db,
+  args: {
+    readonly sourceRunId: string;
+    readonly sourceRun: AgentRunRow;
+    readonly sourceInference: AgentRunInferenceRow;
+    readonly sourceChatThreadId: string;
+    readonly chatThreadId: string;
+    readonly kind: PiRecoveryFixtureKind;
+    readonly omitBillingCapture: boolean;
+  },
+) {
+  let configurationHash = args.sourceInference.input.configurationHash;
+  if (args.omitBillingCapture) {
+    const sourceConfiguration = await readPiInferenceObject(
+      db,
+      {
+        runId: args.sourceRunId,
+        userId: args.sourceRun.userId,
+        orgId: args.sourceRun.orgId,
+        kind: "configuration",
+        hash: configurationHash,
+      },
+      piDeferredConfigurationSchema,
+    );
+    const { apiInferenceBilling: _billing, ...withoutBilling } =
+      sourceConfiguration;
+    configurationHash = await publishPiInferenceObject(
+      db,
+      { userId: args.sourceRun.userId, orgId: args.sourceRun.orgId },
+      "configuration",
+      piDeferredConfigurationSchema,
+      withoutBilling,
+    );
+  }
+  let contextHash = args.sourceInference.input.contextHash;
+  if (args.kind === "ready") {
+    const sourceContext = await readPiInferenceObject(
+      db,
+      {
+        runId: args.sourceRunId,
+        userId: args.sourceRun.userId,
+        orgId: args.sourceRun.orgId,
+        kind: "context",
+        hash: contextHash,
+      },
+      piDeferredContextSchema,
+    );
+    contextHash = await publishPiInferenceObject(
+      db,
+      { userId: args.sourceRun.userId, orgId: args.sourceRun.orgId },
+      "context",
+      piDeferredContextSchema,
+      {
+        ...sourceContext,
+        baseSession: { sessionId: args.chatThreadId, sha256: null },
+        h0SessionHistory: sourceContext.h0SessionHistory.replaceAll(
+          args.sourceChatThreadId,
+          args.chatThreadId,
+        ),
+      },
+    );
+  }
+  return { configurationHash, contextHash };
+}
+
+async function retainPiRecoveryFixtureObjects(
+  tx: Tx,
+  args: {
+    readonly runId: string;
+    readonly sourceRun: AgentRunRow;
+    readonly sourceInference: AgentRunInferenceRow;
+    readonly configurationHash: string;
+    readonly contextHash: string;
+    readonly kind: PiRecoveryFixtureKind;
+  },
+) {
+  for (const object of [
+    { kind: "configuration" as const, hash: args.configurationHash },
+    { kind: "context" as const, hash: args.contextHash },
+  ]) {
+    await retainPiInferenceObject(tx, {
+      runId: args.runId,
+      userId: args.sourceRun.userId,
+      orgId: args.sourceRun.orgId,
+      ...object,
+    });
+  }
+  if (args.sourceInference.input.deferredSecrets.kind === "encrypted") {
+    await retainPiInferenceObject(tx, {
+      runId: args.runId,
+      userId: args.sourceRun.userId,
+      orgId: args.sourceRun.orgId,
+      kind: "secrets",
+      hash: args.sourceInference.input.deferredSecrets.objectHash,
+    });
+  }
+  if (args.kind !== "publishing") {
+    return;
+  }
+  const h1Hash = args.sourceInference.publication?.h1Hash;
+  if (!h1Hash) {
+    throw new Error("Recovery source H1 is missing");
+  }
+  await retainPiInferenceObject(tx, {
+    runId: args.runId,
+    userId: args.sourceRun.userId,
+    orgId: args.sourceRun.orgId,
+    kind: "h1",
+    hash: h1Hash,
+  });
+}
+
+async function persistPiRecoveryFixture(
+  db: Db,
+  args: {
+    readonly runId: string;
+    readonly sessionId: string;
+    readonly chatThreadId: string;
+    readonly sourceRun: AgentRunRow;
+    readonly sourceInference: AgentRunInferenceRow;
+    readonly configurationHash: string;
+    readonly contextHash: string;
+    readonly deadlineAt: Date;
+    readonly kind: PiRecoveryFixtureKind;
+  },
+) {
+  await db.transaction(async (tx) => {
+    if (args.kind === "ready") {
+      const [sourceSession] = await tx
+        .select({ agentId: agentSessions.agentId })
+        .from(agentSessions)
+        .where(eq(agentSessions.id, args.sourceRun.sessionId));
+      if (!sourceSession) {
+        throw new Error("Recovery source session is missing");
+      }
+      await tx.insert(agentSessions).values({
+        id: args.sessionId,
+        agentId: sourceSession.agentId,
+        userId: args.sourceRun.userId,
+        orgId: args.sourceRun.orgId,
+      });
+      await tx.insert(chatThreads).values({
+        id: args.chatThreadId,
+        userId: args.sourceRun.userId,
+        agentId: sourceSession.agentId,
+        agentSessionId: args.sessionId,
+      });
+    }
+    await tx.insert(agentRuns).values({
+      ...args.sourceRun,
+      id: args.runId,
+      sessionId: args.sessionId,
+      continuedFromSessionId: null,
+      chatThreadId: args.chatThreadId,
+      status: "pending",
+      runnerCancellationMode: null,
+      result: null,
+      error: null,
+      failureReason: null,
+      createdAt: nowDate(),
+      startedAt: null,
+      completedAt: null,
+      lastHeartbeatAt: null,
+      lastEventSequence: null,
+      firstAssistantEventAcknowledgedAt: null,
+      sandboxId: null,
+      sandboxReuseResult: null,
+      workspaceReuseResult: null,
+      cancellationRecoveryCompleted: null,
+      runnerId: null,
+      runnerHeartbeatGeneration: null,
+      runnerHostname: null,
+      runnerVersion: null,
+      summary: null,
+    });
+    await tx.insert(agentRunInference).values({
+      runId: args.runId,
+      sourceConversationId: null,
+      input: {
+        ...args.sourceInference.input,
+        inputEventId: null,
+        configurationHash: args.configurationHash,
+        contextHash: args.contextHash,
+      },
+      phase: args.kind,
+      ownerEpoch: 1,
+      deadlineAt: args.deadlineAt,
+      activationReady: true,
+      providerAttemptId: randomUUID(),
+      providerAttemptState: args.kind === "ready" ? "not-started" : "settled",
+      publication:
+        args.kind === "publishing" ? args.sourceInference.publication : null,
+      publishedSequence: 0,
+      usageSettled: false,
+    });
+    await retainPiRecoveryFixtureObjects(tx, args);
+  });
+}
+
+async function seedPiInferenceRecoveryForAction(
+  db: Db,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+) {
+  const sourceRunId = readString(body, "source_run_id");
+  const kind = readString(body, "kind");
+  if (!sourceRunId || (kind !== "ready" && kind !== "publishing")) {
+    return actionBadRequest("source_run_id and recovery kind are required");
+  }
+  const [[sourceRun], [sourceInference]] = await Promise.all([
+    db.select().from(agentRuns).where(eq(agentRuns.id, sourceRunId)),
+    db
+      .select()
+      .from(agentRunInference)
+      .where(eq(agentRunInference.runId, sourceRunId)),
+  ]);
+  signal.throwIfAborted();
+  if (
+    !sourceRun ||
+    !sourceInference ||
+    sourceInference.input.h0.kind !== "empty" ||
+    !sourceRun.chatThreadId
+  ) {
+    return actionBadRequest("source durable producer state is unavailable");
+  }
+  const runId = randomUUID();
+  const sessionId = kind === "ready" ? randomUUID() : sourceRun.sessionId;
+  const chatThreadId = kind === "ready" ? randomUUID() : sourceRun.chatThreadId;
+  const hashes = await preparePiRecoveryObjectHashes(db, {
+    sourceRunId,
+    sourceRun,
+    sourceInference,
+    sourceChatThreadId: sourceRun.chatThreadId,
+    chatThreadId,
+    kind,
+    omitBillingCapture:
+      readOptionalBoolean(body, "omit_billing_capture") === true,
+  });
+  signal.throwIfAborted();
+  await persistPiRecoveryFixture(db, {
+    runId,
+    sessionId,
+    chatThreadId,
+    sourceRun,
+    sourceInference,
+    kind,
+    deadlineAt: readDate(body, "deadline_at") ?? new Date(0),
+    ...hashes,
+  });
+  signal.throwIfAborted();
+  return actionOk({ run_id: runId });
+}
+
+async function expirePiInferenceForAction(
+  db: Db,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+) {
+  const runId = readString(body, "run_id");
+  if (!runId) {
+    return actionBadRequest("run_id is required");
+  }
+  await db
+    .update(agentRunInference)
+    .set({ deadlineAt: readDate(body, "deadline_at") ?? new Date(0) })
+    .where(eq(agentRunInference.runId, runId));
+  signal.throwIfAborted();
+  return actionOk();
+}
+
+async function deletePiInferenceModelKeyForAction(
+  db: Db,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+) {
+  const runId = readString(body, "run_id");
+  if (!runId) {
+    return actionBadRequest("run_id is required");
+  }
+  const [run] = await db
+    .select({ keyId: agentRuns.builtInModelKeyId })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId));
+  if (!run?.keyId) {
+    return actionBadRequest("captured built-in model key is missing");
+  }
+  await db.delete(builtInModelKeys).where(eq(builtInModelKeys.id, run.keyId));
+  signal.throwIfAborted();
+  return actionOk();
+}
+
+async function holdPiInferenceTestLockForAction(
+  db: Db,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+) {
+  const lockId = readString(body, "lock_id");
+  const lockKind = readString(body, "lock_kind");
+  const key = readString(body, "key");
+  if (
+    !lockId ||
+    !key ||
+    (lockKind !== "org-sandbox-capacity" &&
+      lockKind !== "run-output-projection")
+  ) {
+    return actionBadRequest("lock_id, lock_kind, and key are required");
+  }
+  if (heldPiTestLocks().has(lockId)) {
+    return actionBadRequest("test lock already exists");
+  }
+  const release = createDeferredPromise<void>(signal);
+  const state: HeldPiTestLock = { held: false, release };
+  heldPiTestLocks().set(lockId, state);
+  const held = await settle(
+    db.transaction(async (tx) => {
+      if (lockKind === "org-sandbox-capacity") {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
+      } else {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`run_output_projection:${key}`}, 0))`,
+        );
+      }
+      state.held = true;
+      await release.promise;
+      signal.throwIfAborted();
+    }),
+    signal,
+  );
+  heldPiTestLocks().delete(lockId);
+  signal.throwIfAborted();
+  if (!held.ok) {
+    throw held.error;
+  }
+  return actionOk();
+}
+
+function getPiInferenceTestLockForAction(
+  _db: Db,
+  body: Record<string, unknown>,
+  _signal: AbortSignal,
+): Promise<CronCleanupSandboxesActionResponse> {
+  const lockId = readString(body, "lock_id");
+  if (!lockId) {
+    return Promise.resolve(actionBadRequest("lock_id is required"));
+  }
+  return Promise.resolve(
+    actionOk({ held: heldPiTestLocks().get(lockId)?.held === true }),
+  );
+}
+
+function releasePiInferenceTestLockForAction(
+  _db: Db,
+  body: Record<string, unknown>,
+  _signal: AbortSignal,
+): Promise<CronCleanupSandboxesActionResponse> {
+  const lockId = readString(body, "lock_id");
+  if (!lockId) {
+    return Promise.resolve(actionBadRequest("lock_id is required"));
+  }
+  const state = heldPiTestLocks().get(lockId);
+  if (!state?.held || state.release.settled()) {
+    return Promise.resolve(actionBadRequest("held test lock is unavailable"));
+  }
+  state.release.resolve(undefined);
+  return Promise.resolve(actionOk());
+}
+
 const TEST_TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
@@ -1120,6 +1576,13 @@ const cronCleanupSandboxesActionHandlers = {
   "delete-connector-diagnostic-registration":
     deleteConnectorDiagnosticRegistrationForAction,
   "transition-run-terminal": transitionRunTerminalForAction,
+  "get-pi-inference": getPiInferenceForAction,
+  "seed-pi-inference-recovery": seedPiInferenceRecoveryForAction,
+  "expire-pi-inference": expirePiInferenceForAction,
+  "delete-pi-inference-model-key": deletePiInferenceModelKeyForAction,
+  "hold-pi-inference-test-lock": holdPiInferenceTestLockForAction,
+  "get-pi-inference-test-lock": getPiInferenceTestLockForAction,
+  "release-pi-inference-test-lock": releasePiInferenceTestLockForAction,
 } satisfies Record<
   CronCleanupSandboxesAction,
   CronCleanupSandboxesActionHandler

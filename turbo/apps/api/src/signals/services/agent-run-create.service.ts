@@ -57,6 +57,7 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type PiMemoryRecallSelection,
   type PiMemoryPhase2Maintenance,
+  type PiResourceSnapshot,
   type PiLaunchConfig,
   type PiApiFirstTurnConfig,
   type PiModelConfig,
@@ -308,6 +309,8 @@ import {
   piResourceDiscoveryMounts,
   piResourceSnapshotDigest,
   preparePiResourceSnapshot,
+  PiResourceSnapshotPreparationError,
+  UnsupportedPiResourceError,
 } from "./pi-resource-snapshot.service";
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
 import {
@@ -11452,17 +11455,22 @@ async function durablePiConfiguration(
     conversationId: _conversationId,
     ...capturedBody
   } = input.context.body;
-  const gateway = gatewayRow
-    ? {
-        connectionId: gatewayRow.connectionId,
-        secretId: gatewayRow.secretId,
-        protocol: durablePiGatewayProtocol(gatewayRow.protocol),
-        apiBaseUrl: gatewayRow.apiBaseUrl,
-        authHeaderName: gatewayRow.authHeaderName,
-        authHeaderTemplate: gatewayRow.authHeaderTemplate,
-        upstreamModel: gatewayRow.modelMappings[selectedModel] ?? "",
-      }
-    : undefined;
+  const upstreamModel = gatewayRow?.modelMappings[selectedModel];
+  if (gatewayRow && !upstreamModel) {
+    throw new Error("Custom Pi gateway lost its selected model mapping");
+  }
+  const gateway =
+    gatewayRow && upstreamModel
+      ? {
+          connectionId: gatewayRow.connectionId,
+          secretId: gatewayRow.secretId,
+          protocol: durablePiGatewayProtocol(gatewayRow.protocol),
+          apiBaseUrl: gatewayRow.apiBaseUrl,
+          authHeaderName: gatewayRow.authHeaderName,
+          authHeaderTemplate: gatewayRow.authHeaderTemplate,
+          upstreamModel,
+        }
+      : undefined;
   const options = durablePiConfigurationOptions(input, gateway);
   return piDeferredConfigurationSchema.parse({
     schemaVersion: 1,
@@ -11503,6 +11511,31 @@ async function durablePiConfiguration(
     reasoningEffort: input.args.agentRunMetadata?.reasoningEffort ?? null,
     includeOkouTokenSecret: input.args.includeOkouTokenSecret === true,
   });
+}
+
+async function captureDurablePiResource(
+  resource: Promise<{
+    readonly digest: string;
+    readonly snapshot: PiResourceSnapshot;
+  }>,
+  signal: AbortSignal,
+): Promise<{
+  readonly digest: string;
+  readonly snapshot: PiResourceSnapshot;
+} | null> {
+  const prepared = await settle(resource, signal);
+  signal.throwIfAborted();
+  if (prepared.ok) {
+    return prepared.value;
+  }
+  if (
+    prepared.error instanceof UnsupportedPiResourceError ||
+    prepared.error instanceof PiResourceSnapshotPreparationError
+  ) {
+    // Preserve the established pre-provider Sandbox-first recovery policy.
+    return null;
+  }
+  throw prepared.error;
 }
 
 function captureDurablePiInference(
@@ -11591,18 +11624,23 @@ function captureDurablePiInference(
       storagePlan.metadata.persistedStorageMounts,
       memoryRecall,
     );
-    const resource = await get(
-      preparePiResourceSnapshot(
-        {
-          db: input.db,
-          mounts: storagePlan.metadata.storageMounts,
-          ...(memoryRecall ? { memoryRecall } : {}),
-          runId: identity.runId,
-        },
-        signal,
+    const resource = await captureDurablePiResource(
+      get(
+        preparePiResourceSnapshot(
+          {
+            db: input.db,
+            mounts: storagePlan.metadata.storageMounts,
+            ...(memoryRecall ? { memoryRecall } : {}),
+            runId: identity.runId,
+          },
+          signal,
+        ),
       ),
+      signal,
     );
-    signal.throwIfAborted();
+    if (!resource) {
+      return null;
+    }
     const storageMounts = piDeferredContextSchema.shape.storageMounts.safeParse(
       persistedStorageMounts,
     );
@@ -11963,10 +12001,12 @@ async function admitDurablePiInferenceProtection(
       .innerJoin(agentRuns, eq(agentRuns.id, agentRunInference.runId))
       .where(and(eq(agentRuns.orgId, input.args.orgId), protectedOwnership)),
   ]);
+  if (!provider || !organization) {
+    throw new Error("Pi inference protection aggregate is unavailable");
+  }
   if (
-    Number(provider?.total ?? 0) >=
-      env("PI_INFERENCE_PROVIDER_MAX_IN_FLIGHT") ||
-    Number(organization?.total ?? 0) >= env("PI_INFERENCE_ORG_MAX_IN_FLIGHT")
+    Number(provider.total) >= env("PI_INFERENCE_PROVIDER_MAX_IN_FLIGHT") ||
+    Number(organization.total) >= env("PI_INFERENCE_ORG_MAX_IN_FLIGHT")
   ) {
     return piInferenceBusy();
   }

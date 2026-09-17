@@ -1,4 +1,7 @@
-import { recoverDurablePiApiInference$ } from "./pi-api-inference-recovery.service";
+import {
+  hasDurablePiApiRecoveryOwner,
+  recoverDurablePiApiInference$,
+} from "./pi-api-inference-recovery.service";
 import { recoverDeferredPiRuns$ } from "./pi-deferred-sandbox.service";
 import { reclaimPiInferenceObjects } from "./pi-inference-object.service";
 import {
@@ -389,6 +392,9 @@ async function commitStaleRunTimeout(
           lockedRun.launchSnapshot,
         );
         if (lifecycle) {
+          if (hasDurablePiApiRecoveryOwner(lifecycle.inference)) {
+            return { kind: "skipped" };
+          }
           const deadlineExpired =
             piInferenceDeadline(lifecycle).getTime() <= now();
           const heartbeatExpired =
