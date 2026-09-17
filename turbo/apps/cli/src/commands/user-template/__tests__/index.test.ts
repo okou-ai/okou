@@ -1,18 +1,20 @@
 /**
- * Tests for okou user-template publish
+ * Tests for okou user-template publish and repackage
  *
  * Entry point is the command itself, so page ordering, the .png filter and the
  * package tarball are exercised as the reverse run reaches them:
- * - Mock (external): backend upload + publish routes and the storage PUT
+ * - Mock (external): backend upload + template routes and the storage PUT
  * - Real (internal): argument parsing, filesystem reads, tar packaging, fetch
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 
 import chalk from "chalk";
 import { http, HttpResponse } from "msw";
+import { Parser } from "tar";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { server } from "../../../mocks/server";
@@ -23,6 +25,7 @@ const COMPLETE_URL = "http://localhost:3000/api/uploads/complete";
 const PUBLISH_URL = "http://localhost:3000/api/user-templates";
 const PUT_URL = "https://mock-r2.test/upload/:uploadId";
 const TEMPLATE_ID = "22222222-2222-4222-8222-222222222222";
+const REPACKAGE_URL = `${PUBLISH_URL}/:templateId/package`;
 
 interface PublishedBody {
   readonly title: string;
@@ -43,6 +46,7 @@ function uploadId(index: number): string {
 function installUploadRoutes(): {
   filenameOf: (id: string) => string | undefined;
   contentTypeOf: (id: string) => string | undefined;
+  bytesOf: (id: string) => Buffer | undefined;
   uploadCount: () => number;
 } {
   const filenames = new Map<string, string>();
@@ -94,10 +98,40 @@ function installUploadRoutes(): {
     contentTypeOf: (id: string) => {
       return contentTypes.get(id);
     },
+    bytesOf: (id: string) => {
+      return bodies.get(id);
+    },
     uploadCount: () => {
       return issued;
     },
   };
+}
+
+/**
+ * The paths inside an uploaded package, read back the way the API reads them.
+ *
+ * Reading the archive rather than trusting the upload's filename is what makes
+ * the packaged directory observable: a command that tarred the wrong directory
+ * still uploads something called `package.tar.gz`.
+ */
+function archivePaths(archive: Buffer): Promise<readonly string[]> {
+  const paths: string[] = [];
+  return new Promise((resolve, reject) => {
+    const parser = new Parser({
+      onReadEntry: (entry) => {
+        if (entry.type === "File") {
+          paths.push(entry.path);
+        }
+        entry.resume();
+      },
+    });
+    parser.on("end", () => {
+      resolve([...paths].sort());
+    });
+    parser.on("error", reject);
+    parser.write(gunzipSync(archive));
+    parser.end();
+  });
 }
 
 describe("okou user-template publish", () => {
@@ -291,5 +325,97 @@ describe("okou user-template publish", () => {
     const errors = mockConsoleError.mock.calls.flat().join("\n");
     expect(errors).toContain(`No .png page images in ${pagesDir}`);
     expect(uploads.uploadCount()).toBe(0);
+  });
+});
+
+describe("okou user-template repackage", () => {
+  // Commander exits the process on an unknown command, so this describe owns
+  // that boundary rather than borrowing the one above: a subcommand that was
+  // built but never added should fail this test, not tear down the worker.
+  const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
+    throw new Error("process.exit called");
+  }) as never);
+  const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+
+  let tempDir: string;
+  let packageDir: string;
+
+  beforeEach(() => {
+    chalk.level = 0;
+    vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
+    vi.stubEnv("OKOU_TOKEN", "test-token");
+
+    tempDir = join(
+      tmpdir(),
+      `user-template-repackage-${Date.now().toString()}`,
+    );
+    packageDir = join(tempDir, "package");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      join(packageDir, "SKILL.md"),
+      "# Use this template, revised\n",
+    );
+    writeFileSync(join(packageDir, "design-system.md"), "Ink on cool paper.\n");
+    // Beside the package, not inside it. Rebuilding guidance does not re-read
+    // the source, so an archive carrying this file would mean the command
+    // packaged the parent directory rather than the one it was given.
+    writeFileSync(
+      join(tempDir, "brand-system.pptx"),
+      Buffer.from("deck bytes"),
+    );
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+    mockExit.mockClear();
+    mockConsoleLog.mockClear();
+    vi.unstubAllEnvs();
+  });
+
+  it("uploads the named directory and swaps the package on that template", async () => {
+    const uploads = installUploadRoutes();
+    let requestedPath: string | undefined;
+    let sent: { readonly packageFileId: string } | undefined;
+    server.use(
+      http.put(REPACKAGE_URL, async ({ request, params }) => {
+        requestedPath =
+          typeof params.templateId === "string" ? params.templateId : "";
+        sent = (await request.json()) as { packageFileId: string };
+        return HttpResponse.json({
+          id: TEMPLATE_ID,
+          title: "Brand system",
+          sourceFilename: "brand-system.pptx",
+          kind: "presentation",
+          coverUrl: null,
+          pageCount: 3,
+          visibility: "private",
+          ownerUserId: "user_1",
+          canManage: true,
+          createdAt: "2026-09-16T00:00:00.000Z",
+          updatedAt: "2026-09-17T00:00:00.000Z",
+        });
+      }),
+    );
+
+    await userTemplateCommand.parseAsync([
+      "node",
+      "okou",
+      "repackage",
+      TEMPLATE_ID,
+      "--package",
+      packageDir,
+    ]);
+
+    // The template the argument names, and one upload: no source, no pages.
+    expect(requestedPath).toBe(TEMPLATE_ID);
+    expect(uploads.uploadCount()).toBe(1);
+    const packageFileId = sent?.packageFileId ?? "";
+    expect(uploads.contentTypeOf(packageFileId)).toBe("application/gzip");
+    await expect(
+      archivePaths(uploads.bytesOf(packageFileId) ?? Buffer.alloc(0)),
+    ).resolves.toStrictEqual(["SKILL.md", "design-system.md"]);
+    expect(mockConsoleLog).toHaveBeenCalledWith(
+      `Updated the package for Brand system (${TEMPLATE_ID})`,
+    );
   });
 });
