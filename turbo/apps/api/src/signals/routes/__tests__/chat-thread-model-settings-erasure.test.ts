@@ -561,6 +561,37 @@ describe("account erasure fences chat-thread model settings writes", () => {
     await expect(readSettings(fixture)).resolves.toStrictEqual(before);
     await expect(settingsEvents(fixture)).resolves.toStrictEqual([]);
   });
+
+  it("resolves ownership before model validation so a foreign thread leaks no catalog answer", async () => {
+    const fixture = await createSettingsFixture("Ordered denial");
+    const stranger = await createSettingsFixture("Ordered stranger");
+
+    // The owner still gets the unchanged availability 400 for a supported model
+    // this workspace has no policy for.
+    const owned = await chat.requestUpdateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-sonnet-4-6",
+      [400],
+    );
+    expect(owned.body).toMatchObject({
+      error: {
+        message: "The selected model is not available in this workspace",
+      },
+    });
+
+    // The same body against a thread the caller does not own is now resolved as
+    // not-found before the model is validated, so it no longer distinguishes an
+    // unavailable model from a thread that was never theirs, and it never
+    // reaches the policy bootstrap.
+    await chat.requestUpdateThreadModelSelection(
+      stranger.actor,
+      fixture.threadId,
+      "claude-sonnet-4-6",
+      [404],
+    );
+    await expect(settingsEvents(fixture)).resolves.toStrictEqual([]);
+  });
 });
 
 describe("account erasure fences the model-policy bootstrap this route performs", () => {
