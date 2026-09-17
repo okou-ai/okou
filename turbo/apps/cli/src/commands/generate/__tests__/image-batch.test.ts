@@ -9,6 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 import { imageBatchCommand } from "../image-batch";
+import {
+  AVAILABILITY_URL,
+  serveGenerationVisibility,
+} from "./artifact-visibility-fixtures";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:child_process")>();
@@ -68,6 +72,9 @@ describe("okou generate image-batch command", () => {
 
   beforeEach(() => {
     chalk.level = 0;
+    for (const command of imageBatchCommand.commands) {
+      command.setOptionValue("visibility", undefined);
+    }
     imageBatchCommand.commands
       .find((command) => {
         return command.name() === "wait";
@@ -81,6 +88,7 @@ describe("okou generate image-batch command", () => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
     vi.unstubAllEnvs();
+    process.exitCode = 0;
     await Promise.all(
       temporaryDirectories.splice(0).map(async (path) => {
         await rm(path, { recursive: true, force: true });
@@ -241,23 +249,158 @@ describe("okou generate image-batch command", () => {
     expect(attempts.get("Hero dog portrait")).toBe(1);
   });
 
-  it("bundles private images locally and retains their stable chat references", async () => {
+  it.each([undefined, "public"] as const)(
+    "bundles private images locally and retains the selected %s chat references",
+    async (visibility) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+      const root = await makeTemporaryDirectory();
+      const manifestPath = join(root, "images.tsv");
+      const stateDirectory = join(root, "state");
+      await writeFile(manifestPath, "hero\tA private landscape\n", "utf8");
+      await mkdir(stateDirectory);
+      const reference = artifactReferencePath(IMAGE_GENERATION_ID, "image.png");
+      const artifact = visibility
+        ? serveGenerationVisibility("image.png", visibility)
+        : { url: `https://app.okou.ai${reference}` };
+      let authorization: string | null = null;
+      server.use(
+        http.post(
+          visibility ? `${IMAGE_URL}/private` : IMAGE_URL,
+          async ({ request }) => {
+            if (visibility) {
+              expect(await request.json()).toMatchObject({
+                requirePrivateArtifact: true,
+              });
+            }
+            return HttpResponse.json({
+              id: IMAGE_GENERATION_ID,
+              filename: "image.png",
+              contentType: "image/png",
+              size: 33,
+              url: reference,
+              creditsCharged: 1,
+              model: "seedream4",
+              provider: "fal",
+              imageSize: "816x816",
+              quality: "low",
+              background: "opaque",
+              outputFormat: "png",
+              moderation: "auto",
+            });
+          },
+        ),
+        http.get(
+          "http://localhost:3000/api/web/download-file",
+          ({ request }) => {
+            authorization = request.headers.get("authorization");
+            expect(new URL(request.url).searchParams.get("file_id")).toBe(
+              IMAGE_GENERATION_ID,
+            );
+            return new HttpResponse("authenticated private image bytes", {
+              headers: { "content-type": "image/png" },
+            });
+          },
+        ),
+      );
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "__run",
+        manifestPath,
+        stateDirectory,
+        ...(visibility ? ["--visibility", visibility] : []),
+      ]);
+      expect(await readFile(join(stateDirectory, "done"), "utf8")).toBe("0\n");
+      expect(authorization).toBe("Bearer test-token");
+      expect(await readFile(join(stateDirectory, "results.tsv"), "utf8")).toBe(
+        "hero\tassets/image-hero.webp\n",
+      );
+      expect(
+        await readFile(join(stateDirectory, "assets/image-hero.webp"), "utf8"),
+      ).toBe("optimized private WebP bytes");
+      await expect(
+        readFile(join(stateDirectory, "assets/image-hero.source")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      expect(vi.mocked(execFile).mock.calls.at(-1)?.[1]).toEqual(
+        expect.arrayContaining([
+          "-protocol_whitelist",
+          "file,pipe",
+          "-c:v",
+          "libwebp",
+          "-quality",
+          "85",
+        ]),
+      );
+      expect(vi.mocked(execFile).mock.calls.at(-1)?.[1]).not.toContain("-vf");
+      expect(
+        JSON.parse(
+          await readFile(join(stateDirectory, "artifacts.json"), "utf8"),
+        ),
+      ).toMatchObject({
+        artifacts: [
+          {
+            assetId: "hero",
+            asset: "assets/image-hero.webp",
+            url: artifact.url,
+            ...(visibility
+              ? { visibility, ownerUrl: `https://app.okou.ai${reference}` }
+              : {}),
+            inlineMarkdownLink: `[hero](<${artifact.url}>)`,
+            previewMarkdownBlock: `![hero](<${artifact.url}>)`,
+          },
+        ],
+      });
+      await writeFile(join(stateDirectory, "pid"), String(process.pid));
+      mockConsoleLog.mockClear();
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "wait",
+        stateDirectory,
+      ]);
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(stdout).toContain("hero\tassets/image-hero.webp");
+      expect(stdout).toContain(join(stateDirectory, "artifacts.json"));
+      expect(stdout).toContain("only available inside the agent runtime");
+      mockConsoleLog.mockClear();
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "wait",
+        stateDirectory,
+        "--json",
+      ]);
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject({
+        artifacts: [
+          { url: artifact.url, ...(visibility ? { visibility } : {}) },
+        ],
+      });
+    },
+  );
+
+  it("does not regenerate a billed image when sharing fails", async () => {
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     const root = await makeTemporaryDirectory();
     const manifestPath = join(root, "images.tsv");
     const stateDirectory = join(root, "state");
-    await writeFile(manifestPath, "hero\tA private landscape\n", "utf8");
+    await writeFile(manifestPath, "hero\tA landscape\n", "utf8");
     await mkdir(stateDirectory);
-    const reference = artifactReferencePath(IMAGE_GENERATION_ID, "image.png");
-    let authorization: string | null = null;
+    const artifact = serveGenerationVisibility("image.png", "public");
+    let generationCount = 0;
     server.use(
-      http.post(IMAGE_URL, () => {
+      http.post(`${IMAGE_URL}/private`, () => {
+        generationCount += 1;
         return HttpResponse.json({
           id: IMAGE_GENERATION_ID,
           filename: "image.png",
           contentType: "image/png",
           size: 33,
-          url: reference,
+          url: artifact.reference,
           creditsCharged: 1,
           model: "seedream4",
           provider: "fal",
@@ -268,14 +411,16 @@ describe("okou generate image-batch command", () => {
           moderation: "auto",
         });
       }),
-      http.get("http://localhost:3000/api/web/download-file", ({ request }) => {
-        authorization = request.headers.get("authorization");
-        expect(new URL(request.url).searchParams.get("file_id")).toBe(
-          IMAGE_GENERATION_ID,
+      http.put("http://localhost:3000/api/artifact-shares", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Sharing temporarily unavailable",
+            },
+          },
+          { status: 500 },
         );
-        return new HttpResponse("authenticated private image bytes", {
-          headers: { "content-type": "image/png" },
-        });
       }),
     );
     await generateCommand.parseAsync([
@@ -285,57 +430,49 @@ describe("okou generate image-batch command", () => {
       "__run",
       manifestPath,
       stateDirectory,
+      "--visibility",
+      "public",
     ]);
-    expect(await readFile(join(stateDirectory, "done"), "utf8")).toBe("0\n");
-    expect(authorization).toBe("Bearer test-token");
-    expect(await readFile(join(stateDirectory, "results.tsv"), "utf8")).toBe(
-      "hero\tassets/image-hero.webp\n",
+    expect(generationCount).toBe(1);
+    expect(await readFile(join(stateDirectory, "done"), "utf8")).toBe("1\n");
+    const stderr = mockConsoleError.mock.calls.flat().join("\n");
+    expect(stderr).toContain(artifact.ownerUrl);
+    expect(stderr).toContain(
+      "Do not repeat the upload, hosting, or generation",
     );
-    expect(
-      await readFile(join(stateDirectory, "assets/image-hero.webp"), "utf8"),
-    ).toBe("optimized private WebP bytes");
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+      "Retrying image batch",
+    );
+  });
+
+  it("rejects explicit visibility before launching a batch when the switch is off", async () => {
+    const root = await makeTemporaryDirectory();
+    const manifestPath = join(root, "images.tsv");
+    const stateDirectory = join(root, "state");
+    await writeFile(manifestPath, "hero\tA landscape\n", "utf8");
+    server.use(
+      http.get(AVAILABILITY_URL, () => {
+        return HttpResponse.json({ enabled: false });
+      }),
+    );
     await expect(
-      readFile(join(stateDirectory, "assets/image-hero.source")),
-    ).rejects.toMatchObject({ code: "ENOENT" });
-    expect(vi.mocked(execFile).mock.calls.at(-1)?.[1]).toEqual(
-      expect.arrayContaining([
-        "-protocol_whitelist",
-        "file,pipe",
-        "-c:v",
-        "libwebp",
-        "-quality",
-        "85",
+      generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image-batch",
+        "start",
+        manifestPath,
+        stateDirectory,
+        "--visibility",
+        "only-me",
       ]),
-    );
-    expect(vi.mocked(execFile).mock.calls.at(-1)?.[1]).not.toContain("-vf");
-    expect(
-      JSON.parse(
-        await readFile(join(stateDirectory, "artifacts.json"), "utf8"),
-      ),
-    ).toMatchObject({
-      artifacts: [
-        {
-          assetId: "hero",
-          asset: "assets/image-hero.webp",
-          url: `https://app.okou.ai${reference}`,
-          inlineMarkdownLink: `[hero](<https://app.okou.ai${reference}>)`,
-          previewMarkdownBlock: `![hero](<https://app.okou.ai${reference}>)`,
-        },
-      ],
+    ).rejects.toThrow("process.exit called");
+    await expect(readFile(join(stateDirectory, "pid"))).rejects.toMatchObject({
+      code: "ENOENT",
     });
-    await writeFile(join(stateDirectory, "pid"), String(process.pid));
-    mockConsoleLog.mockClear();
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "image-batch",
-      "wait",
-      stateDirectory,
-    ]);
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(stdout).toContain("hero\tassets/image-hero.webp");
-    expect(stdout).toContain(join(stateDirectory, "artifacts.json"));
-    expect(stdout).toContain("only available inside the agent runtime");
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "--visibility requires privateArtifacts to be enabled",
+    );
   });
 
   it.each([false, true])(
@@ -639,66 +776,77 @@ describe("okou generate image-batch command", () => {
     );
   });
 
-  it("starts a detached worker and waits for its result", async () => {
-    const root = await makeTemporaryDirectory();
-    const manifestPath = join(root, "images.tsv");
-    const stateDirectory = join(root, "state");
-    const fixturePath = join(root, "batch-worker.mjs");
-    await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
-    await writeFile(
-      fixturePath,
-      `import { readFile, writeFile } from "node:fs/promises";
+  it.each([undefined, "org"] as const)(
+    "starts a detached worker with %s visibility and waits for its result",
+    async (visibility) => {
+      if (visibility) serveGenerationVisibility("image.png", visibility);
+      const root = await makeTemporaryDirectory();
+      const manifestPath = join(root, "images.tsv");
+      const stateDirectory = join(root, "state");
+      const fixturePath = join(root, "batch-worker.mjs");
+      await writeFile(manifestPath, "hero\tA happy dog\n", "utf8");
+      await writeFile(
+        fixturePath,
+        `import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-const [manifestPath, stateDirectory] = process.argv.slice(-2);
+const [, , , manifestPath, stateDirectory, ...options] = process.argv.slice(2);
+await writeFile(join(stateDirectory, "worker-options.json"), JSON.stringify(options), "utf8");
 const manifest = await readFile(manifestPath, "utf8");
 const id = manifest.split("\\t", 1)[0];
 await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
 await writeFile(join(stateDirectory, "results.tsv"), id + "\\thttps://cdn.example/dog.png\\n", "utf8");
 await writeFile(join(stateDirectory, "done"), "0\\n", "utf8");
 `,
-      "utf8",
-    );
+        "utf8",
+      );
 
-    const originalEntrypoint = process.argv[1];
-    process.argv[1] = fixturePath;
-    try {
+      const originalEntrypoint = process.argv[1];
+      process.argv[1] = fixturePath;
+      try {
+        await generateCommand.parseAsync([
+          "node",
+          "cli",
+          "image-batch",
+          "start",
+          manifestPath,
+          stateDirectory,
+          ...(visibility ? ["--visibility", visibility] : []),
+        ]);
+      } finally {
+        if (originalEntrypoint === undefined) {
+          delete process.argv[1];
+        } else {
+          process.argv[1] = originalEntrypoint;
+        }
+      }
+
       await generateCommand.parseAsync([
         "node",
         "cli",
         "image-batch",
-        "start",
-        manifestPath,
+        "wait",
         stateDirectory,
+        "--timeout",
+        "5",
       ]);
-    } finally {
-      if (originalEntrypoint === undefined) {
-        delete process.argv[1];
-      } else {
-        process.argv[1] = originalEntrypoint;
-      }
-    }
 
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "image-batch",
-      "wait",
-      stateDirectory,
-      "--timeout",
-      "5",
-    ]);
-
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(stdout).toContain(`Image batch started: ${stateDirectory}`);
-    expect(stdout).toContain(
-      `okou generate image-batch wait '${stateDirectory}'`,
-    );
-    expect(stdout).toContain(
-      "reuse this batch instead of starting another one",
-    );
-    expect(stdout).toContain("hero\thttps://cdn.example/dog.png");
-    expect(stdout).toContain(
-      `Image batch joined: ${join(stateDirectory, "results.tsv")}`,
-    );
-  });
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(stdout).toContain(`Image batch started: ${stateDirectory}`);
+      expect(stdout).toContain(
+        `okou generate image-batch wait '${stateDirectory}'`,
+      );
+      expect(stdout).toContain(
+        "reuse this batch instead of starting another one",
+      );
+      expect(stdout).toContain("hero\thttps://cdn.example/dog.png");
+      expect(stdout).toContain(
+        `Image batch joined: ${join(stateDirectory, "results.tsv")}`,
+      );
+      expect(
+        JSON.parse(
+          await readFile(join(stateDirectory, "worker-options.json"), "utf8"),
+        ),
+      ).toEqual(visibility ? ["--visibility", visibility] : []);
+    },
+  );
 });

@@ -12,6 +12,8 @@ const stringOrStringArraySchema = z.union([
 
 export const videoIoGenerateRequestSchema = z
   .object({
+    /** Fail before creating bytes when private artifact creation is unavailable. */
+    requirePrivateArtifact: z.boolean().optional(),
     prompt: z.string().optional(),
     model: z.string().optional(),
     aspectRatio: z.string().optional(),
@@ -57,25 +59,31 @@ export type VideoIoGenerateResponse = z.infer<
   typeof videoIoGenerateResponseSchema
 >;
 
+const creationRoute = {
+  method: "POST",
+  path: "/api/video-io/generate",
+  headers: authHeadersSchema,
+  body: videoIoGenerateRequestSchema,
+  responses: {
+    200: videoIoGenerateResponseSchema,
+    202: builtInGenerationAcceptedResponseSchema,
+    400: apiErrorSchema,
+    401: apiErrorSchema,
+    402: apiErrorSchema,
+    403: apiErrorSchema,
+    500: apiErrorSchema,
+    502: apiErrorSchema,
+    503: apiErrorSchema,
+    504: apiErrorSchema,
+  },
+  summary: "Generate and persist a video file",
+} as const;
+
 export const videoIoGenerateContract = c.router({
-  post: {
-    method: "POST",
-    path: "/api/video-io/generate",
-    headers: authHeadersSchema,
-    body: videoIoGenerateRequestSchema,
-    responses: {
-      200: videoIoGenerateResponseSchema,
-      202: builtInGenerationAcceptedResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-      504: apiErrorSchema,
-    },
-    summary: "Generate and persist a video file",
+  post: creationRoute,
+  postPrivate: {
+    ...creationRoute,
+    path: "/api/video-io/generate/private",
   },
 });
 

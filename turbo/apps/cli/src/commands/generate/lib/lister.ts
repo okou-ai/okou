@@ -316,7 +316,7 @@ const BUILT_IN_GENERATION_COMMANDS: Partial<
 const GENERATION_CONTEXT: Partial<Record<GenerationType, GenerationContext>> = {
   website: {
     lines: [
-      "Standalone static website artifacts can be authored locally and published with okou host for a public URL.",
+      "Standalone static website artifacts can be authored locally and published with okou host for a hosted URL.",
       "okou host is for static directories with index.html; it is not a general deploy system for apps that need a backend, database, worker, or long-running process.",
       "Existing web app changes should usually follow the project's own build, test, and deploy workflow.",
     ],

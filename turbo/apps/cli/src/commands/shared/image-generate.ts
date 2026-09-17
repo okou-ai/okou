@@ -4,6 +4,12 @@ import { generateWebImage } from "../../lib/api/domains/web";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createArtifactPresentation } from "./artifact-return";
+import {
+  applyArtifactVisibility,
+  createArtifactVisibilityOption,
+  prepareArtifactVisibility,
+  type ArtifactVisibility,
+} from "./artifact-visibility";
 import { createStyledImageCompilationPacket } from "./image-style-authoring";
 import { runDefaultImageModelFromEnvironment } from "./run-default-image-model";
 import {
@@ -42,6 +48,7 @@ interface ImageOptions {
   compile?: boolean;
   all?: boolean;
   json?: boolean;
+  visibility?: ArtifactVisibility;
 }
 
 interface ImageGenerateCommandConfig {
@@ -194,6 +201,15 @@ function hasImagePromptModeRequest(options: ImageOptions): boolean {
   );
 }
 
+function imageExecutionOnlyOption(
+  options: ImageOptions,
+): "--visibility" | "--json" | undefined {
+  if (options.visibility) {
+    return "--visibility";
+  }
+  return options.json ? "--json" : undefined;
+}
+
 function resolveImagePromptMode(
   options: ImageOptions,
   usageCommand: string,
@@ -259,6 +275,7 @@ export function createImageGenerateCommand(
       "When listing providers (no --prompt given), include unavailable or not-yet-authorized connectors",
     )
     .option("--json", "Print the complete generation result as JSON")
+    .addOption(createArtifactVisibilityOption())
     .option(
       "--model <model>",
       "Model: gpt-image-1 (default), gpt-image-2, gpt-image-2.5-flare, gpt-image-2.5-sunburst, flux-2-pro, ideogram-4, flux-pro-1.1, flux-pro-1.1-ultra, qwen-image, qwen-image-3, seedream4, seedream5-pro, seedream5-lite, nano-banana-2, or nano-banana-2-lite",
@@ -409,13 +426,18 @@ ${formatRegistryListing(styles, "image styles")}`;
             options.compile || options.style
               ? "--compile requires --prompt <text> or piped stdin"
               : undefined,
-          requireExecutionFor: options.json ? "--json" : undefined,
+          requireExecutionFor: imageExecutionOnlyOption(options),
         });
         if (dispatch.outcome === "handled") return;
         const resolvedPrompt = dispatch.prompt;
         const mode = resolveImagePromptMode(options, config.usageCommand);
 
         if (mode === "compile") {
+          if (options.visibility) {
+            throw new Error(
+              "--visibility is only available for direct built-in generation; pass it with --compiled-prompt or --raw-prompt",
+            );
+          }
           if (options.json) {
             throw new Error(
               "--json is only available for direct built-in generation",
@@ -458,7 +480,10 @@ ${formatRegistryListing(styles, "image styles")}`;
         const imagePromptStrength = parseImagePromptStrength(
           options.imagePromptStrength,
         );
-        const result = await generateWebImage({
+        const requirePrivateArtifact = await prepareArtifactVisibility(
+          options.visibility,
+        );
+        const generated = await generateWebImage({
           prompt: resolvedPrompt,
           model: resolveImageRequestModel(command, options.model),
           size: resolveImageRequestSize(command, options),
@@ -474,7 +499,13 @@ ${formatRegistryListing(styles, "image styles")}`;
           maskImageUrl: options.maskImageUrl,
           inputFidelity,
           imagePromptStrength,
+          requirePrivateArtifact,
         });
+        const result = await applyArtifactVisibility(
+          generated,
+          { kind: "file", id: generated.id },
+          options.visibility,
+        );
 
         const presentation = createArtifactPresentation(
           result.filename,

@@ -1,3 +1,4 @@
+import { artifactVisibilityUnavailable } from "../../lib/error";
 import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
 import { command } from "ccstate";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
@@ -47,6 +48,7 @@ interface GenerateSpeechResponseArgs {
   readonly voice: string;
   readonly instructions: string | undefined;
   readonly pricing: SpeechPricing;
+  readonly privateArtifacts?: boolean;
 }
 
 const generateSpeechResponse$ = command(
@@ -55,9 +57,9 @@ const generateSpeechResponse$ = command(
     args: GenerateSpeechResponseArgs,
     signal: AbortSignal,
   ) => {
-    const privateArtifacts = await get(
-      privateArtifactCreationEnabled(args.orgId, args.userId),
-    );
+    const privateArtifacts =
+      args.privateArtifacts ??
+      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
     signal.throwIfAborted();
     const openaiResponse = await fetch(OPENAI_AUDIO_SPEECH_URL, {
       method: "POST",
@@ -135,104 +137,134 @@ const generateSpeechResponse$ = command(
   },
 );
 
-const postSpeechInner$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const bodyResult = await get(speechBody$);
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
-  }
+const postSpeechInner$ = command(
+  async (
+    { get, set },
+    requirePrivateArtifact: boolean,
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    const bodyResult = await get(speechBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
 
-  const text =
-    typeof bodyResult.data.text === "string" ? bodyResult.data.text.trim() : "";
-  if (text.length === 0) {
-    return badRequest("text is required");
-  }
-
-  const voice =
-    typeof bodyResult.data.voice === "string" ? bodyResult.data.voice : "marin";
-  if (!isSpeechVoice(voice)) {
-    return badRequest(`Unsupported voice: ${voice}`);
-  }
-
-  const instructions =
-    typeof bodyResult.data.instructions === "string" &&
-    bodyResult.data.instructions.trim().length > 0
-      ? bodyResult.data.instructions.trim()
+    const privacyRequired =
+      requirePrivateArtifact || bodyResult.data.requirePrivateArtifact === true;
+    const privateArtifacts = privacyRequired
+      ? await get(privateArtifactCreationEnabled(auth.orgId, auth.userId))
       : undefined;
-  const tokenCount = encode(`${instructions ?? ""}\n${text}`).length;
-  if (tokenCount > SPEECH_MAX_INPUT_TOKENS) {
-    return badRequest(
-      `text and instructions exceed ${SPEECH_MAX_INPUT_TOKENS} input tokens`,
-    );
-  }
+    signal.throwIfAborted();
+    if (privacyRequired && !privateArtifacts) {
+      return artifactVisibilityUnavailable();
+    }
 
-  const runId =
-    auth.tokenType === "agent" || auth.tokenType === "sandbox"
-      ? auth.runId
-      : undefined;
-  const hasCredits = await set(
-    checkSpeechCredits$,
-    { orgId: auth.orgId, userId: auth.userId, runId },
-    signal,
-  );
-  if (!hasCredits) {
-    return insufficientCredits();
-  }
+    const text =
+      typeof bodyResult.data.text === "string"
+        ? bodyResult.data.text.trim()
+        : "";
+    if (text.length === 0) {
+      return badRequest("text is required");
+    }
 
-  const pricing = await get(speechPricing$);
-  signal.throwIfAborted();
-  if (!pricing) {
-    return serviceUnavailable(
-      "Audio generation pricing is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
+    const voice =
+      typeof bodyResult.data.voice === "string"
+        ? bodyResult.data.voice
+        : "marin";
+    if (!isSpeechVoice(voice)) {
+      return badRequest(`Unsupported voice: ${voice}`);
+    }
 
-  const publicBrand = PUBLIC_BRAND;
-  const admission = await set(
-    startRunBuiltInAdmission$,
-    { runId, kind: "voice" },
-    signal,
-  );
-  if (isRunBuiltInAdmissionError(admission)) {
-    return admission;
-  }
+    const instructions =
+      typeof bodyResult.data.instructions === "string" &&
+      bodyResult.data.instructions.trim().length > 0
+        ? bodyResult.data.instructions.trim()
+        : undefined;
+    const tokenCount = encode(`${instructions ?? ""}\n${text}`).length;
+    if (tokenCount > SPEECH_MAX_INPUT_TOKENS) {
+      return badRequest(
+        `text and instructions exceed ${SPEECH_MAX_INPUT_TOKENS} input tokens`,
+      );
+    }
 
-  const result = await onRejection(
-    set(
-      generateSpeechResponse$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        runId,
-        publicBrand,
-        text,
-        voice,
-        instructions,
-        pricing,
-      },
+    const runId =
+      auth.tokenType === "agent" || auth.tokenType === "sandbox"
+        ? auth.runId
+        : undefined;
+    const hasCredits = await set(
+      checkSpeechCredits$,
+      { orgId: auth.orgId, userId: auth.userId, runId },
       signal,
-    ),
-    async () => {
-      await set(completeRunBuiltInAdmission$, {
-        admission,
-        status: "failed",
-      });
-      signal.throwIfAborted();
-    },
-  );
-  signal.throwIfAborted();
+    );
+    if (!hasCredits) {
+      return insufficientCredits();
+    }
 
-  await set(completeRunBuiltInAdmission$, {
-    admission,
-    status: result.admissionStatus,
-  });
-  signal.throwIfAborted();
-  return result.response;
-});
+    const pricing = await get(speechPricing$);
+    signal.throwIfAborted();
+    if (!pricing) {
+      return serviceUnavailable(
+        "Audio generation pricing is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+
+    const publicBrand = PUBLIC_BRAND;
+    const admission = await set(
+      startRunBuiltInAdmission$,
+      { runId, kind: "voice" },
+      signal,
+    );
+    if (isRunBuiltInAdmissionError(admission)) {
+      return admission;
+    }
+
+    const result = await onRejection(
+      set(
+        generateSpeechResponse$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          runId,
+          publicBrand,
+          text,
+          voice,
+          instructions,
+          pricing,
+          privateArtifacts,
+        },
+        signal,
+      ),
+      async () => {
+        await set(completeRunBuiltInAdmission$, {
+          admission,
+          status: "failed",
+        });
+        signal.throwIfAborted();
+      },
+    );
+    signal.throwIfAborted();
+
+    await set(completeRunBuiltInAdmission$, {
+      admission,
+      status: result.admissionStatus,
+    });
+    signal.throwIfAborted();
+    return result.response;
+  },
+);
 
 export const voiceIoSpeechRoutes: readonly RouteEntry[] = [
+  {
+    route: voiceIoSpeechContract.postPrivate,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "file:write" },
+      command(({ set }, signal: AbortSignal) => {
+        return set(postSpeechInner$, true, signal);
+      }),
+    ),
+  },
   {
     route: voiceIoSpeechContract.post,
     handler: authRoute(
@@ -240,7 +272,9 @@ export const voiceIoSpeechRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         requiredCapability: "file:write",
       },
-      postSpeechInner$,
+      command(({ set }, signal: AbortSignal) => {
+        return set(postSpeechInner$, false, signal);
+      }),
     ),
   },
 ];

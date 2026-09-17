@@ -82,6 +82,50 @@ describe("okou generate presentation command", () => {
     expect(stdout).toContain(
       "Check that shapes, charts, images, or decorative graphics do not cover readable text",
     );
+    expect(stdout).toContain(
+      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
+    );
+    expect(stdout).toContain(
+      "With privateArtifacts enabled, new artifacts default to only-me.",
+    );
+  });
+
+  it.each([
+    { label: "direct authoring", templateArgs: [] },
+    {
+      label: "template authoring",
+      templateArgs: ["--template", "html-ppt-playful-launch"],
+    },
+  ])("preserves org visibility for $label", async ({ templateArgs }) => {
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "presentation",
+      "--prompt",
+      "A team planning deck",
+      "--site-slug",
+      "team-plan",
+      "--visibility",
+      "org",
+      ...templateArgs,
+    ]);
+
+    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+    const hostInstructions = stdout.split("\n").filter((line) => {
+      return line.includes("okou host ");
+    });
+    expect(hostInstructions).toEqual([
+      "- Host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org",
+    ]);
+    expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
+    expect(stdout).toContain(
+      "Keep supporting generated media at its default visibility",
+    );
+    const imageWorkflow = stdout.split("\n").find((line) => {
+      return line.startsWith("- Image workflow:");
+    });
+    expect(imageWorkflow).toContain("okou generate image-batch start");
+    expect(imageWorkflow).not.toContain("--visibility org");
   });
 
   it("should reject slide counts outside the supported range", async () => {
@@ -131,6 +175,7 @@ describe("okou generate presentation command", () => {
 
     expect(helpOutput).toContain("--template <id>");
     expect(helpOutput).toContain("--slides <count>");
+    expect(helpOutput).toContain("--visibility <visibility>");
   });
 
   it("should list presentation templates but not design systems in help", () => {
@@ -181,6 +226,9 @@ describe("okou generate presentation command", () => {
       "Keep all slides and visible content in index.html; render the first slide without JavaScript",
     );
     expect(stdout).toContain("User request: create a 15-slide launch deck");
+    expect(stdout).toContain(
+      "Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
+    );
     const imageWorkflowLines = stdout.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");
     });

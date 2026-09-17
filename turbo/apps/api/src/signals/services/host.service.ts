@@ -104,6 +104,7 @@ type PrepareDeploymentResult =
         }[];
       };
     }
+  | { readonly status: "forbidden" }
   | { readonly status: "bad_request"; readonly message: string }
   | { readonly status: "conflict"; readonly message: string }
   | { readonly status: "config_error"; readonly message: string };
@@ -828,6 +829,9 @@ export const prepareHostedSiteDeployment$ = command(
       ),
     };
     signal.throwIfAborted();
+    if (args.body.requirePrivateArtifact && !creationArgs.privateArtifacts) {
+      return { status: "forbidden" };
+    }
     const now = nowDate();
     const deploymentId = crypto.randomUUID();
     const privateReference = creationArgs.privateArtifacts

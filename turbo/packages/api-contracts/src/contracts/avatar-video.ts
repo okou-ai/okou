@@ -38,6 +38,8 @@ export const avatarVideoVoiceIdSchema = z
 
 export const avatarVideoGenerateRequestSchema = z
   .object({
+    /** Fail before creating bytes when private artifact creation is unavailable. */
+    requirePrivateArtifact: z.boolean().optional(),
     avatarId: z.number().int().positive(),
     voiceId: avatarVideoVoiceIdSchema,
     script: z.string().trim().min(1).optional(),
@@ -168,25 +170,31 @@ export type AvatarVideoVoicesQuery = z.infer<
 export type AvatarVideoAvatar = z.infer<typeof avatarVideoAvatarSchema>;
 export type AvatarVideoVoice = z.infer<typeof avatarVideoVoiceSchema>;
 
+const creationRoute = {
+  method: "POST",
+  path: "/api/avatar-video/generate",
+  headers: authHeadersSchema,
+  body: avatarVideoGenerateRequestSchema,
+  responses: {
+    200: avatarVideoGenerateResponseSchema,
+    202: builtInGenerationAcceptedResponseSchema,
+    400: apiErrorSchema,
+    401: apiErrorSchema,
+    402: apiErrorSchema,
+    403: apiErrorSchema,
+    500: apiErrorSchema,
+    502: apiErrorSchema,
+    503: apiErrorSchema,
+    504: apiErrorSchema,
+  },
+  summary: "Generate and persist a JoggAI talking-avatar video",
+} as const;
+
 export const avatarVideoContract = c.router({
-  generate: {
-    method: "POST",
-    path: "/api/avatar-video/generate",
-    headers: authHeadersSchema,
-    body: avatarVideoGenerateRequestSchema,
-    responses: {
-      200: avatarVideoGenerateResponseSchema,
-      202: builtInGenerationAcceptedResponseSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
-      504: apiErrorSchema,
-    },
-    summary: "Generate and persist a JoggAI talking-avatar video",
+  generate: creationRoute,
+  generatePrivate: {
+    ...creationRoute,
+    path: "/api/avatar-video/generate/private",
   },
   avatars: {
     method: "GET",

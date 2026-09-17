@@ -8,6 +8,8 @@
  * must honor when it drives built-in image generation plus local postprocessing.
  */
 
+import type { ArtifactVisibility } from "./artifact-visibility";
+
 export interface SpritePlan {
   readonly assetType: string;
   readonly action: string;
@@ -27,6 +29,7 @@ export interface SpritePlan {
 interface SpriteAuthoringOptions {
   readonly prompt: string;
   readonly plan: SpritePlan;
+  readonly visibility?: ArtifactVisibility;
 }
 
 interface SpriteAuthoringPacket {
@@ -93,6 +96,10 @@ export function createSpriteAuthoringPacket(
 ): SpriteAuthoringPacket {
   const { prompt, plan } = options;
   const outputDir = `./generated/sprites/${plan.name}`;
+  const visibilityFlag =
+    options.visibility === undefined
+      ? ""
+      : ` --visibility ${options.visibility}`;
 
   const planEntries: ReadonlyArray<readonly [string, string]> = [
     ["Asset type", plan.assetType],
@@ -159,6 +166,11 @@ export function createSpriteAuthoringPacket(
       return `  - ${item}`;
     }),
     "- For bundles, create one subfolder per asset and keep the per-action FX/projectile/impact sheets separate.",
+    options.visibility === undefined
+      ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, generation and upload keep their existing behavior."
+      : `- Use ${options.visibility} visibility for delivered files. Explicit visibility requires privateArtifacts to be enabled.`,
+    "- Keep raw intermediate sheets at their default visibility. Apply the selected visibility only when uploading the final files requested by the user.",
+    `- Deliver each requested file with \`okou web upload-file -f <file>${visibilityFlag}\` and return the exact URL it prints.`,
     "",
     "## Verification",
     "- Confirm each transparent sheet and its frames are nonblank and free of magenta fringing.",

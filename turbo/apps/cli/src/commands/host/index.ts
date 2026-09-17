@@ -7,6 +7,12 @@ import {
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { publishStaticSite } from "../../lib/host/publish-static-site";
 import { createArtifactPresentation } from "../shared/artifact-return";
+import {
+  applyArtifactVisibility,
+  createArtifactVisibilityOption,
+  prepareArtifactVisibility,
+  type ArtifactVisibility,
+} from "../shared/artifact-visibility";
 import { cloneHostedSiteCommand } from "./clone";
 import { versionsHostedSiteCommand } from "./versions";
 
@@ -16,6 +22,7 @@ interface HostOptions {
   readonly artifactKind?: HostedArtifactKind;
   readonly spa?: boolean;
   readonly json?: boolean;
+  readonly visibility?: ArtifactVisibility;
 }
 
 function parseArtifactKind(value: string): HostedArtifactKind {
@@ -41,6 +48,7 @@ export const hostCommand = new Command()
   )
   .option("--spa", "Serve unknown HTML navigation paths from index.html")
   .option("--json", "Output the result and Markdown return forms as JSON")
+  .addOption(createArtifactVisibilityOption())
   .addCommand(cloneHostedSiteCommand)
   .addCommand(versionsHostedSiteCommand)
   .addHelpText(
@@ -53,6 +61,7 @@ Examples:
   List site versions:    okou host versions my-product-demo
   Clone a hosted site:   okou host clone my-product-demo ./site
   Machine readable:     okou host ./dist --site my-product-demo --spa --json
+  Share publicly:       okou host ./dist --site my-product-demo --visibility public
 
 Notes:
   - Publishes a static directory containing index.html. It does not deploy a long-running backend, database, worker, or framework runtime; use the project's deployment workflow for those
@@ -61,6 +70,9 @@ Notes:
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
   - With private artifacts enabled, the result is an authenticated preview URL
+  - With privateArtifacts enabled, new versions default to only-me; --visibility org or public explicitly shares the new version
+  - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
+  - only-me leaves any older version's existing share unchanged
   - Private deployments never update an existing public alias
   - For public versioned deployments, reusing --site updates the same alias
   - Otherwise, reuse both --site and --slug-suffix to keep a legacy URL
@@ -72,12 +84,16 @@ Notes:
       if (!options.site) {
         throw new Error("--site is required when publishing a hosted site");
       }
-      const result = await publishStaticSite({
+      const requirePrivateArtifact = await prepareArtifactVisibility(
+        options.visibility,
+      );
+      const deployed = await publishStaticSite({
         dir,
         site: options.site,
         slugSuffix: options.slugSuffix,
         artifactKind: options.artifactKind,
         spaFallback: Boolean(options.spa),
+        requirePrivateArtifact,
         onProgress: options.json
           ? undefined
           : (progress) => {
@@ -90,6 +106,12 @@ Notes:
               console.log(chalk.dim(`Uploading ${progress.path}`));
             },
       });
+
+      const result = await applyArtifactVisibility(
+        deployed,
+        { kind: "html", id: deployed.deploymentId },
+        options.visibility,
+      );
 
       const presentation = createArtifactPresentation(
         options.site,

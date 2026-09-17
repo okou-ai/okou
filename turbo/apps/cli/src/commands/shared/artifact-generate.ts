@@ -17,6 +17,10 @@ import {
 } from "./html-artifact-authoring";
 import { dispatchGenerate } from "../generate/lib/dispatch";
 import type { GenerationType } from "../generate/lib/lister";
+import {
+  createArtifactVisibilityOption,
+  type ArtifactVisibility,
+} from "./artifact-visibility";
 
 interface ArtifactOptions {
   prompt?: string;
@@ -24,6 +28,7 @@ interface ArtifactOptions {
   title?: string;
   designSystem?: string;
   template?: string;
+  visibility?: ArtifactVisibility;
 }
 
 interface ArtifactCommandConfig {
@@ -82,6 +87,7 @@ export function createArtifactGenerateCommand(
     .option("--prompt <text>", "Artifact prompt; can also be piped via stdin")
     .option("--site-slug <slug>", "Hosted site slug override")
     .option("--title <text>", "Requested artifact title or name")
+    .addOption(createArtifactVisibilityOption())
     .option(
       "--design-system <id>",
       "Design system id from the registry (see Design Systems below). Accepts either 'apple' or 'design-system:apple'.",
@@ -171,6 +177,7 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
           prompt,
           slugSource: options.title,
           siteSlug: options.siteSlug,
+          visibility: options.visibility,
           details: [...config.details(options), ...extraDetails],
           artifactRules: config.artifactRules,
         });

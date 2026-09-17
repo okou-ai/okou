@@ -2,6 +2,7 @@ import type {
   GenerationOutputKind,
   GenerationTarget,
 } from "@okouai/core/resource-registry";
+import type { ArtifactVisibility } from "./artifact-visibility";
 
 /** Generation targets authored as static HTML from a target-specific resource index. */
 export type HtmlArtifactKind = Extract<
@@ -33,6 +34,7 @@ interface HtmlArtifactAuthoringOptions {
   readonly prompt: string;
   readonly slugSource?: string;
   readonly siteSlug?: string;
+  readonly visibility?: ArtifactVisibility;
   readonly details: readonly string[];
   readonly artifactRules: readonly string[];
 }
@@ -110,9 +112,13 @@ export function createHtmlArtifactAuthoringPacket(
   const site =
     options.siteSlug ?? slugify(options.slugSource ?? options.prompt);
   const outputDir = outputDirForSite(site);
+  const visibilityFlag =
+    options.visibility === undefined
+      ? ""
+      : ` --visibility ${options.visibility}`;
   const hostCommand = `okou host ${outputDir} --site ${site}${
     options.kind === "website" ? " --spa" : ""
-  }`;
+  }${visibilityFlag}`;
   const title = titleForKind(options.kind);
   const resourceIndexUrl = HTML_RESOURCE_INDEX_URLS[options.kind];
   const selectionSchema: HtmlArtifactSelectionOutputSchema = {
@@ -209,6 +215,7 @@ export function createHtmlArtifactAuthoringPacket(
     `- Write the artifact under \`${outputDir}/\`.`,
     `- The entry file must be \`${outputDir}/index.html\`.`,
     "- Keep every local asset inside the same output directory.",
+    "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final artifact; do not make supporting media public separately.",
     "- For private generated media, use `okou web download-file --help` to download by file ID, artifact URL, or /artifacts/<hash> reference; bundle the downloaded assets using relative paths. Never embed private artifact references (absolute or hostless) or expiring preview/provider signatures in HTML.",
     "- Image batch results may be relative asset paths rooted at the batch state directory. Copy its optimized WebP assets into this output bundle, reference them with relative paths, and preserve image dimensions.",
     "- Do not reference files from another project path.",
@@ -242,7 +249,10 @@ export function createHtmlArtifactAuthoringPacket(
     "",
     "## Publish",
     "The hosted URL is the preview and user-accessible view for this static HTML artifact.",
-    "Return the exact URL from the host command. Private artifacts use an authenticated preview URL; hosting does not make them public.",
+    "Return the exact URL from the host command. Private artifacts use an authenticated preview URL.",
+    options.visibility === undefined
+      ? "With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting keeps its existing behavior."
+      : `Publish the final artifact with ${options.visibility} visibility. Explicit visibility requires privateArtifacts to be enabled.`,
     `When everything is OK, publish it with:`,
     "",
     "```bash",
@@ -250,6 +260,7 @@ export function createHtmlArtifactAuthoringPacket(
     "```",
     "",
     "File upload is a separate delivery channel for when the user needs a local file copy, not another way to preview the same hosted artifact.",
+    `For a requested file copy, use \`okou web upload-file -f <file>${visibilityFlag}\` and return the exact URL it prints.`,
   ].join("\n");
 
   return {

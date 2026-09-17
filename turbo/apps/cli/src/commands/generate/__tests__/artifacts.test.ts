@@ -89,13 +89,43 @@ describe("okou generate source-backed artifact commands", () => {
         `Write the artifact under \`./generated/mockups/${command}-demo/\`.`,
       );
       expect(stdout).toContain(
-        `okou host ./generated/mockups/${command}-demo --site ${command}-demo`,
+        `okou host ./generated/mockups/${command}-demo --site ${command}-demo\n`,
       );
       expect(stdout).toContain(
         "The hosted URL is the preview and user-accessible view for this static HTML artifact.",
       );
       expect(stdout).toContain(
         "Check that shapes, charts, images, or decorative graphics do not cover readable text",
+      );
+    },
+  );
+
+  it.each([
+    "report",
+    "docs-design",
+    "poster",
+    "dashboard-design",
+    "mobile-app-design",
+  ])(
+    "preserves org visibility in %s delivery instructions",
+    async (command) => {
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        command,
+        "--prompt",
+        "An internal planning artifact",
+        "--site-slug",
+        "team-plan",
+        "--visibility",
+        "org",
+      ]);
+
+      expect(output()).toContain(
+        "okou host ./generated/mockups/team-plan --site team-plan --visibility org\n",
+      );
+      expect(output()).toContain(
+        "okou web upload-file -f <file> --visibility org",
       );
     },
   );
@@ -115,6 +145,7 @@ describe("okou generate source-backed artifact commands", () => {
     expect(helpOutput).toContain("--title <text>");
     expect(helpOutput).toContain("--design-system <id>");
     expect(helpOutput).toContain("--template <id>");
+    expect(helpOutput).toContain("--visibility <visibility>");
   });
 
   it("returns every registered skill when no target is requested", () => {

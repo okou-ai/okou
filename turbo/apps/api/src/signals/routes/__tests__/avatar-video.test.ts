@@ -441,19 +441,24 @@ describe("JoggAI built-in avatar video routes", () => {
       );
       mocks.clerk.session(fixture.userId, fixture.orgId);
       const app = createAvatarVideoTestApp(fixture.usagePricingResolution);
-      const response = await app.request("/api/avatar-video/generate", {
-        method: "POST",
-        headers: { authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          avatarId: 81,
-          voiceId: "en-US-ChristopherNeural",
-          script: "Welcome to Okou",
-          aspectRatio: "landscape",
-          screenStyle: 2,
-          caption: false,
-          videoName: "Product introduction",
-        }),
-      });
+      const response = await app.request(
+        privateArtifacts
+          ? "/api/avatar-video/generate/private"
+          : "/api/avatar-video/generate",
+        {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            avatarId: 81,
+            voiceId: "en-US-ChristopherNeural",
+            script: "Welcome to Okou",
+            aspectRatio: "landscape",
+            screenStyle: 2,
+            caption: false,
+            videoName: "Product introduction",
+          }),
+        },
+      );
 
       expect(response.status).toBe(202);
       const generationId = readGenerationId(

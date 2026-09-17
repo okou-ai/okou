@@ -3,11 +3,13 @@ import {
   type VideoTemplateRegistryEntry,
   RESOURCE_REGISTRY_VERSION,
 } from "@okouai/core/resource-registry";
+import type { ArtifactVisibility } from "./artifact-visibility";
 
 interface VideoTemplateAuthoringOptions {
   readonly prompt: string;
   readonly details: readonly string[];
   readonly template: VideoTemplateRegistryEntry;
+  readonly visibility?: ArtifactVisibility;
 }
 
 interface VideoTemplateAuthoringPacket {
@@ -82,6 +84,14 @@ export function createVideoTemplateAuthoringPacket(
     previewKind: "video",
     outputDir,
   } as const;
+  const requestedArtifactRules = [
+    ...artifactRules,
+    ...(options.visibility
+      ? [
+          `Pass --visibility ${options.visibility} to the final built-in okou generate video command. Apply this visibility only to the final video; keep intermediate assets private.`,
+        ]
+      : []),
+  ];
   const instructions = [
     `# Okou generate video --template ${options.template.id}`,
     "",
@@ -134,7 +144,7 @@ export function createVideoTemplateAuthoringPacket(
     }),
     "",
     "## Video Authoring Rules",
-    ...artifactRules.map((rule) => {
+    ...requestedArtifactRules.map((rule) => {
       return `- ${rule}`;
     }),
     "",
@@ -156,7 +166,7 @@ export function createVideoTemplateAuthoringPacket(
     },
     authoring: {
       details: options.details,
-      artifactRules,
+      artifactRules: requestedArtifactRules,
     },
     outputDir,
     instructions,

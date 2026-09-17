@@ -10,6 +10,8 @@ const c = initContract();
 // ---------------------------------------------------------------------------
 
 const prepareRequestSchema = z.object({
+  /** Fail before creating bytes when private artifact creation is unavailable. */
+  requirePrivateArtifact: z.boolean().optional(),
   filename: z.string().min(1).max(255),
   contentType: z.string().min(1).max(200),
   size: z.number().int().nonnegative(),
@@ -97,21 +99,27 @@ const completeResponseSchema = z.object({
  * confirms the object exists after the PUT and persists run associations when
  * the request is authenticated with an Okou run token.
  */
+const creationRoute = {
+  method: "POST",
+  path: "/api/uploads/prepare",
+  headers: authHeadersSchema,
+  body: prepareRequestSchema,
+  responses: {
+    200: prepareResultSchema,
+    400: apiErrorSchema,
+    401: apiErrorSchema,
+    402: apiErrorSchema,
+    403: apiErrorSchema,
+    500: apiErrorSchema,
+  },
+  summary: "Prepare a direct-to-R2 upload",
+} as const;
+
 export const uploadsContract = c.router({
-  prepare: {
-    method: "POST",
-    path: "/api/uploads/prepare",
-    headers: authHeadersSchema,
-    body: prepareRequestSchema,
-    responses: {
-      200: prepareResultSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      402: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Prepare a direct-to-R2 upload",
+  prepare: creationRoute,
+  preparePrivate: {
+    ...creationRoute,
+    path: "/api/uploads/prepare/private",
   },
   completeMultipart: {
     method: "POST",

@@ -11,6 +11,12 @@ import { getBillingStatus } from "../../lib/api/domains/billing";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createArtifactPresentation } from "../shared/artifact-return";
 import {
+  applyArtifactVisibility,
+  createArtifactVisibilityOption,
+  prepareArtifactVisibility,
+  type ArtifactVisibility,
+} from "../shared/artifact-visibility";
+import {
   currentPlanAllowsVideo,
   currentTokenCanReadBilling,
 } from "../shared/billing-capabilities";
@@ -63,6 +69,7 @@ interface AvatarVideoCommandOptions {
   readonly provider?: string;
   readonly all?: boolean;
   readonly json?: boolean;
+  readonly visibility?: ArtifactVisibility;
 }
 
 function parsePositiveInteger(value: string, name: string): number {
@@ -294,6 +301,11 @@ function validateCommandModes(options: AvatarVideoCommandOptions): void {
   }
 
   const listingResources = options.listAvatars || options.listVoices;
+  if (listingResources && options.visibility) {
+    throw new Error(
+      "--visibility is only available for direct built-in generation",
+    );
+  }
   if (listingResources && hasGenerationInput(options)) {
     throw new Error(
       "Resource listing flags cannot be combined with generation options",
@@ -328,7 +340,11 @@ async function resolveCommandDispatch(
       ? "Generate from the supplied audio URL"
       : options.script,
     all: options.all,
-    requireExecutionFor: options.json ? "--json" : undefined,
+    requireExecutionFor: options.visibility
+      ? "--visibility"
+      : options.json
+        ? "--json"
+        : undefined,
   });
   if (dispatch.outcome === "handled") {
     return { outcome: "handled" };
@@ -392,7 +408,10 @@ async function generateAvatarVideo(
   }
 
   await ensureVideoPlan();
-  const result = await generateWebAvatarVideo({
+  const requirePrivateArtifact = await prepareArtifactVisibility(
+    options.visibility,
+  );
+  const generated = await generateWebAvatarVideo({
     avatarId: options.avatarId,
     voiceId,
     ...(script ? { script } : {}),
@@ -401,7 +420,13 @@ async function generateAvatarVideo(
     screenStyle: options.screenStyle,
     caption: options.caption,
     ...(options.videoName ? { videoName: options.videoName } : {}),
+    requirePrivateArtifact,
   });
+  const result = await applyArtifactVisibility(
+    generated,
+    { kind: "file", id: generated.id },
+    options.visibility,
+  );
   printAvatarVideoResult(result, options.json === true);
 }
 
@@ -470,6 +495,7 @@ export const avatarVideoCommand = new Command()
     "When listing providers, include unavailable or unauthorized connectors",
   )
   .option("--json", "Print resource lists or the generation result as JSON")
+  .addOption(createArtifactVisibilityOption())
   .addHelpText(
     "after",
     `

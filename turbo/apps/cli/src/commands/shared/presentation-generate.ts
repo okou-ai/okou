@@ -13,6 +13,10 @@ import {
   PRESENTATION_STATIC_HTML_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
+import {
+  createArtifactVisibilityOption,
+  type ArtifactVisibility,
+} from "./artifact-visibility";
 
 type PresentationRunbookPackage = ReturnType<
   typeof listPresentationRunbookPackages
@@ -24,6 +28,7 @@ interface PresentationOptions {
   title?: string;
   siteSlug?: string;
   template?: string;
+  visibility?: ArtifactVisibility;
 }
 
 interface PresentationGenerateCommandConfig {
@@ -89,6 +94,7 @@ export function createPresentationGenerateCommand(
     )
     .option("--site-slug <slug>", "Hosted site slug override")
     .option("--title <text>", "Requested deck title")
+    .addOption(createArtifactVisibilityOption())
     .option(
       "--template <id>",
       "Presentation template id (see Templates below). Accepts either 'html-ppt-playful-launch' or 'template:html-ppt-playful-launch'.",
@@ -118,6 +124,19 @@ ${formatPresentationTemplateListing(templates)}`;
         });
         if (dispatch.outcome === "handled") return;
         const prompt = dispatch.prompt;
+        const visibilityFlag =
+          options.visibility === undefined
+            ? ""
+            : ` --visibility ${options.visibility}`;
+        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag}`;
+        const deliveryInstructions = [
+          options.visibility === undefined
+            ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting and upload keep their existing behavior."
+            : `- Publish the final deck with ${options.visibility} visibility. Explicit visibility requires privateArtifacts to be enabled.`,
+          "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final deck; do not make supporting media public separately.",
+          `- For a requested file copy, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,
+          "- Return the exact URL printed by the delivery command.",
+        ];
 
         if (options.template !== undefined) {
           const canonical = canonicalizeRegistryId(
@@ -141,7 +160,9 @@ ${formatPresentationTemplateListing(templates)}`;
               ...buildPresentationRunbookInstructionLines({
                 runbookPackage: template,
                 colorSystemToken,
+                hostCommand,
               }),
+              ...deliveryInstructions,
               "",
               `User request: ${prompt}`,
             ].join("\n"),
@@ -188,6 +209,10 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Check that keyboard/click interactions work when present.",
             "- Check that text does not overflow or overlap at desktop and mobile viewport sizes.",
             "- Check that shapes, charts, images, or decorative graphics do not cover readable text at desktop and mobile viewport sizes.",
+            "",
+            "## Publish",
+            `- Host the finished deck: ${hostCommand}`,
+            ...deliveryInstructions,
           ].join("\n"),
         );
       }),

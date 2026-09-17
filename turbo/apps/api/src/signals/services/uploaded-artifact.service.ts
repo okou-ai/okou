@@ -34,17 +34,21 @@ export const allocateUploadedArtifact$ = command(
       readonly size: number;
       readonly publicBrand: PublicBrand;
       readonly purpose?: "artifact";
+      readonly privateArtifacts?: boolean;
       readonly id?: string;
       readonly variant?: string;
     },
     signal: AbortSignal,
   ) => {
     if (args.orgId) {
-      const context = await get(
-        userFeatureSwitchContext(args.orgId, args.userId),
-      );
+      const privateArtifacts =
+        args.privateArtifacts ??
+        isFeatureEnabled(
+          FeatureSwitchKey.PrivateArtifacts,
+          await get(userFeatureSwitchContext(args.orgId, args.userId)),
+        );
       signal.throwIfAborted();
-      if (isFeatureEnabled(FeatureSwitchKey.PrivateArtifacts, context)) {
+      if (privateArtifacts) {
         return await set(
           allocatePrivateArtifact$,
           { ...args, orgId: args.orgId },

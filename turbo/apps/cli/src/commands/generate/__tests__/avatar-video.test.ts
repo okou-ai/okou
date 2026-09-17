@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import { avatarVideoCommand } from "../avatar-video";
 import { generateCommand } from "../index";
+import {
+  GENERATION_ARTIFACT_ID,
+  serveGenerationVisibility,
+} from "./artifact-visibility-fixtures";
 
 const AVATARS_URL = "http://localhost:3000/api/avatar-video/avatars";
 const VOICES_URL = "http://localhost:3000/api/avatar-video/voices";
@@ -67,6 +71,7 @@ describe("okou generate avatar-video command", () => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
+    avatarVideoCommand.setOptionValue("visibility", undefined);
     server.use(stubBillingStatus());
   });
 
@@ -74,6 +79,66 @@ describe("okou generate avatar-video command", () => {
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();
   });
+
+  it("publishes the generated avatar video with the requested visibility", async () => {
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
+    const artifact = serveGenerationVisibility("avatar.mp4", "public");
+    server.use(
+      http.post(`${GENERATE_URL}/private`, async ({ request }) => {
+        expect(await request.json()).toMatchObject({
+          script: "Welcome to Okou",
+          requirePrivateArtifact: true,
+        });
+        return HttpResponse.json({
+          ...AVATAR_VIDEO_RESULT,
+          id: GENERATION_ARTIFACT_ID,
+          url: artifact.reference,
+        });
+      }),
+    );
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "avatar-video",
+      "--avatar-id",
+      "81",
+      "--voice-id",
+      "en-US-ChristopherNeural",
+      "--script",
+      "Welcome to Okou",
+      "--visibility",
+      "public",
+      "--json",
+    ]);
+    expect(
+      JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+    ).toMatchObject({
+      url: artifact.url,
+      ownerUrl: artifact.ownerUrl,
+      visibility: "public",
+      previewMarkdownBlock: `![${AVATAR_VIDEO_RESULT.filename}](<${artifact.url}>)`,
+    });
+  });
+
+  it.each(["--list-avatars", "--list-voices"])(
+    "rejects visibility with %s instead of listing resources",
+    async (listing) => {
+      await expect(
+        generateCommand.parseAsync([
+          "node",
+          "cli",
+          "avatar-video",
+          listing,
+          "--visibility",
+          "public",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+        "--visibility is only available for direct built-in generation",
+      );
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+    },
+  );
 
   it("documents built-in and connector workflows in help", () => {
     let helpOutput = "";

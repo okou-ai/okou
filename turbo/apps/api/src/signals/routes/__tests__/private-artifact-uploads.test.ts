@@ -121,6 +121,48 @@ beforeEach(() => {
 });
 
 describe("private artifact uploads", () => {
+  it("keeps a guarded upload private after the creation switch is disabled", async () => {
+    installSharedThreadStorage(context);
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).preparePrivate({ headers, body }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected single upload");
+    }
+    expect(prepared.body.url).toMatch(/^\/artifacts\/[a-z0-9]{10}\.html$/u);
+    await setPrivateArtifacts(false);
+    await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      body: "private bytes",
+    });
+    const completed = await accept(
+      api()(uploadsContract).complete({
+        headers,
+        body: { id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(completed.body.url).toBe(prepared.body.url);
+    const preview = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(preview.body.publicUrl).toBeNull();
+    const download = await accept(
+      api()(webFilesContract).download({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(download.body).toBe("private bytes");
+  });
+
   it("keeps old public uploads readable after private creation is enabled", async () => {
     installSharedThreadStorage(context);
     const prepared = await accept(

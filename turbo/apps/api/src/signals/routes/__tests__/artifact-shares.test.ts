@@ -495,6 +495,31 @@ test("artifact capabilities do not let agents manage another owner's share", asy
   });
 });
 
+test("artifact availability reads the live switch and still requires artifact read access", async () => {
+  const { owner, org } = await fixture();
+  const agentHeaders = runHeaders(owner, org, ["artifact:read"]);
+  const enabled = await accept(
+    api()(artifactSharesContract).availability({ headers: agentHeaders }),
+    [200],
+  );
+  expect(enabled.body).toStrictEqual({ enabled: true });
+  expect(enabled.headers.get("cache-control")).toBe("private, no-store");
+  expect(enabled.headers.get("referrer-policy")).toBe("no-referrer");
+
+  await flag(false);
+  const disabled = await accept(
+    api()(artifactSharesContract).availability({ headers: agentHeaders }),
+    [200],
+  );
+  expect(disabled.body).toStrictEqual({ enabled: false });
+  await accept(
+    api()(artifactSharesContract).availability({
+      headers: runHeaders(owner, org, ["file:write", "host:write"]),
+    }),
+    [403],
+  );
+});
+
 test("upload, hosting and read-only run capabilities cannot change sharing", async () => {
   const { owner, org } = await fixture();
   const target = await file();

@@ -10,6 +10,12 @@ import { getBillingStatus } from "../../lib/api/domains/billing";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createArtifactPresentation } from "./artifact-return";
 import {
+  applyArtifactVisibility,
+  createArtifactVisibilityOption,
+  prepareArtifactVisibility,
+  type ArtifactVisibility,
+} from "./artifact-visibility";
+import {
   findVideoTemplate,
   listVideoTemplates,
 } from "@okouai/core/resource-registry";
@@ -43,6 +49,7 @@ interface VideoOptions {
   lastFrameImageUrl?: string;
   all?: boolean;
   json?: boolean;
+  visibility?: ArtifactVisibility;
 }
 
 interface VideoGenerateCommandConfig {
@@ -401,6 +408,7 @@ export function createVideoGenerateCommand(
       "When listing providers (no --prompt given), include unavailable or not-yet-authorized connectors",
     )
     .option("--json", "Print the complete generation result as JSON")
+    .addOption(createArtifactVisibilityOption())
     .option(
       "--model <model>",
       "Model: dreamina-seedance-2.0-fast, dreamina-seedance-2.5, dreamina-seedance-2.0, dreamina-seedance-2.0-mini, seedance-1.5-pro, minimax-h3, veo3.1-fast, or kling-v3-4k. Do not pass this unless the user named a model",
@@ -492,7 +500,11 @@ Models:
           provider: options.provider,
           prompt: options.prompt,
           all: options.all,
-          requireExecutionFor: options.json ? "--json" : undefined,
+          requireExecutionFor: options.visibility
+            ? "--visibility"
+            : options.json
+              ? "--json"
+              : undefined,
         });
         if (dispatch.outcome === "handled") return;
         const prompt = dispatch.prompt;
@@ -508,10 +520,12 @@ Models:
             throw unknownTemplateError(options.template, config.usageCommand);
           }
 
+          await prepareArtifactVisibility(options.visibility);
           const packet = createVideoTemplateAuthoringPacket({
             prompt,
             template,
             details: createVideoTemplateDetails(options),
+            visibility: options.visibility,
           });
 
           console.log(packet.instructions);
@@ -530,7 +544,10 @@ Models:
         }
 
         await validateVideoOptions(options);
-        const result = await generateWebVideo({
+        const requirePrivateArtifact = await prepareArtifactVisibility(
+          options.visibility,
+        );
+        const generated = await generateWebVideo({
           prompt,
           model: options.model,
           aspectRatio: options.aspectRatio,
@@ -546,7 +563,13 @@ Models:
           audioUrls: options.audioUrl,
           firstFrameImageUrl: options.firstFrameImageUrl,
           lastFrameImageUrl: options.lastFrameImageUrl,
+          requirePrivateArtifact,
         });
+        const result = await applyArtifactVisibility(
+          generated,
+          { kind: "file", id: generated.id },
+          options.visibility,
+        );
 
         const presentation = createArtifactPresentation(
           result.filename,
