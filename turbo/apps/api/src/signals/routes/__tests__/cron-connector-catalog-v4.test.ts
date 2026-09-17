@@ -1,23 +1,38 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { beforeEach, describe, expect, it } from "vitest";
+import { runnersBuiltinFirewallsResolveContract } from "@okouai/api-contracts/contracts/runners";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { corruptApiTestConnectorCatalogActiveSnapshotPayload } from "../../../test-fixtures/connector-catalog";
+import { installAcceptedV3ConnectorCatalog } from "../../../test-fixtures/connector-catalog-v3";
 import { connectorCatalogRoutes } from "../connector-catalog";
+import { connectorCheckRoutes } from "../connector-check";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { customConnectorsRoutes } from "../custom-connectors";
-import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
+import { runnersRoutes } from "../runners";
+import { createBddApi } from "./helpers/api-bdd";
+import {
+  createConnectorBddApi,
+  manualHttpCustomConnectorCreateBody,
+} from "./helpers/api-bdd-connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const bdd = createBddApi(context);
+const connectorsApi = createConnectorBddApi(context);
 const CRON_SECRET = "v4-catalog-cron-secret";
 const CATALOG_VERSION = "2026-09-17.fixture";
+const V3_CATALOG_VERSION = "2099-01-01.retained-v3";
+const OFFICIAL_RUNNER_AUTHORIZATION =
+  "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 const cronHeaders = { authorization: `Bearer ${CRON_SECRET}` } as const;
 const sessionHeaders = { authorization: "Bearer clerk-session" } as const;
 
@@ -116,6 +131,61 @@ function mcpConnector(slug = "notes-mcp") {
       defaultUnknownPolicy: "allow",
     },
   };
+}
+
+function httpConnectorWithFirewall(label: string) {
+  return {
+    ...httpConnector("catalog-service", label),
+    firewall: {
+      kind: "generated",
+      billable: false,
+      config: {
+        placeholders: { FIXTURE_TOKEN: "fixture-token-placeholder" },
+        apis: [
+          {
+            base: "https://catalog.example.com/v1",
+            auth: {
+              headers: {
+                Authorization: `Bearer \${{ secrets.FIXTURE_TOKEN }}`,
+              },
+            },
+            permissions: [
+              {
+                name: "items.read",
+                description: "Read items",
+                rules: ["GET /items"],
+              },
+            ],
+          },
+        ],
+      },
+      categories: null,
+      defaultAllowed: ["items.read"],
+      defaultUnknownPolicy: "deny",
+    },
+  };
+}
+
+async function installRetainedV3(): Promise<void> {
+  await installAcceptedV3ConnectorCatalog({
+    catalogVersion: V3_CATALOG_VERSION,
+    catalogBytes: bytes({
+      artifactSchemaVersion: 3,
+      catalogVersion: V3_CATALOG_VERSION,
+      categoryMetadata: {
+        categories: [
+          {
+            id: "testing",
+            label: "Testing",
+            menuLabel: "Testing",
+            groupId: null,
+          },
+        ],
+        groups: [],
+      },
+      connectors: [httpConnectorWithFirewall("Retained v3")],
+    }),
+  });
 }
 
 function release(args: {
@@ -219,6 +289,18 @@ async function publicCatalog() {
   return await accept(catalogClient().list({ headers: sessionHeaders }), [200]);
 }
 
+async function builtinFirewalls<TStatus extends 200 | 400>(status: TStatus) {
+  return await accept(
+    setupApp({ context, routes: runnersRoutes })(
+      runnersBuiltinFirewallsResolveContract,
+    ).resolve({
+      headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+      body: { names: ["catalog-service"] },
+    }),
+    [status],
+  );
+}
+
 beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", `catalog-v4-${randomUUID()}`);
@@ -226,6 +308,169 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
+  it("keeps retained v3 HTTP connections and firewalls usable while the first v4 sync fails", async () => {
+    await installRetainedV3();
+    serveObjects(new Map());
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { slug: "catalog-service", label: "Retained v3" },
+    ]);
+
+    const actor = bdd.user();
+    const connection = await connectorsApi.connectManualGrant(
+      actor,
+      "catalog-service",
+      "api-token",
+      { credential: "retained-catalog-secret" },
+    );
+    onTestFinished(async () => {
+      await connectorsApi.deleteDefaultBuiltinConnectorAccount(
+        actor,
+        "catalog-service",
+      );
+    });
+
+    expect((await sync()).body).toMatchObject({
+      outcome: "rejected",
+      schemaVersion: 4,
+      active: null,
+      lastAttempt: { failureCode: "source-unavailable" },
+    });
+    await expect(connectorsApi.listConnectors(actor)).resolves.toMatchObject({
+      connectors: [
+        {
+          id: connection.id,
+          slug: "catalog-service",
+          authMethod: "api-token",
+          connectionStatus: "connected",
+        },
+      ],
+      connectorProvidedBindings: [
+        {
+          connectorSlug: "catalog-service",
+          namespace: "secrets",
+          name: "FIXTURE_TOKEN",
+        },
+      ],
+    });
+    const check = await accept(
+      setupApp({ context, routes: connectorCheckRoutes })(
+        connectorCheckContract,
+      ).check({
+        headers: sessionHeaders,
+        body: {
+          mode: "url",
+          method: "GET",
+          url: "https://catalog.example.com/v1/items",
+          connectorSlug: "catalog-service",
+        },
+      }),
+      [200],
+    );
+    expect(check.body).toMatchObject({
+      outcome: "resolved",
+      connector: { connectorSlug: "catalog-service", label: "Retained v3" },
+      permission: {
+        kind: "matched",
+        permissions: [{ name: "items.read" }],
+      },
+    });
+    const firewalls = await builtinFirewalls(200);
+    expect(firewalls.body.firewalls["catalog-service"]).toMatchObject({
+      apis: [
+        {
+          base: "https://catalog.example.com/v1",
+          auth: {
+            headers: { Authorization: `Bearer \${{ secrets.FIXTURE_TOKEN }}` },
+          },
+        },
+      ],
+    });
+
+    const invalid = release({
+      mutate(catalog) {
+        catalog.artifactSchemaVersion = 3;
+      },
+    });
+    serveObjects(invalid.objects);
+    expect((await sync()).body).toMatchObject({
+      outcome: "rejected",
+      schemaVersion: 4,
+      active: null,
+      lastAttempt: { failureCode: "unsupported-schema" },
+    });
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Retained v3" },
+    ]);
+    await expect(
+      connectorsApi.readConnectorBySlug(actor, "catalog-service"),
+    ).resolves.toMatchObject({
+      id: connection.id,
+      connectionStatus: "connected",
+    });
+  });
+
+  it("switches a warmed v3 reader to v4 and retains v4 after a rejected update even when v3 has a newer catalog version", async () => {
+    await installRetainedV3();
+    serveObjects(new Map());
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Retained v3" },
+    ]);
+    expect((await builtinFirewalls(200)).body.firewalls).toHaveProperty(
+      "catalog-service",
+    );
+
+    const accepted = release({ label: "Preferred v4" });
+    serveObjects(accepted.objects);
+    expect((await sync()).body).toMatchObject({
+      outcome: "accepted",
+      schemaVersion: 4,
+      active: { catalogVersion: CATALOG_VERSION },
+      filtering: { stale: false },
+    });
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Preferred v4" },
+    ]);
+    expect((await builtinFirewalls(400)).body.error.message).toBe(
+      "Unknown builtin firewall: catalog-service",
+    );
+
+    const rejected = release({
+      label: "Rejected replacement",
+      mutate(catalog) {
+        catalog.artifactSchemaVersion = 3;
+      },
+    });
+    serveObjects(rejected.objects);
+    expect((await sync()).body).toMatchObject({
+      outcome: "rejected",
+      schemaVersion: 4,
+      active: { catalogDigest: accepted.pointer.catalogDigest },
+    });
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Preferred v4" },
+    ]);
+  });
+
+  it("does not return retained v3 when an accepted v4 snapshot is corrupt", async () => {
+    await installRetainedV3();
+    serveObjects(new Map());
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Retained v3" },
+    ]);
+    serveObjects(release({ label: "Accepted v4" }).objects);
+    expect((await sync()).body.outcome).toBe("accepted");
+
+    // Infrastructure-corruption exception: no production endpoint writes an
+    // invalid gzip snapshot. Corrupt before the first v4 read, so its original
+    // immutable bytes are not already in this process's accepted-reader cache.
+    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
+    const unavailable = await accept(
+      catalogClient().list({ headers: sessionHeaders }),
+      [503],
+    );
+    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+  });
+
   it("serves complete v4 HTTP data through normal sync while filtering unsupported MCP methods", async () => {
     const candidate = release({ label: "Accepted v4" });
     serveObjects(candidate.objects);

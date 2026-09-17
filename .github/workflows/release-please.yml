@@ -1389,9 +1389,8 @@ jobs:
           skip-start: "true"
           skip-finish: "true"
           skip-setup: "true"
-          skip-domain: "true"
 
-      - name: Prepare production connector catalog before promotion
+      - name: Reconcile production connector catalog (best effort)
         shell: bash
         env:
           API_DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
@@ -1409,12 +1408,11 @@ jobs:
             --silent \
             --max-time 120 \
             --header "Authorization: Bearer ${CRON_SECRET}"); then
-            echo "::error::Connector catalog reconcile request failed; deployment was not promoted"
-            exit 1
+            echo "::warning::Connector catalog reconcile request failed; the scheduled cron will retry"
+            exit 0
           fi
 
           if ! summary=$(jq -c '{
-            schemaVersion,
             outcome,
             hasActive: (.active != null),
             lastAttemptOutcome: .lastAttempt.outcome,
@@ -1423,31 +1421,18 @@ jobs:
               filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)
             }
           }' <<< "$response"); then
-            echo "::error::Connector catalog reconcile returned invalid JSON; deployment was not promoted"
-            exit 1
+            echo "::warning::Connector catalog reconcile returned invalid JSON; the scheduled cron will retry"
+            exit 0
           fi
 
           echo "Connector catalog reconcile: ${summary}"
-          # A rejected latest candidate can retain a usable accepted v4 snapshot.
-          # Bootstrap readiness does not require the latest candidate to succeed.
           if ! jq -e '
-            .schemaVersion == 4
-            and (.state == "current" or .state == "stale")
+            .state == "current"
             and .active != null
             and .filtering.stale == false
           ' <<< "$response" >/dev/null; then
-            echo "::error::Accepted v4 connector catalog is not ready; deployment was not promoted"
-            exit 1
+            echo "::warning::Connector catalog is not ready; the scheduled cron will retry"
           fi
-
-      - name: Promote API Production
-        uses: ./.github/actions/vercel-promote
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ vars.VERCEL_TEAM_ID }}
-          vercel-project-id: ${{ vars.VERCEL_PROJECT_ID_API }}
-          deployment-url: ${{ steps.deploy.outputs.url }}
-          skip-setup: "true"
 
       - name: Resolve Vercel dashboard URL
         id: vercel-dashboard

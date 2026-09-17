@@ -3,7 +3,8 @@
 Issue [#34909](https://github.com/vm0-ai/okou/issues/34909) makes the API consume
 the complete v4 catalog published by
 [vm0-connectors #4634](https://github.com/vm0-ai/vm0-connectors/pull/4634).
-The new API reads only v4 through the existing catalog sync and read paths.
+The new API syncs v4 through the existing catalog path and temporarily reads
+retained accepted v3 data until the first v4 snapshot is accepted.
 Catalog support does not enable built-in MCP execution or Automatic OAuth.
 
 ## Publication and bootstrap
@@ -15,24 +16,27 @@ The existing authenticated `GET /api/cron/sync-connector-catalog` reads
 transactionally accepts its snapshot, compatibility evaluation and projections.
 It uses the existing cron bearer secret and normal runtime wakeup behavior.
 
-There is one catalog reader and one sync endpoint. No serving-generation
-configuration or separate warm-up endpoint is needed. Existing scheduled syncs
-keep v4 current after bootstrap.
+The existing release workflow and best-effort post-deployment sync are unchanged.
+While a source has no accepted v4 snapshot, the shared accepted-catalog reader
+uses its retained accepted v3 snapshot for connector discovery, execution and
+firewall permissions. Normal sync accepts v4 and subsequent reads select it
+automatically. No environment variable, serving-generation selector or separate
+warm-up endpoint is needed. Existing scheduled syncs keep v4 current.
 
-Production deployment stages the new API without moving the serving domain,
-then calls the normal sync endpoint on that exact deployment. Promotion requires
-`schemaVersion: 4`, a non-null accepted snapshot and current compatibility
-evaluation (`filtering.stale: false`). A valid retained v4 snapshot is sufficient
-when the latest candidate is unavailable or rejected; a cold catalog is not.
-A failed request, malformed response or missing accepted state blocks promotion.
-This does not require MCP methods to be executable: filtered methods are expected.
+This read bridge protects existing connectors while the first v4 sync is pending
+or fails. An installation without any accepted v3 or v4 snapshot still needs a
+successful sync before connectors are available. MCP methods do not need to be
+executable for v4 acceptance: filtered methods are expected.
 
 ## Identity and failure behavior
 
 The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`.
-Candidate and persisted snapshot readers verify v4 schema, original-byte digest,
-size and semantic validity. Existing database keys isolate sync and accepted
-state by `(sourceId, schemaVersion)`. Compatibility evaluations additionally bind
+Candidate validation and snapshot writes accept only v4. Persisted snapshot
+readers verify the stored generation's schema, original-byte digest, size and
+semantic validity; v3 bytes are not relabeled or rewritten as v4. The retained
+v3 snapshot is evaluated against current executable capabilities. Existing
+database keys isolate sync and accepted state by `(sourceId, schemaVersion)`.
+Compatibility evaluations additionally bind
 catalog version, digest, executable capability digest and validator authority.
 Projection sets bind the same catalog identity, and their child rows bind a set
 ID and payload digest. No database migration is required.
@@ -42,10 +46,16 @@ size limit and is unrelated to the catalog format version. Old API binaries
 continue reading their existing v3 namespace and rows; new APIs never rewrite or
 delete those pointers, snapshots or immutable publication objects.
 
-A missing or invalid candidate records a failed attempt and retains the last
-accepted v4 snapshot. A cold v4 catalog is unavailable until normal sync accepts
-a valid publication. There is no read fallback to v3. Inspect attempt and stale
-state separately from availability when assessing freshness.
+A missing or invalid candidate records a failed attempt and leaves the accepted
+state unchanged. Accepted v4 always takes precedence over v3, regardless of
+catalog version ordering. Once v4 has been accepted, later failed syncs retain
+it; an invalid accepted v4 snapshot fails rather than falling back to v3. The
+v3 bridge applies only when no accepted v4 snapshot exists for that source.
+
+Diagnostics describe the v4 sync target: `schemaVersion`, `state` and `active`
+refer to v4, not the generation currently serving through the bridge. Diagnostics
+can therefore report cold v4 state while retained v3 keeps connectors available.
+Inspect sync freshness separately from connector availability.
 
 ## MCP capability boundary
 
@@ -64,8 +74,9 @@ methods remain usable through v4.
 
 ## Rollback and remaining integration
 
-Deploying this consumer selects v4 directly. Enabling MCP execution, Automatic
-OAuth and same-service replacement remains work under
+Deploying this consumer starts v4 sync with the bounded v3 read bridge described
+above. Enabling MCP execution, Automatic OAuth and same-service replacement
+remains work under
 [#34157](https://github.com/vm0-ai/okou/issues/34157).
 No production release, storage pointer change or provider authorization is
 performed by this implementation PR itself.
@@ -76,11 +87,16 @@ rollback binaries must retain the execution and credential readers needed by
 their connections; restoring an older binary alone is not a complete recovery.
 Historical immutable v3 objects are retained, not deleted by this transition.
 
-The new diagnostics contract accepts an omitted generation field from older
-serving/rollback APIs. [#34913](https://github.com/vm0-ai/okou/issues/34913) owns
-removing that client compatibility after the old APIs leave the supported window,
-along with any separately introduced client bridges. There is no dual catalog
-reader, serving selector or warm-up endpoint to retire.
+[#34913](https://github.com/vm0-ai/okou/issues/34913) owns removing the v3 read
+bridge, its schema support and its tests after every serving source and supported
+bootstrap target has an accepted v4 snapshot and the deployment/rollback window
+no longer needs v3 reads. Retaining immutable v3 objects and rows for older
+binaries is a separate obligation; removing this bridge does not delete them.
+
+The new diagnostics contract also accepts an omitted generation field from older
+serving/rollback APIs. The same cleanup issue owns removing that client tolerance
+after those APIs leave the supported window, along with any separately introduced
+client bridges. There is no serving selector or warm-up endpoint to retire.
 
 ## Producer evidence
 

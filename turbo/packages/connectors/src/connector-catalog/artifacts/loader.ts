@@ -10,6 +10,7 @@ import {
 import { attempt, parseJson } from "../safe";
 import {
   connectorCatalogArtifactSchema,
+  retainedV3ConnectorCatalogArtifactSchema,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
 } from "./artifacts";
@@ -167,11 +168,14 @@ function parseStrict<T>(
   return parsed.data;
 }
 
-function assertSupportedArtifactSchema(value: unknown): void {
+function assertSupportedArtifactSchema(
+  value: unknown,
+  schemaVersion: 3 | 4,
+): void {
   if (
     isRecord(value) &&
     typeof value.artifactSchemaVersion === "number" &&
-    value.artifactSchemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION
+    value.artifactSchemaVersion !== schemaVersion
   ) {
     fail("unsupported-schema");
   }
@@ -188,16 +192,21 @@ function measureSnapshotPhase<T>(
 function validateCatalogJson(args: {
   readonly json: unknown;
   readonly catalogVersion: string;
+  readonly schemaVersion?: 3 | 4;
   readonly timing?: ConnectorCatalogValidationTiming;
 }): ConnectorCatalogArtifact {
   const artifact = measureSnapshotPhase(
     args.timing,
     "api_dispatch_connector_catalog_validate_schema",
     () => {
-      assertSupportedArtifactSchema(args.json);
-      const parsed = parseStrict(
+      const schemaVersion =
+        args.schemaVersion ?? SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION;
+      assertSupportedArtifactSchema(args.json, schemaVersion);
+      const parsed = parseStrict<ConnectorCatalogArtifact>(
         args.json,
-        connectorCatalogArtifactSchema,
+        schemaVersion === 3
+          ? retainedV3ConnectorCatalogArtifactSchema
+          : connectorCatalogArtifactSchema,
         "invalid-artifact",
       );
       if (parsed.catalogVersion !== args.catalogVersion) {
@@ -376,6 +385,20 @@ export function decodeConnectorCatalogSnapshot(
     artifact: validateCatalogJson({
       json: decodeConnectorCatalogSnapshotJson(args),
       catalogVersion: args.catalogVersion,
+      ...(args.timing === undefined ? {} : { timing: args.timing }),
+    }),
+  };
+}
+
+/** Decode retained v3 bytes without rewriting their header or digest (#34913). */
+export function decodeRetainedV3ConnectorCatalogSnapshot(
+  args: ConnectorCatalogSnapshotDecodeArgs,
+): DecodedConnectorCatalogSnapshot {
+  return {
+    artifact: validateCatalogJson({
+      json: decodeConnectorCatalogSnapshotJson(args),
+      catalogVersion: args.catalogVersion,
+      schemaVersion: 3,
       ...(args.timing === undefined ? {} : { timing: args.timing }),
     }),
   };
