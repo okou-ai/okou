@@ -13,7 +13,6 @@ import {
   type UsagePackCatalogItem,
   type UsagePackSubscriptionChangePreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import { adAttributionMetadataSchema } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
@@ -141,11 +140,15 @@ function isUsagePackSubscriptionChangeConflict(
   return result.status === "plan_ending" || result.status === "conflict";
 }
 
-async function signupAttributionForUser(
+async function checkoutAttribution(
   clerk: ClerkClient,
   userId: string,
+  adAttribution: Parameters<typeof mergeFirstTouchAttribution>[0],
   signal: AbortSignal,
-): Promise<ReturnType<typeof adAttributionMetadataSchema.parse> | undefined> {
+): Promise<ReturnType<typeof mergeFirstTouchAttribution>> {
+  if (clerkAttributionDisabled()) {
+    return undefined;
+  }
   const usersResult = await settle(
     findClerkUser(clerk, userId, signal),
     signal,
@@ -159,28 +162,25 @@ async function signupAttributionForUser(
   }
 
   const user = usersResult.value;
-  return user
-    ? parseStoredSignupAttribution(
-        user.privateMetadata?.[SIGNUP_ATTRIBUTION_KEY],
-      )
-    : undefined;
-}
-
-async function checkoutAttribution(
-  clerk: ClerkClient,
-  userId: string,
-  adAttribution: Parameters<typeof mergeFirstTouchAttribution>[0],
-  signal: AbortSignal,
-): Promise<ReturnType<typeof mergeFirstTouchAttribution>> {
-  if (clerkAttributionDisabled()) {
+  if (!user) {
     return undefined;
   }
-  const storedAttribution = await signupAttributionForUser(
-    clerk,
-    userId,
-    signal,
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      user.privateMetadata,
+      SIGNUP_ATTRIBUTION_KEY,
+    )
+  ) {
+    return mergeFirstTouchAttribution(adAttribution, undefined);
+  }
+  const storedAttribution = parseStoredSignupAttribution(
+    user.privateMetadata[SIGNUP_ATTRIBUTION_KEY],
   );
-  return mergeFirstTouchAttribution(adAttribution, storedAttribution);
+  // A failed read or malformed saved touch is not proof that no touch exists.
+  // Keep checkout available without borrowing a later visit's Ads account.
+  return storedAttribution
+    ? mergeFirstTouchAttribution(adAttribution, storedAttribution)
+    : undefined;
 }
 
 function memberUsagePackIdsMatch(
@@ -479,72 +479,47 @@ function usagePackCheckoutTierConflicts(
   );
 }
 
-const googleAdsPaidConversion$ = command(
-  async (
-    { get },
-    invoice: StripeInvoice | null,
-    orgId: string,
-    signal: AbortSignal,
-  ) => {
-    const amountPaidCents = invoice?.amount_paid ?? 0;
-    if (
-      invoice?.status !== "paid" ||
-      invoice.currency.toLowerCase() !== "usd" ||
-      amountPaidCents <= 0
-    ) {
-      return undefined;
-    }
+function googleAdsPaidConversion(invoice: StripeInvoice | null) {
+  const amountPaidCents = invoice?.amount_paid ?? 0;
+  if (
+    invoice?.status !== "paid" ||
+    invoice.currency.toLowerCase() !== "usd" ||
+    amountPaidCents <= 0
+  ) {
+    return undefined;
+  }
 
-    // Invoice attribution is a frozen checkout snapshot. Never fill an unknown
-    // invoice click with a campaign from a different touch or organization.
-    const snapshots = [
-      invoice.metadata,
-      invoice.parent?.subscription_details?.metadata,
-    ];
-    const attribution = snapshots.find((metadata) => {
-      return (
-        metadata &&
-        [
-          "gclid",
-          "gbraid",
-          "wbraid",
-          "okou_campaign_id",
-          "vm0_campaign_id",
-        ].some((key) => {
+  // Invoice attribution is a frozen checkout snapshot. Never fill an unknown
+  // invoice click with a campaign from a different touch or organization.
+  const snapshots = [
+    invoice.metadata,
+    invoice.parent?.subscription_details?.metadata,
+  ];
+  const attribution = snapshots.find((metadata) => {
+    return (
+      metadata &&
+      ["gclid", "gbraid", "wbraid", "okou_campaign_id", "vm0_campaign_id"].some(
+        (key) => {
           return metadata[key];
-        })
-      );
-    });
-    let googleAdsAccountId: string | null;
-    if (attribution) {
-      googleAdsAccountId = googleAdsAccountForAttribution(attribution);
-    } else {
-      const [org] = await get(db$)
-        .select({
-          campaignId: orgMetadata.acquisitionCampaignId,
-          adGroupId: orgMetadata.acquisitionAdGroupId,
-        })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      googleAdsAccountId = googleAdsAccountForAttribution({
-        okou_campaign_id: org?.campaignId ?? undefined,
-        okou_ad_group_id: org?.adGroupId ?? undefined,
-      });
-    }
-    // Legacy paid conversions are UPLOAD_CLICKS and remain on the offline path.
-    // Omitting this optional payload also protects already-open old clients.
-    if (googleAdsAccountId !== GOOGLE_ADS_ADSMARCH_ACCOUNT_ID) {
-      return undefined;
-    }
-    return {
-      transactionId: invoice.id,
-      valueUsd: amountPaidCents / 100,
-      googleAdsAccountId,
-    };
-  },
-);
+        },
+      )
+    );
+  });
+  if (!attribution) {
+    return undefined;
+  }
+  const googleAdsAccountId = googleAdsAccountForAttribution(attribution);
+  // Legacy paid conversions are UPLOAD_CLICKS and remain on the offline path.
+  // Omitting this optional payload also protects already-open old clients.
+  if (googleAdsAccountId !== GOOGLE_ADS_ADSMARCH_ACCOUNT_ID) {
+    return undefined;
+  }
+  return {
+    transactionId: invoice.id,
+    valueUsd: amountPaidCents / 100,
+    googleAdsAccountId,
+  };
+}
 
 const confirmPlanPurchaseForOrg$ = command(
   async ({ set }, orgId: string, previewToken: string, signal: AbortSignal) => {
@@ -566,12 +541,7 @@ const confirmPlanPurchaseForOrg$ = command(
         );
       }
     }
-    const conversion = await set(
-      googleAdsPaidConversion$,
-      result.paidInvoice,
-      orgId,
-      signal,
-    );
+    const conversion = googleAdsPaidConversion(result.paidInvoice);
     return {
       status: 200 as const,
       body:
@@ -775,12 +745,7 @@ const confirmUsagePackPurchaseForOrg$ = command(
         );
       }
     }
-    const conversion = await set(
-      googleAdsPaidConversion$,
-      result.paidInvoice,
-      orgId,
-      signal,
-    );
+    const conversion = googleAdsPaidConversion(result.paidInvoice);
     return {
       status: 200 as const,
       body:
@@ -1904,12 +1869,7 @@ const checkoutCompleteAuthed$ = command(
       }
     }
 
-    const conversion = await set(
-      googleAdsPaidConversion$,
-      result.paidInvoice,
-      auth.orgId,
-      signal,
-    );
+    const conversion = googleAdsPaidConversion(result.paidInvoice);
     return {
       status: 200 as const,
       body: {

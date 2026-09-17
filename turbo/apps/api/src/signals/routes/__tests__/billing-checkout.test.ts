@@ -2058,6 +2058,17 @@ describe("POST /api/billing/checkout", () => {
     async (_label, error) => {
       const fixture = trackedSeed();
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      mockClerkUsers(context, [
+        {
+          id: fixture.userId,
+          privateMetadata: {
+            signup_attribution: {
+              gclid: "first-click",
+              okou_campaign_id: "24154967178",
+            },
+          },
+        },
+      ]);
       context.mocks.clerk.users.getUser.mockRejectedValue(error);
       context.mocks.stripe.customers.create.mockResolvedValue({
         id: `cus_${randomUUID().slice(0, 8)}`,
@@ -2075,16 +2086,131 @@ describe("POST /api/billing/checkout", () => {
             tier: "pro",
             successUrl: `${APP_ORIGIN}/billing?billing=success`,
             cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+            adAttribution: {
+              gclid: "later-click",
+              okou_campaign_id: "24220469665",
+            },
           },
           headers: { authorization: "Bearer clerk-session" },
         }),
         [200],
       );
       expect(response.body).toMatchObject({ url: checkoutUrl });
+      const expectedMetadata = {
+        orgId: fixture.orgId,
+        tier: "pro",
+        priceId: TEST_PRICE_PRO,
+        purchaseCreatedAt: expect.any(String),
+      };
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expectedMetadata,
+          subscription_data: expect.objectContaining({
+            metadata: expectedMetadata,
+          }),
+        }),
+      );
       expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
         fixture.userId,
       );
       expect(context.mocks.clerk.users.getUserList).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    {
+      name: "absent",
+      metadata: {},
+      expectedCampaign: "24220469665",
+      expectedClick: "later-click",
+    },
+    {
+      name: "saved legacy account",
+      metadata: {
+        signup_attribution: {
+          okou_campaign_id: "24154967178",
+          gclid: "first-click",
+        },
+      },
+      expectedCampaign: "24154967178",
+      expectedClick: "first-click",
+    },
+    {
+      name: "malformed",
+      metadata: {
+        signup_attribution: {
+          okou_campaign_id: 24_154_967_178,
+          gclid: "first-click",
+        },
+      },
+      expectedCampaign: undefined,
+      expectedClick: undefined,
+    },
+    {
+      name: "null",
+      metadata: { signup_attribution: null },
+      expectedCampaign: undefined,
+      expectedClick: undefined,
+    },
+  ])(
+    "preserves checkout attribution ownership when the first touch is $name",
+    async ({ metadata, expectedCampaign, expectedClick }) => {
+      const fixture = trackedSeed();
+      mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      mockClerkUsers(context, [
+        { id: fixture.userId, privateMetadata: metadata },
+      ]);
+      context.mocks.stripe.customers.create.mockResolvedValue({
+        id: `cus_${randomUUID()}`,
+      });
+      const checkoutUrl =
+        "https://checkout.stripe.com/session/attribution-ownership";
+      context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+        url: checkoutUrl,
+      });
+      const response = await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingCheckoutContract,
+        ).create({
+          body: {
+            tier: "pro",
+            successUrl: `${APP_ORIGIN}/billing?billing=success`,
+            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+            adAttribution: {
+              gclid: "later-click",
+              okou_campaign_id: "24220469665",
+            },
+          },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ url: checkoutUrl });
+      const expectedMetadata = {
+        orgId: fixture.orgId,
+        tier: "pro",
+        priceId: TEST_PRICE_PRO,
+        purchaseCreatedAt: expect.any(String),
+        ...(expectedCampaign
+          ? {
+              okou_campaign_id: expectedCampaign,
+              vm0_campaign_id: expectedCampaign,
+              gclid: expectedClick,
+            }
+          : {}),
+      };
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expectedMetadata,
+          subscription_data: expect.objectContaining({
+            metadata: expectedMetadata,
+          }),
+        }),
+      );
     },
   );
 
@@ -2166,6 +2292,7 @@ describe("POST /api/billing/checkout", () => {
     async (brand) => {
       const fixture = await trackedSeed();
       mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+      mockClerkUsers(context, [{ id: fixture.userId, privateMetadata: {} }]);
 
       const customerId = `cus_${randomUUID().slice(0, 8)}`;
       context.mocks.stripe.customers.create.mockResolvedValue({
@@ -3323,6 +3450,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       context.mocks.stripe.customers.create.mockResolvedValue({
         id: `cus_checkout_${randomUUID().slice(0, 8)}`,
       });
+      mockClerkUsers(context, [{ id: fixture.userId, privateMetadata: {} }]);
       const checkoutSessions = [
         {
           id: `cs_${randomUUID().slice(0, 8)}`,
@@ -16612,6 +16740,92 @@ describe("POST /api/billing/checkout/complete", () => {
             }
           : {}),
       });
+    },
+  );
+
+  it.each([
+    { name: "missing invoice", invoice: null },
+    { name: "missing invoice attribution", invoice: { metadata: {} } },
+    {
+      name: "another account's invoice",
+      invoice: {
+        metadata: { gclid: "legacy-click", okou_campaign_id: "24154967178" },
+      },
+    },
+  ])(
+    "completes payment without borrowing the org Ads account for $name",
+    async ({ invoice }) => {
+      const fixture = await createSubscriptionOrg({ tier: "pro" });
+      authenticateOrg(fixture);
+      mockClerkUsers(context, [{ id: fixture.userId, privateMetadata: {} }]);
+      context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+        url: "https://checkout.stripe.com/session/later-campaign",
+      });
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingCheckoutContract,
+      );
+      await accept(
+        client.create({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            tier: "team",
+            successUrl: `${APP_ORIGIN}/billing?billing=success`,
+            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+            adAttribution: {
+              gclid: "later-click",
+              okou_campaign_id: "24220469665",
+            },
+          },
+        }),
+        [200],
+      );
+      expect(
+        context.mocks.stripe.checkout.sessions.create,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            okou_campaign_id: "24220469665",
+          }),
+        }),
+      );
+      const sessionId = `cs_${randomUUID()}`;
+      context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+        id: sessionId,
+        mode: "subscription",
+        status: "complete",
+        customer: fixture.customerId,
+        subscription: fixture.subscriptionId,
+      });
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        id: fixture.subscriptionId,
+        status: "active",
+        cancel_at_period_end: false,
+        latest_invoice: invoice
+          ? {
+              ...invoice,
+              id: `in_${randomUUID()}`,
+              status: "paid",
+              currency: "usd",
+              amount_paid: 20_000,
+            }
+          : null,
+        items: {
+          data: [
+            {
+              price: { id: TEST_PRICE_PRO },
+              current_period_end: 1_800_000_000,
+            },
+          ],
+        },
+      });
+      const response = await accept(
+        client.complete({
+          body: { sessionId },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ completed: true });
     },
   );
 
