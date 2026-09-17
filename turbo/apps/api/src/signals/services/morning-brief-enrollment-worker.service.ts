@@ -7,6 +7,7 @@ import { writeDb$ } from "../external/db";
 import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
 import {
+  loadMorningBriefEnrollment,
   type MorningBriefMemberIdentity,
   morningBriefEnrollmentWhere,
 } from "./morning-brief-enrollment-data.service";
@@ -55,13 +56,15 @@ const executeMorningBriefEnrollmentScope$ = command(
         continue;
       }
       attempted++;
+      const currentEnrollment = await loadMorningBriefEnrollment(db, identity);
+      signal.throwIfAborted();
       const lastError = !result.ok
         ? String(result.error)
         : result.value.outcome === "failed"
           ? result.value.message
           : null;
       if (
-        row.attemptCount === 0 ||
+        currentEnrollment?.state !== row.state ||
         lastError !== row.lastError ||
         (result.ok && result.value.outcome === "installed")
       ) {

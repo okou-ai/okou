@@ -83,9 +83,12 @@ lease before reading current Clerk membership. Failed attempts retry after 1,
 workers. Skipped requests do not extend an existing deadline. Explicit preference changes keep
 their own immediate behavior. Membership qualification preserves its lease;
 a new membership event or explicit choice invalidates an older retry writer.
+Worker notifications follow enrollment state or error changes; unchanged local
+deferrals do not repeatedly invalidate the preference shown in Settings.
 
-Deletion records the departed membership generation even when qualification
-has not run. Replayed creation of that generation cannot revive enrollment.
+Deletion records the departed membership generation even when enrollment has
+not started or an earlier live lookup already marked the member departed.
+Replayed creation of that generation cannot revive enrollment.
 A different live generation can qualify on a later ready attempt, including
 when its creation webhook was missed. Installation still checks current
 membership; local prerequisites and retry state never grant authority.

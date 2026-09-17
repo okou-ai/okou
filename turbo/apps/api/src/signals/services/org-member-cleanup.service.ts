@@ -29,19 +29,28 @@ export async function cleanupOrgMemberResources(
 ): Promise<void> {
   await revokeOrgMemberRunAuthority(db, args, signal);
   signal.throwIfAborted();
+  const currentTime = nowDate();
   await db
-    .update(morningBriefEnrollments)
-    .set({
+    .insert(morningBriefEnrollments)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
       state: "departed",
-      // An interrupted first qualification can leave the generation unknown.
-      // Retain the deleted generation so a late created event cannot revive it.
-      membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
-      updatedAt: nowDate(),
+      membershipId: args.membershipId,
+      availableAt: currentTime,
+      createdAt: currentTime,
+      updatedAt: currentTime,
     })
-    .where(
-      and(
-        eq(morningBriefEnrollments.orgId, args.orgId),
-        eq(morningBriefEnrollments.userId, args.userId),
+    .onConflictDoUpdate({
+      target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
+      set: {
+        state: "departed",
+        // Deletion can arrive before enrollment or after a missing live lookup.
+        // Retain its generation so a late created event cannot revive intent.
+        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
+        updatedAt: currentTime,
+      },
+      setWhere: and(
         args.membershipId
           ? or(
               isNull(morningBriefEnrollments.membershipId),
@@ -52,9 +61,10 @@ export async function cleanupOrgMemberResources(
           "checking",
           "pending",
           "ineligible",
+          "departed",
         ]),
       ),
-    );
+    });
   const [installation] = await db
     .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
     .from(slackOrgInstallations)
