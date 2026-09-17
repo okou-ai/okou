@@ -576,6 +576,37 @@ async function latestRunForFixture(
   return (await telegramPostRunState(fixture)).run;
 }
 
+async function readTelegramSourcePart(
+  fixture: TelegramPostFixture,
+  prompt: string,
+) {
+  const actor = actorForFixture(fixture);
+  const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
+  if (lifecycle.status !== 200) {
+    throw new Error("Expected Telegram thread lifecycle events");
+  }
+  const thread = lifecycle.body.events.find((event) => {
+    return event.kind === "created" && event.agentId === fixture.composeId;
+  });
+  if (!thread) {
+    throw new Error("Expected a Telegram chat thread");
+  }
+  const { events } = await chatApi.listThreadEvents(actor, thread.chatThreadId);
+  const input = events.find((event) => {
+    return (
+      event.eventType === "input.prompt" &&
+      event.userMessage.parts.some((part) => {
+        return part.type === "text" && part.text === prompt;
+      })
+    );
+  });
+  return input?.eventType === "input.prompt"
+    ? input.userMessage.parts.find((part) => {
+        return part.type === "source";
+      })
+    : undefined;
+}
+
 async function latestAgentRunForFixture(
   fixture: TelegramPostFixture,
 ): Promise<TelegramAgentRunSnapshot | null> {
@@ -1284,6 +1315,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const run = await latestRunForFixture(fixture);
     expect(run).toMatchObject({ status: "pending", error: null });
     expect(run?.prompt).toBe("hello from telegram");
+    await expect(
+      readTelegramSourcePart(fixture, "hello from telegram"),
+    ).resolves.toStrictEqual({
+      type: "source",
+      kind: "telegram",
+      href: `https://t.me/bot_${fixture.telegramBotId}`,
+    });
     expect(run?.appendSystemPrompt).toContain("Telegram username: @alice");
     expect(run?.appendSystemPrompt).toContain("Bot ID:");
     expectExactSystemPromptFragment(
@@ -1642,7 +1680,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           version: 1,
           parts: [
             { type: "text", text: firstPrompt },
-            { type: "source", kind: "telegram" },
+            {
+              type: "source",
+              kind: "telegram",
+              href: `https://t.me/bot_${fixture.telegramBotId}`,
+            },
           ],
         },
       }),
@@ -2407,6 +2449,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     const run = await latestRunForFixture(fixture);
     expect(run?.prompt).toBe(`@${botUsername}`);
+    await expect(
+      readTelegramSourcePart(fixture, `@${botUsername}`),
+    ).resolves.toStrictEqual({
+      type: "source",
+      kind: "telegram",
+      href: "https://t.me/c/99002/101",
+    });
     expect(run?.appendSystemPrompt).toContain("Chat type: supergroup");
     expect(run?.appendSystemPrompt).toContain(
       "https://example.com/broken-article",
@@ -2483,6 +2532,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
     const run = await latestRunForFixture(fixture);
     expect(run?.prompt).toBe("run through official bot");
+    await expect(
+      readTelegramSourcePart(fixture, "run through official bot"),
+    ).resolves.toStrictEqual({
+      type: "source",
+      kind: "telegram",
+      href: `https://t.me/${OFFICIAL_BOT_USERNAME}`,
+    });
     expect(run?.appendSystemPrompt).toContain(
       "Bot username: @official_okou_bot",
     );

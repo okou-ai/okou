@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
@@ -245,9 +246,7 @@ export function createBillingMediaApi(context: TestContext) {
     }
 
     routeMocks.clerk.session(actor.userId, actor.orgId, clerkRole(actor));
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [clerkUserProfile(actor)],
-    });
+    mockClerkUsers(context, [clerkUserProfile(actor)]);
     const memberships = clerkOrganizationMemberships(actor);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: memberships,

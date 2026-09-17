@@ -199,6 +199,14 @@ export function publishModelPoliciesChangedForOrgSafely(
   return Promise.resolve();
 }
 
+/** Invalidate the aggregate Run capacity view after a committed state change. */
+export function publishRunQueueChangedForOrgSafely(
+  orgId: string,
+): Promise<void> {
+  waitUntil(bestEffort(publishOrgSignal(orgId, "runQueueChanged")));
+  return Promise.resolve();
+}
+
 /**
  * Fire the per-user-org "thread list shape changed" signal. The SharedWorker
  * consumes this topic to invalidate its local thread-event view; the App then

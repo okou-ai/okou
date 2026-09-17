@@ -387,6 +387,7 @@ function useSlashTemplatePanelActions(
     useGet(featureSwitch$)[FeatureSwitchKey.ComposerSlashTemplatePanel] ===
     true;
   const selectCreate = useSet(composer.create.selectCommand$);
+  const clearSlashRange = useSet(composer.suggestion.clearSlashRange$);
   const insertTemplate = useSet(composer.template.insertTemplate$);
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
   const runDeckImport = useSet(importPresentationTemplateDeck$);
@@ -405,7 +406,13 @@ function useSlashTemplatePanelActions(
       }
       openTemplatePicker({ kind: "insert", category });
     },
+    /**
+     * The cover is a row of this menu, so choosing one consumes the token that
+     * opened it, the same way a category row and a workflow row do. The chip
+     * then lands where the token was rather than after it.
+     */
     selectTemplate(preview: SlashTemplatePreview): void {
+      clearSlashRange();
       insertTemplate(preview.template, preview.attachment);
       close();
     },

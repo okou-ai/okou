@@ -30,7 +30,7 @@ vi.mock("@axiomhq/js", () => {
 });
 
 const context = testContext();
-const ENDPOINT = "https://www.okou.ai/api/marketing/finish-onboarding";
+const ENDPOINT = "https://www.okou.ai/api/marketing/onboarding-start";
 const REQUEST_ID = "ff61981b-5aaf-478d-a690-e39f5eb9d249";
 const previousAttempts = localStorageSignals("marketing_onboarding_attempts");
 const pageOptions = {

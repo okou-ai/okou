@@ -4,8 +4,8 @@ import {
   cleanupCurrentClerkTestGeneration,
   cleanupCurrentClerkTestRun,
   cleanupRecordedClerkTestResources,
-  createOrganization,
   createUser,
+  prepareOrganizationProvisioner,
   runnerTestAccounts,
   type ClerkTestRole,
   type RunnerTestAccounts,
@@ -54,6 +54,7 @@ async function prepareRunnerAccounts(
   jobRef: string,
 ): Promise<void> {
   try {
+    const createOrganization = await prepareOrganizationProvisioner();
     const runnerUserId = await createUser(runnerAccounts.runner);
     const runnerOrganizationId = await createOrganization(
       `e2e-runner-${jobRef}`,

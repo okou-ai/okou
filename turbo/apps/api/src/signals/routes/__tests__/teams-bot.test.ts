@@ -1791,6 +1791,65 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
+  it.each(["personal", "groupChat"] as const)(
+    "provides a source link for a Teams %s message",
+    async (conversationType) => {
+      const { fixture, actor } = await setupConnectedTeamsBotActor();
+      const activityId = teamsFixtureExternalId(fixture, "source-link");
+      const conversationId =
+        conversationType === "personal"
+          ? `a:personal-${fixture.teamsUserId}`
+          : `19:${fixture.teamsUserId}@thread.v2`;
+      const response = await postTeamsActivity({
+        activity: teamsMessageActivity(fixture, {
+          id: activityId,
+          conversation: { id: conversationId, conversationType },
+          channelData: {
+            tenant: { id: fixture.teamsTenantId },
+            teamsAppId: fixture.teamsAppId,
+          },
+          replyToId: null,
+        }),
+        token: teamsToken(),
+      });
+      expect(response.status).toBe(200);
+      await readTeamsBotResponseAndFlush(response);
+
+      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+      const lifecycle = await accept(
+        setupApp({ context, routes: chatThreadRoutes })(
+          chatThreadsContract,
+        ).events({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [200],
+      );
+      const thread = lifecycle.body.events.find((event) => {
+        return event.kind === "created";
+      });
+      if (!thread) {
+        throw new Error("Expected a Teams chat thread");
+      }
+      const events = await readProjectedChatEvents(context, {
+        threadId: thread.chatThreadId,
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      const input = events.find((event) => {
+        return event.eventType === "input.prompt";
+      });
+      const href =
+        conversationType === "personal"
+          ? `https://teams.microsoft.com/l/chat/0/0?tenantId=${encodeURIComponent(fixture.teamsTenantId)}&users=${encodeURIComponent(fixture.teamsBotId)}`
+          : `https://teams.microsoft.com/l/message/${encodeURIComponent(conversationId)}/${encodeURIComponent(activityId)}?tenantId=${encodeURIComponent(fixture.teamsTenantId)}&context=%7B%22contextType%22%3A%22chat%22%7D`;
+      expect(
+        input?.eventType === "input.prompt"
+          ? input.userMessage.parts
+          : undefined,
+      ).toContainEqual({ type: "source", kind: "teams", href });
+    },
+  );
+
   it.each(["uniqueId", "resource URL"] as const)(
     "deduplicates Teams files across messages by %s without mixing attachments",
     async (identity) => {

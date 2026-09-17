@@ -880,7 +880,10 @@ describe("CHAT-02: generation templates and attachments", () => {
   it("renders generation template guidance into the run system prompt", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+    // Pinned by slug because the assertions below quote this runbook by name.
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+      return item.slug === "playful-launch-presentation";
+    });
     if (!template) {
       throw new Error("Expected a registered presentation runbook item");
     }

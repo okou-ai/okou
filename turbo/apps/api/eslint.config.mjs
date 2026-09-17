@@ -679,6 +679,12 @@ export default [
       // copy, erasure closure and the refresh outcome, none of which any
       // production endpoint exposes. The Settings routes cover the rest.
       "src/signals/services/__tests__/morning-brief-preference-projection.service.test.ts",
+      // #34815 needs both commit orders of a Morning Brief classification and a
+      // collection, an Agent transfer arriving mid-read, and the automation
+      // binding and queue admission producers. No endpoint suspends a
+      // transaction at a row lock or fires an automation into a chosen thread;
+      // the preview route suite owns every constructible case.
+      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
     ],
     rules: {
       "no-restricted-syntax": [
@@ -862,6 +868,11 @@ export default [
       // that is still streaming; every other reader contract stays on the
       // Gmail preview endpoint.
       "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
+      // #34815's classification/read commit orders, mid-read Agent transfer and
+      // workflow-driven provenance producers need suspended PostgreSQL
+      // transactions and a chosen destination thread, neither of which an HTTP
+      // caller can construct; the preview route suite owns the rest.
+      "src/signals/services/__tests__/morning-brief-chat-collection.service.test.ts",
     ],
     rules: {
       "no-restricted-imports": [

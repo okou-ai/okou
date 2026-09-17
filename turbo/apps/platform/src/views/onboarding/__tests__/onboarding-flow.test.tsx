@@ -864,7 +864,7 @@ test("Custom workflow onboarding preserves an explicit assistant mention", async
   );
 });
 
-test("Connecting an OAuth account starts its standard authorization", async () => {
+test("Onboarding OAuth can be cancelled and retried", async () => {
   mockOAuthCompletions(context);
   const authWindow = context.mocks.browser.authWindow();
   Object.defineProperty(authWindow, "location", {
@@ -895,7 +895,31 @@ test("Connecting an OAuth account starts its standard authorization", async () =
     );
   });
   expect(connectButton).toBeDisabled();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const progress = screen.getByRole("dialog", {
+    name: "Connecting your account",
+  });
+  click(within(progress).getByText("Cancel", { selector: "button" }));
+  await waitFor(() => {
+    expect(connectButton).toBeEnabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(authWindow.closed).toBeTruthy();
+  const retryWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(retryWindow, "location", {
+    value: { href: "" },
+    configurable: true,
+  });
+  context.mocks.browser.open(retryWindow);
+  click(connectButton);
+  await waitFor(() => {
+    expect(retryWindow.location.href).toBe(
+      "https://oauth.test/github/authorize",
+    );
+  });
+  expect(connectButton).toBeDisabled();
+  expect(
+    screen.getByRole("dialog", { name: "Connecting your account" }),
+  ).toBeVisible();
 });
 
 test("An existing account connection is recognized during onboarding", async () => {
@@ -1432,7 +1456,12 @@ test.each([
   async ({ accountId, onboarding, checkout }) => {
     const marketing = "https://www.okou.ai/api/marketing";
     const requests: Request[] = [];
-    context.mocks.http.post(`${marketing}/finish-onboarding`, ({ request }) => {
+    const checkoutReceived = context.mocks.deferred<Request>();
+    context.mocks.http.post(`${marketing}/checkout-start`, ({ request }) => {
+      checkoutReceived.resolve(request);
+      return new Response(null, { status: 204 });
+    });
+    context.mocks.http.post(`${marketing}/onboarding-start`, ({ request }) => {
       requests.push(request);
       return new Response(null, { status: 204 });
     });
@@ -1488,5 +1517,11 @@ test.each([
     });
     expect(requests).toHaveLength(1);
     await expect(requests[0]?.text()).resolves.toBe("");
+    const checkoutRequest = await checkoutReceived.promise;
+    await expect(checkoutRequest.json()).resolves.toStrictEqual({
+      eventId: expect.any(String),
+      occurredAt: expect.any(String),
+      checkoutSource: "onboarding_video",
+    });
   },
 );

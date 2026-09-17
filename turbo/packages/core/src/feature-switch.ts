@@ -55,8 +55,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Generate short public activity summaries for active thread subscriptions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
@@ -268,27 +267,25 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
 
+  // Effort's run controls carry Fast, so Fast reaches every user the moment
+  // Effort does. Keep this switch enabled for as long as Effort is enabled:
+  // the client send path still reads it directly to attach the run's tier.
   [FeatureSwitchKey.CodexFastMode]: {
     maintainer: "lancy@okou.ai",
     description: "Enable Codex fast mode for GPT 5.6 runs.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.Effort]: {
     maintainer: "bingjie@okou.ai",
     description:
       "Set Fast mode and chat reasoning effort from the composer's run controls.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ModelPickerFlyout]: {
     maintainer: "tongx@okou.ai",
     description:
       "Pick a model from a detached flyout: model types on the left, that type's models in a panel beside it.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatPreference]: {
     maintainer: "lancy@okou.ai",
@@ -374,6 +371,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use private artifact storage, the Okou viewer, and organization and public sharing.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerImageAnnotation]: {
     maintainer: "tongx@okou.ai",
@@ -424,13 +422,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description:
       "Enable remote Streamable HTTP MCP definitions for organization Custom Connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SshAccess]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Enable Runner-mediated SSH with Direct and Cloudflare Access transports",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -8,6 +8,33 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.620.0](https://github.com/vm0-ai/okou/compare/api-v1.619.0...api-v1.620.0) (2026-09-17)
+
+
+### Features
+
+* **api:** collect gmail for simple morning brief with live connector authorization ([#34824](https://github.com/vm0-ai/okou/issues/34824)) ([76e3196](https://github.com/vm0-ai/okou/commit/76e31964bb592da7a4367369163cc02154b6692f))
+
+
+### Bug Fixes
+
+* **api:** fence bulk agent read cursors and bound invalidations ([#34893](https://github.com/vm0-ai/okou/issues/34893)) ([e9001cd](https://github.com/vm0-ai/okou/commit/e9001cdc0e69e7246209e62e2995a388a82077b5))
+* **api:** fence chat model settings across account closure ([#34876](https://github.com/vm0-ai/okou/issues/34876)) ([ffe9862](https://github.com/vm0-ai/okou/commit/ffe98626858cc8888bb9f135c1558471aa9ca968))
+* **api:** fence direct computer-use thread settings during erasure ([#34884](https://github.com/vm0-ai/okou/issues/34884)) ([e7790ae](https://github.com/vm0-ai/okou/commit/e7790ae7d506cc3a3d7f33cde78550e8ec5e8f1f)), closes [#34869](https://github.com/vm0-ai/okou/issues/34869)
+* **api:** fence direct thread read and unread cursor writes during account erasure ([#34875](https://github.com/vm0-ai/okou/issues/34875)) ([a69fab1](https://github.com/vm0-ai/okou/commit/a69fab15252d11aaa67efa7465206a7254ceba37)), closes [#34864](https://github.com/vm0-ai/okou/issues/34864)
+* **api:** fence generated chat titles across account closure ([#34846](https://github.com/vm0-ai/okou/issues/34846)) ([ccaca74](https://github.com/vm0-ai/okou/commit/ccaca7482432147bd5e61f7c66fabd2cf91407bf))
+* **api:** preserve live slack scope and bounded morning brief coverage ([#34873](https://github.com/vm0-ai/okou/issues/34873)) ([d6df0c4](https://github.com/vm0-ai/okou/commit/d6df0c4d703f7f92b68c46ed89bb005f2cf0bb0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.457.0
+    * @okouai/core bumped to 8.675.1
+    * @okouai/db bumped to 1.269.7
+    * @okouai/pi-agent-runtime bumped to 1.33.2
+
 ## [1.619.0](https://github.com/vm0-ai/okou/compare/api-v1.618.0...api-v1.619.0) (2026-09-17)
 
 

@@ -56,6 +56,7 @@ import {
   connectorExpiryCountdownText,
   manualGrantInputValuesForMethod,
   type ConnectorConnectionResult,
+  type ConnectorConnectSuccess,
   type ConnectorExternalCodeState,
   type ConnectorOAuthDeviceAuthState,
 } from "../../../../signals/okou-page/settings/connectors.ts";
@@ -65,8 +66,12 @@ import { ConnectorIcon } from "./connector-icons.tsx";
 import { detach, onDomEventFn, Reason } from "../../../../signals/utils.ts";
 import { ConnectorHelpText } from "./connector-help-text.tsx";
 import { i18n } from "../../../../i18n/index.ts";
-import { dismissConnectorConnectionProgress$ } from "../../../../signals/connector-connection-progress.ts";
+import {
+  cancelConnectorConnection$,
+  connectorConnectionAttempt$,
+} from "../../../../signals/connector-connection-progress.ts";
 import { ConnectorConnectionDialogBody } from "../../../components/connector-connection-dialog-body.tsx";
+import { ConnectorConnectionCancelButton } from "../../../components/connector-connection-progress.tsx";
 import type {
   ConnectorAccountConnectMode,
   ConnectorAccountMutationOptions,
@@ -136,7 +141,7 @@ type SubmitManualGrantFn = (
 type ConnectOAuthAuthCodeAndSettleFn = (
   connectorSlug: ConnectorSlug,
   method: PublicConnectorCatalogAuthMethodDetail,
-  onSuccess: (connectionId: string | null) => void | Promise<void>,
+  onSuccess: ConnectorConnectSuccess,
   options: BrowserAuthPostConnectOptions,
   signal: AbortSignal,
 ) => Promise<void>;
@@ -145,7 +150,7 @@ type ConnectOAuthDeviceAuthAndSettleFn = (
   args: {
     readonly connectorSlug: ConnectorSlug;
     readonly authMethod: ConnectorAuthMethodId;
-    readonly onSuccess: (connectionId: string | null) => void | Promise<void>;
+    readonly onSuccess: ConnectorConnectSuccess;
     readonly options: PostConnectOptions;
     readonly startOptions?: ConnectorDeviceAuthStartOptions;
   },
@@ -167,7 +172,7 @@ type CompleteExternalCodeAndSettleFn = (
   args: {
     readonly connectorSlug: ConnectorSlug;
     readonly authMethod: ConnectorAuthMethodId;
-    readonly onSuccess: (connectionId: string | null) => void | Promise<void>;
+    readonly onSuccess: ConnectorConnectSuccess;
     readonly options: PostConnectOptions;
   },
   signal: AbortSignal,
@@ -177,7 +182,7 @@ type ConnectNoAuthAndSettleFn = (
   args: {
     readonly connectorSlug: ConnectorSlug;
     readonly authMethod: ConnectorAuthMethodId;
-    readonly onSuccess: (connectionId: string | null) => void | Promise<void>;
+    readonly onSuccess: ConnectorConnectSuccess;
     readonly options: PostConnectOptions;
   },
   signal: AbortSignal,
@@ -186,7 +191,7 @@ type ConnectNoAuthAndSettleFn = (
 type ConnectModalContentProps = {
   item: PlatformConnectorCatalogStatusItem;
   agentId?: string;
-  onSuccess: (connectionId: string | null) => void | Promise<void>;
+  onSuccess: ConnectorConnectSuccess;
   authorizeVisibleAgentsOnConnect: boolean;
   accountOptions: ConnectorAccountMutationOptions;
   accountMode?: ConnectorAccountConnectMode;
@@ -286,7 +291,7 @@ function ManualGrantForm({
   connectorLabel: string;
   authMethod: ConnectorAuthMethodId;
   method: PublicConnectorCatalogAuthMethodDetail;
-  onSuccess: (connectionId: string | null) => void | Promise<void>;
+  onSuccess: ConnectorConnectSuccess;
   authorizeVisibleAgentsOnConnect: boolean;
   agentId?: string;
   accountOptions: ConnectorAccountMutationOptions;
@@ -324,7 +329,7 @@ function ManualGrantForm({
       if (!connected) {
         return;
       }
-      await onSuccess(connected.connectionId);
+      await onSuccess(connected.connectionId, pageSignal);
     },
   );
 
@@ -1415,14 +1420,16 @@ function ConnectModalContent({
     );
   };
   const [, runConnectSuccess] = useLoadableSet(runConnectorConnectSuccess$);
-  const pageSignal = useGet(pageSignal$);
   const externalCodeCompleting =
     completeExternalCodeLoadable.state === "loading";
   const manualGrantSubmitting = manualGrantLoadable.state === "loading";
   const noAuthSubmitting = noAuthLoadable.state === "loading";
   const entries = getConnectEntries(item, accountMode, reconnectAuthMethod);
-  const onConnectSuccess = async (connectionId: string | null) => {
-    await runConnectSuccess(item.slug, onSuccess, connectionId, pageSignal);
+  const onConnectSuccess: ConnectorConnectSuccess = async (
+    connectionId,
+    signal,
+  ) => {
+    await runConnectSuccess(item.slug, onSuccess, connectionId, signal);
   };
   const connectOAuthAuthCodeAndSettle: ConnectOAuthAuthCodeAndSettleFn = async (
     connectorSlug,
@@ -1518,7 +1525,7 @@ export function ConnectModal({
 }: {
   item: PlatformConnectorCatalogStatusItem;
   onClose: () => void;
-  onSuccess?: (connectionId: string | null) => void | Promise<void>;
+  onSuccess?: ConnectorConnectSuccess;
   authorizeVisibleAgentsOnConnect?: boolean;
   agentId?: string;
   accountOptions: ConnectorAccountMutationOptions;
@@ -1531,7 +1538,9 @@ export function ConnectModal({
   const pollingConnectorSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
   const connectorOAuthDeviceAuthState = useGet(connectorOAuthDeviceAuthState$);
   const connectorExternalCodeState = useGet(connectorExternalCodeState$);
-  const dismissProgress = useSet(dismissConnectorConnectionProgress$);
+  const cancelConnection = useSet(cancelConnectorConnection$);
+  const connectionAttempt = useGet(connectorConnectionAttempt$);
+  const { t } = useTranslation();
 
   const selectedConnectorSlug = item.slug;
 
@@ -1547,6 +1556,15 @@ export function ConnectModal({
       selectedConnectorSlug,
     );
 
+  const cancel = () => {
+    if (connectFlowActive) {
+      cancelConnection(connectionAttempt);
+      clearConnectorOAuthDeviceAuth();
+      clearConnectorExternalCode();
+    }
+    onClose();
+  };
+
   return (
     <Dialog
       open
@@ -1560,10 +1578,7 @@ export function ConnectModal({
           return;
         }
         if (!open) {
-          dismissProgress();
-          clearConnectorOAuthDeviceAuth();
-          clearConnectorExternalCode();
-          onClose();
+          cancel();
         }
       }}
     >
@@ -1591,14 +1606,26 @@ export function ConnectModal({
             accountOptions={accountOptions}
             accountMode={accountMode}
             reconnectAuthMethod={reconnectAuthMethod}
-            onSuccess={async (connectionId) => {
-              await onSuccess?.(connectionId);
+            onSuccess={async (connectionId, signal) => {
+              await onSuccess?.(connectionId, signal);
+              signal.throwIfAborted();
               clearConnectorOAuthDeviceAuth();
               clearConnectorExternalCode();
               onClose();
             }}
           />
         </ConnectorConnectionDialogBody>
+        {connectFlowActive && connectionAttempt ? (
+          <ConnectorConnectionCancelButton onCancel={cancel} />
+        ) : connectFlowActive ? (
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={cancel}>
+              {t(($) => {
+                return $.connectors.actions.cancel;
+              })}
+            </Button>
+          </div>
+        ) : null}
         {item.slug === "mercury" ? (
           <MercuryDisclosure className="border-t border-border/50 pt-4" />
         ) : null}

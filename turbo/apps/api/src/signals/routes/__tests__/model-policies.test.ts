@@ -1136,6 +1136,10 @@ describe("GET/PUT /api/model-policies", () => {
         [200],
       );
 
+      await updateFeatureSwitchesForUser(context, fixture, {
+        [FeatureSwitchKey.CodexFastMode]: false,
+        [FeatureSwitchKey.Effort]: false,
+      });
       const switchOff = await accept(
         preferenceClient.update({
           headers: authHeaders(),
@@ -1149,6 +1153,7 @@ describe("GET/PUT /api/model-policies", () => {
 
       await updateFeatureSwitchesForUser(context, fixture, {
         [FeatureSwitchKey.CodexFastMode]: false,
+        [FeatureSwitchKey.Effort]: false,
         [fastSwitch]: true,
       });
       const priority = await accept(

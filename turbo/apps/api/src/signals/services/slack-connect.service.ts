@@ -20,6 +20,7 @@ import {
   officialSlackBotMention,
 } from "../../lib/slack-official-app";
 import { clerk$ } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import { publishUserSignal } from "../external/realtime";
 import {
   createSlackClient,
@@ -161,10 +162,7 @@ async function getPrimaryUserEmail(
   clerkClient: ReturnType<typeof clerk$.read>,
   userId: string,
 ): Promise<string | undefined> {
-  const users = await clerkClient.users.getUserList({ userId: [userId] });
-  const user = users.data.find((candidate) => {
-    return candidate.id === userId;
-  });
+  const user = await findClerkUser(clerkClient, userId);
   const primaryEmailAddressId = user?.primaryEmailAddressId;
   const email = user?.emailAddresses.find((candidate) => {
     return candidate.id === primaryEmailAddressId;

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 
-/** Storage invariants against replayed and fresh schemas. There is no active
- * observation writer yet, so these states have no production API setup path.
- * Consumer concurrency, time admission and cleanup scheduling belong to #34713. */
+/** Migration invariants against isolated replayed and fresh schemas, before
+ * an API is running against either database. Production ingestion, concurrency,
+ * time admission and cleanup behavior are covered by the API route tests. */
 export async function validateXResourceUsageSchema(
   databaseUrl: string,
 ): Promise<void> {
@@ -67,7 +67,7 @@ export async function validateXResourceUsageSchema(
     );
 
     // With today fixed to September 18 UTC, cleanup keeps the 17th and 18th.
-    // This is a storage deletion check, not the future cleanup/admission worker.
+    // This verifies migration storage; the API suite covers the cleanup worker.
     await client.query(readSql, ["2026-09-18", "post", "1"]);
     const removed = await client.query(
       "DELETE FROM x_resource_reads WHERE utc_day < $1::date - 1 RETURNING resource_id",
@@ -79,9 +79,7 @@ export async function validateXResourceUsageSchema(
       3,
     );
     assert.equal((await client.query(readSql, rolledBack)).rowCount, 0);
-    console.log(
-      "X resource storage invariants passed (dormant; no ingestion consumer)",
-    );
+    console.log("X resource storage invariants passed");
   } finally {
     await client.query("ROLLBACK");
     await client.end();

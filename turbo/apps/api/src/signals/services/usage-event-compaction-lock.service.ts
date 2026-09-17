@@ -20,10 +20,16 @@ export async function withUsageEventCompactionLockAttemptTrackingForTest<T>(
 
 export async function lockUsageEventCompaction(
   db: UsageEventCompactionLockDb,
+  mode: "shared" | "exclusive" = "exclusive",
 ): Promise<void> {
   scopedUsageEventCompactionLockAttempt.peek()?.getStore()?.();
   await db.execute(
-    sql`SELECT pg_advisory_xact_lock(
+    mode === "shared"
+      ? sql`SELECT pg_advisory_xact_lock_shared(
+      hashtext('vm0'),
+      hashtext('usage_event_compaction')
+    )`
+      : sql`SELECT pg_advisory_xact_lock(
       hashtext('vm0'),
       hashtext('usage_event_compaction')
     )`,
