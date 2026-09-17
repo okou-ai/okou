@@ -266,6 +266,28 @@ export function persistedAttachment(
   };
 }
 
+/** The App registers a separate optimistic event id per sidebar event, so a
+ * model-selection request can carry both the model and the service-tier id. */
+interface ModelSelectionRequestOptions {
+  readonly codexServiceTier?: CodexServiceTier | null;
+  readonly reasoningEffort?: ReasoningEffort;
+  readonly eventId?: string;
+  readonly serviceTierEventId?: string;
+}
+
+function modelSelectionBody(
+  model: SupportedRunModel | null,
+  options: ModelSelectionRequestOptions | undefined,
+) {
+  return {
+    model,
+    codexServiceTier: options?.codexServiceTier,
+    reasoningEffort: options?.reasoningEffort,
+    eventId: options?.eventId,
+    serviceTierEventId: options?.serviceTierEventId,
+  };
+}
+
 export function createChatFilesBddApi(context: TestContext) {
   const mocks = createRouteMocks(context);
 
@@ -987,22 +1009,13 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       model: SupportedRunModel | null,
-      options?: {
-        readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort;
-        readonly eventId?: string;
-      },
+      options?: ModelSelectionRequestOptions,
     ): Promise<void> {
       await accept(
         threadModelSelectionClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: {
-            model,
-            codexServiceTier: options?.codexServiceTier,
-            reasoningEffort: options?.reasoningEffort,
-            eventId: options?.eventId,
-          },
+          body: modelSelectionBody(model, options),
         }),
         [204],
       );
@@ -1063,22 +1076,13 @@ export function createChatFilesBddApi(context: TestContext) {
       threadId: string,
       model: SupportedRunModel | null,
       statuses: readonly (204 | 400 | 401 | 402 | 404)[],
-      options?: {
-        readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort;
-        readonly eventId?: string;
-      },
+      options?: ModelSelectionRequestOptions,
     ) {
       return await accept(
         threadModelSelectionClient().update({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: {
-            model,
-            codexServiceTier: options?.codexServiceTier,
-            reasoningEffort: options?.reasoningEffort,
-            eventId: options?.eventId,
-          },
+          body: modelSelectionBody(model, options),
         }),
         statuses,
       );
