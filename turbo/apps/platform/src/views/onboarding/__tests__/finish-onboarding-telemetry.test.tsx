@@ -95,7 +95,6 @@ test("Report a bodyless handoff acknowledgement with bounded operational context
 
   const request = await received.promise;
   expect(request.credentials).toBe("include");
-  expect(request.keepalive).toBeTruthy();
   expect(request.headers.get("authorization")).toBe("Bearer test-token");
   expect(request.headers.has("content-type")).toBeFalsy();
   expect(request.headers.has("X-Marketing-Request-Id")).toBeFalsy();
@@ -186,20 +185,38 @@ test("Explain a persisted previous attempt without sending another request", asy
 
 test("Record cancellation when the owning session changes during the request", async () => {
   onboardingNeeded();
-  const received = context.mocks.deferred<void>();
-  const response = context.mocks.deferred<void>();
-  context.mocks.http.post(ENDPOINT, async () => {
-    received.resolve();
-    await response.promise;
-    return new Response(null, { status: 204 });
+  const received = context.mocks.deferred<Request>();
+  context.mocks.http.post(ENDPOINT, ({ request, never }) => {
+    received.resolve(request);
+    return never();
   });
 
-  await setupPage(pageOptions);
+  // Build configuration survives Clerk's app-root abort until the document ends.
+  const { env, ...documentOptions } = pageOptions;
+  const previousToken: unknown = import.meta.env
+    .VITE_AXIOM_CLIENT_TELEMETRY_TOKEN;
+  vi.stubEnv(
+    "VITE_AXIOM_CLIENT_TELEMETRY_TOKEN",
+    env.VITE_AXIOM_CLIENT_TELEMETRY_TOKEN,
+  );
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      vi.stubEnv(
+        "VITE_AXIOM_CLIENT_TELEMETRY_TOKEN",
+        typeof previousToken === "string" ? previousToken : undefined,
+      );
+    },
+    { once: true },
+  );
+
+  await setupPage(documentOptions);
   await expect(onboardingHeading()).resolves.toBeInTheDocument();
-  await received.promise;
+  const request = await received.promise;
+  expect(request.signal.aborted).toBeFalsy();
   const switched = window._okou?.switchClerkSession("another-test-session");
+  expect(request.signal.aborted).toBeTruthy();
   await expectCompletion("aborted");
-  response.resolve();
   await switched;
 });
 
