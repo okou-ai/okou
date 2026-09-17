@@ -1,5 +1,5 @@
 {
-  "id": "91aeb363-0065-4554-9ace-6cb4c362373f",
+  "id": "0f5726b6-ef9e-44b5-b281-7cb3cba7fd21",
   "prevId": "50f0f2d9-ddcd-4b05-8588-461e425369a1",
   "version": "7",
   "dialect": "postgresql",
@@ -24343,12 +24343,6 @@
           "notNull": true,
           "default": "'ready'"
         },
-        "publication_token": {
-          "name": "publication_token",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -24375,10 +24369,6 @@
         "pi_stable_context_generations_state_check": {
           "name": "pi_stable_context_generations_state_check",
           "value": "\"pi_stable_context_generations\".\"publication_state\" IN ('pending', 'ready')"
-        },
-        "pi_stable_context_generations_token_check": {
-          "name": "pi_stable_context_generations_token_check",
-          "value": "(\"pi_stable_context_generations\".\"publication_state\" = 'pending' AND \"pi_stable_context_generations\".\"publication_token\" IS NOT NULL) OR (\"pi_stable_context_generations\".\"publication_state\" = 'ready' AND \"pi_stable_context_generations\".\"publication_token\" IS NULL)"
         },
         "pi_stable_context_generations_generation_check": {
           "name": "pi_stable_context_generations_generation_check",
@@ -24655,6 +24645,100 @@
         "pi_stable_context_heads_attempt_check": {
           "name": "pi_stable_context_heads_attempt_check",
           "value": "\"pi_stable_context_heads\".\"attempt_count\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pi_stable_context_publications": {
+      "name": "pi_stable_context_publications",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "publication_key": {
+          "name": "publication_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pi_stable_context_publications_token_idx": {
+          "name": "pi_stable_context_publications_token_idx",
+          "columns": [
+            {
+              "expression": "token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "pi_stable_context_publications_pk": {
+          "name": "pi_stable_context_publications_pk",
+          "columns": [
+            "org_id",
+            "agent_id",
+            "subject",
+            "publication_key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "pi_stable_context_publications_generation_check": {
+          "name": "pi_stable_context_publications_generation_check",
+          "value": "\"pi_stable_context_publications\".\"generation\" > 0"
         }
       },
       "isRLSEnabled": false

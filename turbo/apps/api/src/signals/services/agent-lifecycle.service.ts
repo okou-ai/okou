@@ -4,6 +4,7 @@ import {
   piStableContextArtifacts,
   piStableContextGenerations,
   piStableContextHeads,
+  piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -34,6 +35,9 @@ async function deleteStableContextLifecycleData(
     // Publication fences deliberately have no Agent FK, so organization
     // erasure also removes any fence left by an interrupted Agent lifecycle.
     await tx
+      .delete(piStableContextPublications)
+      .where(eq(piStableContextPublications.orgId, scope.orgId));
+    await tx
       .delete(piStableContextGenerations)
       .where(eq(piStableContextGenerations.orgId, scope.orgId));
     return;
@@ -48,17 +52,25 @@ async function deleteStableContextLifecycleData(
     .delete(piStableContextArtifacts)
     .where(eq(piStableContextArtifacts.userId, scope.userId));
   await tx
+    .delete(piStableContextPublications)
+    .where(eq(piStableContextPublications.subject, scope.userId));
+  await tx
     .delete(piStableContextGenerations)
     .where(eq(piStableContextGenerations.subject, scope.userId));
   if (agentIds.length > 0) {
+    const ownedAgentCondition = eq(
+      piStableContextGenerations.agentId,
+      sql`ANY(${sql.param(agentIds)}::uuid[])`,
+    );
     await tx
-      .delete(piStableContextGenerations)
+      .delete(piStableContextPublications)
       .where(
         eq(
-          piStableContextGenerations.agentId,
+          piStableContextPublications.agentId,
           sql`ANY(${sql.param(agentIds)}::uuid[])`,
         ),
       );
+    await tx.delete(piStableContextGenerations).where(ownedAgentCondition);
   }
 }
 

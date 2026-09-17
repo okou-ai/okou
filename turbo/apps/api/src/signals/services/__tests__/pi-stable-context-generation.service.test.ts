@@ -7,13 +7,14 @@ import {
   piStableContextArtifacts,
   piStableContextGenerations,
   piStableContextHeads,
+  piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { createStore } from "ccstate";
 
 import { env } from "../../../lib/env";
@@ -26,7 +27,10 @@ import {
   PI_STABLE_CONTEXT_AGENT_SUBJECT,
 } from "../pi-stable-context-generation.service";
 import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
-import { preparePiStableContext } from "../pi-stable-context.service";
+import {
+  executePiStableContextWork,
+  preparePiStableContext,
+} from "../pi-stable-context.service";
 
 describe("Pi stable context generation fences", () => {
   const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 4 });
@@ -34,8 +38,29 @@ describe("Pi stable context generation fences", () => {
   const agentIds: string[] = [];
   const storageIds: string[] = [];
 
+  afterEach(async () => {
+    if (agentIds.length === 0) {
+      return;
+    }
+    await db
+      .delete(piStableContextHeads)
+      .where(inArray(piStableContextHeads.agentId, agentIds));
+    await db
+      .delete(piStableContextArtifacts)
+      .where(inArray(piStableContextArtifacts.agentId, agentIds));
+    await db
+      .delete(piStableContextPublications)
+      .where(inArray(piStableContextPublications.agentId, agentIds));
+    await db
+      .delete(piStableContextGenerations)
+      .where(inArray(piStableContextGenerations.agentId, agentIds));
+  });
+
   afterAll(async () => {
     if (agentIds.length > 0) {
+      await db
+        .delete(piStableContextPublications)
+        .where(inArray(piStableContextPublications.agentId, agentIds));
       await db
         .delete(piStableContextGenerations)
         .where(inArray(piStableContextGenerations.agentId, agentIds));
@@ -146,14 +171,22 @@ describe("Pi stable context generation fences", () => {
       );
     expect(afterRollback).toStrictEqual({ generation: 1, state: "ready" });
 
-    const first = await beginPiStableContextPublication(db, {
-      orgId: fixture.orgId,
-      agentId: fixture.agentId,
-    });
-    const second = await beginPiStableContextPublication(db, {
-      orgId: fixture.orgId,
-      agentId: fixture.agentId,
-    });
+    const first = await beginPiStableContextPublication(
+      db,
+      {
+        orgId: fixture.orgId,
+        agentId: fixture.agentId,
+      },
+      "workflow:first",
+    );
+    const second = await beginPiStableContextPublication(
+      db,
+      {
+        orgId: fixture.orgId,
+        agentId: fixture.agentId,
+      },
+      "workflow:first",
+    );
     expect(second.generation).toBe(first.generation + 1);
     await expect(
       lockPiStableContextPublication(db, first),
@@ -176,9 +209,11 @@ describe("Pi stable context generation fences", () => {
       })
       .from(piStableContextHeads)
       .where(eq(piStableContextHeads.id, fixture.headId));
-    expect(head).toStrictEqual({
-      status: "missing",
-      input: null,
+    expect(head).toMatchObject({
+      status: "pending",
+      input: {
+        source: { agentGeneration: second.generation, userGeneration: 1 },
+      },
       artifactDigest: null,
     });
 
@@ -208,6 +243,324 @@ describe("Pi stable context generation fences", () => {
     expect(generationBySubject.get(PI_STABLE_CONTEXT_AGENT_SUBJECT)).toBe(
       second.generation,
     );
+  });
+
+  it("keeps independent workflow publications pending until both complete", async () => {
+    const fixture = await seed();
+    const scope = { orgId: fixture.orgId, agentId: fixture.agentId };
+    const first = await beginPiStableContextPublication(
+      db,
+      scope,
+      "workflow:first",
+    );
+    const second = await beginPiStableContextPublication(
+      db,
+      scope,
+      "workflow:second",
+    );
+
+    await db.transaction(async (tx) => {
+      await expect(
+        lockPiStableContextPublication(tx, first),
+      ).resolves.toBeTruthy();
+      await expect(
+        completePiStableContextPublication(tx, first),
+      ).resolves.toBeTruthy();
+    });
+    await expect(
+      db
+        .select({ state: piStableContextGenerations.publicationState })
+        .from(piStableContextGenerations)
+        .where(
+          and(
+            eq(piStableContextGenerations.orgId, fixture.orgId),
+            eq(piStableContextGenerations.agentId, fixture.agentId),
+            eq(
+              piStableContextGenerations.subject,
+              PI_STABLE_CONTEXT_AGENT_SUBJECT,
+            ),
+          ),
+        ),
+    ).resolves.toStrictEqual([{ state: "pending" }]);
+
+    await db.transaction(async (tx) => {
+      await expect(
+        lockPiStableContextPublication(tx, second),
+      ).resolves.toBeTruthy();
+      await expect(
+        completePiStableContextPublication(tx, second),
+      ).resolves.toBeTruthy();
+    });
+    await expect(
+      db
+        .select({ state: piStableContextGenerations.publicationState })
+        .from(piStableContextGenerations)
+        .where(
+          and(
+            eq(piStableContextGenerations.orgId, fixture.orgId),
+            eq(piStableContextGenerations.agentId, fixture.agentId),
+            eq(
+              piStableContextGenerations.subject,
+              PI_STABLE_CONTEXT_AGENT_SUBJECT,
+            ),
+          ),
+        ),
+    ).resolves.toStrictEqual([{ state: "ready" }]);
+  });
+
+  it("coalesces concurrent first-run demand and reuses write-time worker output", async () => {
+    const fixture = await seed();
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    let waitingRegistrations = 0;
+    let releaseRegistrations!: () => void;
+    const registrationsReleased = new Promise<void>((resolve) => {
+      releaseRegistrations = resolve;
+    });
+    const args = {
+      db,
+      owner: {
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        resourceOwner: {
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+        },
+      },
+      variantDigest: "f".repeat(64),
+      prompt: {
+        agentIdentity: "identity",
+        executionLimit: "limit",
+        tools: "tools",
+      },
+      source: {
+        catalogIdentity: null,
+        featurePromptDigest: "feature",
+        permissionDigest: "permission",
+        connectorScopeDigest: "connector",
+        validityHorizon: null,
+        promptSchemaVersion: 1,
+        runtimeSchemaVersion: 1,
+      },
+      mounts: [],
+      persistedStorageMounts: [],
+      eligible: true,
+      checkedAt: new Date("2026-09-17T00:00:00.000Z"),
+      beforeDemandRegistration: async () => {
+        waitingRegistrations += 1;
+        if (waitingRegistrations === 2) {
+          releaseRegistrations();
+        }
+        await registrationsReleased;
+      },
+    } as const;
+
+    const firstReads = await Promise.all(
+      [createStore(), createStore()].map(async (store) => {
+        return await store.get(
+          preparePiStableContext(args, AbortSignal.timeout(5000)),
+        );
+      }),
+    );
+    expect(firstReads.map((read) => read.kind)).toStrictEqual([
+      "missing",
+      "missing",
+    ]);
+    await expect(
+      db
+        .select({ id: piStableContextHeads.id })
+        .from(piStableContextHeads)
+        .where(
+          and(
+            eq(piStableContextHeads.orgId, fixture.orgId),
+            eq(piStableContextHeads.userId, fixture.userId),
+            eq(piStableContextHeads.agentId, fixture.agentId),
+            eq(piStableContextHeads.variantDigest, args.variantDigest),
+          ),
+        ),
+    ).resolves.toHaveLength(1);
+
+    await invalidatePiStableContext(db, {
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+    });
+    await expect(
+      executePiStableContextWork(db, AbortSignal.timeout(5000)),
+    ).resolves.toMatchObject({ claimed: 1, ready: 1 });
+    await expect(
+      createStore().get(
+        preparePiStableContext(args, AbortSignal.timeout(5000)),
+      ),
+    ).resolves.toMatchObject({ kind: "ready" });
+  });
+
+  it("recovers expired leases and terminally fails an exhausted lease", async () => {
+    const fixture = await seed();
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    const args = {
+      db,
+      owner: {
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        resourceOwner: {
+          orgId: fixture.orgId,
+          userId: fixture.userId,
+        },
+      },
+      variantDigest: "e".repeat(64),
+      prompt: {
+        agentIdentity: "lease identity",
+        executionLimit: "lease limit",
+        tools: "lease tools",
+      },
+      source: {
+        catalogIdentity: null,
+        featurePromptDigest: "feature-lease",
+        permissionDigest: "permission-lease",
+        connectorScopeDigest: "connector-lease",
+        validityHorizon: null,
+        promptSchemaVersion: 1,
+        runtimeSchemaVersion: 1,
+      },
+      mounts: [],
+      persistedStorageMounts: [],
+      eligible: true,
+      checkedAt: new Date("2026-09-17T00:00:00.000Z"),
+    } as const;
+    await createStore().get(
+      preparePiStableContext(args, AbortSignal.timeout(5000)),
+    );
+    const [head] = await db
+      .select({ id: piStableContextHeads.id })
+      .from(piStableContextHeads)
+      .where(eq(piStableContextHeads.agentId, fixture.agentId));
+    if (!head) {
+      throw new Error("Expected a registered lease-recovery head");
+    }
+    await db
+      .update(piStableContextHeads)
+      .set({
+        status: "running",
+        artifactDigest: null,
+        leaseId: randomUUID(),
+        leaseExpiresAt: new Date(0),
+        attemptCount: 1,
+      })
+      .where(eq(piStableContextHeads.id, head.id));
+    await expect(
+      executePiStableContextWork(db, AbortSignal.timeout(5000)),
+    ).resolves.toMatchObject({ claimed: 1, ready: 1 });
+
+    await invalidatePiStableContext(db, {
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+    });
+    await db
+      .update(piStableContextHeads)
+      .set({
+        status: "running",
+        leaseId: randomUUID(),
+        leaseExpiresAt: new Date(0),
+        attemptCount: 5,
+      })
+      .where(eq(piStableContextHeads.id, head.id));
+    await expect(
+      executePiStableContextWork(db, AbortSignal.timeout(5000)),
+    ).resolves.toMatchObject({ claimed: 0, ready: 0 });
+    await expect(
+      db
+        .select({
+          status: piStableContextHeads.status,
+          leaseId: piStableContextHeads.leaseId,
+          lastErrorClass: piStableContextHeads.lastErrorClass,
+        })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, head.id))
+        .then(([row]) => row),
+    ).resolves.toStrictEqual({
+      status: "failed",
+      leaseId: null,
+      lastErrorClass: "lease_expired_exhausted",
+    });
+  });
+
+  it("does not recreate an artifact after user erasure wins a claimed build", async () => {
+    const fixture = await seed({ ownedByOtherUser: true });
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    const args = {
+      db,
+      owner: {
+        orgId: fixture.orgId,
+        userId: fixture.userId,
+        agentId: fixture.agentId,
+        resourceOwner: {
+          orgId: fixture.orgId,
+          userId: fixture.otherUserId,
+        },
+      },
+      variantDigest: "9".repeat(64),
+      prompt: {
+        agentIdentity: "identity",
+        executionLimit: "limit",
+        tools: "tools",
+      },
+      source: {
+        catalogIdentity: null,
+        featurePromptDigest: "feature",
+        permissionDigest: "permission",
+        connectorScopeDigest: "connector",
+        validityHorizon: null,
+        promptSchemaVersion: 1,
+        runtimeSchemaVersion: 1,
+      },
+      mounts: [],
+      persistedStorageMounts: [],
+      eligible: true,
+      checkedAt: new Date("2026-09-17T00:00:00.000Z"),
+    } as const;
+    await createStore().get(
+      preparePiStableContext(args, AbortSignal.timeout(5000)),
+    );
+    await invalidatePiStableContext(db, {
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+      userId: fixture.userId,
+    });
+
+    let enterBuild!: () => void;
+    const buildEntered = new Promise<void>((resolve) => {
+      enterBuild = resolve;
+    });
+    let releaseBuild!: () => void;
+    const buildReleased = new Promise<void>((resolve) => {
+      releaseBuild = resolve;
+    });
+    const work = executePiStableContextWork(db, AbortSignal.timeout(5000), {
+      beforePublish: async () => {
+        enterBuild();
+        await buildReleased;
+      },
+    });
+    await buildEntered;
+    await deleteClerkAgentLifecycleData(db, {
+      kind: "user",
+      userId: fixture.userId,
+    });
+    releaseBuild();
+    await expect(work).resolves.toMatchObject({ claimed: 1, stale: 1 });
+    await expect(
+      db
+        .select({ digest: piStableContextArtifacts.digest })
+        .from(piStableContextArtifacts)
+        .where(eq(piStableContextArtifacts.userId, fixture.userId)),
+    ).resolves.toHaveLength(0);
   });
 
   it("reuses one cold-process aggregate without resource indexes and binds memory separately", async () => {

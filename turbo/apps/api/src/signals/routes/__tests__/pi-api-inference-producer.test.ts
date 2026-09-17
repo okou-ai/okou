@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE } from "@okouai/api-contracts/contracts/errors";
+import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
 import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
   PI_DEFERRED_SANDBOX_HEADER,
@@ -23,6 +24,7 @@ import type { UsagePricingResolution } from "../../context/usage-pricing-resolut
 import { createDeferredPromise, settle } from "../../utils";
 import { runnersRoutes } from "../runners";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   configureNativeCliArtifact,
@@ -44,6 +46,7 @@ const context = testContext();
 const billing = createBillingMediaApi(context);
 const {
   api,
+  bdd,
   chat,
   webhooks,
   entitledChatActor,
@@ -307,6 +310,87 @@ async function releaseDeferredPiRun(
 }
 
 describe("durable Pi API producer", () => {
+  it("uses write-published stable context on the first Run after an instruction update", async () => {
+    configureNativeCliArtifact();
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = await enableDurablePi(actor);
+    await configureBuiltInPiModel(actor, SELECTED_MODEL);
+    const usagePricingResolution =
+      await createPiApiFirstTurnUsagePricingResolution(SELECTED_MODEL);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const providerBodies: string[] = [];
+    let providerCalls = 0;
+    server.use(
+      http.post(PROVIDER_URL, async ({ request }) => {
+        providerCalls += 1;
+        providerBodies.push(JSON.stringify(await request.json()));
+        return new HttpResponse(
+          piResponsesTextSse("stable context answer", providerCalls),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+
+    const first = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "seed the stable context projection",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, first.runId, "completed", 10_000);
+
+    const instructions = `Worker-published instructions ${randomUUID()}`;
+    await bdd.updateAgentInstructions(actor, agentId, instructions);
+    const work = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({ body: { versionIds: ["0".repeat(64)] } }),
+      [200],
+    );
+    expect(work.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+
+    let archiveReadsAfterWorker = 0;
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
+        archiveReadsAfterWorker += 1;
+        return HttpResponse.json(
+          { error: "ready context unexpectedly fetched an archive" },
+          { status: 503 },
+        );
+      }),
+    );
+    const second = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the worker-published projection",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    onTestFinished(async () => {
+      await flushWaitUntilForTest();
+      await removePiInferenceFixture({
+        runId: first.runId,
+        agentId,
+        orgId,
+      });
+      await removePiInferenceFixture({
+        runId: second.runId,
+        agentId,
+        orgId,
+      });
+    });
+    await waitForRunStatus(actor, second.runId, "completed", 10_000);
+    expect(archiveReadsAfterWorker).toBe(0);
+    expect(providerCalls).toBe(2);
+    expect(providerBodies.at(-1)).toContain(instructions);
+  }, 30_000);
+
   it.each(
     (
       [

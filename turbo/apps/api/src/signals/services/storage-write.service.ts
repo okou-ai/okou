@@ -41,6 +41,7 @@ import {
 } from "./pi-memory-phase2-checkpoint.service";
 
 import { enqueuePiResourceVersionIndexes } from "./pi-resource-version-index.service";
+import { enqueuePiStableContextStorageDemands } from "./pi-stable-context-generation.service";
 
 const ACTIVE_SANDBOX_STORAGE_RUN_STATUSES = ["pending", "running"] as const;
 
@@ -939,6 +940,7 @@ async function publishStorageHeadIfChanged(args: {
     "versionId" | "sandboxAuth"
   >;
   readonly size: number;
+  readonly archiveSize: number;
   readonly fileCount: number;
 }): Promise<void> {
   if (args.storage.headVersionId === args.input.versionId) {
@@ -965,6 +967,12 @@ async function publishStorageHeadIfChanged(args: {
   if (!published) {
     throw new Error("Locked Storage HEAD could not be published");
   }
+  await enqueuePiStableContextStorageDemands(args.tx, {
+    storageId: args.storage.id,
+    versionId: args.input.versionId,
+    archiveSize: args.archiveSize,
+    fileCount: args.fileCount,
+  });
   if (
     args.storage.name !== MEMORY_ARTIFACT_NAME ||
     args.storage.userId === VOLUME_ORG_USER_ID
@@ -1008,7 +1016,6 @@ async function commitActiveStorageVersion(
   if (!storage) {
     throw new Error("Storage disappeared before HEAD publication");
   }
-
   if (args.version) {
     if (args.version.archiveSize !== args.verification.archiveSize) {
       await args.tx
@@ -1026,6 +1033,7 @@ async function commitActiveStorageVersion(
       storage,
       input: args.input,
       size: Number(args.version.size),
+      archiveSize: args.verification.archiveSize,
       fileCount: args.version.fileCount,
     });
     await recordStorageLineage({
@@ -1049,7 +1057,6 @@ async function commitActiveStorageVersion(
       deduplicated: true,
     });
   }
-
   const size = totalSize(args.input.files);
   const fileCount = args.input.files.length;
   const [insertedVersion] = await args.tx
@@ -1090,6 +1097,7 @@ async function commitActiveStorageVersion(
     storage,
     input: args.input,
     size,
+    archiveSize: args.verification.archiveSize,
     fileCount,
   });
   await recordStorageLineage({

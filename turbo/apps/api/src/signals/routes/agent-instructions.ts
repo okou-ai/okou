@@ -13,8 +13,11 @@ import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
 import { agentResponse } from "../services/agent-data.service";
 import { lockCanonicalAgentMutation } from "../services/agent-mutation-lock.service";
-import { beginPiStableContextPublication } from "../services/pi-stable-context-generation.service";
-import { writeAgentInstructionsStorage$ } from "../services/agent-instructions-storage.service";
+import {
+  beginPiStableContextPublication,
+  PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
+} from "../services/pi-stable-context-generation.service";
+import { writeAgentInstructionsStorageInTransaction$ } from "../services/agent-instructions-storage.service";
 import { agentInstructions } from "../services/agent-instructions.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -91,16 +94,18 @@ const updateAgentInstructionsInner$ = command(
       }
 
       const stableContextPublication = await beginPiStableContextPublication(
-        writeDb,
+        tx,
         {
           orgId: auth.orgId,
           agentId: current.id,
         },
+        PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY,
       );
 
       await set(
-        writeAgentInstructionsStorage$,
+        writeAgentInstructionsStorageInTransaction$,
         {
+          tx,
           orgId: auth.orgId,
           agentName: current.name,
           instructions: body.data.content,

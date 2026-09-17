@@ -20,8 +20,8 @@ surfaces are on different versions.
 ## Pi stable-context schema rollout and rollback
 
 Migration 1152 adds `pi_stable_context_generations`,
-`pi_stable_context_heads`, `pi_stable_context_artifacts`, and
-`pi_stable_context_artifact_resources`. It creates empty tables only: it does
+`pi_stable_context_publications`, `pi_stable_context_heads`,
+`pi_stable_context_artifacts`, and `pi_stable_context_artifact_resources`. It creates empty tables only: it does
 not enumerate users, Agents, sessions or Storage and performs no materialization
 or production backfill. Deploy the additive migration before an API that writes
 these rows. Existing Runner, Sandbox, CLI and persisted Pi resource-snapshot
@@ -32,7 +32,8 @@ generation/head treats the exact variant as missing and uses canonical
 exact-version discovery. An old writer that does not publish demand likewise
 causes a later read-time repair; this is compatibility and recovery, not the
 normal invalidation path. A pending multi-stage source generation is never read
-as ready. Old API code ignores the additive tables and continues the canonical
+as ready. Source-keyed publication obligations allow independent Workflow
+writers to coexist while a replacement supersedes only the same source. Old API code ignores the additive tables and continues the canonical
 path. Rollback therefore consists of rolling API code back while retaining the
 tables; do not drop them until all new writers/workers and rollback binaries
 have drained.
@@ -50,8 +51,9 @@ Storage/version rows. A source deletion first invalidates its heads in the same
 transaction; deleting that Storage then cascades its retention edges so normal
 Workflow/account erasure is not blocked. Cleanup can remove only an artifact
 older than seven days that no head references. Agent/account erasure removes
-heads/artifacts through owner edges and explicitly removes generation fences. A failed or rolled-back
-source transaction cannot advance its generation; a stale builder cannot attach
+heads/artifacts through owner edges and explicitly removes generation fences and
+publication obligations. A failed or rolled-back source transaction cannot
+advance its generation; a stale builder cannot attach
 to a newer head. These rules keep rollback and erasure safe without treating
 the seven-day legacy snapshot cache or run-only inference objects as live
 configuration retention.

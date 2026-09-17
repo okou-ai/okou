@@ -3,8 +3,10 @@ import { command } from "ccstate";
 
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { executePiResourceIndexWork$ } from "../services/pi-resource-version-index.service";
+import { executePiStableContextWork } from "../services/pi-stable-context.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -26,20 +28,11 @@ const run$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
+  const stableContext = await executePiStableContextWork(set(writeDb$), signal);
+  signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: {
-      success: true as const,
-      ...result,
-      stableContext: {
-        claimed: 0,
-        ready: 0,
-        pending: 0,
-        unindexable: 0,
-        failed: 0,
-        stale: 0,
-      },
-    },
+    body: { success: true as const, ...result, stableContext },
   };
 });
 

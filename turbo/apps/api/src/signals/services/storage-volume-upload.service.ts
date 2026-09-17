@@ -9,6 +9,7 @@ import {
 import {
   completePiStableContextPublication,
   lockPiStableContextPublication,
+  refreshPiStableContextStorageDemands,
   type PiStableContextPublicationFence,
 } from "./pi-stable-context-generation.service";
 
@@ -21,7 +22,7 @@ type UploadVolumeServerSideInput = PrepareVolumeServerSideInput & {
   readonly stableContextPublication?: PiStableContextPublicationFence;
 };
 
-export class StalePiStableContextPublicationError extends Error {}
+class StalePiStableContextPublicationError extends Error {}
 
 export const uploadVolumeServerSide$ = command(
   async (
@@ -44,6 +45,18 @@ export const uploadVolumeServerSide$ = command(
         );
       }
       await commitPreparedVolumeServerSide({ db: tx, volume }, signal);
+      if (args.stableContextPublication) {
+        await refreshPiStableContextStorageDemands(
+          tx,
+          args.stableContextPublication,
+          {
+            storageId: volume.version.storageId,
+            versionId: volume.version.versionId,
+            archiveSize: volume.version.archiveSize,
+            fileCount: volume.version.fileCount,
+          },
+        );
+      }
       if (
         args.stableContextPublication &&
         !(await completePiStableContextPublication(

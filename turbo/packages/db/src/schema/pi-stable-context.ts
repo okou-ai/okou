@@ -39,7 +39,6 @@ export const piStableContextGenerations = pgTable(
       .$type<PiStableContextPublicationState>()
       .notNull()
       .default("ready"),
-    publicationToken: uuid("publication_token"),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
@@ -53,11 +52,43 @@ export const piStableContextGenerations = pgTable(
         sql`${table.publicationState} IN ('pending', 'ready')`,
       ),
       check(
-        "pi_stable_context_generations_token_check",
-        sql`(${table.publicationState} = 'pending' AND ${table.publicationToken} IS NOT NULL) OR (${table.publicationState} = 'ready' AND ${table.publicationToken} IS NULL)`,
-      ),
-      check(
         "pi_stable_context_generations_generation_check",
+        sql`${table.generation} > 0`,
+      ),
+    ];
+  },
+);
+
+/**
+ * Concurrent multi-stage sources within one owner scope publish independently.
+ * Reusing one publication key supersedes only the older write of that source.
+ */
+export const piStableContextPublications = pgTable(
+  "pi_stable_context_publications",
+  {
+    orgId: text("org_id").notNull(),
+    agentId: uuid("agent_id").notNull(),
+    subject: text("subject").notNull(),
+    publicationKey: text("publication_key").notNull(),
+    generation: bigint("generation", { mode: "number" }).notNull(),
+    token: uuid("token").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => {
+    return [
+      primaryKey({
+        name: "pi_stable_context_publications_pk",
+        columns: [
+          table.orgId,
+          table.agentId,
+          table.subject,
+          table.publicationKey,
+        ],
+      }),
+      uniqueIndex("pi_stable_context_publications_token_idx").on(table.token),
+      check(
+        "pi_stable_context_publications_generation_check",
         sql`${table.generation} > 0`,
       ),
     ];

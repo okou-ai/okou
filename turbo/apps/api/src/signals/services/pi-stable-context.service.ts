@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import {
   piResourceSnapshotSchema,
@@ -40,9 +40,15 @@ import {
   UnsupportedPiResourceError,
 } from "./pi-resource-snapshot.service";
 import { readPiResourceVersionIndexes } from "./pi-resource-version-index.service";
+import {
+  PI_STABLE_CONTEXT_SCHEMA_VERSION,
+  piStableContextArtifactDigest,
+  piStableContextInputDigest,
+  piStableContextVariantDigest,
+} from "./pi-stable-context-digest.service";
 import { PI_STABLE_CONTEXT_AGENT_SUBJECT } from "./pi-stable-context-generation.service";
 
-const PI_STABLE_CONTEXT_SCHEMA_VERSION = 1;
+export { piStableContextArtifactDigest, piStableContextVariantDigest };
 const PI_STABLE_CONTEXT_LEASE_MS = 5 * 60 * 1000;
 const PI_STABLE_CONTEXT_RETRY_MS = 5000;
 const PI_STABLE_CONTEXT_WORK_LIMIT = 16;
@@ -53,7 +59,7 @@ type StableSourceWithoutGenerations = Omit<
   "agentGeneration" | "userGeneration" | "extractorVersion"
 >;
 
-export interface PreparePiStableContextArgs {
+interface PreparePiStableContextArgs {
   readonly db: Db;
   readonly owner: PiStableContextOwner;
   readonly variantDigest: string;
@@ -65,9 +71,10 @@ export interface PreparePiStableContextArgs {
   readonly eligible: boolean;
   readonly checkedAt: Date;
   readonly runId?: string;
+  readonly beforeDemandRegistration?: () => Promise<void>;
 }
 
-export type PiStableContextReadKind =
+type PiStableContextReadKind =
   | "ready"
   | "missing"
   | "pending"
@@ -76,7 +83,7 @@ export type PiStableContextReadKind =
   | "failed"
   | "dynamic";
 
-export interface PreparedPiStableContext {
+interface PreparedPiStableContext {
   readonly digest: string;
   readonly snapshot: PiResourceSnapshot;
   readonly kind: PiStableContextReadKind;
@@ -107,43 +114,6 @@ interface StableContextWorkResult {
   unindexable: number;
   failed: number;
   stale: number;
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === undefined) {
-    return "null";
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (value !== null && typeof value === "object") {
-    const entries = Object.entries(value).filter(([, item]) => {
-      return item !== undefined;
-    });
-    entries.sort(([left], [right]) => {
-      return left.localeCompare(right);
-    });
-    return `{${entries
-      .map(([key, item]) => {
-        return `${JSON.stringify(key)}:${canonicalJson(item)}`;
-      })
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function sha256(value: unknown): string {
-  return createHash("sha256").update(canonicalJson(value)).digest("hex");
-}
-
-export function piStableContextVariantDigest(value: unknown): string {
-  return sha256({ schemaVersion: PI_STABLE_CONTEXT_SCHEMA_VERSION, value });
-}
-
-export function piStableContextArtifactDigest(
-  projection: PiStableContextProjection,
-): string {
-  return sha256({ kind: "pi-stable-context", projection });
 }
 
 function stableStorageMount(
@@ -397,7 +367,7 @@ async function readReadyProjection(args: PreparePiStableContextArgs): Promise<{
   const expectedInput = buildInput(args, generations);
   const projection = row.projection;
   if (
-    row.inputDigest !== sha256(expectedInput) ||
+    row.inputDigest !== piStableContextInputDigest(expectedInput) ||
     piStableContextArtifactDigest(projection) !== row.artifactDigest ||
     !horizonIsValid(projection.source, args.checkedAt)
   ) {
@@ -411,8 +381,43 @@ async function registerDemand(
   generations: SourceGenerations,
 ): Promise<StableContextDemand> {
   const input = buildInput(args, generations);
-  const inputDigest = sha256(input);
+  const inputDigest = piStableContextInputDigest(input);
   return await args.db.transaction(async (tx) => {
+    const initialValues = {
+      orgId: args.owner.orgId,
+      userId: args.owner.userId,
+      agentId: args.owner.agentId,
+      variantDigest: args.variantDigest,
+      generation: 1,
+      agentGeneration: generations.agentGeneration,
+      userGeneration: generations.userGeneration,
+      status: "pending" as const,
+      input,
+      inputDigest,
+      artifactDigest: null,
+      validityHorizon: validityHorizon(input.source),
+      leaseId: null,
+      leaseExpiresAt: null,
+      availableAt: nowDate(),
+      attemptCount: 0,
+      lastErrorClass: null,
+      updatedAt: nowDate(),
+    };
+    // Insert-first makes the unique owner/variant row the serialization point.
+    // A concurrent loser waits for the winner, then locks and reuses/advances it.
+    const [inserted] = await tx
+      .insert(piStableContextHeads)
+      .values(initialValues)
+      .onConflictDoNothing()
+      .returning({ id: piStableContextHeads.id });
+    if (inserted) {
+      return {
+        headId: inserted.id,
+        generation: 1,
+        input,
+        inputDigest,
+      };
+    }
     const [existing] = await tx
       .select({
         id: piStableContextHeads.id,
@@ -433,11 +438,14 @@ async function registerDemand(
       )
       .for("update")
       .limit(1);
+    if (!existing) {
+      throw new Error("Stable-context demand disappeared during registration");
+    }
     const unchanged =
-      existing?.inputDigest === inputDigest &&
+      existing.inputDigest === inputDigest &&
       existing.agentGeneration === generations.agentGeneration &&
       existing.userGeneration === generations.userGeneration;
-    if (existing && unchanged && existing.status === "pending") {
+    if (unchanged && existing.status === "pending") {
       return {
         headId: existing.id,
         generation: existing.generation,
@@ -445,37 +453,15 @@ async function registerDemand(
         inputDigest,
       };
     }
-    const nextGeneration = existing ? existing.generation + 1 : 1;
-    const values = {
-      orgId: args.owner.orgId,
-      userId: args.owner.userId,
-      agentId: args.owner.agentId,
-      variantDigest: args.variantDigest,
-      generation: nextGeneration,
-      agentGeneration: generations.agentGeneration,
-      userGeneration: generations.userGeneration,
-      status: "pending" as const,
-      input,
-      inputDigest,
-      artifactDigest: null,
-      validityHorizon: validityHorizon(input.source),
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt: nowDate(),
-      attemptCount: 0,
-      lastErrorClass: null,
-      updatedAt: nowDate(),
-    };
-    const [head] = existing
-      ? await tx
-          .update(piStableContextHeads)
-          .set(values)
-          .where(eq(piStableContextHeads.id, existing.id))
-          .returning({ id: piStableContextHeads.id })
-      : await tx
-          .insert(piStableContextHeads)
-          .values(values)
-          .returning({ id: piStableContextHeads.id });
+    const nextGeneration = existing.generation + 1;
+    const [head] = await tx
+      .update(piStableContextHeads)
+      .set({
+        ...initialValues,
+        generation: nextGeneration,
+      })
+      .where(eq(piStableContextHeads.id, existing.id))
+      .returning({ id: piStableContextHeads.id });
     if (!head) {
       throw new Error("Stable-context demand publication returned no row");
     }
@@ -507,13 +493,39 @@ async function publishProjection(
   projection: PiStableContextProjection,
 ): Promise<boolean> {
   const artifactDigest = piStableContextArtifactDigest(projection);
-  if (
-    Buffer.byteLength(canonicalJson(projection), "utf8") >
-    PI_RESOURCE_SNAPSHOT_MAX_BYTES
-  ) {
-    throw new Error("Pi stable context exceeds its aggregate size limit");
-  }
+  const condition = and(
+    eq(piStableContextHeads.id, demand.headId),
+    eq(piStableContextHeads.generation, demand.generation),
+    eq(piStableContextHeads.inputDigest, demand.inputDigest),
+    eq(
+      piStableContextHeads.agentGeneration,
+      demand.input.source.agentGeneration,
+    ),
+    eq(piStableContextHeads.userGeneration, demand.input.source.userGeneration),
+    demand.leaseId
+      ? and(
+          eq(piStableContextHeads.status, "running"),
+          eq(piStableContextHeads.leaseId, demand.leaseId),
+        )
+      : inArray(piStableContextHeads.status, [
+          "pending",
+          "failed",
+          "unindexable",
+        ]),
+  );
   return await db.transaction(async (tx) => {
+    // Serialize against user erasure before inserting the owner-bound artifact.
+    // If erasure committed first the head is absent; if publication wins,
+    // erasure waits on this row and removes the artifact before committing.
+    const [head] = await tx
+      .select({ id: piStableContextHeads.id })
+      .from(piStableContextHeads)
+      .where(condition)
+      .for("update")
+      .limit(1);
+    if (!head) {
+      return false;
+    }
     await tx
       .insert(piStableContextArtifacts)
       .values({
@@ -535,29 +547,6 @@ async function publishProjection(
         )
         .onConflictDoNothing();
     }
-    const condition = and(
-      eq(piStableContextHeads.id, demand.headId),
-      eq(piStableContextHeads.generation, demand.generation),
-      eq(piStableContextHeads.inputDigest, demand.inputDigest),
-      eq(
-        piStableContextHeads.agentGeneration,
-        demand.input.source.agentGeneration,
-      ),
-      eq(
-        piStableContextHeads.userGeneration,
-        demand.input.source.userGeneration,
-      ),
-      demand.leaseId
-        ? and(
-            eq(piStableContextHeads.status, "running"),
-            eq(piStableContextHeads.leaseId, demand.leaseId),
-          )
-        : inArray(piStableContextHeads.status, [
-            "pending",
-            "failed",
-            "unindexable",
-          ]),
-    );
     const [published] = await tx
       .update(piStableContextHeads)
       .set({
@@ -686,6 +675,8 @@ export function preparePiStableContext(
       const canonical = await get(prepareCanonical(args, signal));
       return { ...canonical, kind: "source_pending" };
     }
+    await args.beforeDemandRegistration?.();
+    signal?.throwIfAborted();
     const demand = await registerDemand(args, generations);
     signal?.throwIfAborted();
     const canonical = await get(prepareCanonical(args, signal));
@@ -734,13 +725,18 @@ async function claimStableContextWork(
         and(
           lte(piStableContextHeads.availableAt, currentTime),
           or(
-            inArray(piStableContextHeads.status, ["pending", "failed"]),
+            and(
+              inArray(piStableContextHeads.status, ["pending", "failed"]),
+              lt(
+                piStableContextHeads.attemptCount,
+                PI_STABLE_CONTEXT_MAX_ATTEMPTS,
+              ),
+            ),
             and(
               eq(piStableContextHeads.status, "running"),
               lte(piStableContextHeads.leaseExpiresAt, currentTime),
             ),
           ),
-          lt(piStableContextHeads.attemptCount, PI_STABLE_CONTEXT_MAX_ATTEMPTS),
         ),
       )
       .orderBy(
@@ -751,6 +747,26 @@ async function claimStableContextWork(
       .for("update", { skipLocked: true });
     const claimed: ClaimedStableContextWork[] = [];
     for (const row of rows) {
+      if (row.attemptCount >= PI_STABLE_CONTEXT_MAX_ATTEMPTS) {
+        await tx
+          .update(piStableContextHeads)
+          .set({
+            status: "failed",
+            leaseId: null,
+            leaseExpiresAt: null,
+            lastErrorClass: "lease_expired_exhausted",
+            updatedAt: currentTime,
+          })
+          .where(
+            and(
+              eq(piStableContextHeads.id, row.headId),
+              eq(piStableContextHeads.generation, row.generation),
+              eq(piStableContextHeads.status, "running"),
+              lte(piStableContextHeads.leaseExpiresAt, currentTime),
+            ),
+          );
+        continue;
+      }
       if (!row.input || !row.inputDigest) {
         continue;
       }
@@ -825,6 +841,7 @@ async function buildStableContextWorkItem(
   db: Db,
   work: ClaimedStableContextWork,
   signal: AbortSignal,
+  beforePublish?: () => Promise<void>,
 ): Promise<keyof Omit<StableContextWorkResult, "claimed" | "failed">> {
   const mounts = piResourceDiscoveryMounts(
     work.input.storageMounts.map(storageMountForComposer),
@@ -851,6 +868,8 @@ async function buildStableContextWorkItem(
       : "stale";
   }
   const projection = indexedProjection(work.input, indexed.indexes);
+  await beforePublish?.();
+  signal.throwIfAborted();
   return (await publishProjection(db, work, projection)) ? "ready" : "stale";
 }
 
@@ -858,8 +877,11 @@ async function executeStableContextWorkItem(
   db: Db,
   work: ClaimedStableContextWork,
   signal: AbortSignal,
+  beforePublish?: () => Promise<void>,
 ): Promise<keyof Omit<StableContextWorkResult, "claimed">> {
-  const built = await settle(buildStableContextWorkItem(db, work, signal));
+  const built = await settle(
+    buildStableContextWorkItem(db, work, signal, beforePublish),
+  );
   signal.throwIfAborted();
   if (built.ok) {
     return built.value;
@@ -877,6 +899,7 @@ async function executeStableContextWorkItem(
 export async function executePiStableContextWork(
   db: Db,
   signal: AbortSignal,
+  hooks?: { readonly beforePublish?: () => Promise<void> },
 ): Promise<StableContextWorkResult> {
   const work = await claimStableContextWork(db, signal);
   const result: StableContextWorkResult = {
@@ -889,7 +912,12 @@ export async function executePiStableContextWork(
   };
   for (const item of work) {
     signal.throwIfAborted();
-    const outcome = await executeStableContextWorkItem(db, item, signal);
+    const outcome = await executeStableContextWorkItem(
+      db,
+      item,
+      signal,
+      hooks?.beforePublish,
+    );
     result[outcome]++;
   }
   return result;

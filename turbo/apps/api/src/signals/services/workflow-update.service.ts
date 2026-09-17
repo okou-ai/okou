@@ -13,7 +13,10 @@ import {
   SKILL_FILENAME,
 } from "./workflow-volume.service";
 import type { WorkflowRow } from "./workflow-data.service";
-import { beginPiStableContextPublication } from "./pi-stable-context-generation.service";
+import {
+  beginPiStableContextPublication,
+  piStableContextWorkflowPublicationKey,
+} from "./pi-stable-context-generation.service";
 
 interface UpdateWorkflowInput {
   readonly workflow: WorkflowRow;
@@ -69,13 +72,17 @@ export const updateWorkflow$ = command(
         })
         .where(eq(workflows.id, workflow.id));
       return volumeChanged
-        ? await beginPiStableContextPublication(tx, {
-            orgId: workflow.orgId,
-            agentId: workflow.agentId,
-            ...(workflow.visibility === "private"
-              ? { userId: workflow.ownerUserId }
-              : {}),
-          })
+        ? await beginPiStableContextPublication(
+            tx,
+            {
+              orgId: workflow.orgId,
+              agentId: workflow.agentId,
+              ...(workflow.visibility === "private"
+                ? { userId: workflow.ownerUserId }
+                : {}),
+            },
+            piStableContextWorkflowPublicationKey(workflow.id),
+          )
         : undefined;
     });
     signal.throwIfAborted();

@@ -1,15 +1,27 @@
 import { randomUUID } from "node:crypto";
 
+import type { PiStableContextBuildInput } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import {
+  piStableContextArtifactResources,
   piStableContextGenerations,
   piStableContextHeads,
+  piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, exists, inArray, isNotNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { piStableContextInputDigest } from "./pi-stable-context-digest.service";
 
 export const PI_STABLE_CONTEXT_AGENT_SUBJECT = "@agent";
+export const PI_STABLE_CONTEXT_AGENT_INSTRUCTIONS_PUBLICATION_KEY =
+  "agent-instructions";
+
+export function piStableContextWorkflowPublicationKey(
+  workflowId: string,
+): string {
+  return `workflow:${workflowId}`;
+}
 
 export interface PiStableContextScope {
   readonly orgId: string;
@@ -20,12 +32,32 @@ export interface PiStableContextScope {
 
 export interface PiStableContextPublicationFence {
   readonly scope: PiStableContextScope;
+  readonly publicationKey: string;
   readonly generation: number;
   readonly token: string;
 }
 
 function subjectForScope(scope: PiStableContextScope): string {
   return scope.userId ?? PI_STABLE_CONTEXT_AGENT_SUBJECT;
+}
+
+function generationScopeCondition(scope: PiStableContextScope) {
+  return and(
+    eq(piStableContextGenerations.orgId, scope.orgId),
+    eq(piStableContextGenerations.agentId, scope.agentId),
+    eq(piStableContextGenerations.subject, subjectForScope(scope)),
+  );
+}
+
+function publicationScopeCondition(fence: PiStableContextPublicationFence) {
+  return and(
+    eq(piStableContextPublications.orgId, fence.scope.orgId),
+    eq(piStableContextPublications.agentId, fence.scope.agentId),
+    eq(piStableContextPublications.subject, subjectForScope(fence.scope)),
+    eq(piStableContextPublications.publicationKey, fence.publicationKey),
+    eq(piStableContextPublications.generation, fence.generation),
+    eq(piStableContextPublications.token, fence.token),
+  );
 }
 
 function headScopeCondition(scope: PiStableContextScope) {
@@ -42,31 +74,13 @@ async function invalidateKnownHeads(
   db: Db,
   scope: PiStableContextScope,
 ): Promise<void> {
-  await db
-    .update(piStableContextHeads)
-    .set({
-      generation: sql`${piStableContextHeads.generation} + 1`,
-      status: "missing",
-      input: null,
-      inputDigest: null,
-      artifactDigest: null,
-      validityHorizon: null,
-      leaseId: null,
-      leaseExpiresAt: null,
-      availableAt: nowDate(),
-      attemptCount: 0,
-      lastErrorClass: null,
-      updatedAt: nowDate(),
-    })
-    .where(headScopeCondition(scope));
+  await invalidateHeadSet(db, headScopeCondition(scope));
 }
 
 async function advanceGeneration(
   db: Db,
   scope: PiStableContextScope,
-  state:
-    | { readonly kind: "ready" }
-    | { readonly kind: "pending"; readonly token: string },
+  state: { readonly kind: "ready" } | { readonly kind: "pending" },
 ): Promise<number> {
   const updatedAt = nowDate();
   const subject = subjectForScope(scope);
@@ -77,7 +91,6 @@ async function advanceGeneration(
       agentId: scope.agentId,
       subject,
       publicationState: state.kind,
-      publicationToken: state.kind === "pending" ? state.token : null,
       updatedAt,
     })
     .onConflictDoUpdate({
@@ -88,8 +101,12 @@ async function advanceGeneration(
       ],
       set: {
         generation: sql`${piStableContextGenerations.generation} + 1`,
-        publicationState: state.kind,
-        publicationToken: state.kind === "pending" ? state.token : null,
+        // A single-stage write invalidates every head but must not expose a
+        // scope while an independent multi-stage source is still publishing.
+        publicationState:
+          state.kind === "pending"
+            ? "pending"
+            : sql`${piStableContextGenerations.publicationState}`,
         updatedAt,
       },
     })
@@ -113,6 +130,27 @@ async function invalidateHeadSet(
   db: Db,
   condition: ReturnType<typeof eq> | ReturnType<typeof and>,
 ): Promise<void> {
+  const captured = await db
+    .select({
+      id: piStableContextHeads.id,
+      generation: piStableContextHeads.generation,
+      orgId: piStableContextHeads.orgId,
+      userId: piStableContextHeads.userId,
+      agentId: piStableContextHeads.agentId,
+      input: piStableContextHeads.input,
+    })
+    .from(piStableContextHeads)
+    .where(
+      and(
+        condition,
+        isNotNull(piStableContextHeads.input),
+        isNotNull(piStableContextHeads.inputDigest),
+      ),
+    )
+    .orderBy(asc(piStableContextHeads.id))
+    .limit(16)
+    .for("update");
+  const invalidatedAt = nowDate();
   await db
     .update(piStableContextHeads)
     .set({
@@ -124,12 +162,77 @@ async function invalidateHeadSet(
       validityHorizon: null,
       leaseId: null,
       leaseExpiresAt: null,
-      availableAt: nowDate(),
+      availableAt: invalidatedAt,
       attemptCount: 0,
       lastErrorClass: null,
-      updatedAt: nowDate(),
+      updatedAt: invalidatedAt,
     })
     .where(condition);
+  // Preserve at most one worker batch of exact captured variants as durable
+  // write-time demand. Larger scopes remain bounded and recover canonically.
+  for (const head of captured) {
+    if (!head.input) {
+      continue;
+    }
+    const subjects = [PI_STABLE_CONTEXT_AGENT_SUBJECT, head.userId];
+    const generations = await db
+      .select({
+        subject: piStableContextGenerations.subject,
+        generation: piStableContextGenerations.generation,
+      })
+      .from(piStableContextGenerations)
+      .where(
+        and(
+          eq(piStableContextGenerations.orgId, head.orgId),
+          eq(piStableContextGenerations.agentId, head.agentId),
+          inArray(piStableContextGenerations.subject, subjects),
+        ),
+      );
+    const bySubject = new Map(
+      generations.map((generation) => {
+        return [generation.subject, generation.generation] as const;
+      }),
+    );
+    const agentGeneration = bySubject.get(PI_STABLE_CONTEXT_AGENT_SUBJECT);
+    const userGeneration = bySubject.get(head.userId);
+    if (agentGeneration === undefined || userGeneration === undefined) {
+      continue;
+    }
+    const input: PiStableContextBuildInput = {
+      ...head.input,
+      source: {
+        ...head.input.source,
+        agentGeneration,
+        userGeneration,
+      },
+    };
+    await db
+      .update(piStableContextHeads)
+      .set({
+        generation: head.generation + 1,
+        agentGeneration,
+        userGeneration,
+        status: "pending",
+        input,
+        inputDigest: piStableContextInputDigest(input),
+        artifactDigest: null,
+        validityHorizon: input.source.validityHorizon
+          ? new Date(input.source.validityHorizon)
+          : null,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt: invalidatedAt,
+        attemptCount: 0,
+        lastErrorClass: null,
+        updatedAt: invalidatedAt,
+      })
+      .where(
+        and(
+          eq(piStableContextHeads.id, head.id),
+          eq(piStableContextHeads.generation, head.generation + 1),
+        ),
+      );
+  }
 }
 
 /** Bulk invalidation for a user-scoped feature/profile source writer. */
@@ -141,8 +244,6 @@ export async function invalidatePiStableContextsForUser(
     .update(piStableContextGenerations)
     .set({
       generation: sql`${piStableContextGenerations.generation} + 1`,
-      publicationState: "ready",
-      publicationToken: null,
       updatedAt: nowDate(),
     })
     .where(
@@ -169,8 +270,6 @@ export async function invalidatePiStableContextsForOrg(
     .update(piStableContextGenerations)
     .set({
       generation: sql`${piStableContextGenerations.generation} + 1`,
-      publicationState: "ready",
-      publicationToken: null,
       updatedAt: nowDate(),
     })
     .where(eq(piStableContextGenerations.orgId, orgId));
@@ -181,87 +280,311 @@ export async function invalidatePiStableContextsForOrg(
 export async function invalidateAllPiStableContexts(db: Db): Promise<void> {
   await db.update(piStableContextGenerations).set({
     generation: sql`${piStableContextGenerations.generation} + 1`,
-    publicationState: "ready",
-    publicationToken: null,
     updatedAt: nowDate(),
   });
-  await db.update(piStableContextHeads).set({
-    generation: sql`${piStableContextHeads.generation} + 1`,
-    status: "missing",
-    input: null,
-    inputDigest: null,
-    artifactDigest: null,
-    validityHorizon: null,
-    leaseId: null,
-    leaseExpiresAt: null,
-    availableAt: nowDate(),
-    attemptCount: 0,
-    lastErrorClass: null,
-    updatedAt: nowDate(),
-  });
+  await invalidateHeadSet(db, sql`TRUE`);
 }
 
-/** Begin a metadata-first publication. No projection is readable while pending. */
+/** Begin one keyed metadata-first publication. The scope stays pending until all keys settle. */
 export async function beginPiStableContextPublication(
   db: Db,
   scope: PiStableContextScope,
+  publicationKey: string,
 ): Promise<PiStableContextPublicationFence> {
   const token = randomUUID();
-  const generation = await advanceGeneration(db, scope, {
-    kind: "pending",
-    token,
+  return await db.transaction(async (tx) => {
+    const generation = await advanceGeneration(tx, scope, { kind: "pending" });
+    const updatedAt = nowDate();
+    await tx
+      .insert(piStableContextPublications)
+      .values({
+        orgId: scope.orgId,
+        agentId: scope.agentId,
+        subject: subjectForScope(scope),
+        publicationKey,
+        generation,
+        token,
+        createdAt: updatedAt,
+        updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: [
+          piStableContextPublications.orgId,
+          piStableContextPublications.agentId,
+          piStableContextPublications.subject,
+          piStableContextPublications.publicationKey,
+        ],
+        set: { generation, token, createdAt: updatedAt, updatedAt },
+      });
+    return { scope, publicationKey, generation, token };
   });
-  return { scope, generation, token };
+}
+
+/** Commit bounded demand for ready contexts that depended on an advanced Storage HEAD. */
+export async function enqueuePiStableContextStorageDemands(
+  db: Db,
+  resource: {
+    readonly storageId: string;
+    readonly versionId: string;
+    readonly archiveSize: number;
+    readonly fileCount: number;
+  },
+): Promise<void> {
+  const dependent = exists(
+    db
+      .select({ ordinal: piStableContextArtifactResources.ordinal })
+      .from(piStableContextArtifactResources)
+      .where(
+        and(
+          eq(
+            piStableContextArtifactResources.artifactDigest,
+            piStableContextHeads.artifactDigest,
+          ),
+          eq(piStableContextArtifactResources.storageId, resource.storageId),
+        ),
+      ),
+  );
+  const heads = await db
+    .select({
+      id: piStableContextHeads.id,
+      generation: piStableContextHeads.generation,
+      input: piStableContextHeads.input,
+    })
+    .from(piStableContextHeads)
+    .where(
+      and(
+        dependent,
+        isNotNull(piStableContextHeads.input),
+        isNotNull(piStableContextHeads.inputDigest),
+      ),
+    )
+    .orderBy(asc(piStableContextHeads.id))
+    .limit(16)
+    .for("update");
+  const availableAt = nowDate();
+  await db
+    .update(piStableContextHeads)
+    .set({
+      generation: sql`${piStableContextHeads.generation} + 1`,
+      status: "missing",
+      input: null,
+      inputDigest: null,
+      artifactDigest: null,
+      validityHorizon: null,
+      leaseId: null,
+      leaseExpiresAt: null,
+      availableAt,
+      attemptCount: 0,
+      lastErrorClass: null,
+      updatedAt: availableAt,
+    })
+    .where(dependent);
+  for (const head of heads) {
+    if (!head.input) {
+      continue;
+    }
+    let changed = false;
+    const storageMounts = head.input.storageMounts.map((mount) => {
+      if (mount.storageId !== resource.storageId) {
+        return mount;
+      }
+      changed = true;
+      return {
+        ...mount,
+        versionId: resource.versionId,
+        archiveSize: resource.archiveSize,
+        empty: resource.fileCount === 0,
+      };
+    });
+    if (!changed) {
+      continue;
+    }
+    const input: PiStableContextBuildInput = {
+      ...head.input,
+      storageMounts,
+      persistedStorageMounts: head.input.persistedStorageMounts.map((mount) => {
+        return mount.storageId === resource.storageId
+          ? { ...mount, version: resource.versionId }
+          : mount;
+      }),
+    };
+    await db
+      .update(piStableContextHeads)
+      .set({
+        generation: head.generation + 1,
+        agentGeneration: input.source.agentGeneration,
+        userGeneration: input.source.userGeneration,
+        status: "pending",
+        input,
+        inputDigest: piStableContextInputDigest(input),
+        artifactDigest: null,
+        validityHorizon: input.source.validityHorizon
+          ? new Date(input.source.validityHorizon)
+          : null,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt,
+        attemptCount: 0,
+        lastErrorClass: null,
+        updatedAt: availableAt,
+      })
+      .where(
+        and(
+          eq(piStableContextHeads.id, head.id),
+          eq(piStableContextHeads.generation, head.generation + 1),
+        ),
+      );
+  }
+}
+
+/** Rebind captured demand to the exact Storage version committed by a source publisher. */
+export async function refreshPiStableContextStorageDemands(
+  db: Db,
+  fence: PiStableContextPublicationFence,
+  resource: {
+    readonly storageId: string;
+    readonly versionId: string;
+    readonly archiveSize: number;
+    readonly fileCount: number;
+  },
+): Promise<void> {
+  const heads = await db
+    .select({
+      id: piStableContextHeads.id,
+      generation: piStableContextHeads.generation,
+      input: piStableContextHeads.input,
+    })
+    .from(piStableContextHeads)
+    .where(
+      and(
+        headScopeCondition(fence.scope),
+        isNotNull(piStableContextHeads.input),
+        isNotNull(piStableContextHeads.inputDigest),
+      ),
+    )
+    .orderBy(asc(piStableContextHeads.id))
+    .limit(16)
+    .for("update");
+  const availableAt = nowDate();
+  for (const head of heads) {
+    if (!head.input) {
+      continue;
+    }
+    let changed = false;
+    const storageMounts = head.input.storageMounts.map((mount) => {
+      if (mount.storageId !== resource.storageId) {
+        return mount;
+      }
+      changed = true;
+      return {
+        ...mount,
+        versionId: resource.versionId,
+        archiveSize: resource.archiveSize,
+        empty: resource.fileCount === 0,
+      };
+    });
+    if (!changed) {
+      continue;
+    }
+    const input: PiStableContextBuildInput = {
+      ...head.input,
+      storageMounts,
+      persistedStorageMounts: head.input.persistedStorageMounts.map((mount) => {
+        return mount.storageId === resource.storageId
+          ? { ...mount, version: resource.versionId }
+          : mount;
+      }),
+    };
+    await db
+      .update(piStableContextHeads)
+      .set({
+        generation: head.generation + 1,
+        status: "pending",
+        input,
+        inputDigest: piStableContextInputDigest(input),
+        artifactDigest: null,
+        validityHorizon: input.source.validityHorizon
+          ? new Date(input.source.validityHorizon)
+          : null,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt,
+        attemptCount: 0,
+        lastErrorClass: null,
+        updatedAt: availableAt,
+      })
+      .where(
+        and(
+          eq(piStableContextHeads.id, head.id),
+          eq(piStableContextHeads.generation, head.generation),
+        ),
+      );
+  }
 }
 
 /**
- * Complete the exact metadata generation together with its resource HEAD. A
- * stale publisher is retained as immutable Storage history but cannot make a
- * newer generation ready.
+ * Complete one exact source publication. Current readiness is restored only
+ * after every independent publication key in the scope has completed.
  */
 export async function completePiStableContextPublication(
   db: Db,
   fence: PiStableContextPublicationFence,
 ): Promise<boolean> {
+  const [generation] = await db
+    .select({ generation: piStableContextGenerations.generation })
+    .from(piStableContextGenerations)
+    .where(generationScopeCondition(fence.scope))
+    .for("update")
+    .limit(1);
+  if (!generation) {
+    return false;
+  }
   const [completed] = await db
-    .update(piStableContextGenerations)
-    .set({
-      publicationState: "ready",
-      publicationToken: null,
-      updatedAt: nowDate(),
-    })
+    .delete(piStableContextPublications)
+    .where(publicationScopeCondition(fence))
+    .returning({ token: piStableContextPublications.token });
+  if (!completed) {
+    return false;
+  }
+  const [remaining] = await db
+    .select({ token: piStableContextPublications.token })
+    .from(piStableContextPublications)
     .where(
       and(
-        eq(piStableContextGenerations.orgId, fence.scope.orgId),
-        eq(piStableContextGenerations.agentId, fence.scope.agentId),
-        eq(piStableContextGenerations.subject, subjectForScope(fence.scope)),
-        eq(piStableContextGenerations.generation, fence.generation),
-        eq(piStableContextGenerations.publicationState, "pending"),
-        eq(piStableContextGenerations.publicationToken, fence.token),
+        eq(piStableContextPublications.orgId, fence.scope.orgId),
+        eq(piStableContextPublications.agentId, fence.scope.agentId),
+        eq(piStableContextPublications.subject, subjectForScope(fence.scope)),
       ),
     )
-    .returning({ generation: piStableContextGenerations.generation });
-  return completed !== undefined;
+    .limit(1);
+  await db
+    .update(piStableContextGenerations)
+    .set({
+      publicationState: remaining ? "pending" : "ready",
+      updatedAt: nowDate(),
+    })
+    .where(generationScopeCondition(fence.scope));
+  return true;
 }
 
-/** Serialize resource HEAD publication and reject a superseded writer. */
+/** Serialize resource HEAD publication and reject only a superseded same-key writer. */
 export async function lockPiStableContextPublication(
   db: Db,
   fence: PiStableContextPublicationFence,
 ): Promise<boolean> {
-  const [current] = await db
+  const [generation] = await db
     .select({ generation: piStableContextGenerations.generation })
     .from(piStableContextGenerations)
-    .where(
-      and(
-        eq(piStableContextGenerations.orgId, fence.scope.orgId),
-        eq(piStableContextGenerations.agentId, fence.scope.agentId),
-        eq(piStableContextGenerations.subject, subjectForScope(fence.scope)),
-        eq(piStableContextGenerations.generation, fence.generation),
-        eq(piStableContextGenerations.publicationState, "pending"),
-        eq(piStableContextGenerations.publicationToken, fence.token),
-      ),
-    )
+    .where(generationScopeCondition(fence.scope))
+    .for("update")
+    .limit(1);
+  if (!generation) {
+    return false;
+  }
+  const [current] = await db
+    .select({ token: piStableContextPublications.token })
+    .from(piStableContextPublications)
+    .where(publicationScopeCondition(fence))
     .for("update")
     .limit(1);
   return current !== undefined;

@@ -88,12 +88,16 @@ extractor schema versions. Mount order is retained, including canonical
 last-wins behavior. Artifact digests include owner bindings, so an equal body
 in another owner scope is not reusable authority.
 
-The persisted lifecycle consists of four additive tables:
+The persisted lifecycle consists of five additive tables:
 
 - `pi_stable_context_generations` is the authoritative Agent- or user-scoped
   source fence. A source writer advances it in the same transaction as a
   single-stage write, or changes it to `pending` before a multi-stage Storage
   publication.
+- `pi_stable_context_publications` holds one generation/token obligation per
+  logical source key. A newer write supersedes only the same Agent/Workflow
+  source; independent Workflow publications can finish in either order and the
+  generation becomes ready only after every obligation for it is gone.
 - `pi_stable_context_heads` is one current owner/variant generation and carries
   `missing`, `pending`, `running`, `ready`, `unindexable`, or `failed` state.
   Lease ID, generation and input digest fence every worker completion.
@@ -105,12 +109,14 @@ The persisted lifecycle consists of four additive tables:
   retention. Weekly cleanup removes only old artifacts with no head; erasure
   removes owner artifacts and the deliberately non-FK generation fence.
 
-Workflow metadata and synthesized volume publication, and Agent instruction
-metadata and volume publication, are real two-stage boundaries. Metadata first
-publishes a pending token. The Storage HEAD transaction locks that exact token,
-commits the prepared volume, and changes only that generation to ready. A
-superseded publisher may retain immutable Storage history but cannot publish a
-ready mixed metadata/volume generation. Agent/workflow create, update, delete,
+Workflow metadata and synthesized volume publication are a real two-stage
+boundary. Metadata first publishes its source-keyed pending token. The Storage
+HEAD transaction locks that exact token, commits the prepared volume, rebinds
+captured heads to the committed version, and removes only that obligation.
+Agent instruction metadata, generation, Storage HEAD and demand commit in one
+transaction after archive preparation, so they have no cross-connection lock
+window. A superseded publisher may retain immutable Storage history but cannot
+publish a ready mixed metadata/volume generation. Agent/workflow create, update, delete,
 installation, custom connector, connector catalog, official workflow catalog,
 feature and grant writers invalidate known heads in their authoritative
 transactions. Storage encoding repair under the same logical version also
@@ -141,7 +147,11 @@ checks. The official-workflow catalog lock and provider-after-durable-commit
 ordering remain unchanged.
 
 The bounded worker coalesces demand, claims at most 16 heads per pass, leases
-for five minutes and caps one generation at five attempts. Cron reports claimed,
+for five minutes and caps one generation at five attempts. An expired lease is
+reclaimed below the cap and is terminally marked failed at the cap. Source
+writes rebind at most one worker batch of already captured exact variants;
+additional variants remain explicit canonical-repair misses rather than an
+unbounded cross product. Cron reports claimed,
 ready, pending, unindexable, failed and stale counts; request telemetry reports
 ready, repaired miss, stale repair, source pending and dynamic paths with wall
 time. These local phase observations are not evidence that the epic's original
