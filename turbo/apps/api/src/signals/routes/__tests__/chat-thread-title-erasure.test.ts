@@ -12,18 +12,24 @@ import {
   transferAgentOwnerFixture,
 } from "../../../test-fixtures/account-erasure-subject";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
-import { withChatThreadContentBarrierFixture } from "../../../test-fixtures/chat-thread-content-erasure";
+import {
+  holdChatThreadEventIdFixture,
+  readChatThreadTitleStateFixture,
+  withChatThreadContentBarrierFixture,
+} from "../../../test-fixtures/chat-thread-content-erasure";
 import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
+const webhooks = createWebhookCallbackApi(context);
 /**
  * Every case here drives the real send route, real PostgreSQL and a background
  * drain, and the barrier-driven ones also pause a real transaction while a
@@ -36,6 +42,13 @@ const CASE_TIMEOUT_MS = 30_000;
 const BLOCKED = { interval: 10, timeout: 10_000 } as const;
 const TITLE_SYSTEM_PROMPT = "Generate a short, descriptive title";
 const GENERATED_TITLE = "Late generated title";
+/**
+ * `TITLE_FENCE_DEADLINE_MS` in `chat-title.service.ts`. It is duplicated rather
+ * than exported so the production module keeps its current surface; a case that
+ * arms the deadline seam below asserts the value is actually observed, so a
+ * drift here fails instead of silently disarming the case.
+ */
+const TITLE_FENCE_DEADLINE_MS = 30_000;
 
 beforeEach(() => {
   mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter");
@@ -72,11 +85,22 @@ interface PausedTitle {
   readonly agentId: string;
   readonly threadId: string;
   readonly prompt: string;
+  /** The runner group this owner's runs are dispatched to. */
+  readonly runnerGroup: string;
   /** Resolves once the first title provider request is in flight. */
   readonly entered: Promise<void>;
-  /** Title provider requests this owner's prompt has actually entered. */
+  /**
+   * Resolves once `count` title provider requests for this owner are in flight
+   * together. Every entered request stays held until `release`, so awaiting
+   * this is an observation of real concurrent provider entry rather than a
+   * poll that a completed first request could satisfy.
+   */
+  readonly enteredAt: (count: number) => Promise<void>;
+  /** Title provider requests this owner's prompts have actually entered. */
   readonly titleRequests: () => number;
   readonly send: (prompt: string) => Promise<void>;
+  /** The created run id, or `null` when the send only queued the message. */
+  readonly sendForRun: (prompt: string) => Promise<string | null>;
   readonly release: () => void;
   /** Releases the provider and drains the background title work. */
   readonly complete: () => Promise<void>;
@@ -105,7 +129,7 @@ async function pauseGeneratedTitle(options?: {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensureOrgModelProvider(actor);
   // Shared visibility, not the private default of `createAgentForChatThread`:
@@ -122,9 +146,28 @@ async function pauseGeneratedTitle(options?: {
   }
 
   const prompt = `Prepare the launch checklist ${randomUUID()}`;
+  /** Every prompt this owner has sent, so a title request is attributed to it
+   * by its own content rather than by being the only one in the process. */
+  const ownedPrompts: string[] = [prompt];
   const entered = createDeferredPromise<void>(context.signal);
   const released = createDeferredPromise<void>(context.signal);
   let titleRequests = 0;
+  const enteredWaiters = new Map<
+    number,
+    ReturnType<typeof createDeferredPromise<void>>
+  >();
+  const enteredAt = (count: number): Promise<void> => {
+    const existing = enteredWaiters.get(count);
+    if (existing) {
+      return existing.promise;
+    }
+    const waiter = createDeferredPromise<void>(context.signal);
+    enteredWaiters.set(count, waiter);
+    if (titleRequests >= count) {
+      waiter.resolve(undefined);
+    }
+    return waiter.promise;
+  };
   const release = () => {
     if (!released.settled()) {
       released.resolve(undefined);
@@ -141,10 +184,19 @@ async function pauseGeneratedTitle(options?: {
     const content = body.messages[1]?.content ?? "";
     if (
       body.messages[0]?.content.includes(TITLE_SYSTEM_PROMPT) &&
-      content.includes(prompt)
+      ownedPrompts.some((owned) => {
+        return content.includes(owned);
+      })
     ) {
       titleRequests += 1;
-      entered.resolve(undefined);
+      if (!entered.settled()) {
+        entered.resolve(undefined);
+      }
+      for (const [count, waiter] of enteredWaiters) {
+        if (titleRequests >= count && !waiter.settled()) {
+          waiter.resolve(undefined);
+        }
+      }
       await released.promise;
       return GENERATED_TITLE;
     }
@@ -152,8 +204,11 @@ async function pauseGeneratedTitle(options?: {
   });
 
   const thread = await chat.createThread(actor, { agentId: agent.agentId });
-  const send = async (text: string) => {
-    await accept(
+  const sendForRun = async (text: string): Promise<string | null> => {
+    if (!ownedPrompts.includes(text)) {
+      ownedPrompts.push(text);
+    }
+    const sent = await accept(
       chat.requestSendEvent(
         actor,
         {
@@ -166,6 +221,10 @@ async function pauseGeneratedTitle(options?: {
       ),
       [201],
     );
+    return sent.body.runId ?? null;
+  };
+  const send = async (text: string) => {
+    await sendForRun(text);
   };
   if (options?.send !== false) {
     await send(prompt);
@@ -191,11 +250,14 @@ async function pauseGeneratedTitle(options?: {
     agentId: agent.agentId,
     threadId: thread.id,
     prompt,
+    runnerGroup,
     entered: entered.promise,
+    enteredAt,
     titleRequests: () => {
       return titleRequests;
     },
     send,
+    sendForRun,
     release,
     complete: async () => {
       release();
@@ -261,6 +323,53 @@ async function expectSequenceUnconsumed(
   });
 }
 
+/**
+ * Every Ably publish paired with the channel it was routed to. The client mock
+ * records `channels.get(name)` and the channel's `publish(topic)` on two
+ * separate spies, so the channel is recovered from the last `get` that ran
+ * before each publish rather than assumed. `publishChatDatabaseSignalNow`
+ * performs both in one expression with no await between them, so that pairing
+ * is exact.
+ */
+function publishedChannelTopics(): readonly {
+  readonly channel: string;
+  readonly topic: unknown;
+}[] {
+  const gets = context.mocks.ably.channelGet.mock;
+  const publishes = context.mocks.ably.publish.mock;
+  return publishes.calls.map((call, index) => {
+    const publishedAt = publishes.invocationCallOrder[index] ?? 0;
+    let channel = "";
+    for (const [getIndex, order] of gets.invocationCallOrder.entries()) {
+      if (order < publishedAt) {
+        channel = String(gets.calls[getIndex]?.[0] ?? "");
+      }
+    }
+    return { channel, topic: call[0] };
+  });
+}
+
+/**
+ * Sidebar invalidations actually routed to this owner's own user-org channel.
+ * The send publishes other topics on that same channel, thread creation
+ * publishes this topic before any title exists, and every other owner in this
+ * file has its own channel — so the target and the topic are both filtered and
+ * each case compares against a baseline it took itself.
+ */
+function threadListInvalidations(paused: PausedTitle): number {
+  const channel = `user-org:${paused.actor.userId}:${paused.orgId}`;
+  return publishedChannelTopics().filter((published) => {
+    return (
+      published.channel === channel && published.topic === "threadListChanged"
+    );
+  }).length;
+}
+
+/** Title, `renamed_at` and `updated_at` as one comparable persisted state. */
+function titleState(paused: PausedTitle) {
+  return readChatThreadTitleStateFixture(paused.threadId);
+}
+
 describe("account erasure fences generated chat titles", () => {
   it.each([
     {
@@ -297,6 +406,10 @@ describe("account erasure fences generated chat titles", () => {
       // optional title is still in flight.
       await expect(paused.title()).resolves.toBeNull();
       const lastSeqId = await lastSidebarSeqId(paused);
+      // Recorded before the closure, so the comparisons below are against the
+      // state the refused title would have had to change.
+      const before = await titleState(paused);
+      const published = threadListInvalidations(paused);
 
       const closed = await closeSubject(subject(paused, owner ?? ""));
       await paused.complete();
@@ -306,6 +419,10 @@ describe("account erasure fences generated chat titles", () => {
       expect(paused.titleRequests()).toBe(1);
       await expect(paused.title()).resolves.toBeNull();
       await expect(paused.renames()).resolves.toStrictEqual([]);
+      // No title, no `renamed_at` and no touched `updated_at`, and the sidebar
+      // of the admitted owner was never invalidated for it.
+      await expect(titleState(paused)).resolves.toStrictEqual(before);
+      expect(threadListInvalidations(paused)).toBe(published);
 
       await removeErasureSubjectsFixture([closed.jobId]);
       await expectSequenceUnconsumed(paused, lastSeqId);
@@ -327,6 +444,8 @@ describe("account erasure fences generated chat titles", () => {
         subjectKind: "user",
         subjectId: `user_${randomUUID()}`,
       });
+      const before = await titleState(paused);
+      const published = threadListInvalidations(paused);
 
       await paused.complete();
 
@@ -335,6 +454,15 @@ describe("account erasure fences generated chat titles", () => {
       await expect(paused.renames()).resolves.toStrictEqual([
         { seqId: expect.any(Number), title: GENERATED_TITLE },
       ]);
+      // The committed title moves `updated_at` and leaves the manual-rename
+      // marker alone, and invalidates exactly the admitted thread user's
+      // sidebar — not the distinct Agent owner's.
+      const after = await titleState(paused);
+      expect(after.renamedAt).toBeNull();
+      expect(Date.parse(after.updatedAt)).toBeGreaterThanOrEqual(
+        Date.parse(before.updatedAt),
+      );
+      expect(threadListInvalidations(paused)).toBe(published + 1);
     },
     CASE_TIMEOUT_MS,
   );
@@ -487,6 +615,8 @@ describe("account erasure fences generated chat titles", () => {
     "re-resolves an owner that moves between identity selection and the retained locks",
     async () => {
       const paused = await pauseGeneratedTitle({ send: false });
+      let before: Awaited<ReturnType<typeof titleState>> | null = null;
+      let published = 0;
 
       await withChatThreadContentBarrierFixture(
         {
@@ -500,6 +630,10 @@ describe("account erasure fences generated chat titles", () => {
             // The writer has resolved its identity and is about to take the
             // Agent lock it will revalidate under.
             await barrier.entered;
+            // Taken while the writer is paused before any of its own writes,
+            // so these are the values a rebound title would have had to change.
+            before = await titleState(paused);
+            published = threadListInvalidations(paused);
             await transferAgentOwnerFixture({
               agentId: paused.agentId,
               owner: `user_${randomUUID()}`,
@@ -516,14 +650,24 @@ describe("account erasure fences generated chat titles", () => {
       expect(paused.titleRequests()).toBe(1);
       await expect(paused.title()).resolves.toBeNull();
       await expect(paused.renames()).resolves.toStrictEqual([]);
+      await expect(titleState(paused)).resolves.toStrictEqual(before);
+      expect(threadListInvalidations(paused)).toBe(published);
     },
     CASE_TIMEOUT_MS,
   );
 
   it(
-    "rolls a blocked late title back completely instead of reporting a closure",
+    "refuses a late title blocked on the parent lock before its first write, without reporting a closure",
     async () => {
+      // A pre-write budget case, deliberately named apart from the late-write
+      // rollback case below: the writer gives up on its `FOR KEY SHARE` wait,
+      // which happens **before** the title UPDATE, the sequence reservation and
+      // the event insert. It proves refusal on a real lock budget, not that
+      // already-executed writes roll back.
       const paused = await pauseGeneratedTitle({ send: false });
+      let lastSeqId = 0;
+      let before: Awaited<ReturnType<typeof titleState>> | null = null;
+      let published = 0;
 
       await withChatThreadContentBarrierFixture(
         {
@@ -538,6 +682,12 @@ describe("account erasure fences generated chat titles", () => {
             // would also await another file's background work, which must not
             // be made to wait on a row lock this case holds.
             await barrier.entered;
+            // The writer is paused before its own first write, so these
+            // baselines are taken ahead of the attempt rather than read back
+            // from whatever survived it.
+            lastSeqId = await lastSidebarSeqId(paused);
+            before = await titleState(paused);
+            published = threadListInvalidations(paused);
             // Taken while the writer is paused, so only the writer's own
             // `chat_threads` KEY SHARE can block on it.
             const holder = await holdChatThreadRowLockFixture({
@@ -568,7 +718,8 @@ describe("account erasure fences generated chat titles", () => {
       expect(paused.titleRequests()).toBe(1);
       await expect(paused.title()).resolves.toBeNull();
       await expect(paused.renames()).resolves.toStrictEqual([]);
-      const lastSeqId = await lastSidebarSeqId(paused);
+      await expect(titleState(paused)).resolves.toStrictEqual(before);
+      expect(threadListInvalidations(paused)).toBe(published);
       await expectSequenceUnconsumed(paused, lastSeqId);
     },
     CASE_TIMEOUT_MS,
@@ -672,6 +823,191 @@ describe("account erasure fences generated chat titles", () => {
       await expect(paused.renames()).resolves.toStrictEqual([
         { seqId: lastSeqId + 1, title: GENERATED_TITLE },
       ]);
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  it(
+    "rolls the title, sidebar event and sequence back when the late write fails after writing them",
+    async () => {
+      const paused = await pauseGeneratedTitle();
+      await paused.entered;
+      // Every baseline is taken **before** the attempt: the row state it would
+      // change, the events it would append, the sequence id it would consume
+      // and the invalidations it would publish.
+      const before = await titleState(paused);
+      const beforeRenames = await paused.renames();
+      const lastSeqId = await lastSidebarSeqId(paused);
+      const published = threadListInvalidations(paused);
+
+      // Holding the very next `(user_id, org_id, seq_id)` slot makes the
+      // writer's **last** statement block: the `renamed` insert runs after the
+      // title UPDATE and after the durable sequence reservation, so the
+      // transaction fails with those two writes already executed and `COMMIT`
+      // never sent. That is a failing final statement, not a failing COMMIT.
+      const holder = await holdChatThreadEventIdFixture({
+        seqId: lastSeqId + 1,
+        userId: paused.actor.userId,
+        orgId: paused.orgId,
+        chatThreadId: paused.threadId,
+        signal: context.signal,
+      });
+      await paused.complete();
+      holder.release();
+      await holder.done;
+
+      // The generation reached the provider and the write executed; the whole
+      // transaction still rolled back, including its timestamp.
+      expect(paused.titleRequests()).toBe(1);
+      await expect(titleState(paused)).resolves.toStrictEqual(before);
+      await expect(paused.renames()).resolves.toStrictEqual(beforeRenames);
+      expect(threadListInvalidations(paused)).toBe(published);
+      // The reserved sequence rolled back with it: the next accepted rename
+      // still takes the id this attempt had already allocated for itself.
+      await expectSequenceUnconsumed(paused, lastSeqId);
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  it(
+    "publishes the sidebar invalidation only once the late title has committed",
+    async () => {
+      const paused = await pauseGeneratedTitle({ send: false });
+      let published = 0;
+      let precommit = -1;
+
+      await withChatThreadContentBarrierFixture(
+        {
+          chatThreadId: paused.threadId,
+          stopAt: "commit",
+          work: async (barrier) => {
+            await paused.send(paused.prompt);
+            await paused.entered;
+            // The send has answered and its own invalidations are recorded;
+            // only the held title is still in flight, so this baseline isolates
+            // the workflow under test from the request that scheduled it.
+            published = threadListInvalidations(paused);
+            paused.release();
+            const draining = flushWaitUntilForTest();
+            await barrier.entered;
+            // The title, the sequence and the `renamed` event are written and
+            // `COMMIT` has not been sent. No subscriber may have been told yet,
+            // and no other session can read the title either.
+            precommit = threadListInvalidations(paused);
+            await expect(paused.title()).resolves.toBeNull();
+            barrier.release();
+            await draining;
+          },
+        },
+        context.signal,
+      );
+
+      expect(precommit).toBe(published);
+      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
+      // Exactly one invalidation, on the admitted owner's own user-org channel.
+      expect(threadListInvalidations(paused)).toBe(published + 1);
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  it(
+    "titles a thread once when the send route and the queued-claim drain overlap",
+    async () => {
+      const paused = await pauseGeneratedTitle({ send: false });
+      const firstRunId = await paused.sendForRun(paused.prompt);
+      if (firstRunId === null) {
+        throw new Error("Expected the first send to create a run");
+      }
+      await paused.entered;
+
+      // A second send while that run is active only queues the message, so the
+      // send route schedules nothing for it. That alone is what the previous
+      // contract mistook for "two in-flight generations are unreachable".
+      const secondPrompt = `Draft the rollback plan ${randomUUID()}`;
+      await expect(paused.sendForRun(secondPrompt)).resolves.toBeNull();
+      expect(paused.titleRequests()).toBe(1);
+
+      // The queued-claim drain is the other production scheduler. Finishing the
+      // first run makes the terminal callback claim that queued message, create
+      // its run and schedule a second eager title — while the first provider
+      // request is still held open and the thread is therefore still untitled.
+      await webhooks.requestAgentComplete(
+        { runId: firstRunId, exitCode: 0 },
+        {
+          authorization: `Bearer ${runs.sandboxTokenForRun(
+            paused.actor,
+            firstRunId,
+          )}`,
+        },
+        [200],
+      );
+      // Both requests are counted and both are inside the held handler, so this
+      // is real overlap rather than a second attempt after the first finished.
+      await paused.enteredAt(2);
+      expect(paused.titleRequests()).toBe(2);
+
+      const published = threadListInvalidations(paused);
+      // Released together, so the two completions race the same eligibility CAS
+      // instead of being serialized by the test.
+      await paused.complete();
+
+      await expect(paused.title()).resolves.toBe(GENERATED_TITLE);
+      // One title-bearing event, so exactly one sequence id was consumed, and
+      // one invalidation for it.
+      const renames = await paused.renames();
+      expect(
+        renames.map((rename) => {
+          return rename.title;
+        }),
+      ).toStrictEqual([GENERATED_TITLE]);
+      expect(threadListInvalidations(paused)).toBe(published + 1);
+    },
+    CASE_TIMEOUT_MS,
+  );
+
+  it(
+    "abandons the late title at its own fence deadline instead of writing past it",
+    async () => {
+      const paused = await pauseGeneratedTitle();
+      await paused.entered;
+      const before = await titleState(paused);
+      const lastSeqId = await lastSidebarSeqId(paused);
+      const published = threadListInvalidations(paused);
+
+      // The initiation gate has already committed — the provider request only
+      // starts after it — so arming the deadline here reaches the completion
+      // fence alone. This is the workflow's own `AbortSignal.timeout`, checked
+      // at its cooperative boundaries: it is not the delivered response's
+      // signal, and it is not the server's `1s` lock or `5s` statement budget.
+      const observed: number[] = [];
+      const fence = new AbortController();
+      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+        observed.push(milliseconds);
+        return milliseconds === TITLE_FENCE_DEADLINE_MS
+          ? fence.signal
+          : undefined;
+      });
+      fence.abort(
+        new DOMException(
+          "The operation was aborted due to timeout",
+          "TimeoutError",
+        ),
+      );
+
+      await paused.complete();
+
+      // The production deadline value is the one the workflow actually asked
+      // for, so this case cannot silently stop arming anything.
+      expect(observed).toContain(TITLE_FENCE_DEADLINE_MS);
+      // The provider request had already completed; the deadline stopped the
+      // workflow before the write, and it is a failure rather than a closure:
+      // nothing was written, published or consumed, and the thread stays
+      // eligible for the owner's own next rename.
+      expect(paused.titleRequests()).toBe(1);
+      await expect(titleState(paused)).resolves.toStrictEqual(before);
+      await expect(paused.renames()).resolves.toStrictEqual([]);
+      expect(threadListInvalidations(paused)).toBe(published);
+      await expectSequenceUnconsumed(paused, lastSeqId);
     },
     CASE_TIMEOUT_MS,
   );

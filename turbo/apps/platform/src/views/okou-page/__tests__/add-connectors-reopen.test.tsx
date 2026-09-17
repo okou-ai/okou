@@ -168,7 +168,7 @@ describe.each([true, false])(
       expectFreshList(reopened);
     });
 
-    it("complete an OAuth connection after closing and reopening the list", async () => {
+    it("retry and complete OAuth after cancelling and reopening the list", async () => {
       const fixture = installComposerConnectorFixture({
         catalog: [
           builtinConnector({
@@ -180,7 +180,7 @@ describe.each([true, false])(
           catalog()[1]!,
         ],
       });
-      const authWindow = context.mocks.browser.authWindow();
+      let authWindow = context.mocks.browser.authWindow();
       Object.defineProperty(authWindow, "location", {
         configurable: true,
         value: { href: "about:blank" },
@@ -202,7 +202,19 @@ describe.each([true, false])(
       await dismiss(dialog, "Close");
       const reopened = await openAddConnectors(directoryEnabled);
       expectFreshList(reopened);
-      expect(authWindow.closed).toBeFalsy();
+      expect(authWindow.closed).toBeTruthy();
+      authWindow = context.mocks.browser.authWindow();
+      Object.defineProperty(authWindow, "location", {
+        configurable: true,
+        value: { href: "about:blank" },
+      });
+      context.mocks.browser.open(authWindow);
+      click(await findFastControl("button", "Connect Gmail", reopened));
+      await waitFor(() => {
+        expect(authWindow.location.href).toBe(
+          "https://accounts.example.test/gmail",
+        );
+      });
 
       const account = connectorAccount({
         id: "f0000000-0000-4000-a000-000000000064",
