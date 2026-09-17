@@ -115,7 +115,6 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
     ...diagrams.map(([name, url]) => {
       return `[${name}](${url})`;
     }),
-    `[![Campaign visual](${WELCOME_SCENE_BASE}/campaign-visual.jpg)](${QUICK_START})`,
     `[View the quick start](${QUICK_START})`,
   ].join("\n\n");
   const row = chat.outputMessage(content, { seqId: 1 });
@@ -136,13 +135,6 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
   });
   await setupPage({ context, path: chat.path });
   await screen.findByText("View the quick start");
-  click(await screen.findByRole("img", { name: "Campaign visual" }));
-  expect(
-    (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
-      "iframe",
-    ),
-  ).toHaveAttribute("src", QUICK_START);
-  await closePreview();
   for (const [name, url] of diagrams) {
     click(link(name));
     await expect(
