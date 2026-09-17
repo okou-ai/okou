@@ -5084,13 +5084,17 @@ function AssistantRecoveryActions({
     detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
   };
 
+  // The card resolves its failure in place, so these controls share the notice
+  // action row. Keeping them on one line holds the row at its reserved height;
+  // the model trigger truncates its own label instead of wrapping the row.
   return (
-    <div className="flex max-w-full flex-wrap items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2 overflow-hidden">
       {hasResetAction && (
         <Button
           type="button"
           size="sm"
           variant="neutral"
+          className="shrink-0"
           disabled={retrying || resetting}
           onClick={() => {
             detach(resetAndRetry(pageSignal), Reason.DomCallback);
@@ -5109,7 +5113,7 @@ function AssistantRecoveryActions({
           placeholder={t(($) => {
             return $.chat.errors.recovery.selectModel;
           })}
-          triggerClassName="h-8 w-auto bg-background text-sm"
+          triggerClassName="h-8 w-auto min-w-0 max-w-40 bg-background text-sm"
           compactTrigger
           {...(recovery.failedModel
             ? { excludedModel: recovery.failedModel }
@@ -5123,6 +5127,7 @@ function AssistantRecoveryActions({
           // Filled neutral leads; the plain outline reads as the secondary
           // action when reset is also offered.
           variant={hasResetAction ? "outline" : "neutral"}
+          className="shrink-0"
           disabled={retrying || resetting}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
@@ -5142,6 +5147,12 @@ function AssistantRecoveryActions({
   );
 }
 
+/**
+ * A card that can state its recovery in one line resolves it in place: its
+ * controls sit in the action slot and no dialog repeats the headline. `details`
+ * stays for the content a fixed-height row cannot hold — a raw provider error
+ * rendered as Markdown — and opens the shared dialog only then.
+ */
 function AssistantErrorCard({
   icon: Icon,
   title,
@@ -5176,13 +5187,14 @@ function AssistantErrorCard({
           )}
         </div>
       </div>
-      {(description !== "" ||
-        details !== undefined ||
-        actions !== undefined) && (
-        <ChatCardDetails title={title}>
-          {details ?? <p>{description}</p>}
-          {actions}
-        </ChatCardDetails>
+      {(actions !== undefined || details !== undefined) && (
+        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
+          {actions !== undefined ? (
+            actions
+          ) : (
+            <ChatCardDetails title={title}>{details}</ChatCardDetails>
+          )}
+        </div>
       )}
     </div>
   );
@@ -5260,26 +5272,6 @@ function AssistantErrorRecoveryCard({
               : t(($) => {
                   return $.chat.errors.recovery.capacityDescription;
                 });
-  const personalSource = recovery.source?.credentialScope === "member";
-  const sourceDescription = personalSource
-    ? recovery.source?.account.status === "unavailable"
-      ? t(($) => {
-          return $.chat.errors.recovery.originalAccountUnavailable;
-        })
-      : recovery.source?.account.status === "unknown"
-        ? t(($) => {
-            return $.chat.errors.recovery.originalAccountUnknown;
-          })
-        : recovery.accountLabel
-          ? t(
-              ($) => {
-                return $.chat.errors.recovery.originalAccount;
-              },
-              { account: recovery.accountLabel },
-            )
-          : null
-    : null;
-
   return (
     <AssistantErrorCard
       icon={
@@ -5292,19 +5284,6 @@ function AssistantErrorRecoveryCard({
       }
       title={title}
       description={`${description}${resetText ? ` ${resetText}` : ""}`}
-      details={
-        <>
-          {`${description}${resetText ? ` ${resetText}` : ""}`}
-          {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
-          {personalSource && (
-            <p className="mt-1">
-              {t(($) => {
-                return $.chat.errors.recovery.newRunCurrentSettings;
-              })}
-            </p>
-          )}
-        </>
-      }
       actions={<AssistantRecoveryActions recovery={recovery} thread={thread} />}
       testId="assistant-error-recovery"
     />
@@ -5323,28 +5302,21 @@ function NoModelProviderErrorCard() {
         return $.chat.errors.genericTitle;
       })}
       description={t(($) => {
-        return $.chat.errors.noModelProviderPrefix;
+        return $.chat.errors.noModelProviderDescription;
       })}
-      details={
-        <span>
+      actions={
+        <Button
+          type="button"
+          size="sm"
+          variant="neutral"
+          onClick={() => {
+            detach(openSettings("model", pageSignal), Reason.DomCallback);
+          }}
+        >
           {t(($) => {
-            return $.chat.errors.noModelProviderPrefix;
-          })}{" "}
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            onClick={() => {
-              detach(openSettings("model", pageSignal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.chat.errors.noModelProviderAction;
-            })}
-          </button>{" "}
-          {t(($) => {
-            return $.chat.errors.noModelProviderSuffix;
+            return $.chat.errors.noModelProviderAction;
           })}
-        </span>
+        </Button>
       }
     />
   );
@@ -5393,22 +5365,16 @@ function AssistantErrorFallback({ error }: { error: string }) {
           return $.chat.errors.genericTitle;
         })}
         description={t(($) => {
-          return $.chat.errors.providerIncompatiblePrefix;
+          return $.chat.errors.providerIncompatibleDescription;
         })}
-        details={
-          <span>
-            {t(($) => {
-              return $.chat.errors.providerIncompatiblePrefix;
-            })}{" "}
-            <Link
-              pathname="/"
-              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            >
+        actions={
+          <Button asChild size="sm" variant="neutral">
+            <Link pathname="/">
               {t(($) => {
                 return $.chat.errors.providerIncompatibleAction;
               })}
             </Link>
-          </span>
+          </Button>
         }
       />
     );
@@ -5428,25 +5394,16 @@ function AssistantErrorFallback({ error }: { error: string }) {
           return $.chat.errors.genericTitle;
         })}
         description={t(($) => {
-          return $.chat.errors.providerDeletedPrefix;
+          return $.chat.errors.providerDeletedDescription;
         })}
-        details={
-          <span>
-            {t(($) => {
-              return $.chat.errors.providerDeletedPrefix;
-            })}{" "}
-            <Link
-              pathname="/"
-              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            >
+        actions={
+          <Button asChild size="sm" variant="neutral">
+            <Link pathname="/">
               {t(($) => {
                 return $.chat.errors.providerDeletedAction;
               })}
-            </Link>{" "}
-            {t(($) => {
-              return $.chat.errors.providerDeletedSuffix;
-            })}
-          </span>
+            </Link>
+          </Button>
         }
       />
     );

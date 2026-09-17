@@ -61,14 +61,8 @@ function installRecoverySource(source: NonNullable<GetRunResponse["source"]>) {
   });
 }
 
-async function openRecoveryDetails(): Promise<HTMLElement> {
-  const card = await screen.findByTestId("assistant-error-recovery");
-  const trigger = queryButton("View details", card);
-  if (!trigger) {
-    throw new Error("Recovery details are unavailable");
-  }
-  click(trigger);
-  return screen.findByRole("dialog");
+function findRecoveryCard(): Promise<HTMLElement> {
+  return screen.findByTestId("assistant-error-recovery");
 }
 
 function configureModelPolicies(
@@ -471,7 +465,7 @@ test("A Codex capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -505,7 +499,7 @@ test("A structured capacity failure offers recovery despite generic provider tex
   });
 
   await readyChat();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(queryButton("Try again", recovery)).toBeVisible();
   expect(recovery).not.toHaveTextContent(providerError);
@@ -755,10 +749,8 @@ test.each([
     const card = screen.getByRole("status");
     expect(card).toHaveTextContent(title);
     expect(card).toHaveTextContent(description);
-    click(await findButton("Voir les détails"));
-    const details = await screen.findByRole("dialog");
-    expect(queryButton("Réessayer", details)).toBeInTheDocument();
-    expect(within(details).getByRole("combobox")).toBeInTheDocument();
+    expect(queryButton("Réessayer", card)).toBeInTheDocument();
+    expect(within(card).getByRole("combobox")).toBeInTheDocument();
   },
 );
 
@@ -803,7 +795,7 @@ test("A Claude Code capacity failure offers a neutral retry", async () => {
   });
 
   await readyChat();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   expect(recovery).toHaveTextContent("This model is busy right now");
   expect(recovery).toHaveTextContent("Try again shortly, or switch models.");
   expect(queryButton("Try again", recovery)).toBeVisible();
@@ -866,7 +858,7 @@ test("Recover from a personal model account limit", async () => {
   });
 
   await readyChat();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   expect(recovery).toHaveTextContent("Codex limit reached");
   expect(recovery).toHaveTextContent(/resets/iu);
   expect(within(recovery).getByRole("combobox")).toBeVisible();
@@ -897,7 +889,7 @@ test("Recover when a model is at capacity", async () => {
   });
 
   await readyChat();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   await expect(
@@ -996,17 +988,8 @@ test.each([false, true])(
       },
     });
     await readyChat();
-    await openRecoveryDetails();
-    await expect(
-      screen.findByText(
-        "This run used your personal subscription: original-a@example.com.",
-      ),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Continuing starts a new run using your current settings.",
-      ),
-    ).toBeInTheDocument();
+    const recovery = await findRecoveryCard();
+    expect(recovery).toHaveTextContent("Codex limit reached");
     expect(
       screen.queryByLabelText("View Langfuse trace"),
     ).not.toBeInTheDocument();
@@ -1016,6 +999,7 @@ test.each([false, true])(
     await expect(screen.findByText("continue")).resolves.toBeInTheDocument();
     expect(resets).toStrictEqual([{ id: PROVIDER_ID, runId: RUN_A }]);
     expect(wrongResets).toStrictEqual([]);
+    expect(reads).not.toStrictEqual([]);
     expect(
       reads.every((request) => {
         return request.id === PROVIDER_ID && request.runId === RUN_A;
@@ -1062,14 +1046,11 @@ test.each(["unknown", "unavailable"] as const)(
       featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
     });
     await readyChat();
-    await openRecoveryDetails();
-    await expect(
-      screen.findByText(
-        status === "unknown"
-          ? "This run used a personal subscription. Its original account could not be verified."
-          : "This run used a personal subscription. Its original account is no longer connected.",
-      ),
-    ).resolves.toBeInTheDocument();
+    const recovery = await findRecoveryCard();
+    expect(recovery).toHaveTextContent("Codex limit reached");
+    expect(recovery).toHaveTextContent(
+      "You can continue when your usage limit resets, or switch models now.",
+    );
     expect(queryButton("Reset and try again")).toBeNull();
     expect(accountReads).toStrictEqual([]);
     await expect(findButton("Try again")).resolves.toBeEnabled();
@@ -1142,14 +1123,13 @@ test("An old API cannot downgrade a verified recovery to a settings reset", asyn
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
   });
   await readyChat();
-  await openRecoveryDetails();
+  await findRecoveryCard();
   click(await findButton("Reset and try again"));
   await expect(
     screen.findByText("This recovery endpoint is unavailable."),
   ).resolves.toBeInTheDocument();
   expect(settingsResets).toStrictEqual([]);
   expect(sent).toStrictEqual([]);
-  click(await findButton("Close"));
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
 });
 
@@ -1208,10 +1188,7 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   ).resolves.toBeInTheDocument();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(reads).toStrictEqual([RUN_A]);
-  await openRecoveryDetails();
-  expect(
-    queryButton("Try again", await screen.findByRole("dialog")),
-  ).toBeEnabled();
+  expect(queryButton("Try again", await findRecoveryCard())).toBeEnabled();
 });
 
 test("Continue a run that reached its execution time limit", async () => {
@@ -1236,7 +1213,7 @@ test("Continue a run that reached its execution time limit", async () => {
   });
 
   await readyChat();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1278,7 +1255,7 @@ test("Continue a run classified by a structured execution timeout reason", async
   });
 
   await readyChat();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   expect(recovery).toHaveTextContent("Time limit reached");
   expect(recovery).toHaveTextContent(
     "This run reached its time limit. Continue to keep working.",
@@ -1314,7 +1291,7 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED", "autonomy_budget_exhausted"])(
     await setupPage({ context, path: RUN_PATH });
 
     await readyChat();
-    const recovery = await openRecoveryDetails();
+    const recovery = await findRecoveryCard();
     expect(recovery).toHaveTextContent("Automatic run limit reached");
     expect(recovery).toHaveTextContent(
       "The limit for consecutive automatic runs has been reached. Confirm to continue.",
@@ -1442,7 +1419,7 @@ test("Switch away from a model rejected by the connected account", async () => {
   ).resolves.toBeVisible();
   expect(queryButton("Reset and try again")).toBeNull();
   expect(queryButton("Continue")).toBeNull();
-  const recovery = await openRecoveryDetails();
+  const recovery = await findRecoveryCard();
   const picker = within(recovery).getByRole("combobox");
   await user.click(picker);
   expect(
@@ -1456,7 +1433,6 @@ test("Switch away from a model rejected by the connected account", async () => {
   expect(screen.getAllByText("Continue the analysis")).toHaveLength(1);
   expect(sentModels).toHaveLength(0);
 
-  click(await findButton("Close"));
   await sendText("Try a new instruction with Luna");
 
   await expect(

@@ -112,12 +112,15 @@ For preview geometry, follow `AttachmentCardArtwork` and
 the artwork or preview area and place changing content inside it. Reading the
 full document or interacting with a page happens in the existing viewer.
 
-`ChatCardDetails` provides the shared dialog for recovery diagnostics, banking
-account selection and confirmation, permission explanations, and credit
-checkout options. Recovery keeps the original account and current-settings
-notice beside the reset/retry controls in that dialog. Banking keeps its
-connection polling owned by the card even when the dialog is closed. Preserve
-those action and lifecycle owners when adding another state.
+`ChatCardDetails` provides the shared dialog for banking account selection and
+confirmation, permission explanations, credit checkout options, and a raw
+provider error whose Markdown body cannot fit a notice row. A card whose
+recovery is a single control resolves it in place instead: failure recovery and
+the model-provider notices put their reset, retry, model, settings, and
+new-session controls in the card's own action slot, and no dialog restates the
+headline the card already shows. Banking keeps its connection polling owned by
+the card even when the dialog is closed. Preserve those action and lifecycle
+owners when adding another state.
 
 Current frame owners are `AssistantErrorContent` (including billing),
 `ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,

@@ -70,7 +70,6 @@ type ClassifiedAssistantError = ClassifiedAssistantErrorBase &
   );
 
 export type AssistantErrorRecovery = ClassifiedAssistantError & {
-  readonly accountLabel: string | null;
   readonly retryAt: string | null;
   readonly actions: {
     readonly tryAgain: {
@@ -599,7 +598,7 @@ function createClassifiedAssistantErrorComputed(
 function recoveryForExactAccount(
   classified: ClassifiedAssistantError,
   provider: ModelProviderResponse | undefined,
-): Pick<AssistantErrorRecovery, "accountLabel" | "limitWindow" | "retryAt"> &
+): Pick<AssistantErrorRecovery, "limitWindow" | "retryAt"> &
   Pick<AssistantErrorRecovery["actions"], "resetAndTryAgain"> {
   const subscriptionReset = providerSubscriptionReset(
     provider,
@@ -622,7 +621,6 @@ function recoveryForExactAccount(
         }
       : null;
   return {
-    accountLabel: provider?.accountEmail ?? provider?.workspaceName ?? null,
     retryAt: subscriptionReset?.resetAt ?? null,
     limitWindow: subscriptionReset?.limitWindow ?? classified.limitWindow,
     resetAndTryAgain,
@@ -667,7 +665,6 @@ function createAssistantErrorRecoveryComputed(
     const recovery = recoveryForExactAccount(classified, provider);
     return {
       ...classified,
-      accountLabel: recovery.accountLabel,
       limitWindow: recovery.limitWindow,
       retryAt: recovery.retryAt,
       actions: {
