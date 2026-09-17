@@ -9,6 +9,7 @@ import {
 import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import { Header } from "tar";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -16,7 +17,11 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { prepareUnpublishedPiVolumeFixture } from "../../../test-fixtures/pi-resource-index";
+import {
+  prepareEmptyPiWritebackSnapshotFixture,
+  prepareUnpublishedPiVolumeFixture,
+  publishEmptyPiVolumeFixture,
+} from "../../../test-fixtures/pi-resource-index";
 import { createDeferredPromise } from "../../utils";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { workflowsRoutes } from "../workflows";
@@ -96,6 +101,34 @@ async function run(versionId: string) {
 }
 
 describe("Pi resource indexing of generic Storage commits", () => {
+  it("keeps an archive-less empty writeback empty after its index is ready", async () => {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped actor");
+    }
+    const versionId = await publishEmptyPiVolumeFixture(
+      {
+        orgId: actor.orgId,
+        storageName: `empty-resource-index-${randomUUID()}`,
+      },
+      context.signal,
+    );
+    await expect(run(versionId)).resolves.toMatchObject({
+      claimed: 1,
+      ready: 1,
+    });
+
+    await expect(
+      prepareEmptyPiWritebackSnapshotFixture(
+        versionId,
+        CANONICAL_WORKING_DIR,
+        context.signal,
+      ),
+    ).resolves.toMatchObject({
+      snapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+    });
+  });
+
   it("invalidates a worker lease when server-side encoding repair finishes without HEAD publication", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();

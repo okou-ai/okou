@@ -626,6 +626,12 @@ async function loadResourceVersionIndexes(
   const pending = new Map<string, Promise<PiResourceVersionIndex | null>>();
   const projections = await Promise.all(
     mounts.map(async (mount) => {
+      // An explicit empty writeback has no archive by contract. Its ready
+      // zero-file index records sourceArchiveSize=0, while the mount correctly
+      // omits archiveSize; neither value is needed to contribute no files.
+      if (mount.empty) {
+        return null;
+      }
       const indexed = indexes.get(mount.versionId);
       if (indexed) {
         if (
@@ -639,9 +645,6 @@ async function loadResourceVersionIndexes(
           );
         }
         return indexed.projection;
-      }
-      if (mount.empty) {
-        return null;
       }
       if (!mount.archiveUrl) {
         throw resourcePreparationError(
