@@ -23,6 +23,7 @@ import {
   AGENT_ID,
   composerInlineTemplates,
   context,
+  queryComposerModelTrigger,
   mockAgent,
   mockBillingCapabilities,
   mockOrgModelRoutes,
@@ -64,8 +65,8 @@ function installVideoEnvironment(): void {
 }
 
 function pickerTrigger(label: string): HTMLElement {
-  const trigger = screen.queryByRole("combobox", { name: label });
-  if (!(trigger instanceof HTMLElement)) {
+  const trigger = queryComposerModelTrigger(label);
+  if (!trigger) {
     throw new Error(`${label} composer model picker not found`);
   }
   return trigger;

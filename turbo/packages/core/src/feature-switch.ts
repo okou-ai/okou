@@ -286,8 +286,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     description:
       "Pick a model from a detached flyout: model types on the left, that type's models in a panel beside it.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatPreference]: {
     maintainer: "lancy@okou.ai",
