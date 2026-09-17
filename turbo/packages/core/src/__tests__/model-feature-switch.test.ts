@@ -26,7 +26,10 @@ describe("isCodexFastModeEnabled", () => {
     ).toBe(true);
     expect(
       isCodexFastModeEnabled({
-        overrides: { [FeatureSwitchKey.CodexFastMode]: true },
+        overrides: {
+          [FeatureSwitchKey.Effort]: false,
+          [FeatureSwitchKey.CodexFastMode]: true,
+        },
       }),
     ).toBe(true);
     expect(

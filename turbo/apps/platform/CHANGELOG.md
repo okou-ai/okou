@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.910.0](https://github.com/vm0-ai/okou/compare/app-v0.909.0...app-v0.910.0) (2026-09-17)
+
+
+### Features
+
+* **platform:** lead an empty custom catalog with one drop zone ([#34879](https://github.com/vm0-ai/okou/issues/34879)) ([559f917](https://github.com/vm0-ai/okou/commit/559f9174e0a52280dce65177cc4fd864bea1dac0))
+
+
+### Bug Fixes
+
+* **api:** fence bulk agent read cursors and bound invalidations ([#34893](https://github.com/vm0-ai/okou/issues/34893)) ([e9001cd](https://github.com/vm0-ai/okou/commit/e9001cdc0e69e7246209e62e2995a388a82077b5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.457.0
+    * @okouai/core bumped to 8.675.1
+
 ## [0.909.0](https://github.com/vm0-ai/okou/compare/app-v0.908.2...app-v0.909.0) (2026-09-17)
 
 

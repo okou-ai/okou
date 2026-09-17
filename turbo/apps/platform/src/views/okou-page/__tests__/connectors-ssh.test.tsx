@@ -111,7 +111,6 @@ test("The SSH directory summarizes attention like Connectors and recovers withou
   await setupPage({
     context,
     path: "/connectors?keywords=ssh",
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
     auth: {
       user: { id: "test-user-123", fullName: "Test User" },
       organization: {
@@ -194,7 +193,6 @@ test.each([0, 2])(
       context,
       path: "/connectors",
       featureSwitches: {
-        [FeatureSwitchKey.SshAccess]: true,
         [FeatureSwitchKey.ConnectorDirectory]: true,
       },
     });
@@ -306,23 +304,12 @@ function mockCatalog() {
   });
 }
 
-async function page(path = "/connectors", enabled = true) {
+async function page(path = "/connectors") {
   await setupPage({
     context,
     path,
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: enabled },
   });
 }
-
-test("SSH is absent from global Connectors when disabled, without requesting SSH data", async () => {
-  mockCatalog();
-  await page("/connectors?keywords=ssh", false);
-  await screen.findByText(/No connectors matching/u);
-  expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-  expect(
-    screen.queryByRole("heading", { name: "Remote access" }),
-  ).not.toBeInTheDocument();
-});
 
 test("The remote-access category is localized independently of the SSH service name", async () => {
   mockCatalog();
@@ -333,7 +320,6 @@ test("The remote-access category is localized independently of the SSH service n
     context,
     path: "/connectors?keywords=ssh",
     locale: "fr-FR",
-    featureSwitches: { [FeatureSwitchKey.SshAccess]: true },
   });
   await screen.findByRole("heading", { name: "Accès à distance" });
   expect(

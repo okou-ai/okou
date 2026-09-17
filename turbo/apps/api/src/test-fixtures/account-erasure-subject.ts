@@ -144,28 +144,32 @@ export interface SelectedTransaction {
   readonly statements: readonly string[];
 }
 
-/**
- * Where the pause sits relative to the chosen statement.
- *
- * `before-dispatch` holds the statement back, so no server-side lock or
- * statement timer runs during the observation window. `after-result` lets the
- * statement execute and holds its result instead, so the transaction waits with
- * that statement's own writes applied and its `COMMIT` not yet issued. The
- * paused transaction then keeps the row locks that statement took, which is
- * what makes the window an observation of uncommitted work rather than of a
- * transaction that has not started writing.
- */
-type TransactionBarrierPause = "before-dispatch" | "after-result";
-
 export interface TransactionBarrier {
   readonly entered: Promise<{
     readonly lockTimeout: string;
     readonly statementTimeout: string;
+    /**
+     * Rows the chosen statement itself reported. It carries a number only in
+     * `pauseAfter` mode, where that statement has already run inside the still
+     * open transaction, and is `null` when the barrier pauses before dispatch.
+     */
+    readonly rowCount: number | null;
   }>;
   /** Backends currently blocked by the paused transaction, so a test never
    * guesses at timing with a sleep. */
   readonly blockedWaiterCount: () => Promise<number>;
   readonly release: () => void;
+}
+
+/** The row count `pg` reports for an executed statement. */
+function pausedRowCount(executed: unknown): number {
+  const parsed = z.object({ rowCount: z.number() }).safeParse(executed);
+  if (!parsed.success) {
+    throw new Error(
+      "Expected the paused statement result to carry a row count",
+    );
+  }
+  return parsed.data.rowCount;
 }
 
 /**
@@ -176,14 +180,15 @@ export interface TransactionBarrier {
  * transaction `select` identifies waits, at one chosen point. Nothing is mocked
  * and no result or error is replaced.
  *
- * The pause happens before the chosen statement is dispatched by default, so no
- * server-side lock or statement timer runs during the observation window and a
- * test never has to win the writer's own bounded budget. `pause:
- * "after-result"` instead runs that statement and holds its result, which is
- * the only way to observe a transaction between a completed write and the
- * caller's own next step: no statement is in flight during that window either,
- * so the writer's budget still does not run down, but its uncommitted rows and
- * their locks are real.
+ * By default the pause happens before the chosen statement is dispatched. With
+ * `pauseAfter` that statement runs first and the transaction pauses holding its
+ * result, which is the only way to observe a mutation that is applied and still
+ * uncommitted, and the only boundary at which a writer's own post-write
+ * cancellation check has not run yet. Either way the backend is idle inside its
+ * transaction for the whole window, so no lock or statement timer is running
+ * and a test never has to win the writer's own bounded budget. `pauseAfter`
+ * does retain the executed statement's row locks, so a concurrent writer to the
+ * same row waits; a plain reader is unaffected.
  *
  * `select` recognizes a candidate transaction from a statement it issues;
  * `stopAt` then chooses where that candidate pauses, and receives whether the
@@ -205,18 +210,18 @@ export async function withDatabaseTransactionBarrierFixture<T>(
       selectingStatement: boolean,
       transaction: SelectedTransaction,
     ) => boolean;
-    readonly pause?: TransactionBarrierPause;
+    readonly pauseAfter?: boolean;
     readonly work: (barrier: TransactionBarrier) => Promise<T>;
   },
   signal: AbortSignal,
 ): Promise<T> {
-  const pause: TransactionBarrierPause = args.pause ?? "before-dispatch";
   await closeDbPool();
   signal.throwIfAborted();
   const entered = createDeferredPromise<{
     readonly pid: number;
     readonly lockTimeout: string;
     readonly statementTimeout: string;
+    readonly rowCount: number | null;
   }>(signal);
   const blocked = async () => {
     return await blockedWaiterCount((await entered.promise).pid);
@@ -254,24 +259,9 @@ export async function withDatabaseTransactionBarrierFixture<T>(
       }
       paused = true;
       return (async () => {
-        // `after-result` dispatches the chosen statement first and keeps its
-        // settled result, so the caller resumes on exactly that outcome and
-        // nothing is replaced. A statement that fails instead of returning is
-        // reported through `entered`, so a test waiting for the pause fails on
-        // the real error rather than on a pause that can never arrive.
-        let held: { readonly result: unknown } | undefined;
-        if (pause === "after-result") {
-          const dispatched = await settleIncludingAbort(
-            (async (): Promise<unknown> => {
-              return await Reflect.apply(target, receiver, queryArgs);
-            })(),
-          );
-          if (!dispatched.ok) {
-            entered.reject(dispatched.error);
-            throw dispatched.error;
-          }
-          held = { result: dispatched.value };
-        }
+        const executed: unknown = args.pauseAfter
+          ? await Reflect.apply(target, receiver, queryArgs)
+          : undefined;
         const settings: unknown = await Reflect.apply(target, receiver, [
           "SELECT pg_backend_pid() AS pid, current_setting('lock_timeout') AS lock_timeout, current_setting('statement_timeout') AS statement_timeout",
         ]);
@@ -295,10 +285,11 @@ export async function withDatabaseTransactionBarrierFixture<T>(
           pid: row.pid,
           lockTimeout: row.lock_timeout,
           statementTimeout: row.statement_timeout,
+          rowCount: args.pauseAfter ? pausedRowCount(executed) : null,
         });
         await released.promise;
-        return held
-          ? held.result
+        return args.pauseAfter
+          ? executed
           : await Reflect.apply(target, receiver, queryArgs);
       })();
     },

@@ -51,7 +51,7 @@ import {
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
-  connectConnectorOAuthAuthCode$,
+  connectConnectorOAuthAuthCodeAndSettle$,
   connectConnectorNoAuth$,
   connectFlowConnectorSlug$,
   runConnectorConnectSuccess$,
@@ -843,8 +843,13 @@ function ConnectorsDirectoryToolbar({
     // strip is latched, so it is the page's 24px rather than the 12px the
     // controls keep between themselves -- a gap equal to the one inside the
     // group reads as a crop against the viewport edge.
+    // The strip paints the workspace canvas rather than `background`: the
+    // surface it covers is `WorkspaceInset`'s paint layer, and under a colour
+    // palette that layer fills from `--card` while `--background` is a darker
+    // 98.8% -- so a `bg-background` strip stood out as a flat block the width
+    // of the 900px column, hard-edged against the canvas on both sides.
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
-      <div className="flex flex-col gap-3 bg-background pt-6">
+      <div className="flex flex-col gap-3 bg-workspace-canvas pt-6">
         <div className="flex items-center">
           <ConnectorsScopeSegment
             scope={scope}
@@ -995,7 +1000,7 @@ function ConnectorsDirectoryToolbar({
       </div>
       <div
         aria-hidden="true"
-        className="h-6 bg-gradient-to-b from-background to-transparent"
+        className="h-6 bg-gradient-to-b from-workspace-canvas to-transparent"
       />
     </div>
   );
@@ -1875,7 +1880,7 @@ export function ConnectorsPage() {
   const pollingAuthCodeSlug = useGet(pollingOAuthAuthCodeConnectorSlug$);
   const pollingDeviceAuthSlug = useGet(pollingOAuthDeviceAuthConnectorSlug$);
   const connectFlowSlug = useGet(connectFlowConnectorSlug$);
-  const connect = useSet(connectConnectorOAuthAuthCode$);
+  const connect = useSet(connectConnectorOAuthAuthCodeAndSettle$);
   const connectNoAuth = useSet(connectConnectorNoAuth$);
   const signal = useGet(pageSignal$);
   const scopeReviewSelection = useGet(scopeReviewSelection$);
@@ -1938,10 +1943,11 @@ export function ConnectorsPage() {
   const finishExplicitAccountAdd = async (
     connector: PlatformConnectorCatalogStatusItem,
     connectionId: string | null,
+    attemptSignal: AbortSignal,
   ): Promise<void> => {
     await runConnectSuccess(
       connector.slug,
-      (completedConnectionId) => {
+      (completedConnectionId, continuationSignal) => {
         return finishAccountConnection(
           {
             target: { kind: "builtin", connectorSlug: connector.slug },
@@ -1949,11 +1955,11 @@ export function ConnectorsPage() {
             connectorLabel: connector.label,
             mode: { kind: "add" },
           },
-          signal,
+          continuationSignal,
         );
       },
       connectionId,
-      signal,
+      attemptSignal,
     );
   };
 
@@ -1965,21 +1971,26 @@ export function ConnectorsPage() {
         openAccountConnect(connector, { kind: "add" });
       },
       connectBrowserAuth: async (authMethod) => {
-        const result = await connect(
-          connector.slug,
-          authMethod,
+        await connect(
           {
-            account: { intent: "add" },
-            authorizeVisibleAgents: true,
-            connectorLabel: connector.label,
-            connectorIcon: connector.icon,
+            connectorSlug: connector.slug,
+            method: authMethod,
+            options: {
+              account: { intent: "add" },
+              authorizeVisibleAgents: true,
+              connectorLabel: connector.label,
+              connectorIcon: connector.icon,
+            },
+            onSuccess: (connectionId, attemptSignal) => {
+              return finishExplicitAccountAdd(
+                connector,
+                connectionId,
+                attemptSignal,
+              );
+            },
           },
           signal,
         );
-        if (result) {
-          await finishExplicitAccountAdd(connector, result.connectionId);
-        }
-        return result;
       },
       connectNoAuth: async (authMethod) => {
         const result = await connectNoAuth(
@@ -1995,7 +2006,11 @@ export function ConnectorsPage() {
           signal,
         );
         if (result) {
-          await finishExplicitAccountAdd(connector, result.connectionId);
+          await finishExplicitAccountAdd(
+            connector,
+            result.connectionId,
+            signal,
+          );
         }
         return result;
       },
@@ -2250,7 +2265,7 @@ export function ConnectorsPage() {
           onClose={() => {
             closeAccountConnect();
           }}
-          onSuccess={async (connectionId) => {
+          onSuccess={async (connectionId, attemptSignal) => {
             await finishAccountConnection(
               {
                 target: {
@@ -2261,7 +2276,7 @@ export function ConnectorsPage() {
                 connectorLabel: accountConnect.connector.label,
                 mode: accountConnect.mode,
               },
-              signal,
+              attemptSignal,
             );
           }}
         />

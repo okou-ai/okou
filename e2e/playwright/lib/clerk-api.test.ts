@@ -19,6 +19,7 @@ import {
   generateTestEmail,
   parseClerkTestEmail,
   parseClerkTestOrganizationMetadata,
+  prepareOrganizationProvisioner,
   runnerTestAccounts,
 } from "./clerk-api";
 
@@ -215,6 +216,74 @@ test("creates organizations with exact ownership metadata and retries a 5xx memb
         ),
         2,
       );
+    },
+  );
+});
+
+test("a new preparation observes changed Clerk creator-role settings", async () => {
+  let creatorRole = "org:admin";
+  const memberships = new Map<string, string>();
+  await withClerkServer(
+    (request, response) => {
+      if (
+        request.method === "GET" &&
+        request.url === "/v1/instance/organization_settings"
+      ) {
+        sendJson(response, 200, { enabled: true, creator_role: creatorRole });
+        return;
+      }
+      if (request.method === "POST" && request.url === "/v1/organizations") {
+        const id = `org_${memberships.size + 1}`;
+        memberships.set(id, creatorRole);
+        sendJson(response, 200, { id });
+        return;
+      }
+      if (
+        request.method === "PATCH" &&
+        request.url === "/v1/organizations/org_2/memberships/user_test"
+      ) {
+        assert.deepEqual(request.body, { role: "org:admin" });
+        memberships.set("org_2", "org:admin");
+        sendJson(response, 200, { role: "org:admin" });
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        request.url === "/v1/organizations/org_2/memberships"
+      ) {
+        sendJson(response, 200, {
+          data: [
+            {
+              role: memberships.get("org_2"),
+              public_user_data: { user_id: "user_test" },
+            },
+          ],
+          total_count: 1,
+        });
+        return;
+      }
+      sendJson(response, 404, { errors: [] });
+    },
+    async (requests) => {
+      const first = await prepareOrganizationProvisioner();
+      assert.equal(await first("First", "user_test", "playwright"), "org_1");
+      creatorRole = "org:owner";
+      const second = await prepareOrganizationProvisioner();
+      assert.equal(await second("Second", "user_test", "playwright"), "org_2");
+      assert.equal(
+        countRequests(requests, "GET", "/v1/instance/organization_settings"),
+        2,
+      );
+      const response = await fetch(
+        `${process.env.CLERK_API_TEST_BASE_URL}/organizations/org_2/memberships`,
+      );
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        data: [
+          { role: "org:admin", public_user_data: { user_id: "user_test" } },
+        ],
+        total_count: 1,
+      });
     },
   );
 });

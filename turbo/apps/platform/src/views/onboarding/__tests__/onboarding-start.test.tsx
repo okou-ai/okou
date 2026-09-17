@@ -9,7 +9,7 @@ import { localStorageSignals } from "../../../signals/external/local-storage.ts"
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const ENDPOINT = "https://www.okou.ai/api/marketing/finish-onboarding";
+const ENDPOINT = "https://www.okou.ai/api/marketing/onboarding-start";
 const previousAttempts = localStorageSignals("marketing_onboarding_attempts");
 
 function goBack() {

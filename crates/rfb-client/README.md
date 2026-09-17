@@ -1,9 +1,10 @@
-# RFB client authentication and framebuffer decoding
+# Bounded RFB session engine
 
 This internal, unpublished crate establishes an authenticated connection for the
 VNC engine tracked by [#34778](https://github.com/vm0-ai/okou/issues/34778).
 It is not yet connected to Runner, guest RPC, CLI or owner settings. It provides
-authenticated framebuffer decoding, but not a complete remote desktop session.
+verified authentication, framebuffer decoding and caller-driven capture/input
+sessions for the documented reference-server profile.
 
 ## Contract
 
@@ -64,13 +65,14 @@ DesktopSize advances `geometry_epoch()`, discards old framebuffer contents and
 requires the next request to be nonincremental. It can occur before other
 rectangles in the same message. `update_sequence()` advances only after processing
 a complete FramebufferUpdate. Neither sequence nor complete coverage proves that
-a remote application has settled; E3 owns capture freshness and input coordination.
+a remote application has settled; the session owns capture/input coordination.
 
 Cursor pixels and hotspot are separate from the desktop image. Alpha follows the
 per-row cursor mask; the Cursor extension does not supply the cursor's desktop
-position. Empty shapes remove the cursor. These APIs do not composite a cursor,
-encode PNG, send keyboard/pointer events, resize the server, or transfer clipboard
-text. Bell and bounded standard ServerCutText messages are consumed and discarded.
+position. Empty shapes remove the cursor. The decoder does not composite a cursor,
+resize the server or transfer clipboard text. The session layer adds PNG and
+keyboard/pointer operations. Bell and bounded standard ServerCutText messages are
+consumed and discarded.
 
 Initialization and updates consume ownership. Error, timeout, or dropping the
 future drops the stream and its storage; a partially decoded connection cannot be
@@ -111,8 +113,75 @@ RGBA/tile scratch, allowing high-detail 4K frames within the same total budget.
 The compressed cap includes headroom above the geometry-derived decoded bound for
 normal deflate framing. Accounting measures buffers,
 not process RSS. TLS/socket buffers, allocator
-metadata and caller-created copies are outside this decoder budget. E3 must account
-for any retained image copies, workers and queues before adding them to a session.
+metadata and caller-created copies are outside this budget. Session captures and
+encoder/input storage use this same budget as described below.
+
+## Session contract
+
+`Session::new(connection)` adopts an initialized `FramebufferConnection`. The
+session is noncloneable and operations require mutable access, serializing capture
+and input without a worker or queue. An operation takes ownership of the connection
+before awaiting IO; failure or cancellation then closes it and leaves the session
+closed. Invalid input detected before IO preserves the untouched session. `close()`
+and dropping the session immediately release the transport; retained captures keep
+only their own memory reservations. No reconnect or input replay is automatic.
+
+The caller owns idle timers, current authorization, leases and Run/session admission.
+`expires_at()` supplies a two-hour maximum operation deadline. Every operation is
+clamped to that expiry, but an idle, unpolled object does not close itself or detect
+a disconnect. The future Runner owner must close/drop it on expiry, revocation or
+Run termination. This crate never establishes another socket or opens a destination.
+
+`capture(deadline)` starts a nonincremental full-frame request. It consumes one
+complete response before requesting more: incremental while coverage is incomplete,
+or nonincremental after DesktopSize. At most 64 responses share one deadline capped
+at 30 seconds. Resize-only responses need another request on TigerVNC; waiting for
+unsolicited pixel data would stall. Continuous updates are never enabled. Timeout
+returns an error rather than a cached image labeled fresh. Neither coverage nor a
+fresh response proves an application has settled.
+
+An immutable `Capture` owns a PNG, timestamp, frame sequence, dimensions and
+`Geometry { session_id, epoch }`. Its PNG excludes the cursor; a separately copied
+cursor shape/hotspot describes that same snapshot. RFB does not supply its desktop
+position. PNG rows use the maintained `png` encoder, filter Up and flate2 level 1,
+with cooperative yields between rows. A conservative 2 MiB reservation covers
+encoder state and row/chunk buffers. Output is capped at 16 MiB; a larger image
+fails with `ImageTooLarge` without changing dimensions. Buffer capacity, temporary
+output compaction and cursor copies are charged. Kept captures retain that charge
+after return and even after session close; enough retained images can make a later
+operation fail with `ResourceLimit`. Copies explicitly made by a caller are its
+responsibility. No image is written to disk or published by this crate.
+
+`input(command, &mut outcome, deadline)` prevalidates the entire operation and sends
+it once, within five seconds and the supplied/session deadlines. The caller-owned
+`InputOutcome` resets to `NotStarted` when the future is created, before it is
+polled. Dropping an unpolled future preserves the untouched session and cannot
+reuse a previous operation's delivery result. The outcome remains observable
+after dropping the future:
+
+- `NotStarted`: no application-input write was attempted. A coordinate refresh may
+  already have performed framebuffer IO.
+- `Unknown`: a write was attempted; a prefix, all or none of the input may have
+  reached the peer. Never infer that a failed operation is safe to replay.
+- `Sent`: every intended press/release and the flush completed before the deadline.
+  This is transport completion, not acknowledgement from the remote application.
+
+Coordinate operations carry a geometry identity from the relevant session. They
+refresh first and recheck epoch and bounds before writing; another session's token
+is rejected. RFB cannot make this check atomic with a later server resize. Input is
+balanced on successful completion; disconnect/cancellation cannot guarantee a key
+or button release reached the server. An idle external viewer or human may still
+operate the desktop. Sustained unsolicited server output can backpressure input;
+the bounded operation fails and closes rather than claiming full-duplex delivery.
+
+Supported operations are click, drag through 2-256 explicit points, 1-100 scroll
+steps, text, and a chord of 1-8 distinct keys. Positive scroll moves down/right;
+negative moves up/left. Drag has no hidden timed interpolation. Text is limited to
+4 KiB UTF-8 and 4,096 emitted events, including releases (so 2,048 ordinary
+characters is the event ceiling). Newline/tab use named keysyms; other controls are
+rejected. Latin-1 and Unicode keysyms are sent directly, with no clipboard fallback.
+Actual insertion depends on server, keyboard layout and application handling;
+named modifiers and F1-F35 follow X11 keysyms.
 
 ## Verification
 
@@ -121,8 +190,11 @@ an independent DES challenge vector, malformed protocol messages and observable
 peer disconnects. Framebuffer tests verify exact pixels, all ZRLE modes, independent
 persistent-zlib fixtures, CopyRect overlap/coverage, cursor/resize behavior,
 decompression limits, cancellation and maximum geometry allocation accounting.
-They do not establish full TigerVNC interoperability or complete session lifecycle
-behavior; those remain E3 acceptance gates before any product exposure.
+Session tests additionally verify immutable PNG pixels, refresh/resize ordering,
+input bytes and outcomes, cancellation and output limits. The explicitly invoked
+[TigerVNC acceptance harness](tests/TIGERVNC.md) verifies the independent server
+profile; ordinary tests do not silently claim that interoperability test ran.
+Runner authority, RPC, CLI and product end-to-end acceptance remain later slices.
 
 ```sh
 cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client

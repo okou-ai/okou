@@ -157,12 +157,6 @@ interface ComputerUseHostSelectionOptions {
   readonly signal?: AbortSignal;
 }
 
-/** `signal` replaces the app-level request signal, which is how a caller
- * cancels the bulk Agent read-cursor write in flight. */
-interface MarkAgentReadOptions {
-  readonly signal?: AbortSignal;
-}
-
 function computerUseHostSelectionBody(
   computerUseHostId: string | null,
   options: ComputerUseHostSelectionOptions | undefined,
@@ -260,6 +254,17 @@ const chatFilesRoutes = [
 ] as const;
 
 function chatFilesApp(context: TestContext, signal?: AbortSignal) {
+  return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
+}
+
+/**
+ * The same chat routes on an app whose **operation** signal the caller owns.
+ * `honoSignalHandler` hands that app signal, never `c.req.raw.signal`, to every
+ * route command, and no chat route reads `requestSignal$`, so aborting it is the
+ * only way a test can drive these routes' production cancellation path. A
+ * `fetchOptions.signal` only abandons the client's own promise.
+ */
+function chatFilesOperationApp(context: TestContext, signal: AbortSignal) {
   return setupAppWithRoutes({ context, routes: chatFilesRoutes, signal });
 }
 
@@ -405,8 +410,8 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadMarkUnreadContract);
   }
 
-  function threadMarkAgentReadClient(signal?: AbortSignal) {
-    return chatFilesApp(context, signal)(chatThreadMarkAgentReadContract);
+  function threadMarkAgentReadClient() {
+    return chatFilesApp(context)(chatThreadMarkAgentReadContract);
   }
 
   function threadPinClient() {
@@ -713,10 +718,9 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser | null,
       agentId: string,
       statuses: readonly (204 | 400 | 401 | 403)[],
-      options?: MarkAgentReadOptions,
     ) {
       return await accept(
-        threadMarkAgentReadClient(options?.signal).markAgentRead({
+        threadMarkAgentReadClient().markAgentRead({
           headers: authenticate(context, actor),
           body: { agentId },
         }),
@@ -992,6 +996,39 @@ export function createChatFilesBddApi(context: TestContext) {
         [200],
       );
       return response.body;
+    },
+
+    /**
+     * The read-cursor writers driven through an app whose operation signal the
+     * caller aborts, which is the signal those route commands actually receive:
+     * the two single-thread writers and the bulk per-Agent one. The requests
+     * are returned unnarrowed so a caller can assert the off-contract response
+     * a cancelled operation produces.
+     */
+    readCursorWritesWithOperationSignal(signal: AbortSignal) {
+      const operationApp = chatFilesOperationApp(context, signal);
+      return {
+        async markRead(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkReadContract).markRead({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+        async markUnread(actor: ApiTestUser, threadId: string) {
+          return await operationApp(chatThreadMarkUnreadContract).markUnread({
+            headers: authenticate(context, actor),
+            params: { id: threadId },
+          });
+        },
+        async markAgentRead(actor: ApiTestUser, agentId: string) {
+          return await operationApp(
+            chatThreadMarkAgentReadContract,
+          ).markAgentRead({
+            headers: authenticate(context, actor),
+            body: { agentId },
+          });
+        },
+      };
     },
 
     async requestMarkThreadRead(

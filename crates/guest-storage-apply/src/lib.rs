@@ -43,6 +43,7 @@
 
 mod archive;
 mod cleanup;
+mod connection_observation;
 mod download;
 mod error;
 mod files;

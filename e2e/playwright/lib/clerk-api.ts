@@ -318,6 +318,44 @@ export async function createOrganization(
   createdByUserId: string,
   role: ClerkTestRole,
 ): Promise<string> {
+  return await createOrganizationWithCreatorRole(name, createdByUserId, role);
+}
+
+/** Read settings once for one short preparation; do not cache across batches. */
+export async function prepareOrganizationProvisioner(): Promise<
+  typeof createOrganization
+> {
+  const operation = "read Clerk organization settings";
+  const response = await requestClerkWithRetry(
+    operation,
+    "/instance/organization_settings",
+    { method: "GET", headers: getClerkHeaders() },
+  );
+  const settings = await readClerkJson(response, operation);
+  if (
+    !isRecord(settings) ||
+    settings.enabled !== true ||
+    !hasStringProperty(settings, "creator_role") ||
+    !settings.creator_role.trim()
+  ) {
+    throw new Error(`${operation} returned unsupported organization settings`);
+  }
+
+  return async (name, createdByUserId, role) =>
+    await createOrganizationWithCreatorRole(
+      name,
+      createdByUserId,
+      role,
+      settings.creator_role,
+    );
+}
+
+async function createOrganizationWithCreatorRole(
+  name: string,
+  createdByUserId: string,
+  role: ClerkTestRole,
+  creatorRole?: string,
+): Promise<string> {
   const owner = currentClerkTestOwner(role);
   // Keep the user if cancellation loses an organization's creation response.
   // The existing strict-marker sweep can reconcile that ambiguous outcome.
@@ -348,6 +386,10 @@ export async function createOrganization(
 
   await recordClerkResource({ kind: "organization", id: data.id, owner });
   await forgetClerkResource("pending-organization", createdByUserId);
+
+  if (creatorRole === "org:admin") {
+    return data.id;
+  }
 
   try {
     await updateOrganizationMembershipRole(

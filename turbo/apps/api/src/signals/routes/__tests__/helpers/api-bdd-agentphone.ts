@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { createHmac, randomInt, randomUUID } from "node:crypto";
 
 import {
@@ -132,17 +133,15 @@ function authenticate(
     actor.orgRole,
   );
   const emailId = `email_${actor.userId}`;
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [
-      {
-        id: actor.userId,
-        emailAddresses: [{ id: emailId, emailAddress: actor.email }],
-        primaryEmailAddressId: emailId,
-        firstName: "BDD",
-        lastName: "AgentPhone",
-      },
-    ],
-  });
+  mockClerkUsers(context, [
+    {
+      id: actor.userId,
+      emailAddresses: [{ id: emailId, emailAddress: actor.email }],
+      primaryEmailAddressId: emailId,
+      firstName: "BDD",
+      lastName: "AgentPhone",
+    },
+  ]);
   return { authorization: "Bearer clerk-session" };
 }
 

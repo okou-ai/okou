@@ -30,6 +30,7 @@ import {
 } from "./usage-allowance.service";
 import type { Tx } from "../../lib/db-types";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
+import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 
 const L = logger("CreditUsage");
 
@@ -358,6 +359,9 @@ async function processOrgUsageEventsInTransaction(
   pricingResolution: UsagePricingResolution,
   signal: AbortSignal,
 ): Promise<ProcessOrgUsageEventsResult> {
+  // Maintenance must drain settlement before taking ledger or Run locks.
+  // Share this admission across orgs, and take it before the credit lock.
+  await lockUsageEventCompaction(tx, "shared");
   await lockOrgCredits(tx, orgId);
 
   const pendingRecords = await tx

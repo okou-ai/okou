@@ -32,6 +32,9 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { mockApi } from "../msw-contract.ts";
 import {
   testConnectorCatalogCategoryMetadata,
@@ -411,6 +414,21 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
 }
 
 export const apiConnectorsHandlers = [
+  mockApi(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  }),
+  mockApi(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  }),
+  mockApi(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [] });
+  }),
+  mockApi(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  }),
+  mockApi(agentSshAccessContract.get, ({ respond }) => {
+    return respond(200, { enabled: false });
+  }),
   mockApi(sshConnectionsContract.observations, ({ respond }) => {
     return respond(200, { observations: [] });
   }),

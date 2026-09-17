@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
@@ -107,9 +108,7 @@ async function setupScenario(): Promise<Scenario> {
     name: WORKFLOW_NAME,
   });
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUser(actor.userId, actor.email)],
-  });
+  mockClerkUsers(context, [clerkUser(actor.userId, actor.email)]);
   context.mocks.s3.send.mockResolvedValue({});
   const automation = await accept(
     automationsClient().create({
@@ -936,10 +935,10 @@ describe("Official Automation result email callbacks", () => {
         releaseEmailLookup.resolve(undefined);
       }
     });
-    context.mocks.clerk.users.getUserList.mockImplementationOnce(async () => {
+    context.mocks.clerk.users.getUser.mockImplementationOnce(async () => {
       emailLookupStarted.resolve(undefined);
       await releaseEmailLookup.promise;
-      return { data: [clerkUser(scenario.actor.userId, scenario.actor.email)] };
+      return clerkUser(scenario.actor.userId, scenario.actor.email);
     });
 
     const callback = executionClient().interruptResultEmailCallback({

@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { Buffer } from "node:buffer";
 
 import type { z } from "zod";
@@ -135,9 +136,7 @@ function clerkMemberships(actor: ApiTestUser) {
 }
 
 function setClerkReads(context: TestContext, actor: ApiTestUser): void {
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUserProfile(actor)],
-  });
+  mockClerkUsers(context, [clerkUserProfile(actor)]);
   const memberships = clerkMemberships(actor);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
     data: memberships,

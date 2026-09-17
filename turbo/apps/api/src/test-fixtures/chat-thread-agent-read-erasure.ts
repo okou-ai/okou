@@ -146,10 +146,11 @@ function isAgentIdentityRead(queryArgs: unknown[], agentId: string): boolean {
  * holds that statement's own result after PostgreSQL has executed it, and
  * `commit` retains every barrier with every matched cursor already written.
  *
- * `update-result` is the only stop between the completed bulk write and the
- * helper's last in-transaction cancellation check, so it is where a request can
- * be cancelled with every matched row written and no `COMMIT` yet sent. A stop
- * at `commit` is already past that check.
+ * `update-result` uses the shared barrier's `pauseAfter` mode, so it is the only
+ * stop between the completed bulk write and the helper's last in-transaction
+ * cancellation check: an operation cancelled there has every matched row
+ * written and no `COMMIT` sent. A stop at `commit` is already past that check,
+ * where cancelling loses a race rather than rolling anything back.
  */
 type ChatThreadAgentReadBarrierStop =
   | "identity"
@@ -196,8 +197,7 @@ export async function withChatThreadAgentReadBarrierFixture<T>(
       stopAt: (queryArgs, selectingStatement) => {
         return reachedBarrierStop(args.stopAt, queryArgs, selectingStatement);
       },
-      pause:
-        args.stopAt === "update-result" ? "after-result" : "before-dispatch",
+      pauseAfter: args.stopAt === "update-result",
       work: args.work,
     },
     signal,

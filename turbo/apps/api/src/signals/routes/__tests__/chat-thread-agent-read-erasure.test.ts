@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ErasureSubject } from "@okouai/db/operations/account-erasure";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
@@ -18,8 +20,10 @@ import {
   withChatThreadAgentReadBarrierFixture,
 } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -48,6 +52,7 @@ interface AgentReadFixture {
 async function createAgentReadFixture(
   threadCount: number,
 ): Promise<AgentReadFixture> {
+  const signal = context.signal;
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });
@@ -57,15 +62,47 @@ async function createAgentReadFixture(
     visibility: "public",
   });
   const model = await chat.getDefaultCreateThreadModel(actor);
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  // Reuse the creation route app instead of rebuilding it for every thread.
+  const client = setupApp({ context, signal, routes: chatThreadCreateRoutes })(
+    chatThreadsContract,
+  );
   const threadIds: string[] = [];
-  for (let index = 0; index < threadCount; index++) {
-    const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
-      title: `Bulk ${index}`,
-      model,
-    });
-    threadIds.push(thread.id);
+  // Bound same-actor requests and drain them before propagating errors or
+  // changing identities, without flooding the pool or event sequence row lock.
+  const batchSize = 4;
+  for (let start = 0; start < threadCount; start += batchSize) {
+    signal.throwIfAborted();
+    const batch = await Promise.allSettled(
+      Array.from(
+        { length: Math.min(batchSize, threadCount - start) },
+        (_, index) => {
+          return accept(
+            client.create({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                agentId: agent.agentId,
+                title: `Bulk ${start + index}`,
+                model,
+              },
+            }),
+            [201],
+          );
+        },
+      ),
+    );
+    for (const result of batch) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      threadIds.push(result.value.body.id);
+    }
   }
+  signal.throwIfAborted();
   await appendTerminalChatEventsFixture({ threadIds });
   return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }
@@ -433,35 +470,42 @@ describe("account erasure fences the bulk Agent read-cursor write", () => {
     await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
   });
 
-  it("rolls every executed cursor write back when the request is cancelled before the commit", async () => {
+  it("rolls every executed cursor write back when the operation is cancelled after the bulk UPDATE", async () => {
     // Past the notification budget, so the rolled-back write is the overflow
     // shape as well as a multi-row one.
     const fixture = await createAgentReadFixture(NOTIFIED_THREAD_ID_BUDGET + 1);
     const before = await readChatThreadCursorsFixture(fixture.threadIds);
-    const cancellation = new AbortController();
+    const controller = new AbortController();
+    // The operation signal `honoSignalHandler` hands this route's command, which
+    // is the signal the admission helper checks. A `fetchOptions` signal would
+    // only abandon the client's own promise and could not reach the database.
+    const cancellable = chat.readCursorWritesWithOperationSignal(
+      controller.signal,
+    );
     clearPublishedNotifications();
 
     await withChatThreadAgentReadBarrierFixture(
       {
         agentId: fixture.agentId,
-        // The bulk statement has executed and its result has not yet resumed
-        // the helper's last in-transaction signal check, so no COMMIT has been
-        // sent. Cancelling here is the only place that proves rollback of work
-        // PostgreSQL really performed.
+        // PostgreSQL has executed the bulk statement and its result has not yet
+        // resumed the helper's last in-transaction check, so no COMMIT has been
+        // sent. This is the only boundary where cancelling proves rollback of
+        // work the database really performed.
         stopAt: "update-result",
         work: async (barrier) => {
-          const marking = chat.requestMarkAgentThreadsRead(
+          const marking = cancellable.markAgentRead(
             fixture.actor,
             fixture.agentId,
-            [204, 403],
-            { signal: cancellation.signal },
           );
-          await barrier.entered;
+          const entered = await barrier.entered;
+          // The statement itself reported its returned ids, so this is not a
+          // pre-write lock timeout, and no other caller can see the new state.
+          expect(entered.rowCount).toBe(NOTIFIED_THREAD_ID_BUDGET + 1);
           await expect(
             readChatThreadCursorsFixture(fixture.threadIds),
           ).resolves.toStrictEqual(before);
 
-          cancellation.abort();
+          controller.abort(new DOMException("Operation ended", "AbortError"));
           barrier.release();
           await expect(marking).rejects.toThrow(/Unknown response status 500/);
         },
@@ -469,8 +513,9 @@ describe("account erasure fences the bulk Agent read-cursor write", () => {
       context.signal,
     );
 
-    // The cancelled request is a failure, never the existing 204 and never the
-    // closure 403, every executed row write is gone, and nothing was published.
+    // The cancelled operation is a failure, never the existing 204 and never
+    // the closure 403, every executed row write is gone, and nothing was
+    // published.
     expect(publishedReadCursorPayloads()).toStrictEqual([]);
     await expect(
       readChatThreadCursorsFixture(fixture.threadIds),
@@ -479,9 +524,52 @@ describe("account erasure fences the bulk Agent read-cursor write", () => {
       new Set(fixture.threadIds),
     );
 
-    // A later valid request still commits the whole set.
+    // A rolled back attempt is not a durable denial: the same request commits
+    // the whole set once its operation is no longer cancelled.
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);
     await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
+  });
+
+  it("keeps every committed cursor when the operation is cancelled after COMMIT, publishing nothing", async () => {
+    const fixture = await createAgentReadFixture(2);
+    const controller = new AbortController();
+    const cancellable = chat.readCursorWritesWithOperationSignal(
+      controller.signal,
+    );
+    clearPublishedNotifications();
+
+    await withChatThreadAgentReadBarrierFixture(
+      {
+        agentId: fixture.agentId,
+        stopAt: "commit",
+        work: async (barrier) => {
+          const marking = cancellable.markAgentRead(
+            fixture.actor,
+            fixture.agentId,
+          );
+          await barrier.entered;
+          // Already past the transaction's post-write abort check, so releasing
+          // sends a COMMIT that succeeds. This is a race the caller loses, not
+          // a rollback, and the case exists so the boundary above is never read
+          // as a promise that any late cancellation undoes a write.
+          controller.abort(new DOMException("Operation ended", "AbortError"));
+          barrier.release();
+          await expect(marking).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+
+    // The cursors are committed and stay committed; only the notification,
+    // which runs after the transaction, is lost with the cancelled operation.
+    const committed = await readChatThreadCursorsFixture(fixture.threadIds);
+    expect(
+      [...committed.values()].filter((cursor) => {
+        return cursor === null;
+      }),
+    ).toHaveLength(0);
+    await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(new Set());
+    expect(publishedReadCursorPayloads()).toStrictEqual([]);
   });
 
   it("keeps the existing 204 when the Agent is deleted between selection and its retained lock", async () => {

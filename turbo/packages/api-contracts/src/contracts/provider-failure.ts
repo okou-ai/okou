@@ -18,7 +18,22 @@ const PROVIDER_FAILURE_CODES = new Map<string, KnownRunFailureReason>([
   ["content_policy_violation", "safety_policy_refusal"],
   ["model_not_found", "unsupported_model"],
   ["unsupported_model", "unsupported_model"],
+  ["ThrottlingException", "provider_rate_limited"],
+  ["throttlingException", "provider_rate_limited"],
+  ["ServiceUnavailableException", "provider_server_error"],
+  ["serviceUnavailableException", "provider_server_error"],
+  ["InternalServerException", "provider_server_error"],
+  ["internalServerException", "provider_server_error"],
 ]);
+
+/** A provider-owned error code, never a word extracted from ordinary output. */
+export function classifyProviderFailureCode(
+  code: unknown,
+): KnownRunFailureReason | undefined {
+  return typeof code === "string"
+    ? PROVIDER_FAILURE_CODES.get(code)
+    : undefined;
+}
 
 /** Only call at a failed model request/result boundary, never on tool or answer text. */
 export function classifyProviderFailure(
@@ -192,8 +207,7 @@ function providerErrorReason(
     return "reconnect_required";
 
   const code = typeof error.code === "string" ? error.code : error.type;
-  const reason =
-    typeof code === "string" ? PROVIDER_FAILURE_CODES.get(code) : undefined;
+  const reason = classifyProviderFailureCode(code);
   if (reason) return reason;
   if (
     code === "invalid_request_error" &&

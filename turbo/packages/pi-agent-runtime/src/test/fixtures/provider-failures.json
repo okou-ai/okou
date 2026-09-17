@@ -1,5 +1,41 @@
 [
   {
+    "message": "{\"error\":{\"code\":\"ThrottlingException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"throttlingException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_rate_limited"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"ServiceUnavailableException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"serviceUnavailableException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"InternalServerException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"internalServerException\",\"message\":\"Provider rejected request\"}}",
+    "reason": "provider_server_error"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"InternalServerException\",\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\"}}",
+    "reason": "provider_queue_timeout"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"ValidationException\",\"message\":\"Provider rejected request\"}}",
+    "reason": null
+  },
+  {
+    "message": "The tool printed ThrottlingException and InternalServerException",
+    "reason": null
+  },
+  {
     "message": "unknown: Our servers are currently overloaded. Please try again later.",
     "reason": "provider_overloaded"
   },

@@ -167,7 +167,7 @@ test("Concurrent onboarding and checkout lookups share work without sharing call
     context.store.set(capturePaidOnboardingStepViewed$, "make", caller),
     context.store.set(
       capturePaidOnboardingRedirectToStripe$,
-      "test",
+      "paywall",
       context.signal,
     ),
   ]);
@@ -218,7 +218,7 @@ test("Unresolved ownership retries and known ownership serves subsequent telemet
   expect(gtag).not.toHaveBeenCalled();
   await context.store.set(
     capturePaidOnboardingRedirectToStripe$,
-    "test",
+    "paywall",
     context.signal,
   );
   await context.store.set(
@@ -343,7 +343,7 @@ test("A signup check invalidates an earlier account decision", async () => {
   await context.store.set(recordSignupAttribution$, context.signal);
   await context.store.set(
     capturePaidOnboardingRedirectToStripe$,
-    "test",
+    "paywall",
     context.signal,
   );
   expect(accountReads).toBe(2);
@@ -393,7 +393,7 @@ test("Signup invalidation preserves an awaiting checkout while a new consumer re
   const checkout = Promise.allSettled([
     context.store.set(
       capturePaidOnboardingRedirectToStripe$,
-      "test",
+      "paywall",
       context.signal,
     ),
   ]);

@@ -1,5 +1,6 @@
 import { execFileSync } from "child_process";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -327,29 +328,98 @@ function renderVideo(
   }
 }
 
-function extractReviewFrame(
-  videoPath: string,
+interface ReviewFrameRequest {
+  readonly frameIndex: number;
+  readonly outputPath: string;
+}
+
+/**
+ * The frame the checkpoint is showing, placed on the render's own frame grid
+ * and clamped to the last frame.
+ *
+ * A screen capture only stores a frame when the picture changes, so seeking to
+ * the checkpoint time returned the next stored frame instead. On a measured
+ * recording that frame sat up to 340 ms in the future, which paired a source
+ * frame with an output frame rendered from a different moment.
+ */
+function reviewFrameIndex(
   timeMs: number,
-  outputPath: string,
-): void {
-  execFileSync(
-    "ffmpeg",
-    [
-      "-y",
-      "-v",
-      "error",
-      "-ss",
-      (timeMs / 1_000).toFixed(3),
-      "-i",
-      videoPath,
-      "-frames:v",
-      "1",
-      "-q:v",
-      "2",
-      outputPath,
-    ],
-    { stdio: ["ignore", "ignore", "pipe"] },
+  frameRate: number,
+  durationMs: number,
+): number {
+  const lastFrameIndex = Math.max(
+    0,
+    Math.floor((durationMs / 1_000) * frameRate) - 1,
   );
+  return Math.min(
+    Math.max(0, Math.ceil((timeMs / 1_000) * frameRate)),
+    lastFrameIndex,
+  );
+}
+
+/**
+ * Extracts every checkpoint frame of one video in a single decode pass.
+ * Seeking per checkpoint reopened and re-decoded the file once per frame,
+ * which cost more than rendering the video itself.
+ *
+ * `fps` normalizes a variable-rate capture onto the render's own frame grid,
+ * so `select` addresses frames by the same index the plan uses, and
+ * `-frame_pts` names each file after that index rather than after its
+ * position in the output sequence.
+ */
+function extractReviewFrames(
+  videoPath: string,
+  frameRate: number,
+  requests: readonly ReviewFrameRequest[],
+): void {
+  if (requests.length === 0) {
+    return;
+  }
+  const frameIndexes = [
+    ...new Set(
+      requests.map((request) => {
+        return request.frameIndex;
+      }),
+    ),
+  ].sort((left, right) => {
+    return left - right;
+  });
+  const selectExpression = frameIndexes
+    .map((frameIndex) => {
+      return `eq(n\\,${frameIndex.toString()})`;
+    })
+    .join("+");
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "okou-camera-review-"));
+  try {
+    execFileSync(
+      "ffmpeg",
+      [
+        "-y",
+        "-v",
+        "error",
+        "-i",
+        videoPath,
+        "-vf",
+        `fps=${frameRate.toString()},select='${selectExpression}'`,
+        "-fps_mode",
+        "passthrough",
+        "-frame_pts",
+        "1",
+        "-q:v",
+        "2",
+        join(temporaryDirectory, "%d.jpg"),
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    for (const request of requests) {
+      copyFileSync(
+        join(temporaryDirectory, `${request.frameIndex.toString()}.jpg`),
+        request.outputPath,
+      );
+    }
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 function writeCameraReview(args: {
@@ -357,23 +427,51 @@ function writeCameraReview(args: {
   readonly outputPath: string;
   readonly planPath: string;
   readonly reviewPath: string;
+  readonly frameRate: number;
+  readonly durationMs: number;
   readonly checkpoints: readonly CameraReviewCheckpoint[];
   readonly clicks: readonly PlanClickVerification[];
 }): void {
   const framesDirectory = reviewFramesDirectory(args.reviewPath);
   mkdirSync(framesDirectory, { recursive: true });
-  const checkpoints = args.checkpoints.map((checkpoint) => {
-    const sourceFramePath = join(
-      framesDirectory,
-      `${checkpoint.id}-source.jpg`,
-    );
-    const outputFramePath = join(
-      framesDirectory,
-      `${checkpoint.id}-output.jpg`,
-    );
-    extractReviewFrame(args.sourcePath, checkpoint.timeMs, sourceFramePath);
-    extractReviewFrame(args.outputPath, checkpoint.timeMs, outputFramePath);
-    return { ...checkpoint, sourceFramePath, outputFramePath };
+  const frames = args.checkpoints.map((checkpoint) => {
+    return {
+      checkpoint,
+      frameIndex: reviewFrameIndex(
+        checkpoint.timeMs,
+        args.frameRate,
+        args.durationMs,
+      ),
+      sourceFramePath: join(framesDirectory, `${checkpoint.id}-source.jpg`),
+      outputFramePath: join(framesDirectory, `${checkpoint.id}-output.jpg`),
+    };
+  });
+  extractReviewFrames(
+    args.sourcePath,
+    args.frameRate,
+    frames.map((frame) => {
+      return {
+        frameIndex: frame.frameIndex,
+        outputPath: frame.sourceFramePath,
+      };
+    }),
+  );
+  extractReviewFrames(
+    args.outputPath,
+    args.frameRate,
+    frames.map((frame) => {
+      return {
+        frameIndex: frame.frameIndex,
+        outputPath: frame.outputFramePath,
+      };
+    }),
+  );
+  const checkpoints = frames.map((frame) => {
+    return {
+      ...frame.checkpoint,
+      sourceFramePath: frame.sourceFramePath,
+      outputFramePath: frame.outputFramePath,
+    };
   });
   writeFileSync(
     args.reviewPath,
@@ -532,6 +630,8 @@ Notes:
         outputPath,
         planPath,
         reviewPath,
+        frameRate: plan.source.frameRate,
+        durationMs: plan.source.durationMs,
         checkpoints,
         clicks: clickChecks,
       });

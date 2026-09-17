@@ -14,6 +14,7 @@ import type {
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   connectConnectorOAuthAuthCode$,
+  type ConnectorConnectSuccess,
   connectConnectorNoAuth$,
   connectFlowConnectorSlug$,
   getConnectorStatusConnectLaunchMode,
@@ -222,6 +223,7 @@ function runDirectedAuthorize(
       options: {
         readonly connectorLabel?: string;
         readonly connectorIcon: PlatformConnectorCatalogStatusItem["icon"];
+        readonly onSuccess?: ConnectorConnectSuccess;
         readonly agentId?: string;
         readonly account: PlatformConnectorAccountMutationIntent;
         readonly useDefaultConnectorProjection?: boolean;
@@ -243,7 +245,7 @@ function runDirectedAuthorize(
     ) => Promise<ConnectorConnectionResult | false>;
     readonly openConnectModal: () => void;
     readonly reloadAuthorization: () => void;
-    readonly onSuccess: () => void | Promise<void>;
+    readonly onSuccess: ConnectorConnectSuccess;
   },
   signal: AbortSignal,
 ): void {
@@ -254,7 +256,7 @@ function runDirectedAuthorize(
     detach(
       (async () => {
         await params.authorize(params.connectorSlug, params.agentId, signal);
-        await params.onSuccess();
+        await params.onSuccess(null, signal);
       })(),
       Reason.DomCallback,
     );
@@ -288,6 +290,10 @@ function runDirectedAuthorize(
               connectorIcon: params.item.icon,
               agentId: params.agentId,
               ...accountOptions,
+              onSuccess: async (connectionId, attemptSignal) => {
+                params.reloadAuthorization();
+                await params.onSuccess(connectionId, attemptSignal);
+              },
             },
             signal,
           );
@@ -307,9 +313,9 @@ function runDirectedAuthorize(
         } else {
           return;
         }
-        if (connected) {
+        if (connected && !browserAuthMethod) {
           params.reloadAuthorization();
-          await params.onSuccess();
+          await params.onSuccess(connected.connectionId, signal);
         }
       })(),
       Reason.DomCallback,
@@ -333,7 +339,7 @@ function DirectedAuthorizeConnectModal({
   item: PlatformConnectorCatalogStatusItem | null | undefined;
   agentId: string;
   reloadAuthorization: () => void;
-  handleAuthorizeSuccess: () => Promise<void>;
+  handleAuthorizeSuccess: ConnectorConnectSuccess;
   close: () => void;
 }) {
   if (!open || !item) {
@@ -349,13 +355,33 @@ function DirectedAuthorizeConnectModal({
       item={item}
       agentId={agentId}
       accountOptions={accountOptions}
-      onSuccess={async () => {
+      onSuccess={async (connectionId, signal) => {
         reloadAuthorization();
-        await handleAuthorizeSuccess();
+        await handleAuthorizeSuccess(connectionId, signal);
       }}
       onClose={close}
     />
   );
+}
+
+function useDirectedAuthorizeSuccess(
+  params: ReturnType<typeof useDirectedAuthorizeParams>,
+): ConnectorConnectSuccess {
+  const actionCallback = useGet(routeChatActionCallback$);
+  const runCallback = useSet(runChatActionCallback$);
+  const agentId = params?.agentId;
+  return async (_connectionId, signal) => {
+    if (agentId && actionCallback.callbackPrompt && actionCallback.threadId) {
+      await runCallback(
+        {
+          threadId: actionCallback.threadId,
+          agentId,
+          callbackPrompt: actionCallback.callbackPrompt,
+        },
+        signal,
+      );
+    }
+  };
 }
 
 function DirectedAuthorizeCard() {
@@ -371,8 +397,7 @@ function DirectedAuthorizeCard() {
   const setDirectedAuthorizeConnectModalKey = useSet(
     setDirectedAuthorizeConnectModalKey$,
   );
-  const actionCallback = useGet(routeChatActionCallback$);
-  const runCallback = useSet(runChatActionCallback$);
+  const handleAuthorizeSuccess = useDirectedAuthorizeSuccess(params);
   const connectorSlugForState = params?.connectorSlug ?? null;
   const agentName = useDirectedAuthorizeAgentName(params?.agentId ?? null);
   const { item, isConnected, catalogLoading, unavailable } =
@@ -405,18 +430,6 @@ function DirectedAuthorizeCard() {
     : null;
   const connectorLabel = item?.label ?? connectorSlug;
   const connectorDescription = item?.description ?? "";
-  const handleAuthorizeSuccess = async () => {
-    if (actionCallback.callbackPrompt && actionCallback.threadId) {
-      await runCallback(
-        {
-          threadId: actionCallback.threadId,
-          agentId,
-          callbackPrompt: actionCallback.callbackPrompt,
-        },
-        signal,
-      );
-    }
-  };
 
   const handleAuthorize = () => {
     runDirectedAuthorize(
