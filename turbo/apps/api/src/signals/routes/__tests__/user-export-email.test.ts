@@ -6,6 +6,7 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { authMeRoutes } from "../auth-me";
 import { userExportRoutes } from "../user-export";
@@ -43,6 +44,12 @@ function actor() {
     },
   ]);
   context.mocks.s3.send.mockResolvedValue({});
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: `resend_${randomUUID()}` },
+    error: null,
+  });
+  // Provider pacing is independent of export recipient resolution.
+  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
   const downloadUrl = `https://r2.example.com/${randomUUID()}/export.zip`;
   context.mocks.s3.getSignedUrl.mockResolvedValue(downloadUrl);
   const outbox = createEmailOutboxStateApi(context);
@@ -92,11 +99,15 @@ test.each(["cold", "warm"])(
       toAddress: current.email,
       subject,
     });
-    expect(item.to_addresses).toBe(current.email);
-    expect(item.template).toMatchObject({
-      template: "data-export-ready",
-      props: { downloadUrl: current.downloadUrl },
-    });
+    await current.outbox.drainItems([item.id]);
+    expect(context.mocks.resend.send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        to: current.email,
+        subject,
+        html: expect.stringContaining(current.downloadUrl),
+      }),
+      expect.anything(),
+    );
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledTimes(
       cache === "cold" ? 1 : 0,
     );
@@ -118,9 +129,18 @@ test.each([
     const current = actor();
     context.mocks.clerk.users.getUser.mockRejectedValue(error);
     await exportData(current.downloadUrl);
-    await expect(
-      current.outbox.findItems({ toAddress: current.email, subject }),
-    ).resolves.toStrictEqual([]);
+    const items = await current.outbox.findItems({
+      toAddress: current.email,
+      subject,
+    });
+    if (items.length > 0) {
+      await current.outbox.drainItems(
+        items.map((item) => {
+          return item.id;
+        }),
+      );
+    }
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
     expect(context.mocks.clerk.users.getUser).toHaveBeenCalledExactlyOnceWith(
       current.userId,
     );
