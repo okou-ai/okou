@@ -634,6 +634,11 @@ export default [
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
+      // Morning Brief composition reduces five providers to one bounded
+      // request. The preview route can only exercise the sources an owner
+      // has actually connected, so these exact byte, deadline, identity,
+      // retention and language-precedence boundaries have no HTTP ingress.
+      "src/signals/services/__tests__/morning-brief-composition.test.ts",
       "src/signals/services/__tests__/connector-catalog-rejection-authority.test.ts",
       "src/signals/services/__tests__/connector-authorization-provider-state.test.ts",
       // Preview job-ref aliases are process environment state, and both Stripe
