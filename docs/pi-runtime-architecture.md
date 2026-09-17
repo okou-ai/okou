@@ -110,12 +110,15 @@ The persisted lifecycle consists of five additive tables:
   removes owner artifacts and the deliberately non-FK generation fence.
 
 Workflow metadata and synthesized volume publication are a real two-stage
-boundary. Metadata first publishes its source-keyed pending token. The Storage
-HEAD transaction locks that exact token, commits the prepared volume, rebinds
-captured heads to the committed version, and removes only that obligation.
-Agent instruction metadata, generation, Storage HEAD and demand commit in one
-transaction after archive preparation, so they have no cross-connection lock
-window. A superseded publisher may retain immutable Storage history but cannot
+boundary. Metadata first publishes its source-keyed pending token. The upload
+transaction commits the prepared Storage version and HEAD first, then locks the
+exact token before rebinding captured heads to the committed version and
+removing only that obligation; a stale token rolls the whole transaction back.
+Agent instruction publication opens its transaction before creating the token
+and preparing the archive. Token creation, archive preparation, token locking,
+Storage HEAD, demand refresh, metadata touch, and completion all commit in that
+one transaction, so there is no cross-connection lock window. A superseded
+publisher may retain immutable Storage history but cannot
 publish a ready mixed metadata/volume generation. Agent/workflow create,
 update, delete, installation, custom connector, connector catalog, official
 workflow catalog, feature and grant writers invalidate known heads in their

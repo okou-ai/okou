@@ -531,6 +531,73 @@ async function resolveDynamicMounts(
   return resolved;
 }
 
+async function resolveLatestInstructionMounts(
+  db: Db,
+  input: PiStableContextBuildInput,
+): Promise<{
+  readonly storageMounts: readonly PiStableContextStorageMount[];
+  readonly persistedStorageMounts: readonly PersistedStorageMount[];
+} | null> {
+  const latestByStorageId = new Map<
+    string,
+    {
+      readonly versionId: string;
+      readonly archiveSize: number;
+      readonly fileCount: number;
+    }
+  >();
+  for (const mount of input.storageMounts) {
+    if (mount.instructionsTargetFilename === undefined) {
+      continue;
+    }
+    const [latest] = await db
+      .select({
+        versionId: storageVersions.id,
+        archiveSize: storageVersions.archiveSize,
+        fileCount: storageVersions.fileCount,
+      })
+      .from(storages)
+      .innerJoin(
+        storageVersions,
+        and(
+          eq(storageVersions.storageId, storages.id),
+          eq(storageVersions.id, storages.headVersionId),
+        ),
+      )
+      .where(
+        and(
+          eq(storages.id, mount.storageId),
+          eq(storages.orgId, mount.orgId),
+          eq(storages.userId, mount.userId),
+          eq(storages.name, mount.name),
+        ),
+      )
+      .limit(1);
+    if (!latest) {
+      return null;
+    }
+    latestByStorageId.set(mount.storageId, latest);
+  }
+  const storageMounts = input.storageMounts.map((mount) => {
+    const latest = latestByStorageId.get(mount.storageId);
+    if (!latest || mount.instructionsTargetFilename === undefined) {
+      return mount;
+    }
+    const { empty: _empty, ...current } = mount;
+    return {
+      ...current,
+      versionId: latest.versionId,
+      archiveSize: latest.archiveSize,
+      ...(latest.fileCount === 0 ? { empty: true as const } : {}),
+    };
+  });
+  const persistedStorageMounts = input.persistedStorageMounts.map((mount) => {
+    const latest = latestByStorageId.get(mount.storageId);
+    return latest ? { ...mount, version: latest.versionId } : mount;
+  });
+  return { storageMounts, persistedStorageMounts };
+}
+
 function dynamicStorageIdentities(
   semantic: PiStableContextSemanticInput,
   orgId: string,
@@ -670,6 +737,10 @@ export async function recapturePiStableContextInput(
     feishuPlatform: input.semantic.feishuPlatform,
     connectorScope: snapshot.connectorScope,
   };
+  const latestInstructions = await resolveLatestInstructionMounts(db, input);
+  if (!latestInstructions) {
+    return null;
+  }
   const desired = await desiredDynamicMounts(db, input, snapshot);
   if (!desired) {
     return null;
@@ -700,6 +771,10 @@ export async function recapturePiStableContextInput(
               snapshot.catalogSelection.selection.catalogIdentity,
             )
           : null,
+      catalogSourceId:
+        snapshot.catalogSelection.kind === "scoped"
+          ? snapshot.catalogSelection.selection.catalogIdentity.sourceId
+          : null,
       agentIdentityDigest: piStableContextVariantDigest(snapshot.agentIdentity),
       featurePromptDigest: piStableContextVariantDigest(snapshot.promptInputs),
       permissionDigest,
@@ -710,7 +785,7 @@ export async function recapturePiStableContextInput(
     },
     storageMounts: normalizeMountOverlay(
       mergeDynamicMounts({
-        current: input.storageMounts,
+        current: latestInstructions.storageMounts,
         resolved,
         previousSemantic: input.semantic,
         nextSemantic: semantic,
@@ -722,7 +797,7 @@ export async function recapturePiStableContextInput(
     ),
     persistedStorageMounts: normalizeMountOverlay(
       mergeDynamicMounts({
-        current: input.persistedStorageMounts,
+        current: latestInstructions.persistedStorageMounts,
         resolved,
         previousSemantic: input.semantic,
         nextSemantic: semantic,

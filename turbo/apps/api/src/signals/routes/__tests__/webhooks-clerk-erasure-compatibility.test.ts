@@ -19,20 +19,64 @@ import { countUserStableContextGenerationsFixture } from "../../../test-fixtures
 import { holdUserConnectorMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-connectors";
 import { holdUserPermissionGrantMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-permission-grants";
 import {
+  holdChatThreadConnectorSelectionBeforeAgentLockFixture,
   holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture,
   holdWorkflowCopyBeforeErasureAdmissionFixture,
   holdWorkflowCreationBeforeErasureAdmissionFixture,
-  seedChatThreadForStableContextWriterFixture,
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { workflowsRoutes } from "../workflows";
 import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
+import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
+const bdd = createBddApi(context);
+const chat = createChatFilesBddApi(context);
+const runs = createRunsApi(context);
+const THREAD_MODEL = "claude-sonnet-5";
+
+async function createPublicAgentThread(args: {
+  readonly orgId: string;
+  readonly ownerUserId: string;
+  readonly threadUserId: string;
+}): Promise<{ readonly agentId: string; readonly chatThreadId: string }> {
+  const owner = bdd.user({
+    orgId: args.orgId,
+    userId: args.ownerUserId,
+    orgRole: "org:admin",
+  });
+  const threadUser = bdd.user({
+    orgId: args.orgId,
+    userId: args.threadUserId,
+    orgRole: "org:member",
+  });
+  bdd.acceptAgentStorageWrites();
+  const { providerId } = await runs.ensureOrgModelProvider(owner);
+  await runs.updateOrgModelPolicies(owner, [
+    {
+      model: THREAD_MODEL,
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
+  const agent = await bdd.createAgent(owner, {
+    displayName: "Surviving public agent",
+    visibility: "public",
+  });
+  const thread = await chat.createThread(threadUser, {
+    agentId: agent.agentId,
+    model: THREAD_MODEL,
+  });
+  return { agentId: agent.agentId, chatThreadId: thread.id };
+}
 
 async function deleteUserWithSignedWebhook(
   userId: string,
@@ -412,20 +456,12 @@ test("does not recreate erased generation metadata when clearing a thread connec
   const orgId = `synthetic_org_${randomUUID()}`;
   const survivingUserId = `synthetic_survivor_${randomUUID()}`;
   const deletedUserId = `synthetic_deleted_${randomUUID()}`;
-  mocks.clerk.session(survivingUserId, orgId);
-  context.mocks.s3.send.mockResolvedValue({});
-  const headers = { authorization: "Bearer clerk-session" };
-  const createdAgent = await accept(
-    setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
-      headers,
-      body: { displayName: "Surviving public agent", visibility: "public" },
-    }),
-    [201],
-  );
-  const chatThreadId = await seedChatThreadForStableContextWriterFixture({
-    userId: deletedUserId,
-    agentId: createdAgent.body.agentId,
+  const fixture = await createPublicAgentThread({
+    orgId,
+    ownerUserId: survivingUserId,
+    threadUserId: deletedUserId,
   });
+  const headers = { authorization: "Bearer clerk-session" };
 
   mocks.clerk.session(deletedUserId, orgId);
   const entered = createDeferredPromise<void>(context.signal);
@@ -439,7 +475,7 @@ test("does not recreate erased generation metadata when clearing a thread connec
     routes: chatThreadConnectorSelectionRoutes,
   })(chatThreadConnectorSelectionContract).clear({
     headers,
-    params: { id: chatThreadId },
+    params: { id: fixture.chatThreadId },
     body: { kind: "builtin", connectorSlug: "openai" },
   });
   await entered.promise;
@@ -452,8 +488,50 @@ test("does not recreate erased generation metadata when clearing a thread connec
   await accept(clear, [404]);
   await expect(
     countUserStableContextGenerationsFixture({
-      agentId: createdAgent.body.agentId,
+      agentId: fixture.agentId,
       userId: deletedUserId,
+    }),
+  ).resolves.toBe(0);
+});
+
+test("does not recreate stable state after the public Agent owner is erased", async () => {
+  const orgId = `synthetic_org_${randomUUID()}`;
+  const ownerUserId = `synthetic_owner_${randomUUID()}`;
+  const threadUserId = `synthetic_thread_user_${randomUUID()}`;
+  const fixture = await createPublicAgentThread({
+    orgId,
+    ownerUserId,
+    threadUserId,
+  });
+  const headers = { authorization: "Bearer clerk-session" };
+
+  mocks.clerk.session(threadUserId, orgId);
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  holdChatThreadConnectorSelectionBeforeAgentLockFixture(async () => {
+    entered.resolve();
+    await release.promise;
+  });
+  const clear = setupApp({
+    context,
+    routes: chatThreadConnectorSelectionRoutes,
+  })(chatThreadConnectorSelectionContract).clear({
+    headers,
+    params: { id: fixture.chatThreadId },
+    body: { kind: "builtin", connectorSlug: "github" },
+  });
+  await entered.promise;
+  await deleteUserWithSignedWebhook(
+    ownerUserId,
+    "thread-selection-agent-owner-erasure",
+  );
+
+  release.resolve();
+  await accept(clear, [404]);
+  await expect(
+    countUserStableContextGenerationsFixture({
+      agentId: fixture.agentId,
+      userId: threadUserId,
     }),
   ).resolves.toBe(0);
 });

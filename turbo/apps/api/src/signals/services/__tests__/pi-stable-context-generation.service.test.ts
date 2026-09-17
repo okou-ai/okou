@@ -18,7 +18,7 @@ import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
@@ -32,10 +32,14 @@ import {
   beginPiStableContextPublication,
   completePiStableContextPublication,
   enqueuePiStableContextStorageDemands,
+  invalidateAllPiStableContexts,
   invalidatePiStableContext,
+  invalidatePiStableContextsForCatalogSource,
   invalidatePiStableContextsForUser,
+  lockPiStableContextGenerationScopes,
   lockPiStableContextPublication,
   piStableContextWorkflowInvalidationOptions,
+  refreshPiStableContextStorageDemands,
   PI_STABLE_CONTEXT_AGENT_SUBJECT,
   retirePiStableContextPublication,
 } from "../pi-stable-context-generation.service";
@@ -45,6 +49,8 @@ import { piStableContextErasureSubjectDigest } from "../pi-stable-context-erasur
 import { lockCanonicalAgentMutation } from "../agent-mutation-lock.service";
 import {
   executePiStableContextWork,
+  piStableContextArtifactDigest,
+  piStableContextProjectionFromInput,
   preparePiStableContext,
 } from "../pi-stable-context.service";
 import {
@@ -162,6 +168,7 @@ describe("Pi stable context generation fences", () => {
         agentGeneration: 1,
         userGeneration: 1,
         catalogIdentity: null,
+        catalogSourceId: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -350,6 +357,248 @@ describe("Pi stable context generation fences", () => {
     );
   });
 
+  it("locks global catalog generations before a two-scope Workflow waiter", async () => {
+    const fixture = await seed();
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    await db
+      .delete(piStableContextGenerations)
+      .where(eq(piStableContextGenerations.agentId, fixture.agentId));
+    // Preserve the reachable history from the review: private Workflow demand
+    // inserted the user row before registration materialized @agent.
+    await db.insert(piStableContextGenerations).values({
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+      subject: fixture.userId,
+    });
+    await db.insert(piStableContextGenerations).values({
+      orgId: fixture.orgId,
+      agentId: fixture.agentId,
+      subject: PI_STABLE_CONTEXT_AGENT_SUBJECT,
+    });
+
+    const signal = AbortSignal.timeout(10_000);
+    const holderReady = createDeferredPromise<number>(signal);
+    const releaseHolder = createDeferredPromise<void>(signal);
+    const holder = db.transaction(async (tx) => {
+      const result = await tx.execute(
+        sql`SELECT pg_backend_pid()::int AS "pid"`,
+      );
+      const pid = Number(result.rows[0]?.pid);
+      if (!Number.isInteger(pid)) {
+        throw new Error("Expected user generation holder pid");
+      }
+      await tx
+        .select({ generation: piStableContextGenerations.generation })
+        .from(piStableContextGenerations)
+        .where(
+          and(
+            eq(piStableContextGenerations.orgId, fixture.orgId),
+            eq(piStableContextGenerations.agentId, fixture.agentId),
+            eq(piStableContextGenerations.subject, fixture.userId),
+          ),
+        )
+        .for("update");
+      holderReady.resolve(pid);
+      await releaseHolder.promise;
+    });
+    const holderPid = await holderReady.promise;
+
+    const workflowStarted = createDeferredPromise<number>(signal);
+    const workflowLocked = createDeferredPromise<void>(signal);
+    const releaseWorkflow = createDeferredPromise<void>(signal);
+    const workflow = db.transaction(async (tx) => {
+      const result = await tx.execute(
+        sql`SELECT pg_backend_pid()::int AS "pid"`,
+      );
+      const pid = Number(result.rows[0]?.pid);
+      if (!Number.isInteger(pid)) {
+        throw new Error("Expected Workflow waiter pid");
+      }
+      workflowStarted.resolve(pid);
+      await lockPiStableContextGenerationScopes(tx, [
+        { orgId: fixture.orgId, agentId: fixture.agentId },
+        {
+          orgId: fixture.orgId,
+          agentId: fixture.agentId,
+          userId: fixture.userId,
+        },
+      ]);
+      workflowLocked.resolve();
+      await releaseWorkflow.promise;
+    });
+    const workflowPid = await workflowStarted.promise;
+    await expect
+      .poll(
+        async () => {
+          const result = await pool.query<{ blocked: boolean }>(
+            `SELECT $2::int = ANY(pg_blocking_pids(pid)) AS blocked
+             FROM pg_stat_activity
+             WHERE pid = $1`,
+            [workflowPid, holderPid],
+          );
+          return result.rows[0]?.blocked ?? false;
+        },
+        { timeout: 5000 },
+      )
+      .toBeTruthy();
+
+    const catalogStarted = createDeferredPromise<number>(signal);
+    const catalog = db.transaction(async (tx) => {
+      const result = await tx.execute(
+        sql`SELECT pg_backend_pid()::int AS "pid"`,
+      );
+      const pid = Number(result.rows[0]?.pid);
+      if (!Number.isInteger(pid)) {
+        throw new Error("Expected catalog invalidator pid");
+      }
+      catalogStarted.resolve(pid);
+      await invalidateAllPiStableContexts(tx);
+    });
+    const catalogPid = await catalogStarted.promise;
+    await expect
+      .poll(
+        async () => {
+          const result = await pool.query<{
+            blockedByWorkflow: boolean;
+            blockedByUserHolder: boolean;
+          }>(
+            `SELECT
+               $2::int = ANY(pg_blocking_pids(pid)) AS "blockedByWorkflow",
+               $3::int = ANY(pg_blocking_pids(pid)) AS "blockedByUserHolder"
+             FROM pg_stat_activity
+             WHERE pid = $1`,
+            [catalogPid, workflowPid, holderPid],
+          );
+          return result.rows[0] ?? null;
+        },
+        { timeout: 5000 },
+      )
+      .toStrictEqual({
+        blockedByWorkflow: true,
+        blockedByUserHolder: false,
+      });
+
+    releaseHolder.resolve();
+    await workflowLocked.promise;
+    releaseWorkflow.resolve();
+    await expect(holder).resolves.toBeUndefined();
+    await expect(workflow).resolves.toBeUndefined();
+    await expect(catalog).resolves.toBeUndefined();
+  });
+
+  it("keeps a test catalog source from mutating another source's work", async () => {
+    const first = await seed();
+    const second = await seed();
+    const firstInput = {
+      ...first.input,
+      source: { ...first.input.source, catalogSourceId: "fixture-source-a" },
+    };
+    const secondInput = {
+      ...second.input,
+      source: { ...second.input.source, catalogSourceId: "fixture-source-b" },
+    };
+    const leaseId = randomUUID();
+    await db
+      .update(piStableContextHeads)
+      .set({
+        input: firstInput,
+        inputDigest: "1".repeat(64),
+      })
+      .where(eq(piStableContextHeads.id, first.headId));
+    await db
+      .update(piStableContextHeads)
+      .set({
+        status: "running",
+        input: secondInput,
+        inputDigest: "2".repeat(64),
+        leaseId,
+        leaseExpiresAt: new Date("2026-09-18T01:00:00.000Z"),
+      })
+      .where(eq(piStableContextHeads.id, second.headId));
+
+    const projection = piStableContextProjectionFromInput(secondInput, {
+      schemaVersion: 1,
+      agentsFiles: [],
+      skills: [],
+    });
+    const artifactDigest = piStableContextArtifactDigest(projection);
+    await db.insert(piStableContextArtifacts).values({
+      digest: artifactDigest,
+      orgId: second.orgId,
+      userId: second.userId,
+      agentId: second.agentId,
+      projection,
+    });
+    const [ready] = await db
+      .insert(piStableContextHeads)
+      .values({
+        orgId: second.orgId,
+        userId: second.userId,
+        agentId: second.agentId,
+        variantDigest: "3".repeat(64),
+        agentGeneration: 1,
+        userGeneration: 1,
+        status: "ready",
+        input: secondInput,
+        inputDigest: "3".repeat(64),
+        artifactDigest,
+      })
+      .returning({ id: piStableContextHeads.id });
+    if (!ready) {
+      throw new Error("Expected second catalog source ready head");
+    }
+
+    await invalidatePiStableContextsForCatalogSource(db, "fixture-source-a");
+
+    await expect(
+      db
+        .select({
+          generation: piStableContextHeads.generation,
+          status: piStableContextHeads.status,
+          leaseId: piStableContextHeads.leaseId,
+          artifactDigest: piStableContextHeads.artifactDigest,
+          input: piStableContextHeads.input,
+        })
+        .from(piStableContextHeads)
+        .where(inArray(piStableContextHeads.id, [second.headId, ready.id]))
+        .orderBy(asc(piStableContextHeads.id)),
+    ).resolves.toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          generation: 1,
+          status: "running",
+          leaseId,
+          artifactDigest: null,
+          input: expect.objectContaining({
+            source: expect.objectContaining({
+              catalogSourceId: "fixture-source-b",
+            }),
+          }),
+        }),
+        expect.objectContaining({
+          generation: 1,
+          status: "ready",
+          leaseId: null,
+          artifactDigest,
+        }),
+      ]),
+    );
+    await expect(
+      db
+        .select({ digest: piStableContextArtifacts.digest })
+        .from(piStableContextArtifacts)
+        .where(eq(piStableContextArtifacts.digest, artifactDigest)),
+    ).resolves.toStrictEqual([{ digest: artifactDigest }]);
+    await expect(
+      db
+        .select({ generation: piStableContextHeads.generation })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.id, first.headId)),
+    ).resolves.toStrictEqual([{ generation: 2 }]);
+  });
+
   it("keeps independent workflow publications pending until both complete", async () => {
     const fixture = await seed();
     const scope = { orgId: fixture.orgId, agentId: fixture.agentId };
@@ -514,6 +763,7 @@ describe("Pi stable context generation fences", () => {
       },
       source: {
         catalogIdentity: null,
+        catalogSourceId: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -698,6 +948,7 @@ describe("Pi stable context generation fences", () => {
       semantic,
       source: {
         catalogIdentity: null,
+        catalogSourceId: null,
         agentIdentityDigest: "captured-agent",
         featurePromptDigest: "captured-feature",
         permissionDigest: "captured-permission",
@@ -804,6 +1055,201 @@ describe("Pi stable context generation fences", () => {
     ).resolves.toStrictEqual([{ storageId, storageVersionId: v2 }]);
   });
 
+  it("keeps V2 demand when a delayed request captured latest instructions V1", async () => {
+    const fixture = await seed();
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    const storageId = randomUUID();
+    const v1 = randomUUID().replaceAll("-", "").repeat(2);
+    const v2 = randomUUID().replaceAll("-", "").repeat(2);
+    storageIds.push(storageId);
+    await db.insert(storages).values({
+      id: storageId,
+      orgId: fixture.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: `agent-instructions-${storageId.slice(0, 8)}`,
+      s3Prefix: `test/pi-stable-context/${storageId}`,
+    });
+    await db.insert(storageVersions).values([
+      {
+        id: v1,
+        storageId,
+        s3Key: `test/pi-stable-context/${storageId}/${v1}`,
+        archiveSize: 0,
+        fileCount: 0,
+        createdBy: fixture.userId,
+      },
+      {
+        id: v2,
+        storageId,
+        s3Key: `test/pi-stable-context/${storageId}/${v2}`,
+        archiveSize: 0,
+        fileCount: 0,
+        createdBy: fixture.userId,
+      },
+    ]);
+    await db
+      .update(storages)
+      .set({ headVersionId: v1 })
+      .where(eq(storages.id, storageId));
+
+    const mountPath = "/home/user/workspace";
+    const v1Mount = {
+      orgId: fixture.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: `agent-instructions-${storageId.slice(0, 8)}`,
+      storageId,
+      versionId: v1,
+      mountPath,
+      archiveSize: 0,
+      empty: true as const,
+      instructionsTargetFilename: "AGENTS.md",
+    };
+    const semantic = {
+      promptInputs: {
+        privateArtifactsEnabled: false,
+        bankingEnabled: false,
+        larkEnabled: false,
+        deliveryFormatGuidanceEnabled: false,
+        introVideoEnabled: false,
+        customConnectorMcpEnabled: false,
+        triggerSource: "web" as const,
+        cloudBrowserEnabled: undefined,
+      },
+      feishuPlatform: null,
+      connectorScope: {
+        allowedConnectorSlugs: [],
+        allowedCustomConnectorIds: [],
+        customConnectorGrants: [],
+        customConnectorDefinitions: [],
+        workflows: [],
+      },
+    } as const;
+    const prompt = {
+      agentIdentity: "captured V1 identity",
+      executionLimit: "captured limit",
+      tools: "captured tools",
+    };
+    const source = {
+      catalogIdentity: null,
+      catalogSourceId: null,
+      agentIdentityDigest: "captured-agent",
+      featurePromptDigest: "captured-feature",
+      permissionDigest: "captured-permission",
+      connectorScopeDigest: "captured-connectors",
+      validityHorizon: null,
+      promptSchemaVersion: 1,
+      runtimeSchemaVersion: 1,
+    } as const;
+    const variantDigest = "7".repeat(64);
+    await db.insert(piStableContextHeads).values({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      agentId: fixture.agentId,
+      variantDigest,
+      agentGeneration: 1,
+      userGeneration: 1,
+      status: "pending",
+      input: {
+        schemaVersion: 1,
+        owner: fixture.input.owner,
+        source: {
+          ...source,
+          agentGeneration: 1,
+          userGeneration: 1,
+          extractorVersion: 1,
+        },
+        prompt,
+        semantic,
+        storageMounts: [v1Mount],
+        persistedStorageMounts: [
+          {
+            orgId: v1Mount.orgId,
+            userId: v1Mount.userId,
+            name: v1Mount.name,
+            storageId,
+            version: v1,
+            mountPath,
+            instructionsTargetFilename: "AGENTS.md",
+          },
+        ],
+      },
+      inputDigest: "7".repeat(64),
+    });
+    const args = {
+      db,
+      owner: fixture.input.owner,
+      variantDigest,
+      buildPrompt: () => {
+        return prompt;
+      },
+      semantic,
+      source,
+      mounts: [v1Mount],
+      persistedStorageMounts: [
+        {
+          orgId: v1Mount.orgId,
+          userId: v1Mount.userId,
+          name: v1Mount.name,
+          storageId,
+          version: v1,
+          mountPath,
+          instructionsTargetFilename: "AGENTS.md",
+        },
+      ],
+      eligible: true,
+      checkedAt: new Date("2026-09-17T00:00:00.000Z"),
+      beforeSourceGenerationInitialization: async () => {
+        await db.transaction(async (tx) => {
+          const fence = await beginPiStableContextPublication(
+            tx,
+            { orgId: fixture.orgId, agentId: fixture.agentId },
+            "agent-instructions",
+          );
+          await tx
+            .update(storages)
+            .set({ headVersionId: v2 })
+            .where(eq(storages.id, storageId));
+          await refreshPiStableContextStorageDemands(tx, fence, {
+            storageId,
+            versionId: v2,
+            archiveSize: 0,
+            fileCount: 0,
+          });
+          await expect(
+            completePiStableContextPublication(tx, fence),
+          ).resolves.toBeTruthy();
+        });
+      },
+    } as const;
+
+    await expect(
+      createStore().get(
+        preparePiStableContext(args, AbortSignal.timeout(5000)),
+      ),
+    ).resolves.toMatchObject({ kind: "missing" });
+    await expect(
+      db
+        .select({
+          generation: piStableContextHeads.generation,
+          status: piStableContextHeads.status,
+          input: piStableContextHeads.input,
+        })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.variantDigest, variantDigest)),
+    ).resolves.toMatchObject([
+      {
+        generation: 3,
+        status: "pending",
+        input: {
+          storageMounts: [{ storageId, versionId: v2 }],
+          persistedStorageMounts: [{ storageId, version: v2 }],
+        },
+      },
+    ]);
+  });
+
   it("coalesces two Storage writes while aggregate demand is pending", async () => {
     const fixture = await seed();
     await db
@@ -907,6 +1353,7 @@ describe("Pi stable context generation fences", () => {
           },
           source: {
             catalogIdentity: null,
+            catalogSourceId: null,
             agentIdentityDigest: "agent-identity",
             featurePromptDigest: "storage-feature",
             permissionDigest: "storage-permission",
@@ -1181,6 +1628,7 @@ describe("Pi stable context generation fences", () => {
       },
       source: {
         catalogIdentity: null,
+        catalogSourceId: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature-lease",
         permissionDigest: "permission-lease",
@@ -1661,6 +2109,7 @@ describe("Pi stable context generation fences", () => {
           },
           source: {
             catalogIdentity: null,
+            catalogSourceId: null,
             agentIdentityDigest: "agent-identity",
             featurePromptDigest: "erased-feature",
             permissionDigest: "erased-permission",
@@ -1748,6 +2197,7 @@ describe("Pi stable context generation fences", () => {
           },
           source: {
             catalogIdentity: null,
+            catalogSourceId: null,
             agentIdentityDigest: "agent-identity",
             featurePromptDigest: "erased-feature",
             permissionDigest: "erased-permission",
@@ -1815,6 +2265,7 @@ describe("Pi stable context generation fences", () => {
       },
       source: {
         catalogIdentity: null,
+        catalogSourceId: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -1928,6 +2379,7 @@ describe("Pi stable context generation fences", () => {
       },
       source: {
         catalogIdentity: null,
+        catalogSourceId: null,
         agentIdentityDigest: "agent-identity",
         featurePromptDigest: "feature",
         permissionDigest: "permission",
@@ -2039,6 +2491,7 @@ describe("Pi stable context generation fences", () => {
           },
           source: {
             catalogIdentity: null,
+            catalogSourceId: null,
             agentIdentityDigest: "agent-identity",
             featurePromptDigest: "feature",
             permissionDigest: "permission",

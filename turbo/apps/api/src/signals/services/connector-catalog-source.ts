@@ -23,6 +23,10 @@ export async function withConnectorCatalogSourceForTest<T>(
   return await scopedConnectorCatalogSource().run(source, work);
 }
 
+export function connectorCatalogSourceIsTestScoped(): boolean {
+  return scopedConnectorCatalogSource.peek()?.getStore() !== undefined;
+}
+
 export function connectorCatalogSource(): ConnectorCatalogSource {
   const scoped = scopedConnectorCatalogSource.peek()?.getStore();
   if (scoped) {

@@ -34,6 +34,8 @@ export interface PiStableContextSourceVector {
   readonly agentGeneration: number;
   readonly userGeneration: number;
   readonly catalogIdentity: string | null;
+  /** Exact connector-catalog authority; test-scoped sources must not cross. */
+  readonly catalogSourceId: string | null;
   readonly agentIdentityDigest: string;
   readonly featurePromptDigest: string;
   readonly permissionDigest: string;

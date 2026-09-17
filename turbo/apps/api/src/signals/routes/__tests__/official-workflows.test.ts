@@ -23,6 +23,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferencesRoutes } from "../user-preferences";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
+import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import {
   OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
@@ -51,6 +52,7 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { HttpResponse, http } from "msw";
+import { Webhook } from "svix";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -71,6 +73,8 @@ import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-p
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
+import { countUserStableContextGenerationsFixture } from "../../../test-fixtures/pi-stable-context";
+import { holdOfficialWorkflowInstallationBeforeErasureAdmissionFixture } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -119,6 +123,7 @@ import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automati
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowsRoutes } from "../workflows";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import {
   acknowledgeDetachedForTest,
@@ -1717,6 +1722,46 @@ async function setSimpleMorningBriefEnabled(
     { orgId: actor.orgId, userId: actor.userId },
     { [FeatureSwitchKey.SimpleMorningBrief]: enabled },
   );
+}
+
+async function deliverSignedClerkUserDeleted(
+  userId: string,
+  secretLabel: string,
+): Promise<void> {
+  const sdk = await vi.importActual<typeof import("@clerk/backend/webhooks")>(
+    "@clerk/backend/webhooks",
+  );
+  const secret = `whsec_${Buffer.from(secretLabel).toString("base64")}`;
+  mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
+  context.mocks.clerk.verifyWebhook.mockImplementation(
+    async (request: unknown) => {
+      if (!(request instanceof Request)) {
+        throw new Error("expected raw Request");
+      }
+      return await sdk.verifyWebhook(request, { signingSecret: secret });
+    },
+  );
+  const body = JSON.stringify({
+    type: "user.deleted",
+    data: { id: userId, deleted: true },
+  });
+  const id = randomUUID();
+  const timestamp = new Date(now());
+  const signature = new Webhook(secret).sign(id, timestamp, body);
+  await accept(
+    setupApp({ context, routes: webhooksClerkRoutes })(
+      webhookClerkContract,
+    ).post({
+      body,
+      extraHeaders: {
+        "svix-id": id,
+        "svix-timestamp": String(Math.floor(timestamp.getTime() / 1000)),
+        "svix-signature": signature,
+      },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
 }
 
 async function deliverClerkOrganizationCreated(
@@ -4406,6 +4451,61 @@ describe("Official Workflow installations", () => {
     expect(fixedTimezone.body.workflow.automations).toMatchObject([
       { schedule: { type: "cron", timezone: "UTC" } },
     ]);
+  });
+
+  it("rejects a delayed zero-blueprint install after signed user erasure", async () => {
+    installCatalogStorageFixture();
+    const definitionName = `api-test-erasure-${randomUUID()
+      .replaceAll("-", "")
+      .slice(0, 10)}`;
+    await syncCatalog(catalog([activeDefinition(definitionName, [])]));
+
+    const setup = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const installer = setup.actor;
+    if (!installer.orgId) {
+      throw new Error("Expected organization-scoped installer");
+    }
+    await setOfficialWorkflowsEnabled(installer, true);
+    const agentOwner = bdd.user({
+      orgId: installer.orgId,
+      orgRole: "org:member",
+    });
+    const { agentId } = await workflowBdd.createAgent(agentOwner, {
+      visibility: "public",
+    });
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.requestDeleteAgent(agentOwner, agentId, [204, 404]);
+      await cleanupCatalog();
+    });
+
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    holdOfficialWorkflowInstallationBeforeErasureAdmissionFixture(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const install = officialClient().install({
+      headers: authHeaders(installer),
+      params: { definitionName },
+      body: { agentId, blueprints: [] },
+    });
+    await entered.promise;
+    await deliverSignedClerkUserDeleted(
+      installer.userId,
+      "official-workflow-install-erasure",
+    );
+
+    release.resolve();
+    await accept(install, [404]);
+    await expect(
+      countUserStableContextGenerationsFixture({
+        agentId,
+        userId: installer.userId,
+      }),
+    ).resolves.toBe(0);
   });
 
   it("guards access and validates concurrent installations through public boundaries", async () => {

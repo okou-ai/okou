@@ -8,7 +8,7 @@ import {
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import type { Tx } from "../../lib/db-types";
@@ -35,22 +35,52 @@ type ClerkDeletionScope =
   | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "user"; readonly userId: string };
 
+async function deleteStableContextGenerations(
+  tx: Tx,
+  condition: SQL,
+): Promise<void> {
+  await tx
+    .select({
+      orgId: piStableContextGenerations.orgId,
+      agentId: piStableContextGenerations.agentId,
+      subject: piStableContextGenerations.subject,
+    })
+    .from(piStableContextGenerations)
+    .where(condition)
+    .orderBy(
+      asc(piStableContextGenerations.orgId),
+      asc(piStableContextGenerations.agentId),
+      asc(piStableContextGenerations.subject),
+    )
+    .for("update");
+  await tx.delete(piStableContextGenerations).where(condition);
+}
+
+async function deleteStableContextHeads(tx: Tx, condition: SQL): Promise<void> {
+  await tx
+    .select({ id: piStableContextHeads.id })
+    .from(piStableContextHeads)
+    .where(condition)
+    .orderBy(asc(piStableContextHeads.id))
+    .for("update");
+  await tx.delete(piStableContextHeads).where(condition);
+}
+
 export async function deleteAgentStableContextLifecycleData(
   tx: Tx,
   agentId: string,
 ): Promise<void> {
-  await tx
-    .delete(piStableContextHeads)
-    .where(eq(piStableContextHeads.agentId, agentId));
-  await tx
-    .delete(piStableContextArtifacts)
-    .where(eq(piStableContextArtifacts.agentId, agentId));
+  await deleteStableContextGenerations(
+    tx,
+    eq(piStableContextGenerations.agentId, agentId),
+  );
   await tx
     .delete(piStableContextPublications)
     .where(eq(piStableContextPublications.agentId, agentId));
+  await deleteStableContextHeads(tx, eq(piStableContextHeads.agentId, agentId));
   await tx
-    .delete(piStableContextGenerations)
-    .where(eq(piStableContextGenerations.agentId, agentId));
+    .delete(piStableContextArtifacts)
+    .where(eq(piStableContextArtifacts.agentId, agentId));
 }
 
 async function deleteStableContextLifecycleData(
@@ -61,44 +91,56 @@ async function deleteStableContextLifecycleData(
   if (scope.kind === "organization") {
     // Publication fences deliberately have no Agent FK, so organization
     // erasure also removes any fence left by an interrupted Agent lifecycle.
-    await tx
-      .delete(piStableContextPublications)
-      .where(eq(piStableContextPublications.orgId, scope.orgId));
-    await tx
-      .delete(piStableContextGenerations)
-      .where(eq(piStableContextGenerations.orgId, scope.orgId));
-    return;
-  }
-  // Stable artifacts are bound to the executing user even when the Agent is
-  // public or owned by somebody else. Remove heads before their artifacts;
-  // owned-Agent deletion separately cascades every other audience.
-  await tx
-    .delete(piStableContextHeads)
-    .where(eq(piStableContextHeads.userId, scope.userId));
-  await tx
-    .delete(piStableContextArtifacts)
-    .where(eq(piStableContextArtifacts.userId, scope.userId));
-  await tx
-    .delete(piStableContextPublications)
-    .where(eq(piStableContextPublications.subject, scope.userId));
-  await tx
-    .delete(piStableContextGenerations)
-    .where(eq(piStableContextGenerations.subject, scope.userId));
-  if (agentIds.length > 0) {
-    const ownedAgentCondition = eq(
-      piStableContextGenerations.agentId,
-      sql`ANY(${sql.param(agentIds)}::uuid[])`,
+    await deleteStableContextGenerations(
+      tx,
+      eq(piStableContextGenerations.orgId, scope.orgId),
     );
     await tx
       .delete(piStableContextPublications)
-      .where(
-        eq(
-          piStableContextPublications.agentId,
-          sql`ANY(${sql.param(agentIds)}::uuid[])`,
-        ),
-      );
-    await tx.delete(piStableContextGenerations).where(ownedAgentCondition);
+      .where(eq(piStableContextPublications.orgId, scope.orgId));
+    return;
   }
+  const ownedAgentGenerationCondition =
+    agentIds.length === 0
+      ? undefined
+      : eq(
+          piStableContextGenerations.agentId,
+          sql`ANY(${sql.param(agentIds)}::uuid[])`,
+        );
+  const userGenerationCondition = eq(
+    piStableContextGenerations.subject,
+    scope.userId,
+  );
+  const generationCondition = ownedAgentGenerationCondition
+    ? or(userGenerationCondition, ownedAgentGenerationCondition)
+    : userGenerationCondition;
+  if (!generationCondition) {
+    throw new Error("Stable-context generation cleanup condition is empty");
+  }
+  await deleteStableContextGenerations(tx, generationCondition);
+  await tx
+    .delete(piStableContextPublications)
+    .where(
+      or(
+        eq(piStableContextPublications.subject, scope.userId),
+        agentIds.length === 0
+          ? undefined
+          : eq(
+              piStableContextPublications.agentId,
+              sql`ANY(${sql.param(agentIds)}::uuid[])`,
+            ),
+      ),
+    );
+  // Stable artifacts are bound to the executing user even when the Agent is
+  // public or owned by somebody else. Generation locks come before heads;
+  // owned-Agent deletion separately cascades every other audience.
+  await deleteStableContextHeads(
+    tx,
+    eq(piStableContextHeads.userId, scope.userId),
+  );
+  await tx
+    .delete(piStableContextArtifacts)
+    .where(eq(piStableContextArtifacts.userId, scope.userId));
 }
 
 export async function deleteStableContextLifecycleAfterAuthorityRemoval(

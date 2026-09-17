@@ -61,6 +61,7 @@ import {
 } from "./connector-catalog-skill-registration.service";
 import {
   connectorCatalogSource,
+  connectorCatalogSourceIsTestScoped,
   type ConnectorCatalogSource,
 } from "./connector-catalog-source";
 import {
@@ -68,7 +69,10 @@ import {
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import { persistConnectorCatalogRuntimeProjection } from "./connector-catalog-runtime-projection.service";
-import { invalidateAllPiStableContexts } from "./pi-stable-context-generation.service";
+import {
+  invalidateAllPiStableContexts,
+  invalidatePiStableContextsForCatalogSource,
+} from "./pi-stable-context-generation.service";
 import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
@@ -819,7 +823,11 @@ async function commitCandidate(
         artifact: args.candidate.artifact,
         validator: args.validator,
       });
-      await invalidateAllPiStableContexts(tx);
+      if (connectorCatalogSourceIsTestScoped()) {
+        await invalidatePiStableContextsForCatalogSource(tx, args.sourceId);
+      } else {
+        await invalidateAllPiStableContexts(tx);
+      }
       return "accepted" as const;
     }),
   );

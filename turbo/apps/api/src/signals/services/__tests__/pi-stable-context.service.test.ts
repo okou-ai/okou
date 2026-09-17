@@ -27,6 +27,7 @@ describe("Pi stable context projection", () => {
       agentGeneration: 4,
       userGeneration: 7,
       catalogIdentity: "catalog-a",
+      catalogSourceId: "source-a",
       agentIdentityDigest: "agent-identity-a",
       featurePromptDigest: "feature-a",
       permissionDigest: "permission-a",

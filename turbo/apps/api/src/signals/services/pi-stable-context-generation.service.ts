@@ -9,7 +9,17 @@ import {
   piStableContextHeads,
   piStableContextPublications,
 } from "@okouai/db/schema/pi-stable-context";
-import { and, asc, eq, exists, inArray, isNotNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -328,23 +338,55 @@ async function invalidateHeadSet(
   }
 }
 
-/** Bulk invalidation for a user-scoped feature/profile source writer. */
-export async function invalidatePiStableContextsForUser(
-  db: Db,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<void> {
+function requireCondition(
+  condition: SQL | undefined,
+  description: string,
+): SQL {
+  if (!condition) {
+    throw new Error(`Stable-context ${description} condition is empty`);
+  }
+  return condition;
+}
+
+async function advanceGenerationSet(db: Db, condition: SQL): Promise<void> {
+  await db
+    .select({
+      orgId: piStableContextGenerations.orgId,
+      agentId: piStableContextGenerations.agentId,
+      subject: piStableContextGenerations.subject,
+    })
+    .from(piStableContextGenerations)
+    .where(condition)
+    .orderBy(
+      asc(piStableContextGenerations.orgId),
+      asc(piStableContextGenerations.agentId),
+      asc(piStableContextGenerations.subject),
+    )
+    .for("update");
   await db
     .update(piStableContextGenerations)
     .set({
       generation: sql`${piStableContextGenerations.generation} + 1`,
       updatedAt: nowDate(),
     })
-    .where(
+    .where(condition);
+}
+
+/** Bulk invalidation for a user-scoped feature/profile source writer. */
+export async function invalidatePiStableContextsForUser(
+  db: Db,
+  args: { readonly orgId: string; readonly userId: string },
+): Promise<void> {
+  await advanceGenerationSet(
+    db,
+    requireCondition(
       and(
         eq(piStableContextGenerations.orgId, args.orgId),
         eq(piStableContextGenerations.subject, args.userId),
       ),
-    );
+      "user generation",
+    ),
+  );
   await invalidateHeadSet(
     db,
     and(
@@ -359,23 +401,67 @@ export async function invalidatePiStableContextsForOrg(
   db: Db,
   orgId: string,
 ): Promise<void> {
-  await db
-    .update(piStableContextGenerations)
-    .set({
-      generation: sql`${piStableContextGenerations.generation} + 1`,
-      updatedAt: nowDate(),
-    })
-    .where(eq(piStableContextGenerations.orgId, orgId));
+  await advanceGenerationSet(db, eq(piStableContextGenerations.orgId, orgId));
   await invalidateHeadSet(db, eq(piStableContextHeads.orgId, orgId));
 }
 
 /** Bulk invalidation for the shared official connector/workflow catalog. */
 export async function invalidateAllPiStableContexts(db: Db): Promise<void> {
-  await db.update(piStableContextGenerations).set({
-    generation: sql`${piStableContextGenerations.generation} + 1`,
-    updatedAt: nowDate(),
-  });
+  await advanceGenerationSet(db, sql`TRUE`);
   await invalidateHeadSet(db, sql`TRUE`);
+}
+
+/** Test catalog sources own only heads captured under their exact source ID. */
+export async function invalidatePiStableContextsForCatalogSource(
+  db: Db,
+  sourceId: string,
+): Promise<void> {
+  const headCondition = requireCondition(
+    and(
+      isNotNull(piStableContextHeads.input),
+      sql`${piStableContextHeads.input} -> 'source' ->> 'catalogSourceId' = ${sourceId}`,
+    ),
+    "catalog head",
+  );
+  const owners = await db
+    .selectDistinct({
+      orgId: piStableContextHeads.orgId,
+      userId: piStableContextHeads.userId,
+      agentId: piStableContextHeads.agentId,
+    })
+    .from(piStableContextHeads)
+    .where(headCondition)
+    .orderBy(
+      asc(piStableContextHeads.orgId),
+      asc(piStableContextHeads.agentId),
+      asc(piStableContextHeads.userId),
+    );
+  const scopes = owners.flatMap((owner) => {
+    return [
+      { orgId: owner.orgId, agentId: owner.agentId },
+      {
+        orgId: owner.orgId,
+        agentId: owner.agentId,
+        userId: owner.userId,
+      },
+    ];
+  });
+  if (scopes.length === 0) {
+    return;
+  }
+  await lockPiStableContextGenerationScopes(db, scopes);
+  await advanceGenerationSet(
+    db,
+    requireCondition(
+      or(
+        ...scopes.map((scope) => {
+          return generationScopeCondition(scope);
+        }),
+      ),
+      "catalog generation",
+    ),
+  );
+  await invalidateHeadSet(db, headCondition);
 }
 
 /** Begin one keyed metadata-first publication. The scope stays pending until all keys settle. */

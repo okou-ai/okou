@@ -860,6 +860,10 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
                 args.connectorCatalogSelection.selection.catalogIdentity,
               )
             : null,
+        catalogSourceId:
+          args.connectorCatalogSelection.kind === "scoped"
+            ? args.connectorCatalogSelection.selection.catalogIdentity.sourceId
+            : null,
         agentIdentityDigest: piStableContextVariantDigest(agentIdentity),
         featurePromptDigest: piStableContextVariantDigest(promptInputs),
         permissionDigest: piStableContextVariantDigest(
