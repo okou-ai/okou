@@ -959,6 +959,24 @@ async function requestAndRecordCharge(
 }
 
 /**
+ * What this attempt may still spend at `at`, after the persistence reserve.
+ *
+ * Zero or negative means the reservation is exhausted: whatever is left is
+ * owed to recording the outcome, so nothing may be sent.
+ */
+function remainingProviderBudgetMs(
+  reservationExpiresAt: Date,
+  at: Date,
+): number {
+  return Math.min(
+    GENERATION_PROVIDER_DEADLINE_MS,
+    reservationExpiresAt.getTime() -
+      at.getTime() -
+      GENERATION_PERSISTENCE_RESERVE_MS,
+  );
+}
+
+/**
  * Make the single provider request this reservation admitted, then record it.
  *
  * Everything before this point is reversible; this is not, so the live
@@ -1004,14 +1022,16 @@ const invokeAndPersist$ = command(
       };
     };
 
-    const startedAt = nowDate();
-    const budgetMs = Math.min(
-      GENERATION_PROVIDER_DEADLINE_MS,
-      admission.reservationExpiresAt.getTime() -
-        startedAt.getTime() -
-        GENERATION_PERSISTENCE_RESERVE_MS,
+    // The preflight below is a real membership and authorization resolution
+    // that can block, so it spends the same reservation the request does. It
+    // gets a finite slice of what remains, and the allowance for the request
+    // itself is recomputed from the clock afterwards — a budget measured before
+    // a wait describes time this attempt may no longer own.
+    const preflightBudgetMs = remainingProviderBudgetMs(
+      admission.reservationExpiresAt,
+      nowDate(),
     );
-    if (budgetMs <= 0) {
+    if (preflightBudgetMs <= 0) {
       // Deterministically uninvoked: no request was made, so this is a
       // failure-before-contact and never an unknown outcome.
       return await uninvoked("reservation_expired");
@@ -1019,18 +1039,36 @@ const invokeAndPersist$ = command(
 
     // The reservation proved this attempt owns the slot; it does not prove the
     // owner still wants a brief or that the source is still theirs to read.
-    const admitted = await set(
-      generationAuthorityStillCurrent$,
-      args.occurrenceRow,
-      signal,
+    const admitted = await settleIncludingAbort(
+      set(
+        generationAuthorityStillCurrent$,
+        args.occurrenceRow,
+        AbortSignal.any([signal, AbortSignal.timeout(preflightBudgetMs)]),
+      ),
     );
+    // A caller that cancelled still cancels; a preflight the reservation
+    // deadline cut off is a proven pre-contact failure, not an unknown one.
     signal.throwIfAborted();
-    if (admitted.kind !== "current") {
+    if (!admitted.ok) {
+      return await uninvoked("reservation_expired");
+    }
+    if (admitted.value.kind !== "current") {
       return await uninvoked(
-        admitted.kind === "binding-changed"
+        admitted.value.kind === "binding-changed"
           ? "binding_changed"
           : "owner_revoked",
       );
+    }
+
+    // Resampled immediately before contact, so a preflight that consumed the
+    // allowance cannot still admit the one request this reservation permits.
+    // Equality with the deadline is exhausted.
+    const budgetMs = remainingProviderBudgetMs(
+      admission.reservationExpiresAt,
+      nowDate(),
+    );
+    if (budgetMs <= 0) {
+      return await uninvoked("reservation_expired");
     }
 
     const { receipt, interpreted: observedOutcome } =

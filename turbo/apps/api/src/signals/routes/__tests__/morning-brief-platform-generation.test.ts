@@ -36,6 +36,7 @@ import {
   setMorningBriefMemberLocale,
 } from "../../../test-fixtures/morning-brief-generation";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { createDeferredPromise } from "../../utils";
 import { morningBriefCollectionPreviewRoutes } from "../morning-brief-collection-preview";
 import { morningBriefGenerationPreviewRoutes } from "../morning-brief-generation-preview";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -972,6 +973,49 @@ describe("Morning Brief platform-funded generation authority", () => {
     expect(body.generation.failureReason).toBe("owner_revoked");
     expect(body.generation.receipt).toBeNull();
     expect(traffic.bodies).toStrictEqual([]);
+  });
+
+  it("makes no provider request when the preflight consumes the reservation", async () => {
+    const f = await fixture();
+    slackWithMessages();
+    const traffic = scriptProvider(() => {
+      throw new Error("an exhausted reservation must not reach the provider");
+    });
+
+    // Hold the real pre-contact authority preflight. It is identified by the
+    // state it runs in rather than by a call index: the reservation row exists
+    // only after the collection transaction committed, which is exactly the
+    // window between owning the slot and using it.
+    const arrived = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const memberships =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const resolveMemberships = memberships.getMockImplementation();
+    let held = false;
+    memberships.mockImplementation(async (...callArgs: unknown[]) => {
+      if (!held && (await readMorningBriefGenerations(f)).length > 0) {
+        held = true;
+        arrived.resolve();
+        await release.promise;
+      }
+      return await resolveMemberships?.(...callArgs);
+    });
+
+    const pending = accept(generate(f), [200]);
+    await arrived.promise;
+    // The reservation lapses while the preflight is still blocked.
+    mockNow(now() + 2 * 60 * 1000);
+    release.resolve();
+
+    const response = await pending;
+    const body = expectGenerated(response.body);
+    // Proven before contact, so it is a known outcome and not an unknown one.
+    expect(body.generation.state).toBe("not_invoked");
+    expect(body.generation.failureReason).toBe("reservation_expired");
+    expect(body.generation.result).toBeNull();
+    expect(body.generation.receipt).toBeNull();
+    expect(traffic.bodies).toStrictEqual([]);
+    await expect(readPlatformGenerationReceipts([])).resolves.toStrictEqual([]);
   });
 
   it("does not release a stored result after the brief is disabled", async () => {

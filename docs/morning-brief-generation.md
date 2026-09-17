@@ -160,9 +160,20 @@ refused, not accepted. Equality with the deadline is expired at both boundaries.
 | Accepted rendered result  | 32 KiB                                              |
 | Preview result retention  | 24 h                                                |
 
-The collection lease is **not** reused as generation ownership. Equality with
-the reservation deadline is already expired, and that is checked before any
-provider contact.
+The collection lease is **not** reused as generation ownership.
+
+The provider allowance is **what remains of the reservation, minus the
+persistence reserve, measured now** — not a figure computed earlier in the
+request. The pre-contact authority preflight is a real membership and
+authorization resolution that can block, so it receives a finite slice of that
+remaining time and the allowance is recomputed immediately before contact. A
+preflight that consumed the reservation therefore cannot still admit the one
+request the reservation permits.
+
+Equality with the deadline is exhausted at every one of those points, and
+exhaustion before contact records a **known** `not_invoked` with zero provider
+requests. It is never reported as an unknown invocation, because nothing was
+sent.
 
 ## The request
 
@@ -394,15 +405,58 @@ no production row census is claimed for them. The Morning Brief installation
 census in the parent epic describes installations, not generations; the new
 tables start empty.
 
-## What direct delivery consumes
+## The callable interface later slices consume
 
-Delivery reads one accepted result by owner, occurrence slot and purpose. The
-stable parts of that reference are the slot key
+These are the entry points this slice publishes. A later slice composes them;
+it does not build a second generation engine and never adds a provider request.
+
+**Orchestration.** `executeMorningBriefPreviewGeneration$` (`command`, in
+`morning-brief-generation-executor.service.ts`) takes `{ owner: { orgId, userId
+}, scheduledFor: Date }` plus an `AbortSignal`, and returns the discriminated
+union `MorningBriefGenerationExecution`: `not-executed`, `invalid-anchor`,
+`conflict`, `collection-failed`, `generated`, `already-generated` or
+`collection-completed-without-generation`. It owns the whole reservation,
+request and persistence contract described above.
+
+**Source handoff.** `executeMorningBriefSlackCollection$` accepts an optional
+`handoff.onCollected(tx, context)` that runs inside the finalize transaction.
+A multi-source composition reuses that hook at its own single finalize point;
+the reservation must stay inside the transaction that makes the collected facts
+durable.
+
+**Request shaping.** `planGenerationRequest({ bundle, language })` returns the
+exact bytes, the input digest, the included/total counts and the source map, and
+`resolveGenerationLanguage(locale)` returns the frozen language policy. A slice
+that adds sources or an Agent language context changes what it passes in here;
+it does not add a second request.
+
+**Durable state.** `morning-brief-generation-store.service.ts` exposes
+`reserveMorningBriefGeneration`, `recordMorningBriefGenerationSkip`,
+`readMorningBriefGeneration(db, key, purpose)`,
+`acceptMorningBriefGenerationResult`, `recordMorningBriefGenerationOutcome`,
+`resolveStaleMorningBriefGeneration`, `recordPlatformGenerationReceipt`,
+`readPlatformGenerationReceipt` and
+`sweepExpiredMorningBriefGenerations`. The guarded writers sample their own
+admission clock; callers pass no instant.
+
+**Live authority.** `currentMorningBriefCollectionAuthority$` resolves the
+canonical Morning Brief authority without the Slack credential, and
+`morningBriefCollectionBindingMatches(row, admission)` compares it against an
+occurrence. Any slice acting for an owner after a wait uses these rather than a
+second adoption algorithm.
+
+**Delivery read.** Delivery reads one accepted result by owner, occurrence slot
+and purpose. The stable parts of that reference are the slot key
 `(org_id, user_id, scheduled_for, collection_kind, collection_version)`, the
 `execution_purpose` filter, the `succeeded` state with its `deliver`/`skip`
-decision, and the bounded preview `expires_at` lifetime. A `preview` result is
-not a production candidate and is refused by a consumer asking for another
-purpose. Any change to that reference is recorded here and on the issue.
+decision, the stored `result_bytes`, and the bounded preview `expires_at`
+lifetime. A `preview` result is not a production candidate and is refused by a
+consumer asking for another purpose.
+
+Native scheduling supplies a real `execution_purpose` beside `preview`; adding
+one is a schema and migration change in that slice, and the purpose filter is
+already the mechanism that keeps the two apart. Any change to this interface is
+recorded here and on the issue.
 
 ## Gates that remain
 
