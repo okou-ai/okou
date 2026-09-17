@@ -9,6 +9,7 @@
 use crate::error::AgentError;
 use crate::events;
 use crate::http::{HttpAttemptFinished, HttpAttemptObserver, HttpAttemptStarted, HttpClient};
+use crate::masker::SecretMasker;
 use bytes::Bytes;
 use guest_contracts::diagnostics::{
     EventDeliveryAcceptanceOutcome, EventDeliveryActiveAttemptDiagnostic,
@@ -47,33 +48,27 @@ pub(super) struct EventDeliverySender {
 }
 
 impl EventDeliverySender {
-    pub(super) fn try_send(
-        &self,
-        sequence: u32,
-        mut event: serde_json::Value,
-    ) -> Result<(), AgentError> {
-        let private_citation = self
-            .payload_envelope
-            .take_private_citation(sequence, &mut event)?;
-        let serialized_event = serde_json::to_vec(&event)?;
-        drop(event);
-        self.try_send_prepared(sequence, serialized_event, private_citation)
-    }
-
+    /// Admit a canonical event, separating private metadata before masking keys.
     pub(super) fn try_send_for_framework(
         &self,
         sequence: u32,
         mut event: serde_json::Value,
         framework: crate::env::Framework,
+        masker: &SecretMasker,
     ) -> Result<(), AgentError> {
+        let private_citation = self
+            .payload_envelope
+            .take_private_citation(sequence, &mut event, masker)?;
+        let event = events::prepare_event_for_delivery(event, sequence, masker);
         let framework = match framework {
-            crate::env::Framework::ClaudeCode => return self.try_send(sequence, event),
+            crate::env::Framework::ClaudeCode => {
+                let serialized_event = serde_json::to_vec(&event)?;
+                drop(event);
+                return self.try_send_prepared(sequence, serialized_event, private_citation);
+            }
             crate::env::Framework::Pi => super::bounded_event_delivery::Framework::Pi,
             crate::env::Framework::Codex => super::bounded_event_delivery::Framework::Codex,
         };
-        let private_citation = self
-            .payload_envelope
-            .take_private_citation(sequence, &mut event)?;
         let envelope_bytes = self
             .payload_envelope
             .singleton_bytes(0, private_citation.as_ref().map_or(0, Bytes::len));

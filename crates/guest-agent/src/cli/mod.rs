@@ -833,8 +833,7 @@ impl<'a> CliEventIngestor<'a> {
                 )
             })?;
             if should_send_events {
-                let event = events::prepare_event_for_delivery(event, sequence, masker);
-                event_tx.try_send_for_framework(sequence, event, self.framework)?;
+                event_tx.try_send_for_framework(sequence, event, self.framework, masker)?;
             }
         }
         Ok(())
