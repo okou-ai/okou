@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { eq } from "drizzle-orm";
@@ -37,19 +39,66 @@ export async function setChatThreadAgentFixture(args: {
 }
 
 /**
- * Holds one uncommitted `chat_thread_events` row carrying the id a rename will
- * supply. `appendChatThreadEvent` inserts with `ON CONFLICT DO NOTHING`, whose
- * speculative insertion must wait on this open transaction, so the rename fails
- * on its own bounded budget at its **last** statement — after the title UPDATE
- * and after the durable sequence reservation. That is the only place a real
- * failure can prove those two earlier writes roll back with it.
+ * The persisted title state of one thread, including `updated_at`.
+ *
+ * Read-only fixture exception: the generated-title writer sets `title`,
+ * `renamed_at` and `updated_at` in one statement, and `updated_at` is the only
+ * one of the three that no chat-thread read contract returns — the metadata
+ * response omits it and the snapshot projection that carries it is served from
+ * a compacted row this workflow never produces. Asserting that a denied or
+ * rolled back title leaves the timestamp alone therefore needs this read, and
+ * a read-only fixture is a far narrower exception than publishing a timestamp
+ * endpoint for a test. It writes nothing.
+ */
+export async function readChatThreadTitleStateFixture(
+  chatThreadId: string,
+): Promise<{
+  readonly title: string | null;
+  readonly renamedAt: string | null;
+  readonly updatedAt: string;
+}> {
+  const [thread] = await db()
+    .select({
+      title: chatThreads.title,
+      renamedAt: chatThreads.renamedAt,
+      updatedAt: chatThreads.updatedAt,
+    })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, chatThreadId))
+    .limit(1);
+  if (!thread) {
+    throw new Error("Expected the chat thread row to exist");
+  }
+  return {
+    title: thread.title,
+    renamedAt: thread.renamedAt?.toISOString() ?? null,
+    updatedAt: thread.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Holds one uncommitted `chat_thread_events` row carrying a key the next
+ * sidebar append will supply: either the event id a route accepts from its
+ * caller, or the `(user_id, org_id, seq_id)` slot the durable sequence is about
+ * to hand out. `appendChatThreadEvent` inserts with `ON CONFLICT DO NOTHING`
+ * targeting the primary key, so both conflicts make its speculative insertion
+ * wait on this open transaction and the append fails on its own bounded budget
+ * at its **last** statement — after the title, pin or selection UPDATE and
+ * after the durable sequence reservation. That is the only place a real failure
+ * can prove those two earlier writes roll back with it.
+ *
+ * The sequence form exists for a writer that generates its own event id, such
+ * as the background generated-title workflow: there is no caller-supplied id to
+ * collide with, and `chat_thread_events_user_org_seq_unique` is the only other
+ * key that reaches the same wait.
  *
  * Infrastructure exception: a concurrent uncommitted insert of a specific event
- * id cannot be produced through any API. It writes no title or draft and is
- * always rolled back by `release`.
+ * id or sequence slot cannot be produced through any API. It writes no title or
+ * draft and is always rolled back by `release`.
  */
 export async function holdChatThreadEventIdFixture(args: {
-  readonly eventId: string;
+  readonly eventId?: string;
+  readonly seqId?: number;
   readonly userId: string;
   readonly orgId: string;
   readonly chatThreadId: string;
@@ -61,10 +110,10 @@ export async function holdChatThreadEventIdFixture(args: {
     const result = await settleIncludingAbort(
       db().transaction(async (tx) => {
         await tx.insert(chatThreadEvents).values({
-          id: args.eventId,
+          id: args.eventId ?? randomUUID(),
           userId: args.userId,
           orgId: args.orgId,
-          seqId: HELD_EVENT_SEQ_ID,
+          seqId: args.seqId ?? HELD_EVENT_SEQ_ID,
           chatThreadId: args.chatThreadId,
           kind: "renamed",
           title: "held rename event",

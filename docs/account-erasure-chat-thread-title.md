@@ -150,17 +150,25 @@ and failure classification are unchanged.
 
 These are three different mechanisms and the tests check them separately:
 
-| Mechanism                   | What it bounds                                      | How it is verified                                                                                       |
-| --------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `lock_timeout` `1s`         | How long one statement waits for a conflicting lock | Observed on the paused transaction, then a held parent row lock makes the writer block and give up on it |
-| `statement_timeout` `5s`    | How long one statement may run                      | Observed on the paused transaction                                                                       |
-| `AbortSignal.timeout` `30s` | How long the retry loop may keep starting attempts  | Not exercised: the inner budgets are an order of magnitude smaller, so they always fire first            |
+| Mechanism                   | What it bounds                                      | How it is verified                                                                                                      |
+| --------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `lock_timeout` `1s`         | How long one statement waits for a conflicting lock | Observed on the paused transaction, then a held parent row lock makes the writer block and give up on it                |
+| `statement_timeout` `5s`    | How long one statement may run                      | Observed on the paused transaction                                                                                      |
+| `AbortSignal.timeout` `30s` | How long the retry loop may keep starting attempts  | Exercised at its cooperative boundary: an already-aborted fence reaching the completion stops it before the first write |
 
-The signal is checked between attempts and around the transaction, so it stops
-the workflow from beginning further work. It does **not** cancel a statement
-PostgreSQL is already executing — only `statement_timeout` and `lock_timeout` do
-that, server side. Nothing here claims the background workflow is cancellable by
-a caller.
+They do not compose into an aggregate transaction deadline: the two server budgets
+apply per statement, and the signal is only read where the workflow chooses to
+read it — between attempts and around the transaction. It stops the workflow
+from beginning further work and does **not** cancel a statement PostgreSQL is
+already executing; only `statement_timeout` and `lock_timeout` do that, server
+side. There is therefore no claim that a title transaction is hard-cancelled at
+`30s`, and none that the background workflow is cancellable by a caller: it owns
+no request-cancellation contract and no such endpoint exists for it.
+
+The deadline case reaches this boundary through the API suite's existing
+`AbortSignal.timeout` seam, armed only after the initiation gate has committed
+so it applies to the completion fence alone, and it asserts that the production
+`30s` value is the one actually requested. Production budgets are unchanged.
 
 ## Failure contract
 
@@ -194,10 +202,11 @@ copy was added, and no new retention exception was created.
 
 ## Verified behavior
 
-`chat-thread-title-erasure.test.ts` drives the production send route against
-real PostgreSQL with the title provider response held open, and reuses the
-accepted closure, owner-transfer, row-lock and transaction-barrier fixtures.
-**Fourteen cases**, all passing locally:
+`chat-thread-title-erasure.test.ts` drives the production send route and the
+production terminal-callback drain against real PostgreSQL with the title
+provider response held open, and reuses the accepted closure, owner-transfer,
+row-lock, held-event and transaction-barrier fixtures. **Eighteen cases**, all
+passing locally:
 
 | Case                                                                                       | What it establishes                                                                                                                                                                                 |
 | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -207,7 +216,11 @@ accepted closure, owner-transfer, row-lock and transaction-barrier fixtures.
 | Owner moves while the gate reads context                                                   | The gate's fresh pin check discards before generation: **zero** provider requests                                                                                                                   |
 | Writer-first commit ordering                                                               | The admitted completion commits one coherent title, event and sequence; the closure is a real blocked PostgreSQL waiter behind it; an unrelated owner writes through; the next write is then fenced |
 | Owner moves between identity selection and the retained locks                              | Discarded, not rebound to the survivor                                                                                                                                                              |
-| Blocked parent row lock                                                                    | The writer blocks, then gives up on its own `1s` budget; nothing written, nothing consumed, and the next accepted rename still takes the very next sequence id                                      |
+| Blocked parent row lock **before** the first write                                         | The writer blocks on `FOR KEY SHARE`, then gives up on its own `1s` budget; nothing written, nothing consumed, and the next accepted rename still takes the very next sequence id                   |
+| Late write that fails **after** the title UPDATE and the sequence reservation              | The whole transaction rolls back: title, `renamed_at`, `updated_at`, the sidebar event and the reserved sequence id                                                                                 |
+| Commit ordering of the sidebar invalidation                                                | None published while the written transaction is paused before `COMMIT`; exactly one afterwards, on the admitted owner's own channel                                                                 |
+| Two overlapping in-flight generations from the two real schedulers                         | Both provider requests counted and held together; exactly one title, one `renamed` event and one invalidation result                                                                                |
+| The fence deadline reaching the completion                                                 | The workflow stops at its cooperative boundary before the first write; nothing written, published or consumed                                                                                       |
 | Same-organization Agent owner transfer                                                     | `agents.owner` alone moving is caught                                                                                                                                                               |
 | Agent organization transfer                                                                | Caught                                                                                                                                                                                              |
 | Thread deleted during the provider request                                                 | Nothing recreated                                                                                                                                                                                   |
@@ -225,44 +238,110 @@ Two details worth stating exactly, because both were previously asserted loosely
   on its own. Removing the Agent owner from the admitted subject set was run as
   a mutation probe: that case fails and its open-owner control still passes.
 
-A genuine pair of concurrent in-flight generations is **not** reachable from the
-send route: a second send while the first run is active becomes a queued
-message, which schedules no second generation. The coupled single-event property
-is therefore established through the eligibility CAS with a counted provider
-attempt, not by claiming two attempts raced.
+Three more details, each of which replaces an earlier claim that its evidence
+did not support:
+
+- **A genuine pair of concurrent in-flight generations is reachable**, and is
+  now exercised. A second send while the first run is active does become a
+  queued message and the send route schedules nothing for it — but the terminal
+  callback then claims that message, creates its run and calls
+  `scheduleChatThreadTitleGeneration` itself, independently of whether the
+  earlier provider request has answered. The case holds the first request open,
+  finishes the first run through the production completion webhook, waits until
+  **two** requests are counted inside the held handler, and releases both
+  together: one title, one `renamed` event and one invalidation result. The
+  earlier statement that this pair was unreachable was wrong; the eligibility
+  CAS it relied on is sound and unchanged.
+- **Rollback of an already-executed late write is exercised directly.** The
+  pre-write lock case fails on `FOR KEY SHARE`, before the title UPDATE, so it
+  proves refusal on a lock budget and nothing about rollback. The new case holds
+  the next `(user_id, org_id, seq_id)` slot instead, which the writer's _last_
+  statement collides with — after the title UPDATE and after the durable
+  sequence reservation — so the failure happens with both writes executed and
+  `COMMIT` never sent. That distinguishes a failing final statement from a
+  failing `COMMIT`; the latter is not claimed here. Every baseline, including
+  `updated_at` and the sequence, is captured before the attempt rather than read
+  back afterwards.
+- **Outbound invalidation is observed, not inferred.** Cases assert the
+  `threadListChanged` publishes routed to the admitted owner's own
+  `user-org:<userId>:<orgId>` channel, paired from the Ably client mock's
+  channel and publish spies. Closure, a moved identity, a rolled back write and
+  a paused pre-`COMMIT` transaction publish none; a committed title publishes
+  exactly one. The send itself publishes other topics on that same channel, so
+  both the channel and the topic are filtered and each case compares against a
+  baseline it took after the send had answered.
+
+Because no chat-thread read contract returns `chat_threads.updated_at` — the
+metadata response omits it and the snapshot projection that carries it is served
+from a compacted row this workflow never produces — the timestamp assertions use
+a read-only fixture. It writes nothing, and it is a narrower exception than
+adding a timestamp endpoint for a test.
+
+The title fence's own cancellation coverage is the deadline case above.
+`auxiliary-generation.test.ts` cancellation covers `saveRunSummaryRequest` and
+is **not** coverage of this fence.
 
 ## Measured cost
 
 Local development PostgreSQL, real HTTP boundary, same harness for both builds:
 20 sequential sends on 20 threads, each drained to its persisted title, three
-samples each. Baseline is this branch with `chat-title.service.ts` and the
-admission helper reverted to `main`. These are bounded local samples, not
-production throughput.
+samples each. Candidate is `ccaca7482432147bd5e61f7c66fabd2cf91407bf`; baseline
+is that revision with `chat-title.service.ts` and
+`chat-thread-content-erasure-admission.service.ts` restored to
+`aad63fff96aa14413a97b952093fc897f7962804`, the `main` commit immediately before
+it.
 
 | Build     | Samples (ms)       |  Median | Per send |
 | --------- | ------------------ | ------: | -------: |
 | Baseline  | 2127 / 2099 / 2150 | 2127 ms |  ~106 ms |
 | Candidate | 2093 / 2162 / 2173 | 2162 ms |  ~108 ms |
 
-The medians differ by 35 ms across 20 sends, about 1.8 ms per send, and the two
-ranges overlap. The honest reading is that these samples **bound** the added
-cost at roughly a couple of milliseconds per send rather than resolving it: the
-fence adds two bounded transactions whose statements are all single-row primary
-key work, and that is below this harness's own run-to-run spread.
+These are **raw observations from three samples per build on one developer
+machine, and nothing more**. The two ranges overlap — the candidate's fastest
+sample is below the baseline's median — so they neither resolve the added cost
+nor bound it, at a couple of milliseconds per send or at any other figure. They
+are recorded because they are the measurement that was taken, not because they
+support an upper bound, and they say nothing about production throughput.
 
-Every statement the fence adds is a primary-key scan. The gate's identity read
-and its revalidating re-read share one plan:
+The gate's identity read and its revalidating re-read share one plan, measured
+here against a **real** thread row whose Agent resolves, so the join is actually
+exercised rather than short-circuited by an empty outer side:
 
 ```
-Limit  (actual time=0.013..0.013 rows=0 loops=1)
-  ->  Nested Loop Left Join  (actual time=0.011..0.012 rows=0 loops=1)
+Limit (actual time=0.027..0.028 rows=1.00 loops=1)
+  Buffers: shared hit=4
+  ->  Nested Loop Left Join (actual time=0.026..0.027 rows=1.00 loops=1)
         ->  Index Scan using chat_threads_pkey on chat_threads
+              Index Cond: (id = $1)
         ->  Index Scan using agents_pkey on agents
-  Buffers: shared hit=1
+              Index Cond: (id = chat_threads.agent_id)
 ```
 
 The writer's `FOR KEY SHARE` locks keep the plans the accepted R3 measurement
 recorded for the same two statements.
+
+### What the fence actually adds
+
+Per eager title, replacing one standalone eligibility `SELECT` with two bounded
+transactions:
+
+| Transaction               | Statements                                                                                                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Initiation gate (all new) | `BEGIN`, two `set_config`, identity read, B1 isolation probe, one `pg_advisory_xact_lock_shared` per distinct subject, B1 closure lookup, eligibility read, prior-round context read, identity re-read, `COMMIT` |
+| Completion (new prologue) | two `set_config`, identity read, B1 isolation probe, the same advisory locks, B1 closure lookup, `agents` `FOR KEY SHARE`, `chat_threads` `FOR KEY SHARE`, identity re-read                                      |
+| Completion (pre-existing) | title `UPDATE ... RETURNING`, sequence `INSERT ... ON CONFLICT DO UPDATE ... RETURNING`, `renamed` `INSERT ... ON CONFLICT DO NOTHING`, `COMMIT`                                                                 |
+
+There are two or three distinct subjects — thread user, Agent organization, and
+the Agent owner when it differs from the thread user — so B1 issues that many
+advisory-lock round trips in each transaction.
+
+Not all of this is primary-key work, and the earlier claim that it was should be
+read as withdrawn. The advisory locks are function calls that take no snapshot
+and scan nothing but can **wait**; the isolation probe reads a `VALUES` row; the
+closure lookup filters `jobs` over the subject domains rather than by primary
+key; and the two `FOR KEY SHARE` selects are primary-key scans that additionally
+take row locks. Only the identity reads, the eligibility read and the title
+`UPDATE` are plain single-row primary-key work.
 
 ## Residual work
 
