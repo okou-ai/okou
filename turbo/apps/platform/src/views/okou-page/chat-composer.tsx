@@ -174,6 +174,12 @@ import {
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
 } from "./template-tile.ts";
+import {
+  TEMPLATE_FILTER_PILL,
+  TEMPLATE_FILTER_PILL_ACTIVE,
+  TEMPLATE_FILTER_PILL_IDLE,
+  TEMPLATE_FILTER_PILL_ROW,
+} from "./template-filter-pill.ts";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
@@ -1384,7 +1390,7 @@ function WorkflowTemplatePillRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-6">
+    <div className={cn(TEMPLATE_FILTER_PILL_ROW, "px-6")}>
       {["all", ...pills].map((pill) => {
         const isActive = active === pill;
         return (
@@ -1393,10 +1399,10 @@ function WorkflowTemplatePillRow({
             type="button"
             aria-pressed={isActive}
             className={cn(
-              "h-7 shrink-0 rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors cursor-pointer",
+              TEMPLATE_FILTER_PILL,
               isActive
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
+                ? TEMPLATE_FILTER_PILL_ACTIVE
+                : TEMPLATE_FILTER_PILL_IDLE,
             )}
             onClick={() => {
               onSelect(pill);

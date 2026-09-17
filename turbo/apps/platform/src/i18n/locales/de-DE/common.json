@@ -1901,13 +1901,14 @@
       "picker": {
         "autoVoiceDescription": "Finde eine Stimme, die zu deinem Inhalt passt.",
         "avatarVoice": "Stimme des Avatars",
-        "changeAvatar": "Avatar ändern",
+        "back": "Zurück",
         "chooseStyle": "Stil auswählen",
-        "chooseStyleAndVoice": "Wähle einen Stil und eine Stimme.",
+        "closeOptions": "Optionen schließen",
+        "moreOptions": "Weitere Optionen",
         "noMatches": "Keine Treffer.",
-        "ready": "Bereit. Füge deinen Inhalt im Chat hinzu.",
+        "searchStyles": "Stile suchen",
+        "selectionSummary": "Stimme: {{voice}} · Avatar: {{avatar}}",
         "settings": "Einstellungen für Intro-Videos",
-        "style": "Stil",
         "useSelection": "Auswahl verwenden"
       },
       "style": {

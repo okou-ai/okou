@@ -1939,13 +1939,14 @@
       "picker": {
         "autoVoiceDescription": "Encuentra una voz que se adapte a tu contenido.",
         "avatarVoice": "Voz del avatar",
-        "changeAvatar": "Cambiar avatar",
+        "back": "Atrás",
         "chooseStyle": "Elige un estilo",
-        "chooseStyleAndVoice": "Elige un estilo y una voz.",
+        "closeOptions": "Cerrar opciones",
+        "moreOptions": "Más opciones",
         "noMatches": "No hay resultados.",
-        "ready": "Listo para usar. Añade tu contenido en el chat.",
+        "searchStyles": "Buscar estilos",
+        "selectionSummary": "Voz: {{voice}} · Avatar: {{avatar}}",
         "settings": "Configuración del vídeo de introducción",
-        "style": "Estilo",
         "useSelection": "Usar selección"
       },
       "style": {

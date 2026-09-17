@@ -1893,13 +1893,14 @@
       "picker": {
         "autoVoiceDescription": "Temukan suara yang cocok dengan konten Anda.",
         "avatarVoice": "Suara avatar",
-        "changeAvatar": "Ubah avatar",
+        "back": "Kembali",
         "chooseStyle": "Pilih gaya",
-        "chooseStyleAndVoice": "Pilih gaya dan suara.",
+        "closeOptions": "Tutup opsi",
+        "moreOptions": "Opsi lainnya",
         "noMatches": "Tidak ada hasil.",
-        "ready": "Siap digunakan. Tambahkan konten Anda di obrolan.",
+        "searchStyles": "Cari gaya",
+        "selectionSummary": "Suara: {{voice}} · Avatar: {{avatar}}",
         "settings": "Pengaturan video intro",
-        "style": "Gaya",
         "useSelection": "Gunakan pilihan"
       },
       "style": {

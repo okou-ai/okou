@@ -1901,13 +1901,14 @@
       "picker": {
         "autoVoiceDescription": "Find a voice that fits your content.",
         "avatarVoice": "Avatar’s voice",
-        "changeAvatar": "Change avatar",
+        "back": "Back",
         "chooseStyle": "Choose a style",
-        "chooseStyleAndVoice": "Choose a style and a voice.",
+        "closeOptions": "Close options",
+        "moreOptions": "More options",
         "noMatches": "No matches found.",
-        "ready": "Ready to use. Add your content in the chat.",
+        "searchStyles": "Search styles",
+        "selectionSummary": "Voice: {{voice}} · Avatar: {{avatar}}",
         "settings": "Intro video settings",
-        "style": "Style",
         "useSelection": "Use selection"
       },
       "style": {

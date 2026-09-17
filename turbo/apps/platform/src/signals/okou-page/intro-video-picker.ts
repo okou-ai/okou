@@ -3,18 +3,29 @@ import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-vi
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
 import { command, computed, state } from "ccstate";
 
-export type IntroVideoPickerTab = "style" | "avatar" | "voice";
+/**
+ * The advanced panel's own view. `root` lists the current voice and presenter;
+ * the two library views replace it in place so the panel keeps one back stack
+ * instead of opening a second dialog.
+ */
+export type IntroVideoPickerPanelView = "root" | "voice" | "avatar";
+
+/**
+ * The style is the only required choice. A voice the user never opened is
+ * `{ kind: "default" }` — the system picks one that fits — so the picker can
+ * state the default instead of holding the primary action hostage to it.
+ */
+const DEFAULT_VOICE: IntroVideoOptions["voice"] = { kind: "default" };
 
 export function createIntroVideoPickerSignals() {
-  const tab$ = state<IntroVideoPickerTab>("style");
   const style$ = state<IntroVideoOptions["style"] | null>(null);
   const avatar$ = state<IntroVideoOptions["avatar"]>({ kind: "none" });
-  const voice$ = state<IntroVideoOptions["voice"] | null>(null);
+  const voice$ = state<IntroVideoOptions["voice"]>(DEFAULT_VOICE);
   const group$ = state("all");
+  const query$ = state("");
+  const panelOpen$ = state(false);
+  const panelView$ = state<IntroVideoPickerPanelView>("root");
   return {
-    tab$: computed((get) => {
-      return get(tab$);
-    }),
     style$: computed((get) => {
       return get(style$);
     }),
@@ -27,30 +38,31 @@ export function createIntroVideoPickerSignals() {
     group$: computed((get) => {
       return get(group$);
     }),
+    query$: computed((get) => {
+      return get(query$);
+    }),
+    panelOpen$: computed((get) => {
+      return get(panelOpen$);
+    }),
+    panelView$: computed((get) => {
+      return get(panelView$);
+    }),
     template$: computed((get): GenerationTemplateRequest | null => {
       const style = get(style$);
-      const voice = get(voice$);
-      return style && voice
+      return style
         ? {
             type: "intro-video",
             selection: {
-              options: { style, avatar: get(avatar$), voice },
+              options: { style, avatar: get(avatar$), voice: get(voice$) },
             },
           }
         : null;
     }),
-    setTab$: command(({ set }, tab: IntroVideoPickerTab) => {
-      set(tab$, tab);
-      set(group$, "all");
-    }),
     setStyle$: command(({ set }, style: IntroVideoOptions["style"]) => {
       set(style$, style);
     }),
-    setAvatar$: command(({ get, set }, avatar: IntroVideoOptions["avatar"]) => {
+    setAvatar$: command(({ set }, avatar: IntroVideoOptions["avatar"]) => {
       set(avatar$, avatar);
-      if (avatar.kind === "catalog" && get(voice$) === null) {
-        set(voice$, { kind: "default" });
-      }
     }),
     setVoice$: command(({ set }, voice: IntroVideoOptions["voice"]) => {
       set(voice$, voice);
@@ -58,13 +70,28 @@ export function createIntroVideoPickerSignals() {
     setGroup$: command(({ set }, group: string) => {
       set(group$, group);
     }),
+    setQuery$: command(({ set }, query: string) => {
+      set(query$, query);
+    }),
+    setPanelOpen$: command(({ set }, open: boolean) => {
+      set(panelOpen$, open);
+      if (!open) {
+        set(panelView$, "root");
+      }
+    }),
+    setPanelView$: command(({ set }, view: IntroVideoPickerPanelView) => {
+      set(panelView$, view);
+      set(panelOpen$, true);
+    }),
     restore$: command(({ set }, template: GenerationTemplateRequest | null) => {
       const options = introVideoTemplateOptions(template);
-      set(tab$, "style");
       set(group$, "all");
+      set(query$, "");
+      set(panelOpen$, false);
+      set(panelView$, "root");
       set(style$, options?.style ?? null);
       set(avatar$, options?.avatar ?? { kind: "none" });
-      set(voice$, options?.voice ?? null);
+      set(voice$, options?.voice ?? DEFAULT_VOICE);
     }),
   };
 }
