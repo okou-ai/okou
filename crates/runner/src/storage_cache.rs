@@ -187,6 +187,9 @@ struct CacheTarget {
 struct CacheTargetGroup {
     targets: Vec<CacheTarget>,
     archive_size: Option<u64>,
+    // This plan already validated positive decoded contents. Only a hint for
+    // optional warming of archive hits; never suppress missing archive fills.
+    decoded_ready_observed: bool,
 }
 
 struct FreshDeliveryScanSummary {
@@ -1475,14 +1478,14 @@ struct ProcessedGroupTask {
 /// entries after disk eviction or redo a miss after prefetch has already begun.
 async fn prepare_decoded_storage(
     plan: &mut StoragePlan,
-    groups: &[CacheTargetGroup],
+    groups: &mut [CacheTargetGroup],
     cache: &decoded::DecodedCache,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
     if plan.decoded_prepared() {
         return Ok(());
     }
-    for batch in groups.chunks(decoded::LOOKUP_BATCH_SIZE) {
+    for batch in groups.chunks_mut(decoded::LOOKUP_BATCH_SIZE) {
         let keys = batch
             .iter()
             .map(|group| {
@@ -1503,7 +1506,8 @@ async fn prepare_decoded_storage(
         let ready = result.map_err(|error| {
             RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
         })?;
-        for (group, files) in batch.iter().zip(ready) {
+        for (group, files) in batch.iter_mut().zip(ready) {
+            group.decoded_ready_observed = files.is_some();
             reuse_decoded(plan, group, files)?;
         }
     }
@@ -2016,7 +2020,7 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
     let mut fresh_delivery = fresh_delivery;
-    let target_groups = if let Some(delivery) = fresh_delivery.as_mut() {
+    let mut target_groups = if let Some(delivery) = fresh_delivery.as_mut() {
         if let Err(error) = delivery.finish_classification(telemetry).await {
             delivery.cancel_and_drain(telemetry).await;
             return Err(error);
@@ -2028,7 +2032,7 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
         group_targets(collect_targets(plan.cache_candidates()))
     };
     if let Some(cache) = decoded {
-        prepare_decoded_storage(plan, &target_groups, cache, telemetry).await?;
+        prepare_decoded_storage(plan, &mut target_groups, cache, telemetry).await?;
     }
     if target_groups.is_empty() && fresh_delivery.is_none() {
         return Ok(None);
@@ -2188,7 +2192,7 @@ fn defer_background_fill_groups(
                 BackgroundFillAction::RetireArchive(decoded?.clone())
             } else if should_background_fill(outcome) {
                 BackgroundFillAction::Fill(decoded.cloned())
-            } else if matches!(outcome, TargetOutcome::Hit) {
+            } else if matches!(outcome, TargetOutcome::Hit) && !group.decoded_ready_observed {
                 BackgroundFillAction::WarmDecoded(decoded?.clone())
             } else {
                 return None;
@@ -2308,6 +2312,7 @@ fn group_targets(targets: Vec<CacheTarget>) -> Vec<CacheTargetGroup> {
             groups.push(CacheTargetGroup {
                 targets,
                 archive_size,
+                decoded_ready_observed: false,
             });
         }
     }
@@ -2382,9 +2387,9 @@ pub(crate) async fn prepare_fresh_archive_delivery(
     let ordinary_required = archives
         .iter()
         .any(|archive| archive.name.is_empty() || archive.version.is_empty());
-    let groups = group_targets(collect_targets(archives));
+    let mut groups = group_targets(collect_targets(archives));
     if let Some(cache) = decoded {
-        prepare_decoded_storage(plan, &groups, cache, telemetry).await?;
+        prepare_decoded_storage(plan, &mut groups, cache, telemetry).await?;
     }
     let candidates = groups
         .iter()
@@ -3940,6 +3945,7 @@ fn rewrite_url(plan: &mut StoragePlan, target: &CacheTarget) {
 mod tests {
     use super::*;
 
+    mod decoded_observation;
     mod http_reuse;
     mod phase_diagnostics;
 
@@ -4533,7 +4539,7 @@ mod tests {
             fresh_storage_plan(long_url, "name", "v1"),
         ];
         for mut plan in plans {
-            populate_cache_with_fresh_delivery(
+            let deferred = populate_cache_with_fresh_delivery(
                 &mut plan,
                 &sandbox,
                 &home,
@@ -4543,6 +4549,7 @@ mod tests {
             )
             .await
             .unwrap();
+            assert!(deferred.is_none(), "validated contents need no warming");
             assert!(plan.take_decoded().is_empty());
             assert!(
                 storage_archive_url(&plan, 0)
@@ -4840,6 +4847,7 @@ mod tests {
         archive_size: Option<u64>,
     ) -> CacheTargetGroup {
         CacheTargetGroup {
+            decoded_ready_observed: false,
             targets: vec![CacheTarget {
                 handle: ArchiveHandle::storage(0),
                 name: name.to_string(),

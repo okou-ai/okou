@@ -744,6 +744,15 @@ Only background fill reads these records; foreground lookup probes positive
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
 
+For an ordinary archive hit, optional decoded warming is omitted when this
+plan's existing foreground lookup already validated positive decoded contents,
+even if mount or payload admission did not select them for delivery. This
+observation belongs only to that prepared plan and adds no lookup or retained
+file contents. A missing compressed archive still selects its required fill;
+later plans perform their own positive lookup, so GC eviction cannot become a
+permanent warming exclusion. Unobserved positive entries and rejection records
+retain the existing background checks.
+
 Readers hold that lock while validating the bounded index, identity, file types,
 sizes and content digests, then pin owned bytes through Guest apply. GC can evict
 the disk entry afterward without invalidating an in-flight delivery. Orphaned
