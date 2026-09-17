@@ -133,6 +133,17 @@ export function barrierQueryBinds(
   return values.success && values.data.includes(value);
 }
 
+/**
+ * The statements the currently selected transaction has already issued, in
+ * order. A thread id alone cannot identify a transaction when several of them
+ * read the same thread, so `stopAt` uses this to recognize the phase it wants —
+ * for example a transaction that has already taken a `FOR KEY SHARE` lock is
+ * the writer, not the read-only gate that precedes it.
+ */
+export interface SelectedTransaction {
+  readonly statements: readonly string[];
+}
+
 export interface TransactionBarrier {
   readonly entered: Promise<{
     readonly lockTimeout: string;
@@ -144,8 +155,63 @@ export interface TransactionBarrier {
   readonly release: () => void;
 }
 
+/**
+ * Infrastructure exception: no API can suspend a real transaction between its
+ * statements, and a fenced writer's own transaction is the only place its
+ * statement ordering and retained barriers can be observed from another
+ * session. Every original query still executes unchanged and in order; only the
+ * transaction `select` identifies waits, at one chosen point. Nothing is mocked
+ * and no result or error is replaced.
+ *
+ * The pause always happens before the chosen statement is dispatched, so no
+ * server-side lock or statement timer runs during the observation window and a
+ * test never has to win the writer's own bounded budget.
+ *
+ * `select` recognizes a candidate transaction from a statement it issues;
+ * `stopAt` then chooses where that candidate pauses, and receives whether the
+ * current statement is the selecting one so a caller can stop there, plus the
+ * statements that candidate has already issued so it can require a phase.
+ *
+ * A candidate that reaches `COMMIT` or `ROLLBACK` without ever satisfying
+ * `stopAt` was not the transaction the caller meant: the latch is released and
+ * the next candidate is considered. Several transactions legitimately read the
+ * same row — an admission gate commits before the writer it precedes — so
+ * latching the first one permanently either pauses the wrong transaction or
+ * waits forever for a stop it will never reach.
+ */
+export async function withDatabaseTransactionBarrierFixture<T>(
+  args: {
+    readonly select: (queryArgs: unknown[]) => boolean;
+    readonly stopAt: (
+      queryArgs: unknown[],
+      selectingStatement: boolean,
+      transaction: SelectedTransaction,
+    ) => boolean;
+    readonly work: (barrier: TransactionBarrier) => Promise<T>;
+  },
+  signal: AbortSignal,
+): Promise<T> {
+  return await withDatabaseTransactionBarriersFixture(
+    {
+      transactions: 1,
+      select: args.select,
+      stopAt: (queryArgs, selectingStatement, transaction) => {
+        return args.stopAt(queryArgs, selectingStatement, transaction);
+      },
+      work: async ([barrier]) => {
+        if (!barrier) {
+          throw new Error("Expected one transaction barrier");
+        }
+        return await args.work(barrier);
+      },
+    },
+    signal,
+  );
+}
+
 interface BarrierSlot {
   receiver: unknown;
+  statements: string[];
   paused: boolean;
   readonly entered: ReturnType<
     typeof createDeferredPromise<{
@@ -173,62 +239,20 @@ const barrierSettingsSchema = z.object({
 });
 
 /**
- * Infrastructure exception: no API can suspend a real transaction between its
- * statements, and a fenced writer's own transaction is the only place its
- * statement ordering and retained barriers can be observed from another
- * session. Every original query still executes unchanged and in order; only the
- * transaction `select` identifies waits, at one chosen point. Nothing is mocked
- * and no result or error is replaced.
+ * The same infrastructure exception for more than one transaction at a time,
+ * and the single implementation the one-transaction form above delegates to.
  *
- * The pause always happens before the chosen statement is dispatched, so no
- * server-side lock or statement timer runs during the observation window and a
- * test never has to win the writer's own bounded budget.
+ * A candidate is bound to the pooled connection that issued its selecting
+ * statement, which is the transaction's identity: a statement is attributed to
+ * a barrier only when it runs on that exact connection, never by matching a
+ * thread id that several readers and writers share. A caller that starts one
+ * request, awaits its barrier and only then starts the next therefore binds
+ * each barrier to an exact HTTP request.
  *
- * `select` recognizes the target transaction from a statement only it issues;
- * `stopAt` then chooses where that transaction pauses, and receives whether the
- * current statement is the selecting one so a caller can stop there.
- */
-export async function withDatabaseTransactionBarrierFixture<T>(
-  args: {
-    readonly select: (queryArgs: unknown[]) => boolean;
-    readonly stopAt: (
-      queryArgs: unknown[],
-      selectingStatement: boolean,
-    ) => boolean;
-    readonly work: (barrier: TransactionBarrier) => Promise<T>;
-  },
-  signal: AbortSignal,
-): Promise<T> {
-  return await withDatabaseTransactionBarriersFixture(
-    {
-      transactions: 1,
-      select: args.select,
-      stopAt: (queryArgs, selectingStatement) => {
-        return args.stopAt(queryArgs, selectingStatement);
-      },
-      work: async ([barrier]) => {
-        if (!barrier) {
-          throw new Error("Expected one transaction barrier");
-        }
-        return await args.work(barrier);
-      },
-    },
-    signal,
-  );
-}
-
-/**
- * The same infrastructure exception for more than one transaction at a time.
- * Each selected transaction is bound to its own pooled connection, which is the
- * transaction's identity: a statement is attributed to a barrier only when it
- * runs on that exact connection, never by matching a thread id that several
- * readers and writers share. A caller that starts one request, awaits its
- * barrier and only then starts the next therefore binds each barrier to an
- * exact HTTP request.
- *
- * Slots are claimed in arrival order and a claimed connection keeps its slot,
- * so `stopAt` receives the slot index and can pause two writers of the same row
- * at two different statements. Every barrier pauses at most once.
+ * Slots are claimed in index order, `stopAt` receives the slot index so two
+ * writers of the same row can pause at two different statements, and every
+ * barrier pauses at most once. A candidate that reaches `COMMIT` or `ROLLBACK`
+ * without satisfying its `stopAt` frees its slot for the next candidate.
  */
 export async function withDatabaseTransactionBarriersFixture<T>(
   args: {
@@ -237,6 +261,7 @@ export async function withDatabaseTransactionBarriersFixture<T>(
     readonly stopAt: (
       queryArgs: unknown[],
       selectingStatement: boolean,
+      transaction: SelectedTransaction,
       index: number,
     ) => boolean;
     readonly work: (barriers: readonly TransactionBarrier[]) => Promise<T>;
@@ -250,6 +275,7 @@ export async function withDatabaseTransactionBarriersFixture<T>(
     (): BarrierSlot => {
       return {
         receiver: undefined,
+        statements: [],
         paused: false,
         entered: createDeferredPromise<{
           readonly pid: number;
@@ -270,23 +296,38 @@ export async function withDatabaseTransactionBarriersFixture<T>(
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const selectingStatement = args.select(queryArgs);
       let index = slots.findIndex((slot) => {
-        return slot.receiver === receiver;
+        return slot.receiver !== undefined && slot.receiver === receiver;
       });
       if (index === -1 && selectingStatement) {
         index = slots.findIndex((slot) => {
           return slot.receiver === undefined;
         });
-        const claimed = slots[index];
+        const claimed = index === -1 ? undefined : slots[index];
         if (claimed) {
           claimed.receiver = receiver;
+          claimed.statements = [];
         }
       }
       const slot = index === -1 ? undefined : slots[index];
+      if (!slot || slot.paused) {
+        return Reflect.apply(target, receiver, queryArgs);
+      }
+      const text = barrierQueryText(queryArgs);
       if (
-        !slot ||
-        slot.paused ||
-        !args.stopAt(queryArgs, selectingStatement, index)
+        !args.stopAt(
+          queryArgs,
+          selectingStatement,
+          { statements: slot.statements },
+          index,
+        )
       ) {
+        slot.statements.push(text);
+        if (text === "commit" || text === "rollback") {
+          // This candidate finished without ever reaching the requested stop,
+          // so it was not the transaction this slot meant.
+          slot.receiver = undefined;
+          slot.statements = [];
+        }
         return Reflect.apply(target, receiver, queryArgs);
       }
       slot.paused = true;
