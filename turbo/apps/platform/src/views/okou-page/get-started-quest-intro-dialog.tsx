@@ -2,7 +2,7 @@ import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-sta
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Play } from "lucide-react";
+import { Play, User } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -167,36 +167,26 @@ function OkouAvatar({ size }: { size: number }) {
   );
 }
 
-/** A bust: the account glyph, reused wherever a person is meant. */
+/**
+ * A person, drawn as one glyph rather than assembled.
+ *
+ * An earlier version stacked a filled circle over a filled dome, and at 20px
+ * the gap between them read as a head floating above a shoulder rather than as
+ * somebody. lucide's is one drawing at proportions that survive the size, and
+ * it is the same source the start-card tiles already take their marks from.
+ */
 function Person({ accent, size }: { accent: string; size: number }) {
   return (
     <span
-      className="relative shrink-0 overflow-hidden rounded-full border bg-card"
+      className="grid shrink-0 place-items-center rounded-full border bg-card"
       style={{
         width: size,
         height: size,
         borderColor: `${accent}${LINE_ALPHA}`,
+        color: accent,
       }}
     >
-      <span
-        className="absolute left-1/2 rounded-full"
-        style={{
-          top: size * 0.24,
-          width: size * 0.28,
-          height: size * 0.28,
-          marginLeft: -size * 0.14,
-          backgroundColor: accent,
-        }}
-      />
-      <span
-        className="absolute bottom-0 left-1/2 rounded-t-full"
-        style={{
-          width: size * 0.58,
-          height: size * 0.32,
-          marginLeft: -size * 0.29,
-          backgroundColor: accent,
-        }}
-      />
+      <User size={Math.round(size * 0.56)} strokeWidth={2.4} />
     </span>
   );
 }
