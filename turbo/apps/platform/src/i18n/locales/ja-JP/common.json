@@ -6297,8 +6297,7 @@
       "sourceFile": "{{filename}} から"
     },
     "empty": {
-      "description": "アップロードしたファイルから作成されたテンプレートがここに表示されます。",
-      "title": "テンプレートはまだありません"
+      "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
     },
     "loadFailed": "テンプレートを読み込めませんでした。",
     "pageCount_other": "{{count}} ページ",

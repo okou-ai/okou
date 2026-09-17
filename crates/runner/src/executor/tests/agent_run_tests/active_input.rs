@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,7 +20,8 @@ use crate::executor::tests::support::{
     minimal_context, sandbox_read_file_error, test_executor_config, test_telemetry,
 };
 use crate::http::{HttpClient, HttpClientConfig};
-use crate::local_queue::{ActiveInputEntry, LocalQueue};
+use crate::ids::RunId;
+use crate::local_queue::{self, ActiveInputEntry, LocalQueue};
 use crate::provider::ApiClient;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
 use crate::types::SandboxReuseResult;
@@ -29,6 +31,18 @@ mod read_recovery;
 
 const DELIVERY_ID: &str = "b1e2ad6d-930a-4d51-aa40-7952d54f978b";
 const EVENT_ID: &str = "e6bc287d-8c08-464e-831a-cad771610157";
+
+fn local_queue_with_job(group_dir: &Path, run_id: RunId) -> LocalQueue {
+    let profile = crate::profile::DEFAULT_PROFILE;
+    local_queue::ensure_profile_jobs_dir(group_dir, profile).unwrap();
+    local_queue::write_private_file(
+        &local_queue::job_path(group_dir, profile, run_id).unwrap(),
+        b"{}",
+        "test local job",
+    )
+    .unwrap();
+    LocalQueue::new(group_dir.to_path_buf())
+}
 
 async fn receive_http_request_before(
     deadline: tokio::time::Instant,
@@ -93,7 +107,7 @@ async fn run_local_active_input_rejection(diagnostic: &str) -> Vec<CapturedEvent
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let group_dir = dir.path().join("active-inputs");
-    LocalQueue::new(group_dir.clone())
+    local_queue_with_job(&group_dir, ctx.run_id)
         .write_active_input_sync(&ActiveInputEntry {
             run_id: ctx.run_id,
             sequence: 1,
@@ -198,7 +212,7 @@ async fn run_in_sandbox_forwards_local_active_inputs_in_order() {
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let group_dir = dir.path().join("active-inputs");
-    let queue = LocalQueue::new(group_dir.clone());
+    let queue = local_queue_with_job(&group_dir, ctx.run_id);
     for entry in [
         ActiveInputEntry {
             run_id: ctx.run_id,
@@ -468,14 +482,15 @@ async fn run_in_sandbox_retries_local_active_input_with_same_id_after_uncertain_
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let group_dir = dir.path().join("active-inputs");
-    LocalQueue::new(group_dir.clone())
+    let queue = local_queue_with_job(&group_dir, ctx.run_id);
+    queue
         .write_active_input_sync(&ActiveInputEntry {
             run_id: ctx.run_id,
             sequence: 1,
             text: "first".to_string(),
         })
         .unwrap();
-    LocalQueue::new(group_dir.clone())
+    queue
         .write_active_input_sync(&ActiveInputEntry {
             run_id: ctx.run_id,
             sequence: 2,

@@ -155,7 +155,8 @@ This is a producer fence only. It does not erase any existing draft, title,
 attachment descriptor, sidebar event or snapshot, and it does not complete B2,
 A2 or account erasure. Still open in the parent epic:
 
-- The generated/LLM title workflow and its late completion callback.
+- The generated/LLM title workflow and its late completion callback, now fenced
+  separately in [generated chat titles](account-erasure-chat-thread-title.md).
 - Create, send, edit and revoke message flows, and send-coupled draft clearing.
 - Pin, read state, model, service tier, browser and other thread metadata.
 - The sidebar snapshot projector, shared and public titles.

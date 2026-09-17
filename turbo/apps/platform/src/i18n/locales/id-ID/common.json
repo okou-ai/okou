@@ -6297,8 +6297,7 @@
       "sourceFile": "Dari {{filename}}"
     },
     "empty": {
-      "description": "Templat yang dibuat dari file yang Anda unggah akan muncul di sini.",
-      "title": "Belum ada templat"
+      "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."
     },
     "loadFailed": "Tidak dapat memuat templat.",
     "pageCount_other": "{{count}} halaman",

@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+
+import { Cron } from "croner";
 import { gunzipSync } from "node:zlib";
 
 import {
@@ -73,7 +75,10 @@ import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fi
 import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
 import { holdMorningBriefProjectionWrite } from "../../../test-fixtures/morning-brief-projection";
 import { readMorningBriefScheduleClaimsFixture } from "../../../test-fixtures/morning-brief-schedule-claim";
-import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
+import {
+  admitWorkflowAutomationEventFixture,
+  holdWorkflowAutomationRowFixture,
+} from "../../../test-fixtures/workflow-queue";
 import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -1734,6 +1739,26 @@ async function deliverClerkOrganizationCreated(
       id: actor.orgId,
       created_by: actor.userId,
       created_at: createdAt.getTime(),
+    },
+  });
+  await webhooks.requestClerkWebhook("{}", {}, [200]);
+  await flushWaitUntilForTest();
+}
+
+async function deliverClerkOrganizationMembershipDeleted(
+  actor: ApiTestUser,
+): Promise<void> {
+  if (!actor.orgId || !actor.orgRole) {
+    throw new Error("Expected organization-scoped Clerk member");
+  }
+  webhooks.configureClerkWebhookSecret();
+  webhooks.verifyNextClerkWebhook({
+    type: "organizationMembership.deleted",
+    data: {
+      id: `membership-${actor.userId}-${actor.orgId}`,
+      organization: { id: actor.orgId },
+      publicUserData: { userId: actor.userId },
+      role: actor.orgRole,
     },
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
@@ -11726,6 +11751,15 @@ describe("Official Workflow Run admission", () => {
 });
 
 describe("Morning Brief legacy schedule claim journal", () => {
+  /** The published Morning Brief cadence, evaluated independently of the API. */
+  function briefOccurrenceAfter(
+    cronExpression: string,
+    timezone: string,
+    from: Date,
+  ): Date | null {
+    return new Cron(cronExpression, { timezone }).nextRun(from);
+  }
+
   interface JournaledBrief {
     readonly actor: ApiTestUser;
     readonly runnerGroup: string;
@@ -11805,14 +11839,20 @@ describe("Morning Brief legacy schedule claim journal", () => {
 
   /**
    * Deliver the run's terminal internal callbacks through the production
-   * dispatcher, `dispatch_count` times, exactly as a redelivered completion
-   * would arrive.
+   * dispatcher. `dispatchCount` above one runs concurrent initial dispatches,
+   * which is what actually reaches the handler more than once: the dispatcher
+   * only selects pending or failed callbacks, so a sequential redelivery after
+   * a successful one selects nothing. The returned counts are the arrival
+   * evidence tests assert on.
    */
   async function deliverBriefCallback(
     runId: string,
     dispatchCount = 1,
-  ): Promise<void> {
-    await accept(
+  ): Promise<{
+    readonly callbackResults: number;
+    readonly successfulCallbacks: number;
+  }> {
+    const response = await accept(
       automationExecutionClient().dispatchCallbacks({
         body: {
           run_id: runId,
@@ -11823,6 +11863,10 @@ describe("Morning Brief legacy schedule claim journal", () => {
       [200],
     );
     await flushWaitUntilForTest();
+    return {
+      callbackResults: response.body.callback_results,
+      successfulCallbacks: response.body.successful_callbacks,
+    };
   }
 
   async function briefRunIds(threadId: string): Promise<readonly string[]> {
@@ -11937,21 +11981,9 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(briefAutomationEventCount(threadId)).resolves.toBe(
       claims.length,
     );
-
-    // The superseded first occurrence can no longer advance the schedule.
-    await deliverBriefCallback(firstRunId, 2);
-    const afterStaleCallback = await readBriefPreference(brief.actor);
-    expect(afterStaleCallback.body.nextRunAt).toBeNull();
-    const finalClaims = await readMorningBriefScheduleClaimsFixture(
-      brief.automationId,
-    );
-    expect(finalClaims[0]?.settledAt?.getTime()).toBe(
-      claims[0]?.settledAt?.getTime(),
-    );
-    expect(finalClaims[1]?.settlement).toBe("unsettled");
   });
 
-  it("settles a completion once across duplicate callbacks and keeps the published successor", async () => {
+  it("settles once when concurrent first deliveries of the same completion arrive", async () => {
     const brief = await installJournaledBrief();
     await pollAt(brief.automationId, brief.anchor + 60_000);
     const threadId = await briefThreadId(brief.actor, brief.workflowId);
@@ -11960,27 +11992,30 @@ describe("Morning Brief legacy schedule claim journal", () => {
       throw new Error("Expected the occurrence to start a run");
     }
 
-    await deliverBriefCallback(runId);
+    // Four concurrent initial dispatches: none has been marked delivered yet,
+    // so more than one really selects the callback and enters settlement.
+    const delivery = await deliverBriefCallback(runId, 4);
+    expect(delivery.callbackResults).toBeGreaterThan(1);
+    expect(delivery.successfulCallbacks).toBeGreaterThan(1);
+
     const settled = await readBriefPreference(brief.actor);
     const successor = settled.body.nextRunAt;
     expect(successor).toStrictEqual(expect.any(String));
-    const [afterFirst] = await readMorningBriefScheduleClaimsFixture(
-      brief.automationId,
-    );
-    expect(afterFirst?.settlement).toBe("completed");
-    expect(afterFirst?.settledAt).not.toBeNull();
-
-    // Redelivering the same terminal callback must not advance again.
-    await deliverBriefCallback(runId, 4);
-    const replayed = await readBriefPreference(brief.actor);
-    expect(replayed.body.nextRunAt).toBe(successor);
     const claims = await readMorningBriefScheduleClaimsFixture(
       brief.automationId,
     );
     expect(claims).toHaveLength(1);
-    expect(claims[0]?.settledAt?.getTime()).toBe(
-      afterFirst?.settledAt?.getTime(),
+    expect(claims[0]?.settlement).toBe("completed");
+    expect(claims[0]?.settledAt).not.toBeNull();
+
+    // Exactly one recurrence step: a second settlement would have advanced
+    // past this successor rather than republishing it.
+    const expectedSuccessor = briefOccurrenceAfter(
+      "0 7 * * *",
+      "Asia/Shanghai",
+      new Date(brief.anchor + 60_000),
     );
+    expect(successor).toBe(expectedSuccessor?.toISOString());
   });
 
   it("settles an active claim with the timezone edited while it was running", async () => {
@@ -12056,6 +12091,238 @@ describe("Morning Brief legacy schedule claim journal", () => {
     await expect(
       briefAutomationEventCount(threadId),
     ).resolves.toBeGreaterThanOrEqual(1);
+  });
+
+  /** Publish a new occurrence through the real preference writer. */
+  async function republishBriefSchedule(actor: ApiTestUser): Promise<number> {
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    if (!enabled.body.nextRunAt) {
+      throw new Error("Expected the preference writer to publish a successor");
+    }
+    return Date.parse(enabled.body.nextRunAt);
+  }
+
+  it("ignores a still-unsettled older occurrence's callback once a newer claim exists", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [olderRunId] = await briefRunIds(threadId);
+    if (!olderRunId) {
+      throw new Error("Expected the first occurrence to start a run");
+    }
+
+    // The first occurrence is deliberately left unsettled, so only the current
+    // claim fence can stop its callback.
+    const nextAnchor = await republishBriefSchedule(brief.actor);
+    await pollAt(brief.automationId, nextAnchor + 60_000);
+    const claims = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(claims).toHaveLength(2);
+    expect(claims[0]?.settlement).toBe("unsettled");
+    expect(claims[1]?.claimSequence).toBe(2);
+    expect(claims[1]?.settlement).toBe("unsettled");
+    await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
+      body: { nextRunAt: null },
+    });
+
+    // First delivery of the older callback, so it genuinely reaches settlement.
+    const delivery = await deliverBriefCallback(olderRunId);
+    expect(delivery.callbackResults).toBeGreaterThan(0);
+
+    const settled = await readMorningBriefScheduleClaimsFixture(
+      brief.automationId,
+    );
+    expect(settled[0]?.settlement).toBe("unsettled");
+    expect(settled[1]?.settlement).toBe("unsettled");
+    await expect(readBriefPreference(brief.actor)).resolves.toMatchObject({
+      body: { nextRunAt: null },
+    });
+  });
+
+  it("revokes schedule occurrences when a member leaves, before and after a later tick", async () => {
+    const kept = await installJournaledBrief();
+    await pollAt(kept.automationId, kept.anchor + 60_000);
+    const departing = await installJournaledBrief();
+    await pollAt(departing.automationId, departing.anchor + 60_000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(1);
+
+    await deliverClerkOrganizationMembershipDeleted(departing.actor);
+
+    // The journal is gone and the schedule cannot replay: settlement requires
+    // an enabled automation, so a late callback fails closed instead of
+    // reaching the untracked legacy branch.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(0);
+    await pollAt(departing.automationId, departing.anchor + 2 * 60 * 60 * 1000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(0);
+
+    // The other owner keeps its occurrence and its schedule.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(kept.automationId),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("revokes a departing member's occurrences recorded by an earlier tick", async () => {
+    const kept = await installJournaledBrief();
+    await pollAt(kept.automationId, kept.anchor + 60_000);
+    const departing = await installJournaledBrief();
+
+    // Reverse interleaving: revocation first, then a tick that must not
+    // recreate journal state for the removed member.
+    await deliverClerkOrganizationMembershipDeleted(departing.actor);
+    await pollAt(departing.automationId, departing.anchor + 60_000);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(departing.automationId),
+    ).resolves.toHaveLength(0);
+    await expect(
+      readMorningBriefScheduleClaimsFixture(kept.automationId),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("keeps a published successor when a tick fails before acquiring any claim", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the first occurrence to start a run");
+    }
+    await deliverBriefCallback(runId);
+    const secondAnchor = Date.parse(
+      (await readBriefPreference(brief.actor)).body.nextRunAt ?? "",
+    );
+
+    // The tick blocks at the queue admission lock, which is before it can
+    // acquire any claim, and then observes a real database failure there.
+    const barrier = await holdChatEventQueueAdmissionLockFixture({
+      threadId,
+      signal: context.signal,
+    });
+    mockNow(secondAnchor + 60_000);
+    // The cancelled admission surfaces through the tick's own failure path, so
+    // the cron route still completes normally.
+    const failingTick = accept(
+      automationExecutionClient().execute({
+        body: { automation_id: brief.automationId },
+      }),
+      [200],
+    );
+    await expect
+      .poll(async () => {
+        return await barrier.directWaiterCount();
+      })
+      .toBe(1);
+
+    // Meanwhile the occurrence this tick resolved stops being current: a real
+    // timezone write republishes the schedule in a different zone, so the
+    // recurrence a stale loser would compute from its own snapshot differs
+    // from the value that is actually published.
+    await accept(
+      setupApp({ context, routes: userPreferencesRoutes })(
+        userPreferencesContract,
+      ).update({
+        headers: authHeaders(brief.actor),
+        body: { timezone: "America/New_York" },
+      }),
+      [200],
+    );
+    const published = await readBriefPreference(brief.actor);
+    if (!published.body.nextRunAt) {
+      throw new Error("Expected the timezone write to republish the schedule");
+    }
+    const publishedSuccessor = Date.parse(published.body.nextRunAt);
+    expect(publishedSuccessor).not.toBe(secondAnchor);
+    expect(publishedSuccessor).not.toBe(
+      briefOccurrenceAfter(
+        "0 7 * * *",
+        "Asia/Shanghai",
+        new Date(secondAnchor + 60_000),
+      )?.getTime(),
+    );
+    await expect(barrier.cancelBlockedWaiters()).resolves.toBeGreaterThan(0);
+    barrier.release();
+    await barrier.done;
+    await failingTick;
+
+    // The loser recorded no occurrence and did not touch the published
+    // schedule, the failure count or the enabled state.
+    await expect(
+      readMorningBriefScheduleClaimsFixture(brief.automationId),
+    ).resolves.toHaveLength(1);
+    const preserved = await readBriefPreference(brief.actor);
+    expect(preserved.body).toMatchObject({
+      enabled: true,
+      timezone: "America/New_York",
+      nextRunAt: new Date(publishedSuccessor).toISOString(),
+    });
+    await expect(briefRunIds(threadId)).resolves.toStrictEqual([runId]);
+  });
+
+  it("publishes a future successor when settlement waits across a recurrence boundary", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const [runId] = await briefRunIds(threadId);
+    if (!runId) {
+      throw new Error("Expected the occurrence to start a run");
+    }
+    const boundary = briefOccurrenceAfter(
+      "0 7 * * *",
+      "Asia/Shanghai",
+      new Date(brief.anchor + 60_000),
+    );
+    if (!boundary) {
+      throw new Error("Expected a next Morning Brief occurrence");
+    }
+
+    // The callback arrives just before the boundary and then waits on a real
+    // automation row lock until after it has passed.
+    const held = await holdWorkflowAutomationRowFixture({
+      automationId: brief.automationId,
+      signal: context.signal,
+    });
+    mockNow(boundary.getTime() - 60_000);
+    const settlement = deliverBriefCallback(runId);
+    await expect
+      .poll(async () => {
+        return await held.blockedWaiterCount();
+      })
+      .toBeGreaterThan(0);
+    mockNow(boundary.getTime() + 60_000);
+    held.release();
+    await held.done;
+    const delivery = await settlement;
+    expect(delivery.callbackResults).toBeGreaterThan(0);
+
+    // The recurrence is computed after the wait, so the published successor is
+    // still ahead of the clock instead of the boundary that already passed.
+    const settled = await readBriefPreference(brief.actor);
+    if (!settled.body.nextRunAt) {
+      throw new Error("Expected the settlement to publish a successor");
+    }
+    expect(Date.parse(settled.body.nextRunAt)).toBeGreaterThan(
+      boundary.getTime() + 60_000,
+    );
   });
 
   it("settles a consumed occurrence through the outer pre-run failure path and recovers the schedule", async () => {

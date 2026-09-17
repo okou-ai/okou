@@ -6386,8 +6386,7 @@
       "sourceFile": "De {{filename}}"
     },
     "empty": {
-      "description": "Las plantillas creadas a partir de un archivo que subas aparecerán aquí.",
-      "title": "Aún no hay plantillas"
+      "description": "Okou convierte el diseño de tu archivo en una plantilla que puedes reutilizar."
     },
     "loadFailed": "No se pudieron cargar las plantillas.",
     "pageCount_one": "{{count}} página",

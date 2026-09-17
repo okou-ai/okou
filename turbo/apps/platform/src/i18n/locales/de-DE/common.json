@@ -6317,8 +6317,7 @@
       "sourceFile": "Aus {{filename}}"
     },
     "empty": {
-      "description": "Vorlagen, die aus einer hochgeladenen Datei erstellt werden, erscheinen hier.",
-      "title": "Noch keine Vorlagen"
+      "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
     },
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
     "pageCount_one": "{{count}} Seite",

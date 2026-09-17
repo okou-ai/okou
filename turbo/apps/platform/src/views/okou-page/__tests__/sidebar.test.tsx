@@ -1550,7 +1550,14 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
     ({ body, respond }) => {
       markedAgentIds.push(body.agentId);
       hasUnread = false;
-      changeChatThreadReadCursor();
+      // More cursors moved than one payload carries, so the server publishes an
+      // agent-scoped invalidation with no ids. Authoritative indicators still
+      // have to reload from it: this list never depends on the id array.
+      changeChatThreadReadCursor({
+        agentId: AGENT_ID,
+        threadIds: [],
+        scope: "agent",
+      });
       return respond(204);
     },
   );
