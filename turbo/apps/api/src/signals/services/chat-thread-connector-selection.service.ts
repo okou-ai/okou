@@ -14,6 +14,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
+import { testOverride } from "../../lib/singleton";
 import type { Db, ReadonlyDb } from "../external/db";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
@@ -28,7 +29,37 @@ import {
 import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
 import { invalidatePiStableContext } from "./pi-stable-context-generation.service";
+
+interface ChatThreadConnectorSelectionMutationHooks {
+  readonly beforeAdmission?: () => Promise<void>;
+}
+
+const chatThreadConnectorSelectionMutationHooks =
+  testOverride<ChatThreadConnectorSelectionMutationHooks>(() => {
+    return {};
+  });
+
+export function setChatThreadConnectorSelectionMutationHooksForTest(
+  hooks: ChatThreadConnectorSelectionMutationHooks,
+): void {
+  chatThreadConnectorSelectionMutationHooks.set(hooks);
+}
+
+export function clearChatThreadConnectorSelectionMutationHooksForTest(): void {
+  chatThreadConnectorSelectionMutationHooks.clear();
+}
+
+async function admitChatThreadConnectorSelectionMutation(
+  tx: Tx,
+  args: { readonly orgId: string; readonly userId: string },
+): Promise<boolean> {
+  return await admitPiStableContextSubjects(tx, [
+    { subjectKind: "organization", subjectId: args.orgId },
+    { subjectKind: "user", subjectId: args.userId },
+  ]);
+}
 
 interface OwnedChatThread {
   readonly agentId: string;
@@ -477,7 +508,11 @@ export async function updateChatThreadConnectorSelection(
   },
   signal: AbortSignal,
 ): Promise<UpdateChatThreadConnectorSelectionResult> {
+  await chatThreadConnectorSelectionMutationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
+    if (!(await admitChatThreadConnectorSelectionMutation(tx, args))) {
+      return { kind: "not_found" };
+    }
     const thread = await loadOwnedChatThread(tx, args);
     if (!thread) {
       return { kind: "not_found" };
@@ -523,7 +558,11 @@ export async function clearChatThreadConnectorSelection(
   },
   signal: AbortSignal,
 ): Promise<ClearChatThreadConnectorSelectionResult> {
+  await chatThreadConnectorSelectionMutationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
+    if (!(await admitChatThreadConnectorSelectionMutation(tx, args))) {
+      return { kind: "not_found" };
+    }
     const thread = await loadOwnedChatThread(tx, args);
     if (!thread) {
       return { kind: "not_found" };

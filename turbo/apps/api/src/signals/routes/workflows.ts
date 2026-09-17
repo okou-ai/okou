@@ -44,6 +44,7 @@ import {
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
+import { testOverride } from "../../lib/singleton";
 import {
   deleteOrphanedWorkflowVolume$,
   deleteWorkflow$,
@@ -375,6 +376,25 @@ const listWorkflowsInner$ = computed(async (get) => {
   return { status: 200 as const, body: [...workflows] };
 });
 
+interface WorkflowCreationHooks {
+  readonly beforeAdmission?: () => Promise<void>;
+  readonly beforeCopyAdmission?: () => Promise<void>;
+}
+
+const workflowCreationHooks = testOverride<WorkflowCreationHooks>(() => {
+  return {};
+});
+
+export function setWorkflowCreationHooksForTest(
+  hooks: WorkflowCreationHooks,
+): void {
+  workflowCreationHooks.set(hooks);
+}
+
+export function clearWorkflowCreationHooksForTest(): void {
+  workflowCreationHooks.clear();
+}
+
 interface WorkflowCreationInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
@@ -427,7 +447,19 @@ async function createPreparedWorkflow(
   },
   signal: AbortSignal,
 ) {
+  await workflowCreationHooks.get().beforeAdmission?.();
   return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.orgId },
+        { subjectKind: "user", subjectId: args.member.userId },
+      ]))
+    ) {
+      return {
+        kind: "error" as const,
+        response: notFound(`Agent not found: ${args.body.agentId}`),
+      };
+    }
     const error = await validateWorkflowCreation(tx, args, true, signal);
     if (error) {
       return { kind: "error" as const, response: error };
@@ -1407,7 +1439,16 @@ async function copyWorkflowDatabaseRows(
   },
   signal: AbortSignal,
 ): Promise<CopyWorkflowDatabaseResult> {
+  await workflowCreationHooks.get().beforeCopyAdmission?.();
   return await db.transaction(async (tx) => {
+    if (
+      !(await admitPiStableContextSubjects(tx, [
+        { subjectKind: "organization", subjectId: args.orgId },
+        { subjectKind: "user", subjectId: args.userId },
+      ]))
+    ) {
+      return { kind: "conflict", message: WORKFLOW_COPY_CHANGED_MESSAGE };
+    }
     const current = await readWorkflowCopySource(tx, args, args.source);
     if (current.kind === "conflict") {
       return current;
