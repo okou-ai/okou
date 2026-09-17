@@ -142,8 +142,11 @@ function clipUtf8(
   if (encoded.byteLength <= maxBytes) {
     return { text, truncated: false };
   }
+  // `maxBytes` is inside the buffer on this branch and `end` only decreases, so
+  // every read is in range and a broken invariant would throw rather than be
+  // rounded into a byte value that stops the walk early.
   let end = maxBytes;
-  while (end > 0 && ((encoded[end] ?? 0) & 0xc0) === 0x80) {
+  while (end > 0 && (encoded.readUInt8(end) & 0xc0) === 0x80) {
     end -= 1;
   }
   return { text: encoded.subarray(0, end).toString("utf8"), truncated: true };
