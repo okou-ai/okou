@@ -81,6 +81,7 @@ import {
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
+import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
@@ -148,6 +149,12 @@ async function cancelOrgRuns(
         { kind: "organization", orgId },
         revokedAt,
       );
+      // Same transaction, same reason: an unsent native intent still holds the
+      // recipient and the rendered brief.
+      await revokeMorningBriefDeliveryOwnership(tx, {
+        kind: "organization",
+        orgId,
+      });
     }
     return rows;
   });
@@ -228,6 +235,7 @@ async function cancelUserRuns(
         { kind: "user", userId },
         revokedAt,
       );
+      await revokeMorningBriefDeliveryOwnership(tx, { kind: "user", userId });
     }
     return rows;
   });

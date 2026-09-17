@@ -2,6 +2,7 @@ import { morningBriefCalendarCollectionPreviewContract } from "@okouai/api-contr
 import { morningBriefChatCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
+import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
 import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
@@ -12,6 +13,7 @@ import { morningBriefCalendarCollectionPreviewRoutes } from "../signals/routes/m
 import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
 import { morningBriefCollectionPreviewRoutes } from "../signals/routes/morning-brief-collection-preview";
 import { morningBriefCompositionPreviewRoutes } from "../signals/routes/morning-brief-composition-preview";
+import { morningBriefDeliveryPreviewRoutes } from "../signals/routes/morning-brief-delivery-preview";
 import { morningBriefGenerationPreviewRoutes } from "../signals/routes/morning-brief-generation-preview";
 import { morningBriefGmailCollectionPreviewRoutes } from "../signals/routes/morning-brief-gmail-collection-preview";
 import { morningBriefPreviewGithubCollectionRoutes } from "../signals/routes/morning-brief-preview-github-collection";
@@ -114,5 +116,23 @@ describe("API route registrations", () => {
     expect(morningBriefGithubCollectionContract.collect.path).toBe(
       "/api/morning-brief/preview/github-collection",
     );
+  });
+
+  // Delivery has the same requirement, and one more reason: its production 404
+  // is only a statement about a route that really exists if the deployed table
+  // is the table that holds it.
+  it("registers the Morning Brief delivery preview an operator invokes", () => {
+    const [entry, ...extra] = morningBriefDeliveryPreviewRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(morningBriefDeliveryPreviewContract.preview);
+    expect(ROUTES).toContain(entry);
+    expect(
+      ROUTES.filter((registered) => {
+        return (
+          registered.route.path ===
+          morningBriefDeliveryPreviewContract.preview.path
+        );
+      }),
+    ).toStrictEqual([entry]);
   });
 });
