@@ -18,40 +18,10 @@ pub(crate) static MOCK_RUNTIME_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
         .join(TEST_RUN_ID)
 });
 
-/// Shared mock server - env vars are set once so process-env runtime captures
-/// in this integration binary resolve to test values.
-pub(crate) static MOCK_SERVER: LazyLock<MockServer> = LazyLock::new(|| {
-    let server = MockServer::start();
-    unsafe {
-        crate::common::clear_guest_agent_bootstrap_env_for_test();
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_API_URL_ENV,
-            server.base_url(),
-        );
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_API_TOKEN_ENV,
-            "test-token-abc123",
-        );
-        std::env::set_var(guest_contracts::env::RUN_ID_ENV, TEST_RUN_ID);
-        std::env::set_var(
-            guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
-            MOCK_RUNTIME_DIR.as_os_str(),
-        );
-        write_shared_run_payload_file_or_panic();
-        std::env::set_var("VERCEL_PROTECTION_BYPASS", "test-bypass-value");
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
-            "00000000-0000-4000-8000-000000000abc",
-        );
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        );
-    }
-    server
-});
+/// Shared HTTP boundary; callers provide config and paths explicitly.
+pub(crate) static MOCK_SERVER: LazyLock<MockServer> = LazyLock::new(MockServer::start);
 
-/// Serialize all tests - they share one mock server and process-wide env vars.
+/// Serialize shared mock resets, runtime files, and process-wide log overrides.
 pub(crate) static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 #[must_use = "keep SharedApiMock alive for the full test to hold the shared mock lock"]
@@ -100,22 +70,16 @@ fn write_shared_run_payload_file_or_panic() {
         prompt: "test prompt".to_string(),
         ..guest_contracts::env::RunPayload::default()
     };
-    let result =
-        unsafe { crate::common::set_run_payload_file_env_for_test(&MOCK_RUNTIME_DIR, &payload) };
+    let result = crate::common::write_run_payload_file_for_test(&MOCK_RUNTIME_DIR, &payload);
     assert!(result.is_ok(), "write test run payload: {result:?}");
 }
 
 fn cleanup_integration_runtime_root() {
-    let Some(runtime_dir) =
-        std::env::var_os(guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV)
-            .map(PathBuf::from)
-    else {
-        return;
-    };
+    let runtime_dir = MOCK_RUNTIME_DIR.as_path();
     let root = runtime_dir
         .parent()
         .and_then(Path::parent)
-        .unwrap_or(runtime_dir.as_path());
+        .unwrap_or(runtime_dir);
     let is_test_root = root
         .file_name()
         .and_then(|name| name.to_str())
@@ -150,7 +114,6 @@ pub(crate) fn test_http_client(retry_delay: Duration) -> guest_agent::http::Http
 }
 
 pub(crate) fn shared_guest_paths() -> guest_agent::paths::GuestPaths {
-    let _server = &*MOCK_SERVER;
     guest_agent::paths::GuestPaths::from_runtime_dir(MOCK_RUNTIME_DIR.as_path())
 }
 

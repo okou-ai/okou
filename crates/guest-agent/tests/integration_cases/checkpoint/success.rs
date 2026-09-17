@@ -48,7 +48,7 @@ async fn pi_checkpoint_reports_full_combined_completion_payload() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Pi;
     runtime.config.workspace_reuse_result = "sandboxReused".to_string();
     let _files_guard = SessionCheckpointFilesGuard::new();
@@ -110,9 +110,10 @@ async fn pi_checkpoint_reports_full_combined_completion_payload() {
 #[tokio::test]
 async fn success_checkpoint_preserves_small_codex_history() {
     let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -170,7 +171,7 @@ async fn checkpoint_rejects_mistyped_prepare_response_before_upload() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "abababab-abab-4bab-8bab-abababababab";
@@ -222,7 +223,7 @@ async fn checkpoint_rejects_prepare_response_without_upload_url() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "adadadad-adad-4dad-8dad-adadadadadad";
@@ -271,9 +272,10 @@ async fn checkpoint_rejects_prepare_response_without_upload_url() {
 #[tokio::test]
 async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
     let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _system_log_guard = SystemLogOverrideGuard::set(runtime.paths.system_log_file());
     let _files_guard = SessionCheckpointFilesGuard::new();
@@ -365,9 +367,10 @@ async fn checkpoint_reports_failed_session_history_upload_as_unavailable() {
 #[tokio::test]
 async fn success_checkpoint_discards_oversized_claude_history_without_compact_boundary() {
     let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     let line =
@@ -420,9 +423,10 @@ async fn success_checkpoint_discards_oversized_claude_history_without_compact_bo
 #[tokio::test]
 async fn success_checkpoint_discards_codex_history_that_jumps_past_hard_limit() {
     let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -466,9 +470,10 @@ async fn success_checkpoint_discards_codex_history_that_jumps_past_hard_limit() 
 #[tokio::test]
 async fn success_checkpoint_discards_codex_history_with_oversized_canonical_candidate() {
     let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -513,8 +518,9 @@ async fn success_checkpoint_discards_codex_history_with_oversized_canonical_cand
 #[tokio::test]
 async fn checkpoint_continues_when_codex_history_is_missing() {
     let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -547,7 +553,7 @@ async fn checkpoint_continues_when_codex_history_is_missing() {
 async fn combined_checkpoint_accepts_terminal_acknowledgement_without_checkpoint_identity() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "acacacac-acac-4cac-8cac-acacacacacac";
@@ -573,7 +579,7 @@ async fn combined_checkpoint_accepts_terminal_acknowledgement_without_checkpoint
 async fn success_checkpoint_reports_invalid_local_history_as_unavailable() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
 
     let prepare_mock = server.mock(|when, then| {
@@ -621,7 +627,7 @@ async fn success_checkpoint_reports_invalid_local_history_as_unavailable() {
 async fn success_checkpoint_reports_invalid_reused_zstd_history_as_unavailable() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -665,7 +671,7 @@ async fn success_checkpoint_reconciles_claude_compact_generation_after_commit() 
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, candidate) = write_prunable_claude_history(&mut runtime, session_id).unwrap();
@@ -753,9 +759,10 @@ async fn success_checkpoint_reconciles_claude_compact_generation_after_commit() 
 #[tokio::test]
 async fn success_checkpoint_reconciles_codex_compact_generation_after_commit() {
     let api = SharedApiMock::new().await;
+    let _telemetry_guard = CheckpointTelemetryGuard::new(&api);
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     runtime.config.framework = guest_agent::env::Framework::Codex;
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -850,7 +857,7 @@ async fn success_checkpoint_omits_identity_when_live_history_replacement_fails()
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, candidate) = write_prunable_claude_history(&mut runtime, session_id).unwrap();
@@ -904,7 +911,7 @@ async fn success_checkpoint_keeps_live_history_when_compact_commit_fails() {
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let session_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     let (history_dir, candidate) = write_prunable_claude_history(&mut runtime, session_id).unwrap();
@@ -944,7 +951,7 @@ async fn success_checkpoint_writes_large_final_identity_metadata()
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
@@ -1029,7 +1036,7 @@ async fn success_checkpoint_propagates_zstd_prepare_bad_request()
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
@@ -1091,7 +1098,7 @@ async fn success_checkpoint_rejects_missing_zstd_encoding_acknowledgement()
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
@@ -1152,7 +1159,7 @@ async fn success_checkpoint_rejects_new_zstd_with_mismatched_encoding_acknowledg
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
@@ -1216,7 +1223,7 @@ async fn success_checkpoint_accepts_existing_gzip_for_zstd_history()
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
@@ -1279,7 +1286,7 @@ async fn success_checkpoint_propagates_zstd_auth_failure() -> Result<(), Box<dyn
     let api = SharedApiMock::new().await;
     let server = api.server();
 
-    let mut runtime = runtime_from_process_env().unwrap();
+    let mut runtime = checkpoint_runtime().unwrap();
     let _files_guard = SessionCheckpointFilesGuard::new();
     let history = large_session_history();
     let _history_dir =
@@ -1336,16 +1343,37 @@ async fn success_checkpoint_propagates_zstd_auth_failure() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
-async fn success_checkpoint_uses_explicit_runtime_after_process_env_changes() {
+async fn success_checkpoint_uses_explicit_runtime_with_conflicting_process_env() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut command = checkpoint_child_command(
+        "integration_cases::checkpoint::success::explicit_runtime_with_conflicting_process_env_child",
+    )
+    .unwrap();
+    command
+        .env("TMPDIR", tmp.path())
+        .env(guest_contracts::env::RUN_ID_ENV, "stale-run")
+        .env(
+            guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
+            tmp.path().join("stale-runtime"),
+        );
+    run_checkpoint_child(&mut command).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "launched by the parent with conflicting startup environment"]
+async fn explicit_runtime_with_conflicting_process_env_child() {
     let api = SharedApiMock::new().await;
     let server = api.server();
-    let _run_id_guard = EnvVarRestore::capture(guest_contracts::env::RUN_ID_ENV);
-    let _runtime_dir_guard =
-        EnvVarRestore::capture(guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV);
 
     let tmp = tempfile::tempdir().unwrap();
     let runtime_dir = tmp.path().join("captured-runtime");
-    let stale_runtime_dir = tmp.path().join("stale-runtime");
+    let stale_runtime_dir = std::path::PathBuf::from(
+        std::env::var_os(guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV).unwrap(),
+    );
+    assert_eq!(
+        std::env::var(guest_contracts::env::RUN_ID_ENV).unwrap(),
+        "stale-run"
+    );
     let home_dir = tmp.path().join("home");
     let paths = guest_agent::paths::GuestPaths::from_runtime_dir(&runtime_dir);
     let run_payload_file = crate::common::write_run_payload_file_for_test(
@@ -1381,14 +1409,6 @@ async fn success_checkpoint_uses_explicit_runtime_after_process_env_changes() {
         workload_containment: None,
         process_control_endpoint: None,
     };
-
-    unsafe {
-        std::env::set_var(guest_contracts::env::RUN_ID_ENV, "stale-run-after-runtime");
-        std::env::set_var(
-            guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
-            &stale_runtime_dir,
-        );
-    }
 
     let history_hash = hex::encode(Sha256::digest(history.as_bytes()));
     let prepare_mock = server.mock(|when, then| {
