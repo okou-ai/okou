@@ -55,7 +55,7 @@ interface RenderedOfficialAutomationResultEmail {
   readonly fallback: OfficialAutomationResultEmailFallback | null;
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   let escaped = "";
   for (const char of value) {
     switch (char) {
@@ -209,7 +209,7 @@ function createMarkdownRenderer(): MarkdownIt {
   return markdown;
 }
 
-const markdownRenderer = createMarkdownRenderer();
+export const markdownRenderer = createMarkdownRenderer();
 
 function officialAutomationResultEmailHtml(
   props: OfficialAutomationResultEmailRenderProps,
@@ -267,7 +267,7 @@ function officialAutomationResultEmailHtml(
 </html>`;
 }
 
-function plainTextFromHtml(html: string): string {
+export function plainTextFromHtml(html: string): string {
   return convert(html, {
     wordwrap: false,
     selectors: [{ selector: "img", format: "skip" }],
