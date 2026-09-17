@@ -22,16 +22,16 @@ export const MORNING_BRIEF_RESULT_EMAIL_SUBJECT_MAX_CHARACTERS = 180;
  * 160 KiB of `&amp;` before the surrounding document, so this bound can always
  * carry an accepted result and only rejects genuinely pathological expansion.
  */
-export const MORNING_BRIEF_RESULT_EMAIL_HTML_MAX_BYTES = 512 * 1024;
+const MORNING_BRIEF_RESULT_EMAIL_HTML_MAX_BYTES = 512 * 1024;
 
-export interface MorningBriefResultEmailRenderProps {
+interface MorningBriefResultEmailRenderProps {
   readonly title: string;
   readonly resultMarkdown: string;
   readonly threadUrl: string;
   readonly manageUrl: string;
 }
 
-export interface RenderedMorningBriefResultEmail {
+interface RenderedMorningBriefResultEmail {
   readonly html: string;
   readonly text: string;
 }

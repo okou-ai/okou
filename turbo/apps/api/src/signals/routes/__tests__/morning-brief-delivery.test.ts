@@ -428,7 +428,7 @@ describe("Morning Brief native delivery", () => {
     const sends = emailSends();
     expect(sends).toHaveLength(1);
     const sent = sends[0]!;
-    expect(sent.payload["to"]).toStrictEqual(`${f.userId}@example.test`);
+    expect(sent.payload["to"]).toBe(`${f.userId}@example.test`);
     expect(sent.payload["from"]).toContain("@mail.okou.test");
     expect(sent.payload["subject"]).toBe("Release readiness");
     // One accepted body, identical across Chat, plain text and HTML.
@@ -470,14 +470,14 @@ describe("Morning Brief native delivery", () => {
     expect(second.body.result).toBe("already-delivered");
     expect(second.body.delivery).toStrictEqual(first.body.delivery);
     expect(calls.generation).toHaveLength(1);
-    expect(await readDeliveries(f)).toHaveLength(1);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
     const events = await readThreadEvents(first.body.delivery.chatThreadId);
     expect(
       events.filter((event) => {
         return event.eventType === "output.message";
       }),
     ).toHaveLength(1);
-    expect(await readOutbox(f)).toHaveLength(1);
+    await expect(readOutbox(f)).resolves.toHaveLength(1);
   });
 
   it("recovers a committed delivery after its source result expires", async () => {
@@ -497,7 +497,7 @@ describe("Morning Brief native delivery", () => {
     const replay = await accept(deliver(f, attemptId), [200]);
     expect(replay.body.result).toBe("already-delivered");
     expect(replay.body.delivery).toStrictEqual(first.body.delivery);
-    expect(await readDeliveries(f)).toHaveLength(1);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
   });
 
   it("refuses an expired result that was never delivered", async () => {
@@ -512,7 +512,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [409]);
     expect(response.body.error.code).toBe("MORNING_BRIEF_RESULT_EXPIRED");
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
   });
 
   it("refuses another member's result reference", async () => {
@@ -527,8 +527,8 @@ describe("Morning Brief native delivery", () => {
     const response = await accept(deliver(stranger, attemptId), [404]);
     expect(response.body).not.toBe("Not found");
     expect(JSON.stringify(response.body)).toContain("NOT_FOUND");
-    expect(await readDeliveries(owner)).toHaveLength(0);
-    expect(await readDeliveries(stranger)).toHaveLength(0);
+    await expect(readDeliveries(owner)).resolves.toHaveLength(0);
+    await expect(readDeliveries(stranger)).resolves.toHaveLength(0);
   });
 
   it("refuses to deliver after the brief is disabled", async () => {
@@ -540,7 +540,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [409]);
     expect(response.body.error.code).toBe("MORNING_BRIEF_UNAVAILABLE");
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
   });
 
   it("still delivers to Chat when the recipient has opted out", async () => {
@@ -564,7 +564,7 @@ describe("Morning Brief native delivery", () => {
         return event.id === response.body.delivery.chatEventId;
       }),
     ).toHaveLength(1);
-    expect(await readOutbox(f)).toHaveLength(0);
+    await expect(readOutbox(f)).resolves.toHaveLength(0);
     expect(emailSends()).toHaveLength(0);
   });
 
@@ -583,7 +583,7 @@ describe("Morning Brief native delivery", () => {
 
     const response = await accept(deliver(f, attemptId), [200]);
     expect(response.body.delivery.emailResolution).toBe("suppressed");
-    expect(await readOutbox(f)).toHaveLength(0);
+    await expect(readOutbox(f)).resolves.toHaveLength(0);
   });
 
   it("records no_email rather than refilling an erased user cache", async () => {
@@ -637,7 +637,7 @@ describe("Morning Brief native delivery", () => {
       });
     });
 
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
     const remaining = await db()
       .select({ id: emailOutbox.id })
       .from(emailOutbox)
@@ -701,7 +701,7 @@ describe("Morning Brief native delivery", () => {
     expect(response.body.error.code).toBe(
       "MORNING_BRIEF_IMPLEMENTATION_DISABLED",
     );
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
   });
 
   it("answers 404 in production before doing any authentication work", async () => {
@@ -715,7 +715,7 @@ describe("Morning Brief native delivery", () => {
     // feature, is what makes the endpoint absent.
     const denied = await accept(deliver(f, attemptId), [404]);
     expect(denied.body).toBe("Not found");
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
 
     // The same request without any credential is equally absent, so production
     // discloses nothing by answering before authentication.
@@ -785,7 +785,7 @@ describe("Morning Brief native delivery", () => {
     expect(drainedSibling?.status).toBe("sent");
     const sends = emailSends();
     expect(sends).toHaveLength(1);
-    expect(sends[0]?.payload["to"]).toStrictEqual("sibling@example.test");
+    expect(sends[0]?.payload["to"]).toBe("sibling@example.test");
   });
 
   it("refuses a native send after the recipient rejoins under a new membership", async () => {
@@ -847,7 +847,7 @@ describe("Morning Brief native delivery", () => {
 
     // The cascade removed the delivery; the deletion transaction removed the
     // content-bearing mail with it rather than leaving it to expire.
-    expect(await readDeliveries(f)).toHaveLength(0);
+    await expect(readDeliveries(f)).resolves.toHaveLength(0);
     const remaining = await db()
       .select({ id: emailOutbox.id })
       .from(emailOutbox)
@@ -871,14 +871,14 @@ describe("Morning Brief native delivery", () => {
     expect(first.body.delivery.chatEventId).toBe(
       second.body.delivery.chatEventId,
     );
-    expect(await readDeliveries(f)).toHaveLength(1);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
     const events = await readThreadEvents(first.body.delivery.chatThreadId);
     expect(
       events.filter((event) => {
         return event.eventType === "output.message";
       }),
     ).toHaveLength(1);
-    expect(await readOutbox(f)).toHaveLength(1);
+    await expect(readOutbox(f)).resolves.toHaveLength(1);
   });
 
   it("replays one native send under the same key after a lost completion", async () => {
@@ -901,7 +901,7 @@ describe("Morning Brief native delivery", () => {
         { currentTimeMs: now(), itemIds: [queued!.id] },
         context.signal,
       ),
-    ).rejects.toThrow();
+    ).rejects.toThrow("Test email outbox completion write failed");
     await restore();
 
     const firstSends = emailSends();
@@ -944,6 +944,6 @@ describe("Morning Brief native delivery", () => {
       .where(eq(emailOutbox.id, queued!.id));
     expect(settled?.status).toBe("sent");
     // No second Chat message and no second generation followed the replay.
-    expect(await readDeliveries(f)).toHaveLength(1);
+    await expect(readDeliveries(f)).resolves.toHaveLength(1);
   });
 });

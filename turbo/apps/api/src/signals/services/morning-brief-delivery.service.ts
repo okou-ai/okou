@@ -82,7 +82,7 @@ export type MorningBriefDeliveryRejection =
   /** The member's installation has no Agent to own a destination thread. */
   | "destination-unavailable";
 
-export interface MorningBriefDeliveryOutcome {
+interface MorningBriefDeliveryOutcome {
   readonly kind: "delivered" | "already-delivered";
   readonly chatThreadId: string;
   readonly chatEventId: string;
@@ -90,7 +90,7 @@ export interface MorningBriefDeliveryOutcome {
   readonly deliveredAt: string;
 }
 
-export type MorningBriefDeliveryResult =
+type MorningBriefDeliveryResult =
   | MorningBriefDeliveryOutcome
   | {
       readonly kind: "rejected";
@@ -120,7 +120,7 @@ function rejectionOf(reason: string): MorningBriefDeliveryRejection {
     : "morning-brief-unavailable";
 }
 
-export interface MorningBriefDeliveryRequest {
+interface MorningBriefDeliveryRequest {
   readonly orgId: string;
   readonly userId: string;
   /** The opaque attempt the generation preview returned. Never an owner. */
@@ -958,7 +958,7 @@ export const deliverMorningBriefResult$ = command(
 );
 
 /** The owner scope a cleanup transaction revokes delivery ownership for. */
-export type MorningBriefDeliveryRevocationScope =
+type MorningBriefDeliveryRevocationScope =
   | {
       readonly kind: "membership";
       readonly orgId: string;
