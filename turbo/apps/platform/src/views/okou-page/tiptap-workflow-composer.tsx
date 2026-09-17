@@ -39,6 +39,7 @@ import {
   SLASH_TEMPLATE_CATEGORIES,
   type SlashTemplateCategory,
   type SlashTemplatePreview,
+  type SlashTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 
@@ -314,7 +315,10 @@ interface ComposerSuggestionMenuState {
   readonly previewIndex: number | null;
   readonly previewSuggestion: (index: number | null) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
-  readonly selectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly selectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplatePreviewCategory,
+  ) => void;
   readonly importDeck: (file: File) => void;
   readonly browseAllTemplates: () => void;
   readonly showTemplatePanel: boolean;
@@ -402,11 +406,19 @@ function useSlashTemplatePanelActions(
      * The cover is a row of this menu, so choosing one consumes the token that
      * opened it, the same way a category row and a workflow row do. The chip
      * then lands where the token was rather than after it.
+     *
+     * It also names the same task its category row does, so it lands the
+     * composer there too — it just brings the template along instead of opening
+     * the picker to choose one.
      */
-    selectTemplate(preview: SlashTemplatePreview): void {
+    selectTemplate(
+      preview: SlashTemplatePreview,
+      category: SlashTemplatePreviewCategory,
+    ): void {
       clearSlashRange();
-      insertTemplate(preview.template, preview.attachment);
       close();
+      openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
+      insertTemplate(preview.template, preview.attachment);
     },
     /**
      * The import attaches the deck and sends, which navigates away from the
