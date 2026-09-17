@@ -91,6 +91,7 @@ import {
   retainPiInferenceObjects,
 } from "../pi-inference-object.service";
 import { runnersRoutes } from "../../routes/runners";
+import { generateSandboxToken } from "../../auth/tokens";
 import { createRouteMocks } from "../../routes/__tests__/helpers/route-test";
 import { recordPiMemoryPhase2Checkpoint } from "../pi-memory-phase2-checkpoint.service";
 import {
@@ -453,6 +454,61 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       1_500_000,
     );
     const handoffApp = setupApp({ context, routes: runnersRoutes });
+    const readHandoff = (token: string) => {
+      return handoffApp(runnersJobClaimContract).handoff({
+        params: { id: f.runId, offset: "0" },
+        headers: { authorization: `Bearer ${token}` },
+      });
+    };
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, randomUUID(), f.orgId, {
+          ownerEpoch: 2,
+          generation: 1,
+        }),
+      ),
+      [401],
+    );
+    await accept(
+      readHandoff(generateSandboxToken(f.userId, f.runId, f.orgId)),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, f.runId, `other-${f.orgId}`, {
+          ownerEpoch: 2,
+          generation: 1,
+        }),
+      ),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(`other-${f.userId}`, f.runId, f.orgId, {
+          ownerEpoch: 2,
+          generation: 1,
+        }),
+      ),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, f.runId, f.orgId, {
+          ownerEpoch: 1,
+          generation: 1,
+        }),
+      ),
+      [404],
+    );
+    await accept(
+      readHandoff(
+        generateSandboxToken(f.userId, f.runId, f.orgId, {
+          ownerEpoch: 2,
+          generation: 2,
+        }),
+      ),
+      [404],
+    );
     const chunks: Buffer[] = [];
     let offset: number | null = 0;
     while (offset !== null) {

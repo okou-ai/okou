@@ -1404,6 +1404,9 @@ export async function readDeferredPiHandoffChunk(
       run.id,
       run.launchSnapshot,
     );
+    if (!lifecycle?.intent) {
+      return undefined;
+    }
     if (
       !hasDeferredPiHandoffAuthority(auth, {
         runId: run.id,

@@ -1,5 +1,9 @@
 //! Deferred Pi handoff uses the Guest's Sandbox control credential while the
 //! CLI child keeps its ordinary agent token and receives only private bytes.
+//!
+//! The parent configures the complete startup environment before spawning an
+//! ignored child test. This keeps process-environment mutation outside the
+//! multi-threaded test process that owns the Guest runtime.
 
 mod common;
 
@@ -9,12 +13,15 @@ use httpmock::prelude::*;
 use serde_json::json;
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::process::Command;
 
 const RUN_ID: &str = "00000000-0000-4000-8000-000000000321";
 const SESSION_ID: &str = "11111111-1111-4111-8111-111111111321";
 const SANDBOX_TOKEN: &str = "sandbox-control-token-34795";
 const AGENT_TOKEN: &str = "ordinary-agent-token-34795";
+const CHILD_COMPLETE: &str = "authenticated deferred handoff child passed";
 
 #[tokio::test]
 async fn guest_authenticates_handoff_without_exposing_its_control_token()
@@ -102,76 +109,142 @@ fi
         .duration_since(UNIX_EPOCH)?
         .as_millis()
         .saturating_add(60_000);
-    unsafe {
-        common::clear_guest_agent_bootstrap_env_for_test();
-        std::env::set_var(guest_contracts::env::CLI_AGENT_TYPE_ENV, "pi");
-        std::env::set_var(guest_contracts::env::RUN_ID_ENV, RUN_ID);
-        std::env::set_var(
+    let payload_path = common::write_run_payload_file_for_test(
+        &runtime_dir,
+        &guest_contracts::env::RunPayload {
+            prompt: "continue from authenticated H0".to_string(),
+            pi_launch_config: json!({
+                "schemaVersion": 2,
+                "apiFirstTurn": {
+                    "schemaVersion": 2,
+                    "ownerEpoch": 7,
+                    "generation": 3,
+                    "deadlineAt": deadline_at,
+                    "resourceSnapshotDigest": "a".repeat(64),
+                    "baseSession": { "sessionId": SESSION_ID, "sha256": null },
+                    "sandboxEventSequenceStart": 1,
+                    "continuation": { "mode": "untouched-h0" },
+                    "runId": RUN_ID,
+                    "historyHash": "b".repeat(64),
+                    "activeInput": true
+                }
+            })
+            .to_string(),
+            pi_model_config: "{}".to_string(),
+            pi_session_id: SESSION_ID.to_string(),
+            ..guest_contracts::env::RunPayload::default()
+        },
+    )?;
+    let user_env_dir = runtime_dir.join(guest_contracts::env::USER_ENV_PRIVATE_DIR_NAME);
+    std::fs::create_dir_all(&user_env_dir)?;
+    let user_env_path = user_env_dir.join(guest_contracts::env::USER_ENV_FILENAME);
+    std::fs::write(
+        &user_env_path,
+        serde_json::to_vec(&HashMap::from([
+            ("OKOU_TOKEN".to_string(), AGENT_TOKEN.to_string()),
+            (
+                "CLI_PKG_URL".to_string(),
+                "https://example.invalid/current-okou-cli.tgz".to_string(),
+            ),
+            (
+                "EXPECTED_HANDOFF_FILE".to_string(),
+                expected_handoff.to_string_lossy().into_owned(),
+            ),
+            (
+                "CHILD_STARTED_FILE".to_string(),
+                child_started.to_string_lossy().into_owned(),
+            ),
+        ]))?,
+    )?;
+
+    let mut command = Command::new(std::env::current_exe()?);
+    command
+        .args([
+            "--exact",
+            "authenticated_handoff_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env_clear()
+        .env(guest_contracts::env::CLI_AGENT_TYPE_ENV, "pi")
+        .env(guest_contracts::env::RUN_ID_ENV, RUN_ID)
+        .env(
             guest_contracts::env::CANONICAL_API_URL_ENV,
             server.base_url(),
-        );
-        std::env::set_var(guest_contracts::env::CANONICAL_API_TOKEN_ENV, SANDBOX_TOKEN);
-        std::env::set_var(
+        )
+        .env(guest_contracts::env::CANONICAL_API_TOKEN_ENV, SANDBOX_TOKEN)
+        .env(
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
-        );
-        std::env::set_var(
+        )
+        .env(
             guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
             "reused",
-        );
-        std::env::set_var("HOME", tmp.path());
-        let mut paths = vec![bin_dir];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths)?);
-        common::set_run_payload_file_env_for_test(
+        )
+        .env(
+            guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
             &runtime_dir,
-            &guest_contracts::env::RunPayload {
-                prompt: "continue from authenticated H0".to_string(),
-                pi_launch_config: json!({
-                    "schemaVersion": 2,
-                    "apiFirstTurn": {
-                        "schemaVersion": 2,
-                        "ownerEpoch": 7,
-                        "generation": 3,
-                        "deadlineAt": deadline_at,
-                        "resourceSnapshotDigest": "a".repeat(64),
-                        "baseSession": { "sessionId": SESSION_ID, "sha256": null },
-                        "sandboxEventSequenceStart": 1,
-                        "continuation": { "mode": "untouched-h0" },
-                        "runId": RUN_ID,
-                        "historyHash": "b".repeat(64),
-                        "activeInput": true
-                    }
-                })
-                .to_string(),
-                pi_model_config: "{}".to_string(),
-                pi_session_id: SESSION_ID.to_string(),
-                ..guest_contracts::env::RunPayload::default()
-            },
-        )?;
-        common::set_user_env_file_env_for_test(
-            &runtime_dir,
-            &HashMap::from([
-                ("OKOU_TOKEN".to_string(), AGENT_TOKEN.to_string()),
-                (
-                    "CLI_PKG_URL".to_string(),
-                    "https://example.invalid/current-okou-cli.tgz".to_string(),
-                ),
-                (
-                    "EXPECTED_HANDOFF_FILE".to_string(),
-                    expected_handoff.to_string_lossy().into_owned(),
-                ),
-                (
-                    "CHILD_STARTED_FILE".to_string(),
-                    child_started.to_string_lossy().into_owned(),
-                ),
-            ]),
-        )?;
+        )
+        .env(
+            guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
+            payload_path,
+        )
+        .env(
+            guest_contracts::env::CANONICAL_USER_ENV_FILE_ENV,
+            user_env_path,
+        )
+        .env("HOME", tmp.path())
+        .env(
+            "PATH",
+            std::env::join_paths([bin_dir.as_path(), Path::new("/usr/bin"), Path::new("/bin")])?,
+        )
+        .current_dir(tmp.path());
+    if let Some(llvm_profile_file) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", llvm_profile_file);
     }
-    std::env::set_current_dir(tmp.path())?;
+    let output = common::command_output_with_timeout(
+        &mut command,
+        Duration::from_secs(15),
+        "authenticated deferred handoff child did not finish",
+    )
+    .await?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "authenticated handoff child failed with {}; stdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    assert!(
+        stdout.contains(CHILD_COMPLETE),
+        "authenticated handoff child did not complete assertions; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    first_handoff.assert_hits(1);
+    final_handoff.assert_hits(1);
+    assert!(child_started.is_file());
+    let actual_handoff = guest_contracts::runtime_paths::pi_deferred_handoff_file(&runtime_dir);
+    assert_eq!(std::fs::read(&actual_handoff)?, handoff_bytes);
+    assert_eq!(
+        std::fs::metadata(actual_handoff)?.permissions().mode() & 0o777,
+        0o600
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[ignore = "spawned with an isolated Guest startup environment by the parent test"]
+async fn authenticated_handoff_child() -> Result<(), Box<dyn std::error::Error>> {
     let runtime = common::guest_runtime_from_process_env()?;
+    assert_eq!(runtime.config.api_token, SANDBOX_TOKEN);
+    assert_eq!(
+        runtime
+            .config
+            .user_env
+            .get("OKOU_TOKEN")
+            .map(String::as_str),
+        Some(AGENT_TOKEN)
+    );
     let secrets = format!(
         "{},{}",
         base64::engine::general_purpose::STANDARD.encode(SANDBOX_TOKEN),
@@ -187,16 +260,7 @@ fi
     )
     .await
     .expect("authenticated deferred Pi CLI should finish")?;
-
     assert_eq!(result.exit_code, common::CLEAN_EXIT);
-    assert!(child_started.is_file());
-    first_handoff.assert_hits(1);
-    final_handoff.assert_hits(1);
-    let actual_handoff = guest_contracts::runtime_paths::pi_deferred_handoff_file(&runtime_dir);
-    assert_eq!(std::fs::read(&actual_handoff)?, handoff_bytes);
-    assert_eq!(
-        std::fs::metadata(actual_handoff)?.permissions().mode() & 0o777,
-        0o600
-    );
+    println!("{CHILD_COMPLETE}");
     Ok(())
 }
