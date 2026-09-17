@@ -1,5 +1,5 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -85,6 +85,23 @@ test("A signed-in viewer is not asked to sign in or sign up", async () => {
     expect(linksByName("Sign in")).toHaveLength(0);
     expect(linksByName("Sign up")).toHaveLength(0);
   });
+
+  // Clerk republishes on every session-token refresh without the account
+  // changing, and the viewer is the same member on the other side of it. The
+  // prompts must not come back in the window the re-read is open.
+  act(() => {
+    context.mocks.clerk().stateChanged();
+  });
+  expect(linksByName("Sign in")).toHaveLength(0);
+  expect(linksByName("Sign up")).toHaveLength(0);
+
+  // ...nor once it closes.
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(linksByName("Sign in")).toHaveLength(0);
+  expect(linksByName("Sign up")).toHaveLength(0);
+  expect(getLinkByName("Try it yourself")).toBeInTheDocument();
 });
 
 test("A visitor can copy complete public message content", async () => {

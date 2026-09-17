@@ -5,7 +5,7 @@ import type {
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { Button, Card, CardContent, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { useLoadable, useSet } from "ccstate-react";
+import { useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type { Root } from "hast";
 import { Copy, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -357,8 +357,9 @@ function SharedThreadHandoff({
  * The public conversation's own header. It sits inside the workspace sheet, as
  * the chat page's header does: the sheet carries the canvas and its palette, so
  * a header above it would paint a separate band across the top of the page. It
- * keeps its fill only where it also keeps its rule, below `sm`, which is the
- * app's mobile top bar.
+ * keeps its fill only where it also keeps its rule, below `sm`: a filled strip
+ * with a rule under it is a top bar, while the same strip without one is a
+ * lighter patch of canvas with nothing to explain where it ends.
  */
 function SharedThreadHeader({
   brandName,
@@ -526,10 +527,13 @@ export function SharedThreadPage({
   // for. A viewer who already has an account keeps the conversation and the
   // handoff without being asked to create a second one. Only a settled absence
   // of a user offers them, so the page a link opens by default renders its
-  // actions immediately rather than after Clerk answers.
-  const viewer = useLoadable(currentUserInfo$);
-  const viewerSignedIn =
-    viewer.state === "hasData" && viewer.data !== undefined;
+  // actions immediately rather than after Clerk answers. The last resolved
+  // viewer is what settles it: `currentUserInfo$` re-reads on every Clerk
+  // event, including the session-token refreshes that leave the account alone,
+  // and a hook that returned to its pending state would put the prompts back
+  // in front of the member each time one landed.
+  const viewer = useLastResolved(currentUserInfo$);
+  const viewerSignedIn = viewer !== undefined;
   const groups = sharedThread ? groupSharedMessages(sharedThread.messages) : [];
   // Threads shared under the retired brand keep their stored value, but only
   // okou.ai serves this page, so it always presents the Okou brand.
