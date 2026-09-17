@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
+import { morningBriefDeliveryPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-delivery-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -27,6 +28,7 @@ import {
   seedSlackOrgInstallation$,
 } from "./helpers/integrations-slack";
 import { morningBriefCompositionPreviewRoutes } from "../morning-brief-composition-preview";
+import { morningBriefDeliveryPreviewRoutes } from "../morning-brief-delivery-preview";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
@@ -128,6 +130,12 @@ function client() {
   );
 }
 
+function deliveryClient() {
+  return setupApp({ context, routes: morningBriefDeliveryPreviewRoutes })(
+    morningBriefDeliveryPreviewContract,
+  );
+}
+
 function agentToken(
   userId: string,
   orgId: string,
@@ -139,7 +147,7 @@ function agentToken(
       userId,
       orgId,
       runId: randomUUID(),
-      capabilities: ["agent:read"],
+      capabilities: ["agent:read", "agent:write"],
       iat: seconds,
       exp: seconds + 3600,
     })}`,
@@ -476,5 +484,66 @@ describe("composed Morning Brief generation", () => {
     await expect(
       readPlatformGenerationReceipts([generations[0]?.attemptId ?? ""]),
     ).resolves.toHaveLength(1);
+  });
+
+  it("hands a composed result to the real delivery consumer", async () => {
+    const fixture = await seedOwnerWithoutConnectors();
+    await withSlack(fixture);
+    slackWithMessages(["ship the release"]);
+    scriptProvider(
+      JSON.stringify({
+        decision: "deliver",
+        language: "en-US",
+        title: "Today",
+        sections: [
+          {
+            heading: "Decisions",
+            items: [{ text: "Release is going out", citations: ["c1"] }],
+          },
+        ],
+      }),
+    );
+
+    const generated = await accept(
+      client().generate({
+        headers: fixture.headers,
+        body: { anchor: ANCHOR },
+      }),
+      [200],
+    );
+    if (generated.body.result !== "generated") {
+      throw new Error(
+        `expected a generated brief, got ${generated.body.result}`,
+      );
+    }
+    // The occurrence this reference belongs to is source-independent, so this
+    // also proves the delivery path resolves an anchor it never read Slack for.
+    expect(generated.body.occurrence.collectionKind).toBe("sources");
+
+    // The one reference a delivery consumer resolves content by. Nothing else
+    // about the brief can be supplied to it.
+    const delivered = await accept(
+      deliveryClient().preview({
+        headers: fixture.headers,
+        body: { resultAttemptId: generated.body.generation.attemptId },
+      }),
+      [200],
+    );
+    expect(delivered.body.result).toBe("delivered");
+    expect(delivered.body.delivery.chatEventId).toBeTruthy();
+
+    // A repeat request returns the delivery this occurrence already has rather
+    // than appending a second message or creating a second email intent.
+    const repeated = await accept(
+      deliveryClient().preview({
+        headers: fixture.headers,
+        body: { resultAttemptId: generated.body.generation.attemptId },
+      }),
+      [200],
+    );
+    expect(repeated.body.result).toBe("already-delivered");
+    expect(repeated.body.delivery.chatEventId).toBe(
+      delivered.body.delivery.chatEventId,
+    );
   });
 });
