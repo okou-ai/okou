@@ -29,7 +29,7 @@ interface MorningBriefOwner {
   readonly userId: string;
 }
 
-export interface MorningBriefInstallationFixture {
+interface MorningBriefInstallationFixture {
   readonly workflowId: string;
   readonly automationId: string;
 }

@@ -33,7 +33,7 @@ const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me/";
 const GMAIL_CONNECTOR_SLUG = "gmail" as const;
 const GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME = "GMAIL_TOKEN";
 
-export const GMAIL_COLLECTION_CAPS = Object.freeze({
+const GMAIL_COLLECTION_CAPS = Object.freeze({
   recentWindowMs: 24 * 60 * 60 * 1000,
   listPagesPerBranch: 2,
   candidatesPerPage: 25,
@@ -468,15 +468,11 @@ function branchesForMessage(
   return branches;
 }
 
-export interface MorningBriefGmailCollectionArgs {
+export async function collectMorningBriefGmail(args: {
   readonly db: Db;
   readonly scope: MorningBriefCollectionScope;
   readonly signal: AbortSignal;
-}
-
-export async function collectMorningBriefGmail(
-  args: MorningBriefGmailCollectionArgs,
-): Promise<MorningBriefGmailCollection> {
+}): Promise<MorningBriefGmailCollection> {
   const { scope } = args;
   const window = {
     from: new Date(

@@ -131,7 +131,6 @@ function stubGmail(args: {
   >;
   readonly holdFirstDetail?: Promise<void>;
   readonly detailStatus?: ReadonlyMap<string, number>;
-  readonly malformedDetail?: ReadonlySet<string>;
 }): GmailStub {
   const calls: GmailCall[] = [];
   const byId = new Map<string, StubMessage>();
@@ -184,9 +183,6 @@ function stubGmail(args: {
       if (status !== undefined) {
         return HttpResponse.json({ error: { code: status } }, { status });
       }
-      if (args.malformedDetail?.has(messageId)) {
-        return HttpResponse.json({ id: messageId, unexpected: true });
-      }
       const message = byId.get(messageId);
       if (!message) {
         return HttpResponse.json({ error: { code: 404 } }, { status: 404 });
@@ -208,12 +204,9 @@ interface Fixture {
   readonly actor: ApiTestUser & { readonly orgId: string };
   readonly agentId: string;
   readonly workflowId: string;
-  readonly defaultConnectorId: string;
 }
 
-async function setupOwner(
-  options: { readonly enabled?: boolean } = {},
-): Promise<Fixture> {
+async function setupOwner(): Promise<Fixture> {
   const { actor } = await workflowBdd.setupWorkflowOrg({
     timezone: "Asia/Shanghai",
   });
@@ -225,17 +218,14 @@ async function setupOwner(
     throw new Error("Expected a default Agent");
   }
   const agentId = onboarding.defaultAgentId;
-  const defaultConnectorId = await connectGmail(actor, agentId, {
+  await connectGmail(actor, agentId, {
     email: "owner@example.test",
     subject: `gmail-${randomUUID()}`,
   });
   await runsApi.enableAgentConnectors(actor, agentId, ["gmail"]);
   const installation = await installMorningBriefFixture(
     { orgId: actor.orgId, userId: actor.userId },
-    {
-      agentId,
-      ...(options.enabled === undefined ? {} : { enabled: options.enabled }),
-    },
+    { agentId },
   );
   await updateFeatureSwitchesForUser(
     context,
@@ -246,7 +236,6 @@ async function setupOwner(
     actor: { ...actor, orgId: actor.orgId },
     agentId,
     workflowId: installation.workflowId,
-    defaultConnectorId,
   };
 }
 

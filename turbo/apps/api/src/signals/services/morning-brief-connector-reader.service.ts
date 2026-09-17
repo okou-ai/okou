@@ -9,6 +9,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
+import { connectors } from "@okouai/db/schema/connector";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { and, eq, or } from "drizzle-orm";
 import type { z } from "zod";
@@ -69,7 +70,7 @@ export interface MorningBriefCollectionScope {
   readonly timezone: string;
 }
 
-export interface MorningBriefReaderBudget {
+interface MorningBriefReaderBudget {
   /** Every attempted request counts, including the ones that fail. */
   readonly maxRequests: number;
   readonly maxResponseBytes: number;
@@ -81,14 +82,14 @@ export interface MorningBriefReaderBudget {
  * Why a whole source is unusable. These are terminal: the source is discarded,
  * no further request may be issued and no collected payload is released.
  */
-export type MorningBriefSourceUnavailable =
+type MorningBriefSourceUnavailable =
   | "not-connected"
   | "not-authorized"
   | "reconnect-required"
   | "source-revoked"
   | "provider-failed";
 
-export type MorningBriefAccessResult<T> =
+type MorningBriefAccessResult<T> =
   | {
       readonly kind: "ok";
       readonly value: T;
@@ -151,10 +152,9 @@ interface MorningBriefReaderRequest {
   readonly signal: AbortSignal;
 }
 
-/** The exact account and credential revision this source is pinned to. */
+/** The exact account this source is pinned to for its whole lifetime. */
 interface PinnedAccount {
   readonly connectorId: string;
-  readonly stateRevision: string;
   readonly externalEmail: string | null;
 }
 
@@ -268,6 +268,33 @@ async function resolveSelectedConnectorId(
     workflowId: scope.installationId,
     connectorSlug,
   });
+}
+
+/**
+ * The pinned account must still be this owner's live account for this source.
+ *
+ * A deleted account or one the owner has been asked to reconnect withdraws the
+ * access this read was admitted under, even though its ID has not changed.
+ */
+async function pinnedAccountIsLive(
+  db: ReadonlyDb,
+  scope: MorningBriefCollectionScope,
+  pinned: PinnedAccount,
+  connectorSlug: ConnectorSlug,
+): Promise<boolean> {
+  const [account] = await db
+    .select({ needsReconnect: connectors.needsReconnect })
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, pinned.connectorId),
+        eq(connectors.orgId, scope.orgId),
+        eq(connectors.userId, scope.userId),
+        eq(connectors.connectorSlug, connectorSlug),
+      ),
+    )
+    .limit(1);
+  return account !== undefined && !account.needsReconnect;
 }
 
 /** Accepted catalog visibility for this member. Availability is not policy. */
@@ -410,6 +437,12 @@ async function authorize(
     // payload gathered from the previous account may not be released.
     return { kind: "revoked", reason: "source-revoked" };
   }
+  if (
+    pinned &&
+    !(await pinnedAccountIsLive(db, scope, pinned, connectorSlug))
+  ) {
+    return { kind: "revoked", reason: "reconnect-required" };
+  }
   request.signal.throwIfAborted();
 
   const scopeGrants = await loadAgentConnectorScope(db, {
@@ -503,7 +536,6 @@ async function loadCredential(
   }
   const pinned = {
     connectorId: connection.connectorId,
-    stateRevision: connection.stateRevision,
     externalEmail: connection.externalEmail,
   };
   if (!credentialNeedsRefresh(connection.tokenExpiresAt)) {
@@ -759,7 +791,7 @@ export async function withMorningBriefConnectorReader<T>(
  * The preview entrypoint's gate: the implementation switch plus a canonical,
  * installed and enabled Morning Brief the authenticated member actually owns.
  */
-export type MorningBriefCollectionAdmission =
+type MorningBriefCollectionAdmission =
   | { readonly kind: "ok"; readonly scope: MorningBriefCollectionScope }
   | {
       readonly kind: "denied";
