@@ -51,9 +51,11 @@ running it. No release, activation, feature-switch write or backfill is part of
 the schema migration.
 
 Ready heads own immutable artifacts, and artifact-resource edges retain exact
-Storage/version rows. A source deletion first invalidates its heads in the same
-transaction; deleting that Storage then cascades its retention edges so normal
-Workflow/account erasure is not blocked. Cleanup can remove only an artifact
+Storage/version rows. A source deletion locks/deletes its Workflow and exact
+Storage/version parents before retiring generations and invalidating heads in
+the same transaction (`Workflow → Storage/version → generation/head`). The
+Storage deletion cascades retention edges so normal Workflow/account erasure is
+not blocked. Cleanup can remove only an artifact
 older than seven days that no head references. Agent/account erasure removes
 heads/artifacts through owner edges and explicitly removes generation fences and
 publication obligations. A failed or rolled-back source transaction cannot

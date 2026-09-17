@@ -34,6 +34,7 @@ export interface PiStableContextSourceVector {
   readonly agentGeneration: number;
   readonly userGeneration: number;
   readonly catalogIdentity: string | null;
+  readonly agentIdentityDigest: string;
   readonly featurePromptDigest: string;
   readonly permissionDigest: string;
   readonly connectorScopeDigest: string;
@@ -56,6 +57,7 @@ export interface PiStableContextPromptInputs {
   readonly larkEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly introVideoEnabled: boolean;
+  readonly customConnectorMcpEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
 }
@@ -75,6 +77,7 @@ export interface PiStableContextSemanticInput {
       readonly connectorSlug: string;
       readonly storageVersion: number;
       readonly skillStorageVersionId: string | null;
+      readonly isMcp: boolean;
     }[];
     readonly workflows: readonly {
       readonly name: string;

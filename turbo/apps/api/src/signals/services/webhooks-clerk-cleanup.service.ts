@@ -853,6 +853,10 @@ async function deleteOrgData(
     .delete(orgConcurrencySubscriptions)
     .where(eq(orgConcurrencySubscriptions.orgId, orgId));
   await db.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
+  // Membership is the durable stable-context admission parent. Re-run the
+  // idempotent lifecycle cleanup after removing it so a request that raced the
+  // earlier pass cannot recreate generation/publication state.
+  await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
   await db
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.orgId, orgId));
@@ -925,6 +929,10 @@ async function deleteUserData(
     .delete(userPermissionGrants)
     .where(eq(userPermissionGrants.userId, userId));
   await db.delete(orgMembersCache).where(eq(orgMembersCache.userId, userId));
+  // Close the initialization interval between the early Agent cleanup and the
+  // authoritative membership removal. Future initialization now fails its
+  // parent lock; this second pass removes any generation created before it.
+  await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
   await db
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.userId, userId));

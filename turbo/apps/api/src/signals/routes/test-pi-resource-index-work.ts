@@ -4,6 +4,7 @@ import {
   piStableContextHeads,
 } from "@okouai/db/schema/pi-stable-context";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
+import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 
@@ -67,7 +68,11 @@ const run$ = command(async ({ get, set }, signal: AbortSignal) => {
           stale: 0,
         };
   signal.throwIfAborted();
-  if (body.data.removeStableContextResourceIndexes && headIds.length > 0) {
+  if (
+    body.data.removeStableContextResourceIndexes &&
+    owner &&
+    headIds.length > 0
+  ) {
     const resources = await db
       .select({ versionId: piStableContextArtifactResources.storageVersionId })
       .from(piStableContextArtifactResources)
@@ -78,16 +83,36 @@ const run$ = command(async ({ get, set }, signal: AbortSignal) => {
           piStableContextArtifactResources.artifactDigest,
         ),
       )
-      .where(inArray(piStableContextHeads.id, headIds));
+      .innerJoin(
+        storageVersions,
+        eq(
+          storageVersions.id,
+          piStableContextArtifactResources.storageVersionId,
+        ),
+      )
+      .innerJoin(storages, eq(storages.id, storageVersions.storageId))
+      .where(
+        and(
+          inArray(piStableContextHeads.id, headIds),
+          eq(storages.orgId, owner.orgId),
+          inArray(
+            storages.name,
+            body.data.removeStableContextResourceIndexes.ownedStorageNames,
+          ),
+        ),
+      );
     signal.throwIfAborted();
     const versionIds = resources.map((resource) => {
       return resource.versionId;
     });
-    if (versionIds.length > 0) {
-      await db
-        .delete(piResourceVersionIndexes)
-        .where(inArray(piResourceVersionIndexes.storageVersionId, versionIds));
+    if (versionIds.length === 0) {
+      throw new Error(
+        "Expected a fixture-owned stable-context resource index to remove",
+      );
     }
+    await db
+      .delete(piResourceVersionIndexes)
+      .where(inArray(piResourceVersionIndexes.storageVersionId, versionIds));
     signal.throwIfAborted();
   }
   return {

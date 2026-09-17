@@ -18,7 +18,6 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agentDisplayName } from "@okouai/core/public-brand";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -83,6 +82,7 @@ import {
   isPersonalSubscriptionProviderType,
 } from "./model-provider-account.service";
 import { piStableContextVariantDigest } from "./pi-stable-context.service";
+import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
 import { buildAgentToolsPrompt } from "./agent-tools-prompt.service";
 
 type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
@@ -103,17 +103,6 @@ const DISALLOWED_TOOLS = [
   "Skill(loop)",
   "Skill(loop *)",
 ] as const;
-
-const TONE_INSTRUCTIONS: Readonly<Record<string, string>> = {
-  professional:
-    "Communicate in a clear, polished, and business-appropriate tone. Be thorough yet concise.",
-  friendly:
-    "Communicate in a warm, approachable, and conversational tone. Feel free to be casual while still being helpful.",
-  direct:
-    "Be brief and to the point. Skip pleasantries and filler — just deliver the information or action needed.",
-  supportive:
-    "Be encouraging and empathetic. Show that you're in the user's corner and proactively offer help.",
-};
 
 interface AgentRunRecord {
   readonly id: string;
@@ -295,37 +284,6 @@ function forbidden(message: string) {
   };
 }
 
-export function buildAgentIdentityPrompt(
-  agent: Pick<
-    AgentRunRecord,
-    "id" | "defaultAgentId" | "displayName" | "description" | "sound"
-  >,
-): string | null {
-  const parts: string[] = [];
-
-  const displayName = agentDisplayName({
-    agentId: agent.id,
-    defaultAgentId: agent.defaultAgentId,
-    displayName: agent.displayName,
-  });
-  if (displayName) {
-    parts.push(`Your name is ${displayName}.`);
-  }
-
-  if (agent.description) {
-    parts.push(`Your role: ${agent.description}`);
-  }
-
-  if (agent.sound) {
-    const instruction = TONE_INSTRUCTIONS[agent.sound];
-    if (instruction) {
-      parts.push(instruction);
-    }
-  }
-
-  return parts.length > 0 ? `# Agent Identity\n${parts.join("\n")}` : null;
-}
-
 function buildExecutionTimeLimitPrompt(): string {
   const executionHours = AGENT_EXECUTION_TIMEOUT_SECONDS / (60 * 60);
   const executionHourUnit = executionHours === 1 ? "hour" : "hours";
@@ -405,6 +363,24 @@ function buildAppendSystemPrompt(args: {
     .join("\n\n");
 }
 
+type StableAgentPromptBuildHook = () => void;
+
+const stableAgentPromptBuildHook = testOverride<
+  StableAgentPromptBuildHook | undefined
+>(() => {
+  return undefined;
+});
+
+export function setStableAgentPromptBuildHookForTest(
+  hook: StableAgentPromptBuildHook,
+): void {
+  stableAgentPromptBuildHook.set(hook);
+}
+
+export function clearStableAgentPromptBuildHookForTest(): void {
+  stableAgentPromptBuildHook.clear();
+}
+
 function buildStableAgentPrompt(args: {
   readonly privateArtifactsEnabled: boolean;
   readonly agent: AgentRunRecord;
@@ -415,7 +391,9 @@ function buildStableAgentPrompt(args: {
   readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly deliveryFormatGuidanceEnabled: boolean;
+  readonly customConnectorMcpEnabled: boolean;
 }): PiStableContextPromptProjection {
+  stableAgentPromptBuildHook.get()?.();
   return {
     agentIdentity: buildAgentIdentityPrompt(args.agent) ?? "",
     executionLimit: buildExecutionTimeLimitPrompt(),
@@ -779,10 +757,18 @@ interface BuildCreateAgentRunArgsInput {
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
+function emptyStablePrompt(): PiStableContextPromptProjection {
+  return {
+    agentIdentity: "",
+    executionLimit: "",
+    tools: "",
+  };
+}
+
 function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   readonly introVideoEnabled: boolean;
   readonly userInfo: UserInfo;
-  readonly stablePrompt: PiStableContextPromptProjection;
+  readonly initialStablePrompt: PiStableContextPromptProjection;
   readonly piStableContext: NonNullable<CreateAgentRunArgs["piStableContext"]>;
 } {
   const introVideoEnabled = isFeatureEnabled(
@@ -807,19 +793,30 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
       args.featureSwitchContext,
     ),
     introVideoEnabled,
+    customConnectorMcpEnabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomConnectorMcp,
+      args.featureSwitchContext,
+    ),
     triggerSource: args.command.triggerSource ?? "web",
     cloudBrowserEnabled: args.cloudBrowserEnabled,
   };
   const userInfo = { ...args.userInfo, ...args.command.userInfoExtras };
-  const stablePrompt = buildStableAgentPrompt({
-    ...promptInputs,
-    agent: args.agent,
-    feishuPlatform: userInfo.feishuPlatform,
-  });
+  const agentIdentity = buildAgentIdentityPrompt(args.agent) ?? "";
+  let stablePrompt: PiStableContextPromptProjection | undefined;
+  const buildPrompt = () => {
+    stablePrompt ??= buildStableAgentPrompt({
+      ...promptInputs,
+      agent: args.agent,
+      feishuPlatform: userInfo.feishuPlatform,
+    });
+    return stablePrompt;
+  };
   return {
     introVideoEnabled,
     userInfo,
-    stablePrompt,
+    initialStablePrompt: args.command.piExecution
+      ? emptyStablePrompt()
+      : buildPrompt(),
     piStableContext: {
       owner: {
         orgId: args.command.auth.orgId,
@@ -836,7 +833,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
         feishuPlatform: userInfo.feishuPlatform ?? null,
         connectorSource: "stored_agent",
       }),
-      prompt: stablePrompt,
+      buildPrompt,
       dynamicAppendSystemPrompt: [
         buildCurrentUserPrompt(userInfo),
         args.command.appendSystemPrompt,
@@ -863,6 +860,7 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
                 args.connectorCatalogSelection.selection.catalogIdentity,
               )
             : null,
+        agentIdentityDigest: piStableContextVariantDigest(agentIdentity),
         featurePromptDigest: piStableContextVariantDigest(promptInputs),
         permissionDigest: piStableContextVariantDigest(
           args.runPermissionPolicies ?? null,
@@ -888,7 +886,7 @@ function buildCreateAgentRunArgs(
   const command = args.command;
   const agentModelProviderId = optionalAgentSetting(args.agent.modelProviderId);
   const agentSelectedModel = optionalAgentSetting(args.agent.selectedModel);
-  const { introVideoEnabled, userInfo, stablePrompt, piStableContext } =
+  const { introVideoEnabled, userInfo, initialStablePrompt, piStableContext } =
     buildStableRunPromptContext(args);
   const productAgentExecutionPlan = {
     identity: "agent" as const,
@@ -901,7 +899,7 @@ function buildCreateAgentRunArgs(
       body: command.body,
       agent: args.agent,
       userInfo,
-      stablePrompt,
+      stablePrompt: initialStablePrompt,
       permissionPolicies: args.runPermissionPolicies,
       triggerSource: command.triggerSource,
       appendSystemPrompt: command.appendSystemPrompt,

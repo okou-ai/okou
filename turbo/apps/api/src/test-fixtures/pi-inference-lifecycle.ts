@@ -6,7 +6,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { conversations } from "@okouai/db/schema/conversation";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
@@ -243,23 +243,38 @@ export type PiInferenceFixture = Awaited<
   ReturnType<typeof seedPiInferenceFixture>
 >;
 
+export async function removePiInferenceFixtures(f: {
+  readonly runIds: readonly string[];
+  readonly agentId: string;
+  readonly orgId: string;
+}) {
+  // Runs can share one Agent. Remove every owned lease before deleting that
+  // parent so another fixture run cannot retain a RESTRICT edge mid-cleanup.
+  if (f.runIds.length > 0) {
+    await db().delete(usageEvent).where(inArray(usageEvent.runId, f.runIds));
+    await db()
+      .delete(agentRunSandboxLease)
+      .where(inArray(agentRunSandboxLease.runId, f.runIds));
+    await db()
+      .delete(agentRunInference)
+      .where(inArray(agentRunInference.runId, f.runIds));
+  }
+  await db().delete(agents).where(eq(agents.id, f.agentId));
+  await db()
+    .delete(orgPlanEntitlements)
+    .where(eq(orgPlanEntitlements.orgId, f.orgId));
+}
+
 export async function removePiInferenceFixture(f: {
   readonly runId: string;
   readonly agentId: string;
   readonly orgId: string;
 }) {
-  // These fixtures never allocate external resources; teardown owns all rows.
-  await db().delete(usageEvent).where(eq(usageEvent.runId, f.runId));
-  await db()
-    .delete(agentRunSandboxLease)
-    .where(eq(agentRunSandboxLease.runId, f.runId));
-  await db()
-    .delete(agentRunInference)
-    .where(eq(agentRunInference.runId, f.runId));
-  await db().delete(agents).where(eq(agents.id, f.agentId));
-  await db()
-    .delete(orgPlanEntitlements)
-    .where(eq(orgPlanEntitlements.orgId, f.orgId));
+  await removePiInferenceFixtures({
+    runIds: [f.runId],
+    agentId: f.agentId,
+    orgId: f.orgId,
+  });
 }
 
 export async function expirePiInferenceFixture(f: PiInferenceFixture) {

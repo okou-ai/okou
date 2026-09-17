@@ -58,6 +58,7 @@ import {
 import { computeContentHashFromHashes } from "./storage-content-hash.service";
 import { enqueueMemorySummaryProjection } from "./memory-summary-projection.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
+import { normalizeMountOverlay } from "./storage-mount-overlay";
 
 import { publishPiResourceVersionIndex } from "./pi-resource-version-index.service";
 
@@ -2035,19 +2036,6 @@ function buildPreparedReadOnlyStorageEntry(args: {
     ...metadata,
     storedMount: { ...metadata.storedMount, archiveUrl: args.archiveUrl },
   };
-}
-
-function normalizeMountOverlay<T extends { readonly mountPath: string }>(
-  mounts: readonly T[],
-): readonly T[] {
-  const byMountPath = new Map<string, T>();
-  for (const mount of mounts) {
-    // Mount application is last-wins. Delete first so the canonical list also
-    // preserves the winning entry's relative order.
-    byMountPath.delete(mount.mountPath);
-    byMountPath.set(mount.mountPath, mount);
-  }
-  return [...byMountPath.values()];
 }
 
 function buildWorkflowSkillStorageEntry(args: {

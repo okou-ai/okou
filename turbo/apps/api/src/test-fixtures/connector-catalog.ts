@@ -39,12 +39,23 @@ import {
   persistConnectorCatalogRuntimeProjection,
   setConnectorCatalogRuntimeProjectionIdentityReadHookForTest,
 } from "../signals/services/connector-catalog-runtime-projection.service";
-import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
+import {
+  connectorCatalogSource,
+  withConnectorCatalogSourceForTest,
+  type ConnectorCatalogSource,
+} from "../signals/services/connector-catalog-source";
 import {
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidationAuthority,
 } from "../signals/services/connector-catalog-validator-authority";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "./connector-catalog-artifact";
+
+export async function withApiTestConnectorCatalogSource<T>(
+  source: ConnectorCatalogSource,
+  work: () => Promise<T>,
+): Promise<T> {
+  return await withConnectorCatalogSourceForTest(source, work);
+}
 
 export const API_TEST_CONNECTOR_CATALOG = connectorCatalogArtifactSchema.parse(
   API_TEST_CONNECTOR_CATALOG_ARTIFACT,

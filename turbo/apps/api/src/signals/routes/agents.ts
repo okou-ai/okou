@@ -37,7 +37,7 @@ import {
   lockCanonicalAgentMutation,
   lockCanonicalAgentPublicLimit,
 } from "../services/agent-mutation-lock.service";
-import { buildAgentIdentityPrompt } from "../services/agent-runs-create.service";
+import { buildAgentIdentityPrompt } from "../services/agent-identity-prompt.service";
 import {
   invalidatePiStableContext,
   type PiStableContextInvalidationOptions,

@@ -1,6 +1,7 @@
 import type {
   PiStableContextBuildInput,
   PiStableContextProjection,
+  PiStableContextPromptInputs,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
 import { describe, expect, it } from "vitest";
 
@@ -10,6 +11,8 @@ import {
   piStableContextProjectionFromInput,
   piStableContextVariantDigest,
 } from "../pi-stable-context.service";
+import { customConnectorDefinitionHasStableSkill } from "../pi-stable-context-recapture.service";
+import { normalizeMountOverlay } from "../storage-mount-overlay";
 
 describe("Pi stable context projection", () => {
   const input: PiStableContextBuildInput = {
@@ -24,6 +27,7 @@ describe("Pi stable context projection", () => {
       agentGeneration: 4,
       userGeneration: 7,
       catalogIdentity: "catalog-a",
+      agentIdentityDigest: "agent-identity-a",
       featurePromptDigest: "feature-a",
       permissionDigest: "permission-a",
       connectorScopeDigest: "connector-a",
@@ -146,6 +150,49 @@ describe("Pi stable context projection", () => {
     expect(piStableContextArtifactDigest(projection)).toBe(
       piStableContextArtifactDigest(projection),
     );
+  });
+
+  it("uses canonical last-wins mount overlay order", () => {
+    const mounts = normalizeMountOverlay([
+      { mountPath: "/skills/github", source: "builtin" },
+      { mountPath: "/skills/intro-video", source: "intro" },
+      { mountPath: "/skills/github", source: "workflow" },
+    ]);
+
+    expect(mounts).toStrictEqual([
+      { mountPath: "/skills/intro-video", source: "intro" },
+      { mountPath: "/skills/github", source: "workflow" },
+    ]);
+  });
+
+  it("filters MCP custom skills when their feature is disabled", () => {
+    const promptInputs: PiStableContextPromptInputs = {
+      privateArtifactsEnabled: false,
+      cloudBrowserEnabled: false,
+      bankingEnabled: false,
+      larkEnabled: false,
+      deliveryFormatGuidanceEnabled: false,
+      introVideoEnabled: false,
+      customConnectorMcpEnabled: false,
+      triggerSource: "web",
+    };
+    const definition = {
+      customConnectorId: "00000000-0000-4000-8000-000000000030",
+      connectorSlug: "custom-mcp",
+      storageVersion: 1,
+      skillStorageVersionId: "e".repeat(64),
+      isMcp: true,
+    };
+
+    expect(
+      customConnectorDefinitionHasStableSkill(definition, promptInputs),
+    ).toBeFalsy();
+    expect(
+      customConnectorDefinitionHasStableSkill(definition, {
+        ...promptInputs,
+        customConnectorMcpEnabled: true,
+      }),
+    ).toBeTruthy();
   });
 
   it("does not reuse artifacts across owner or semantic generations", () => {

@@ -24,6 +24,7 @@ import {
   piStableContextGenerations,
   piStableContextHeads,
 } from "@okouai/db/schema/pi-stable-context";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
@@ -54,6 +55,7 @@ import {
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import { COMPUTE_CLOSURE_ERROR } from "./agent-run-terminal-transition.service";
 import { PI_STABLE_CONTEXT_AGENT_SUBJECT } from "./pi-stable-context-generation.service";
+import { recapturePiStableContextInput } from "./pi-stable-context-recapture.service";
 
 export { piStableContextArtifactDigest, piStableContextVariantDigest };
 const PI_STABLE_CONTEXT_LEASE_MS = 5 * 60 * 1000;
@@ -70,7 +72,7 @@ interface PreparePiStableContextArgs {
   readonly db: Db;
   readonly owner: PiStableContextOwner;
   readonly variantDigest: string;
-  readonly prompt: PiStableContextPromptProjection;
+  readonly buildPrompt: () => PiStableContextPromptProjection;
   readonly semantic?: PiStableContextSemanticInput;
   readonly source: StableSourceWithoutGenerations;
   readonly mounts: readonly StoredStorageMountEntry[];
@@ -79,6 +81,7 @@ interface PreparePiStableContextArgs {
   readonly eligible: boolean;
   readonly checkedAt: Date;
   readonly runId?: string;
+  readonly beforeSourceGenerationInitialization?: () => Promise<void>;
   readonly beforeDemandRegistration?: () => Promise<void>;
 }
 
@@ -211,6 +214,20 @@ async function lockStableContextOwnerAuthority(
     }
     throw admission.error;
   }
+  const [executingMember] = await tx
+    .select({ userId: orgMembersCache.userId })
+    .from(orgMembersCache)
+    .where(
+      and(
+        eq(orgMembersCache.orgId, owner.orgId),
+        eq(orgMembersCache.userId, owner.userId),
+      ),
+    )
+    .for("key share")
+    .limit(1);
+  if (!executingMember) {
+    return false;
+  }
   await lockCanonicalAgentMutation(tx, owner.agentId);
   const [agent] = await tx
     .select({ id: agents.id })
@@ -227,10 +244,15 @@ async function lockStableContextOwnerAuthority(
   return agent !== undefined;
 }
 
-function buildInput(
+type StableContextInputIdentity = Omit<
+  PiStableContextBuildInput,
+  "prompt" | "semantic"
+>;
+
+function buildInputIdentity(
   args: PreparePiStableContextArgs,
   generations: SourceGenerations,
-): PiStableContextBuildInput {
+): StableContextInputIdentity {
   const stableMounts = piResourceDiscoveryMounts(args.mounts);
   const stableMountKeys = new Set(
     stableMounts.map((mount) => {
@@ -250,8 +272,6 @@ function buildInput(
       userGeneration: generations.userGeneration,
       extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
     },
-    prompt: args.prompt,
-    ...(args.semantic ? { semantic: args.semantic } : {}),
     storageMounts: stableMounts.map(stableStorageMount),
     persistedStorageMounts: args.persistedStorageMounts
       .filter((mount) => {
@@ -263,6 +283,29 @@ function buildInput(
         );
       })
       .map(stablePersistedMount),
+  };
+}
+
+function buildInput(
+  args: PreparePiStableContextArgs,
+  generations: SourceGenerations,
+): PiStableContextBuildInput {
+  return {
+    ...buildInputIdentity(args, generations),
+    prompt: args.buildPrompt(),
+    ...(args.semantic ? { semantic: args.semantic } : {}),
+  };
+}
+
+function projectionInputIdentity(
+  projection: PiStableContextProjection,
+): StableContextInputIdentity {
+  return {
+    schemaVersion: projection.schemaVersion,
+    owner: projection.owner,
+    source: projection.source,
+    storageMounts: projection.storageMounts,
+    persistedStorageMounts: projection.persistedStorageMounts,
   };
 }
 
@@ -319,8 +362,8 @@ function horizonIsValid(
   return horizon === null || horizon.getTime() > checkedAt.getTime();
 }
 
-async function ensureSourceGenerations(
-  db: Db,
+async function ensureSourceGenerationsInTransaction(
+  db: Tx,
   owner: PiStableContextOwner,
 ): Promise<SourceGenerations> {
   const subjects = [PI_STABLE_CONTEXT_AGENT_SUBJECT, owner.userId];
@@ -368,6 +411,18 @@ async function ensureSourceGenerations(
   };
 }
 
+async function ensureSourceGenerations(
+  db: Db,
+  owner: PiStableContextOwner,
+): Promise<SourceGenerations | null> {
+  return await db.transaction(async (tx) => {
+    if (!(await lockStableContextOwnerAuthority(tx, owner))) {
+      return null;
+    }
+    return await ensureSourceGenerationsInTransaction(tx, owner);
+  });
+}
+
 async function readReadyProjection(args: PreparePiStableContextArgs): Promise<{
   readonly projection: PiStableContextProjection;
   readonly generations: SourceGenerations;
@@ -384,7 +439,6 @@ async function readReadyProjection(args: PreparePiStableContextArgs): Promise<{
     .select({
       projection: piStableContextArtifacts.projection,
       artifactDigest: piStableContextArtifacts.digest,
-      inputDigest: piStableContextHeads.inputDigest,
       agentGeneration: agentGeneration.generation,
       userGeneration: userGeneration.generation,
       agentState: agentGeneration.publicationState,
@@ -431,10 +485,11 @@ async function readReadyProjection(args: PreparePiStableContextArgs): Promise<{
     userGeneration: row.userGeneration,
     ready: true,
   };
-  const expectedInput = buildInput(args, generations);
+  const expectedIdentity = buildInputIdentity(args, generations);
   const projection = row.projection;
   if (
-    row.inputDigest !== piStableContextInputDigest(expectedInput) ||
+    piStableContextVariantDigest(expectedIdentity) !==
+      piStableContextVariantDigest(projectionInputIdentity(projection)) ||
     piStableContextArtifactDigest(projection) !== row.artifactDigest ||
     !horizonIsValid(projection.source, args.checkedAt)
   ) {
@@ -484,8 +539,7 @@ async function registerDemand(
   args: PreparePiStableContextArgs,
   generations: SourceGenerations,
 ): Promise<StableContextDemand | null> {
-  const input = buildInput(args, generations);
-  const inputDigest = piStableContextInputDigest(input);
+  const capturedInput = buildInput(args, generations);
   return await args.db.transaction(async (tx) => {
     if (!(await lockStableContextOwnerAuthority(tx, args.owner))) {
       return null;
@@ -493,6 +547,23 @@ async function registerDemand(
     if (!(await lockMatchingReadyGenerations(tx, args.owner, generations))) {
       return null;
     }
+    const recaptured = await recapturePiStableContextInput(
+      tx,
+      capturedInput,
+      args.checkedAt,
+    );
+    if (!recaptured) {
+      return null;
+    }
+    const input: PiStableContextBuildInput = {
+      ...recaptured,
+      source: {
+        ...recaptured.source,
+        agentGeneration: generations.agentGeneration,
+        userGeneration: generations.userGeneration,
+      },
+    };
+    const inputDigest = piStableContextInputDigest(input);
     const initialValues = {
       orgId: args.owner.orgId,
       userId: args.owner.userId,
@@ -601,7 +672,7 @@ async function publishProjection(
     "headId" | "generation" | "input" | "inputDigest"
   > & { readonly leaseId?: string },
   projection: PiStableContextProjection,
-  afterResourceLock?: () => Promise<void>,
+  afterResourceLock?: (tx: Tx) => Promise<void>,
 ): Promise<boolean> {
   const artifactDigest = piStableContextArtifactDigest(projection);
   const condition = and(
@@ -662,7 +733,7 @@ async function publishProjection(
         .orderBy(asc(storageVersions.id))
         .for("key share");
     }
-    await afterResourceLock?.();
+    await afterResourceLock?.(tx);
     const [head] = await tx
       .select({ id: piStableContextHeads.id })
       .from(piStableContextHeads)
@@ -792,7 +863,7 @@ export function preparePiStableContext(
     const startedAt = performance.now();
     if (!args.eligible) {
       const canonical = await get(prepareCanonical(args, signal));
-      return { ...canonical, prompt: args.prompt, kind: "dynamic" };
+      return { ...canonical, prompt: args.buildPrompt(), kind: "dynamic" };
     }
     const ready = await readReadyProjection(args);
     signal?.throwIfAborted();
@@ -814,11 +885,21 @@ export function preparePiStableContext(
       return { ...result, prompt: ready.projection.prompt, kind: "ready" };
     }
 
+    await args.beforeSourceGenerationInitialization?.();
+    signal?.throwIfAborted();
     const generations = await ensureSourceGenerations(args.db, args.owner);
     signal?.throwIfAborted();
+    if (!generations) {
+      const canonical = await get(prepareCanonical(args, signal));
+      return { ...canonical, prompt: args.buildPrompt(), kind: "missing" };
+    }
     if (!generations.ready) {
       const canonical = await get(prepareCanonical(args, signal));
-      return { ...canonical, prompt: args.prompt, kind: "source_pending" };
+      return {
+        ...canonical,
+        prompt: args.buildPrompt(),
+        kind: "source_pending",
+      };
     }
     await args.beforeDemandRegistration?.();
     signal?.throwIfAborted();
@@ -843,7 +924,7 @@ export function preparePiStableContext(
         },
       });
     }
-    return { ...canonical, prompt: args.prompt, kind: "missing" };
+    return { ...canonical, prompt: args.buildPrompt(), kind: "missing" };
   });
 }
 
@@ -985,7 +1066,7 @@ function errorClass(error: unknown): string {
 
 interface StableContextWorkHooks {
   readonly beforePublish?: () => Promise<void>;
-  readonly afterResourceLock?: () => Promise<void>;
+  readonly afterResourceLock?: (tx: Tx) => Promise<void>;
 }
 
 async function buildStableContextWorkItem(

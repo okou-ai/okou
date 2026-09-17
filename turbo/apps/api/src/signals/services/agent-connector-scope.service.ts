@@ -6,8 +6,9 @@ import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/
 import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userConnectors } from "@okouai/db/schema/user-connector";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import type { ReadonlyDb } from "../external/db";
 
 export interface CustomConnectorDefinitionVersion {
@@ -15,6 +16,7 @@ export interface CustomConnectorDefinitionVersion {
   readonly connectorSlug: string;
   readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
+  readonly isMcp: boolean;
 }
 
 export interface AgentConnectorScope {
@@ -37,6 +39,7 @@ export interface AgentCustomConnectorRow {
   readonly connectorSlug: string;
   readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
+  readonly isMcp: boolean;
 }
 
 async function loadAgentAllowedConnectorSlugRows(
@@ -74,6 +77,9 @@ async function loadAgentAllowedCustomConnectorRows(
       connectorSlug: orgCustomConnectors.slug,
       storageVersion: orgCustomConnectors.storageVersion,
       skillStorageVersionId: orgCustomConnectors.skillStorageVersionId,
+      isMcp: isNotNull(orgCustomConnectors.mcpEndpoint).mapWith(
+        pgBooleanDecoder,
+      ),
     })
     .from(userCustomConnectors)
     .innerJoin(
@@ -123,6 +129,7 @@ export function agentConnectorScopeFromRows(args: {
       connectorSlug: row.connectorSlug,
       storageVersion: row.storageVersion,
       skillStorageVersionId: row.skillStorageVersionId,
+      isMcp: row.isMcp,
     };
   });
   return {

@@ -4,7 +4,6 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
-import { piStableContextGenerations } from "@okouai/db/schema/pi-stable-context";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
@@ -16,6 +15,7 @@ import { isLockNotAvailable } from "../../lib/pg-errors";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
+import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
@@ -177,12 +177,10 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
 
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
 
-  // Generation fences intentionally have no agent FK: metadata-first Storage
-  // publication can run in a separate transaction while the canonical agent
-  // row is locked. Erasure therefore owns this explicit edge.
-  await tx
-    .delete(piStableContextGenerations)
-    .where(eq(piStableContextGenerations.agentId, args.agentId));
+  // Stable-context generations intentionally have no Agent FK, while heads
+  // retain artifacts through explicit references. Direct Agent deletion owns
+  // the complete edge and settles heads before generations.
+  await deleteAgentStableContextLifecycleData(tx, args.agentId);
   await tx
     .delete(agents)
     .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));

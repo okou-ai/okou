@@ -22,6 +22,8 @@ import type {
   PiStableContextSemanticInput,
   PiStableContextStorageMount,
 } from "@okouai/db/jsonb-contracts/pi-stable-context";
+import { agents } from "@okouai/db/schema/agent";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
@@ -33,7 +35,11 @@ import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
-import { loadAgentConnectorScopeSerial } from "./agent-connector-scope.service";
+import {
+  loadAgentConnectorScopeSerial,
+  type CustomConnectorDefinitionVersion,
+} from "./agent-connector-scope.service";
+import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
 import { buildAgentToolsPrompt } from "./agent-tools-prompt.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { loadConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
@@ -44,12 +50,14 @@ import {
 } from "./feature-switch-scope";
 import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
 import { piStableContextVariantDigest } from "./pi-stable-context-digest.service";
+import { normalizeMountOverlay } from "./storage-mount-overlay";
 import {
   workflowsForRunFromRows,
   type RunWorkflowRef,
 } from "./workflow-data.service";
 
 interface StableContextSourceSnapshot {
+  readonly agentIdentity: string;
   readonly promptInputs: PiStableContextPromptInputs;
   readonly connectorScope: PiStableContextSemanticInput["connectorScope"];
   readonly permissionPolicies: ReturnType<
@@ -102,6 +110,10 @@ function featurePromptInputs(
     ),
     introVideoEnabled: isFeatureEnabled(
       FeatureSwitchKey.IntroVideo,
+      featureContext,
+    ),
+    customConnectorMcpEnabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomConnectorMcp,
       featureContext,
     ),
   };
@@ -216,6 +228,34 @@ async function loadPermissionSnapshot(
   };
 }
 
+async function loadAgentIdentityPrompt(
+  db: Db,
+  input: PiStableContextBuildInput,
+): Promise<string> {
+  const [agent] = await db
+    .select({
+      id: agents.id,
+      defaultAgentId: orgMetadata.defaultAgentId,
+      displayName: agents.displayName,
+      description: agents.description,
+      sound: agents.sound,
+    })
+    .from(agents)
+    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
+    .where(
+      and(
+        eq(agents.id, input.owner.agentId),
+        eq(agents.orgId, input.owner.resourceOwner.orgId),
+        eq(agents.owner, input.owner.resourceOwner.userId),
+      ),
+    )
+    .limit(1);
+  if (!agent) {
+    throw new Error("Stable-context Agent authority is unavailable");
+  }
+  return buildAgentIdentityPrompt(agent) ?? "";
+}
+
 async function loadStableContextSourceSnapshot(
   db: Db,
   input: PiStableContextBuildInput,
@@ -226,6 +266,7 @@ async function loadStableContextSourceSnapshot(
   }
   // Source writers call this inside one transaction-bound PostgreSQL client;
   // keep reads serial instead of issuing unsupported concurrent client queries.
+  const agentIdentity = await loadAgentIdentityPrompt(db, input);
   const promptInputs = await loadFeaturePromptInputs(db, input);
   const connectorScopeBase = await loadAgentConnectorScopeSerial(db, {
     orgId: input.owner.orgId,
@@ -257,6 +298,7 @@ async function loadStableContextSourceSnapshot(
           connectorSlugs: [...connectorScope.allowedConnectorSlugs],
         });
   return {
+    agentIdentity,
     promptInputs,
     connectorScope,
     permissionPolicies,
@@ -273,13 +315,30 @@ function introVideoStorageName(): string {
   return getSkillStorageName(parsed.fullPath);
 }
 
+export function customConnectorDefinitionHasStableSkill(
+  definition: CustomConnectorDefinitionVersion,
+  promptInputs: PiStableContextPromptInputs,
+): definition is CustomConnectorDefinitionVersion & {
+  readonly skillStorageVersionId: string;
+} {
+  return Boolean(
+    definition.skillStorageVersionId &&
+    (!definition.isMcp || promptInputs.customConnectorMcpEnabled),
+  );
+}
+
 function customConnectorMounts(
   snapshot: StableContextSourceSnapshot,
   orgId: string,
 ): readonly DesiredDynamicMount[] {
   return snapshot.connectorScope.customConnectorDefinitions.flatMap(
     (definition) => {
-      if (!definition.skillStorageVersionId) {
+      if (
+        !customConnectorDefinitionHasStableSkill(
+          definition,
+          snapshot.promptInputs,
+        )
+      ) {
         return [];
       }
       return [
@@ -626,6 +685,7 @@ export async function recapturePiStableContextInput(
     ...input,
     prompt: {
       ...input.prompt,
+      agentIdentity: snapshot.agentIdentity,
       tools: buildAgentToolsPrompt({
         ...snapshot.promptInputs,
         feishuPlatform: semantic.feishuPlatform ?? undefined,
@@ -640,6 +700,7 @@ export async function recapturePiStableContextInput(
               snapshot.catalogSelection.selection.catalogIdentity,
             )
           : null,
+      agentIdentityDigest: piStableContextVariantDigest(snapshot.agentIdentity),
       featurePromptDigest: piStableContextVariantDigest(snapshot.promptInputs),
       permissionDigest,
       connectorScopeDigest: piStableContextVariantDigest(
@@ -647,25 +708,29 @@ export async function recapturePiStableContextInput(
       ),
       validityHorizon: snapshot.permissionValidityHorizon,
     },
-    storageMounts: mergeDynamicMounts({
-      current: input.storageMounts,
-      resolved,
-      previousSemantic: input.semantic,
-      nextSemantic: semantic,
-      ownerOrgId: input.owner.orgId,
-      select(mount) {
-        return mount.storage;
-      },
-    }),
-    persistedStorageMounts: mergeDynamicMounts({
-      current: input.persistedStorageMounts,
-      resolved,
-      previousSemantic: input.semantic,
-      nextSemantic: semantic,
-      ownerOrgId: input.owner.orgId,
-      select(mount) {
-        return mount.persisted;
-      },
-    }),
+    storageMounts: normalizeMountOverlay(
+      mergeDynamicMounts({
+        current: input.storageMounts,
+        resolved,
+        previousSemantic: input.semantic,
+        nextSemantic: semantic,
+        ownerOrgId: input.owner.orgId,
+        select(mount) {
+          return mount.storage;
+        },
+      }),
+    ),
+    persistedStorageMounts: normalizeMountOverlay(
+      mergeDynamicMounts({
+        current: input.persistedStorageMounts,
+        resolved,
+        previousSemantic: input.semantic,
+        nextSemantic: semantic,
+        ownerOrgId: input.owner.orgId,
+        select(mount) {
+          return mount.persisted;
+        },
+      }),
+    ),
   };
 }

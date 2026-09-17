@@ -14,12 +14,13 @@ import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { workflows } from "@okouai/db/schema/workflow";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import {
   nullableDriverValueDecoder,
+  pgBooleanDecoder,
   pgTextDecoder,
   zodDriverValueDecoder,
   zodEnumDriverValueDecoder,
@@ -65,6 +66,7 @@ const permissionGrantActionDecoder = zodEnumDriverValueDecoder(
   userPermissionGrantActionSchema,
 );
 const nullableTextDecoder = nullableDriverValueDecoder(pgTextDecoder);
+const nullableBooleanDecoder = nullableDriverValueDecoder(pgBooleanDecoder);
 const nullableBootstrapMetadataSwitchesDecoder = nullableDriverValueDecoder(
   bootstrapMetadataSwitchesDecoder,
 );
@@ -94,6 +96,7 @@ interface BootstrapMetadataQueryRow {
   readonly permissionBundleRef: string | null;
   readonly storageVersion: number | null;
   readonly skillStorageVersionId: string | null;
+  readonly isMcp: boolean | null;
   readonly expiresAt: Date | null;
 }
 
@@ -165,6 +168,7 @@ function emptyBootstrapMetadataFields() {
     skillStorageVersionId: sql`NULL::text`
       .mapWith(nullableTextDecoder)
       .as("skill_storage_version_id"),
+    isMcp: sql`NULL::boolean`.mapWith(nullableBooleanDecoder).as("is_mcp"),
     expiresAt: sql`NULL::timestamp`
       .mapWith(nullablePermissionGrantExpiresAtDecoder)
       .as("expires_at"),
@@ -197,6 +201,9 @@ function agentRunCustomConnectorMetadataQuery(
       skillStorageVersionId: sql`${orgCustomConnectors.skillStorageVersionId}`
         .mapWith(nullableTextDecoder)
         .as("skill_storage_version_id"),
+      isMcp: isNotNull(orgCustomConnectors.mcpEndpoint)
+        .mapWith(pgBooleanDecoder)
+        .as("is_mcp"),
     })
     .from(userCustomConnectors)
     .innerJoin(
@@ -373,6 +380,13 @@ function permissionValidityHorizon(
   return horizon?.toISOString() ?? null;
 }
 
+function requireCustomConnectorMcpFlag(value: boolean | null): boolean {
+  if (value === null) {
+    throw new Error("Custom connector MCP classification is unavailable");
+  }
+  return value;
+}
+
 export function materializeRunBootstrapContext(
   rows: RunBootstrapSnapshotRows,
   args: {
@@ -433,6 +447,7 @@ export function materializeRunBootstrapContext(
           connectorSlug: row.detail,
           storageVersion: row.storageVersion,
           skillStorageVersionId: row.skillStorageVersionId,
+          isMcp: requireCustomConnectorMcpFlag(row.isMcp),
         });
         if (row.permissionBundleRef !== null) {
           const dependency = customConnectorPermissionBundleDependencySlug(

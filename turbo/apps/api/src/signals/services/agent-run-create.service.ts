@@ -1119,7 +1119,8 @@ export interface CreateAgentRunArgs {
   readonly piStableContext?: {
     readonly owner: PiStableContextOwner;
     readonly variantDigest: string;
-    readonly prompt: PiStableContextPromptProjection;
+    /** Built only for a miss/dynamic path; ready artifacts supply this text. */
+    readonly buildPrompt: () => PiStableContextPromptProjection;
     /** Dynamic profile/channel text and explicit caller appendage, bound later. */
     readonly dynamicAppendSystemPrompt: string;
     readonly semantic: PiStableContextSemanticInput;
@@ -11601,23 +11602,19 @@ function bindStableAppendSystemPrompt(
 }
 
 function bindPublishedStableAppendSystemPrompt(args: {
-  readonly requestedPrompt: PiStableContextPromptProjection;
   readonly publishedPrompt: PiStableContextPromptProjection;
   readonly dynamicAppendSystemPrompt: string;
   readonly finalAppendSystemPrompt: string | undefined;
 }): string {
-  const requested = bindStableAppendSystemPrompt(
-    args.requestedPrompt,
-    args.dynamicAppendSystemPrompt,
-  );
   const finalPrompt = args.finalAppendSystemPrompt ?? "";
-  if (!finalPrompt.startsWith(requested)) {
+  if (!finalPrompt.startsWith(args.dynamicAppendSystemPrompt)) {
     throw new Error("Pi stable prompt lost its canonical final binding");
   }
-  return `${bindStableAppendSystemPrompt(
-    args.publishedPrompt,
-    args.dynamicAppendSystemPrompt,
-  )}${finalPrompt.slice(requested.length)}`;
+  return [bindStableAppendSystemPrompt(args.publishedPrompt, ""), finalPrompt]
+    .filter((part) => {
+      return Boolean(part);
+    })
+    .join("\n\n");
 }
 
 function bindDurablePiAppendSystemPrompt(
@@ -11627,7 +11624,6 @@ function bindDurablePiAppendSystemPrompt(
   const stableContext = input.args.piStableContext;
   return publishedPrompt && stableContext
     ? bindPublishedStableAppendSystemPrompt({
-        requestedPrompt: stableContext.prompt,
         publishedPrompt,
         dynamicAppendSystemPrompt: stableContext.dynamicAppendSystemPrompt,
         finalAppendSystemPrompt: input.context.body.appendSystemPrompt,
@@ -11660,7 +11656,7 @@ function prepareDurablePiResource(
           db: args.input.db,
           owner: stableContext.owner,
           variantDigest: stableContext.variantDigest,
-          prompt: stableContext.prompt,
+          buildPrompt: stableContext.buildPrompt,
           semantic: stableContext.semantic,
           source: stableContext.source,
           mounts: args.storagePlan.metadata.storageMounts,
@@ -13247,9 +13243,16 @@ export const completeAgentRun$ = command(
       if (isRouteError(legacyContext)) {
         return legacyContext;
       }
+      const legacyAppendSystemPrompt = input.prepared.args.piStableContext
+        ? bindStableAppendSystemPrompt(
+            input.prepared.args.piStableContext.buildPrompt(),
+            input.finalAppendSystemPrompt ??
+              input.prepared.args.piStableContext.dynamicAppendSystemPrompt,
+          )
+        : input.finalAppendSystemPrompt;
       launchContext = finalizePreparedRunContext(
         { ...input.prepared, context: legacyContext },
-        input.finalAppendSystemPrompt,
+        legacyAppendSystemPrompt,
       );
     }
 

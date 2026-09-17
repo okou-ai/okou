@@ -109,22 +109,34 @@ export async function enqueuePiResourceVersionIndexes(
         updatedAt: nowDate(),
       })
       .where(
-        exists(
-          db
-            .select({ ordinal: piStableContextArtifactResources.ordinal })
-            .from(piStableContextArtifactResources)
-            .where(
-              and(
-                eq(
-                  piStableContextArtifactResources.artifactDigest,
-                  piStableContextHeads.artifactDigest,
-                ),
-                inArray(
-                  piStableContextArtifactResources.storageVersionId,
-                  changedVersionIds,
+        or(
+          exists(
+            db
+              .select({ ordinal: piStableContextArtifactResources.ordinal })
+              .from(piStableContextArtifactResources)
+              .where(
+                and(
+                  eq(
+                    piStableContextArtifactResources.artifactDigest,
+                    piStableContextHeads.artifactDigest,
+                  ),
+                  inArray(
+                    piStableContextArtifactResources.storageVersionId,
+                    changedVersionIds,
+                  ),
                 ),
               ),
-            ),
+          ),
+          // Pending/running heads have no artifact edge yet. Their captured
+          // immutable mounts still bind the repaired Storage encoding, so the
+          // same transaction must fence those leases as well.
+          sql`EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(
+              COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)
+            ) AS mount
+            WHERE ${inArray(sql`mount->>'versionId'`, changedVersionIds)}
+          )`,
         ),
       );
   }

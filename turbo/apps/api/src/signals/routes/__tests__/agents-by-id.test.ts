@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { agentsByIdContract } from "@okouai/api-contracts/contracts/agents";
-
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
+import {
+  countAgentStableContextPublicationsFixture,
+  seedAgentStableContextPublicationFixture,
+} from "../../../test-fixtures/pi-stable-context";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
   createBddApi,
@@ -423,6 +426,24 @@ describe("DELETE /api/agents/:id", () => {
         code: "NOT_FOUND",
       },
     });
+  });
+
+  it("removes abandoned stable-context publications on ordinary deletion", async () => {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected org-scoped actor");
+    }
+    const agent = await createAgent(actor);
+    await seedAgentStableContextPublicationFixture({
+      orgId: actor.orgId,
+      agentId: agent.agentId,
+    });
+
+    await bdd.deleteAgent(actor, agent.agentId);
+
+    await expect(
+      countAgentStableContextPublicationsFixture(agent.agentId),
+    ).resolves.toBe(0);
   });
 
   it("sweeps the agent instructions volume after deleting the agent", async () => {

@@ -23,7 +23,7 @@ import {
   workflowWebhookAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -115,7 +115,12 @@ import {
   prepareVolumeServerSide$,
   type PreparedServerSideVolume,
 } from "../services/storage-volume-publication.service";
-import { invalidatePiStableContext } from "../services/pi-stable-context-generation.service";
+import {
+  invalidatePiStableContext,
+  piStableContextWorkflowInvalidationOptions,
+  piStableContextWorkflowPublicationKey,
+  retirePiStableContextPublication,
+} from "../services/pi-stable-context-generation.service";
 
 const workflowReadAuth = {
   requireOrganization: true,
@@ -754,7 +759,7 @@ const updateWorkflowInner$ = command(
       }
     }
 
-    await set(
+    const updated = await set(
       updateWorkflow$,
       {
         workflow: visible.workflow,
@@ -764,6 +769,9 @@ const updateWorkflowInner$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (!updated) {
+      return conflict("Workflow changed during update; retry the request");
+    }
 
     const detail = await get(
       workflowDetail({
@@ -1456,6 +1464,22 @@ async function copyWorkflowDatabaseRows(
       { db: tx, volume: args.volume },
       signal,
     );
+    await invalidatePiStableContext(
+      tx,
+      {
+        orgId: args.orgId,
+        agentId: args.targetAgentId,
+        userId: args.userId,
+      },
+      piStableContextWorkflowInvalidationOptions({
+        kind: "upsert",
+        workflow: {
+          workflowId: args.targetWorkflowId,
+          name: sourceWorkflow.name,
+          officialDefinitionName: null,
+        },
+      }),
+    );
     // The shared user/org sequence is the final lock: all external work and
     // unrelated row updates have finished before the thread event is appended.
     if (
@@ -1924,21 +1948,74 @@ interface VisibilityTransition {
 async function applyVisibilityUpdate(
   db: Db,
   args: {
-    readonly workflowId: string;
+    readonly workflow: Pick<
+      WorkflowRow,
+      | "id"
+      | "orgId"
+      | "agentId"
+      | "ownerUserId"
+      | "name"
+      | "officialDefinitionName"
+      | "visibility"
+    >;
     readonly updatedByUserId: string;
-    readonly patch: {
-      readonly visibility?: "public" | "private";
-    };
+    readonly visibility: "public" | "private";
   },
-): Promise<void> {
-  await db
-    .update(workflows)
-    .set({
-      ...args.patch,
-      updatedBy: args.updatedByUserId,
-      updatedAt: nowDate(),
-    })
-    .where(eq(workflows.id, args.workflowId));
+): Promise<boolean> {
+  return await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(workflows)
+      .set({
+        visibility: args.visibility,
+        updatedBy: args.updatedByUserId,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(workflows.id, args.workflow.id),
+          eq(workflows.orgId, args.workflow.orgId),
+          eq(workflows.agentId, args.workflow.agentId),
+          eq(workflows.ownerUserId, args.workflow.ownerUserId),
+          eq(workflows.visibility, args.workflow.visibility),
+          isNull(workflows.officialDefinitionName),
+        ),
+      )
+      .returning({ id: workflows.id });
+    if (!updated) {
+      return false;
+    }
+
+    const scopes = [
+      { orgId: args.workflow.orgId, agentId: args.workflow.agentId },
+      {
+        orgId: args.workflow.orgId,
+        agentId: args.workflow.agentId,
+        userId: args.workflow.ownerUserId,
+      },
+    ] as const;
+    const publicationKey = piStableContextWorkflowPublicationKey(
+      args.workflow.id,
+    );
+    for (const scope of scopes) {
+      await retirePiStableContextPublication(tx, scope, publicationKey);
+    }
+    for (const [index, scope] of scopes.entries()) {
+      const scopeVisibility = index === 0 ? "public" : "private";
+      await invalidatePiStableContext(
+        tx,
+        scope,
+        piStableContextWorkflowInvalidationOptions({
+          kind: args.visibility === scopeVisibility ? "upsert" : "delete",
+          workflow: {
+            workflowId: args.workflow.id,
+            name: args.workflow.name,
+            officialDefinitionName: args.workflow.officialDefinitionName,
+          },
+        }),
+      );
+    }
+    return true;
+  });
 }
 
 function summaryFrom(
@@ -2022,14 +2099,15 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return slugError;
   }
 
-  await applyVisibilityUpdate(writeDb, {
-    workflowId: workflow.id,
+  const updated = await applyVisibilityUpdate(writeDb, {
+    workflow,
     updatedByUserId: auth.userId,
-    patch: {
-      visibility: "public",
-    },
+    visibility: "public",
   });
   signal.throwIfAborted();
+  if (!updated) {
+    return conflict("Workflow changed during publish; retry the request");
+  }
   return {
     status: 200 as const,
     body: summaryFrom(loaded, {
@@ -2076,14 +2154,15 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return slugError;
   }
 
-  await applyVisibilityUpdate(writeDb, {
-    workflowId: loaded.workflow.id,
+  const updated = await applyVisibilityUpdate(writeDb, {
+    workflow: loaded.workflow,
     updatedByUserId: auth.userId,
-    patch: {
-      visibility: "private",
-    },
+    visibility: "private",
   });
   signal.throwIfAborted();
+  if (!updated) {
+    return conflict("Workflow changed during demotion; retry the request");
+  }
   return {
     status: 200 as const,
     body: summaryFrom(loaded, {

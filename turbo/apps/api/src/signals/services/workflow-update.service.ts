@@ -3,7 +3,7 @@ import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import type { WorkflowUpdateRequest } from "@okouai/api-contracts/contracts/workflows";
 import { workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -30,7 +30,7 @@ export const updateWorkflow$ = command(
     { get, set },
     args: UpdateWorkflowInput,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const writeDb = set(writeDb$);
     const { workflow, body } = args;
     if (workflow.officialDefinitionName !== null) {
@@ -52,8 +52,8 @@ export const updateWorkflow$ = command(
     const volumeChanged = body.files !== undefined || skillChanged;
     // Metadata and its pending generation commit together. The later volume
     // transaction may make only this exact generation ready.
-    const stableContextPublication = await writeDb.transaction(async (tx) => {
-      await tx
+    const metadata = await writeDb.transaction(async (tx) => {
+      const [updated] = await tx
         .update(workflows)
         .set({
           ...(body.name !== undefined && {
@@ -71,8 +71,21 @@ export const updateWorkflow$ = command(
           updatedBy: args.updatedByUserId,
           updatedAt: nowDate(),
         })
-        .where(eq(workflows.id, workflow.id));
-      return volumeChanged
+        .where(
+          and(
+            eq(workflows.id, workflow.id),
+            eq(workflows.orgId, workflow.orgId),
+            eq(workflows.agentId, workflow.agentId),
+            eq(workflows.ownerUserId, workflow.ownerUserId),
+            eq(workflows.visibility, workflow.visibility),
+            isNull(workflows.officialDefinitionName),
+          ),
+        )
+        .returning({ id: workflows.id });
+      if (!updated) {
+        return { updated: false as const };
+      }
+      const stableContextPublication = volumeChanged
         ? await beginPiStableContextPublication(
             tx,
             {
@@ -93,8 +106,12 @@ export const updateWorkflow$ = command(
             }),
           )
         : undefined;
+      return { updated: true as const, stableContextPublication };
     });
     signal.throwIfAborted();
+    if (!metadata.updated) {
+      return false;
+    }
 
     if (volumeChanged) {
       const attachedFiles =
@@ -131,11 +148,14 @@ export const updateWorkflow$ = command(
           storageName: getCustomSkillStorageName(workflow.id),
           files: [{ path: SKILL_FILENAME, content: skillMd }, ...attachedFiles],
           piResourceIndex: true,
-          ...(stableContextPublication ? { stableContextPublication } : {}),
+          ...(metadata.stableContextPublication
+            ? { stableContextPublication: metadata.stableContextPublication }
+            : {}),
         },
         signal,
       );
       signal.throwIfAborted();
     }
+    return true;
   },
 );

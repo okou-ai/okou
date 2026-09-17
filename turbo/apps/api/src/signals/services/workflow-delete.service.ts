@@ -9,6 +9,7 @@ import { and, eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
+import { testOverride } from "../../lib/singleton";
 import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
 import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
@@ -19,6 +20,24 @@ import {
   piStableContextWorkflowPublicationKey,
   retirePiStableContextPublication,
 } from "./pi-stable-context-generation.service";
+
+interface WorkflowDeleteHooks {
+  readonly beforeStorageDelete?: (tx: Tx) => Promise<void>;
+}
+
+const workflowDeleteHooks = testOverride<WorkflowDeleteHooks>(() => {
+  return {};
+});
+
+export function setWorkflowDeleteHooksForTest(
+  hooks: WorkflowDeleteHooks,
+): void {
+  workflowDeleteHooks.set(hooks);
+}
+
+export function clearWorkflowDeleteHooksForTest(): void {
+  workflowDeleteHooks.clear();
+}
 
 interface DeleteWorkflowInput {
   readonly orgId: string;
@@ -42,35 +61,42 @@ async function retireDeletedWorkflowStableContext(
       readonly agentId: string;
       readonly name: string;
       readonly ownerUserId: string;
-      readonly visibility: "public" | "private";
       readonly officialDefinitionName: string | null;
     };
   },
 ): Promise<void> {
-  const scope = {
-    orgId: args.orgId,
-    agentId: args.workflow.agentId,
-    ...(args.workflow.visibility === "private"
-      ? { userId: args.workflow.ownerUserId }
-      : {}),
-  };
-  await retirePiStableContextPublication(
-    tx,
-    scope,
-    piStableContextWorkflowPublicationKey(args.workflow.id),
+  // A Workflow can have an abandoned obligation in either scope after a
+  // visibility transition or a stale update. Settle both in one deterministic
+  // @agent → user order, then invalidate both memberships from the same
+  // post-delete snapshot.
+  const scopes = [
+    { orgId: args.orgId, agentId: args.workflow.agentId },
+    {
+      orgId: args.orgId,
+      agentId: args.workflow.agentId,
+      userId: args.workflow.ownerUserId,
+    },
+  ] as const;
+  const publicationKey = piStableContextWorkflowPublicationKey(
+    args.workflow.id,
   );
-  await invalidatePiStableContext(
-    tx,
-    scope,
-    piStableContextWorkflowInvalidationOptions({
-      kind: "delete",
-      workflow: {
-        workflowId: args.workflow.id,
-        name: args.workflow.name,
-        officialDefinitionName: args.workflow.officialDefinitionName,
-      },
-    }),
-  );
+  for (const scope of scopes) {
+    await retirePiStableContextPublication(tx, scope, publicationKey);
+  }
+  for (const scope of scopes) {
+    await invalidatePiStableContext(
+      tx,
+      scope,
+      piStableContextWorkflowInvalidationOptions({
+        kind: "delete",
+        workflow: {
+          workflowId: args.workflow.id,
+          name: args.workflow.name,
+          officialDefinitionName: args.workflow.officialDefinitionName,
+        },
+      }),
+    );
+  }
 }
 
 /**
@@ -167,7 +193,6 @@ export const deleteWorkflow$ = command(
           agentId: workflows.agentId,
           name: workflows.name,
           ownerUserId: workflows.ownerUserId,
-          visibility: workflows.visibility,
           officialDefinitionName: workflows.officialDefinitionName,
           officialInstallationState: workflows.officialInstallationState,
         })
@@ -227,6 +252,7 @@ export const deleteWorkflow$ = command(
         .limit(1);
 
       if (storage) {
+        await workflowDeleteHooks.get().beforeStorageDelete?.(tx);
         // Stable-context publishers lock resource parents before the head.
         // Delete in the same parent-before-head order so a publisher holding a
         // Storage key-share lock cannot deadlock with Workflow invalidation.

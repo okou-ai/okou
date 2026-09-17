@@ -26,6 +26,24 @@ type ClerkAgentLifecycleScope =
   | { readonly kind: "organization"; readonly orgId: string }
   | { readonly kind: "user"; readonly userId: string };
 
+export async function deleteAgentStableContextLifecycleData(
+  tx: Tx,
+  agentId: string,
+): Promise<void> {
+  await tx
+    .delete(piStableContextHeads)
+    .where(eq(piStableContextHeads.agentId, agentId));
+  await tx
+    .delete(piStableContextArtifacts)
+    .where(eq(piStableContextArtifacts.agentId, agentId));
+  await tx
+    .delete(piStableContextPublications)
+    .where(eq(piStableContextPublications.agentId, agentId));
+  await tx
+    .delete(piStableContextGenerations)
+    .where(eq(piStableContextGenerations.agentId, agentId));
+}
+
 async function deleteStableContextLifecycleData(
   tx: Tx,
   scope: ClerkAgentLifecycleScope,

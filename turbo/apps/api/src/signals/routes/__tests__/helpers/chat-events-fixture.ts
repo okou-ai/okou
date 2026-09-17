@@ -1627,9 +1627,13 @@ export function createChatEventsFixture(context: TestContext) {
     return content;
   }
 
-  function mockPiResourceArchiveDownloads(unavailable = false): void {
+  function mockPiResourceArchiveDownloads(
+    unavailable = false,
+    onRead?: () => void,
+  ): void {
     server.use(
       http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
+        onRead?.();
         if (unavailable) {
           return HttpResponse.json(
             { error: "archive unavailable" },

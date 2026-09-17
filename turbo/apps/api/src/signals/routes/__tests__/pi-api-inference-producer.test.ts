@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { testPiResourceIndexWorkContract } from "@okouai/api-contracts/contracts/test-pi-resource-index-work";
@@ -42,11 +43,20 @@ import {
 } from "./helpers/pi-responses";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { removePiInferenceFixture } from "../../../test-fixtures/pi-inference-lifecycle";
 import {
+  removePiInferenceFixture,
+  removePiInferenceFixtures,
+} from "../../../test-fixtures/pi-inference-lifecycle";
+import {
+  captureApiTestConnectorCatalogCleanup,
   installApiTestConnectorCatalog,
   invalidateApiTestConnectorCatalogCompatibility,
+  withApiTestConnectorCatalogSource,
 } from "../../../test-fixtures/connector-catalog";
+import {
+  beginWorkflowStableContextPublicationFixture,
+  withStableAgentPromptBuildCountFixture,
+} from "../../../test-fixtures/pi-stable-context";
 
 const context = testContext();
 const billing = createBillingMediaApi(context);
@@ -322,7 +332,7 @@ describe("durable Pi API producer", () => {
     const capturedAt = Date.parse("2026-09-17T00:00:00.000Z");
     mockNow(capturedAt);
     configureNativeCliArtifact();
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = await enableDurablePi(actor);
     await configureBuiltInPiModel(actor, SELECTED_MODEL);
     const usagePricingResolution =
@@ -330,9 +340,12 @@ describe("durable Pi API producer", () => {
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
     const providerBodies: string[] = [];
+    const resourceArchiveReadsAtProvider: number[] = [];
+    let resourceArchiveReads = 0;
     let providerCalls = 0;
     server.use(
       http.post(PROVIDER_URL, async ({ request }) => {
+        resourceArchiveReadsAtProvider.push(resourceArchiveReads);
         providerCalls += 1;
         providerBodies.push(JSON.stringify(await request.json()));
         return new HttpResponse(
@@ -392,6 +405,124 @@ describe("durable Pi API producer", () => {
     expect(archiveReadsAfterWorkflowCreate).toBe(0);
     mockPiResourceArchiveDownloads();
 
+    const sourceAgent = await bdd.createAgent(actor, {
+      displayName: `Stable Copy Source ${randomUUID()}`,
+      visibility: "private",
+    });
+    onTestFinished(async () => {
+      await bdd.deleteAgent(actor, sourceAgent.agentId);
+    });
+    const copiedWorkflowName = `stable-copy-${randomUUID()}`;
+    const sourceWorkflowId = await workflows.createWorkflow(actor, {
+      agentId: sourceAgent.agentId,
+      name: copiedWorkflowName,
+      visibility: "private",
+      description: `Published copy description ${randomUUID()}`,
+      instruction: `Published copy instruction ${randomUUID()}`,
+    });
+    const copiedWorkflowId = await workflows.copyWorkflow(
+      actor,
+      sourceWorkflowId,
+      agentId,
+    );
+    const copyWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(copyWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    mockPiResourceArchiveDownloads(false, () => {
+      resourceArchiveReads += 1;
+    });
+    resourceArchiveReads = 0;
+    const copyProviderIndex = providerCalls;
+    const workflowCopied = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-copy publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowCopied.runId, "completed", 10_000);
+    expect(resourceArchiveReadsAtProvider[copyProviderIndex]).toBe(0);
+    expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
+
+    await beginWorkflowStableContextPublicationFixture({
+      orgId,
+      userId: actor.userId,
+      agentId,
+      workflowId: copiedWorkflowId,
+    });
+    await workflows.publishWorkflow(actor, copiedWorkflowId);
+    const publishWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(publishWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    resourceArchiveReads = 0;
+    const publishProviderIndex = providerCalls;
+    const workflowPublished = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-publish publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowPublished.runId, "completed", 10_000);
+    expect(resourceArchiveReadsAtProvider[publishProviderIndex]).toBe(0);
+    expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
+
+    await beginWorkflowStableContextPublicationFixture({
+      orgId,
+      agentId,
+      workflowId: copiedWorkflowId,
+    });
+    await workflows.demoteWorkflow(actor, copiedWorkflowId);
+    const demoteWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(demoteWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
+    resourceArchiveReads = 0;
+    const demoteProviderIndex = providerCalls;
+    const workflowDemoted = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "use the workflow-demotion publication",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await waitForRunStatus(actor, workflowDemoted.runId, "completed", 10_000);
+    expect(resourceArchiveReadsAtProvider[demoteProviderIndex]).toBe(0);
+    expect(providerBodies.at(-1)).toContain(copiedWorkflowName);
+    mockPiResourceArchiveDownloads();
+
     await misc.deleteWorkflow(actor, workflowId, [204]);
     await api.applyUserPermissionGrant(actor, {
       agentId,
@@ -438,37 +569,49 @@ describe("durable Pi API producer", () => {
     await waitForRunStatus(actor, workflowDeleted.runId, "completed", 10_000);
     expect(archiveReadsAfterWorkflowDelete).toBe(0);
 
-    onTestFinished(async () => {
-      await installApiTestConnectorCatalog();
-    });
-    await installApiTestConnectorCatalog({
-      catalogVersion: `stable-context-authority-${randomUUID()}`,
-    });
-    await invalidateApiTestConnectorCatalogCompatibility();
-    await expect(
-      updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.DeliveryFormatGuidance]: true },
-      ),
-    ).resolves.toBeUndefined();
-    const callsBeforeCatalogRejection = providerCalls;
-    await expect(
-      sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: "reject invalid catalog authority before transport",
-          model: SELECTED_MODEL,
-        },
-        usagePricingResolution,
-      ),
-    ).rejects.toThrow("Unknown response status 500 for POST /api/chat/events");
-    expect(providerCalls).toBe(callsBeforeCatalogRejection);
-    await installApiTestConnectorCatalog();
+    const catalogSourceId = randomUUID().replaceAll("-", "").repeat(2);
+    await withApiTestConnectorCatalogSource(
+      {
+        bucket: `stable-context-authority-${randomUUID()}`,
+        sourceId: catalogSourceId,
+      },
+      async () => {
+        const cleanupCatalog = captureApiTestConnectorCatalogCleanup();
+        onTestFinished(cleanupCatalog);
+        await installApiTestConnectorCatalog({
+          catalogVersion: `stable-context-authority-${randomUUID()}`,
+        });
+        await invalidateApiTestConnectorCatalogCompatibility();
+        await expect(
+          updateFeatureSwitchesForUser(
+            context,
+            { ...actor, orgId },
+            { [FeatureSwitchKey.DeliveryFormatGuidance]: true },
+          ),
+        ).resolves.toBeUndefined();
+        const callsBeforeCatalogRejection = providerCalls;
+        await expect(
+          sendChatRun(
+            actor,
+            {
+              agentId,
+              prompt: "reject invalid catalog authority before transport",
+              model: SELECTED_MODEL,
+            },
+            usagePricingResolution,
+          ),
+        ).rejects.toThrow(
+          "Unknown response status 500 for POST /api/chat/events",
+        );
+        expect(providerCalls).toBe(callsBeforeCatalogRejection);
+      },
+    );
 
     mockPiResourceArchiveDownloads();
-    mockNow(capturedAt + 60 * 60 * 1000 + 1);
+    // Cross both the one-hour grant horizon and PostgreSQL's real fixture
+    // timestamps so the deterministic recovery endpoint can materialize the
+    // deferred H0 claim under the same expired authority.
+    mockNow(capturedAt + 24 * 60 * 60 * 1000);
     const expired = await sendChatRun(
       actor,
       {
@@ -480,11 +623,96 @@ describe("durable Pi API producer", () => {
     );
     await waitForRunStatus(actor, expired.runId, "completed", 10_000);
 
+    const expiredBoundary = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "/native-command",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    await expirePiInference(expiredBoundary.runId);
+    await expect(
+      cleanupRun(expiredBoundary.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({ body: { errors: 0 } });
+    const expiredClaim = await claimDeferredPiRun(
+      expiredBoundary.runId,
+      runnerGroup,
+    );
+    expect(
+      expiredClaim.claim.networkPolicies?.slack?.allow ?? [],
+    ).not.toContain("conversations:read");
+    await api.requestCancelRun(
+      actor,
+      expiredBoundary.runId,
+      [200],
+      usagePricingResolution,
+    );
+    await releaseDeferredPiRun(
+      expiredBoundary.runId,
+      expiredClaim.runnerId,
+      expiredClaim.claim,
+    );
+    await waitForRunStatus(actor, expiredBoundary.runId, "cancelled", 10_000);
+
+    await api.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "slack",
+      permission: "conversations:read",
+      action: "allow",
+    });
+    const refreshedWork = await accept(
+      setupApp({ context, routes: testPiResourceIndexWorkRoutes })(
+        testPiResourceIndexWorkContract,
+      ).run({
+        body: {
+          versionIds: ["0".repeat(64)],
+          stableContextOwner: { orgId, userId: actor.userId, agentId },
+        },
+      }),
+      [200],
+    );
+    expect(refreshedWork.body.stableContext.ready).toBeGreaterThanOrEqual(1);
     await api.replaceUserPermissionGrants(actor, {
       agentId,
       connectorSlug: "slack",
       grants: [],
     });
+    const revokedBoundary = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "/native-command",
+        model: SELECTED_MODEL,
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    await expirePiInference(revokedBoundary.runId);
+    await expect(
+      cleanupRun(revokedBoundary.runId, orgId, usagePricingResolution),
+    ).resolves.toMatchObject({ body: { errors: 0 } });
+    const revokedClaim = await claimDeferredPiRun(
+      revokedBoundary.runId,
+      runnerGroup,
+    );
+    expect(
+      revokedClaim.claim.networkPolicies?.slack?.allow ?? [],
+    ).not.toContain("conversations:read");
+    await api.requestCancelRun(
+      actor,
+      revokedBoundary.runId,
+      [200],
+      usagePricingResolution,
+    );
+    await releaseDeferredPiRun(
+      revokedBoundary.runId,
+      revokedClaim.runnerId,
+      revokedClaim.claim,
+    );
+    await waitForRunStatus(actor, revokedBoundary.runId, "cancelled", 10_000);
     await api.enableAgentConnectors(actor, agentId, []);
     const instructions = `Worker-published instructions ${randomUUID()}`;
     const displayName = `Published identity ${randomUUID()}`;
@@ -497,7 +725,9 @@ describe("durable Pi API producer", () => {
         body: {
           versionIds: ["0".repeat(64)],
           stableContextOwner: { orgId, userId: actor.userId, agentId },
-          removeStableContextResourceIndexes: true,
+          removeStableContextResourceIndexes: {
+            ownedStorageNames: [getCustomSkillStorageName(copiedWorkflowId)],
+          },
         },
       }),
       [200],
@@ -514,30 +744,41 @@ describe("durable Pi API producer", () => {
         );
       }),
     );
-    const ready = await sendChatRun(
-      actor,
-      {
-        agentId,
-        prompt: "use the worker-published projection",
-        model: SELECTED_MODEL,
-      },
-      usagePricingResolution,
-    );
+    const { buildCount, result: ready } =
+      await withStableAgentPromptBuildCountFixture(async () => {
+        return await sendChatRun(
+          actor,
+          {
+            agentId,
+            prompt: "use the worker-published projection",
+            model: SELECTED_MODEL,
+          },
+          usagePricingResolution,
+        );
+      });
+    expect(buildCount).toBe(0);
     onTestFinished(async () => {
       await flushWaitUntilForTest();
-      for (const runId of [
-        first.runId,
-        workflowAdded.runId,
-        workflowDeleted.runId,
-        expired.runId,
-        ready.runId,
-      ]) {
-        await removePiInferenceFixture({ runId, agentId, orgId });
-      }
+      await removePiInferenceFixtures({
+        runIds: [
+          first.runId,
+          workflowAdded.runId,
+          workflowCopied.runId,
+          workflowPublished.runId,
+          workflowDemoted.runId,
+          workflowDeleted.runId,
+          expired.runId,
+          expiredBoundary.runId,
+          revokedBoundary.runId,
+          ready.runId,
+        ],
+        agentId,
+        orgId,
+      });
     });
     await waitForRunStatus(actor, ready.runId, "completed", 10_000);
     expect(archiveReadsAfterWorker).toBe(0);
-    expect(providerCalls).toBe(5);
+    expect(providerCalls).toBe(8);
     expect(providerBodies.at(-1)).toContain(instructions);
     expect(providerBodies.at(-1)).toContain(displayName);
     expect(providerBodies.at(-1)).toContain(
