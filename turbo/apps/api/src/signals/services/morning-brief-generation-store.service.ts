@@ -2,6 +2,7 @@ import type {
   MorningBriefGenerationFailureReason,
   MorningBriefGenerationState,
 } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
+import type { MorningBriefRetainedSources } from "@okouai/db/jsonb-contracts/morning-brief-generation";
 import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
@@ -114,7 +115,7 @@ export interface MorningBriefGenerationAdmission {
    * Frozen with the reservation because it describes the request that is about
    * to be sent; a later phase revalidates it rather than recollecting it.
    */
-  readonly retainedSources: readonly unknown[] | null;
+  readonly retainedSources: MorningBriefRetainedSources | null;
   /** Never earlier than `expiresAt`, and never extended by a retry. */
   readonly retainedUntil: Date | null;
   readonly reservedAt: Date;

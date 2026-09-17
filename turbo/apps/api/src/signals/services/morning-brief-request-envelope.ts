@@ -117,7 +117,7 @@ interface MorningBriefRequestItem {
 }
 
 /** The opaque citable id one allocated item travels under. */
-export function morningBriefCitationId(index: number): string {
+function morningBriefCitationId(index: number): string {
   return `c${String(index + 1)}`;
 }
 
@@ -223,9 +223,9 @@ export function morningBriefCitationLinks(
   items: readonly MorningBriefSourceItem[],
 ): ReadonlyMap<string, MorningBriefDisplayLink | null> {
   const links = new Map<string, MorningBriefDisplayLink | null>();
-  items.forEach((item, index) => {
+  for (const [index, item] of items.entries()) {
     links.set(morningBriefCitationId(index), item.links[0] ?? null);
-  });
+  }
   return links;
 }
 

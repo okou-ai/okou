@@ -2,18 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  MORNING_BRIEF_COLLECTION_VERSION,
-  morningBriefCollectionOccurrences,
-} from "@okouai/db/schema/morning-brief-collection-occurrence";
-import { morningBriefGenerations } from "@okouai/db/schema/morning-brief-generation";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { db } from "../../../lib/db";
 import { mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -25,6 +19,7 @@ import {
   readMorningBriefGenerations,
   readOwnerBillingFootprint,
   readPlatformGenerationReceipts,
+  seedPossiblyInvokedSlackGeneration,
 } from "../../../test-fixtures/morning-brief-generation";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
@@ -62,7 +57,7 @@ function messageTs(index: number): string {
 
 /** Script the Slack reads the composed collector performs. */
 function slackWithMessages(texts: readonly string[]): void {
-  const reply = (body: unknown) => {
+  const reply = (body: Record<string, unknown>) => {
     return () => {
       return HttpResponse.json(body);
     };
@@ -264,9 +259,9 @@ describe("composed Morning Brief generation", () => {
     expect(generations[0]?.state).toBe("skipped_empty");
     expect(generations[0]?.collectionKind).toBe("sources");
     // A skip consumed zero model calls, so it owes no platform receipt.
-    expect(
-      await readPlatformGenerationReceipts([generations[0]?.attemptId ?? ""]),
-    ).toHaveLength(0);
+    await expect(
+      readPlatformGenerationReceipts([generations[0]?.attemptId ?? ""]),
+    ).resolves.toHaveLength(0);
 
     // Okou pays for this pipeline, so the owner's ledger must be untouched.
     const footprint = await readOwnerBillingFootprint({
@@ -283,65 +278,17 @@ describe("composed Morning Brief generation", () => {
   it("refuses a second invocation for a morning a Slack-kind attempt may already have sent", async () => {
     const fixture = await seedOwnerWithoutConnectors();
     const provider = countProviderRequests();
-    const reservedAt = new Date(ANCHOR_MS);
-
-    // Its parent Slack occurrence, completed exactly as the Slack-only
-    // executor would have left it.
-    await db()
-      .insert(morningBriefCollectionOccurrences)
-      .values({
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        scheduledFor: new Date(ANCHOR_MS),
-        collectionKind: "slack",
-        collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
-        windowStart: new Date(ANCHOR_MS - 24 * 60 * 60 * 1000),
-        windowEnd: new Date(ANCHOR_MS),
-        timezone: "Asia/Shanghai",
-        membershipId: `orgmem_${randomUUID()}`,
-        workflowId: fixture.workflowId,
-        automationId: fixture.automationId,
-        agentId: fixture.agentId,
-        slackWorkspaceId: "T_HISTORICAL",
-        slackUserId: "U_HISTORICAL",
-        status: "completed",
-        attempt: 1,
-        outcome: "complete",
-        claimedAt: reservedAt,
-        finishedAt: reservedAt,
-      });
-
     // A Slack-only generation that is merely `reserved` is already ambiguous:
     // the reservation commits before the request, so it may have reached the
     // provider. Widening the source set must never turn that into a resend.
-    await db()
-      .insert(morningBriefGenerations)
-      .values({
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        scheduledFor: new Date(ANCHOR_MS),
-        collectionKind: "slack",
-        collectionVersion: MORNING_BRIEF_COLLECTION_VERSION,
-        executionPurpose: "preview",
-        attemptId: randomUUID(),
-        state: "reserved",
-        membershipId: `orgmem_${randomUUID()}`,
-        agentId: fixture.agentId,
-        model: "google/gemini-3.8-flash",
-        promptVersion: 1,
-        resultSchemaVersion: 1,
-        language: "en-US",
-        languageSource: "default",
-        inputDigest: "deadbeef",
-        inputItems: 1,
-        includedItems: 1,
-        inputReduced: false,
-        sourceCoverage: "complete",
-        reservedAt,
-        reservationExpiresAt: new Date(reservedAt.getTime() + 60_000),
-        expiresAt: new Date(reservedAt.getTime() + 24 * 60 * 60 * 1000),
-      })
-      .onConflictDoNothing();
+    await seedPossiblyInvokedSlackGeneration({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      agentId: fixture.agentId,
+      workflowId: fixture.workflowId,
+      automationId: fixture.automationId,
+      scheduledFor: new Date(ANCHOR_MS),
+    });
 
     const response = await accept(
       client().generate({
@@ -367,7 +314,7 @@ describe("composed Morning Brief generation", () => {
     expect(generations[0]?.state).toBe("reserved");
   });
 
-  it("sends one complete bounded request and stores the accepted result", async () => {
+  it("sends exactly one complete request the provider ceiling admits", async () => {
     const fixture = await seedOwnerWithoutConnectors();
     await withSlack(fixture);
     slackWithMessages(['ship the "release" today', "block on review"]);
@@ -405,7 +352,7 @@ describe("composed Morning Brief generation", () => {
     };
     expect(sent.model).toBe("google/gemini-3.8-flash");
     expect(sent.max_tokens).toBe(8192);
-    expect(sent.stream).toBe(false);
+    expect(sent.stream).toBeFalsy();
     // The ceiling is on the bytes that actually travelled, escaping included.
     expect(Buffer.byteLength(raw, "utf8")).toBeLessThanOrEqual(128 * 1024);
 
@@ -426,8 +373,34 @@ describe("composed Morning Brief generation", () => {
     expect(document.items[0]).not.toHaveProperty("links");
     expect(sent.messages[1]?.content).not.toContain("https://");
     expect(document.coverage.length).toBeGreaterThan(0);
+  });
 
-    // One accepted result, with its bounded provenance beside it.
+  it("stores the accepted result with its provenance and no owner billing", async () => {
+    const fixture = await seedOwnerWithoutConnectors();
+    await withSlack(fixture);
+    slackWithMessages(["ship the release"]);
+    scriptProvider(
+      JSON.stringify({
+        decision: "deliver",
+        language: "zh-Hans",
+        title: "Today",
+        sections: [
+          {
+            heading: "Decisions",
+            items: [{ text: "Release is going out", citations: ["c1"] }],
+          },
+        ],
+      }),
+    );
+
+    await accept(
+      client().generate({
+        headers: fixture.headers,
+        body: { anchor: ANCHOR },
+      }),
+      [200],
+    );
+
     const generations = await readMorningBriefGenerations({
       orgId: fixture.orgId,
       userId: fixture.userId,
@@ -500,8 +473,8 @@ describe("composed Morning Brief generation", () => {
     expect(generations[0]?.failureReason).toBe("unknown_source_reference");
     expect(generations[0]?.resultMarkdown).toBeNull();
     // The request was billed whether or not its answer was usable.
-    expect(
-      await readPlatformGenerationReceipts([generations[0]?.attemptId ?? ""]),
-    ).toHaveLength(1);
+    await expect(
+      readPlatformGenerationReceipts([generations[0]?.attemptId ?? ""]),
+    ).resolves.toHaveLength(1);
   });
 });

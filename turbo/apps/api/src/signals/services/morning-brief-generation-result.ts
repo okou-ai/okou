@@ -333,11 +333,11 @@ const composedResultSchema = z.discriminatedUnion("decision", [
 ]);
 
 /** An accepted composed result, plus the language the answer claimed. */
-export type AcceptedComposedResult = AcceptedGenerationResult & {
+type AcceptedComposedResult = AcceptedGenerationResult & {
   readonly reportedLanguage: MorningBriefOutputLanguage | null;
 };
 
-export type ComposedResultOutcome =
+type ComposedResultOutcome =
   | { readonly kind: "accepted"; readonly result: AcceptedComposedResult }
   | Extract<GenerationResultOutcome, { kind: "rejected" }>;
 

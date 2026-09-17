@@ -57,7 +57,6 @@ import {
   type GenerationRequestPlan,
   type GenerationSource,
 } from "./morning-brief-generation-prompt";
-import type { MorningBriefCoverageFacts } from "./morning-brief-coverage-note";
 import { interpretGenerationOutput } from "./morning-brief-generation-result";
 import {
   acceptMorningBriefGenerationResult,
@@ -431,7 +430,7 @@ type InterpretedOutcome =
  * Passing that contract in keeps it that way, instead of growing a second
  * engine beside this one.
  */
-export type MorningBriefContentInterpreter = (content: string) =>
+type MorningBriefContentInterpreter = (content: string) =>
   | {
       readonly kind: "accepted";
       readonly result:
@@ -1120,7 +1119,7 @@ const resolveExistingGeneration$ = command(
   },
 );
 
-export interface InvocationArgs {
+interface InvocationArgs {
   readonly db: Db;
   readonly apiKey: string;
   readonly admission: MorningBriefGenerationAdmission;

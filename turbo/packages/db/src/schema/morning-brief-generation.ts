@@ -15,6 +15,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { MorningBriefRetainedSources } from "../jsonb-contracts/morning-brief-generation";
 import { morningBriefCollectionOccurrences } from "./morning-brief-collection-occurrence";
 
 /**
@@ -156,9 +157,6 @@ export const MORNING_BRIEF_GENERATION_UNINVOKED_STATES = [
   "skipped_incomplete",
 ] as const;
 
-/** The serialized ceiling the retained descriptor set is admitted under. */
-export const MORNING_BRIEF_GENERATION_RETAINED_SOURCES_MAX_BYTES = 8192;
-
 /**
  * One owner-scoped Morning Brief generation and its accepted result.
  *
@@ -248,7 +246,8 @@ export const morningBriefGenerations = pgTable(
      * It identifies the inputs a later phase must revalidate; it can never
      * fetch them again, and it holds no source body, prompt or credential.
      */
-    retainedSources: jsonb("retained_sources"),
+    retainedSources:
+      jsonb("retained_sources").$type<MorningBriefRetainedSources>(),
     /**
      * How long that proof outlives the result body.
      *

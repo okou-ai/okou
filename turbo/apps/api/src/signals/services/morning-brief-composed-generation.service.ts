@@ -107,7 +107,7 @@ const COMPOSED_RESERVATION_MS = 60_000;
  */
 const COMPOSED_ADMISSION_BUDGET_MS = 5000;
 
-export type MorningBriefComposedConflict =
+type MorningBriefComposedConflict =
   | "in-progress"
   | "retry-pending"
   | "attempts-exhausted"
@@ -119,7 +119,7 @@ export type MorningBriefComposedConflict =
   /** Another collection kind or contract version already owns this morning. */
   | "anchor-already-invoked";
 
-export type MorningBriefComposedExecution =
+type MorningBriefComposedExecution =
   | { readonly kind: "denied"; readonly reason: string }
   | { readonly kind: "invalid-anchor"; readonly message: string }
   | {
@@ -302,7 +302,7 @@ function generationAdmissionOf(args: {
     instructionsDigest: args.language.instructionsDigest,
     // Frozen with the reservation, because it describes the request that is
     // about to be sent. No source body, prompt or credential is in it.
-    retainedSources: args.descriptors,
+    retainedSources: [...args.descriptors],
     // The proof outlives the body. No email obligation exists yet, so this is
     // the result's own validity; a later obligation extends it from its own
     // original deadline rather than by resetting this one.
@@ -530,6 +530,104 @@ function composedView(
 }
 
 /**
+ * Finalize the collection and take the one generation slot, in one transaction.
+ *
+ * The collected facts and the right to call the provider become durable
+ * together or not at all, and the anchor-wide check runs here rather than
+ * before it: a caller-side look before the transaction could not exclude a
+ * competitor that commits in between.
+ */
+async function admitComposedGeneration(args: {
+  readonly db: Db;
+  readonly admission: MorningBriefCollectionAdmission;
+  readonly claim: MorningBriefCollectionClaim;
+  readonly completion: MorningBriefCollectionCompletion;
+  readonly composed: Extract<
+    MorningBriefCompositionOutcome,
+    { kind: "composed" | "empty" }
+  >;
+  readonly transport: MorningBriefCompositionTransport | null;
+  readonly coverage: "complete" | "partial" | "empty";
+  readonly purpose: MorningBriefGenerationAdmission["executionPurpose"];
+}): Promise<{
+  readonly finalized: Awaited<
+    ReturnType<typeof finalizeMorningBriefCollection>
+  >;
+  readonly generationAdmission: MorningBriefGenerationAdmission | undefined;
+  readonly anchorConflict: boolean;
+}> {
+  const { admission, transport, coverage } = args;
+  let generationAdmission: MorningBriefGenerationAdmission | undefined;
+  let anchorConflict = false;
+
+  const finalized = await args.db.transaction(async (tx) => {
+    const result = await finalizeMorningBriefCollection(
+      tx,
+      admission,
+      args.claim,
+      args.completion,
+      nowDate,
+    );
+    if (result.kind !== "finalized") {
+      return result;
+    }
+    const language = args.composed.result.language;
+    const pending = generationAdmissionOf({
+      admission,
+      transport: transport ?? {
+        body: "",
+        bodyBytes: 0,
+        inputDigest: "",
+        citations: new Map(),
+        inputItems: 0,
+        includedItems: 0,
+        sourceCoverage: coverage,
+      },
+      language: {
+        authority: language?.authority ?? "default",
+        fallbackLanguage: language?.fallbackLanguage ?? "en-US",
+        instructionsVersionId: language?.instructionsVersionId ?? null,
+        instructionsDigest: language?.instructionsDigest ?? null,
+      },
+      descriptors: args.composed.result.descriptors,
+      at: result.at,
+      occurrenceCreatedAt: result.occurrence.createdAt,
+      purpose: args.purpose,
+    });
+
+    // One anchor, one possible invocation — including one admitted under the
+    // Slack-only kind. A row that may already have reached the provider owns
+    // this morning, and widening the source set is never a reason to send
+    // again for it.
+    const occupying = await readInvokedAnchorGeneration(tx, {
+      owner: admission.owner,
+      scheduledFor: admission.scheduledFor,
+      executionPurpose: args.purpose,
+    });
+    if (occupying) {
+      anchorConflict = true;
+      return result;
+    }
+
+    const took =
+      transport === null
+        ? await recordMorningBriefGenerationSkip(
+            tx,
+            pending,
+            coverage === "partial" ? "skipped_incomplete" : "skipped_empty",
+          )
+        : await reserveMorningBriefGeneration(tx, pending);
+    if (took) {
+      generationAdmission = pending;
+    } else {
+      anchorConflict = true;
+    }
+    return result;
+  });
+  return { finalized, generationAdmission, anchorConflict };
+}
+
+/**
  * Finalize the collection, take the single reservation, then send once.
  *
  * The finalize-and-reserve transaction is short and local. The provider request
@@ -562,80 +660,20 @@ const reserveAndInvoke$ = command(
       coverage,
     );
 
-    let generationAdmission: MorningBriefGenerationAdmission | undefined;
-    let occurrenceRow: MorningBriefCollectionOccurrenceRow | undefined;
-    let anchorConflict = false;
-
-    const finalized = await db.transaction(async (tx) => {
-      const result = await finalizeMorningBriefCollection(
-        tx,
-        admission,
-        claim,
-        completion,
-        nowDate,
-      );
-      if (result.kind !== "finalized") {
-        return result;
-      }
-      occurrenceRow = result.occurrence;
-      const language = composed.result.language;
-      const pending = generationAdmissionOf({
-        admission,
-        transport: transport ?? {
-          body: "",
-          bodyBytes: 0,
-          inputDigest: "",
-          citations: new Map(),
-          inputItems: 0,
-          includedItems: 0,
-          sourceCoverage: coverage,
-        },
-        language: {
-          authority: language?.authority ?? "default",
-          fallbackLanguage: language?.fallbackLanguage ?? "en-US",
-          instructionsVersionId: language?.instructionsVersionId ?? null,
-          instructionsDigest: language?.instructionsDigest ?? null,
-        },
-        descriptors: composed.result.descriptors,
-        at: result.at,
-        occurrenceCreatedAt: result.occurrence.createdAt,
-        purpose: input.purpose,
-      });
-
-      // One anchor, one possible invocation — including one admitted under the
-      // Slack-only kind. A row that may already have reached the provider owns
-      // this morning, and widening the source set is never a reason to send
-      // again for it.
-      const occupying = await readInvokedAnchorGeneration(tx, {
-        owner: admission.owner,
-        scheduledFor: admission.scheduledFor,
-        executionPurpose: input.purpose,
-      });
-      if (occupying) {
-        anchorConflict = true;
-        return result;
-      }
-
-      if (transport === null) {
-        const state =
-          coverage === "partial" ? "skipped_incomplete" : "skipped_empty";
-        if (!(await recordMorningBriefGenerationSkip(tx, pending, state))) {
-          anchorConflict = true;
-          return result;
-        }
-        generationAdmission = pending;
-        return result;
-      }
-      if (!(await reserveMorningBriefGeneration(tx, pending))) {
-        anchorConflict = true;
-        return result;
-      }
-      generationAdmission = pending;
-      return result;
+    const admitted = await admitComposedGeneration({
+      db,
+      admission,
+      claim,
+      completion,
+      composed,
+      transport,
+      coverage,
+      purpose: input.purpose,
     });
     signal.throwIfAborted();
+    const { finalized, generationAdmission, anchorConflict } = admitted;
 
-    if (finalized.kind !== "finalized" || occurrenceRow === undefined) {
+    if (finalized.kind !== "finalized") {
       return {
         kind: "conflict",
         reason:

@@ -332,39 +332,55 @@ export const composeMorningBrief$ = command(
     if (planned.kind !== "planned") {
       return planned;
     }
-    const { language, envelopeBytes, request, allocation } = planned;
-    const offered = bounded.collections.reduce((total, collection) => {
-      return total + collection.items.length;
-    }, 0);
-    return {
-      kind: "composed",
-      result: {
-        ...base,
-        language,
-        request: {
-          envelopeBytes,
-          totalBytes: request.bodyBytes,
-          maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
-          items: allocation.items.length,
-          omittedItems: allocation.omittedItems,
-          omittedBytes: allocation.omittedBytes,
-        },
-      },
-      transport: {
-        body: request.body,
-        bodyBytes: request.bodyBytes,
-        inputDigest: request.inputDigest,
-        citations: morningBriefCitationLinks(allocation.items),
-        inputItems: offered,
-        includedItems: allocation.items.length,
-        sourceCoverage: aggregateCoverage(
-          bounded.collections,
-          allocation.omittedItems,
-        ),
-      },
-    };
+    return composedOutcome(base, bounded.collections, planned);
   },
 );
+
+/**
+ * Assemble what one successful composition reports, and what it produced.
+ *
+ * The reported `result` is metadata a route may serialize; the `transport` is
+ * the ephemeral request beside it and is never part of that report.
+ */
+function composedOutcome(
+  base: Omit<MorningBriefCompositionResult, "request" | "language">,
+  collections: readonly MorningBriefSourceCollection[],
+  planned: {
+    readonly language: MorningBriefLanguagePlan;
+    readonly envelopeBytes: number;
+    readonly request: MorningBriefModelRequest;
+    readonly allocation: ReturnType<typeof allocateMorningBriefRequest>;
+  },
+): Extract<MorningBriefCompositionOutcome, { kind: "composed" }> {
+  const { language, envelopeBytes, request, allocation } = planned;
+  const offered = collections.reduce((total, collection) => {
+    return total + collection.items.length;
+  }, 0);
+  return {
+    kind: "composed",
+    result: {
+      ...base,
+      language,
+      request: {
+        envelopeBytes,
+        totalBytes: request.bodyBytes,
+        maxBytes: MORNING_BRIEF_REQUEST_MAX_BYTES,
+        items: allocation.items.length,
+        omittedItems: allocation.omittedItems,
+        omittedBytes: allocation.omittedBytes,
+      },
+    },
+    transport: {
+      body: request.body,
+      bodyBytes: request.bodyBytes,
+      inputDigest: request.inputDigest,
+      citations: morningBriefCitationLinks(allocation.items),
+      inputItems: offered,
+      includedItems: allocation.items.length,
+      sourceCoverage: aggregateCoverage(collections, allocation.omittedItems),
+    },
+  };
+}
 
 /** The distinct containers a normalized collection drew from, in first-seen order. */
 function containerIds(
