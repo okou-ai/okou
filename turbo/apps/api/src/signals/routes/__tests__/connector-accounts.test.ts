@@ -927,7 +927,7 @@ describe("connector account lifecycle routes", () => {
       });
       // Every case owns a complete API-created fixture before exercising its
       // query contract. The enclosing tracker cleans up that case's accounts.
-      createdAccountIds = await createBulkAccounts();
+      createdAccountIds = await catalog.run(createBulkAccounts);
     });
 
     it("paginates more than one hundred accounts", async () => {
