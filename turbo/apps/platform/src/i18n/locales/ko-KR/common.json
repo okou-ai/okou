@@ -645,7 +645,6 @@
       "importedSlides_other": "{{count}}장",
       "importFile": "내 파일 가져오기",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}}을(를) 분석하고 있습니다. 준비되면 Custom에 표시됩니다.",
       "importUnsupported": "템플릿을 만들려면 {{formats}} 파일을 선택하세요.",
       "introVideo": "인트로 영상",
       "introVideoUnavailable": "이 동영상 템플릿은 더 이상 사용할 수 없습니다. 메시지를 보내려면 삭제하세요.",
@@ -1893,13 +1892,14 @@
       "picker": {
         "autoVoiceDescription": "콘텐츠에 맞는 음성을 선택합니다.",
         "avatarVoice": "아바타 음성",
-        "changeAvatar": "아바타 변경",
+        "back": "뒤로",
         "chooseStyle": "스타일 선택",
-        "chooseStyleAndVoice": "스타일과 음성을 선택하세요.",
+        "closeOptions": "옵션 닫기",
+        "moreOptions": "추가 옵션",
         "noMatches": "결과가 없습니다.",
-        "ready": "준비되었습니다. 채팅에 콘텐츠를 추가하세요.",
+        "searchStyles": "스타일 검색",
+        "selectionSummary": "음성: {{voice}} · 아바타: {{avatar}}",
         "settings": "인트로 영상 설정",
-        "style": "스타일",
         "useSelection": "선택 항목 사용"
       },
       "style": {
@@ -1968,10 +1968,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "오픈 채팅",
+      "openChatIn": "{{integration}}에서 채팅 열기",
       "openFeishuChat": "Feishu에서 원본 채팅 열기",
       "openGithubMessage": "GitHub에서 원본 이슈 또는 풀 리퀘스트 열기",
       "openLarkChat": "Lark에서 원본 채팅 열기",
       "openMessage": "메시지 열기",
+      "openMessages": "메시지 열기",
       "openSlackMessage": "Slack에서 원본 메시지 열기",
       "openTeamsMessage": "Microsoft Teams에서 원본 메시지 열기",
       "openTelegramMessage": "Telegram에서 원본 메시지 열기",
@@ -4203,6 +4205,8 @@
         "tiny-wanderer": "작은 방랑자"
       },
       "presentation": {
+        "bloom-pitch": "꽃잎 피치",
+        "blueprint-academy": "제도 캠퍼스",
         "botane-organic-deck": "모브 가든",
         "business-data-presentation": "베리 대시보드",
         "crayon-learning-deck": "크레용 낙서",
@@ -4211,9 +4215,19 @@
         "editorial-magazine-deck": "종이 잡지",
         "landing-consulting-deck": "네온 브라우저",
         "lumina-creative-studio": "브러시 스티커",
+        "meridian": "코발트 블록",
         "mosaic-geometric-pitch": "바우하우스 타일",
+        "neo-brutalism": "섀도 숍",
+        "nocturne": "미드나이트 스테이지",
+        "pixel-glitch": "아케이드 픽셀",
         "playful-launch-presentation": "선버스트 놀이방",
-        "playful-pop-deck": "네온 캔디"
+        "playful-pop-deck": "네온 캔디",
+        "prospectus": "홈페이지 피치",
+        "schoolhouse": "크라프트 포스터",
+        "sticker-scrapbook": "스티커 노트",
+        "strata": "붉은 계단",
+        "taped-consulting": "폴라로이드 벽",
+        "vantage": "넘버링 회의실"
       },
       "video": {
         "chinese-ink-art": "중국 먹 그림",
@@ -5310,7 +5324,8 @@
     "status": {
       "availableNow": "현재 사용 가능",
       "inUse_one": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
-      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯"
+      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
+      "waitingForSandbox": "Sandbox 대기 중"
     },
     "tiers": {
       "custom": "맞춤형",
@@ -6266,6 +6281,18 @@
     "manage": "SSH 호스트 관리",
     "notLearned": "아직 저장된 호스트 키 없음",
     "passphrase": "암호문구(선택 사항)",
+    "placeholders": {
+      "accessName": "예: 프로덕션 액세스",
+      "clientId": "Service Token의 Client ID 붙여넣기",
+      "clientSecret": "Service Token의 Client Secret 붙여넣기",
+      "credentialName": "예: 배포용 로그인",
+      "displayName": "예: 프로덕션 서버",
+      "host": "예: ssh.example.com",
+      "passphrase": "키가 암호화되지 않았다면 비워 두세요",
+      "password": "SSH 사용자 비밀번호 입력",
+      "privateKey": "전체 개인 키 붙여넣기",
+      "username": "예: ubuntu"
+    },
     "port": "포트",
     "privateKey": "개인 키",
     "reset": "호스트 키 재설정",

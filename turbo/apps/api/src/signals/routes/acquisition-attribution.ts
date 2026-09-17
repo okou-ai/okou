@@ -14,6 +14,7 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 import { nowDate } from "../../lib/time";
 import {
@@ -95,15 +96,8 @@ const recordSignupInner$ = command(
     }
 
     const clerk = get(clerk$);
-    const users = await clerk.users.getUserList({
-      userId: [auth.userId],
-      limit: 1,
-    });
+    const user = await findClerkUser(clerk, auth.userId, signal);
     signal.throwIfAborted();
-
-    const user = users.data.find((candidate) => {
-      return candidate.id === auth.userId;
-    });
     if (!user) {
       throw new Error(`No Clerk user found for user ${auth.userId}`);
     }

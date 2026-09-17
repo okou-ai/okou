@@ -665,7 +665,6 @@
       "importedSlides_other": "{{count}} diapositivas",
       "importFile": "Importa tu propio archivo",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analizando {{filename}}. Aparecerá en Custom cuando esté lista.",
       "importUnsupported": "Elige un archivo {{formats}} para crear una plantilla.",
       "introVideo": "Vídeo de introducción",
       "introVideoUnavailable": "Esta plantilla de vídeo ya no está disponible. Elimínala para enviar tu mensaje.",
@@ -1939,13 +1938,14 @@
       "picker": {
         "autoVoiceDescription": "Encuentra una voz que se adapte a tu contenido.",
         "avatarVoice": "Voz del avatar",
-        "changeAvatar": "Cambiar avatar",
+        "back": "Atrás",
         "chooseStyle": "Elige un estilo",
-        "chooseStyleAndVoice": "Elige un estilo y una voz.",
+        "closeOptions": "Cerrar opciones",
+        "moreOptions": "Más opciones",
         "noMatches": "No hay resultados.",
-        "ready": "Listo para usar. Añade tu contenido en el chat.",
+        "searchStyles": "Buscar estilos",
+        "selectionSummary": "Voz: {{voice}} · Avatar: {{avatar}}",
         "settings": "Configuración del vídeo de introducción",
-        "style": "Estilo",
         "useSelection": "Usar selección"
       },
       "style": {
@@ -2014,10 +2014,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Abrir chat",
+      "openChatIn": "Abrir chat en {{integration}}",
       "openFeishuChat": "Abrir el chat original en Feishu",
       "openGithubMessage": "Abrir la incidencia o solicitud de cambios original en GitHub",
       "openLarkChat": "Abrir el chat original en Lark",
       "openMessage": "Abrir mensaje",
+      "openMessages": "Abrir Mensajes",
       "openSlackMessage": "Abrir el mensaje original en Slack",
       "openTeamsMessage": "Abrir el mensaje original en Microsoft Teams",
       "openTelegramMessage": "Abrir el mensaje original en Telegram",
@@ -4271,6 +4273,8 @@
         "tiny-wanderer": "Pequeño Errante"
       },
       "presentation": {
+        "bloom-pitch": "Presentación de pétalos",
+        "blueprint-academy": "Campus de dibujo técnico",
         "botane-organic-deck": "Jardín malva",
         "business-data-presentation": "Salpicadero Berry",
         "crayon-learning-deck": "Garabato con ceras",
@@ -4279,9 +4283,19 @@
         "editorial-magazine-deck": "Revista en papel",
         "landing-consulting-deck": "Navegador neón",
         "lumina-creative-studio": "Pegatinas de cepillo",
+        "meridian": "Bloques cobalto",
         "mosaic-geometric-pitch": "Azulejos Bauhaus",
+        "neo-brutalism": "Tienda de sombras",
+        "nocturne": "Escenario de medianoche",
+        "pixel-glitch": "Píxeles arcade",
         "playful-launch-presentation": "Sala de juegos Sunburst",
-        "playful-pop-deck": "Caramelo de neón"
+        "playful-pop-deck": "Caramelo de neón",
+        "prospectus": "Presentación de portada",
+        "schoolhouse": "Póster kraft",
+        "sticker-scrapbook": "Cuaderno de pegatinas",
+        "strata": "Escalera roja",
+        "taped-consulting": "Muro de polaroids",
+        "vantage": "Sala de juntas numerada"
       },
       "video": {
         "chinese-ink-art": "Pintura china a tinta",
@@ -5381,7 +5395,8 @@
       "availableNow": "Disponible ahora",
       "inUse_one": "{{active}} de {{limit}} cupo en uso",
       "inUse_many": "{{active}} de {{limit}} cupos en uso",
-      "inUse_other": "{{active}} de {{limit}} cupos en uso"
+      "inUse_other": "{{active}} de {{limit}} cupos en uso",
+      "waitingForSandbox": "Esperando Sandbox"
     },
     "tiers": {
       "custom": "Personalizado",
@@ -6352,6 +6367,18 @@
     "manage": "Gestionar hosts SSH",
     "notLearned": "Aún no se ha guardado la clave del host",
     "passphrase": "Frase de contraseña (opcional)",
+    "placeholders": {
+      "accessName": "p. ej., Acceso a producción",
+      "clientId": "Pega el Client ID del Service Token",
+      "clientSecret": "Pega el Client Secret del Service Token",
+      "credentialName": "p. ej., Acceso de despliegue",
+      "displayName": "p. ej., Servidor de producción",
+      "host": "p. ej., ssh.example.com",
+      "passphrase": "Déjalo vacío si no está cifrada",
+      "password": "Introduce la contraseña del usuario SSH",
+      "privateKey": "Pega la clave privada completa",
+      "username": "p. ej., ubuntu"
+    },
     "port": "Puerto",
     "privateKey": "Clave privada",
     "reset": "Restablecer clave del host",

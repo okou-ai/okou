@@ -52,6 +52,25 @@ const GMAIL_COLLECTION_CAPS = Object.freeze({
   maxDecodedBodyBytes: 512 * 1024,
 });
 
+/**
+ * Per-header ceilings, each sized for what its field legitimately carries.
+ *
+ * A provider header is transport-valid long before it is reasonable, so every
+ * retained value is projected to its own small ceiling and then charged to the
+ * shared text budget below. None of these widen a transport, request or
+ * aggregate cap: they only decide how much of an arrived response is kept.
+ */
+const GMAIL_HEADER_CHARACTER_CAPS = Object.freeze({
+  /** A wrapped RFC 5322 subject line, far short of a message body. */
+  subject: 300,
+  /** One RFC 5321 mailbox is 64 + `@` + 255 characters, plus a display name. */
+  from: 320,
+  /** `To` legitimately lists several mailboxes. */
+  to: 1000,
+  /** An RFC 5322 date-time with its zone and a short comment. */
+  date: 64,
+});
+
 const BRANCHES: readonly MorningBriefGmailBranch[] = ["recent", "unread"];
 
 const gmailListResponseSchema = z.object({
@@ -86,10 +105,46 @@ const gmailMessagePartSchema: z.ZodType<GmailMessagePart> = z.lazy(() => {
   });
 });
 
+/** The largest instant a `Date` can represent, in milliseconds. */
+const MAX_EPOCH_MILLISECONDS = 8.64e15;
+
+function decodeEpochMilliseconds(value: string): number | null {
+  if (!/^-?\d+$/.test(value)) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) &&
+    Math.abs(parsed) <= MAX_EPOCH_MILLISECONDS
+    ? parsed
+    : null;
+}
+
+/**
+ * Gmail sends `internalDate` as decimal epoch milliseconds.
+ *
+ * A value this collector cannot turn into a real instant is provider data, and
+ * rejecting it at the decode boundary is what lets the shared reader report it
+ * as `malformed`. Accepting any string instead silently dropped a message whose
+ * timestamp fell outside the window and threw out of `toISOString` during
+ * normalization — after the reader had already returned, where its unavailable
+ * mapping can no longer catch anything. No timestamp is ever invented.
+ */
+const gmailInternalDateSchema = z.string().transform((value, ctx) => {
+  const parsed = decodeEpochMilliseconds(value);
+  if (parsed === null) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Expected internalDate to be epoch milliseconds",
+    });
+    return z.NEVER;
+  }
+  return parsed;
+});
+
 const gmailMessageSchema = z.object({
   id: z.string(),
   threadId: z.string(),
-  internalDate: z.string(),
+  internalDate: gmailInternalDateSchema,
   labelIds: z.array(z.string()).optional(),
   payload: gmailMessagePartSchema.optional(),
 });
@@ -110,6 +165,8 @@ interface CollectionState {
   readonly truncations: Set<MorningBriefTruncation>;
   detailRequests: number;
   retryAfterMs: number | null;
+  /** A provider rate limit occurred, whether or not it advised a delay. */
+  rateLimited: boolean;
   failed: boolean;
   /**
    * Message bodies are shared by both branches, so a refusal or cap there
@@ -136,27 +193,29 @@ function decodeBase64Url(data: string, maxBytes: number): string | null {
 interface BodyWalkResult {
   text: string | null;
   html: string | null;
+  /** A depth or node cap stopped the walk before the structure was exhausted. */
   truncatedNodes: boolean;
 }
 
 /**
- * Walk the MIME tree for inline text, bounded by depth and node count.
+ * A part with a filename is an attachment.
  *
- * Attachments are never fetched and never opened: a part with a filename is
- * skipped even when its type is textual.
+ * The whole subtree is pruned, not only the part itself: a `message/rfc822`
+ * attachment carries a complete message underneath it, and continuing into its
+ * children let attached content supply this message's inline text. Attachments
+ * are never fetched and never opened.
  */
-/**
- * Capture one part's inline text.
- *
- * A part with a filename is an attachment and is skipped even when its type is
- * textual, so no attachment content is ever opened.
- */
+function isAttachment(part: GmailMessagePart): boolean {
+  return (part.filename ?? "").length > 0;
+}
+
+/** Capture one inline part's text, preferring the first of each type. */
 function captureInlineText(
   part: GmailMessagePart,
   result: BodyWalkResult,
 ): void {
   const data = part.body?.data;
-  if (data === undefined || (part.filename ?? "").length > 0) {
+  if (data === undefined) {
     return;
   }
   const mimeType = part.mimeType ?? "";
@@ -175,6 +234,7 @@ function captureInlineText(
   }
 }
 
+/** Walk the MIME tree for inline text, bounded by depth and node count. */
 function walkMessageBody(
   payload: GmailMessagePart | undefined,
 ): BodyWalkResult {
@@ -201,6 +261,9 @@ function walkMessageBody(
       break;
     }
     const { part, depth } = next;
+    if (isAttachment(part)) {
+      continue;
+    }
     captureInlineText(part, result);
     if (result.text !== null) {
       break;
@@ -224,17 +287,27 @@ interface Excerpt {
   readonly excerpt: string;
   readonly source: MorningBriefGmailItem["excerptSource"];
   readonly truncated: boolean;
+  /** A MIME cap cut the walk short, so the structure was not fully seen. */
+  readonly mimeTruncated: boolean;
 }
 
 /**
  * Prefer decoded inline `text/plain`. An HTML-only message goes through the
  * repository's existing bounded normalizer; when that yields nothing usable the
  * item declares limited coverage instead of inventing content.
+ *
+ * A MIME cap is its own state. Reporting it as `html-only` claimed the message
+ * really carried no inline text, when a plaintext part may simply never have
+ * been reached.
  */
 function messageExcerpt(message: GmailMessage): Excerpt {
   const body = walkMessageBody(message.payload);
   if (body.text !== null) {
-    return boundExcerpt(collapseWhitespace(body.text), "text-plain");
+    return boundExcerpt(
+      collapseWhitespace(body.text),
+      "text-plain",
+      body.truncatedNodes,
+    );
   }
   if (body.html !== null) {
     const normalized = collapseWhitespace(
@@ -243,28 +316,39 @@ function messageExcerpt(message: GmailMessage): Excerpt {
         limits: { maxInputLength: GMAIL_COLLECTION_CAPS.maxDecodedBodyBytes },
       }),
     );
-    return normalized.length > 0
-      ? boundExcerpt(normalized, "html-normalized")
-      : { excerpt: "", source: "html-only", truncated: false };
+    if (normalized.length > 0) {
+      return boundExcerpt(normalized, "html-normalized", body.truncatedNodes);
+    }
+  }
+  if (body.truncatedNodes) {
+    return {
+      excerpt: "",
+      source: "mime-truncated",
+      truncated: false,
+      mimeTruncated: true,
+    };
   }
   return {
     excerpt: "",
-    source: body.truncatedNodes ? "html-only" : "none",
+    source: body.html === null ? "none" : "html-only",
     truncated: false,
+    mimeTruncated: false,
   };
 }
 
 function boundExcerpt(
   value: string,
   source: MorningBriefGmailItem["excerptSource"],
+  mimeTruncated: boolean,
 ): Excerpt {
-  if (value.length <= GMAIL_COLLECTION_CAPS.maxExcerptCharacters) {
-    return { excerpt: value, source, truncated: false };
-  }
+  const truncated = value.length > GMAIL_COLLECTION_CAPS.maxExcerptCharacters;
   return {
-    excerpt: value.slice(0, GMAIL_COLLECTION_CAPS.maxExcerptCharacters),
+    excerpt: truncated
+      ? value.slice(0, GMAIL_COLLECTION_CAPS.maxExcerptCharacters)
+      : value,
     source,
-    truncated: true,
+    truncated,
+    mimeTruncated,
   };
 }
 
@@ -303,6 +387,23 @@ function worstOutcome(
   return OUTCOME_SEVERITY[left] >= OUTCOME_SEVERITY[right] ? left : right;
 }
 
+/**
+ * Combine the delays advised across limited requests.
+ *
+ * The longest advice wins, so a caller that honors it never retries earlier
+ * than a provider asked. Each value arrives already clamped by the shared
+ * reader, which keeps the retained one inside that same bound.
+ */
+function longerDelay(left: number | null, right: number | null): number | null {
+  if (left === null) {
+    return right;
+  }
+  if (right === null) {
+    return left;
+  }
+  return Math.max(left, right);
+}
+
 function recordOutcome(
   state: CollectionState,
   outcome: MorningBriefReadOutcome<unknown>,
@@ -315,7 +416,14 @@ function recordOutcome(
       return "denied";
     }
     case "rate-limited": {
-      state.retryAfterMs = outcome.retryAfterMs;
+      // The limit is the fact; `Retry-After` is optional provider advice.
+      // Deriving the classification from the delay alone reported a 429 that
+      // carried no header as an ordinary provider failure.
+      state.rateLimited = true;
+      state.retryAfterMs = longerDelay(
+        state.retryAfterMs,
+        outcome.retryAfterMs,
+      );
       state.failed = true;
       return "failed";
     }
@@ -502,11 +610,9 @@ function branchesForMessage(
   unreadIds: ReadonlySet<string>,
   window: { readonly from: Date; readonly to: Date },
 ): MorningBriefGmailBranch[] {
-  const internalDate = Number(message.internalDate);
   const inWindow =
-    Number.isFinite(internalDate) &&
-    internalDate >= window.from.getTime() &&
-    internalDate < window.to.getTime();
+    message.internalDate >= window.from.getTime() &&
+    message.internalDate < window.to.getTime();
   const branches: MorningBriefGmailBranch[] = [];
   if (recentIds.has(message.id) && inWindow) {
     branches.push("recent");
@@ -515,6 +621,51 @@ function branchesForMessage(
     branches.push("unread");
   }
   return branches;
+}
+
+/** What is left of the shared normalized-text budget. */
+interface TextBudget {
+  remaining: number;
+}
+
+/**
+ * Charge one retained value to the shared budget.
+ *
+ * Every character a collection keeps is charged here, headers included, so no
+ * single transport-valid field can carry the result past the promised aggregate
+ * bound. A value that no longer fits is shortened to what remains and the
+ * shortfall is reported, rather than dropping the item that owns it.
+ */
+function retainText(
+  value: string,
+  budget: TextBudget,
+  truncations: Set<MorningBriefTruncation>,
+): string {
+  if (value.length <= budget.remaining) {
+    budget.remaining -= value.length;
+    return value;
+  }
+  const kept = value.slice(0, budget.remaining);
+  budget.remaining = 0;
+  truncations.add("text-characters");
+  return kept;
+}
+
+/** Project one header to its own ceiling, then charge it to the budget. */
+function retainHeader(
+  value: string | null,
+  limit: number,
+  budget: TextBudget,
+  truncations: Set<MorningBriefTruncation>,
+): string | null {
+  if (value === null) {
+    return null;
+  }
+  if (value.length <= limit) {
+    return retainText(value, budget, truncations);
+  }
+  truncations.add("header-characters");
+  return retainText(value.slice(0, limit), budget, truncations);
 }
 
 /** Normalize merged messages under the final text budget, newest first. */
@@ -527,7 +678,10 @@ function normalizeItems(args: {
   readonly state: CollectionState;
 }): MorningBriefGmailItem[] {
   const items: MorningBriefGmailItem[] = [];
-  let textCharacters = 0;
+  const truncations = args.state.truncations;
+  const budget: TextBudget = {
+    remaining: GMAIL_COLLECTION_CAPS.maxTextCharacters,
+  };
   for (const message of args.messages.values()) {
     const branches = branchesForMessage(
       message,
@@ -540,31 +694,48 @@ function normalizeItems(args: {
     }
     const excerptResult = messageExcerpt(message);
     if (excerptResult.truncated) {
-      args.state.truncations.add("excerpt-characters");
+      truncations.add("excerpt-characters");
     }
-    let excerpt = excerptResult.excerpt;
-    if (
-      textCharacters + excerpt.length >
-      GMAIL_COLLECTION_CAPS.maxTextCharacters
-    ) {
-      excerpt = excerpt.slice(
-        0,
-        Math.max(0, GMAIL_COLLECTION_CAPS.maxTextCharacters - textCharacters),
-      );
-      args.state.truncations.add("text-characters");
+    if (excerptResult.mimeTruncated) {
+      truncations.add("mime-nodes");
     }
-    textCharacters += excerpt.length;
+    // Charged in the order the item presents them: the headers that identify a
+    // message first, then its excerpt.
+    const subject = retainHeader(
+      headerValue(message, "subject"),
+      GMAIL_HEADER_CHARACTER_CAPS.subject,
+      budget,
+      truncations,
+    );
+    const from = retainHeader(
+      headerValue(message, "from"),
+      GMAIL_HEADER_CHARACTER_CAPS.from,
+      budget,
+      truncations,
+    );
+    const to = retainHeader(
+      headerValue(message, "to"),
+      GMAIL_HEADER_CHARACTER_CAPS.to,
+      budget,
+      truncations,
+    );
+    const date = retainHeader(
+      headerValue(message, "date"),
+      GMAIL_HEADER_CHARACTER_CAPS.date,
+      budget,
+      truncations,
+    );
     items.push({
       messageId: message.id,
       threadId: message.threadId,
       branches,
-      subject: headerValue(message, "subject"),
-      from: headerValue(message, "from"),
-      to: headerValue(message, "to"),
-      date: headerValue(message, "date"),
-      internalDate: new Date(Number(message.internalDate)).toISOString(),
+      subject,
+      from,
+      to,
+      date,
+      internalDate: new Date(message.internalDate).toISOString(),
       unread: (message.labelIds ?? []).includes("UNREAD"),
-      excerpt,
+      excerpt: retainText(excerptResult.excerpt, budget, truncations),
       excerptSource: excerptResult.source,
       sourceUrl: messageSourceUrl(message.id, args.accountEmail),
     });
@@ -624,6 +795,7 @@ export async function collectMorningBriefGmail(
     truncations: new Set(),
     detailRequests: 0,
     retryAfterMs: null,
+    rateLimited: false,
     failed: false,
     detailOutcome: null,
   };
@@ -718,12 +890,11 @@ export async function collectMorningBriefGmail(
     coverage,
     // Branch-level trouble that produced no usable content is reported as a
     // source failure, so an unreadable day can never look like an empty one.
-    failure:
-      state.retryAfterMs !== null
-        ? "rate-limited"
-        : status === "unavailable" && state.failed
-          ? "provider-failed"
-          : null,
+    failure: state.rateLimited
+      ? "rate-limited"
+      : status === "unavailable" && state.failed
+        ? "provider-failed"
+        : null,
   };
 }
 

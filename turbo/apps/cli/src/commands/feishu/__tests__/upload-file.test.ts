@@ -47,7 +47,17 @@ describe.each(["feishu", "lark"] as const)(
       rmSync(tempDir, { recursive: true, force: true });
     });
 
-    it("uploads through storage and completes a threaded Feishu reply", async () => {
+    it.each([
+      {
+        url: "/artifacts/abcxyz1234.pdf",
+        expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.pdf",
+      },
+      {
+        url: "https://files.example/report.pdf?download=1",
+        expectedUrl: "https://files.example/report.pdf?download=1",
+      },
+    ])("prints reply URL $url", async ({ url, expectedUrl }) => {
+      vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
       let completeBody: Readonly<Record<string, unknown>> | undefined;
       server.use(
         http.post(
@@ -61,8 +71,7 @@ describe.each(["feishu", "lark"] as const)(
             return HttpResponse.json({
               uploadId: "00000000-0000-4000-8000-000000000001",
               uploadUrl: STORAGE_UPLOAD_URL,
-              fileUrl:
-                "https://files.test/artifacts/user/00000000-0000-4000-8000-000000000001/report.pdf",
+              fileUrl: url,
               filename: "report.pdf",
               contentType: "application/pdf",
               size: Buffer.byteLength(FILE_CONTENT),
@@ -94,7 +103,7 @@ describe.each(["feishu", "lark"] as const)(
               filename: "report.pdf",
               mimetype: "application/pdf",
               size: Buffer.byteLength(FILE_CONTENT),
-              url: "https://files.test/report.pdf",
+              url,
             });
           },
         ),
@@ -125,6 +134,7 @@ describe.each(["feishu", "lark"] as const)(
         fileKey: "file_uploaded",
         filename: "report.pdf",
         mimetype: "application/pdf",
+        url: expectedUrl,
       });
     });
 

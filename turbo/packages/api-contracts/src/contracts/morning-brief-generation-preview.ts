@@ -66,8 +66,15 @@ export const morningBriefGenerationFailureReasonSchema = z.enum([
  * amount is either exactly known or explicitly unknown. It carries no owner
  * identity and no provider payload. `value` is the provider's own reported
  * amount in `unit`; it is never converted into a currency or into Okou credits.
+ *
+ * `recorded` separates the observation from the record of it. `durable` means
+ * this receipt is committed and readable; `unresolved` means the invocation was
+ * observed but every bounded attempt to store it failed, so the charge is real
+ * and its record is outstanding. An unresolved receipt is never reported as a
+ * cost of zero and never as a durable one.
  */
 export const morningBriefPlatformReceiptSchema = z.object({
+  recorded: z.enum(["durable", "unresolved"]),
   attemptId: z.string().uuid(),
   provider: z.literal("openrouter"),
   requestedModel: z.string(),

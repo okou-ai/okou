@@ -646,7 +646,6 @@
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "अपनी फ़ाइल इंपोर्ट करें",
       "importFileHint": "({{formats}})",
-      "importStarted": "{{filename}} का विश्लेषण हो रहा है। तैयार होने पर यह Custom में दिखाई देगा।",
       "importUnsupported": "टेम्पलेट बनाने के लिए {{formats}} फ़ाइल चुनें।",
       "introVideo": "इंट्रो वीडियो",
       "introVideoUnavailable": "यह वीडियो टेम्पलेट अब उपलब्ध नहीं है। अपना संदेश भेजने के लिए इसे हटाएँ।",
@@ -1901,13 +1900,14 @@
       "picker": {
         "autoVoiceDescription": "अपने कंटेंट के अनुकूल आवाज़ खोजें।",
         "avatarVoice": "अवतार की आवाज़",
-        "changeAvatar": "अवतार बदलें",
+        "back": "वापस",
         "chooseStyle": "शैली चुनें",
-        "chooseStyleAndVoice": "एक शैली और आवाज़ चुनें।",
+        "closeOptions": "विकल्प बंद करें",
+        "moreOptions": "अधिक विकल्प",
         "noMatches": "कोई परिणाम नहीं मिला।",
-        "ready": "इस्तेमाल के लिए तैयार। चैट में अपना कंटेंट जोड़ें।",
+        "searchStyles": "शैलियाँ खोजें",
+        "selectionSummary": "आवाज़: {{voice}} · अवतार: {{avatar}}",
         "settings": "इंट्रो वीडियो की सेटिंग",
-        "style": "शैली",
         "useSelection": "चयन इस्तेमाल करें"
       },
       "style": {
@@ -1976,10 +1976,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "चैट खोलें",
+      "openChatIn": "{{integration}} में चैट खोलें",
       "openFeishuChat": "Feishu में मूल चैट खोलें",
       "openGithubMessage": "GitHub में मूल इश्यू या पुल अनुरोध खोलें",
       "openLarkChat": "Lark में मूल चैट खोलें",
       "openMessage": "संदेश खोलें",
+      "openMessages": "Messages खोलें",
       "openSlackMessage": "मूल संदेश को Slack में खोलें",
       "openTeamsMessage": "Microsoft Teams में मूल संदेश खोलें",
       "openTelegramMessage": "Telegram में मूल संदेश खोलें",
@@ -4216,6 +4218,8 @@
         "tiny-wanderer": "छोटा पथिक"
       },
       "presentation": {
+        "bloom-pitch": "पंखुड़ी पिच",
+        "blueprint-academy": "ड्राफ्टिंग कैंपस",
         "botane-organic-deck": "मौवे उद्यान",
         "business-data-presentation": "बेरी डैशबोर्ड",
         "crayon-learning-deck": "क्रेयॉन डूडल",
@@ -4224,9 +4228,19 @@
         "editorial-magazine-deck": "कागज पत्रिका",
         "landing-consulting-deck": "नियॉन ब्राउज़र",
         "lumina-creative-studio": "ब्रश स्टिकर",
+        "meridian": "कोबाल्ट ब्लॉक्स",
         "mosaic-geometric-pitch": "बॉहॉस टाइल्स",
+        "neo-brutalism": "शैडो शॉप",
+        "nocturne": "मिडनाइट स्टेज",
+        "pixel-glitch": "आर्केड पिक्सल",
         "playful-launch-presentation": "सनबर्स्ट प्लेरूम",
-        "playful-pop-deck": "नियॉन कैंडी"
+        "playful-pop-deck": "नियॉन कैंडी",
+        "prospectus": "होमपेज पिच",
+        "schoolhouse": "क्राफ्ट पोस्टर",
+        "sticker-scrapbook": "स्टिकर नोटबुक",
+        "strata": "लाल सीढ़ी",
+        "taped-consulting": "पोलेरॉइड दीवार",
+        "vantage": "नंबर वाला बोर्डरूम"
       },
       "video": {
         "chinese-ink-art": "चीनी स्याही चित्रकारी",
@@ -5323,7 +5337,8 @@
     "status": {
       "availableNow": "अभी उपलब्ध",
       "inUse_one": "{{limit}} स्लॉट का {{active}} उपयोग में है",
-      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
+      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है",
+      "waitingForSandbox": "Sandbox की प्रतीक्षा"
     },
     "tiers": {
       "custom": "कस्टम",
@@ -6285,6 +6300,18 @@
     "manage": "SSH होस्ट प्रबंधित करें",
     "notLearned": "होस्ट कुंजी अभी सहेजी नहीं गई है",
     "passphrase": "पासफ़्रेज़ (वैकल्पिक)",
+    "placeholders": {
+      "accessName": "जैसे, प्रोडक्शन एक्सेस",
+      "clientId": "Service Token का Client ID पेस्ट करें",
+      "clientSecret": "Service Token का Client Secret पेस्ट करें",
+      "credentialName": "जैसे, डिप्लॉयमेंट लॉगिन",
+      "displayName": "जैसे, प्रोडक्शन सर्वर",
+      "host": "जैसे, ssh.example.com",
+      "passphrase": "कुंजी एन्क्रिप्टेड न हो तो खाली छोड़ें",
+      "password": "SSH उपयोगकर्ता का पासवर्ड दर्ज करें",
+      "privateKey": "पूरी निजी कुंजी पेस्ट करें",
+      "username": "जैसे, ubuntu"
+    },
     "port": "पोर्ट",
     "privateKey": "निजी कुंजी",
     "reset": "होस्ट कुंजी रीसेट करें",

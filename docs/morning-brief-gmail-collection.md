@@ -156,11 +156,47 @@ behind a busy recent window.
 Preserved per message: bounded subject/from/to/date headers, IDs, timestamps,
 unread labels, a readable inline excerpt and a safe Gmail deep link whose
 `authuser` names the pinned account, so a selected non-default account never
-points at another mailbox. Inline `text/plain` is preferred; an HTML-only
-message goes through the repository's existing bounded `html-to-text`
-normalizer, and when that yields nothing usable the item declares
-`excerptSource: "html-only"` instead of inventing content. No attachment is
-retrieved and no remote URL is fetched.
+points at another mailbox. No attachment is retrieved and no remote URL is
+fetched.
+
+`internalDate` is decoded as epoch milliseconds **at the provider boundary**. A
+value outside that shape, or outside the range a `Date` can represent, is
+provider data this collector cannot normalize: the message is rejected as a
+malformed response so its branch reports a failure, its authorized siblings
+survive, and no timestamp is invented. Accepting any string instead dropped an
+unusable recent message into a healthy-looking read and threw out of
+`toISOString` during normalization, after the reader had already returned.
+
+### Retained text is one budget
+
+Every character the result keeps is charged to the same 40,000-character
+normalized budget: the four retained headers as well as the excerpt, in that
+order. Each header is first projected to its own small ceiling, because a
+provider header is transport-valid long before it is reasonable — a single
+50,000-character `Subject` fits comfortably inside the 256 KiB response ceiling.
+A value that no longer fits is shortened to what remains rather than dropping
+the item that owns it, and the shortfall is named in `coverage.truncations`:
+`header-characters` for a per-field ceiling, `text-characters` for the
+aggregate. None of this widens a transport, request or aggregate cap.
+
+### Inline text, attachments and MIME caps
+
+Inline `text/plain` is preferred; an HTML-only message goes through the
+repository's existing bounded `html-to-text` normalizer, and when that yields
+nothing usable the item declares `excerptSource: "html-only"` instead of
+inventing content.
+
+A part carrying a filename is an attachment and its **whole subtree** is pruned
+before its descendants are visited. A `message/rfc822` attachment contains a
+complete message, so walking into it let attached content supply the excerpt of
+the message that carried it. Pruning content already present in the response is
+not a cap and is not reported as one; it never reaches for another provider
+endpoint.
+
+A MIME depth or node cap that stops the walk is its own state:
+`excerptSource: "mime-truncated"` plus a `mime-nodes` truncation. Reporting it
+as `html-only` claimed the message really carried no inline text, when a
+plaintext part may simply never have been reached.
 
 ### Caps
 
@@ -175,6 +211,10 @@ retrieved and no remote URL is fetched.
 | Bytes per response             | 256 KiB  |
 | Cumulative response bytes      | 4 MiB    |
 | Characters per excerpt         | 2,000    |
+| Characters per subject         | 300      |
+| Characters per `From`          | 320      |
+| Characters per `To`            | 1,000    |
+| Characters per `Date`          | 64       |
 | Final text characters          | 40,000   |
 | MIME depth / nodes             | 12 / 200 |
 
@@ -186,9 +226,17 @@ deliberately stated as an upper bound rather than an exact count: the bounded
 reader stops at the allowance and reports no consumed count for an oversized
 body, so an abandoned body keeps its whole reservation charged and only a
 completed body releases the difference. Redirects are disabled, so a credential
-cannot follow a provider redirect off-host. `Retry-After` is surfaced as bounded
-metadata (≤ 60 s); the reader never sleeps or retries on it. The earliest cap
-wins and every truncation is named in `coverage.truncations`.
+cannot follow a provider redirect off-host. The earliest cap wins and every
+truncation is named in `coverage.truncations`.
+
+`Retry-After` is surfaced as bounded metadata (≤ 60 s); the reader never sleeps
+or retries on it. The rate limit itself is recorded as an occurrence, separately
+from that optional advice, so a `429` carrying no header stays `rate-limited`
+rather than collapsing into a generic provider failure. When several requests
+are limited the longest advised delay is retained, so a caller that honors it
+never retries earlier than a provider asked; each value is already clamped by
+the reader, which keeps the retained one inside the same bound. A provider `403`
+stays an endpoint-local denial and a `404` stays a deleted message.
 
 ### The envelope
 
@@ -243,6 +291,12 @@ the reader a real consumed boundary, not to ship a feature:
   policy. What is proven instead is that an explicit selection that is still
   present but unusable fails closed, and that deleting the pinned account while
   its requests are in flight never substitutes another account.
+- **A malformed `internalDate` is proven as a rejected provider response, not
+  as a partially usable message.** The message is not normalized at all, so its
+  branch reports `failed` and its siblings carry the collection. Which siblings
+  survive depends on how many detail requests were already in flight when the
+  malformed one arrived; the guarantee is that authorized siblings already read
+  are kept, not that every remaining candidate is still fetched.
 - **The in-flight body deadline is proven as admission, not as a timed abort.**
   The clock re-read before provider admission is covered deterministically; the
   `AbortSignal.timeout` that bounds a body already streaming is not exercised by

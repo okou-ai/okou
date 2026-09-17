@@ -1,0 +1,171 @@
+# Morning Brief calendar collection
+
+Simple Morning Brief needs the recipient's own schedule for today and the next
+two days. This document describes the bounded multi-calendar read that supplies
+it, and the boundaries that read must not cross.
+
+## Why this is not the webhook sync reader
+
+`google-calendar-automation-event.service.ts` keeps automation triggers current
+from a sync token. It is unbounded by design and it renders date-only values by
+appending UTC midnight, which places every all-day event on the wrong local day
+outside UTC and misreports daylight-saving boundaries. Morning Brief needs the
+opposite properties: a frozen window, a hard budget, and truthful coverage. The
+two readers therefore stay separate, and this one never creates a sync token,
+a watch channel, or any provider write.
+
+## The window
+
+`resolveMorningBriefCalendarWindow` freezes the reporting window from a
+validated anchor and the owner's canonical Morning Brief timezone. The timezone
+is never taken from the request.
+
+- The window starts at the first instant of the local day containing the anchor
+  and ends at the first instant of the local day three calendar days later.
+  Day 0 is today; days 1 and 2 are the near term.
+- Three local days are 71, 72 or 73 hours depending on daylight saving. The
+  window is computed with calendar arithmetic, never as a fixed 72-hour offset.
+- When a spring-forward skips local midnight entirely, the day starts at the
+  first instant that actually belongs to it, found by bisecting the local date
+  over absolute time.
+- An unusable timezone or anchor fails closed. The collector never guesses one.
+
+## Time semantics
+
+- **Timed events** overlap the half-open window `[startAt, endAt)`. An event
+  ending exactly at the window start, or starting exactly at the window end, is
+  outside it. An event crossing local midnight stays whole.
+- **All-day events** are calendar dates with an exclusive end date, not
+  instants. They are compared as dates, and their original date range and
+  calendar timezone are preserved. They are grouped under the owner's local
+  days. They are never converted through a fabricated UTC midnight.
+- An event whose start or end cannot be interpreted marks its calendar
+  `truncated` and records an `unreadable-event-time` truncation, rather than
+  being dropped silently.
+
+## Calendar selection
+
+`GET /calendar/v3/users/me/calendarList` is enumerated from the exact selected
+`google-calendar` account.
+
+- `reader`, `writer` and `owner` calendars are readable. Deleted entries are
+  omitted.
+- `freeBusyReader` grants busy blocks, not event detail. Such a calendar is
+  reported as `free-busy-only` coverage and is never requested.
+- If the list itself is denied, `coverage.calendarList` is `denied` and no
+  events are read. The collector does not fall back to `primary`: that would
+  claim coverage the account never proved.
+- The readable set is ordered primary-first _within the calendars actually
+  enumerated_, then by stable calendar ID, and capped. Calendars beyond the cap
+  are reported as `not-read` with a `calendars` truncation.
+
+## Budgets
+
+| Limit                                | Value                                  | Owner         |
+| ------------------------------------ | -------------------------------------- | ------------- |
+| Calendar list pages × page size      | 2 × 50                                 | this module   |
+| Readable calendars read              | 8                                      | this module   |
+| Event pages per calendar × page size | 2 × 50                                 | this module   |
+| Events kept                          | 200                                    | this module   |
+| Attendees kept per event             | 20                                     | this module   |
+| Final text characters                | 40,000                                 | this module   |
+| Provider requests                    | 18                                     | shared reader |
+| Response bytes                       | 256 KiB per response, 2 MiB cumulative | shared reader |
+| Deadline                             | 20 s                                   | shared reader |
+| Concurrency                          | 2                                      | this module   |
+
+Byte ceilings are enforced while streaming, inside the shared reader — the only
+component that touches the network. Every **attempted** request is charged
+there, so a failing provider cannot buy extra attempts.
+
+A cap, an unfollowed continuation token, an unread calendar or a dropped event
+is always explicit coverage; it is never reported as a complete empty read.
+
+## Result envelope
+
+The result is memory-only. It carries the fixed anchor, `collectedAt`, the
+owner timezone, the actual window, normalized items with their calendar
+provenance, per-calendar coverage, the truncations that applied, the request
+count and a sanitized source failure.
+
+`status` follows the shared source convention:
+
+- `ok` — a complete read that produced content.
+- `empty` — a complete read that produced none. This is a normal quiet day.
+- `partial` — usable content survived, but some coverage was lost.
+- `unavailable` — no usable content was produced.
+
+`coverage.calendarList` reports whether the account's calendar list itself was
+`complete`, `truncated`, `denied` or `failed`. Each readable calendar then
+carries its own outcome: `complete`, `free-busy-only`, `denied`, `not-found`,
+`rate-limited`, `truncated`, `failed`, or `not-read` when it was enumerated but
+never requested.
+
+A single calendar's denial, `404`, rate limit, malformed body or oversized body
+is local: a valid sibling calendar survives it. The shared reader reports a
+denial with its scope — this member's effective policy refusing the endpoint, or
+the provider answering `403` — and Calendar treats both as the same bounded
+coverage gap on that one calendar.
+
+Owner, Agent grant, membership generation, installation or selected-account
+invalidation is global. The shared reader latches it, stops issuing requests and
+discards the payload instead of releasing it, so the whole source reports
+`source-revoked` rather than a partial read.
+
+Bounded provider metadata is consumed rather than ignored: `Retry-After` from an
+explicit `429`, and from a provider `403` that is really a secondary rate limit,
+lands on the calendar's coverage entry and on the envelope. The collector never
+sleeps on it and never retries inside a collection.
+
+## What is retained
+
+Bounded summary, location, a description excerpt, start/end and all-day flag,
+calendar identity and timezone, organizer, the recipient's own response status,
+and at most 20 attendees, with truncation flagged. Recurrence identity (`id`,
+`recurringEventId`, `originalStartTime`) and `iCalUID` are kept so instances
+stay distinguishable; the same meeting seen on two calendars keeps both
+provenances rather than being collapsed without evidence.
+
+Only absolute HTTP(S) display links survive, and they are never fetched.
+Description, meeting and attachment URLs are not followed. Raw provider bodies,
+credentials and provider error payloads are never logged or persisted.
+
+## Authorization boundary
+
+This module owns Google Calendar semantics only. `admitMorningBriefCollection`
+derives the scope — owner, installation, Agent, thread, timezone and the frozen
+Clerk `membershipId` — and every request then goes through the shared Morning
+Brief connector reader, which resolves the exact selected account and
+re-authorizes before credentials, before each next request, and before the
+payload is released.
+
+Nothing here widens that decision, and the anchor is the only caller-supplied
+value on the path — there is no caller-supplied owner, Agent, account, calendar
+ID, query or URL. The membership generation is what stops a member who left and
+rejoined from releasing content the previous membership started collecting.
+
+## Scope
+
+Preview and future scheduled collection only. No provider writes, no calendar
+creation or update, no watch channel, no Run or sandbox, no LLM call, no credit
+admission or debit, no Chat or email, no schema or migration, and no legacy
+schedule mutation. The result has no durable lifetime of its own; S5/S7 will
+call this same collector internally under occurrence ownership.
+
+## Rollout, scale and compatibility
+
+`simpleMorningBrief` stays default-off, and the preview route is unavailable in
+production regardless of it. Existing Settings and the legacy scheduler remain
+authoritative; nothing here changes a user's preference, schedule, timezone or
+thread.
+
+One collection issues at most 18 provider requests and holds at most 200
+normalized events and 40,000 characters in memory, so a single read is bounded
+independently of how many calendars the owner can see. Concurrency is 2 per
+collection, and the read holds no database transaction across a network call.
+
+There is no schema change, no migration and no persisted output, so old and new
+application versions can run side by side: an older deployment simply does not
+serve the route, and a newer one adds an endpoint that production never
+admits. Rollback removes the optional preview consumer with no data to clean
+up and no backfill.

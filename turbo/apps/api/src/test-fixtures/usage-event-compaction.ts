@@ -5,8 +5,9 @@ import { promisify } from "node:util";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
 import { billingAttributionBackfill } from "@okouai/db/schema/billing-run-attribution";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { env, optionalEnv } from "../lib/env";
-import { count, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
@@ -23,9 +24,15 @@ const waiterCountRowSchema = z.object({ waiterCount: z.int() });
 /**
  * Holds the production usage-compaction advisory lock so route tests can prove
  * that destructive cleanup waits for the same transaction boundary.
+ * An optional owned source reproduces the compactor's raw-row lock followed
+ * by the rollup foreign key's Run KEY SHARE lock, without rewriting history.
  */
 export async function holdUsageEventCompactionLockFixture(
   signal: AbortSignal,
+  source?: {
+    readonly idempotencyKey: string;
+    readonly runId: string;
+  },
 ): Promise<{
   readonly release: () => void;
   readonly done: Promise<void>;
@@ -40,6 +47,21 @@ export async function holdUsageEventCompactionLockFixture(
   const acquisitionAttempted = createDeferredPromise<void>(signal);
   const done = db().transaction(async (tx) => {
     await lockUsageEventCompaction(tx);
+    if (source) {
+      const [owned] = await tx
+        .select({ id: usageEvent.id })
+        .from(usageEvent)
+        .where(
+          and(
+            eq(usageEvent.idempotencyKey, source.idempotencyKey),
+            eq(usageEvent.runId, source.runId),
+          ),
+        )
+        .for("update");
+      if (!owned) {
+        throw new Error("Expected the owned usage compaction source");
+      }
+    }
     const rows = await executeRawRows(
       tx,
       sql`SELECT pg_backend_pid() AS "pid"`,
@@ -51,8 +73,23 @@ export async function holdUsageEventCompactionLockFixture(
     }
     started.resolve(holderPid);
     await released.promise;
+    if (source) {
+      // A compactor must still be able to validate its new rollup's FK while
+      // holding the source row. NOWAIT makes reversed Run ownership fail here.
+      const [run] = await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, source.runId))
+        .for("key share", { noWait: true });
+      if (!run) {
+        throw new Error("Compaction source lost its live Run reference");
+      }
+    }
   });
-  const holderPid = await started.promise;
+  const holderPid = await Promise.race([started.promise, done]);
+  if (holderPid === undefined) {
+    throw new Error("Compaction lock fixture finished before acquiring lock");
+  }
 
   return {
     release: () => {

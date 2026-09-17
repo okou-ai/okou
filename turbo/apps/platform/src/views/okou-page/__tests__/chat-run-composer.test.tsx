@@ -13,7 +13,10 @@ import {
   mockPushBrowserSupport,
   setupPage,
 } from "./chat-lifecycle-test-helpers.ts";
-import { buildModelPolicy } from "./chat-composer-test-helpers.ts";
+import {
+  buildModelPolicy,
+  composerModelTrigger,
+} from "./chat-composer-test-helpers.ts";
 import {
   assistantEvent,
   context,
@@ -261,9 +264,7 @@ test("Send a large image with a fallback-enabled text model", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   await readyChat();
-  await expect(
-    screen.findByRole("combobox", { name: "DeepSeek V4 Pro" }),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("DeepSeek V4 Pro")).resolves.toBeVisible();
   await uploadFile(
     user,
     new File([new Uint8Array(12_000_000)], "launch-board.png", {
@@ -315,7 +316,7 @@ test("Continue an existing chat with a fallback-enabled text model", async () =>
 
   await readyChat();
   await expect(
-    screen.findByRole("combobox", { name: "Claude Sonnet 4.6" }),
+    composerModelTrigger("Claude Sonnet 4.6"),
   ).resolves.toBeVisible();
   await uploadFile(
     user,

@@ -665,7 +665,6 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Importe seu próprio arquivo",
       "importFileHint": "({{formats}})",
-      "importStarted": "Analisando {{filename}}. Ele aparecerá em Custom quando estiver pronto.",
       "importUnsupported": "Escolha um arquivo {{formats}} para criar um modelo.",
       "introVideo": "Vídeo de introdução",
       "introVideoUnavailable": "Este modelo de vídeo não está mais disponível. Remova-o para enviar sua mensagem.",
@@ -1939,13 +1938,14 @@
       "picker": {
         "autoVoiceDescription": "Encontre uma voz que combine com seu conteúdo.",
         "avatarVoice": "Voz do avatar",
-        "changeAvatar": "Alterar avatar",
+        "back": "Voltar",
         "chooseStyle": "Escolha um estilo",
-        "chooseStyleAndVoice": "Escolha um estilo e uma voz.",
+        "closeOptions": "Fechar opções",
+        "moreOptions": "Mais opções",
         "noMatches": "Nenhum resultado.",
-        "ready": "Pronto para usar. Adicione seu conteúdo na conversa.",
+        "searchStyles": "Pesquisar estilos",
+        "selectionSummary": "Voz: {{voice}} · Avatar: {{avatar}}",
         "settings": "Configurações do vídeo de introdução",
-        "style": "Estilo",
         "useSelection": "Usar seleção"
       },
       "style": {
@@ -2014,10 +2014,12 @@
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Abrir conversa",
+      "openChatIn": "Abrir conversa no {{integration}}",
       "openFeishuChat": "Abrir conversa original no Feishu",
       "openGithubMessage": "Abrir a issue ou pull request original no GitHub",
       "openLarkChat": "Abrir conversa original no Lark",
       "openMessage": "Abrir mensagem",
+      "openMessages": "Abrir Mensagens",
       "openSlackMessage": "Abrir mensagem original no Slack",
       "openTeamsMessage": "Abrir mensagem original no Microsoft Teams",
       "openTelegramMessage": "Abrir mensagem original no Telegram",
@@ -4271,6 +4273,8 @@
         "tiny-wanderer": "Pequeno Viajante"
       },
       "presentation": {
+        "bloom-pitch": "Petal pitch",
+        "blueprint-academy": "Drafting campus",
         "botane-organic-deck": "Mauve garden",
         "business-data-presentation": "Berry dashboard",
         "crayon-learning-deck": "Crayon doodle",
@@ -4279,9 +4283,19 @@
         "editorial-magazine-deck": "Paper magazine",
         "landing-consulting-deck": "Neon browser",
         "lumina-creative-studio": "Brush stickers",
+        "meridian": "Cobalt blocks",
         "mosaic-geometric-pitch": "Bauhaus tiles",
+        "neo-brutalism": "Shadow shop",
+        "nocturne": "Midnight stage",
+        "pixel-glitch": "Arcade pixels",
         "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy"
+        "playful-pop-deck": "Neon candy",
+        "prospectus": "Homepage pitch",
+        "schoolhouse": "Kraft poster",
+        "sticker-scrapbook": "Sticker notebook",
+        "strata": "Red staircase",
+        "taped-consulting": "Polaroid wall",
+        "vantage": "Numbered boardroom"
       },
       "video": {
         "chinese-ink-art": "Arte em Tinta Chinesa",
@@ -5381,7 +5395,8 @@
       "availableNow": "Disponível agora",
       "inUse_one": "{{active}} de {{limit}} slot em uso",
       "inUse_many": "{{active}} de {{limit}} slots em uso",
-      "inUse_other": "{{active}} de {{limit}} slots em uso"
+      "inUse_other": "{{active}} de {{limit}} slots em uso",
+      "waitingForSandbox": "Aguardando Sandbox"
     },
     "tiers": {
       "custom": "Personalizado",
@@ -6352,6 +6367,18 @@
     "manage": "Gerenciar hosts SSH",
     "notLearned": "Chave de host ainda não armazenada",
     "passphrase": "Frase secreta (opcional)",
+    "placeholders": {
+      "accessName": "ex.: Acesso à produção",
+      "clientId": "Cole o Client ID do Service Token",
+      "clientSecret": "Cole o Client Secret do Service Token",
+      "credentialName": "ex.: Login de implantação",
+      "displayName": "ex.: Servidor de produção",
+      "host": "ex.: ssh.example.com",
+      "passphrase": "Deixe em branco se a chave não for criptografada",
+      "password": "Digite a senha do usuário SSH",
+      "privateKey": "Cole a chave privada completa",
+      "username": "ex.: ubuntu"
+    },
     "port": "Porta",
     "privateKey": "Chave privada",
     "reset": "Redefinir chave de host",

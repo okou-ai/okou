@@ -5,12 +5,10 @@ import { describe, expect, it } from "vitest";
 
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { testSshConnectionStateContract } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -33,12 +31,6 @@ function authenticate(
   value: Actor | { readonly orgId: null; readonly userId: string },
 ) {
   mocks.clerk.session(value.userId, value.orgId);
-}
-
-async function enableSsh(value: Actor): Promise<void> {
-  await updateFeatureSwitchesForUser(context, value, {
-    [FeatureSwitchKey.SshAccess]: true,
-  });
 }
 
 function authHeaders() {
@@ -80,42 +72,24 @@ function createBody(
 }
 
 describe("SSH connection routes", () => {
-  it.each([
-    { staff: true, override: undefined, enabled: true },
-    { staff: false, override: undefined, enabled: false },
-    { staff: true, override: false, enabled: false },
-    { staff: false, override: true, enabled: true },
-  ])(
-    "applies the SSH rollout to host management: staff=$staff, override=$override",
-    async ({ staff, override, enabled }) => {
-      const owner = actor(
-        "rollout",
-        staff ? "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" : undefined,
-      );
+  it.each(["org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org_ordinary_ssh"])(
+    "allows host management without feature overrides in %s",
+    async (orgId) => {
+      const owner = actor("availability", orgId);
       authenticate(owner);
-      if (override !== undefined) {
-        await updateFeatureSwitchesForUser(context, owner, {
-          [FeatureSwitchKey.SshAccess]: override,
-        });
-      }
-
       const result = await accept(
         client().list({ headers: authHeaders() }),
-        [200, 404],
+        [200],
       );
-      expect(result.status).toBe(enabled ? 200 : 404);
-      if (result.status === 404) {
-        expect(result.body.error.code).toBe("SSH_UNAVAILABLE");
-      } else {
-        expect(result.body.connections).toStrictEqual([]);
-      }
+      expect(result.body.connections).toStrictEqual([]);
+      expect(result.headers.get("cache-control")).toBe("no-store");
     },
   );
 
   it("notifies only the owner after every successful creation, even without visible Agents", async () => {
     useSecretKmsProbe();
     const owner = actor("browser-notice");
-    await enableSsh(owner);
+    authenticate(owner);
     for (const host of [
       "first.example.com",
       "second.example.com",
@@ -138,7 +112,7 @@ describe("SSH connection routes", () => {
       ]);
     }
   });
-  it("requires an organization session and the feature flag before parsing input", async () => {
+  it("requires an organization session and validates input before encryption", async () => {
     const kms = useSecretKmsProbe();
     const unauthenticated = await accept(client().list({ headers: {} }), [401]);
     expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
@@ -161,23 +135,7 @@ describe("SSH connection routes", () => {
     );
     expect(patResponse.body.error.code).toBe("FORBIDDEN");
 
-    const withoutSwitch = actor("disabled");
-    authenticate(withoutSwitch);
-    const disabledResponse = await accept(
-      client().create({
-        headers: authHeaders(),
-        body: {
-          id: randomUUID(),
-          ...createBody("disabled.example.com"),
-        },
-      }),
-      [404],
-    );
-    expect(disabledResponse.body.error.message).toBe(
-      "SSH configuration is not available",
-    );
-    expect(disabledResponse.body.error.code).toBe("SSH_UNAVAILABLE");
-
+    authenticate(actor("invalid-input"));
     const rawResponse = await setupRawAppRequest({
       context,
       routes: sshConnectionsRoutes,
@@ -189,14 +147,14 @@ describe("SSH connection routes", () => {
       },
       body: JSON.stringify({ unexpected: true }),
     });
-    expect(rawResponse.status).toBe(404);
+    expect(rawResponse.status).toBe(400);
     expect(kms.generateDataKeyCalls).toBe(0);
   });
 
   it("creates, normalizes, lists, edits, resets, and deletes without exposing secrets", async () => {
     useSecretKmsProbe();
     const owner = actor("crud");
-    await enableSsh(owner);
+    authenticate(owner);
     const privateKey = "  -----BEGIN KEY-----\nvalue\n-----END KEY-----\n";
     const passphrase = " passphrase with spaces ";
 
@@ -426,7 +384,7 @@ describe("SSH connection routes", () => {
   it("rejects invalid input before KMS work", async () => {
     const kms = useSecretKmsProbe();
     const owner = actor("validation");
-    await enableSsh(owner);
+    authenticate(owner);
 
     const invalidHosts = [
       "[::1]",
@@ -577,7 +535,7 @@ describe("SSH connection routes", () => {
   it("allows independent logins to share a normalized endpoint on create and update", async () => {
     useSecretKmsProbe();
     const owner = actor("shared-endpoint");
-    await enableSsh(owner);
+    authenticate(owner);
     const original = await accept(
       client().create({
         headers: authHeaders(),
@@ -643,7 +601,7 @@ describe("SSH connection routes", () => {
   it("fails closed across owners without invoking KMS", async () => {
     const kms = useSecretKmsProbe();
     const owner = actor("owner");
-    await enableSsh(owner);
+    authenticate(owner);
     const created = await accept(
       client().create({
         headers: authHeaders(),
@@ -657,7 +615,7 @@ describe("SSH connection routes", () => {
     expect(kms.generateDataKeyCalls).toBe(1);
 
     const other = actor("other", owner.orgId);
-    await enableSsh(other);
+    authenticate(other);
     const crossOwner = await accept(
       client().update({
         headers: authHeaders(),
@@ -682,7 +640,7 @@ describe("SSH connection routes", () => {
   it("preserves concurrent configurations for the same endpoint and username", async () => {
     useSecretKmsProbe();
     const duplicateOwner = actor("concurrent-duplicate");
-    await enableSsh(duplicateOwner);
+    authenticate(duplicateOwner);
     const [first, second] = await Promise.all([
       accept(
         client().create({
@@ -719,7 +677,7 @@ describe("SSH connection routes", () => {
   it("allows concurrent creates beyond 64 configured hosts", async () => {
     useSecretKmsProbe();
     const owner = actor("concurrent-above-64");
-    await enableSsh(owner);
+    authenticate(owner);
     const seeded = await Promise.all(
       Array.from({ length: 63 }, (_, index) => {
         return client().create({
@@ -778,7 +736,7 @@ describe("SSH connection routes", () => {
 
   it("leaves no visible row when KMS encryption fails", async () => {
     const owner = actor("kms-failure");
-    await enableSsh(owner);
+    authenticate(owner);
     const kms = useSecretKmsProbe(() => {
       return Promise.reject(new Error("KMS unavailable"));
     });

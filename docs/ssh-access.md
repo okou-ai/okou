@@ -1,14 +1,9 @@
 # SSH access for owners and Agents
 
-SSH is a standalone capability behind the `SshAccess` (`sshAccess`) feature
-switch, enabled by default for staff organizations and disabled by default for
-other organizations. Explicit user overrides still take precedence, including
-disabling SSH for a staff user or enabling it for a non-staff user. The switch
-appears in Lab's Beta group and is the only feature-eligibility gate; there is no
-additional staff-membership check. Owner, Agent grant and Run authorization
-checks remain mandatory. The Connectors entry and Agent control are hidden
-while the switch is off. SSH uses neither connector accounts nor connector
-permissions.
+SSH is generally available as a standalone capability, including Direct and
+Cloudflare Access transports. There is no rollout switch or staff-membership
+gate. Owner, Agent grant and Run authorization checks remain mandatory.
+SSH uses neither connector accounts nor connector permissions.
 
 ## Owner setup
 
@@ -116,7 +111,7 @@ keep their existing concurrency contracts.
 
 ### Owner storage and pre-GA cutover
 
-`/api/ssh/credentials` provides session-authenticated, feature-gated metadata
+`/api/ssh/credentials` provides session-authenticated metadata
 listing and credential creation/update/deletion. Host writes select
 `credential: { id }` or atomically create `credential: { create: ... }`.
 Responses never return plaintext or ciphertext. A composite database foreign key
@@ -165,7 +160,7 @@ computer/browser slots; SSH no longer displaces built-in Connector icons.
 It always uses that composer's Agent, including split-pane chats. No hosts hides
 the SSH row; **Add connectors** offers the same zero-host setup entry.
 Both the legacy dialog and the Discover directory include this entry when
-SSH is enabled and no hosts are configured. In Discover, it appears after
+no hosts are configured. In Discover, it appears after
 built-in shelves and under **Remote access**, participates in search, and stays
 out of the Custom tab. Its link also supports normal keyboard activation.
 Opening the popover refreshes SSH reads without dropping the last confirmed
@@ -176,7 +171,8 @@ its own Agent's grant.
 Owner API business errors use stable `SSH_*` codes. Platform translates them,
 including recovery guidance for invalid input, stale generations and unavailable
 hosts/Agents. A failed read shows a localized load error with **Retry**, distinct
-from feature unavailability. There is no persistent Refresh button and background
+from unavailability returned by an older API during deployment. There is no
+persistent Refresh button and background
 failures do not show raw server-message toasts.
 
 Successful host and grant changes publish best-effort `ssh:changed` on the owner's
@@ -192,11 +188,10 @@ the accepted Run-lifetime cache window.
 
 The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
 Token configurations as SSH connection settings, independently of SSH login
-credentials. Direct and Cloudflare Access share the existing staff-only
-`sshAccess` switch; there is no separate Access rollout switch. #34080 adds the
-native Runner carrier and #34081 adds management inside the SSH page. #34370
-records the completed integrated acceptance and owner-approved evidence boundaries.
-Removing the separate switch does not enable SSH for users outside its existing cohort.
+credentials. Both transports are generally available with no rollout switch.
+#34080 adds the native Runner carrier and #34081 adds management inside the SSH
+page. #34370 records the completed integrated acceptance and owner-approved
+evidence boundaries.
 
 The carrier uses a customer-managed published SSH hostname on WSS/443 and a
 Service Token allowed by the application's **Service Auth** policy. The token's
@@ -222,8 +217,8 @@ updates/deletion require the expected edit revision, and referenced deletion is
 rejected. Names may change without invalidating Runs. Token replacement advances
 a separate authority generation and all referencing SSH host generations.
 Configurations have no separate enabled state; the saved host binding selects
-Access, the existing SSH Agent grant authorizes use, and `sshAccess`
-controls rollout. Switching to Direct is not a way to disable a protected host.
+Access, and the existing SSH Agent grant authorizes use. Switching to Direct is
+not a way to disable a protected host.
 
 An SSH host explicitly selects a same-owner configuration, published DNS hostname
 and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
@@ -264,17 +259,15 @@ host. Selecting an existing resource never edits it; rebinding or deleting a hos
 does not delete the previously referenced resource. Saving does not test connectivity.
 
 Pending and failed saves retain input in the mounted form. Cancellation,
-navigation, owner changes and loss of feature access clear secret inputs and
+navigation and owner changes clear secret inputs and
 cancel pending UI work. Switching away from new-resource or secret-replacement
 fields clears their secrets; Direct excludes Access fields. Stale Credential and
 Access revisions preserve the draft and display
 latest metadata and affected hosts; the user must explicitly review it before
 saving against the new revision. A further concurrent change still fails the
-revision check. Load failures offer **Retry** and remain distinct from feature
+revision check. Load failures offer **Retry** and remain distinct from older-API
 unavailability and translated business errors. A protected host remains visibly
 protected when Access is unavailable; it is never silently converted to Direct.
-Losing `sshAccess` disables management and fresh runtime authorization for both
-Direct and protected hosts. It does not remove saved configurations or bindings.
 
 Configuration mutations reuse the owner's `ssh:changed` notification to refresh
 metadata without clearing open drafts. There is no independent connector card,
@@ -285,7 +278,7 @@ SSH management uses one canonical contract. Protected metadata includes
 `transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
 An omitted transport on edit preserves the current binding. The Platform submits
 the selected transport explicitly, including when retrying after reviewing a
-concurrent change. Switching to Direct requires SSH eligibility and the current
+concurrent change. Switching to Direct requires owner authorization and the current
 host generation.
 
 Host writes additionally accept
@@ -432,7 +425,7 @@ two hours and always end with their Run; they cannot resume in another Run.
 
 Input/signal submission and closing SSH do not prove the remote process stopped
 or its effects completed. Never automatically replay uncertain starts or input.
-This staff-gated session-read contract replaces the earlier defaults and payload
+This session-read contract replaced the earlier defaults and payload before GA
 without an old-reader compatibility path or automatic conversion into independent
 exec calls. Ably notification disconnects, reconnects and prolonged unavailability
 do not stop healthy SSH work or prevent new Sessions/file transfers. First use and

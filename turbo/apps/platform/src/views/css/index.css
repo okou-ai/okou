@@ -152,6 +152,14 @@
   --animate-composer-rail-item-in: okou-composer-rail-item-in 260ms ease-out
     backwards;
 
+  /* The intro video picker's advanced options layer. It floats 8px inside the
+     dialog, so it enters from past the right edge - 100% of its own width plus
+     that gutter - and the gallery's padding animates over the same duration,
+     which is what makes the two read as one movement. Consumed through
+     `motion-safe:animate-intro-video-options-in`; keyframes stay below. */
+  --animate-intro-video-options-in: okou-intro-video-options-in 220ms
+    cubic-bezier(0.32, 0.72, 0, 1);
+
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
@@ -536,6 +544,17 @@ body {
   }
   to {
     transform: translateY(0);
+  }
+}
+
+@keyframes okou-intro-video-options-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(100% + 0.5rem));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 

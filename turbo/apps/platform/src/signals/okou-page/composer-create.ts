@@ -217,14 +217,7 @@ export function createComposerCreateSignals(
     if (!get(enabled$)) {
       return;
     }
-    const range = get(composer.activeSlashRange$);
-    if (range) {
-      const head = composer.editor.state.selection.head;
-      composer.editor.commands.deleteRange({
-        from: head - (range.end - range.start),
-        to: head,
-      });
-    }
+    set(composer.clearSlashRange$);
     set(setMode$, mode);
   });
   return {

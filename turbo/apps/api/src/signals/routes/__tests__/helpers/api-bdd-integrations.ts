@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./clerk-users";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import {
@@ -372,16 +373,14 @@ function configureClerkDirectory(
   actor: ApiTestUser | null,
 ): void {
   if (!actor) {
-    context.mocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
+    mockClerkUsers(context, []);
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [],
     });
     return;
   }
 
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUserProfile(actor)],
-  });
+  mockClerkUsers(context, [clerkUserProfile(actor)]);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
     data: actor.orgId
       ? [

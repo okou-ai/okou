@@ -9,8 +9,6 @@ import {
   type RunnerSshObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-ssh";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -23,7 +21,6 @@ import { and, eq, lt, ne, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 type SshResolveInput = RunnerSshResolveRequest & {
   readonly runId: string;
@@ -137,15 +134,6 @@ async function currentConnection(
   const [row] = await currentConnectionQuery(db, input, lockAuthority);
   signal.throwIfAborted();
   if (!row) {
-    return null;
-  }
-  const featureContext = await loadUserFeatureSwitchContext(
-    db,
-    row.orgId,
-    row.userId,
-  );
-  signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.SshAccess, featureContext)) {
     return null;
   }
   if (row.accessId === null) {

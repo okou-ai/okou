@@ -24,6 +24,7 @@ import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
+  getConnectorIcon,
   listAgent,
   mockConnectors,
   mockCustomConnectorStory,
@@ -79,6 +80,9 @@ test("Browse connectors by category", async () => {
   expect(
     ai.compareDocumentPosition(engineering) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
+  // The catalog is browsed a category at a time, and a category is far taller
+  // than the viewport. Its marks are fetched as they are reached.
+  expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
 });
 
 test("Show only connectors present in the current catalog", async () => {
@@ -365,9 +369,9 @@ test("Search the full connector catalog", async () => {
     path: "/connectors",
   });
   await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Connect 1,234 services for your agents to use."),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByText("Connect 1,235 services for your agents to use."),
+  ).resolves.toBeInTheDocument();
 
   await fill(screen.getByPlaceholderText("Find connectors"), "Slack");
 
@@ -376,9 +380,9 @@ test("Search the full connector catalog", async () => {
     expect(queryConnectorCard("GitHub")).not.toBeInTheDocument();
   });
   expect(keywords).toContain("Slack");
-  expect(
-    screen.getByText("Connect 1,234 services for your agents to use."),
-  ).toBeInTheDocument();
+  await expect(
+    screen.findByText("Connect 1,235 services for your agents to use."),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Switch between built-in and custom connectors", async () => {

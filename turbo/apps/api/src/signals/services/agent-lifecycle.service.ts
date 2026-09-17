@@ -1,9 +1,11 @@
+import { lockErasureSubjects } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
+import { env } from "../../lib/env";
 import { removeAgentInstructionsStorageInTransaction } from "./agent-instructions-storage-transaction.service";
 import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
 import {
@@ -12,16 +14,56 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
+import {
+  deleteOrgUsageData,
+  deleteUserUsageData,
+} from "./usage-event-cleanup.service";
+import { lockXResourceAdmission } from "./x-resource-usage-lifecycle";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
+type ClerkDeletionScope =
+  | { readonly kind: "organization"; readonly orgId: string }
+  | { readonly kind: "user"; readonly userId: string };
+
+async function deleteScopedUsageData(
+  db: NodePgDatabase,
+  scope: ClerkDeletionScope,
+): Promise<void> {
+  if (scope.kind === "organization") {
+    await deleteOrgUsageData(db, scope.orgId);
+  } else {
+    await deleteUserUsageData(db, scope.userId);
+  }
+}
+
 export async function deleteClerkAgentLifecycleData(
   db: NodePgDatabase,
-  scope:
-    | { readonly kind: "organization"; readonly orgId: string }
-    | { readonly kind: "user"; readonly userId: string },
+  scope: ClerkDeletionScope,
 ): Promise<void> {
+  const resourceBillingEnabled =
+    env("X_RESOURCE_BILLING_START_DATE") !== undefined;
+  if (!resourceBillingEnabled) {
+    // Keep the existing separately committed cleanup during the API rollout.
+    // Activation requires settlers and ordinary Run deleters to share admission.
+    await deleteScopedUsageData(db, scope);
+  }
   const receipt = await db.transaction(async (tx) => {
+    if (resourceBillingEnabled) {
+      // Drain compute admission before retaining entitlement locks: creators
+      // and queue promotion hold Agent locks before accessing allowances.
+      await lockErasureSubjects(tx, [
+        {
+          subjectKind: scope.kind,
+          subjectId: scope.kind === "organization" ? scope.orgId : scope.userId,
+        },
+      ]);
+      // Subjects -> X admission -> compaction -> ledger/entitlements -> parents/Run.
+      // The helper uses a savepoint on this same connection; both deletion
+      // stages commit atomically and retain their locks through that commit.
+      await lockXResourceAdmission(tx, "exclusive");
+      await deleteScopedUsageData(tx, scope);
+    }
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
     );

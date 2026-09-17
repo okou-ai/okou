@@ -421,6 +421,16 @@ const runSharedDatabaseWorkerDaemons$ = command(
       },
       signal,
     );
+    set(
+      setAblyLoop$,
+      {
+        scope: "org",
+        topic: "runQueueChanged",
+        loopCommand$: reloadWorkerQueueDataFromRealtime$,
+        options: { onError },
+      },
+      signal,
+    );
   },
 );
 

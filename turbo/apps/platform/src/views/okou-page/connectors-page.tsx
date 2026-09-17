@@ -83,6 +83,12 @@ import {
   type ConnectorCategoryGroup,
   type ConnectorCategorySection,
 } from "../../signals/okou-page/settings/connector-categories.ts";
+import {
+  bindConnectorCategoryGrid$,
+  connectorCategoryGridMetrics$,
+  connectorCategoryGridWindow,
+  CONNECTOR_CATEGORY_GRID_ROW_HEIGHT,
+} from "../../signals/okou-page/settings/connector-category-grid.ts";
 import { localizeConnectorCategoryMetadata } from "./components/settings/connector-category-labels.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
@@ -843,8 +849,13 @@ function ConnectorsDirectoryToolbar({
     // strip is latched, so it is the page's 24px rather than the 12px the
     // controls keep between themselves -- a gap equal to the one inside the
     // group reads as a crop against the viewport edge.
+    // The strip paints the workspace canvas rather than `background`: the
+    // surface it covers is `WorkspaceInset`'s paint layer, and under a colour
+    // palette that layer fills from `--card` while `--background` is a darker
+    // 98.8% -- so a `bg-background` strip stood out as a flat block the width
+    // of the 900px column, hard-edged against the canvas on both sides.
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
-      <div className="flex flex-col gap-3 bg-background pt-6">
+      <div className="flex flex-col gap-3 bg-workspace-canvas pt-6">
         <div className="flex items-center">
           <ConnectorsScopeSegment
             scope={scope}
@@ -995,7 +1006,7 @@ function ConnectorsDirectoryToolbar({
       </div>
       <div
         aria-hidden="true"
-        className="h-6 bg-gradient-to-b from-background to-transparent"
+        className="h-6 bg-gradient-to-b from-workspace-canvas to-transparent"
       />
     </div>
   );
@@ -1167,6 +1178,58 @@ function ConnectorCategoryGroupSection({
  * not repeated here -- it is the other scope, and a connected connector still
  * shows its account on its own card wherever it appears.
  */
+/**
+ * The open category, rendered a viewport at a time. The reserved rows are grid
+ * items spanning the tracks their cards would occupy, so the scrollbar, the
+ * column count and the row rhythm stay the browser's own -- the grid keeps its
+ * responsive template and only the cards near the viewport are mounted.
+ */
+function ConnectorCategoryGrid({
+  connectors,
+  renderCard,
+}: {
+  readonly connectors: readonly PlatformConnectorCatalogStatusItem[];
+  readonly renderCard: (
+    connector: PlatformConnectorCatalogStatusItem,
+  ) => ReactNode;
+}) {
+  const bindGrid = useSet(bindConnectorCategoryGrid$);
+  const metrics = useGet(connectorCategoryGridMetrics$);
+  const visible = connectorCategoryGridWindow(connectors.length, metrics);
+  return (
+    <div
+      ref={bindGrid}
+      data-testid="connector-category-grid"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+      style={{
+        gridAutoRows: `${CONNECTOR_CATEGORY_GRID_ROW_HEIGHT}px`,
+      }}
+    >
+      {visible.leadingRows > 0 && (
+        <div
+          aria-hidden="true"
+          data-testid="connector-category-reserved-rows"
+          style={{
+            gridColumn: "1 / -1",
+            gridRow: `span ${visible.leadingRows}`,
+          }}
+        />
+      )}
+      {connectors.slice(visible.startIndex, visible.endIndex).map(renderCard)}
+      {visible.trailingRows > 0 && (
+        <div
+          aria-hidden="true"
+          data-testid="connector-category-reserved-rows"
+          style={{
+            gridColumn: "1 / -1",
+            gridRow: `span ${visible.trailingRows}`,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function ConnectorShelfBrowse({
   layout,
   renderCard,
@@ -1364,12 +1427,10 @@ function ConnectorsBuiltinPanel({
       {browse.showShelves ? (
         <ConnectorShelfBrowse layout={browse.layout} renderCard={renderCard} />
       ) : browse.categoryConnectors ? (
-        <div
-          data-testid="connector-category-grid"
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          {browse.categoryConnectors.map(renderCard)}
-        </div>
+        <ConnectorCategoryGrid
+          connectors={browse.categoryConnectors}
+          renderCard={renderCard}
+        />
       ) : (
         fallback
       )}
