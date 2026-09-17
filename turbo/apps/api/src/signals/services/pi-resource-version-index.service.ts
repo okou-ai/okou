@@ -27,6 +27,7 @@ import { safeSync, settle } from "../utils";
 
 const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
+const HEAD_INVALIDATION_BATCH_SIZE = 256;
 const WORK_LEASE_MS = 5 * 60 * 1000;
 
 function indexQueueValues(
@@ -46,12 +47,93 @@ function indexQueueValues(
   });
 }
 
+function repairedVersionHeadCondition(
+  db: Pick<Db, "select">,
+  changedVersionIds: readonly string[],
+) {
+  return or(
+    exists(
+      db
+        .select({ ordinal: piStableContextArtifactResources.ordinal })
+        .from(piStableContextArtifactResources)
+        .where(
+          and(
+            eq(
+              piStableContextArtifactResources.artifactDigest,
+              piStableContextHeads.artifactDigest,
+            ),
+            inArray(
+              piStableContextArtifactResources.storageVersionId,
+              changedVersionIds,
+            ),
+          ),
+        ),
+    ),
+    // Pending/running heads have no artifact edge yet. Their captured immutable
+    // mounts still bind the repaired Storage encoding.
+    sql`EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(
+        COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)
+      ) AS mount
+      WHERE ${inArray(sql`mount->>'versionId'`, changedVersionIds)}
+    )`,
+  );
+}
+
+async function invalidateRepairedVersionHeads(
+  db: Pick<Db, "select" | "update">,
+  changedVersionIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  const condition = repairedVersionHeadCondition(db, changedVersionIds);
+  const heads = await db
+    .select({ id: piStableContextHeads.id })
+    .from(piStableContextHeads)
+    .where(condition)
+    .orderBy(asc(piStableContextHeads.id))
+    .for("update");
+  signal?.throwIfAborted();
+  const invalidatedAt = nowDate();
+  // Every bulk head writer uses the same UUID order. Update only the exact
+  // prelocked snapshot so a concurrent insert cannot enter an unlocked batch.
+  for (
+    let offset = 0;
+    offset < heads.length;
+    offset += HEAD_INVALIDATION_BATCH_SIZE
+  ) {
+    const ids = heads
+      .slice(offset, offset + HEAD_INVALIDATION_BATCH_SIZE)
+      .map((head) => {
+        return head.id;
+      });
+    await db
+      .update(piStableContextHeads)
+      .set({
+        generation: sql`${piStableContextHeads.generation} + 1`,
+        status: "missing",
+        input: null,
+        inputDigest: null,
+        artifactDigest: null,
+        validityHorizon: null,
+        leaseId: null,
+        leaseExpiresAt: null,
+        availableAt: invalidatedAt,
+        attemptCount: 0,
+        lastErrorClass: null,
+        updatedAt: invalidatedAt,
+      })
+      .where(inArray(piStableContextHeads.id, ids));
+    signal?.throwIfAborted();
+  }
+}
+
 export async function enqueuePiResourceVersionIndexes(
   db: Pick<Db, "insert" | "select" | "update">,
   versionIds: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {
-  const unique = [...new Set(versionIds)];
+  const unique = [...new Set(versionIds)].sort();
   if (unique.length === 0) {
     return;
   }
@@ -122,53 +204,7 @@ export async function enqueuePiResourceVersionIndexes(
     }
   }
   if (changedVersionIds.length > 0) {
-    await db
-      .update(piStableContextHeads)
-      .set({
-        generation: sql`${piStableContextHeads.generation} + 1`,
-        status: "missing",
-        input: null,
-        inputDigest: null,
-        artifactDigest: null,
-        validityHorizon: null,
-        leaseId: null,
-        leaseExpiresAt: null,
-        availableAt: nowDate(),
-        attemptCount: 0,
-        lastErrorClass: null,
-        updatedAt: nowDate(),
-      })
-      .where(
-        or(
-          exists(
-            db
-              .select({ ordinal: piStableContextArtifactResources.ordinal })
-              .from(piStableContextArtifactResources)
-              .where(
-                and(
-                  eq(
-                    piStableContextArtifactResources.artifactDigest,
-                    piStableContextHeads.artifactDigest,
-                  ),
-                  inArray(
-                    piStableContextArtifactResources.storageVersionId,
-                    changedVersionIds,
-                  ),
-                ),
-              ),
-          ),
-          // Pending/running heads have no artifact edge yet. Their captured
-          // immutable mounts still bind the repaired Storage encoding, so the
-          // same transaction must fence those leases as well.
-          sql`EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(
-              COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)
-            ) AS mount
-            WHERE ${inArray(sql`mount->>'versionId'`, changedVersionIds)}
-          )`,
-        ),
-      );
+    await invalidateRepairedVersionHeads(db, changedVersionIds, signal);
   }
   signal?.throwIfAborted();
 }
