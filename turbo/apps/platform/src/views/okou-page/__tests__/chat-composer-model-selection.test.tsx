@@ -122,9 +122,9 @@ function installNewChat(
 }
 
 /**
- * The Fast rows and option list these cases describe belong to the legacy
- * select, which the switch's off lever still serves. Cases that name the menu
- * or the flyout opt back in, because their own `featureSwitches` win here.
+ * These cases read the Fast rows and the option list from the legacy select,
+ * which the switch's off lever still serves. Cases about the menu or the flyout
+ * call `setupPage` directly.
  */
 async function setupLegacyPickerPage(
   options: Parameters<typeof setupPage>[0],
@@ -738,7 +738,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
   setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -790,7 +790,7 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
   setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -852,7 +852,7 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, limitedFreeBillingStatus());
   });
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -884,7 +884,7 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
   setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -925,7 +925,7 @@ test("Choose a model from the flyout without leaving the type list", async () =>
     return query === "(min-width: 640px)";
   });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -957,7 +957,7 @@ test("Choose a model from the flyout without leaving the type list", async () =>
 test("Offer Fast beside effort on the composer for a Fast-capable model", async () => {
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-luna"], "gpt-5.6-luna");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -994,7 +994,7 @@ test("Adjust effort from the composer without opening the model picker", async (
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -1028,7 +1028,7 @@ test("Name the ends of the effort scale beside the bar", async () => {
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -1073,7 +1073,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     },
   });
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -1133,7 +1133,7 @@ test("Select the default effort on an existing thread without changing Fast", as
     },
   });
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
@@ -1177,7 +1177,7 @@ test("Keep independent effort selections when changing models", async () => {
     ["claude-sonnet-5", "gpt-5.6-sol", "gpt-5.5"],
     "claude-sonnet-5",
   );
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -1286,7 +1286,7 @@ test("Use the legacy picker and keep saved effort dormant when refactoring is di
     },
   });
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
@@ -1341,7 +1341,7 @@ test("Keep effort on the composer while the model list stays on the legacy picke
     },
   });
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
@@ -1380,7 +1380,7 @@ test("Show the Pi fallback without overwriting a saved native preference", async
     },
   });
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
@@ -1414,7 +1414,7 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
       modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
     });
   });
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -1468,7 +1468,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
       hasMore: false,
     });
   });
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: RUN_PATH,
     featureSwitches: {
@@ -1520,7 +1520,7 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
     return query === "(min-width: 640px)";
   });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
@@ -1616,7 +1616,7 @@ test.each([
     context.mocks.data.orgModelPolicies([
       modelPolicy(model, 1, { default: true, providerType }),
     ]);
-    await setupLegacyPickerPage({
+    await setupPage({
       context,
       path: RUN_PATH,
       featureSwitches: {

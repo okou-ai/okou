@@ -103,9 +103,9 @@ async function findComposerFor(threadId: string): Promise<HTMLElement> {
 }
 
 /**
- * The catalog these cases describe is the legacy select's, which the switch's
- * off lever still serves. The menu and flyout cases below opt back in, because
- * their own `featureSwitches` win over this default.
+ * These cases read the catalog from the legacy select's category control, which
+ * the switch's off lever still serves. The menu and flyout cases below call
+ * `setupPage` directly.
  */
 async function setupLegacyPickerPage(
   options: Parameters<typeof setupPage>[0],
@@ -908,7 +908,7 @@ test("Choose image and video models from the compact overview", async () => {
       return respond(204);
     },
   );
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },
@@ -963,7 +963,7 @@ test("Switch model type in the flyout without leaving the panel", async () => {
     selectedImageModel: null,
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },
@@ -1021,7 +1021,7 @@ test("Hovering a model type opens its panel only once the pointer settles", asyn
     selectedImageModel: null,
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },

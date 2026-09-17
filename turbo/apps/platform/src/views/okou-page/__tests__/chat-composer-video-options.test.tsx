@@ -65,8 +65,9 @@ function installVideoEnvironment(): void {
 }
 
 /**
- * The video catalog these cases open lives behind the legacy select's category
- * control, which the switch's off lever still serves.
+ * These cases reach the video catalog through the legacy select's category
+ * control, which the switch's off lever still serves. The cases that never open
+ * the picker call `setupPage` directly.
  */
 async function setupLegacyPickerPage(
   options: Parameters<typeof setupPage>[0],
@@ -226,7 +227,7 @@ test.each([false, true])(
   "Keep video settings collapsed until requested with the slash panel on: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
-    await setupLegacyPickerPage({
+    await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: {
@@ -247,7 +248,7 @@ test.each([false, true])(
 
 test("Keep the video spec with the run controls below the message", async () => {
   installVideoSubmissionCapture();
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
@@ -411,7 +412,7 @@ test.each(["task", "command"] as const)(
   "Submit the current model's defaults without a template through the video %s",
   async (entry) => {
     const submissions = installVideoSubmissionCapture();
-    await setupLegacyPickerPage({
+    await setupPage({
       locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
@@ -495,7 +496,7 @@ test("Selecting a video model alone keeps Creative Video settings hidden and uns
 
 test("Changing a Creative Video style retains settings without reopening the panel", async () => {
   installVideoSubmissionCapture();
-  await setupLegacyPickerPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   const editor = await enterText("Keep this scene description");
   await selectVideoTemplate();
   await selectPaneOption("16:9 · 8s · 720p", "9:16");
@@ -577,7 +578,7 @@ async function restoreTemplateDraft(
       draftAttachments: null,
     });
   });
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {

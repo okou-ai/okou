@@ -191,7 +191,7 @@ test("Sending in an older conversation moves it to the top", async () => {
     });
   });
 
-  await setupLegacyPickerPage({
+  await setupPage({
     context,
     path: `/chats/${older.id}`,
     auth,
