@@ -484,11 +484,19 @@ describe("API provider usage evidence", () => {
   });
 });
 
-function bedrockFrame(event: string, payload: unknown): Buffer {
+function bedrockFrame(
+  event: string,
+  payload: unknown,
+  messageType: "event" | "error" | "exception" = "event",
+): Buffer {
   const headers = Buffer.concat(
     Object.entries({
-      ":message-type": "event",
-      ":event-type": event,
+      ":message-type": messageType,
+      ...(messageType === "event"
+        ? { ":event-type": event }
+        : messageType === "exception"
+          ? { ":exception-type": event }
+          : { ":error-code": event, ":error-message": "Provider stopped" }),
       ":content-type": "application/json",
     }).map(([name, value]) => {
       const size = Buffer.alloc(2);
@@ -530,6 +538,68 @@ async function nativeModel(dialect: string) {
 }
 
 describe("native provider usage evidence", () => {
+  it.each([
+    { messageType: "error" as const, fragmented: false },
+    { messageType: "error" as const, fragmented: true },
+    { messageType: "exception" as const, fragmented: false },
+    { messageType: "exception" as const, fragmented: true },
+  ])(
+    "stops Bedrock evidence at $messageType frames (fragmented $fragmented)",
+    async ({ messageType, fragmented }) => {
+      const { config, materialized } = await nativeModel(
+        "bedrock-converse-stream",
+      );
+      const usage = {
+        inputTokens: 11,
+        cacheReadInputTokens: 7,
+        cacheWriteInputTokens: 5,
+        outputTokens: 3,
+      };
+      const bytes = Buffer.concat([
+        bedrockFrame("messageStart", { role: "assistant" }),
+        bedrockFrame("metadata", { usage }),
+        bedrockFrame(
+          "internalServerException",
+          { message: "Provider stopped" },
+          messageType,
+        ),
+        bedrockFrame("metadata", {
+          usage: { ...usage, inputTokens: 999, outputTokens: 999 },
+        }),
+      ]);
+      server.use(
+        http.post(piNativeInferenceUrl(config), () => {
+          let offset = 0;
+          const stream = new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (offset === bytes.length) {
+                controller.close();
+                return;
+              }
+              const end = fragmented
+                ? Math.min(offset + 7, bytes.length)
+                : bytes.length;
+              controller.enqueue(bytes.subarray(offset, end));
+              offset = end;
+            },
+          });
+          return new HttpResponse(stream, {
+            headers: { "content-type": "application/vnd.amazon.eventstream" },
+          });
+        }),
+      );
+      const result = await run(materialized);
+      expect(result.assistantMessage).toMatchObject({
+        stopReason: "error",
+        usage: { input: 11, cacheRead: 7, cacheWrite: 5, output: 3 },
+      });
+      expect(result.usageObservation).toEqual({
+        coverage: "partial",
+        tokens: { input: 11, cacheRead: 7, cacheCreation: 5, output: 3 },
+      });
+    },
+  );
+
   it.each(["plain", "bom", "fragmented-bom"])(
     "ignores unrelated Messages frames (%s)",
     async (encoding) => {

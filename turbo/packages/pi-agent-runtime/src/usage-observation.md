@@ -46,6 +46,8 @@ fetch stream transform. Bedrock decorates the existing Smithy HTTP handler,
 preserving its proxy, DNS, credentials and cancellation policy. Smithy's event
 codec validates frame lengths, headers and CRCs. The observer forwards the
 original bytes and never tees a body or reads ahead independently of the SDK.
+AWS `error` and `exception` frames end Bedrock observation, preserving quantities
+from before the failure even when later metadata arrives in the same chunk.
 
 One frame buffer is capped at 256 KiB. Oversized SSE frames are skipped until
 the next event boundary; invalid/oversized AWS frame lengths stop observation

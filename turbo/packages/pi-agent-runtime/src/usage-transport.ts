@@ -213,8 +213,14 @@ function bedrockReader(observer: PiUsageObserver) {
   const inspect = (): void => {
     try {
       const message = codec.decode(frame.subarray(0, size));
+      const messageType = message.headers[":message-type"]?.value;
+      // Smithy's decoder throws on these envelopes before later metadata.
+      if (messageType === "error" || messageType === "exception") {
+        disabled = true;
+        return;
+      }
       if (
-        message.headers[":message-type"]?.value === "event" &&
+        messageType === "event" &&
         message.headers[":event-type"]?.value === "metadata"
       ) {
         observeJson(
@@ -233,7 +239,7 @@ function bedrockReader(observer: PiUsageObserver) {
     push(chunk: Uint8Array): void {
       if (disabled) return;
       let offset = 0;
-      while (offset < chunk.length) {
+      while (offset < chunk.length && !disabled) {
         const count = Math.min(length - size, chunk.length - offset);
         frame.set(chunk.subarray(offset, offset + count), size);
         offset += count;
