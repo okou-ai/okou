@@ -138,6 +138,17 @@ The input command rejects disabled forwarding or unavailable job metadata withou
 creating an input entry. A successful command reports file publication, not an
 acknowledgement that the running agent consumed the input.
 
+Input publication and terminal input cleanup take the same cross-process lock on
+the existing group directory. Publication rechecks the terminal result and
+retained job under that lock, so a late input command cannot recreate a completed
+run's input directory after cleanup. Delayed inputs can still be published before
+the runner claims the job. The lock serializes these short filesystem operations
+within one group and creates no per-run lock files.
+
+Queue paths and JSON payloads are unchanged. Older local submit, input, or runner
+processes can still read the queue, but do not participate in this synchronization;
+the race is closed once the publishers and cleanup owners use the updated binary.
+
 ### API active-input read recovery
 
 The Runner retries failed active-input reserve reads with the existing jittered
