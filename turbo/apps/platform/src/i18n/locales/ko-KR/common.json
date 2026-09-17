@@ -1439,6 +1439,53 @@
         },
         "inReview": "검토 중",
         "inReviewDescription": "제출됨, 검토 대기 중",
+        "intro": {
+          "checkin": {
+            "confirm": "확인",
+            "description": "+{{amount}} 크레딧. 내일 또 오세요.",
+            "title": "체크인 완료"
+          },
+          "connector": {
+            "confirm": "도구 선택",
+            "description": "지금은 공개 정보와 직접 붙여넣은 내용만 사용할 수 있습니다. 도구를 연결하면 받은편지함, 문서, 캘린더를 바로 읽습니다.",
+            "scopeCredentials": "인증 정보는 해당 서비스에 남고 {{assistantName}}으로 전달되지 않습니다.",
+            "scopeMinimum": "이 작업에 필요한 권한만 요청합니다.",
+            "scopeRevoke": "설정에서 언제든 해제할 수 있습니다. 이미 만든 결과는 그대로 남습니다.",
+            "title": "{{assistantName}}이(가) 내 도구에서 일하게 하기"
+          },
+          "invite": {
+            "confirm": "팀원 초대",
+            "description": "만든 워크플로는 개인 스크립트가 아니라 팀 자산입니다. 새 동료는 첫날부터 실행할 수 있고 방법을 물어볼 필요가 없습니다.",
+            "scopeConnectors": "커넥터는 개인별입니다. 각자 자기 계정을 인증합니다.",
+            "scopeShared": "워크플로와 에이전트는 초대한 모든 사람과 공유됩니다.",
+            "title": "한 사람이 익힌 것을 팀 전체가 실행합니다"
+          },
+          "later": "나중에",
+          "slack": {
+            "confirm": "Slack에 추가",
+            "description": "동료들은 매일 새 사이트를 열지 않습니다. Slack에서는 {{assistantName}}이(가) 누구나 @로 부를 수 있는 동료가 되고, 결과는 논의가 일어나는 곳에 도착합니다.",
+            "scopeChannels": "초대한 채널만 볼 수 있으며 DM이나 다른 채널은 보지 못합니다.",
+            "scopeOrganization": "개인 계정이 조직 계정으로 바뀌고, 만든 워크플로가 팀 공동 자산이 됩니다.",
+            "scopeReward": "Slack 보상은 조직 잔액으로 들어가 팀 전체가 사용합니다.",
+            "title": "팀이 이미 일하는 곳에 두기"
+          },
+          "workflow": {
+            "browse": "템플릿 둘러보기",
+            "confirm": "첫 번째 보기",
+            "description": "새로 배울 것은 없습니다. 전체 과정은 이게 전부입니다.",
+            "prompt": "매주 월요일 아침에 경쟁사가 지난주에 공개한 내용을 확인하고 주제별로 묶어 비교표로 만들어 주세요.",
+            "promptConfirm": "{{assistantName}}에게 보내기",
+            "promptDescription": "그대로 보내도 되고, 본인 말로 바꿔도 됩니다.",
+            "promptTitle": "{{assistantName}}에게 보낼 문장입니다",
+            "stepRun": "한 번 실행",
+            "stepRunDescription": "설정하기 전에 결과부터 확인하세요. 만들어진 결과는 대화에 남습니다.",
+            "stepSave": "저장",
+            "stepSaveDescription": "얼마나 자주 실행할지, 결과를 어디로 보낼지 정하면 그다음부터는 스스로 실행됩니다.",
+            "stepTemplate": "템플릿 선택",
+            "stepTemplateDescription": "처음부터 쓰지 말고, 하려는 일과 가까운 것으로 시작하세요.",
+            "title": "{{assistantName}}에게 일을 맡기는 3단계"
+          }
+        },
         "invite": {
           "action": "초대",
           "description": "추가하는 사람마다 적립됩니다",

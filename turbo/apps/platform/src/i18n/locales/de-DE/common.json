@@ -1440,6 +1440,53 @@
         },
         "inReview": "In Prüfung",
         "inReviewDescription": "Eingereicht, wartet auf Prüfung",
+        "intro": {
+          "checkin": {
+            "confirm": "Alles klar",
+            "description": "+{{amount}} Credits. Komm morgen für die nächsten wieder.",
+            "title": "Eingecheckt"
+          },
+          "connector": {
+            "confirm": "Tool auswählen",
+            "description": "Aktuell hat es nur öffentliche Informationen und das, was du einfügst. Verbinde ein Tool, und es liest dein Postfach, deine Dokumente und deinen Kalender direkt.",
+            "scopeCredentials": "Deine Zugangsdaten bleiben beim Anbieter und gelangen nie zu {{assistantName}}.",
+            "scopeMinimum": "Angefragt werden nur die Berechtigungen, die diese Art von Aufgabe braucht.",
+            "scopeRevoke": "Du kannst die Verbindung jederzeit in den Einstellungen trennen. Bereits erzeugte Ergebnisse bleiben erhalten.",
+            "title": "{{assistantName}} mit deinen eigenen Tools arbeiten lassen"
+          },
+          "invite": {
+            "confirm": "Team einladen",
+            "description": "Die Workflows, die du baust, sind Team-Assets und keine privaten Skripte. Neue Kolleginnen und Kollegen führen sie am ersten Tag aus, statt dich zu fragen, wie es geht.",
+            "scopeConnectors": "Connectors bleiben persönlich: Jede Person autorisiert ihre eigenen Konten.",
+            "scopeShared": "Workflows und Agents werden mit allen geteilt, die du einlädst.",
+            "title": "Was eine Person lernt, kann das ganze Team ausführen"
+          },
+          "later": "Später",
+          "slack": {
+            "confirm": "Zu Slack hinzufügen",
+            "description": "Dein Team öffnet nicht jeden Tag eine neue Website. In Slack ist {{assistantName}} eine Kollegin, die jede und jeder mit @ ansprechen kann, und Ergebnisse landen dort, wo entschieden wird.",
+            "scopeChannels": "Es sieht nur die Kanäle, in die du es einlädst – weder deine DMs noch den restlichen Workspace.",
+            "scopeOrganization": "Damit wird aus deinem persönlichen Konto ein Organisationskonto, und deine Workflows werden zu gemeinsamen Team-Assets.",
+            "scopeReward": "Die Slack-Belohnung geht auf das Guthaben der Organisation, das dem ganzen Team zur Verfügung steht.",
+            "title": "Dort lassen, wo dein Team schon arbeitet"
+          },
+          "workflow": {
+            "browse": "Vorlagen ansehen",
+            "confirm": "Zeig mir den ersten",
+            "description": "Nichts Neues zu lernen. So sieht das Ganze aus.",
+            "prompt": "Sieh jeden Montagmorgen nach, was meine Wettbewerber letzte Woche veröffentlicht haben, gruppiere es nach Thema und gib mir eine Vergleichstabelle.",
+            "promptConfirm": "An {{assistantName}} senden",
+            "promptDescription": "Schick es genau so, oder sag es in deinen eigenen Worten.",
+            "promptTitle": "Das schickst du {{assistantName}}",
+            "stepRun": "Einmal ausführen",
+            "stepRunDescription": "Sieh das Ergebnis, bevor du irgendetwas konfigurierst. Was dabei entsteht, bleibt in deinem Chat.",
+            "stepSave": "Speichern",
+            "stepSaveDescription": "Lege fest, wie oft er läuft und wohin die Ergebnisse gehen. Danach läuft er von allein.",
+            "stepTemplate": "Vorlage auswählen",
+            "stepTemplateDescription": "Starte mit einer Vorlage, die deiner Aufgabe nahekommt, statt alles selbst zu schreiben.",
+            "title": "In drei Schritten eine Aufgabe an {{assistantName}} übergeben"
+          }
+        },
         "invite": {
           "action": "Einladen",
           "description": "Jede Person, die du hinzufügst, zählt",

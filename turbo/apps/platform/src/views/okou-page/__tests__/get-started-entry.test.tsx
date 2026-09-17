@@ -641,3 +641,132 @@ test("A pending check-in disables the action and a failed request leaves it avai
   expect(within(checkinRow).getByText("Check in")).toBeInTheDocument();
   expect(within(panel).getByText("300")).toBeInTheDocument();
 });
+
+test("The connector step says what it costs the user before it hands them off", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Let Okou work on your own tools",
+  });
+  // The refusal this answers is about custody, not value.
+  expect(
+    within(dialog).getByText(
+      "Your credentials stay with the provider; they never enter Okou.",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText(
+      "Disconnect anytime in settings. Whatever it already produced stays.",
+    ),
+  ).toBeInTheDocument();
+  // Explaining is all it does: the destination is still the connector list.
+  expect(pathname()).toBe(questChatPath());
+
+  click(buttonNamed("Pick a tool", dialog));
+  await waitFor(() => {
+    expect(pathname()).toBe("/connectors");
+  });
+});
+
+test("Declining an introduced step costs the user nothing", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-invite"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "What one person learns, the whole team can run",
+  });
+  // The reason to invite is what a teammate inherits, not the per-member
+  // reward the row already states.
+  expect(
+    within(dialog).getByText(
+      "Workflows and agents are shared with everyone you invite.",
+    ),
+  ).toBeInTheDocument();
+
+  click(buttonNamed("Later", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(pathname()).toBe(questChatPath());
+});
+
+test("The workflow step ends by handing over the prompt itself", async () => {
+  configureQuestPage(context, "admin");
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-workflow"));
+
+  const steps = await screen.findByRole("dialog", {
+    name: "Three steps to hand a job to Okou",
+  });
+  expect(within(steps).getByText("Pick a template")).toBeInTheDocument();
+  expect(within(steps).getByText("Run it once")).toBeInTheDocument();
+  expect(within(steps).getByText("Save it")).toBeInTheDocument();
+
+  click(buttonNamed("Show me the first one", steps));
+
+  const handover = await screen.findByRole("dialog", {
+    name: "This is what you send Okou",
+  });
+  // The prompt is readable before it is sent, not hidden behind the button.
+  expect(
+    within(handover).getByText(
+      "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
+    ),
+  ).toBeInTheDocument();
+
+  // The way out of the handover is still the template list.
+  click(buttonNamed("Browse templates", handover));
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+  });
+});
+
+test("Checking in confirms the reward instead of closing silently", async () => {
+  configureQuestPage(context, "admin", { claimedToday: false });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+
+  const dialog = await screen.findByRole("dialog", { name: "Checked in" });
+  expect(
+    within(dialog).getByText(
+      "+100 credits. Come back tomorrow for the next one.",
+    ),
+  ).toBeInTheDocument();
+});

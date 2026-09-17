@@ -1464,6 +1464,53 @@
         },
         "inReview": "Em análise",
         "inReviewDescription": "Enviado, aguardando análise",
+        "intro": {
+          "checkin": {
+            "confirm": "Entendi",
+            "description": "+{{amount}} créditos. Volte amanhã para os próximos.",
+            "title": "Check-in feito"
+          },
+          "connector": {
+            "confirm": "Escolher uma ferramenta",
+            "description": "Agora ele só tem informação pública e o que você cola. Conecte uma ferramenta e ele lê direto sua caixa de entrada, seus documentos e sua agenda.",
+            "scopeCredentials": "Suas credenciais ficam com o provedor; elas nunca chegam ao {{assistantName}}.",
+            "scopeMinimum": "São pedidas apenas as permissões que esse tipo de tarefa precisa.",
+            "scopeRevoke": "Você pode desconectar quando quiser nas configurações. O que já foi produzido continua lá.",
+            "title": "Deixe o {{assistantName}} trabalhar nas suas próprias ferramentas"
+          },
+          "invite": {
+            "confirm": "Convidar o time",
+            "description": "Os workflows que você cria são ativos do time, não scripts particulares. Um colega consegue executá-los no primeiro dia em vez de perguntar como se faz.",
+            "scopeConnectors": "Os conectores continuam pessoais: cada pessoa autoriza as próprias contas.",
+            "scopeShared": "Workflows e agents são compartilhados com todas as pessoas que você convidar.",
+            "title": "O que uma pessoa aprende, o time inteiro executa"
+          },
+          "later": "Depois",
+          "slack": {
+            "confirm": "Adicionar ao Slack",
+            "description": "Seus colegas não vão abrir um site novo todo dia. No Slack, o {{assistantName}} é um colega que qualquer um chama com @, e os resultados chegam onde as decisões acontecem.",
+            "scopeChannels": "Ele só enxerga os canais para os quais você o convida, não suas mensagens diretas nem o resto do workspace.",
+            "scopeOrganization": "Sua conta pessoal vira uma conta de organização, então os workflows que você cria viram ativos compartilhados do time.",
+            "scopeReward": "A recompensa do Slack vai para o saldo da organização, que o time inteiro usa.",
+            "title": "Deixe onde seu time já trabalha"
+          },
+          "workflow": {
+            "browse": "Ver modelos",
+            "confirm": "Me mostre o primeiro",
+            "description": "Nada novo para aprender. É isso tudo.",
+            "prompt": "Toda segunda de manhã, veja o que meus concorrentes publicaram na semana passada, agrupe por tema e me dê uma tabela comparativa.",
+            "promptConfirm": "Enviar ao {{assistantName}}",
+            "promptDescription": "Envie do jeito que está ou diga com as suas palavras.",
+            "promptTitle": "É isto que você envia ao {{assistantName}}",
+            "stepRun": "Execute uma vez",
+            "stepRunDescription": "Veja o resultado antes de configurar qualquer coisa. O que sair fica no seu chat.",
+            "stepSave": "Salve",
+            "stepSaveDescription": "Escolha com que frequência ele roda e para onde vão os resultados. Depois disso ele roda sozinho.",
+            "stepTemplate": "Escolha um modelo",
+            "stepTemplateDescription": "Comece por um parecido com o que você precisa em vez de escrever do zero.",
+            "title": "Três passos para passar um trabalho ao {{assistantName}}"
+          }
+        },
         "invite": {
           "action": "Convidar",
           "description": "Cada pessoa que você adiciona conta",

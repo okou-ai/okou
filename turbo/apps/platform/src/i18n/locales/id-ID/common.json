@@ -1439,6 +1439,53 @@
         },
         "inReview": "Sedang ditinjau",
         "inReviewDescription": "Terkirim, menunggu ditinjau",
+        "intro": {
+          "checkin": {
+            "confirm": "Oke",
+            "description": "+{{amount}} kredit. Kembali lagi besok.",
+            "title": "Sudah check-in"
+          },
+          "connector": {
+            "confirm": "Pilih satu perkakas",
+            "description": "Sekarang ia hanya punya informasi publik dan apa pun yang Anda tempel. Hubungkan satu perkakas dan ia membaca langsung kotak masuk, dokumen, dan kalender Anda.",
+            "scopeCredentials": "Kredensial Anda tetap di penyedianya dan tidak pernah masuk ke {{assistantName}}.",
+            "scopeMinimum": "Hanya izin yang dibutuhkan tugas semacam ini yang diminta.",
+            "scopeRevoke": "Putuskan kapan saja lewat pengaturan. Hasil yang sudah dibuat tetap ada.",
+            "title": "Biarkan {{assistantName}} bekerja di perkakas Anda sendiri"
+          },
+          "invite": {
+            "confirm": "Undang tim",
+            "description": "Workflow yang Anda buat adalah aset tim, bukan skrip pribadi. Rekan baru bisa menjalankannya di hari pertama tanpa perlu bertanya caranya.",
+            "scopeConnectors": "Konektor tetap pribadi: setiap orang mengotorisasi akunnya sendiri.",
+            "scopeShared": "Workflow dan agent dibagikan ke semua orang yang Anda undang.",
+            "title": "Yang dipelajari satu orang bisa dijalankan seluruh tim"
+          },
+          "later": "Nanti saja",
+          "slack": {
+            "confirm": "Tambahkan ke Slack",
+            "description": "Rekan Anda tidak akan membuka situs baru setiap hari. Di Slack, {{assistantName}} jadi rekan kerja yang bisa di-@ siapa saja, dan hasilnya muncul di tempat keputusan dibuat.",
+            "scopeChannels": "Ia hanya melihat kanal tempat Anda mengundangnya, bukan pesan pribadi atau kanal lain.",
+            "scopeOrganization": "Akun pribadi Anda berubah menjadi akun organisasi, sehingga workflow yang Anda buat menjadi aset bersama tim.",
+            "scopeReward": "Hadiah Slack masuk ke saldo organisasi, jadi seluruh tim bisa memakainya.",
+            "title": "Taruh di tempat tim Anda sudah bekerja"
+          },
+          "workflow": {
+            "browse": "Lihat templat",
+            "confirm": "Tunjukkan yang pertama",
+            "description": "Tidak ada yang baru untuk dipelajari. Semuanya hanya sebanyak ini.",
+            "prompt": "Setiap Senin pagi, periksa apa yang dipublikasikan kompetitor saya minggu lalu, kelompokkan menurut tema, dan buatkan tabel perbandingan.",
+            "promptConfirm": "Kirim ke {{assistantName}}",
+            "promptDescription": "Kirim apa adanya, atau ucapkan dengan kalimat Anda sendiri.",
+            "promptTitle": "Ini yang Anda kirim ke {{assistantName}}",
+            "stepRun": "Jalankan sekali",
+            "stepRunDescription": "Lihat hasilnya sebelum mengatur apa pun. Hasilnya tetap tersimpan di obrolan Anda.",
+            "stepSave": "Simpan",
+            "stepSaveDescription": "Tentukan seberapa sering ia berjalan dan ke mana hasilnya dikirim. Setelah itu ia jalan sendiri.",
+            "stepTemplate": "Pilih templat",
+            "stepTemplateDescription": "Mulai dari yang paling dekat dengan pekerjaan Anda, bukan menulis dari nol.",
+            "title": "Tiga langkah menyerahkan satu pekerjaan ke {{assistantName}}"
+          }
+        },
         "invite": {
           "action": "Undang",
           "description": "Setiap orang yang kamu tambahkan dihitung",

@@ -1440,6 +1440,53 @@
         },
         "inReview": "In review",
         "inReviewDescription": "Submitted, waiting on review",
+        "intro": {
+          "checkin": {
+            "confirm": "Got it",
+            "description": "+{{amount}} credits. Come back tomorrow for the next one.",
+            "title": "Checked in"
+          },
+          "connector": {
+            "confirm": "Pick a tool",
+            "description": "Right now it only has public information and whatever you paste in. Connect a tool and it reads your inbox, your docs and your calendar directly.",
+            "scopeCredentials": "Your credentials stay with the provider; they never enter {{assistantName}}.",
+            "scopeMinimum": "Only the permissions this kind of task needs are requested.",
+            "scopeRevoke": "Disconnect anytime in settings. Whatever it already produced stays.",
+            "title": "Let {{assistantName}} work on your own tools"
+          },
+          "invite": {
+            "confirm": "Invite teammates",
+            "description": "The workflows you build are team assets, not private scripts. A teammate can run them on their first day instead of asking you how.",
+            "scopeConnectors": "Connectors stay personal: each person authorizes their own accounts.",
+            "scopeShared": "Workflows and agents are shared with everyone you invite.",
+            "title": "What one person learns, the whole team can run"
+          },
+          "later": "Later",
+          "slack": {
+            "confirm": "Add to Slack",
+            "description": "Your teammates will not open a new site every day. In Slack, {{assistantName}} is a colleague anyone can @, and results land where the decisions happen.",
+            "scopeChannels": "It only sees the channels you invite it into, not your DMs or the rest of the workspace.",
+            "scopeOrganization": "This turns your personal account into an organization one, so the workflows you build become shared team assets.",
+            "scopeReward": "The Slack reward goes to the organization balance, so the whole team spends it.",
+            "title": "Keep it where your team already works"
+          },
+          "workflow": {
+            "browse": "Browse templates",
+            "confirm": "Show me the first one",
+            "description": "Nothing new to learn. This is what the whole thing looks like.",
+            "prompt": "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
+            "promptConfirm": "Send it to {{assistantName}}",
+            "promptDescription": "Send it as it is, or say it in your own words.",
+            "promptTitle": "This is what you send {{assistantName}}",
+            "stepRun": "Run it once",
+            "stepRunDescription": "See the result before you configure anything. What it produces stays in your chat.",
+            "stepSave": "Save it",
+            "stepSaveDescription": "Choose how often it runs and where the results go. After that it runs itself.",
+            "stepTemplate": "Pick a template",
+            "stepTemplateDescription": "Start from one that is close to the job you have, instead of writing it from scratch.",
+            "title": "Three steps to hand a job to {{assistantName}}"
+          }
+        },
         "invite": {
           "action": "Invite",
           "description": "Everyone you add counts",
