@@ -4286,13 +4286,11 @@ function TemplatePickerCategoryNav({
   selectedCategory,
   introVideoEnabled,
   customTemplatesEnabled,
-  creativeVideoOnly,
   onChange,
 }: {
   selectedCategory: string;
   introVideoEnabled: boolean;
   customTemplatesEnabled: boolean;
-  creativeVideoOnly: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -4371,9 +4369,6 @@ function TemplatePickerCategoryNav({
       Icon: Route,
     },
   ];
-  const visibleCategories = categoryOptions.filter(({ value }) => {
-    return !creativeVideoOnly || value === "video";
-  });
 
   return (
     <>
@@ -4388,7 +4383,7 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {visibleCategories.flatMap(({ value, label, Icon }) => {
+            {categoryOptions.flatMap(({ value, label, Icon }) => {
               return [
                 <SelectItem key={value} value={value}>
                   <span className="flex items-center gap-2">
@@ -4416,7 +4411,7 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
           >
-            {visibleCategories.flatMap(
+            {categoryOptions.flatMap(
               ({ value, label, Icon }, categoryIndex) => {
                 const selected = value === selectedCategory;
                 return [
@@ -4433,15 +4428,15 @@ function TemplatePickerCategoryNav({
                       let nextIndex: number | null = null;
                       if (event.key === "ArrowDown") {
                         nextIndex =
-                          (categoryIndex + 1) % visibleCategories.length;
+                          (categoryIndex + 1) % categoryOptions.length;
                       } else if (event.key === "ArrowUp") {
                         nextIndex =
-                          (categoryIndex - 1 + visibleCategories.length) %
-                          visibleCategories.length;
+                          (categoryIndex - 1 + categoryOptions.length) %
+                          categoryOptions.length;
                       } else if (event.key === "Home") {
                         nextIndex = 0;
                       } else if (event.key === "End") {
-                        nextIndex = visibleCategories.length - 1;
+                        nextIndex = categoryOptions.length - 1;
                       }
                       if (nextIndex === null) {
                         return;
@@ -4451,7 +4446,7 @@ function TemplatePickerCategoryNav({
                         ?.querySelectorAll<HTMLElement>("[role=tab]")
                         .item(nextIndex);
                       nextTab?.focus();
-                      onChange(visibleCategories[nextIndex]?.value ?? value);
+                      onChange(categoryOptions[nextIndex]?.value ?? value);
                     }}
                     className={cn(
                       "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -6088,8 +6083,6 @@ function TemplatePickerDialog({
   const openBillingPlans = useSet(openSettingsBillingPlans$);
   const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
-  const creativeVideo = useGet(signals.create.creativeVideo$);
-  const creativeVideoOnly = creativeVideo && category === "video";
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
@@ -6482,7 +6475,6 @@ function TemplatePickerDialog({
                 selectedCategory={selectedCategory}
                 introVideoEnabled={introVideoEnabled}
                 customTemplatesEnabled={customTemplatesEnabled}
-                creativeVideoOnly={creativeVideoOnly}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
