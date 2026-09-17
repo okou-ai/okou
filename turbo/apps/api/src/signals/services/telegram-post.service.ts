@@ -1972,6 +1972,7 @@ const persistTelegramChatMessage$ = command(
               chatId: args.chatId,
               messageId: String(args.source.message.message_id),
               isDm: args.source.isDM,
+              botUsername: args.source.botUsername,
             }),
           }),
           runId: null,

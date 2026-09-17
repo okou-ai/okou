@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ErasureSubject } from "@okouai/db/operations/account-erasure";
 import { describe, expect, it, onTestFinished } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import {
   closeErasureSubjectFixture,
   removeErasureSubjectsFixture,
@@ -16,8 +18,10 @@ import {
   withChatThreadAgentReadBarrierFixture,
 } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -46,6 +50,7 @@ interface AgentReadFixture {
 async function createAgentReadFixture(
   threadCount: number,
 ): Promise<AgentReadFixture> {
+  const signal = context.signal;
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });
@@ -55,15 +60,47 @@ async function createAgentReadFixture(
     visibility: "public",
   });
   const model = await chat.getDefaultCreateThreadModel(actor);
+  createRouteMocks(context).clerk.session(
+    actor.userId,
+    actor.orgId,
+    actor.orgRole,
+  );
+  // Reuse the creation route app instead of rebuilding it for every thread.
+  const client = setupApp({ context, signal, routes: chatThreadCreateRoutes })(
+    chatThreadsContract,
+  );
   const threadIds: string[] = [];
-  for (let index = 0; index < threadCount; index++) {
-    const thread = await chat.createThread(actor, {
-      agentId: agent.agentId,
-      title: `Bulk ${index}`,
-      model,
-    });
-    threadIds.push(thread.id);
+  // Bound same-actor requests and drain them before propagating errors or
+  // changing identities, without flooding the pool or event sequence row lock.
+  const batchSize = 4;
+  for (let start = 0; start < threadCount; start += batchSize) {
+    signal.throwIfAborted();
+    const batch = await Promise.allSettled(
+      Array.from(
+        { length: Math.min(batchSize, threadCount - start) },
+        (_, index) => {
+          return accept(
+            client.create({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                agentId: agent.agentId,
+                title: `Bulk ${start + index}`,
+                model,
+              },
+            }),
+            [201],
+          );
+        },
+      ),
+    );
+    for (const result of batch) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      threadIds.push(result.value.body.id);
+    }
   }
+  signal.throwIfAborted();
   await appendTerminalChatEventsFixture({ threadIds });
   return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }

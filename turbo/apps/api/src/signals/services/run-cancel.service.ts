@@ -8,6 +8,7 @@ import { writeDb$, type Db } from "../external/db";
 import {
   publishCancelToRunnerGroup,
   publishChatThreadDetailChangedSafely,
+  publishRunQueueChangedForOrgSafely,
 } from "../external/realtime";
 import { logger } from "../../lib/log";
 import { notFound, runNotCancellable } from "../../lib/error";
@@ -323,6 +324,8 @@ export const dispatchCancelSideEffects$ = command(
     const db = set(writeDb$);
     await publishCancellationRecoveryEntered(result, signal);
     await publishRunnerCancellation(result, signal);
+    await publishRunQueueChangedForOrgSafely(result.orgId);
+    signal.throwIfAborted();
 
     // A hard upgrade must not revive legacy terminal effects that were already suppressed.
     if (

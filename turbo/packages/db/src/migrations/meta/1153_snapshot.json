@@ -1,5 +1,5 @@
 {
-  "id": "a198369b-1b01-438f-b870-cea5800f946d",
+  "id": "b8f353db-68d3-4cf9-bda4-53cfcd8ece6e",
   "prevId": "97adf283-9230-4530-88ef-6cb1ffb99df8",
   "version": "7",
   "dialect": "postgresql",
@@ -9322,6 +9322,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "provenance": {
+          "name": "provenance",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -21389,12 +21395,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "morning_brief_collection_revoked_at": {
-          "name": "morning_brief_collection_revoked_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "capture_network_bodies_remaining": {
           "name": "capture_network_bodies_remaining",

@@ -24,6 +24,7 @@ import {
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import { withAbsoluteArtifactUrl } from "../../artifact-url";
 import {
   integrationsSlackReadContract,
   type SlackChannelListQuery,
@@ -124,7 +125,7 @@ export async function materializeSlackFileUpload(
   const result = await client.materialize({ body, headers: {} });
 
   if (result.status === 200) {
-    return result.body;
+    return withAbsoluteArtifactUrl(result.body);
   }
 
   handleError(result, "Failed to materialize Slack file upload");

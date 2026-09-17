@@ -1070,7 +1070,11 @@ export const cleanupClerkDeletedUser$ = command(
 
 async function commitClerkDeletedOrgMembershipCleanup(
   db: Db,
-  args: { readonly orgId: string; readonly userId: string },
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly membershipId?: string;
+  },
 ): Promise<void> {
   const commitSignal = new AbortController().signal;
   await removeUsagePackMemberAllocation(db, args, commitSignal);
@@ -1087,6 +1091,7 @@ export const cleanupClerkDeletedOrgMembership$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
+      readonly membershipId?: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {

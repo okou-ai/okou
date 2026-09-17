@@ -188,7 +188,7 @@ a local boundary for one owner's collection authority: a result linearized
 before cleanup may still be observed by its own caller afterwards, and no
 wall-clock guarantee is claimed against arbitrary external revocation.
 
-**Deploy order.** The stamp is migration 1153, an additive nullable column. The
+**Deploy order.** The stamp is migration 1154, an additive nullable column. The
 cleanup writers are unconditional and are not behind `simpleMorningBrief`, so
 the migration must ship before the API artifact that writes them; an older
 artifact simply never reads or writes the column. See

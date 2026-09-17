@@ -18,6 +18,18 @@ import {
 
 const USER_TEMPLATE_ROW_ID = "8f5c9a1e-6f7d-4a2b-9c3e-0d1a2b3c4d5e";
 
+// The presentation assertions below quote one runbook by name, so they pin the
+// item by slug: the picker order is a product decision that moves on its own.
+function presentationTemplateBySlug(slug: string) {
+  const item = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((candidate) => {
+    return candidate.slug === slug;
+  });
+  if (!item) {
+    throw new Error(`Expected a registered presentation template: ${slug}`);
+  }
+  return item;
+}
+
 describe("buildGenerationTemplatePrompt", () => {
   it("builds one shared context for multiple ordered templates", () => {
     const illustration = ILLUSTRATION_TEMPLATE_ITEMS[0]!;
@@ -73,7 +85,7 @@ describe("buildGenerationTemplatePrompt", () => {
   });
 
   it("builds direct-HTML presentation guidance with the Okou image batch command", () => {
-    const item = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+    const item = presentationTemplateBySlug("playful-launch-presentation");
 
     const result = buildGenerationTemplatePrompt({
       type: "presentation",
@@ -251,7 +263,7 @@ describe("buildGenerationTemplatePrompt", () => {
   });
 
   it("falls back to the default color token when none is selected", () => {
-    const item = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+    const item = presentationTemplateBySlug("playful-launch-presentation");
 
     const result = buildGenerationTemplatePrompt({
       type: "presentation",

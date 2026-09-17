@@ -10,6 +10,7 @@ import { command } from "ccstate";
 
 import { googleAdsAccountForAttribution } from "@okouai/core/google-ads-account";
 import { clerk$ } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 
 import { nowDate } from "../../lib/time";
@@ -70,15 +71,8 @@ export const googleAdsAccountForUser$ = command(
     if (clerkAttributionDisabled()) {
       return null;
     }
-    const users = await get(clerk$).users.getUserList(
-      { userId: [userId], limit: 1 },
-      undefined,
-      signal,
-    );
+    const user = await findClerkUser(get(clerk$), userId, signal);
     signal.throwIfAborted();
-    const user = users.data.find((candidate) => {
-      return candidate.id === userId;
-    });
     if (!user) {
       throw new Error(`No Clerk user found for user ${userId}`);
     }

@@ -45,7 +45,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
 import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
-import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
+import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
+import {
+  customTemplateCatalog$,
+  resetCustomTemplatePicker$,
+} from "../../signals/okou-page/custom-template-library.ts";
 import {
   avatarSelectionLabel,
   styleSelectionLabel,
@@ -174,6 +178,7 @@ import {
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
 } from "./template-tile.ts";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
@@ -1372,7 +1377,8 @@ interface ResolvedWorkflowTemplateCatalog {
 }
 
 // Persona pill filter for the workflow template tab, styled like the in-app
-// Ideas & Use Cases gallery: an "All" pill plus one pill per persona.
+// Ideas & Use Cases gallery: an "All" pill plus one pill per persona. The pill
+// treatment itself belongs to the shared filter row.
 function WorkflowTemplatePillRow({
   pills,
   active,
@@ -1384,33 +1390,22 @@ function WorkflowTemplatePillRow({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex flex-wrap items-center gap-1.5 px-6">
-      {["all", ...pills].map((pill) => {
-        const isActive = active === pill;
-        return (
-          <button
-            key={pill}
-            type="button"
-            aria-pressed={isActive}
-            className={cn(
-              "h-7 shrink-0 rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors cursor-pointer",
-              isActive
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-            )}
-            onClick={() => {
-              onSelect(pill);
-            }}
-          >
-            {pill === "all"
-              ? t(($) => {
-                  return $.artifacts.templates.all;
-                })
-              : localizedWorkflowTemplateCategory(pill)}
-          </button>
-        );
-      })}
-    </div>
+    <TemplateFilterPillRow
+      className="px-6"
+      active={active}
+      pills={[
+        {
+          id: "all",
+          label: t(($) => {
+            return $.artifacts.templates.all;
+          }),
+        },
+        ...pills.map((pill) => {
+          return { id: pill, label: localizedWorkflowTemplateCategory(pill) };
+        }),
+      ]}
+      onSelect={onSelect}
+    />
   );
 }
 
@@ -4267,13 +4262,11 @@ function TemplatePickerCategoryNav({
   selectedCategory,
   introVideoEnabled,
   customTemplatesEnabled,
-  creativeVideoOnly,
   onChange,
 }: {
   selectedCategory: string;
   introVideoEnabled: boolean;
   customTemplatesEnabled: boolean;
-  creativeVideoOnly: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -4352,9 +4345,6 @@ function TemplatePickerCategoryNav({
       Icon: Route,
     },
   ];
-  const visibleCategories = categoryOptions.filter(({ value }) => {
-    return !creativeVideoOnly || value === "video";
-  });
 
   return (
     <>
@@ -4369,7 +4359,7 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {visibleCategories.flatMap(({ value, label, Icon }) => {
+            {categoryOptions.flatMap(({ value, label, Icon }) => {
               return [
                 <SelectItem key={value} value={value}>
                   <span className="flex items-center gap-2">
@@ -4397,7 +4387,7 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
           >
-            {visibleCategories.flatMap(
+            {categoryOptions.flatMap(
               ({ value, label, Icon }, categoryIndex) => {
                 const selected = value === selectedCategory;
                 return [
@@ -4414,15 +4404,15 @@ function TemplatePickerCategoryNav({
                       let nextIndex: number | null = null;
                       if (event.key === "ArrowDown") {
                         nextIndex =
-                          (categoryIndex + 1) % visibleCategories.length;
+                          (categoryIndex + 1) % categoryOptions.length;
                       } else if (event.key === "ArrowUp") {
                         nextIndex =
-                          (categoryIndex - 1 + visibleCategories.length) %
-                          visibleCategories.length;
+                          (categoryIndex - 1 + categoryOptions.length) %
+                          categoryOptions.length;
                       } else if (event.key === "Home") {
                         nextIndex = 0;
                       } else if (event.key === "End") {
-                        nextIndex = visibleCategories.length - 1;
+                        nextIndex = categoryOptions.length - 1;
                       }
                       if (nextIndex === null) {
                         return;
@@ -4432,7 +4422,7 @@ function TemplatePickerCategoryNav({
                         ?.querySelectorAll<HTMLElement>("[role=tab]")
                         .item(nextIndex);
                       nextTab?.focus();
-                      onChange(visibleCategories[nextIndex]?.value ?? value);
+                      onChange(categoryOptions[nextIndex]?.value ?? value);
                     }}
                     className={cn(
                       "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -5819,6 +5809,12 @@ function ImportedPresentationTemplateLibraryStatus({
   );
 }
 
+/** The catalog behind a `custom` selection's chip. Empty until it loads. */
+function useCustomTemplateCatalog(): readonly UserTemplateCatalogEntry[] {
+  const loadable = useLoadable(customTemplateCatalog$);
+  return loadable.state === "hasData" ? loadable.data : [];
+}
+
 function useImportedPresentationTemplates(
   signals: ComposerSignals,
 ): readonly PresentationTemplateSummary[] {
@@ -6065,8 +6061,6 @@ function TemplatePickerDialog({
   const openBillingPlans = useSet(openSettingsBillingPlans$);
   const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
-  const creativeVideo = useGet(signals.create.creativeVideo$);
-  const creativeVideoOnly = creativeVideo && category === "video";
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
@@ -6229,6 +6223,16 @@ function TemplatePickerDialog({
     template: PresentationTemplateSummary,
   ) => {
     onChange(toImportedPresentationGenerationTemplate(template));
+    closeTemplatePicker();
+  };
+
+  const handleSelectCustom = (template: UserTemplateCatalogEntry) => {
+    // The row id alone. What this template produces lives on the row, so the
+    // selection does not restate it and cannot disagree with it.
+    onChange({
+      type: "custom",
+      selection: { userTemplateId: template.id },
+    });
     closeTemplatePicker();
   };
 
@@ -6459,7 +6463,6 @@ function TemplatePickerDialog({
                 selectedCategory={selectedCategory}
                 introVideoEnabled={introVideoEnabled}
                 customTemplatesEnabled={customTemplatesEnabled}
-                creativeVideoOnly={creativeVideoOnly}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -6512,6 +6515,7 @@ function TemplatePickerDialog({
                       onSelectImportedPresentation={
                         handleSelectImportedPresentation
                       }
+                      onSelectCustom={handleSelectCustom}
                       onPreviewPresentation={handlePreview}
                       onPreviewImportedPresentation={handlePreviewImported}
                       onImportedPresentation={closeTemplatePicker}
@@ -6572,6 +6576,7 @@ function TemplatePickerCategoryContent({
   onRestorePresentationScroll,
   onSelectPresentation,
   onSelectImportedPresentation,
+  onSelectCustom,
   onPreviewPresentation,
   onPreviewImportedPresentation,
   onImportedPresentation,
@@ -6603,6 +6608,7 @@ function TemplatePickerCategoryContent({
     colorSystemId?: string,
   ) => void;
   onSelectImportedPresentation: (template: PresentationTemplateSummary) => void;
+  onSelectCustom: (template: UserTemplateCatalogEntry) => void;
   onPreviewPresentation: (
     item: PresentationTemplateItem,
     slideIndex?: number,
@@ -6629,7 +6635,7 @@ function TemplatePickerCategoryContent({
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
-        <CustomTemplatePickerPane signals={signals} />
+        <CustomTemplatePickerPane signals={signals} onSelect={onSelectCustom} />
       </div>
     );
   }
@@ -6765,10 +6771,43 @@ function TemplatePickerCategoryContent({
   return null;
 }
 
+/**
+ * The chip for a custom template.
+ *
+ * The catalog is the only place its title and cover exist, so a selection
+ * whose row has not loaded produces no chip rather than an unnamed one.
+ */
+function customTemplateAttachment(
+  userTemplateId: string,
+  customTemplates: readonly UserTemplateCatalogEntry[],
+): ComposerTemplateAttachment | undefined {
+  const template = customTemplates.find((candidate) => {
+    return candidate.id === userTemplateId;
+  });
+  if (!template) {
+    return undefined;
+  }
+  return {
+    type: "custom",
+    title: template.title,
+    category: "custom",
+    ...(template.coverUrl === null
+      ? {}
+      : { previewImageUrl: template.coverUrl }),
+  };
+}
+
 function selectedComposerTemplateAttachment(
   value: GenerationTemplateRequest | undefined,
   importedTemplates: readonly PresentationTemplateSummary[] = [],
+  customTemplates: readonly UserTemplateCatalogEntry[] = [],
 ): ComposerTemplateAttachment | undefined {
+  if (value?.type === "custom") {
+    return customTemplateAttachment(
+      value.selection.userTemplateId,
+      customTemplates,
+    );
+  }
   const introVideo = introVideoTemplateOptions(value);
   if (introVideo) {
     return {
@@ -9324,6 +9363,7 @@ function useComposerTemplatePicker(
 ): ComposerTemplatePicker {
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const importedTemplates = useImportedPresentationTemplates(signals);
+  const customTemplates = useCustomTemplateCatalog();
   const notifyDraftChanged = useComposerDraftChange(signals);
   return {
     onChange(value) {
@@ -9333,6 +9373,7 @@ function useComposerTemplatePicker(
       const attachment = selectedComposerTemplateAttachment(
         value,
         importedTemplates,
+        customTemplates,
       );
       if (!attachment) {
         return;

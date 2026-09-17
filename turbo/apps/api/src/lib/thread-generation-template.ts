@@ -1,4 +1,5 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import type { MountedUserTemplate } from "../signals/services/user-template-data.service";
 import {
   generationTemplateIdentity,
   type GenerationTemplateIdentity,
@@ -41,10 +42,16 @@ export function resolveThreadGenerationTemplatePrompt(args: {
    * Required rather than optional so every caller states what its run carries.
    */
   readonly mountedUserPresentationTemplateIds: readonly string[];
+  /**
+   * Custom templates the run being built will mount, with the kind each row
+   * says it is. Required for the same reason as the ids above.
+   */
+  readonly mountedUserTemplates: readonly MountedUserTemplate[];
 }): ResolvedThreadGenerationTemplates {
   const options = {
     introVideoEnabled: args.introVideoEnabled,
     mountedUserPresentationTemplateIds: args.mountedUserPresentationTemplateIds,
+    mountedUserTemplates: args.mountedUserTemplates,
   };
   if (args.explicitTemplates && args.explicitTemplates.length > 0) {
     const built = buildGenerationTemplatesPrompt(

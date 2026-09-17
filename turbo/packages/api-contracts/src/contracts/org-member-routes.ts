@@ -37,6 +37,9 @@ export const orgMembersContract = c.router({
     method: "GET",
     path: "/api/org/members",
     headers: authHeadersSchema,
+    query: z.object({
+      view: z.literal("members").optional(),
+    }),
     responses: {
       200: orgMembersResponseSchema,
       400: apiErrorSchema,
@@ -46,7 +49,7 @@ export const orgMembersContract = c.router({
       503: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Get org members",
+    summary: "Get org members, optionally without invitation and request data",
   },
   updateRole: {
     method: "PATCH",

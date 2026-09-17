@@ -140,7 +140,11 @@ switching it to Only me; recipients lose access.
 CLI artifact output qualifies hostless references with its configured app origin
 (`OKOU_APP_URL`, or the existing API-to-App origin mapping). Production output is
 `https://app.okou.ai/artifacts/<reference>`. Generation, upload, hosting and media
-download results use the same complete URL in text, JSON and Markdown. Public
+download results use the same complete URL in text, JSON and Markdown. Integration
+upload completion (Teams, Telegram, Feishu/Lark, AgentPhone and GitHub) and Slack
+canonical publication apply the same CLI normalization before printing. Image
+batch waits also qualify stored artifact and owner references in JSON output,
+including the generated Markdown, without rewriting the batch files. Public
 URLs keep their original bytes, including query strings. API responses and stored
 references retain their existing shapes, so older pinned CLIs retain their prior
 output and the new CLI can consume an older API. Downloading or cloning newly
@@ -284,6 +288,20 @@ sends that field; no CLI caller was found. The complete retained 72-hour
 request-log query ending 2026-09-15 at 07:14:20 UTC contained one POST: App
 `0.893.2`, response `202`. It found no non-App or unidentified POST; this is
 bounded caller evidence, not a guarantee about every external client.
+
+#### Organization member display queries
+
+`GET /api/org/members?view=members` retains the existing organization summary
+and current-member profile shape while omitting invitation and membership-request
+data and their provider reads. The Agents page uses this view; organization
+management keeps the full default response. Membership authorization, profile
+cache lifetime, batching, and missing-creator presentation are unchanged.
+
+Old Apps omit `view` and receive the full response from a new API. New Apps can
+also consume an old API: its query-less route ignores `view` and returns the
+same member shape, with the previous management-read cost until the API updates.
+No temporary fallback, App version-floor increase, migration, or Runner protocol
+change is required.
 
 ### Backend
 
@@ -746,7 +764,7 @@ also bounds each extracted entry's inode footprint.
 
 Unsupported-archive admission records use separate
 `decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
-Only background fill reads these records; foreground lookup probes positive
+Only post-spawn background work reads these records; foreground lookup probes positive
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
 
@@ -756,8 +774,21 @@ even if mount or payload admission did not select them for delivery. This
 observation belongs only to that prepared plan and adds no lookup or retained
 file contents. A missing compressed archive still selects its required fill;
 later plans perform their own positive lookup, so GC eviction cannot become a
-permanent warming exclusion. Unobserved positive entries and rejection records
-retain the existing background checks.
+permanent warming exclusion. Unobserved positive entries retain the existing
+background checks.
+
+After Agent spawn, ordinary warm-source candidates can pass through one
+runner-owned classification batch of at most 16 keys before queue admission.
+Classification shares the existing decoded worker/memory budget, never waits
+for a permit, and owns no waiting queue or remembered negative state. It omits
+warming only after validating a current rejection record and a still-present
+compressed source under their existing locks. Missing fills and archive-required
+consumers keep normal admission. Busy, missing, invalid or unavailable
+classification retains the ordinary background path, including its errors.
+The coordinator owns classification completion and reporting through shutdown;
+dropping its last owner closes admission before any delayed classification can
+submit. Foreground lookup still probes only positive entries. Neither persisted
+format, GC, nor the four-worker/32-queued admission bounds change.
 
 Readers hold that lock while validating the bounded index, identity, file types,
 sizes and content digests, then pin owned bytes through Guest apply. GC can evict
@@ -1583,14 +1614,31 @@ These objects are contracts, not generic fallbacks. Verify the exact outgoing
 SQL against them, record the release they protect, and remove the functions,
 triggers, and views after that release drains.
 
+## SSH general availability
+
+SSH, including Direct and Cloudflare Access, is generally available. The
+`sshAccess` registry entry, overrides consumer, UI gates and API/Run gates are
+retired together. Existing registered-key filtering ignores retired overrides;
+no migration, data deletion or rewrite is needed. Owner isolation, Agent grants,
+winning Run/Runner authority, credential encryption and host trust remain required.
+The existing Run-lifetime authority cache and missed-notification window are unchanged.
+
+Promote the API before the App. An older API can still enforce its rollout switch;
+the App retains its existing unavailable/error handling for that response, never
+an authorization bypass. Older loaded Apps may hide SSH until refreshed. Already
+created Runs retain their minted capabilities and prompt snapshot; create a new
+Run to obtain SSH guidance and capabilities. Runner/guest/CLI DTOs and stored
+hosts, credentials, pins, grants and observations do not change. Source-level GA
+does not attest deployment state or waive the protected-reader constraints below.
+
 ## Cloudflare Access for SSH
 
 The #31996 delivery adds a protected transport to the existing SSH host domain.
 #34077 is additive database/API authority preparation, including the minimal
 current Runner contract reader and Platform diagnostic translations.
-Direct and Cloudflare Access now share the existing staff-only `sshAccess` switch;
-there is no independent Access switch. The SSH cohort and Agent grants are unchanged.
-Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
+Direct and Cloudflare Access are generally available with no rollout switches;
+the SSH Agent grant still covers both. The initial delivery used the
+[pre-GA policy](fallback.md) and keeps one canonical contract:
 no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 
 Before the first protected configuration or binding is written in a deployed
@@ -1600,8 +1648,7 @@ environment, every serving API must understand protected authority, Runners from
 and the owner-approved evidence boundaries at closure.
 Management stays inside `/connectors/ssh`. Access is a reusable host connection
 setting under the existing SSH Agent grant, not a separately authorized service.
-The SSH feature switch controls rollout for both transports; it does not replace
-the existing Agent permission.
+General availability does not replace the existing Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
@@ -1609,27 +1656,25 @@ The management UI uses the existing canonical Access endpoints; it adds no
 schema or private Runner contract. Unified host forms also accept inline Access
 creation in the host write request. Existing `configId` selections remain valid;
 responses still return only the resolved binding. Deploy API support before the
-App uses inline creation. An older API rejects that write alternative; staff
+App uses inline creation. An older API rejects that write alternative;
 clients should refresh after the current API/App deployment, without a second
 save path or automatic fallback. Existing rows and older App requests remain
 valid, and Runner versions do not need a new decoder for this management change.
 
-With SSH enabled, Access management and
-protected host creation are available without an additional opt-in. With SSH off,
-both transports' management, guest inventory and fresh authority are unavailable.
+Access management and protected host creation require no additional opt-in.
 Already-bound hosts are never silently converted to Direct. Removing a binding
-requires SSH eligibility and an explicit Direct selection. Losing SSH eligibility or changing
-owner clears open secret forms and cancels their pending UI work. API authorization
-and same-owner foreign keys remain authoritative; frontend visibility is not an
+requires owner authorization and an explicit Direct selection. Changing owner
+clears open secret forms and cancels their pending UI work. API authorization and
+same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.
 
 SSH save retries (#34503) require a client-generated resource `id` on host creation
 and standalone credential/Access creation. New resources return `201`; same-owner
 existing IDs return `204` without mutation. Host edits retain their existing
 `expectedGeneration` contract. There is no database migration or backfill, and
-Runner/guest protocols are unchanged. Deploy the API before the App. Under the
-staff-only pre-GA policy, stale Apps/APIs may reject the new/missing field or fail
-to handle `204`; refresh staff clients after deployment. Do not fall back to a
+Runner/guest protocols are unchanged. Deploy the API before the App. This change shipped
+under the staff-only pre-GA policy; stale Apps/APIs could reject the new/missing
+field or fail to handle `204`. Refresh clients after deployment. Do not fall back to a
 new-ID save or automatically replay it. Deduplication only covers the existing
 resource's lifetime, not deletion or abandoned forms; see
 [SSH access](ssh-access.md#save-retries).
@@ -1639,11 +1684,11 @@ resource's lifetime, not deletion or abandoned forms; see
 | Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
 | Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
 | Current API and S2 Runner with authorized protected handoff        | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
-| Current API with an unauthorized host or SSH feature off           | Private authority and guest inventory remain unavailable under the SSH gate and Agent grant.           |
+| Current API with an unauthorized host                              | Private authority and guest inventory remain unavailable under owner and Agent authorization.          |
 | Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                                             |
 | Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                                              |
 
-Feature disable does not make a protected row safe for a pre-Access reader.
+A rollout switch does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
 or conversion is part of deployment.
 
@@ -1653,9 +1698,9 @@ missing/incompatible authority response fails closed; no pre-GA dual decoder is
 introduced. The separate switch removal changes API eligibility and Platform
 visibility only; Runner/guest wire contracts and stored credentials stay unchanged.
 Old pre-removal APIs may still enforce their Access switch, and old App bundles
-may hide Access until refreshed. Both remain pre-GA under `sshAccess`; deploy the
-current API/App and refresh staff clients rather than adding a compatibility alias
-or second decoder. Retired switch overrides are ignored by the existing registered-key
+may hide Access until refreshed. Deploy the current API/App and refresh clients
+rather than adding a compatibility alias or second decoder; see the SSH GA
+boundary above. Retired switch overrides are ignored by the existing registered-key
 filter; no database migration or destructive cleanup is required.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
@@ -1671,6 +1716,28 @@ failure eviction and Run/sandbox teardown remain effective. The accepted
 Run-lifetime missed-notification window includes observed outages; this introduces
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
+
+## Integration source links
+
+Telegram bot DMs, Teams chats, and AgentPhone DMs store their return link in
+the existing optional `source.href` field of the V1 user-message document.
+No new document fields, context columns, or migrations are introduced. Older
+Apps and APIs already accept these URLs, including `sms:`; older Apps may
+label a conversation link as an original-message link until refreshed.
+
+New Apps distinguish message links from conversation links by the provider's
+documented URL shape. Events already stored without `href` remain unlinked;
+their immutable user-message documents and archived snapshots are not rewritten.
+Telegram DMs open the bot conversation. Teams Bot Framework `a:` IDs open
+the bot chat using its `28:` recipient rather than pretending to be Graph
+`19:` chat IDs. AgentPhone DMs open Messages addressed to the inbound destination
+(the assistant number); group events do not expose a single-recipient link.
+
+Desktop adds a narrow external-navigation allowance for single-recipient
+`sms:+E164` links without query parameters or fragments. Older Desktop builds
+continue to deny these links until the Desktop update is installed; browser
+delivery does not upgrade the Electron navigation policy. Opening Messages
+requires a registered handler on the user's device and does not send a message.
 
 ## Integration input attachments
 
@@ -2115,9 +2182,50 @@ the revoking transaction commits. See
 [the collection contract](morning-brief-collection.md) for the source contract,
 lease semantics, finite budgets and declared coverage limits.
 
+## Marketing browser funnel events
+
+The App posts onboarding entry to `/api/marketing/onboarding-start` and actual
+Stripe redirect actions to `/api/marketing/checkout-start` on the Marketing
+origin. The owner confirmed this feature has not launched and requested removal
+of `/api/marketing/finish-onboarding` without an alias, with a client force
+upgrade as the supported-client boundary.
+
+Deploy the Marketing receiver before this App. Verify the production App version
+and commit contain the new callers, then raise `minimumSupportedVersion` in
+`turbo/apps/api/src/lib/web-client-compatibility.json` to that verified version
+in a separate release. Do not guess a version from this PR or raise the floor
+with the first replacement App deployment: production promotes the API first,
+so a refresh could still load an unsupported build. This PR does not activate
+the floor increase before the replacement App is live.
+
+The existing App API check prompts old clients to refresh on their next handled
+API request. Direct Marketing requests do not pass through that middleware;
+cached old callers before the floor takes effect are outside this prelaunch
+support boundary. Do not roll the App back below the floor or Marketing back
+behind the new receivers while those App builds are supported.
+
+Onboarding remains bodyless and preserves the existing
+`marketing_onboarding_attempts` user/org attempt marker. Changing the URL does
+not replay past attempts, including failed attempts. Checkout sends only a fresh
+UUID, its UTC occurrence time and the bounded source `onboarding_video` or
+`paywall`; Marketing derives identity from the bearer token and attribution from
+its own consented cookies. Both requests include credentials, run under the App
+root with a ten-second deadline and never delay navigation for their response.
+There is no periodic check or browser retry.
+
+The new receiver records Google Ads funnel shadows only. Marketing deduplicates
+onboarding by user/org and checkout by user/org/event UUID. These counts differ
+intentionally from the legacy gtag browser-session/account deduplication: another
+checkout action produces another event. A shadow acknowledgement is neither
+proof of eligible consent nor a Google Ads delivery receipt. Existing App gtag
+and PostHog reporting remain active; this change adds no GA4/PostHog sender,
+provider cutover, historical replay, App table or MaskDB scan. Checkout coverage
+matches the existing `RedirectToStripe` producers, excluding previews and other
+payment paths without that producer.
+
 ## Morning Brief collection revocation stamp (#34860)
 
-Migration 1153 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
+Migration 1154 adds the nullable `org_members_metadata.morning_brief_collection_revoked_at`
 column. It is additive, has no default and needs no backfill, scan or
 `LOCK TABLE`, so it applies as an ordinary short transaction.
 
@@ -2134,7 +2242,7 @@ found no occurrence to delete, and long before the member row itself is removed.
   organization cleanup write this column **unconditionally**, in the same
   transaction that already revokes run authority, with no feature check in front
   of it; the default-off `simpleMorningBrief` switch does not protect it.
-  Promoting the API artifact before migration 1153 has shipped would make those
+  Promoting the API artifact before migration 1154 has shipped would make those
   Clerk cleanup webhooks fail with `42703`. Claiming and finalizing read the
   column in the same unconditional statement that locks the member row.
 - **Rollback** leaves stamped rows behind. An older artifact ignores them, so a

@@ -1,3 +1,4 @@
+import { mockClerkUsers } from "./helpers/clerk-users";
 import { randomUUID } from "node:crypto";
 
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -68,9 +69,7 @@ async function emailOrg(): Promise<EmailOrgFixture> {
   await runs.ensureOrgModelProvider(actor);
   await runs.heartbeatRunner(runnerGroup);
 
-  context.mocks.clerk.users.getUserList.mockResolvedValue({
-    data: [clerkUserListEntry(actor.userId, actor.email)],
-  });
+  mockClerkUsers(context, [clerkUserListEntry(actor.userId, actor.email)]);
   context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
     id: orgId,
     slug: orgSlug,
@@ -345,9 +344,9 @@ describe("POST /api/email/inbound", () => {
 
   it("keeps complained recipients out of transactional sends", async () => {
     const complainedActor = bdd.user();
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [clerkUserListEntry(complainedActor.userId, complainedActor.email)],
-    });
+    mockClerkUsers(context, [
+      clerkUserListEntry(complainedActor.userId, complainedActor.email),
+    ]);
 
     await postInbound({
       type: "email.complained",

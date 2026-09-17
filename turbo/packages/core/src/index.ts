@@ -620,6 +620,7 @@ export {
   parseUserPresentationTemplateId,
   userPresentationTemplateDirectory,
 } from "./presentation-template-selection";
+export { userTemplateDirectory } from "./user-template-selection";
 export {
   parseGitHubTreeUrl,
   getSkillNameFromPath,

@@ -2,7 +2,7 @@ import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { nowDate } from "../../lib/time";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -23,25 +23,48 @@ export async function cleanupOrgMemberResources(
   args: {
     readonly orgId: string;
     readonly userId: string;
+    readonly membershipId?: string;
   },
   signal: AbortSignal,
 ): Promise<void> {
   await revokeOrgMemberRunAuthority(db, args, signal);
   signal.throwIfAborted();
+  const currentTime = nowDate();
   await db
-    .update(morningBriefEnrollments)
-    .set({ state: "departed", updatedAt: nowDate() })
-    .where(
-      and(
-        eq(morningBriefEnrollments.orgId, args.orgId),
-        eq(morningBriefEnrollments.userId, args.userId),
+    .insert(morningBriefEnrollments)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      state: "departed",
+      membershipId: args.membershipId,
+      availableAt: currentTime,
+      createdAt: currentTime,
+      updatedAt: currentTime,
+    })
+    .onConflictDoUpdate({
+      target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
+      set: {
+        state: "departed",
+        // Deletion can arrive before enrollment or after a missing live lookup.
+        // Retain its generation so a late created event cannot revive intent.
+        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
+        updatedAt: currentTime,
+      },
+      setWhere: and(
+        args.membershipId
+          ? or(
+              isNull(morningBriefEnrollments.membershipId),
+              eq(morningBriefEnrollments.membershipId, args.membershipId),
+            )
+          : undefined,
         inArray(morningBriefEnrollments.state, [
           "checking",
           "pending",
           "ineligible",
+          "departed",
         ]),
       ),
-    );
+    });
   const [installation] = await db
     .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
     .from(slackOrgInstallations)
