@@ -113,7 +113,14 @@ type MorningBriefCollectionExecution =
  */
 interface AdmittedCollection {
   readonly admission: MorningBriefCollectionAdmission;
-  readonly botToken: string;
+  /**
+   * Null for a scope that reads no Slack.
+   *
+   * An empty string here would be a credential-shaped value that no
+   * installation produced, and the Slack collector would carry it to the
+   * provider instead of refusing.
+   */
+  readonly botToken: string | null;
 }
 
 type AdmissionResult =
@@ -390,7 +397,7 @@ const admitMorningBriefCollection$ = command(
     return {
       kind: "admitted",
       admitted: {
-        botToken: slack?.botToken ?? "",
+        botToken: slack?.botToken ?? null,
         admission: {
           owner,
           memberCreatedAt: local.memberCreatedAt,
@@ -709,9 +716,13 @@ export const executeMorningBriefSlackCollection$ = command(
         MORNING_BRIEF_SLACK_COLLECTION_DEADLINE_MS,
       ),
     );
-    if (admission.slackUserId === null || admission.slackWorkspaceId === null) {
-      // A Slack occurrence always pins a real binding; the column is nullable
-      // only so a source-independent occurrence can honestly carry none.
+    if (
+      botToken === null ||
+      admission.slackUserId === null ||
+      admission.slackWorkspaceId === null
+    ) {
+      // A Slack occurrence always pins a real binding; these are nullable only
+      // so a source-independent occurrence can honestly carry none.
       throw new Error(
         "Morning Brief Slack collection admitted without a binding",
       );

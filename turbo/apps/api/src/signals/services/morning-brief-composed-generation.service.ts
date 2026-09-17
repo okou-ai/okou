@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { MorningBriefCollectionOccurrenceView } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 import type { MorningBriefGenerationView } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
@@ -34,6 +34,7 @@ import {
   type MorningBriefCompositionTransport,
 } from "./morning-brief-composition.service";
 import { interpretComposedGenerationOutput } from "./morning-brief-generation-result";
+import { MORNING_BRIEF_DEFAULT_LANGUAGE } from "./morning-brief-language-policy";
 import {
   invokeAndPersist$,
   type MorningBriefGenerationExecution,
@@ -97,6 +98,16 @@ const COMPOSED_RESULT_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 /** How long one attempt owns its generation slot. Never the collection lease. */
 const COMPOSED_RESERVATION_MS = 60_000;
+
+/**
+ * The input digest a slot records when no request was ever assembled.
+ *
+ * A skipped morning has no request to describe, and `input_digest` is not
+ * nullable. This is the digest of the empty input — a defined, reproducible
+ * value that says "nothing was sent" — rather than an empty string, which would
+ * read as a digest nobody computed.
+ */
+const NO_REQUEST_DIGEST = createHash("sha256").update("").digest("hex");
 
 /**
  * The bounded budget an admission may spend before it has to answer.
@@ -577,17 +588,21 @@ async function admitComposedGeneration(args: {
       transport: transport ?? {
         body: "",
         bodyBytes: 0,
-        inputDigest: "",
+        inputDigest: NO_REQUEST_DIGEST,
         citations: new Map(),
         inputItems: 0,
         includedItems: 0,
         sourceCoverage: coverage,
       },
-      language: {
-        authority: language?.authority ?? "default",
-        fallbackLanguage: language?.fallbackLanguage ?? "en-US",
-        instructionsVersionId: language?.instructionsVersionId ?? null,
-        instructionsDigest: language?.instructionsDigest ?? null,
+      // A healthy empty composition resolves no language, because asking which
+      // language to write a brief in that will not be written is work nobody
+      // authorized. The row still needs one, so it records the declared default
+      // rather than an authority nothing resolved.
+      language: language ?? {
+        authority: "default",
+        fallbackLanguage: MORNING_BRIEF_DEFAULT_LANGUAGE,
+        instructionsVersionId: null,
+        instructionsDigest: null,
       },
       descriptors: args.composed.result.descriptors,
       at: result.at,
@@ -698,7 +713,8 @@ const reserveAndInvoke$ = command(
     }
 
     const language = composed.result.language;
-    const requestedLanguage = language?.fallbackLanguage ?? "en-US";
+    const requestedLanguage =
+      language?.fallbackLanguage ?? MORNING_BRIEF_DEFAULT_LANGUAGE;
     return await set(
       invokeAndPersist$,
       {
