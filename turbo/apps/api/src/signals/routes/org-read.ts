@@ -7,7 +7,7 @@ import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-r
 
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import {
   badRequestMessage,
@@ -135,6 +135,7 @@ const leaveOrgInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const membersInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
+  const query = get(queryOf(orgMembersContract.members));
   const result = await settle(
     set(
       orgMembersList$,
@@ -144,6 +145,7 @@ const membersInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         // Fall back to "member" when the auth context lacks an explicit role
         // (rare: run-scoped tokens whose membership lookup returned no role).
         callerRole: auth.orgRole ?? "member",
+        includeManagement: query.view !== "members",
       },
       signal,
     ),

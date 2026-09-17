@@ -33,7 +33,7 @@ import {
   sortedAgents$,
 } from "../../signals/agent.ts";
 import {
-  orgMembers$,
+  orgMemberProfiles$,
   type OrgMember,
 } from "../../signals/external/org-members.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
@@ -176,7 +176,7 @@ function AgentTabsView({
 }) {
   const { t } = useTranslation("agents");
   const agentsLoadable = useLoadable(sortedAgents$);
-  const membersLoadable = useLoadable(orgMembers$);
+  const membersLoadable = useLoadable(orgMemberProfiles$);
   const unreadAgentIds = useLastResolved(unreadAgentIds$);
   const loading = agentsLoadable.state === "loading";
   const agents =

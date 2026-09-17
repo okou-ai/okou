@@ -1,14 +1,19 @@
 import { createHash } from "node:crypto";
 
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
+import { getUserTemplateStorageName } from "@okouai/core/storage-names";
+import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type {
   UserTemplateKind,
   UserTemplateSummary,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 
 import type { ReadonlyDb } from "../external/db";
+import type { PresentationTemplateVolume } from "./presentation-template-data.service";
 
 export type UserTemplateRow = typeof userTemplates.$inferSelect;
 
@@ -153,6 +158,99 @@ export async function loadAccessibleUserTemplate(
     .where(and(eq(userTemplates.id, args.templateId), accessibleWhere(args)))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * One selected custom template, reduced to what a run needs: where to mount it
+ * and what the package inside will turn out to be.
+ */
+export interface MountedUserTemplate {
+  readonly templateId: string;
+  readonly kind: UserTemplateKind;
+}
+
+/**
+ * The custom templates one message names.
+ *
+ * Syntax only, and no database yet: the prompt builder rejects a selection
+ * this run does not mount, so the candidate set has to be known before the
+ * rows are read.
+ */
+export function selectedUserTemplateIds(
+  generationTemplates: readonly GenerationTemplateRequest[],
+): readonly string[] {
+  const templateIds = new Set<string>();
+  for (const template of generationTemplates) {
+    if (template.type === "custom") {
+      templateIds.add(template.selection.userTemplateId);
+    }
+  }
+  return [...templateIds];
+}
+
+/**
+ * The subset of those the caller may use, in selection order, each with the
+ * kind its row says it is.
+ *
+ * The row is the authority for its own existence and visibility, and for what
+ * it produces. A caller cannot claim a kind: an id that does not come back is
+ * indistinguishable from an inaccessible template and from a deleted one, so
+ * the answer cannot be used to probe which.
+ */
+export async function authorizedUserTemplates(
+  db: ReadonlyDb,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly templateIds: readonly string[];
+    /**
+     * Whether this member has the feature. Required rather than read here, so
+     * every caller states it: the routes that read and write this catalog are
+     * gated, but a send is not, and a crafted selection would otherwise reach
+     * the table through a path with no gate of its own.
+     */
+    readonly enabled: boolean;
+  },
+): Promise<readonly MountedUserTemplate[]> {
+  if (!args.enabled || args.templateIds.length === 0) {
+    return [];
+  }
+  const rows = await db
+    .select()
+    .from(userTemplates)
+    .where(
+      and(
+        inArray(userTemplates.id, [...args.templateIds]),
+        accessibleWhere(args),
+      ),
+    );
+  const byId = new Map(
+    rows.map((row) => {
+      return [row.id, row.manifest.kind];
+    }),
+  );
+  return args.templateIds.flatMap((templateId) => {
+    const kind = byId.get(templateId);
+    return kind === undefined ? [] : [{ templateId, kind }];
+  });
+}
+
+/**
+ * The storage volumes that carry those templates' packages.
+ *
+ * Mounted under the working directory rather than the skills root because the
+ * skills root is chosen per framework inside run creation, while the prompt
+ * naming this path is built before a framework exists.
+ */
+export function userTemplateVolumes(
+  mounted: readonly MountedUserTemplate[],
+): readonly PresentationTemplateVolume[] {
+  return mounted.map((template) => {
+    return {
+      name: getUserTemplateStorageName(template.templateId),
+      mountPath: `${CANONICAL_WORKING_DIR}/${userTemplateDirectory(template.templateId)}`,
+    };
+  });
 }
 
 /**

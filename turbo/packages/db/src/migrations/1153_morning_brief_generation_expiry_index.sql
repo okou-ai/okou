@@ -1,1 +1,0 @@
-CREATE INDEX "idx_morning_brief_generations_expiry" ON "morning_brief_generations" USING btree ("expires_at");

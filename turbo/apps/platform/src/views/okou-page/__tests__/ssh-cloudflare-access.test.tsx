@@ -10,16 +10,11 @@ import {
   sshCredentialsContract,
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  applyFeatureSwitches$,
-  featureSwitch$,
-} from "../../../signals/external/feature-switch.ts";
 import {
   getAction,
   queryAction,
@@ -88,9 +83,6 @@ async function page(add = false) {
         memberships: [{ id: orgId }],
       },
     },
-    featureSwitches: {
-      [FeatureSwitchKey.SshAccess]: true,
-    },
   });
 }
 async function selectConfig(dialog: HTMLElement, name = config.name) {
@@ -114,6 +106,47 @@ async function tokenFields(dialog: HTMLElement, name = config.name) {
     "test-client-secret",
   );
 }
+
+test.each(["host", "configuration"])(
+  "The new Access %s form shows input hints without prefilling tokens",
+  async (kind) => {
+    await page(kind === "host");
+    if (kind === "configuration") {
+      click(getAction("radio", "Cloudflare Access"));
+      const add = await waitFor(() => {
+        return getAction("button", "Add Access configuration");
+      });
+      click(add);
+    }
+    const dialog = await screen.findByRole("dialog", {
+      name: kind === "host" ? "Add host" : "Add Access configuration",
+    });
+    if (kind === "host") {
+      click(getAction("radio", "Cloudflare Access", dialog));
+    }
+    await within(dialog).findByLabelText("Configuration name");
+    const hints = {
+      "Configuration name": "e.g. Production access",
+      "Service Token Client ID": "Paste the Service Token Client ID",
+      "Service Token Client Secret": "Paste the Service Token Client Secret",
+    };
+    for (const [label, hint] of Object.entries(hints)) {
+      const field = within(dialog).getByLabelText(label);
+      expect(field).toHaveAttribute("placeholder", hint);
+      expect(field).toHaveValue("");
+      expect(field).toBeInvalid();
+    }
+    for (const label of [
+      "Service Token Client ID",
+      "Service Token Client Secret",
+    ]) {
+      expect(within(dialog).getByLabelText(label)).toHaveAttribute(
+        "type",
+        "password",
+      );
+    }
+  },
+);
 
 test.each([0, 1, 2])(
   "Resource selectors initialize once for %i saved resources",
@@ -322,6 +355,9 @@ test("Direct and protected mode retain their port and configuration drafts but s
   await fill(within(dialog).getByLabelText("Port"), "2222");
   click(getAction("radio", "Cloudflare Access", dialog));
   await within(dialog).findByLabelText("Access configuration");
+  const publishedHost = within(dialog).getByLabelText("Published hostname");
+  expect(publishedHost).toHaveAttribute("placeholder", "e.g. ssh.example.com");
+  expect(publishedHost).toHaveValue("ssh.example.com");
   expect(within(dialog).getByLabelText("Port")).not.toBeVisible();
   await selectConfig(dialog);
   click(getAction("radio", "Direct", dialog));
@@ -1111,7 +1147,7 @@ test("A configuration deleted before host Save can be replaced without losing th
   });
 });
 
-test.each(["navigation", "owner", "feature"])(
+test.each(["navigation", "owner"])(
   "Pending Access Save is cancelled and secrets cleared on %s loss",
   async (reason) => {
     const pending = context.mocks.deferred<void>();
@@ -1150,21 +1186,13 @@ test.each(["navigation", "owner", "feature"])(
       if (reason === "navigation") {
         window.history.pushState({}, "", "/");
         window.dispatchEvent(new PopStateEvent("popstate"));
-      } else if (reason === "owner") {
+      } else {
         const clerk = context.mocks.clerk();
         clerk.user(
           { id: "next-owner", fullName: "Next Owner" },
           { token: "next-owner-token" },
         );
         clerk.stateChanged();
-      } else {
-        // Eligibility cannot change through this page or an SSH notification.
-        // The Lab flow navigates away, already covered above. Inject only this
-        // infrastructure-owned snapshot to exercise in-place feature loss.
-        context.store.set(applyFeatureSwitches$, {
-          ...context.store.get(featureSwitch$),
-          [FeatureSwitchKey.SshAccess]: false,
-        });
       }
     });
     await waitFor(() => {

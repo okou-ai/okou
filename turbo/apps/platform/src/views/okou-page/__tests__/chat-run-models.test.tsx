@@ -40,6 +40,7 @@ import {
   RUN_PATH,
   sendText,
 } from "./chat-run-test-fixtures.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const RUN_A = "a0000000-0000-4000-a000-000000000301";
@@ -189,7 +190,11 @@ describe("a model or speed change during an active run", () => {
     await setupPage({
       context,
       path: RUN_PATH,
-      featureSwitches: { [FeatureSwitchKey.CodexFastMode]: true },
+      featureSwitches: {
+        [FeatureSwitchKey.CodexFastMode]: true,
+        // The speed change is read from the legacy select's option list.
+        [FeatureSwitchKey.ModelPickerFlyout]: false,
+      },
     });
 
     await readyChat();
@@ -346,7 +351,7 @@ test("Preserve which model a message was sent with", async () => {
 
   await readyChat();
   await expect(
-    screen.findByRole("combobox", { name: "Claude Sonnet 4.6" }),
+    composerModelTrigger("Claude Sonnet 4.6"),
   ).resolves.toHaveTextContent("Claude Sonnet 4.6");
   await sendText("Preserve this model attribution");
   await expect(

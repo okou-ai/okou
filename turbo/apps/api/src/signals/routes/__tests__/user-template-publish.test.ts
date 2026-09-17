@@ -1,6 +1,7 @@
 import {
   userTemplatesContract,
   type PublishUserTemplateBody,
+  type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getUserTemplateStorageName } from "@okouai/core/storage-names";
@@ -38,11 +39,32 @@ function templateClient() {
   );
 }
 
-function guidance(): readonly { path: string; content: string }[] {
-  return [
-    { path: "SKILL.md", content: "# Use this template\n" },
-    { path: "design-system.md", content: "Ink on warm paper.\n" },
-  ];
+/**
+ * What each reverse skill actually writes.
+ *
+ * `presentation-reverse-template` produces the visual language as prose;
+ * `docx-reverse-template` produces `reference.docx`, which is what pandoc
+ * consumes, and writes no `design-system.md` at all. A fixture that gave both
+ * kinds the same files would agree with the endpoint and disagree with the
+ * packages it has to accept.
+ */
+function guidance(
+  kind: UserTemplateKind,
+): readonly { path: string; content: string }[] {
+  switch (kind) {
+    case "presentation": {
+      return [
+        { path: "SKILL.md", content: "# Use this template\n" },
+        { path: "design-system.md", content: "Ink on warm paper.\n" },
+      ];
+    }
+    case "document": {
+      return [
+        { path: "SKILL.md", content: "# Use this template\n" },
+        { path: "reference.docx", content: "PK reference bytes\n" },
+      ];
+    }
+  }
 }
 
 /** Signs a member in and turns the switch on for them. */
@@ -61,7 +83,7 @@ async function enableFor(actor: ApiTestUser) {
 async function publishBody(
   actor: ApiTestUser,
   fixture: Fixture,
-  archive: Buffer = tarGz(guidance()),
+  archive: Buffer = tarGz(guidance("presentation")),
 ): Promise<PublishUserTemplateBody> {
   const sourceFileId = await uploadTemplateFile(
     context,
@@ -174,7 +196,6 @@ describe("POST /api/user-templates", () => {
     await enableFor(actor);
     const client = templateClient();
 
-    const body = await publishBody(actor, fixture);
     const docxSourceId = await uploadTemplateFile(
       context,
       actor,
@@ -186,15 +207,23 @@ describe("POST /api/user-templates", () => {
       },
       Buffer.from("PK docx bytes", "utf8"),
     );
+    // The package the docx reverse skill actually writes: no design-system.md.
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("document")),
+    );
 
     const response = await accept(
       client.publish({
         headers: webHeaders(),
         body: {
-          title: body.title,
+          title: "Brand report",
           kind: "document",
           sourceFileId: docxSourceId,
-          packageFileId: body.packageFileId,
+          packageFileId,
         },
       }),
       [200],
@@ -212,6 +241,51 @@ describe("POST /api/user-templates", () => {
     const listed = await accept(client.list({ headers: webHeaders() }), [200]);
     expect(listed.body).toHaveLength(1);
     expect(listed.body[0]?.previewAssets).toStrictEqual([]);
+  });
+
+  it("takes a document package that carries its skill and nothing else", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const docxSourceId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      {
+        filename: "brand-report.docx",
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+      Buffer.from("PK docx bytes", "utf8"),
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz([{ path: "SKILL.md", content: "# Use this template\n" }]),
+    );
+
+    const response = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: {
+          title: "Brand report",
+          kind: "document",
+          sourceFileId: docxSourceId,
+          packageFileId,
+        },
+      }),
+      [200],
+    );
+
+    // The skill names the artifact it consumes and the command that consumes
+    // it, so what else the package carries is that account's business. Naming
+    // a second file here would let a reverse skill that changed its own output
+    // be refused by an endpoint that had not changed with it.
+    expect(response.body.kind).toBe("document");
   });
 
   it("rejects a package that is missing its required guidance", async () => {

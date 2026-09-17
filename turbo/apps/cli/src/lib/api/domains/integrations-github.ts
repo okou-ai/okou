@@ -18,6 +18,7 @@ import {
 } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
+import { withAbsoluteArtifactUrl } from "../../artifact-url";
 
 interface DownloadGithubFileResult {
   path: string;
@@ -49,7 +50,7 @@ export async function completeGithubFileUpload(
   const result = await client.complete({ body, headers: {} });
 
   if (result.status === 200) {
-    return result.body;
+    return withAbsoluteArtifactUrl(result.body);
   }
 
   handleError(result, "Failed to complete GitHub file upload");

@@ -5,7 +5,7 @@ import {
 } from "./pi-deferred-sandbox.service";
 import {
   listDeferredPiCandidates,
-  hasEarlierDeferredDemand,
+  countEarlierDeferredDemand,
 } from "./pi-deferred-demand.service";
 import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { command } from "ccstate";
@@ -33,6 +33,7 @@ import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import {
   publishChatThreadMessageCreatedSafely,
+  publishRunQueueChangedForOrgSafely,
   publishThreadListChanged,
 } from "../external/realtime";
 import { logger } from "../../lib/log";
@@ -569,18 +570,14 @@ async function promoteQueuedCandidateInTransaction(
     await stopClosedComputeCandidate(tx, admission);
     return complete({ status: "lost" });
   }
-  if (
-    await hasEarlierDeferredDemand(
-      tx,
-      args.orgId,
-      args.row.createdAt,
-      args.row.runId,
-    )
-  ) {
-    return complete({ status: "full" });
-  }
   const concurrency = await effectiveOrgConcurrencyState(tx, args.orgId);
-  if (concurrency.activeRunCount >= concurrency.limit) {
+  const earlierDeferredDemand = await countEarlierDeferredDemand(
+    tx,
+    args.orgId,
+    args.row.createdAt,
+    args.row.runId,
+  );
+  if (concurrency.activeRunCount + earlierDeferredDemand >= concurrency.limit) {
     return complete({ status: "full" });
   }
 
@@ -694,6 +691,13 @@ async function promoteQueuedCandidateWithSideEffects(
   },
 ): Promise<PromoteQueuedCandidateSideEffectResult> {
   const result = await promoteQueuedCandidate(db, args);
+  if (
+    result.status === "removed-stale" ||
+    result.status === "failed" ||
+    result.status === "promoted"
+  ) {
+    await publishRunQueueChangedForOrgSafely(args.orgId);
+  }
   if (result.status === "removed-stale") {
     return { status: "skipped" };
   }

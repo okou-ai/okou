@@ -17,7 +17,7 @@ historical billing data.
 Marketing captures `im_ref` only after initialized Termly advertising consent.
 The host-only `__Host-okou_impact_v2` cookie carries the click ID, capture time and
 consent epoch. Marketing-to-App links no longer carry Impact query parameters.
-The App sends one empty `POST https://www.okou.ai/api/marketing/finish-onboarding`
+The App sends one empty `POST https://www.okou.ai/api/marketing/onboarding-start`
 when an authenticated user enters onboarding. It uses the same session-token
 provider as calls to `api.okou.ai` and sends `Authorization: Bearer <token>`.
 The browser also includes Marketing cookies for consent and click attribution;
@@ -46,13 +46,19 @@ returned to the App or its API.
 Deploy the shared Marketing endpoint and acquisition migration before this App.
 Already-open Apps still use `/api/marketing/impact/onboarding`; Marketing retains
 that URL as a compatibility entry to the same storage handler, including the
-legacy admin requirement. New Apps send only finish-onboarding and no longer have
+legacy admin requirement. New Apps send only onboarding-start and no longer have
 an acquisition Feature Switch. The shared `marketing_onboarding_attempts` marker
 replaces the previous Impact-only marker, which must not suppress storage for the
 additional consented categories. Marketing deduplicates repeated captures/events.
 The owner confirmed Impact has not launched. Retire the legacy URL in the next
 Marketing release after both deployments are verified; cached Impact-only clients
 are outside that removal boundary.
+
+The browser-funnel rollout replaces `/api/marketing/finish-onboarding` without
+an alias. Deploy Marketing and the new App first, verify the replacement App
+version is live, then raise the App API compatibility floor to that version in
+a separate release. See [Marketing browser funnel events](deployment-compatibility.md#marketing-browser-funnel-events)
+for the explicit prelaunch support boundary and force-upgrade ordering.
 
 The earlier iframe cutover retired `/finish-onboarding`, the config endpoint,
 signed handoff APIs, identity proofs and nonce handling. Those older iframe clients

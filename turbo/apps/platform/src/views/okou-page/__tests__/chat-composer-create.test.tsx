@@ -35,6 +35,7 @@ import {
   mockBillingCapabilities,
   mockOrgModelRoutes,
   selectTemplate,
+  composerModelTrigger,
 } from "./chat-composer-test-helpers.ts";
 
 function setupModels(): void {
@@ -363,7 +364,7 @@ test("Image mode combines styles and image models while preserving the prompt", 
     expect(picker).toHaveTextContent(IMAGE_MODEL_CONFIGS[model].label);
   });
   click(button("Exit create mode"));
-  await screen.findByRole("combobox", { name: "Claude Fable 5.1" });
+  await composerModelTrigger("Claude Fable 5.1");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("A quiet garden");
 });

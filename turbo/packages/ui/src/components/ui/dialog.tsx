@@ -195,7 +195,11 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
                     smMaxWidth !== undefined &&
                       dialogMaxWidthClasses[smMaxWidth].sm,
                     dialogHeightClasses[height],
-                    "rounded-xl",
+                    // 16px. A dialog is the largest floating surface in the
+                    // product, and at 14px its corners read tighter than the
+                    // cards it contains. Anything pinned to this edge derives
+                    // its own radius from this one: inner = 16 - its inset.
+                    "rounded-2xl",
                     surface === "card" &&
                       "border border-[hsl(var(--gray-400))] shadow-lg",
                     surface === "canvas" &&

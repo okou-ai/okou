@@ -38,6 +38,7 @@ import {
   createClerkReadContext,
   type ClerkClient,
 } from "../external/clerk";
+import { findClerkUser } from "../external/clerk-users";
 import { db$, writeDb$, type Db } from "../external/db";
 import { getStripeClient, type StripeInvoice } from "../external/stripe-client";
 import {
@@ -146,16 +147,7 @@ async function signupAttributionForUser(
   signal: AbortSignal,
 ): Promise<ReturnType<typeof adAttributionMetadataSchema.parse> | undefined> {
   const usersResult = await settle(
-    Promise.resolve(
-      clerk.users.getUserList(
-        {
-          userId: [userId],
-          limit: 1,
-        },
-        undefined,
-        signal,
-      ),
-    ),
+    findClerkUser(clerk, userId, signal),
     signal,
   );
   if (!usersResult.ok) {
@@ -166,9 +158,7 @@ async function signupAttributionForUser(
     return undefined;
   }
 
-  const user = usersResult.value?.data?.find((candidate) => {
-    return candidate.id === userId;
-  });
+  const user = usersResult.value;
   return user
     ? parseStoredSignupAttribution(
         user.privateMetadata?.[SIGNUP_ATTRIBUTION_KEY],

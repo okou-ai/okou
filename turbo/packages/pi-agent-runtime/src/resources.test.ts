@@ -7,10 +7,14 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   SessionManager,
+  type ResourceLoader,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { piPreheatedResourceLoaderOptions } from "./resources";
+import {
+  createPiPreheatedResourceLoader,
+  piPreheatedResourceLoaderOptions,
+} from "./resources";
 
 const temporaryDirectories: string[] = [];
 
@@ -23,33 +27,32 @@ afterEach(async () => {
 });
 
 describe("preheated Pi resources", () => {
-  it("lets Pi build its native prompt without reading discovery files", async () => {
-    const root = await mkdtemp(join(tmpdir(), "pi-resource-snapshot-"));
-    temporaryDirectories.push(root);
-    const cwd = join(root, "workspace");
-    const agentDir = join(root, "agent");
-    const agentsPath = join(cwd, "AGENTS.md");
-    const skillPath = join(agentDir, "skills", "release-check", "SKILL.md");
-    await expect(access(agentsPath)).rejects.toThrow();
-    await expect(access(skillPath)).rejects.toThrow();
+  it.each(["generic", "api-first"] as const)(
+    "lets Pi build its native prompt from the %s loader without reading discovery files",
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), "pi-resource-snapshot-"));
+      temporaryDirectories.push(root);
+      const cwd = join(root, "workspace");
+      const agentDir = join(root, "agent");
+      const agentsPath = join(cwd, "AGENTS.md");
+      const skillPath = join(agentDir, "skills", "release-check", "SKILL.md");
+      await expect(access(agentsPath)).rejects.toThrow();
+      await expect(access(skillPath)).rejects.toThrow();
 
-    // A reused sandbox may still contain an omitted legacy skill. The durable
-    // discovery snapshot, not local scanning, owns the supported resource list.
-    const staleGoal = join(agentDir, "skills", "goal");
-    await mkdir(staleGoal, { recursive: true });
-    await writeFile(
-      join(staleGoal, "SKILL.md"),
-      "---\nname: goal\ndescription: Stale automatic Goal guidance.\n---\nContinue automatically.",
-    );
+      // A reused sandbox may still contain an omitted legacy skill. The durable
+      // discovery snapshot, not local scanning, owns the supported resource list.
+      const staleGoal = join(agentDir, "skills", "goal");
+      await mkdir(staleGoal, { recursive: true });
+      await writeFile(
+        join(staleGoal, "SKILL.md"),
+        "---\nname: goal\ndescription: Stale automatic Goal guidance.\n---\nContinue automatically.",
+      );
 
-    const loader = new DefaultResourceLoader({
-      cwd,
-      agentDir,
-      ...piPreheatedResourceLoaderOptions({
+      const resourceArgs = {
         appendSystemPrompt: ["Appended by the run"],
         systemPrompt: "Okou Harness base prompt for the preheated route.",
         snapshot: {
-          schemaVersion: 1,
+          schemaVersion: 1 as const,
           agentsFiles: [
             {
               path: agentsPath,
@@ -62,7 +65,7 @@ describe("preheated Pi resources", () => {
               description: "Inspect a release before deployment.",
               filePath: skillPath,
               baseDir: join(agentDir, "skills", "release-check"),
-              scope: "user",
+              scope: "user" as const,
               disableModelInvocation: false,
             },
             {
@@ -70,50 +73,96 @@ describe("preheated Pi resources", () => {
               description: "Only available through explicit invocation.",
               filePath: join(agentDir, "skills", "manual-only", "SKILL.md"),
               baseDir: join(agentDir, "skills", "manual-only"),
-              scope: "user",
+              scope: "user" as const,
               disableModelInvocation: true,
             },
           ],
         },
-      }),
-    });
-    await loader.reload();
-    const faux = createFauxCore({
-      api: "resource-test",
-      provider: "resource-test",
-    });
-    const { session } = await createAgentSession({
-      cwd,
-      agentDir,
-      model: faux.getModel(),
-      tools: ["read"],
-      resourceLoader: loader,
-      sessionManager: SessionManager.inMemory(cwd),
-    });
+      };
+      let loader: ResourceLoader;
+      if (mode === "generic") {
+        loader = new DefaultResourceLoader({
+          cwd,
+          agentDir,
+          ...piPreheatedResourceLoaderOptions(resourceArgs),
+        });
+        await loader.reload();
+      } else {
+        loader = createPiPreheatedResourceLoader(resourceArgs);
+      }
+      const faux = createFauxCore({
+        api: "resource-test",
+        provider: "resource-test",
+      });
+      const { session } = await createAgentSession({
+        cwd,
+        agentDir,
+        model: faux.getModel(),
+        tools: ["read"],
+        resourceLoader: loader,
+        sessionManager: SessionManager.inMemory(cwd),
+      });
 
-    expect(session.systemPrompt).toContain(
-      `<project_instructions path="${agentsPath}">\nUse the repository-native validation workflow.`,
-    );
-    expect(session.systemPrompt).toContain("<name>release-check</name>");
-    expect(session.systemPrompt).toContain(
-      "<description>Inspect a release before deployment.</description>",
-    );
-    expect(session.systemPrompt).toContain(`<location>${skillPath}</location>`);
-    expect(session.systemPrompt).not.toContain("manual-only");
-    expect(
-      loader.getSkills().skills.map((skill) => {
-        return skill.name;
-      }),
-    ).toStrictEqual(["release-check", "manual-only"]);
-    expect(session.systemPrompt).not.toContain("Stale automatic Goal guidance");
-    expect(session.systemPrompt).toContain("Appended by the run");
-    expect(session.systemPrompt).toContain(
-      "Okou Harness base prompt for the preheated route.",
-    );
-    expect(session.sessionManager.getSessionFile()).toBeUndefined();
-    session.dispose();
+      expect(session.systemPrompt).toContain(
+        `<project_instructions path="${agentsPath}">\nUse the repository-native validation workflow.`,
+      );
+      expect(session.systemPrompt).toContain("<name>release-check</name>");
+      expect(session.systemPrompt).toContain(
+        "<description>Inspect a release before deployment.</description>",
+      );
+      expect(session.systemPrompt).toContain(
+        `<location>${skillPath}</location>`,
+      );
+      expect(session.systemPrompt).not.toContain("manual-only");
+      expect(
+        loader.getSkills().skills.map((skill) => {
+          return skill.name;
+        }),
+      ).toStrictEqual(["release-check", "manual-only"]);
+      expect(session.systemPrompt).not.toContain(
+        "Stale automatic Goal guidance",
+      );
+      expect(session.systemPrompt).toContain("Appended by the run");
+      expect(session.systemPrompt).toContain(
+        "Okou Harness base prompt for the preheated route.",
+      );
+      expect(session.sessionManager.getSessionFile()).toBeUndefined();
+      session.dispose();
 
-    await expect(access(agentsPath)).rejects.toThrow();
-    await expect(access(skillPath)).rejects.toThrow();
+      await expect(access(agentsPath)).rejects.toThrow();
+      await expect(access(skillPath)).rejects.toThrow();
+    },
+  );
+
+  it("owns one extension runtime per immutable API snapshot", async () => {
+    const args = {
+      appendSystemPrompt: ["captured instruction"],
+      systemPrompt: "captured system prompt",
+      snapshot: { schemaVersion: 1 as const, agentsFiles: [], skills: [] },
+    };
+    const first = createPiPreheatedResourceLoader(args);
+    const second = createPiPreheatedResourceLoader(args);
+
+    expect(first.getExtensions().runtime).not.toBe(
+      second.getExtensions().runtime,
+    );
+    expect(first.getAppendSystemPrompt()).toStrictEqual([
+      "captured instruction",
+    ]);
+    await expect(first.reload()).resolves.toBeUndefined();
+    expect(() => {
+      first.extendResources({
+        skillPaths: [
+          {
+            path: "/unexpected/SKILL.md",
+            metadata: {
+              source: "test",
+              scope: "temporary",
+              origin: "top-level",
+            },
+          },
+        ],
+      });
+    }).toThrow("cannot be extended");
   });
 });

@@ -703,14 +703,20 @@ describe("CHAT-02: completed chat callback", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     const titlePrompts: string[] = [];
+    const sentinelPrompt = "unrelated sentinel run";
+    // Keep the sentinel's eager title pending after its run is cancelled.
+    const sentinelTitle = deferredGate();
     const followupSystemPrompts: string[] = [];
     const followupPrompts: string[] = [];
     const longFollowupPrompt =
       "Can you draft a new 90-minute workshop outline that focuses on the event-driven workflow of an AI Lead Operations Team and includes hands-on exercises?";
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-    chatCallbacks.mockOpenRouterCompletions((body) => {
+    chatCallbacks.mockOpenRouterCompletions(async (body) => {
       const systemContent = body.messages[0]?.content ?? "";
       if (systemContent.includes("Generate a short, descriptive title")) {
+        if (body.messages[1]?.content.includes(sentinelPrompt)) {
+          await sentinelTitle.wait();
+        }
         titlePrompts.push(body.messages[1]?.content ?? "");
         return "Debugging Node Apps";
       }
@@ -745,7 +751,10 @@ describe("CHAT-02: completed chat callback", () => {
       selectedModel: "claude-sonnet-5",
     });
 
-    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+    // Pinned by slug because the assertions below quote this runbook by name.
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+      return item.slug === "playful-launch-presentation";
+    });
     if (!template) {
       throw new Error("Expected a registered presentation runbook item");
     }
@@ -783,14 +792,15 @@ describe("CHAT-02: completed chat callback", () => {
     // run-end bump on X is observable through thread-list reordering.
     const sentinel = await startChatRun(actor, {
       agentId,
-      prompt: "unrelated sentinel run",
+      prompt: sentinelPrompt,
     });
     await api.requestCancelRun(actor, sentinel.runId, [200]);
     await waitForRunStatus(actor, sentinel.runId, "cancelled");
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
-    // The sentinel thread titles itself on its own detached schedule, so count
-    // only this thread's requests. A shared counter would otherwise measure
-    // whichever background title work happened to land first.
+    sentinelTitle.release();
+    // Cancellation does not drain the sentinel's background title work.
+    await waitForThreadTitle(actor, sentinel.threadId, "Debugging Node Apps");
+    // Only this thread's title requests belong to the completion assertion.
     const titlePromptCountBeforeComplete = titlePromptsForThisThread().length;
 
     await chatCallbacks.registerPushSubscription(actor);
@@ -855,6 +865,7 @@ describe("CHAT-02: completed chat callback", () => {
       "Supported generation types are:",
     );
 
+    await flushWaitUntilForTest();
     await waitForThreadTitle(actor, first.threadId, "Debugging Node Apps");
     expect(titlePromptsForThisThread()).toHaveLength(
       titlePromptCountBeforeComplete,

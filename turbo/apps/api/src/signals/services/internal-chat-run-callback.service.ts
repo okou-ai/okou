@@ -237,6 +237,12 @@ import {
   userPresentationTemplateVolumes,
   type PresentationTemplateVolume,
 } from "./presentation-template-data.service";
+import {
+  authorizedUserTemplates,
+  selectedUserTemplateIds,
+  userTemplateVolumes,
+  type MountedUserTemplate,
+} from "./user-template-data.service";
 import { OFFICIAL_WORKFLOW_RUN_ADMISSION_MESSAGE } from "./official-workflow-run.service";
 
 const log = logger("callback:chat");
@@ -3170,6 +3176,7 @@ function resolveQueuedMessageGenerationTemplatePrompt(args: {
     | undefined;
   readonly introVideoEnabled: boolean;
   readonly mountedUserPresentationTemplateIds: readonly string[];
+  readonly mountedUserTemplates: readonly MountedUserTemplate[];
 }) {
   return measureChatCallbackPreCreateTiming(
     args.input.timing,
@@ -3182,6 +3189,7 @@ function resolveQueuedMessageGenerationTemplatePrompt(args: {
         explicitTemplates: args.userMessageProjection?.templates,
         mountedUserPresentationTemplateIds:
           args.mountedUserPresentationTemplateIds,
+        mountedUserTemplates: args.mountedUserTemplates,
       });
     },
   );
@@ -3212,30 +3220,42 @@ async function resolveQueuedMessageTemplateContext(args: {
   readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
   readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
 }> {
+  const selectedTemplates = args.userMessageProjection?.templates ?? [];
   const mountedUserPresentationTemplateIds =
     await authorizedUserPresentationTemplateIds(args.db, {
       orgId: args.orgId,
       userId: args.userId,
-      templateIds: selectedUserPresentationTemplateIds(
-        args.userMessageProjection?.templates ?? [],
-      ),
+      templateIds: selectedUserPresentationTemplateIds(selectedTemplates),
     });
+  const mountedUserTemplates = await authorizedUserTemplates(args.db, {
+    orgId: args.orgId,
+    userId: args.userId,
+    templateIds: selectedUserTemplateIds(selectedTemplates),
+    enabled: isFeatureEnabled(
+      FeatureSwitchKey.CustomTemplates,
+      args.featureSwitchContext,
+    ),
+  });
   const generationTemplates =
     await resolveQueuedMessageGenerationTemplatePrompt({
       input: args.input,
       userMessageProjection: args.userMessageProjection,
       introVideoEnabled: loadIntroVideoTemplateAccess(
-        args.userMessageProjection?.templates ?? [],
+        selectedTemplates,
         args.featureSwitchContext,
       ),
       mountedUserPresentationTemplateIds,
+      mountedUserTemplates,
     });
   return {
     generationTemplatePrompt: generationTemplates.prompt,
     generationTemplateIdentities: generationTemplates.identities,
-    presentationTemplateVolumes: userPresentationTemplateVolumes(
-      mountedUserPresentationTemplateIds,
-    ),
+    // Both catalogs can be selected in one message while the tables are
+    // separate, so the run carries whichever packages it was actually given.
+    presentationTemplateVolumes: [
+      ...userPresentationTemplateVolumes(mountedUserPresentationTemplateIds),
+      ...userTemplateVolumes(mountedUserTemplates),
+    ],
   };
 }
 
