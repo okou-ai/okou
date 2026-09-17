@@ -89,9 +89,13 @@ export function createIntroVideoPickerSignals() {
       set(query$, "");
       set(panelOpen$, false);
       set(panelView$, "root");
-      set(style$, options?.style ?? null);
-      set(avatar$, options?.avatar ?? { kind: "none" });
-      set(voice$, options?.voice ?? DEFAULT_VOICE);
+      // `introVideoTemplateOptions` resolves to `undefined` only when there is
+      // no intro video template to restore. The options schema makes all three
+      // fields required, so the right branch is the picker's initial state
+      // rather than a per-field default.
+      set(style$, options ? options.style : null);
+      set(avatar$, options ? options.avatar : { kind: "none" });
+      set(voice$, options ? options.voice : DEFAULT_VOICE);
     }),
   };
 }
