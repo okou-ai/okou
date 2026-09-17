@@ -40,6 +40,15 @@ async function announceBillingChange(): Promise<void> {
   });
 }
 
+async function announceRunQueueChange(): Promise<void> {
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("runQueueChanged")).toBeTruthy();
+  });
+  act(() => {
+    context.mocks.ably.trigger("runQueueChanged");
+  });
+}
+
 /**
  * Drop the realtime connection long enough that Ably discards channel state,
  * then restore it. The reattach reports no continuity, which is the only signal
@@ -364,6 +373,48 @@ test("The queue shows active slot usage for each member", async () => {
   expect(within(drawer).getByText("2 slots")).toBeVisible();
   expect(within(drawer).getByText("Available now")).toBeVisible();
   expect(within(drawer).getByText("63 slots")).toBeVisible();
+});
+
+test("The queue shows waiting Sandbox demand and refreshes its lease transition", async () => {
+  const fixture = installQueuePageFixture(context, {
+    billing: billingStatus({ tier: "team", concurrencyLimit: 4 }),
+    queue: queueResponse({
+      tier: "team",
+      limit: 4,
+      active: 1,
+      waiting: 2,
+      available: 1,
+      memberUsage: [
+        { userId: "user-lancy", displayName: "Chenyu Lan", active: 1 },
+      ],
+    }),
+  });
+
+  await setupPage({ context, path: openQueuePath() });
+
+  const drawer = await visibleQueueDrawer();
+  expect(within(drawer).getByText("1 of 4 slots in use")).toBeVisible();
+  expect(within(drawer).getByText("Waiting for Sandbox")).toBeVisible();
+  expect(within(drawer).getByText("2 slots")).toBeVisible();
+
+  fixture.setQueueResponse(
+    queueResponse({
+      tier: "team",
+      limit: 4,
+      active: 3,
+      waiting: 0,
+      available: 1,
+      memberUsage: [
+        { userId: "user-lancy", displayName: "Chenyu Lan", active: 3 },
+      ],
+    }),
+  );
+  await announceRunQueueChange();
+
+  await expect(
+    within(drawer).findByText("3 of 4 slots in use"),
+  ).resolves.toBeVisible();
+  expect(within(drawer).queryByText("Waiting for Sandbox")).toBeNull();
 });
 
 test("A full queue offers the next appropriate plan upgrade", async () => {

@@ -47,6 +47,7 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import type { Tx } from "../../lib/db-types";
 import { nowDate, now } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import { publishRunQueueChangedForOrgSafely } from "../external/realtime";
 import {
   prepareComputeRunAdmission,
   validateComputeRunAdmission,
@@ -69,7 +70,7 @@ import {
   readPublishedPiInferenceObject,
   retainPiInferenceObject,
 } from "./pi-inference-object.service";
-import { hasEarlierDeferredDemand } from "./pi-deferred-demand.service";
+import { countEarlierDeferredDemand } from "./pi-deferred-demand.service";
 import {
   assertDeferredHandoffWithinLimits,
   piDeferredConfigurationSchema,
@@ -411,13 +412,20 @@ export async function publishPiSandboxDemand(
   const accepted = await commitPiSandboxDemand(db, fence, continuation);
   if (accepted) {
     const [intent] = await db
-      .select({ enqueuedAt: agentRunSandboxIntent.enqueuedAt })
+      .select({
+        enqueuedAt: agentRunSandboxIntent.enqueuedAt,
+        orgId: agentRuns.orgId,
+      })
       .from(agentRunSandboxIntent)
+      .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxIntent.runId))
       .where(eq(agentRunSandboxIntent.runId, fence.runId));
     logger("PiDeferredSandbox").debug("Deferred Sandbox intent committed", {
       ...fence,
       enqueuedAt: intent?.enqueuedAt.getTime(),
     });
+    if (intent) {
+      await publishRunQueueChangedForOrgSafely(intent.orgId);
+    }
   }
   return accepted;
 }
@@ -468,12 +476,12 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
       .limit(1);
     if (
       legacy ||
-      (await hasEarlierDeferredDemand(
+      (await countEarlierDeferredDemand(
         tx,
         run.orgId,
         lifecycle.intent.enqueuedAt,
         runId,
-      ))
+      )) > 0
     ) {
       return undefined;
     }
@@ -524,6 +532,7 @@ async function reserveDeferredPiRun(db: Db, runId: string) {
       });
     return {
       runId,
+      orgId: run.orgId,
       ownerEpoch,
       generation: lifecycle.intent.generation,
       enqueuedAt: lifecycle.intent.enqueuedAt.getTime(),
@@ -792,6 +801,8 @@ export const consumeDeferredPiRun$ = command(
       await set(settleDeferredPiTerminal$, runId, signal);
       return false;
     }
+    await publishRunQueueChangedForOrgSafely(fence.orgId);
+    signal.throwIfAborted();
     const reservedAt = now();
     logger("PiDeferredSandbox").debug(
       "Deferred Sandbox reservation committed",
@@ -1174,7 +1185,8 @@ export async function releaseDeferredPiSandbox(
   db: Db,
   args: DeferredReleaseProof,
 ): Promise<DeferredSandboxReleaseOutcome> {
-  return await withComputeOwnershipRetry(async () => {
+  let orgId: string | undefined;
+  const outcome = await withComputeOwnershipRetry(async () => {
     const [owner] = await db
       .select({
         userId: agentRuns.userId,
@@ -1189,6 +1201,7 @@ export async function releaseDeferredPiSandbox(
     if (!owner) {
       return "stale";
     }
+    orgId = owner.orgId;
     const captured = await readPublishedPiInferenceObject(
       db,
       { ...owner, hash: owner.input.configurationHash, kind: "configuration" },
@@ -1272,6 +1285,10 @@ export async function releaseDeferredPiSandbox(
       },
     );
   });
+  if (outcome === "released" && orgId) {
+    await publishRunQueueChangedForOrgSafely(orgId);
+  }
+  return outcome;
 }
 
 export async function failWaitingPiCandidate(

@@ -35,6 +35,7 @@ import {
   publishPiSandboxDemand,
   consumeDeferredPiRun$,
 } from "../pi-deferred-sandbox.service";
+import { promoteNextQueuedRun$ } from "../run-queue.service";
 import { setTimeout as delay } from "node:timers/promises";
 import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
 import { runsCancelContract } from "@okouai/api-contracts/contracts/run-routes";
@@ -54,6 +55,7 @@ import { createStore } from "ccstate";
 import { eq, sql } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
+import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   agentRunInference,
@@ -130,6 +132,7 @@ async function fixture(
     readonly publish?: boolean;
     readonly orgId?: string;
     readonly userId?: string;
+    readonly publishInProcess?: boolean;
   } = {},
 ) {
   const f = await seedPiInferenceFixture({
@@ -246,22 +249,73 @@ async function fixture(
       }),
     },
   );
-  const child = await execute(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      publisher,
-      f.orgId,
-      f.userId,
-      piSessionId,
-      options.large ? "large" : "small",
-      configuration.runtimeProvider,
-      configuration.runtimeModel,
-    ],
-    { timeout: 30_000 },
-  );
-  const { hash: h1Hash } = JSON.parse(child.stdout) as { hash: string };
+  let h1Hash: string;
+  if (options.publishInProcess) {
+    const session = MemoryPiSession.create({
+      cwd: "/home/user/workspace",
+      id: piSessionId,
+    });
+    session.appendMessage({
+      role: "user",
+      content: "Synthetic foundation fixture",
+      timestamp: 1,
+    });
+    session.appendMessage({
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "tool-1",
+          name: "read",
+          arguments: { path: "/home/user/workspace/README.md" },
+        },
+      ],
+      api: "openai-completions",
+      provider: configuration.runtimeProvider,
+      model: configuration.runtimeModel,
+      usage: {
+        input: 1,
+        output: 1,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 2,
+        cost: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          total: 0,
+        },
+      },
+      stopReason: "toolUse",
+      timestamp: 2,
+    });
+    const sessionHistory = session.toJsonl();
+    h1Hash = await publishPiInferenceObject(db(), f, "h1", piDeferredH1Schema, {
+      schemaVersion: 1,
+      manifestGeneration: 3,
+      lastEventSequence: 4,
+      sessionHistory,
+      historyHash: createHash("sha256").update(sessionHistory).digest("hex"),
+    });
+  } else {
+    const child = await execute(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        publisher,
+        f.orgId,
+        f.userId,
+        piSessionId,
+        options.large ? "large" : "small",
+        configuration.runtimeProvider,
+        configuration.runtimeModel,
+      ],
+      { timeout: 30_000 },
+    );
+    ({ hash: h1Hash } = JSON.parse(child.stdout) as { hash: string });
+  }
   await db()
     .update(agentRunInference)
     .set({
@@ -307,7 +361,7 @@ async function fixture(
       ),
     ).resolves.toBeTruthy();
   }
-  return { ...f, capturedMount, maintenance };
+  return { ...f, capturedMount, maintenance, h1Hash };
 }
 
 function claim(runId: string, capable: boolean, runnerId: string) {
@@ -345,7 +399,10 @@ function release(
   });
 }
 
-async function createLegacyAdmissionFixture(displayName: string) {
+async function createLegacyAdmissionFixture(
+  displayName: string,
+  baseConcurrencyLimit = 1,
+) {
   const api = createRunsApi(context);
   const bdd = createBddApi(context);
   const actor = bdd.user();
@@ -364,7 +421,7 @@ async function createLegacyAdmissionFixture(displayName: string) {
   });
   await db()
     .update(orgPlanEntitlements)
-    .set({ baseConcurrencyLimit: 1 })
+    .set({ baseConcurrencyLimit })
     .where(eq(orgPlanEntitlements.orgId, actor.orgId));
   createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
   return { actor: { ...actor, orgId: actor.orgId }, agent, api };
@@ -1519,8 +1576,207 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
     90_000,
   );
 
+  it.each(["deferred-first", "legacy-first"] as const)(
+    "uses spare capacity and holds the last slot with %s lock order",
+    async (order) => {
+      const { actor, agent, api } = await createLegacyAdmissionFixture(
+        `Spare admission ${order}`,
+        2,
+      );
+      const deferred = await fixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        publishInProcess: true,
+      });
+      const waiting = await api.readRunQueue(actor);
+      expect(waiting.body.concurrency).toMatchObject({
+        active: 0,
+        waiting: 1,
+        available: 1,
+      });
+      expect(JSON.stringify(waiting.body)).not.toContain(deferred.runId);
+
+      const held = await holdDeferredRow(context.signal, (tx) => {
+        return tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${actor.orgId}))`,
+        );
+      });
+      const startConsumer = () => {
+        return createStore().set(
+          consumeDeferredPiRun$,
+          deferred.runId,
+          context.signal,
+        );
+      };
+      const startLegacy = () => {
+        return api.requestCreateRun(
+          actor,
+          {
+            agentId: agent.agentId,
+            prompt: `spare legacy ${order}`,
+            modelProvider: "anthropic-api-key",
+          },
+          [201],
+        );
+      };
+      const raced =
+        order === "deferred-first"
+          ? await (async () => {
+              const consumer = startConsumer();
+              const consumerPid = await held.waitForBlocked();
+              const legacy = startLegacy();
+              const legacyPid = await waitForDeferredBlocker(consumerPid);
+              const duplicate = startConsumer();
+              await waitForDeferredBlocker(legacyPid);
+              await held.release();
+              return {
+                legacy: await legacy,
+                consumers: await Promise.all([consumer, duplicate]),
+              };
+            })()
+          : await (async () => {
+              const legacy = startLegacy();
+              const legacyPid = await held.waitForBlocked();
+              const consumer = startConsumer();
+              const consumerPid = await waitForDeferredBlocker(legacyPid);
+              const duplicate = startConsumer();
+              await waitForDeferredBlocker(consumerPid);
+              await held.release();
+              return {
+                legacy: await legacy,
+                consumers: await Promise.all([consumer, duplicate]),
+              };
+            })();
+      expect(raced.legacy.body).toMatchObject({ status: "pending" });
+      expect(
+        [...raced.consumers].sort((left, right) => {
+          return Number(left) - Number(right);
+        }),
+      ).toStrictEqual([false, true]);
+      await expect(
+        db()
+          .select({
+            runId: agentRunSandboxLease.runId,
+            state: agentRunSandboxLease.state,
+          })
+          .from(agentRunSandboxLease)
+          .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxLease.runId))
+          .where(eq(agentRuns.orgId, actor.orgId)),
+      ).resolves.toStrictEqual([{ runId: deferred.runId, state: "ready" }]);
+      const saturated = await api.readRunQueue(actor);
+      expect(saturated.body.concurrency).toMatchObject({
+        active: 2,
+        waiting: 0,
+        available: 0,
+      });
+      const overflow = await api.requestCreateRun(
+        actor,
+        {
+          agentId: agent.agentId,
+          prompt: `last-slot overflow ${order}`,
+          modelProvider: "anthropic-api-key",
+        },
+        [201],
+      );
+      expect(overflow.body).toMatchObject({ status: "queued" });
+    },
+    120_000,
+  );
+
+  it("promotes a queued Run when newly earlier demand leaves spare capacity", async () => {
+    const { actor, agent, api } = await createLegacyAdmissionFixture(
+      "Queued spare-capacity admission",
+    );
+    await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "active before queue promotion",
+      modelProvider: "anthropic-api-key",
+    });
+    const queued = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "queued before capacity expansion",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(queued.status).toBe("queued");
+    const [queuedRow] = await db()
+      .select({ createdAt: agentRunQueue.createdAt })
+      .from(agentRunQueue)
+      .where(eq(agentRunQueue.runId, queued.runId));
+    if (!queuedRow) {
+      throw new Error("Missing queued admission row");
+    }
+    const deferred = await fixture({
+      orgId: actor.orgId,
+      userId: actor.userId,
+      publish: false,
+      publishInProcess: true,
+    });
+    await db()
+      .update(orgPlanEntitlements)
+      .set({ baseConcurrencyLimit: 3 })
+      .where(eq(orgPlanEntitlements.orgId, actor.orgId));
+
+    const beforeDemand = await api.readRunQueue(actor);
+    expect(beforeDemand.body.concurrency).toMatchObject({
+      active: 1,
+      waiting: 0,
+      available: 2,
+    });
+    expect(JSON.stringify(beforeDemand.body)).not.toContain(deferred.runId);
+
+    const held = await holdDeferredRow(context.signal, (tx) => {
+      return tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${actor.orgId}))`,
+      );
+    });
+    const publication = withMockNowForTest(
+      queuedRow.createdAt.getTime() - 1,
+      async () => {
+        return await publishPiSandboxDemand(
+          db(),
+          { runId: deferred.runId, ownerEpoch: 1, generation: 1 },
+          {
+            mode: "pending-tools",
+            h1Hash: deferred.h1Hash,
+            manifestGeneration: 3,
+            pendingToolIds: ["tool-1"],
+            lastEventSequence: 4,
+          },
+        );
+      },
+    );
+    const publisherPid = await held.waitForBlocked();
+    const promotion = createStore().set(
+      promoteNextQueuedRun$,
+      { orgId: actor.orgId },
+      context.signal,
+    );
+    await waitForDeferredBlocker(publisherPid);
+    await held.release();
+    await expect(publication).resolves.toBeTruthy();
+    await expect(promotion).resolves.toMatchObject({
+      kind: "activation",
+      activation: { runnerNotification: { runId: queued.runId } },
+    });
+    await expect(
+      createStore().set(consumeDeferredPiRun$, deferred.runId, context.signal),
+    ).resolves.toBeTruthy();
+    const saturated = await api.readRunQueue(actor);
+    expect(saturated.body.concurrency).toMatchObject({
+      active: 3,
+      waiting: 0,
+      available: 0,
+    });
+    const overflow = await api.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "queued after last reserved slot",
+      modelProvider: "anthropic-api-key",
+    });
+    expect(overflow.status).toBe("queued");
+  }, 120_000);
+
   it("preserves nonqueue capacity errors and ordinary admission without older demand", async () => {
-    const { actor, agent } = await createLegacyAdmissionFixture(
+    const { actor, agent, api } = await createLegacyAdmissionFixture(
       "Nonqueue admission boundary",
     );
     const reads = createRunReadsApi(context);
@@ -1536,6 +1792,12 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       [201],
     );
     expect(ordinary.body).toMatchObject({ status: "pending" });
+    const ordinaryCapacity = await api.readRunQueue(actor);
+    expect(ordinaryCapacity.body.concurrency).toMatchObject({
+      active: 1,
+      waiting: 0,
+      available: 0,
+    });
     const cancel = setupApp({ context, routes: runsCancelRoutes })(
       runsCancelContract,
     );
@@ -1617,10 +1879,28 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       }
       await expect(
         db()
-          .select({ runId: runnerJobQueue.runId })
+          .select({
+            runId: runnerJobQueue.runId,
+            phase: agentRunInference.phase,
+            leaseState: agentRunSandboxLease.state,
+          })
           .from(runnerJobQueue)
+          .innerJoin(
+            agentRunInference,
+            eq(agentRunInference.runId, runnerJobQueue.runId),
+          )
+          .innerJoin(
+            agentRunSandboxLease,
+            eq(agentRunSandboxLease.runId, runnerJobQueue.runId),
+          )
           .where(eq(runnerJobQueue.runId, later.runId)),
-      ).resolves.toStrictEqual([{ runId: later.runId }]);
+      ).resolves.toStrictEqual([
+        {
+          runId: later.runId,
+          phase: "sandbox_ready",
+          leaseState: "ready",
+        },
+      ]);
       await expect(
         db()
           .select({ runId: runnerJobQueue.runId })

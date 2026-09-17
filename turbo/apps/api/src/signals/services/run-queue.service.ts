@@ -5,7 +5,7 @@ import {
 } from "./pi-deferred-sandbox.service";
 import {
   listDeferredPiCandidates,
-  hasEarlierDeferredDemand,
+  countEarlierDeferredDemand,
 } from "./pi-deferred-demand.service";
 import { agentRunSandboxIntent } from "@okouai/db/schema/agent-run-inference";
 import { command } from "ccstate";
@@ -569,18 +569,14 @@ async function promoteQueuedCandidateInTransaction(
     await stopClosedComputeCandidate(tx, admission);
     return complete({ status: "lost" });
   }
-  if (
-    await hasEarlierDeferredDemand(
-      tx,
-      args.orgId,
-      args.row.createdAt,
-      args.row.runId,
-    )
-  ) {
-    return complete({ status: "full" });
-  }
   const concurrency = await effectiveOrgConcurrencyState(tx, args.orgId);
-  if (concurrency.activeRunCount >= concurrency.limit) {
+  const earlierDeferredDemand = await countEarlierDeferredDemand(
+    tx,
+    args.orgId,
+    args.row.createdAt,
+    args.row.runId,
+  );
+  if (concurrency.activeRunCount + earlierDeferredDemand >= concurrency.limit) {
     return complete({ status: "full" });
   }
 

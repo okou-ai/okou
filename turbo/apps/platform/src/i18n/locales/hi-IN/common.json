@@ -5317,7 +5317,8 @@
     "status": {
       "availableNow": "अभी उपलब्ध",
       "inUse_one": "{{limit}} स्लॉट का {{active}} उपयोग में है",
-      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है"
+      "inUse_other": "{{limit}} स्लॉट में से {{active}} उपयोग में है",
+      "waitingForSandbox": "Sandbox की प्रतीक्षा"
     },
     "tiers": {
       "custom": "कस्टम",

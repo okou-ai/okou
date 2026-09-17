@@ -5304,7 +5304,8 @@
     "status": {
       "availableNow": "현재 사용 가능",
       "inUse_one": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
-      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯"
+      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
+      "waitingForSandbox": "Sandbox 대기 중"
     },
     "tiers": {
       "custom": "맞춤형",
