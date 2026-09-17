@@ -143,8 +143,6 @@ describe("VNC owner configuration", () => {
         "password",
         "encryptedPassword",
         "vm0secret:",
-        "membershipId",
-        "scopeKey",
       ]) {
         expect(JSON.stringify(response)).not.toContain(secret);
       }

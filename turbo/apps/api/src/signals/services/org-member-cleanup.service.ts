@@ -25,7 +25,7 @@ export async function cleanupOrgMemberResources(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly membershipId: string;
+    readonly membershipId?: string;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -47,16 +47,18 @@ export async function cleanupOrgMemberResources(
       target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
       set: {
         state: "departed",
-        // Deletion can arrive before enrollment. Retain its generation so a
-        // late created event cannot revive intent.
-        membershipId: args.membershipId,
+        // Deletion can arrive before enrollment or after a missing live lookup.
+        // Retain its generation so a late created event cannot revive intent.
+        membershipId: args.membershipId ?? morningBriefEnrollments.membershipId,
         updatedAt: currentTime,
       },
       setWhere: and(
-        or(
-          isNull(morningBriefEnrollments.membershipId),
-          eq(morningBriefEnrollments.membershipId, args.membershipId),
-        ),
+        args.membershipId
+          ? or(
+              isNull(morningBriefEnrollments.membershipId),
+              eq(morningBriefEnrollments.membershipId, args.membershipId),
+            )
+          : undefined,
         inArray(morningBriefEnrollments.state, [
           "checking",
           "pending",
@@ -123,11 +125,7 @@ export async function cleanupOrgMemberResources(
 
 async function revokeOrgMemberRunAuthority(
   db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly membershipId: string;
-  },
+  args: { readonly orgId: string; readonly userId: string },
   signal: AbortSignal,
 ): Promise<void> {
   // Membership revocation is a hard authority boundary, including credentials
@@ -136,7 +134,11 @@ async function revokeOrgMemberRunAuthority(
   const revokedAt = nowDate();
   const cancelled = await db.transaction(async (tx) => {
     // Cleanup scope ownership precedes Run and all other business-row locks.
-    await eraseVncOwner(tx, { kind: "membership", ...args });
+    await eraseVncOwner(tx, {
+      kind: "owner",
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: "cancelled",

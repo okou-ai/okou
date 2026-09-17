@@ -17,7 +17,6 @@ export const vncCredentials = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    membershipId: text("membership_id").notNull(),
     name: varchar("name", { length: 128 }).notNull(),
     encryptedPassword: text("encrypted_password").notNull(),
     revision: integer("revision").default(1).notNull(),
@@ -30,12 +29,10 @@ export const vncCredentials = pgTable(
         table.id,
         table.orgId,
         table.userId,
-        table.membershipId,
       ),
       index("idx_vnc_credentials_owner_created").on(
         table.orgId,
         table.userId,
-        table.membershipId,
         table.createdAt,
         table.id,
       ),
@@ -43,10 +40,6 @@ export const vncCredentials = pgTable(
       check(
         "chk_vnc_credentials_name",
         sql`char_length(${table.name}) BETWEEN 1 AND 128`,
-      ),
-      check(
-        "chk_vnc_credentials_membership",
-        sql`char_length(${table.membershipId}) > 0`,
       ),
       check(
         "chk_vnc_credentials_password",

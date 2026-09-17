@@ -8,7 +8,7 @@ in [#34980](https://github.com/vm0-ai/okou/issues/34980).
 
 ## Owner API
 
-Organization session authentication and a fresh exact Clerk membership lookup
+Organization session authentication and a fresh Clerk membership check
 are required for every request. The session's cached organization role alone is
 insufficient. A disabled feature or absent membership returns an unavailable
 response. Metadata responses use `Cache-Control: no-store`.
@@ -24,8 +24,7 @@ response. Metadata responses use `Cache-Control: no-store`.
 A credential contains a display name and a password of **1–8 printable ASCII
 bytes**. Spaces are preserved. Longer or non-ASCII passwords are rejected, never
 silently truncated to the classic VNC authentication limit. Credentials can be
-shared by multiple saved hosts belonging to the same user, organization and
-immutable Clerk membership generation.
+shared by multiple saved hosts belonging to the same user and organization.
 
 Hosts contain a canonical DNS name or IP address, a port (default 5900), a
 credential selection and explicit TLS trust. Trust is either
@@ -38,11 +37,11 @@ Connection creation accepts either `credential: { id }` or
 `credential: { create: { name, password } }`. Inline credential and host
 creation commit atomically. A conflicting endpoint cannot leave an orphaned
 inline credential. Canonical host and port are unique for one
-organization/user/membership.
+organization/user pair.
 
 Like SSH configuration, repeating the UUID of an existing resource belonging to
-the current owner and membership returns 204 without changing metadata or secrets.
-A UUID occupied by another owner or membership returns an opaque conflict.
+the current owner returns 204 without changing metadata or secrets.
+A UUID occupied by another owner returns an opaque conflict.
 Deletion physically removes the row, so a subsequent create with that UUID is a
 new resource starting at version 1. Clients should use a new UUID for each new
 resource and stop retrying its creation after deletion. Updates and deletes reject stale versions;
@@ -65,26 +64,25 @@ unchanged; a future rotation must include VNC in its current inventory.
 
 ## Membership and deletion lifecycle
 
-The only VNC tables are `vnc_credentials` and `vnc_connections`. Both pin the
-immutable Clerk membership ID. A rejoined membership cannot read or mutate the
-earlier membership's configuration and can save its own endpoint before the old
-membership's cleanup arrives. Saving configuration never deletes another
-membership's rows.
+The only VNC tables are `vnc_credentials` and `vnc_connections`. Both use the
+organization/user pair as their owner, matching SSH configuration. Current
+membership authorizes access to that owner's configuration. If the user leaves
+and rejoins before cleanup removes the configuration, it remains the same
+owner's data and is accessible again. Endpoint uniqueness applies to that owner
+across membership changes.
 
 Mutation transactions use the existing B1 erasure admission, shared cleanup-scope
 locks and an exclusive owner lock. Cleanup takes an exclusive scope lock and
 deletes hosts before credentials. These locks serialize overlapping transactions
 without retaining a VNC authority ledger or creation receipts. They do not cancel
 a request that passed membership admission before cleanup and only enters its
-write transaction afterward; such an in-flight request can finish under its
-original membership. A later membership remains isolated from that data.
+write transaction afterward; such an in-flight request can still finish.
 
 Current user, organization and member cleanup removes hosts before credentials.
-Known membership deletion events remove only their exact membership generation;
-direct removal uses the membership ID returned by Clerk's delete operation.
-Clerk's membership webhook contract requires that ID. A malformed event without
-it does not trigger cleanup. Membership lookup and KMS calls run outside
-database locks; cleanup never guesses which membership generation to erase.
+Member cleanup removes the organization's configuration for that user. It follows
+the existing organization/user cleanup path, including when a deletion event
+arrives after the user has rejoined. Membership checks and KMS calls run outside
+database locks.
 
 ## Deployment and rollback
 
@@ -105,8 +103,8 @@ to #34980 and the remaining VNC delivery work.
 
 ## Verification
 
-Route integration tests exercise auth, fresh membership, owner and membership
-isolation, secret-free output, validation, live-resource retries, recreation
+Route integration tests exercise auth, current membership, owner isolation,
+rejoined owner access, secret-free output, validation, live-resource retries, recreation
 after deletion, optimistic concurrency, rotation, inline rollback and scoped
 cleanup through production HTTP boundaries.
 The dedicated migration test validates database ownership and version/trust

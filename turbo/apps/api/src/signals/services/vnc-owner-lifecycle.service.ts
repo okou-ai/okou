@@ -9,45 +9,36 @@ import type { Db } from "../external/db";
 import { settle } from "../utils";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
 
-interface OwnerIdentity {
+export interface VncOwner {
   readonly orgId: string;
   readonly userId: string;
 }
 
-export interface VncOwner extends OwnerIdentity {
-  readonly membershipId: string;
-}
-
 /** Deleted external identities deny access; dependency failures stay visible. */
-export async function loadCurrentVncMembershipId(
+export async function hasCurrentVncMembership(
   clerk: ClerkClient,
-  owner: OwnerIdentity,
+  owner: VncOwner,
   signal: AbortSignal,
-): Promise<string | null> {
+): Promise<boolean> {
   const result = await settle(
     loadCurrentMembershipId(clerk, owner, signal),
     signal,
   );
   if (result.ok) {
-    return result.value;
+    return result.value !== null;
   }
   if (!isClerkResourceNotFound(result.error)) {
     throw result.error;
   }
-  return null;
+  return false;
 }
-
-type VncAuthorityScope =
-  | { readonly kind: "user"; readonly userId: string }
-  | { readonly kind: "organization"; readonly orgId: string }
-  | (OwnerIdentity & { readonly kind: "membership" });
 
 type VncCleanupScope =
   | { readonly kind: "user"; readonly userId: string }
   | { readonly kind: "organization"; readonly orgId: string }
-  | (VncOwner & { readonly kind: "membership" });
+  | (VncOwner & { readonly kind: "owner" });
 
-function scopeKey(scope: VncAuthorityScope): string {
+function scopeKey(scope: VncCleanupScope): string {
   const identity =
     scope.kind === "user"
       ? [scope.kind, scope.userId]
@@ -57,11 +48,11 @@ function scopeKey(scope: VncAuthorityScope): string {
   return JSON.stringify(identity);
 }
 
-function ownerScopeKeys(owner: OwnerIdentity): readonly string[] {
+function ownerScopeKeys(owner: VncOwner): readonly string[] {
   return [
     scopeKey({ kind: "user", userId: owner.userId }),
     scopeKey({ kind: "organization", orgId: owner.orgId }),
-    scopeKey({ kind: "membership", ...owner }),
+    scopeKey({ kind: "owner", ...owner }),
   ].sort();
 }
 
@@ -124,7 +115,7 @@ export async function enterVncWrite(tx: Tx, owner: VncOwner): Promise<boolean> {
   for (const key of keys) {
     await lockScope(tx, key, "shared");
   }
-  const ownerLock = `vnc-owner:${scopeKey({ kind: "membership", ...owner })}`;
+  const ownerLock = `vnc-owner:${scopeKey({ kind: "owner", ...owner })}`;
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${ownerLock}, 0))`,
   );
@@ -160,12 +151,10 @@ export async function eraseVncOwner(
     and(
       eq(vncConnections.orgId, scope.orgId),
       eq(vncConnections.userId, scope.userId),
-      eq(vncConnections.membershipId, scope.membershipId),
     ),
     and(
       eq(vncCredentials.orgId, scope.orgId),
       eq(vncCredentials.userId, scope.userId),
-      eq(vncCredentials.membershipId, scope.membershipId),
     ),
   );
 }

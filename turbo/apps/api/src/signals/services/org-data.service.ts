@@ -25,7 +25,6 @@ import {
   createClerkReadContext,
   type ClerkReadContext,
   type ClerkUser,
-  type ClerkOrganizationMembership,
 } from "../external/clerk";
 import {
   listAllOrganizationMemberships,
@@ -321,12 +320,12 @@ async function commitOrgMemberRemoval(
   db: Db,
   args: { readonly orgId: string; readonly userId: string },
   reservationId: string | null,
-  deleteMembership: () => Promise<ClerkOrganizationMembership>,
+  deleteMembership: () => Promise<void>,
 ): Promise<void> {
   // Once Clerk accepts the deletion, billing and resource cleanup must finish
   // even if the originating request disconnects.
   const commitSignal = new AbortController().signal;
-  const deletedMembership = await onRejection(deleteMembership(), async () => {
+  await onRejection(deleteMembership(), async () => {
     await cancelUsagePackMemberRemovalReservation(db, reservationId);
   });
   commitSignal.throwIfAborted();
@@ -334,11 +333,7 @@ async function commitOrgMemberRemoval(
   commitSignal.throwIfAborted();
   await refundUsagePackMemberCredits(db, args, commitSignal);
   commitSignal.throwIfAborted();
-  await cleanupOrgMemberResources(
-    db,
-    { ...args, membershipId: deletedMembership.id },
-    commitSignal,
-  );
+  await cleanupOrgMemberResources(db, args, commitSignal);
   commitSignal.throwIfAborted();
 }
 
@@ -364,7 +359,7 @@ export const leaveOrg$ = command(
     );
     signal.throwIfAborted();
     await commitOrgMemberRemoval(writeDb, args, reservationId, async () => {
-      return await client.organizations.deleteOrganizationMembership({
+      await client.organizations.deleteOrganizationMembership({
         organizationId: args.orgId,
         userId: args.userId,
       });
@@ -428,7 +423,7 @@ export const removeOrgMember$ = command(
       { orgId: args.orgId, userId: target.id },
       reservationId,
       async () => {
-        return await client.organizations.deleteOrganizationMembership({
+        await client.organizations.deleteOrganizationMembership({
           organizationId: args.orgId,
           userId: target.id,
         });

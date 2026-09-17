@@ -14,8 +14,10 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { holdSecretKms } from "./helpers/hold-secret-kms";
-import { seedOrgMembership$ } from "./helpers/org-membership";
+import {
+  deleteOrgMembership$,
+  seedOrgMembership$,
+} from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
@@ -140,101 +142,49 @@ test.each(["user", "organization", "membership"] as const)(
   },
 );
 
-test("an admitted save from the old membership preserves the rejoined owner's configuration", async () => {
-  const current = await owner();
-  const held = holdSecretKms(1, context.signal);
-  const stale = createConnection();
-  await held.entered;
-  await store.set(
-    seedOrgMembership$,
-    { ...current, membershipId: `orgmem_${randomUUID()}` },
-    context.signal,
-  );
-  const replacement = await accept(createConnection(), [201]);
-  held.release();
-  await accept(stale, [201]);
-  const listed = await accept(connections().list({ headers }), [200]);
-  expect(listed.body.connections).toStrictEqual([replacement.body]);
-  const logins = await accept(credentials().list({ headers }), [200]);
-  expect(
-    logins.body.credentials.map((entry) => {
-      return entry.id;
-    }),
-  ).toStrictEqual([replacement.body.credentialId]);
-});
-
-test("a delayed deletion of an earlier membership preserves the rejoined owner's VNC configuration", async () => {
+test("requires current membership while retaining the same owner's configuration after rejoining", async () => {
   useSecretKmsProbe();
   const current = await owner();
   const previous = await accept(createConnection(), [201]);
+  await store.set(deleteOrgMembership$, current, context.signal);
+  await accept(connections().list({ headers }), [404]);
+  await accept(credentials().list({ headers }), [404]);
+  await accept(createConnection(), [404]);
   const rejoined = { ...current, membershipId: `orgmem_${randomUUID()}` };
   await store.set(seedOrgMembership$, rejoined, context.signal);
   expect(
     (await accept(connections().list({ headers }), [200])).body.connections,
-  ).toStrictEqual([]);
+  ).toStrictEqual([previous.body]);
   expect(
-    (await accept(credentials().list({ headers }), [200])).body.credentials,
-  ).toStrictEqual([]);
-  await accept(
-    connections().create({
-      headers,
-      body: {
-        id: randomUUID(),
-        displayName: "Old credential",
-        host: "desktop.example.com",
-        trust: { mode: "system" },
-        credential: { id: previous.body.credentialId },
+    (await accept(credentials().list({ headers }), [200])).body.credentials.map(
+      (entry) => {
+        return entry.id;
       },
-    }),
-    [404],
-  );
-  await accept(
+    ),
+  ).toStrictEqual([previous.body.credentialId]);
+  await accept(createConnection(), [409]);
+  const renamed = await accept(
     credentials().update({
       headers,
       params: { credentialId: previous.body.credentialId },
       body: { expectedRevision: 1, name: "Rejoined" },
     }),
-    [404],
+    [200],
   );
+  expect(renamed.body.name).toBe("Rejoined");
   await accept(
-    connections().delete({
+    connections().create({
       headers,
-      params: { connectionId: previous.body.id },
-      body: { expectedGeneration: 1 },
+      body: {
+        id: randomUUID(),
+        displayName: "Shared credential",
+        host: "other-desktop.example.com",
+        trust: { mode: "system" },
+        credential: { id: previous.body.credentialId },
+      },
     }),
-    [404],
+    [201],
   );
-  // Endpoint uniqueness belongs to the current membership; old rows stay
-  // isolated until their exact membership cleanup arrives.
-  const saved = await accept(createConnection(), [201]);
-  await webhook({
-    type: "organizationMembership.deleted",
-    data: {
-      id: current.membershipId,
-      organization_id: current.orgId,
-      user_id: current.userId,
-    },
-  });
-  const listed = await accept(connections().list({ headers }), [200]);
-  expect(listed.body.connections).toStrictEqual([saved.body]);
-  const logins = await accept(credentials().list({ headers }), [200]);
-  expect(
-    logins.body.credentials.map((entry) => {
-      return entry.id;
-    }),
-  ).toStrictEqual([saved.body.credentialId]);
-});
-
-test("a malformed membership deletion without its required ID cannot erase configuration", async () => {
-  useSecretKmsProbe();
-  const current = await owner();
-  const saved = await accept(createConnection(), [201]);
-  await webhook({
-    type: "organizationMembership.deleted",
-    data: { organization_id: current.orgId, user_id: current.userId },
-  });
-  const listed = await accept(connections().list({ headers }), [200]);
-  expect(listed.body.connections).toStrictEqual([saved.body]);
 });
 
 test("a missing Clerk identity denies owner reads while provider failures remain server errors", async () => {

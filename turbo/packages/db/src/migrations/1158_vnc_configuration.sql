@@ -2,7 +2,6 @@ CREATE TABLE "vnc_connections" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" text NOT NULL,
 	"user_id" text NOT NULL,
-	"membership_id" text NOT NULL,
 	"display_name" varchar(128) NOT NULL,
 	"host" varchar(253) NOT NULL,
 	"port" integer DEFAULT 5900 NOT NULL,
@@ -12,7 +11,7 @@ CREATE TABLE "vnc_connections" (
 	"generation" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "uq_vnc_connections_owner_endpoint" UNIQUE("org_id","user_id","membership_id","host","port"),
+	CONSTRAINT "uq_vnc_connections_owner_endpoint" UNIQUE("org_id","user_id","host","port"),
 	CONSTRAINT "chk_vnc_connections_display_name" CHECK (char_length("vnc_connections"."display_name") BETWEEN 1 AND 128),
 	CONSTRAINT "chk_vnc_connections_host" CHECK (char_length("vnc_connections"."host") BETWEEN 1 AND 253 AND "vnc_connections"."host" = lower("vnc_connections"."host") AND "vnc_connections"."host" !~ '[[:space:]/@?#]'),
 	CONSTRAINT "chk_vnc_connections_port" CHECK ("vnc_connections"."port" BETWEEN 1 AND 65535),
@@ -24,22 +23,20 @@ CREATE TABLE "vnc_credentials" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" text NOT NULL,
 	"user_id" text NOT NULL,
-	"membership_id" text NOT NULL,
 	"name" varchar(128) NOT NULL,
 	"encrypted_password" text NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "uq_vnc_credentials_owner_id" UNIQUE("id","org_id","user_id","membership_id"),
+	CONSTRAINT "uq_vnc_credentials_owner_id" UNIQUE("id","org_id","user_id"),
 	CONSTRAINT "chk_vnc_credentials_name" CHECK (char_length("vnc_credentials"."name") BETWEEN 1 AND 128),
-	CONSTRAINT "chk_vnc_credentials_membership" CHECK (char_length("vnc_credentials"."membership_id") > 0),
 	CONSTRAINT "chk_vnc_credentials_password" CHECK (char_length("vnc_credentials"."encrypted_password") > 0),
 	CONSTRAINT "chk_vnc_credentials_revision" CHECK ("vnc_credentials"."revision" > 0)
 );
 --> statement-breakpoint
-ALTER TABLE "vnc_connections" ADD CONSTRAINT "vnc_connections_credential_owner_fk" FOREIGN KEY ("credential_id","org_id","user_id","membership_id") REFERENCES "public"."vnc_credentials"("id","org_id","user_id","membership_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "vnc_connections" ADD CONSTRAINT "vnc_connections_credential_owner_fk" FOREIGN KEY ("credential_id","org_id","user_id") REFERENCES "public"."vnc_credentials"("id","org_id","user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_vnc_connections_credential" ON "vnc_connections" USING btree ("credential_id","id");--> statement-breakpoint
-CREATE INDEX "idx_vnc_connections_owner_created" ON "vnc_connections" USING btree ("org_id","user_id","membership_id","created_at","id");--> statement-breakpoint
+CREATE INDEX "idx_vnc_connections_owner_created" ON "vnc_connections" USING btree ("org_id","user_id","created_at","id");--> statement-breakpoint
 CREATE INDEX "idx_vnc_connections_user" ON "vnc_connections" USING btree ("user_id","id");--> statement-breakpoint
-CREATE INDEX "idx_vnc_credentials_owner_created" ON "vnc_credentials" USING btree ("org_id","user_id","membership_id","created_at","id");--> statement-breakpoint
+CREATE INDEX "idx_vnc_credentials_owner_created" ON "vnc_credentials" USING btree ("org_id","user_id","created_at","id");--> statement-breakpoint
 CREATE INDEX "idx_vnc_credentials_user" ON "vnc_credentials" USING btree ("user_id","id");

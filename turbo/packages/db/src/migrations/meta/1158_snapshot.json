@@ -1,5 +1,5 @@
 {
-  "id": "8e24c5ac-4963-4264-9d50-cecae5e41862",
+  "id": "c173f55a-48c9-482e-9d3f-cc613635f7cc",
   "prevId": "186a8b37-6ae5-4530-9a9d-622d79fa9815",
   "version": "7",
   "dialect": "postgresql",
@@ -34476,12 +34476,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "membership_id": {
-          "name": "membership_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
         "display_name": {
           "name": "display_name",
           "type": "varchar(128)",
@@ -34579,12 +34573,6 @@
               "nulls": "last"
             },
             {
-              "expression": "membership_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
               "expression": "created_at",
               "isExpression": false,
               "asc": true,
@@ -34632,14 +34620,12 @@
           "columnsFrom": [
             "credential_id",
             "org_id",
-            "user_id",
-            "membership_id"
+            "user_id"
           ],
           "columnsTo": [
             "id",
             "org_id",
-            "user_id",
-            "membership_id"
+            "user_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -34653,7 +34639,6 @@
           "columns": [
             "org_id",
             "user_id",
-            "membership_id",
             "host",
             "port"
           ]
@@ -34703,12 +34688,6 @@
         },
         "user_id": {
           "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "membership_id": {
-          "name": "membership_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -34764,12 +34743,6 @@
               "nulls": "last"
             },
             {
-              "expression": "membership_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
               "expression": "created_at",
               "isExpression": false,
               "asc": true,
@@ -34818,8 +34791,7 @@
           "columns": [
             "id",
             "org_id",
-            "user_id",
-            "membership_id"
+            "user_id"
           ]
         }
       },
@@ -34828,10 +34800,6 @@
         "chk_vnc_credentials_name": {
           "name": "chk_vnc_credentials_name",
           "value": "char_length(\"vnc_credentials\".\"name\") BETWEEN 1 AND 128"
-        },
-        "chk_vnc_credentials_membership": {
-          "name": "chk_vnc_credentials_membership",
-          "value": "char_length(\"vnc_credentials\".\"membership_id\") > 0"
         },
         "chk_vnc_credentials_password": {
           "name": "chk_vnc_credentials_password",

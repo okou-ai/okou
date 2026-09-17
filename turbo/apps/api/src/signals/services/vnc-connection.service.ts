@@ -44,7 +44,6 @@ function ownedConnections(owner: VncOwner) {
   return and(
     eq(vncConnections.orgId, owner.orgId),
     eq(vncConnections.userId, owner.userId),
-    eq(vncConnections.membershipId, owner.membershipId),
   );
 }
 
@@ -93,7 +92,6 @@ async function endpointExists(
       and(
         eq(vncConnections.orgId, owner.orgId),
         eq(vncConnections.userId, owner.userId),
-        eq(vncConnections.membershipId, owner.membershipId),
         eq(vncConnections.host, host),
         eq(vncConnections.port, port),
         exceptId === undefined ? undefined : ne(vncConnections.id, exceptId),
@@ -119,7 +117,6 @@ export async function listVncConnections(
         eq(vncCredentials.id, vncConnections.credentialId),
         eq(vncCredentials.orgId, vncConnections.orgId),
         eq(vncCredentials.userId, vncConnections.userId),
-        eq(vncCredentials.membershipId, vncConnections.membershipId),
       ),
     )
     .where(ownedConnections(owner))

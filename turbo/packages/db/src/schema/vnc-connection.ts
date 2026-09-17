@@ -19,7 +19,6 @@ export const vncConnections = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
-    membershipId: text("membership_id").notNull(),
     displayName: varchar("display_name", { length: 128 }).notNull(),
     host: varchar("host", { length: 253 }).notNull(),
     port: integer("port").notNull().default(5900),
@@ -37,23 +36,16 @@ export const vncConnections = pgTable(
     return [
       foreignKey({
         name: "vnc_connections_credential_owner_fk",
-        columns: [
-          table.credentialId,
-          table.orgId,
-          table.userId,
-          table.membershipId,
-        ],
+        columns: [table.credentialId, table.orgId, table.userId],
         foreignColumns: [
           vncCredentials.id,
           vncCredentials.orgId,
           vncCredentials.userId,
-          vncCredentials.membershipId,
         ],
       }).onDelete("restrict"),
       unique("uq_vnc_connections_owner_endpoint").on(
         table.orgId,
         table.userId,
-        table.membershipId,
         table.host,
         table.port,
       ),
@@ -61,7 +53,6 @@ export const vncConnections = pgTable(
       index("idx_vnc_connections_owner_created").on(
         table.orgId,
         table.userId,
-        table.membershipId,
         table.createdAt,
         table.id,
       ),

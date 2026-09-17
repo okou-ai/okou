@@ -16,7 +16,7 @@ import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { loadCurrentVncMembershipId } from "../services/vnc-owner-lifecycle.service";
+import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import {
   createVncCredential,
   deleteVncCredential,
@@ -61,18 +61,14 @@ const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  const membershipId = await loadCurrentVncMembershipId(
-    get(clerk$),
-    auth,
-    signal,
-  );
-  if (!membershipId) {
+  const isMember = await hasCurrentVncMembership(get(clerk$), auth, signal);
+  if (!isMember) {
     return null;
   }
   return {
     db: set(writeDb$),
     featureContext,
-    owner: { orgId: auth.orgId, userId: auth.userId, membershipId },
+    owner: { orgId: auth.orgId, userId: auth.userId },
   };
 });
 

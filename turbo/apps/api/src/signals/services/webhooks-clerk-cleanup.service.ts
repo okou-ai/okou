@@ -1082,7 +1082,7 @@ async function commitClerkDeletedOrgMembershipCleanup(
   args: {
     readonly orgId: string;
     readonly userId: string;
-    readonly membershipId: string;
+    readonly membershipId?: string;
   },
 ): Promise<void> {
   const commitSignal = new AbortController().signal;
@@ -1100,7 +1100,7 @@ export const cleanupClerkDeletedOrgMembership$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly membershipId: string;
+      readonly membershipId?: string;
     },
     signal: AbortSignal,
   ): Promise<void> => {

@@ -609,38 +609,6 @@ const enrollMorningBriefMembership$ = command(
   },
 );
 
-const handleOrganizationMembershipDeletedWebhook$ = command(
-  ({ set }, data: unknown, signal: AbortSignal): Response => {
-    const identity = organizationMembershipIdentity(data);
-    if (!identity?.membershipId) {
-      L.error("organizationMembership.deleted event missing identity", {
-        data,
-      });
-      return new Response("OK", { status: 200 });
-    }
-    waitUntil(
-      tapError(
-        set(
-          cleanupClerkDeletedOrgMembership$,
-          {
-            orgId: identity.orgId,
-            userId: identity.userId,
-            membershipId: identity.membershipId,
-          },
-          signal,
-        ),
-        (error) => {
-          L.error("organizationMembership.deleted cleanup failed", {
-            ...identity,
-            error,
-          });
-        },
-      ),
-    );
-    return new Response("OK", { status: 200 });
-  },
-);
-
 const postClerkWebhook$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const event = await verifiedClerkWebhook(get(request$).raw);
@@ -754,11 +722,26 @@ const postClerkWebhook$ = command(
     }
 
     if (event.type === "organizationMembership.deleted") {
-      return set(
-        handleOrganizationMembershipDeletedWebhook$,
-        event.data,
-        signal,
+      const identity = organizationMembershipIdentity(event.data);
+      if (!identity) {
+        L.error("organizationMembership.deleted event missing org/user ID", {
+          data: event.data,
+        });
+        return new Response("OK", { status: 200 });
+      }
+
+      waitUntil(
+        tapError(
+          set(cleanupClerkDeletedOrgMembership$, identity, signal),
+          (error) => {
+            L.error("organizationMembership.deleted cleanup failed", {
+              ...identity,
+              error,
+            });
+          },
+        ),
       );
+      return new Response("OK", { status: 200 });
     }
 
     L.debug("ignoring unhandled Clerk event", { type: event.type });

@@ -35,15 +35,12 @@ export async function inspectVncCreationId(
     .select({
       orgId: table.orgId,
       userId: table.userId,
-      membershipId: table.membershipId,
     })
     .from(table)
     .where(eq(table.id, id));
   if (
     existing &&
-    (existing.orgId !== owner.orgId ||
-      existing.userId !== owner.userId ||
-      existing.membershipId !== owner.membershipId)
+    (existing.orgId !== owner.orgId || existing.userId !== owner.userId)
   ) {
     return vncFailure("resourceIdConflict");
   }

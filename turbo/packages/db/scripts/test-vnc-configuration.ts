@@ -35,17 +35,16 @@ try {
     [{ value: "retained" }],
   );
   await client.query(`
-    INSERT INTO vnc_credentials (id,org_id,user_id,membership_id,name,encrypted_password)
-      VALUES ('00000000-0000-4000-8000-000000000001','org','owner','membership','Password','ciphertext'),
-             ('00000000-0000-4000-8000-000000000002','org','other','other-membership','Other','other-ciphertext');
-    INSERT INTO vnc_connections (id,org_id,user_id,membership_id,display_name,host,credential_id,trust_mode)
-      VALUES ('00000000-0000-4000-8000-000000000003','org','owner','membership','Desktop','desktop.example.com','00000000-0000-4000-8000-000000000001','system');
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000001','org','owner','Password','ciphertext'),
+             ('00000000-0000-4000-8000-000000000002','org','other','Other','other-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000003','org','owner','Desktop','desktop.example.com','00000000-0000-4000-8000-000000000001','system');
   `);
 
   for (const assignment of [
     "org_id='foreign'",
     "user_id='other'",
-    "membership_id='new-membership'",
     "credential_id='00000000-0000-4000-8000-000000000002'",
   ] as const) {
     await rejects(`UPDATE vnc_connections SET ${assignment}`, {
@@ -61,25 +60,17 @@ try {
     },
   );
   await rejects(
-    "INSERT INTO vnc_connections (org_id,user_id,membership_id,display_name,host,credential_id,trust_mode) VALUES ('org','owner','membership','Duplicate','desktop.example.com','00000000-0000-4000-8000-000000000001','system')",
+    "INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,trust_mode) VALUES ('org','owner','Duplicate','desktop.example.com','00000000-0000-4000-8000-000000000001','system')",
     { code: "23505", constraint: "uq_vnc_connections_owner_endpoint" },
   );
   // Endpoint uniqueness is scoped to the owning user and organization.
   await client.query(
-    "INSERT INTO vnc_connections (org_id,user_id,membership_id,display_name,host,credential_id,trust_mode) VALUES ('org','other','other-membership','Other desktop','desktop.example.com','00000000-0000-4000-8000-000000000002','system')",
+    "INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,trust_mode) VALUES ('org','other','Other desktop','desktop.example.com','00000000-0000-4000-8000-000000000002','system')",
   );
-  // A rejoined membership can save its own endpoint before old cleanup arrives.
-  await client.query(`
-    INSERT INTO vnc_credentials (id,org_id,user_id,membership_id,name,encrypted_password)
-      VALUES ('00000000-0000-4000-8000-000000000004','org','owner','rejoined','Rejoined','ciphertext');
-    INSERT INTO vnc_connections (org_id,user_id,membership_id,display_name,host,credential_id,trust_mode)
-      VALUES ('org','owner','rejoined','Rejoined desktop','desktop.example.com','00000000-0000-4000-8000-000000000004','system');
-  `);
 
   for (const [assignment, constraint] of [
     ["revision=0", "chk_vnc_credentials_revision"],
     ["encrypted_password=''", "chk_vnc_credentials_password"],
-    ["membership_id=''", "chk_vnc_credentials_membership"],
     ["name=''", "chk_vnc_credentials_name"],
   ] as const) {
     await rejects(`UPDATE vnc_credentials SET ${assignment}`, {
@@ -125,7 +116,7 @@ try {
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 3 }],
+    [{ count: 2 }],
   );
   await client.query("DELETE FROM vnc_credentials");
   console.log("VNC additive migration and storage constraints passed");

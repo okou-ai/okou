@@ -36,7 +36,6 @@ function ownedCredential(owner: VncOwner, id: string) {
     eq(vncCredentials.id, id),
     eq(vncCredentials.orgId, owner.orgId),
     eq(vncCredentials.userId, owner.userId),
-    eq(vncCredentials.membershipId, owner.membershipId),
   );
 }
 
@@ -45,7 +44,6 @@ function referencingConnections(owner: VncOwner, credentialId: string) {
     eq(vncConnections.credentialId, credentialId),
     eq(vncConnections.orgId, owner.orgId),
     eq(vncConnections.userId, owner.userId),
-    eq(vncConnections.membershipId, owner.membershipId),
   );
 }
 
@@ -89,14 +87,12 @@ export async function listVncCredentials(
         eq(vncConnections.credentialId, vncCredentials.id),
         eq(vncConnections.orgId, vncCredentials.orgId),
         eq(vncConnections.userId, vncCredentials.userId),
-        eq(vncConnections.membershipId, vncCredentials.membershipId),
       ),
     )
     .where(
       and(
         eq(vncCredentials.orgId, owner.orgId),
         eq(vncCredentials.userId, owner.userId),
-        eq(vncCredentials.membershipId, owner.membershipId),
       ),
     )
     .orderBy(
