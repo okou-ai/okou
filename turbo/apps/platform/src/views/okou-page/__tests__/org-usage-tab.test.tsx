@@ -6,7 +6,6 @@ import {
 import { orgMembersContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
 import type { UsageRecordRange } from "@okouai/api-contracts/contracts/usage-record";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
@@ -237,13 +236,10 @@ async function openCreditBalance(): Promise<void> {
   });
 }
 
-async function openCreditUsage(teamUsageBreakdown = true): Promise<void> {
+async function openCreditUsage(): Promise<void> {
   await setupPage({
     context,
     path: "/?settings=usage-records",
-    featureSwitches: {
-      [FeatureSwitchKey.TeamUsageBreakdown]: teamUsageBreakdown,
-    },
   });
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -422,16 +418,4 @@ test("Review credit usage by workspace member and period", async () => {
   await expect(
     screen.findByText("Models - 6,100"),
   ).resolves.toBeInTheDocument();
-});
-
-test("Hide member breakdowns while their rollout switch is off", async () => {
-  mockUsageStory();
-  await openCreditUsage(false);
-
-  selectTeamUsage();
-  await expect(screen.findByText("Alice Admin")).resolves.toBeInTheDocument();
-  expect(screen.getByText("7,500")).toBeInTheDocument();
-  expect(
-    screen.queryByTestId("member-usage-kind-test-user-123-model"),
-  ).not.toBeInTheDocument();
 });

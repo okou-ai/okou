@@ -1,10 +1,9 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { useLoadable } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { OrgMember } from "@okouai/api-contracts/contracts/org-members";
 import type { BillingStatusResponse } from "@okouai/api-contracts/contracts/billing";
 import type { MemberUsage } from "@okouai/api-contracts/contracts/usage";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Tooltip,
   TooltipContent,
@@ -17,7 +16,6 @@ import { currentLocale, i18n } from "../../../../i18n/index.ts";
 import { formatLocalizedNumber } from "../../../../i18n/format.ts";
 import { now } from "../../../../lib/time.ts";
 import { UserAvatar } from "../../../components/avatar.tsx";
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { UsageBreakdownBar } from "../usage-breakdown-bar.tsx";
 
 // ---------------------------------------------------------------------------
@@ -692,9 +690,6 @@ export function MemberUsageTable({
   memberMap: Map<string, OrgMember>;
 }) {
   const { t } = useTranslation();
-  const featureSwitches = useGet(featureSwitch$);
-  const showBreakdown =
-    featureSwitches[FeatureSwitchKey.TeamUsageBreakdown] ?? false;
   const maxCredits = Math.max(
     1,
     ...members.map((member) => {
@@ -758,14 +753,12 @@ export function MemberUsageTable({
                       {formatLocalizedNumber(member.creditsCharged)}
                     </span>
                   </div>
-                  {showBreakdown ? (
-                    <UsageBreakdownBar
-                      credits={member.creditsCharged}
-                      breakdown={member.breakdown}
-                      max={maxCredits}
-                      testIdPrefix={`member-usage-kind-${member.userId}`}
-                    />
-                  ) : null}
+                  <UsageBreakdownBar
+                    credits={member.creditsCharged}
+                    breakdown={member.breakdown}
+                    max={maxCredits}
+                    testIdPrefix={`member-usage-kind-${member.userId}`}
+                  />
                 </div>
               </div>
             </div>

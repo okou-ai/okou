@@ -57,13 +57,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Generate short public activity summaries for active thread subscriptions.",
     enabled: true,
   },
-  [FeatureSwitchKey.TeamUsageBreakdown]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show per-member usage categories and provider details in Team usage.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
     description:
