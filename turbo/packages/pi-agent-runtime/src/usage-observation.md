@@ -27,9 +27,12 @@ quantities. Messages deltas replace only supplied fields and require final
 output evidence plus `message_stop` for complete coverage. Repeated cumulative
 snapshots replace quantities rather than adding them.
 
-Codex observation ends at the first terminal event, matching the pinned SDK's
-consumption boundary. Later bytes in the same network chunk cannot replace that
-result or downgrade its coverage. Original transport bytes are still forwarded.
+Observation follows the pinned SDK's SSE consumption boundaries: Codex ends at
+its first terminal event, Responses at `[DONE]`, and Messages at an `error`
+event. Messages accepts only named message/content events; ping, extension and
+unnamed events cannot contribute usage or parsing loss. Later bytes after a
+terminal boundary cannot replace that result or downgrade its coverage.
+Original transport bytes are still forwarded.
 
 Each execution owns its observer. Responses/Codex and Messages use a passive
 fetch stream transform. Bedrock decorates the existing Smithy HTTP handler,

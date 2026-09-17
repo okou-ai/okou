@@ -213,19 +213,27 @@ describe("API provider usage evidence", () => {
     });
   });
 
-  it.each([false, true])(
-    "stops Codex evidence at the SDK terminal boundary (fragmented %s)",
-    async (fragmented) => {
+  it.each([
+    { codex: true, fragmented: false },
+    { codex: true, fragmented: true },
+    { codex: false, fragmented: false },
+    { codex: false, fragmented: true },
+  ])(
+    "stops evidence at the SDK boundary (Codex $codex, fragmented $fragmented)",
+    async ({ codex, fragmented }) => {
+      const terminal = codex ? "response.done" : "response.completed";
       const body =
-        sse([
-          ...responseEvents(reportedUsage, "response.done"),
-          ...responseEvents(
+        sse(responseEvents(reportedUsage, terminal)) +
+        (codex ? "" : "data: [DONE]\n\n") +
+        sse(
+          responseEvents(
             { ...reportedUsage, input_tokens: 150 },
-            "response.done",
+            terminal,
           ).slice(-1),
-        ]) + "data: malformed trailing payload\n\n";
+        ) +
+        "data: malformed trailing payload\n\n";
       serveSse(body.replaceAll("\r\n", "\n"), fragmented);
-      const result = await run(model(true));
+      const result = await run(model(codex));
       expect(result.assistantMessage).toMatchObject({
         stopReason: "stop",
         usage: { input: 25, cacheRead: 10, cacheWrite: 15, output: 20 },
@@ -449,6 +457,62 @@ async function nativeModel(dialect: string) {
 }
 
 describe("native provider usage evidence", () => {
+  it("ignores Messages frames outside the SDK's named message events", async () => {
+    const { config, materialized } = await nativeModel("anthropic-messages");
+    const start = sse([
+      {
+        type: "message_start",
+        message: {
+          id: "messages_usage",
+          type: "message",
+          role: "assistant",
+          model: config.model,
+          content: [],
+          usage: {
+            input_tokens: 11,
+            cache_read_input_tokens: 7,
+            cache_creation_input_tokens: 5,
+            output_tokens: 0,
+          },
+        },
+      },
+    ]);
+    const unrelated = JSON.stringify({
+      type: "message_delta",
+      usage: { input_tokens: 999, output_tokens: 999 },
+    });
+    const ignored = [
+      "event: ping\ndata: keepalive\n\n",
+      `event: message_delta\nevent: ping\ndata: ${unrelated}\n\n`,
+      `event: extension\ndata: ${unrelated}\n\n`,
+      `data: ${unrelated}\n\n`,
+    ].join("");
+    const end = sse([
+      {
+        type: "message_delta",
+        delta: { stop_reason: "end_turn" },
+        usage: { output_tokens: 3 },
+      },
+      { type: "message_stop" },
+    ]);
+    server.use(
+      http.post(piNativeInferenceUrl(config), () => {
+        return new HttpResponse(start + ignored + end, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }),
+    );
+    const result = await run(materialized);
+    expect(result.assistantMessage).toMatchObject({
+      stopReason: "stop",
+      usage: { input: 11, cacheRead: 7, cacheWrite: 5, output: 3 },
+    });
+    expect(result.usageObservation).toEqual({
+      coverage: "complete",
+      tokens: { input: 11, cacheRead: 7, cacheCreation: 5, output: 3 },
+    });
+  });
+
   it.each(["zero", "absent", "partial", "failed"])(
     "observes Messages BYOK %s",
     async (kind) => {
@@ -479,6 +543,10 @@ describe("native provider usage evidence", () => {
               {
                 type: "error",
                 error: { type: "api_error", message: "Provider stopped" },
+              },
+              {
+                type: "message_delta",
+                usage: { input_tokens: 999, output_tokens: 999 },
               },
             ]
           : [

@@ -6,6 +6,25 @@ import type { PiUsageObserver } from "./usage-observation";
 
 const MAX_FRAME_BYTES = 256 * 1024;
 type SseDialect = "responses" | "codex-responses" | "messages";
+const MESSAGE_EVENTS = new Set([
+  "message_start",
+  "message_delta",
+  "message_stop",
+  "content_block_start",
+  "content_block_delta",
+  "content_block_stop",
+]);
+
+function sseEventName(lines: string[]): string | undefined {
+  let name: string | undefined;
+  for (const line of lines) {
+    if (line === "event") name = "";
+    else if (line.startsWith("event:")) {
+      name = line.slice(6).replace(/^ /u, "");
+    }
+  }
+  return name;
+}
 
 /** The pinned Codex adapter stops consuming at its first terminal event. */
 function endsCodexStream(event: unknown): boolean {
@@ -44,9 +63,17 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
   let ended = false;
   const inspect = (): void => {
     if (dropped) return;
-    const data = frame
-      .toString("utf8", 0, size)
-      .split(/\r\n|\r|\n/u)
+    const lines = frame.toString("utf8", 0, size).split(/\r\n|\r|\n/u);
+    if (dialect === "messages") {
+      const name = sseEventName(lines);
+      // The pinned Messages decoder rejects errors before parsing their data.
+      if (name === "error") {
+        ended = true;
+        return;
+      }
+      if (name === undefined || !MESSAGE_EVENTS.has(name)) return;
+    }
+    const data = lines
       .filter((line) => {
         return line === "data" || line.startsWith("data:");
       })
@@ -54,6 +81,10 @@ function sseReader(observer: PiUsageObserver, dialect: SseDialect) {
         return line.startsWith("data:") ? line.slice(5).replace(/^ /u, "") : "";
       })
       .join("\n");
+    if (dialect === "responses" && data.startsWith("[DONE]")) {
+      ended = true;
+      return;
+    }
     if (data === "" || data === "[DONE]") return;
     observeJson(
       data,
