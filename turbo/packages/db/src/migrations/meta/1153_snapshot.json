@@ -1,6 +1,6 @@
 {
-  "id": "97adf283-9230-4530-88ef-6cb1ffb99df8",
-  "prevId": "50f0f2d9-ddcd-4b05-8588-461e425369a1",
+  "id": "84d2bc5e-ecf3-41c4-818e-32101695bcdd",
+  "prevId": "97adf283-9230-4530-88ef-6cb1ffb99df8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9322,6 +9322,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "provenance": {
+          "name": "provenance",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

@@ -1,6 +1,6 @@
 {
-  "id": "97adf283-9230-4530-88ef-6cb1ffb99df8",
-  "prevId": "50f0f2d9-ddcd-4b05-8588-461e425369a1",
+  "id": "d6a79a78-2323-4712-b8e9-61c27e5de56b",
+  "prevId": "84d2bc5e-ecf3-41c4-818e-32101695bcdd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -9322,6 +9322,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "provenance": {
+          "name": "provenance",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -18768,6 +18774,242 @@
           "value": "(\"morning_brief_collection_occurrences\".\"status\" = 'running') = (\"morning_brief_collection_occurrences\".\"outcome\" IS NULL)"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.morning_brief_deliveries": {
+      "name": "morning_brief_deliveries",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "collection_kind": {
+          "name": "collection_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "collection_version": {
+          "name": "collection_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_purpose": {
+          "name": "execution_purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "membership_id": {
+          "name": "membership_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_id": {
+          "name": "workflow_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "automation_id": {
+          "name": "automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_event_id": {
+          "name": "chat_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result_digest": {
+          "name": "result_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_resolution": {
+          "name": "email_resolution",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_outbox_id": {
+          "name": "email_outbox_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "morning_brief_deliveries_chat_event_unique": {
+          "name": "morning_brief_deliveries_chat_event_unique",
+          "columns": [
+            {
+              "expression": "chat_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "morning_brief_deliveries_outbox_unique": {
+          "name": "morning_brief_deliveries_outbox_unique",
+          "columns": [
+            {
+              "expression": "email_outbox_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "morning_brief_deliveries_thread_idx": {
+          "name": "morning_brief_deliveries_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "delivered_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "morning_brief_deliveries_agent_idx": {
+          "name": "morning_brief_deliveries_agent_idx",
+          "columns": [
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "morning_brief_deliveries_agent_id_agents_id_fk": {
+          "name": "morning_brief_deliveries_agent_id_agents_id_fk",
+          "tableFrom": "morning_brief_deliveries",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "morning_brief_deliveries_chat_thread_id_chat_threads_id_fk": {
+          "name": "morning_brief_deliveries_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "morning_brief_deliveries",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "fk_morning_brief_deliveries_member": {
+          "name": "fk_morning_brief_deliveries_member",
+          "tableFrom": "morning_brief_deliveries",
+          "tableTo": "org_members_metadata",
+          "columnsFrom": [
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "morning_brief_deliveries_pk": {
+          "name": "morning_brief_deliveries_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "scheduled_for",
+            "collection_kind",
+            "collection_version"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.morning_brief_enrollments": {
