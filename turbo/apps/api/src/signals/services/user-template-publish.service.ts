@@ -30,7 +30,7 @@ import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
  * The size ceilings are the template's, not the kind's, so only the required
  * paths follow what was published.
  */
-function packageLimitsFor(
+export function packageLimitsFor(
   kind: PublishUserTemplateBody["kind"],
 ): TemplatePackageLimits {
   return Object.freeze({

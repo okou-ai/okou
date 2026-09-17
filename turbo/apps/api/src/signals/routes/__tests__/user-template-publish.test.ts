@@ -288,6 +288,137 @@ describe("POST /api/user-templates", () => {
     expect(response.body.kind).toBe("document");
   });
 
+  it("replaces a template's package without touching anything else", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(actor, fixture),
+      }),
+      [200],
+    );
+    const rebuilt = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz([
+        { path: "SKILL.md", content: "# Use this template, revised\n" },
+        { path: "design-system.md", content: "Ink on cool paper.\n" },
+      ]),
+    );
+
+    const response = await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId: rebuilt },
+      }),
+      [200],
+    );
+
+    // Rebuilding the guidance is not re-reversing the source, so everything
+    // the catalog shows still describes the file this was compiled from — and
+    // every message already carrying this template keeps pointing at it.
+    expect(response.body).toMatchObject({
+      id: published.body.id,
+      title: published.body.title,
+      kind: published.body.kind,
+      sourceFilename: published.body.sourceFilename,
+      pageCount: published.body.pageCount,
+      visibility: published.body.visibility,
+    });
+  });
+
+  it("applies the row's kind to the replacement, not the caller's", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    await enableFor(actor);
+    const client = templateClient();
+
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(actor, fixture),
+      }),
+      [200],
+    );
+    // A document's package would pass its own rules. This row is a deck, and
+    // the row is what decides: the body says nothing about kind at all.
+    const documentShaped = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("document")),
+    );
+
+    const response = await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId: documentShaped },
+      }),
+      [400],
+    );
+    expect(response.body.error.message).toContain("design-system.md");
+  });
+
+  it("hides a colleague's template from a package replacement", async () => {
+    const fixture = installS3Fixture(context);
+    const owner = bdd.user();
+    await enableFor(owner);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(owner, fixture),
+      }),
+      [200],
+    );
+
+    // Shared with the organization first, so the colleague can genuinely read
+    // it. A private row would be refused by the visibility rule before the
+    // ownership check ran, and this test would prove nothing about ownership.
+    await accept(
+      client.update({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { visibility: "organization" },
+      }),
+      [200],
+    );
+
+    const colleague = bdd.user({ orgId: owner.orgId });
+    await enableFor(colleague);
+    const rebuilt = await uploadTemplateFile(
+      context,
+      colleague,
+      fixture,
+      { filename: "package.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz(guidance("presentation")),
+    );
+
+    // Readable, and still not theirs to rewrite. Answering "you may read this
+    // but not change it" would be a different answer from the one a template
+    // they cannot see gets, so both say missing.
+    const response = await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId: rebuilt },
+      }),
+      [404],
+    );
+    expect(response.body.error.message).toBe(
+      `User template not found: ${published.body.id}`,
+    );
+  });
+
   it("rejects a package that is missing its required guidance", async () => {
     const fixture = installS3Fixture(context);
     const actor = bdd.user();
