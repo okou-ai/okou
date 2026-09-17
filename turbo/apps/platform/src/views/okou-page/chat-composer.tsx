@@ -253,12 +253,17 @@ import {
   defaultCustomConnectorAccountOptions,
   type DefaultConnectorAccountMutationOptions,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
-import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
+import {
+  matchesConnectorSearch,
+  type ConnectorConnectSuccess,
+} from "../../signals/okou-page/settings/connectors.ts";
+import { ConnectorConnectionCancelButton } from "../components/connector-connection-progress.tsx";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
 import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import {
-  dismissConnectorConnectionProgress$,
+  cancelConnectorConnection$,
+  connectorConnectionAttempt$,
   registerConnectorConnectionDialog$,
 } from "../../signals/connector-connection-progress.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
@@ -7306,7 +7311,8 @@ function AddConnectorsDialog({
     resetCustomConnectorConnectInput$,
   );
   const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const dismissProgress = useSet(dismissConnectorConnectionProgress$);
+  const cancelConnection = useSet(cancelConnectorConnection$);
+  const connectionAttempt = useGet(connectorConnectionAttempt$);
   const search = connectorUi.addDialogSearch;
   const filtered = unconnected.filter((item) => {
     return matchesConnectorSearch(search, item);
@@ -7325,9 +7331,15 @@ function AddConnectorsDialog({
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
+      onOpenChange={(open, details) => {
+        if (!open && connecting && details.reason === "outside-press") {
+          details.cancel();
+          return;
+        }
         if (!open) {
-          dismissProgress();
+          if (connecting) {
+            cancelConnection(connectionAttempt);
+          }
           onClose();
         }
       }}
@@ -7358,6 +7370,9 @@ function AddConnectorsDialog({
               })}
             </p>
           )}
+          {connecting ? (
+            <ConnectorConnectionCancelButton onCancel={onClose} />
+          ) : null}
         </DialogHeader>
         <div className="shrink-0">
           <Input
@@ -10643,7 +10658,7 @@ function ComposerConnectorConnectDialogs({
   readonly selectedCustomConnectorAccountOptions: DefaultConnectorAccountMutationOptions | null;
   readonly agentId: string;
   readonly onBuiltinClose: () => void;
-  readonly onBuiltinSuccess: () => Promise<void>;
+  readonly onBuiltinSuccess: ConnectorConnectSuccess;
   readonly onCustomClose: () => void;
 }) {
   return (
@@ -10782,12 +10797,15 @@ function ComposerConnectorsSlot({
   const selectedCustomConnectorAccountOptions =
     defaultCustomConnectorAccountOptions(selectedCustomConnector);
 
-  const handleConnectSuccess = async (connectorSlug: ConnectorSlug) => {
+  const handleConnectSuccess = async (
+    connectorSlug: ConnectorSlug,
+    signal: AbortSignal,
+  ) => {
     const label = connectorMap.get(connectorSlug)?.label ?? connectorSlug;
     await setConnectorAuthorization(
       { kind: "builtin", connectorSlug },
       true,
-      pageSignal,
+      signal,
     );
     toast.success(
       t(
@@ -10807,13 +10825,15 @@ function ComposerConnectorsSlot({
 
   const completeConnectorAddition = async (
     connectorSlug: ConnectorSlug,
+    signal: AbortSignal,
   ): Promise<void> => {
     if (
       connectorData?.authorization.agentId !== agentRecordId ||
       !authorizedSet.has(connectorSlug)
     ) {
-      await handleConnectSuccess(connectorSlug);
+      await handleConnectSuccess(connectorSlug, signal);
     }
+    signal.throwIfAborted();
     updateConnectorUi({
       showAddDialog: false,
     });
@@ -10845,8 +10865,8 @@ function ComposerConnectorsSlot({
               agentId: agentRecordId,
               ...accountOptions,
             },
-            onSuccess: () => {
-              return completeConnectorAddition(connectorSlug);
+            onSuccess: (_connectionId, signal) => {
+              return completeConnectorAddition(connectorSlug, signal);
             },
           },
           pageSignal,
@@ -10860,8 +10880,8 @@ function ComposerConnectorsSlot({
           {
             connectorSlug,
             authMethod,
-            onSuccess: () => {
-              return completeConnectorAddition(connectorSlug);
+            onSuccess: (_connectionId, signal) => {
+              return completeConnectorAddition(connectorSlug, signal);
             },
             options: {
               connectorLabel: connector.label,
@@ -10930,10 +10950,10 @@ function ComposerConnectorsSlot({
         onBuiltinClose={() => {
           updateConnectorUi({ selectedConnectorSlug: null });
         }}
-        onBuiltinSuccess={async () => {
+        onBuiltinSuccess={async (_connectionId, signal) => {
           const connectorSlug = selectedConnectorSlug;
           if (connectorSlug) {
-            await completeConnectorAddition(connectorSlug);
+            await completeConnectorAddition(connectorSlug, signal);
           }
         }}
         onCustomClose={() => {

@@ -25,6 +25,7 @@ import {
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   connectConnectorOAuthAuthCode$,
+  type ConnectorConnectSuccess,
   connectConnectorNoAuth$,
   connectFlowConnectorSlug$,
   getOnlyAvailableStatusBrowserAuthMethodDetail,
@@ -105,6 +106,7 @@ function runDirectedConnect(
       options: {
         readonly connectorLabel?: string;
         readonly connectorIcon: PlatformConnectorCatalogStatusItem["icon"];
+        readonly onSuccess?: ConnectorConnectSuccess;
         readonly agentId?: string;
         readonly account: PlatformConnectorAccountMutationIntent;
         readonly useDefaultConnectorProjection?: boolean;
@@ -128,7 +130,7 @@ function runDirectedConnect(
     ) => Promise<ConnectorConnectionResult | false>;
     openConnectModal: () => void;
     openManualGrantDialog: () => void;
-    onSuccess: () => void | Promise<void>;
+    onSuccess: ConnectorConnectSuccess;
   },
   signal: AbortSignal,
 ): void {
@@ -166,7 +168,7 @@ function runDirectedConnect(
           params.openConnectModal();
           return;
         }
-        const connected = await params.connect(
+        await params.connect(
           params.connectorSlug,
           authMethod,
           {
@@ -176,12 +178,10 @@ function runDirectedConnect(
               ? { agentId: params.agentId }
               : { authorizeVisibleAgents: true }),
             ...params.accountOptions,
+            onSuccess: params.onSuccess,
           },
           signal,
         );
-        if (connected) {
-          await params.onSuccess();
-        }
       } else {
         const authMethod = getOnlyAvailableStatusNoAuthMethod(params.item);
         if (!authMethod) {
@@ -203,7 +203,7 @@ function runDirectedConnect(
           signal,
         );
         if (connected) {
-          await params.onSuccess();
+          await params.onSuccess(connected.connectionId, signal);
         }
       }
     })(),
@@ -224,7 +224,7 @@ function ManualGrantForm({
   connectorLabel: string;
   manualGrantMethod: PublicConnectorCatalogAuthMethodDetail;
   accountOptions: ConnectorAccountMutationOptions;
-  onSuccess: () => void | Promise<void>;
+  onSuccess: ConnectorConnectSuccess;
 }) {
   const { t } = useTranslation();
   const submit = useSet(submitManualGrant$);
@@ -269,7 +269,7 @@ function ManualGrantForm({
             if (!connected) {
               return;
             }
-            await onSuccess();
+            await onSuccess(connected.connectionId, pageSignal);
           })(),
         ),
         () => {
@@ -345,7 +345,7 @@ function ManualGrantDialog({
   accountOptions: ConnectorAccountMutationOptions | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void | Promise<void>;
+  onSuccess: ConnectorConnectSuccess;
 }) {
   if (!manualGrantMethod || !accountOptions) {
     return null;
@@ -365,8 +365,9 @@ function ManualGrantDialog({
           connectorLabel={connectorLabel}
           manualGrantMethod={manualGrantMethod}
           accountOptions={accountOptions}
-          onSuccess={async () => {
-            await onSuccess();
+          onSuccess={async (connectionId, signal) => {
+            await onSuccess(connectionId, signal);
+            signal.throwIfAborted();
             onOpenChange(false);
           }}
         />
@@ -450,7 +451,7 @@ function DirectedConnectModal({
   readonly reconnectAuthMethod: ConnectorAuthMethodId | undefined;
   readonly agentId: string | null;
   readonly onClose: () => void;
-  readonly onSuccess: () => void | Promise<void>;
+  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   if (!open || !item || !accountOptions) {
     return null;
@@ -495,7 +496,7 @@ function DirectedConnectDialogs({
   readonly agentId: string | null | undefined;
   readonly connectModalOpen: boolean;
   readonly setConnectModalOpen: (open: boolean) => void;
-  readonly onSuccess: () => void | Promise<void>;
+  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   return (
     <>
@@ -792,7 +793,10 @@ function DirectedConnectCard() {
   const canConnect = authMethods.length > 0 && accountOptions !== null;
   const connectorLabel = item?.label ?? connectorSlug;
   const connectorDescription = item?.description ?? "";
-  const handleConnectSuccess = async () => {
+  const handleConnectSuccess: ConnectorConnectSuccess = async (
+    _connectionId,
+    attemptSignal,
+  ) => {
     if (actionCallback.callbackPrompt && actionCallback.threadId && agentId) {
       await runCallback(
         {
@@ -800,7 +804,7 @@ function DirectedConnectCard() {
           agentId,
           callbackPrompt: actionCallback.callbackPrompt,
         },
-        signal,
+        attemptSignal,
       );
     }
   };
@@ -913,7 +917,7 @@ function CustomDirectedConnectorDialog({
   readonly open: boolean;
   readonly agentId: string | null;
   readonly onClose: () => void;
-  readonly onSuccess: () => Promise<void>;
+  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   if (!connection || !open) {
     return null;
@@ -968,7 +972,10 @@ function CustomDirectedConnectCard({
     agentNameLoadable.data.displayName
       ? agentNameLoadable.data.displayName
       : assistantName;
-  const handleConnectSuccess = async () => {
+  const handleConnectSuccess: ConnectorConnectSuccess = async (
+    _connectionId,
+    attemptSignal,
+  ) => {
     if (actionCallback.callbackPrompt && actionCallback.threadId && agentId) {
       await runCallback(
         {
@@ -976,7 +983,7 @@ function CustomDirectedConnectCard({
           agentId,
           callbackPrompt: actionCallback.callbackPrompt,
         },
-        signal,
+        attemptSignal,
       );
     }
   };

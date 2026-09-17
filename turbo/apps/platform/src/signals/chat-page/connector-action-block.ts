@@ -1,4 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import { withConnectorConnectionProgress } from "../connector-connection-progress.ts";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
@@ -199,80 +200,82 @@ function createCatalogConnectorActivation(
   descriptor: CatalogConnectorActionDescriptor,
   signals: CatalogConnectorActivationSignals,
 ): CatalogConnectorSignals["activate$"] {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    const available = await get(signals.available$);
-    signal.throwIfAborted();
-    if (!available) {
-      return;
-    }
+  return withConnectorConnectionProgress(
+    command(async ({ get, set }, signal: AbortSignal) => {
+      const available = await get(signals.available$);
+      signal.throwIfAborted();
+      if (!available) {
+        return;
+      }
 
-    const [connected, catalogItem] = await Promise.all([
-      get(signals.connected$),
-      get(signals.catalogItem$),
-    ]);
-    signal.throwIfAborted();
-    const reconnectRequired =
-      catalogItem !== null &&
-      connectorCurrentConnectionStatus(catalogItem) === "reconnect-required";
-    if (connected && !reconnectRequired) {
-      await set(
-        authorizeDirectedConnector$,
-        descriptor.connectorSlug,
-        descriptor.agentId,
-        signal,
-      );
-      await set(runConnectorActionCallback$, descriptor, signal);
-      return;
-    }
+      const [connected, catalogItem] = await Promise.all([
+        get(signals.connected$),
+        get(signals.catalogItem$),
+      ]);
+      signal.throwIfAborted();
+      const reconnectRequired =
+        catalogItem !== null &&
+        connectorCurrentConnectionStatus(catalogItem) === "reconnect-required";
+      if (connected && !reconnectRequired) {
+        await set(
+          authorizeDirectedConnector$,
+          descriptor.connectorSlug,
+          descriptor.agentId,
+          signal,
+        );
+        await set(runConnectorActionCallback$, descriptor, signal);
+        return;
+      }
 
-    const connector = catalogItem;
-    if (!connector) {
-      return;
-    }
-    const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
-    if (!accountOptions) {
-      return;
-    }
+      const connector = catalogItem;
+      if (!connector) {
+        return;
+      }
+      const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
+      if (!accountOptions) {
+        return;
+      }
 
-    const directConnectMethod =
-      getConnectorStatusDirectConnectMethod(connector);
-    if (!directConnectMethod) {
-      set(resetManualGrantForm$, connector.slug);
-      set(activeChatConnectorActionState$, {
-        ...descriptor,
-        catalogItem: connector,
-      });
-      return;
-    }
+      const directConnectMethod =
+        getConnectorStatusDirectConnectMethod(connector);
+      if (!directConnectMethod) {
+        set(resetManualGrantForm$, connector.slug);
+        set(activeChatConnectorActionState$, {
+          ...descriptor,
+          catalogItem: connector,
+        });
+        return;
+      }
 
-    const connectOptions = {
-      connectorLabel: connector.label,
-      connectorIcon: connector.icon,
-      agentId: descriptor.agentId,
-      ...accountOptions,
-    };
-    const connectionCompleted =
-      directConnectMethod.kind === "browser-auth"
-        ? await set(
-            connectConnectorOAuthAuthCode$,
-            descriptor.connectorSlug,
-            directConnectMethod.authMethod,
-            connectOptions,
-            signal,
-          )
-        : await set(
-            connectConnectorNoAuth$,
-            {
-              connectorSlug: descriptor.connectorSlug,
-              authMethod: directConnectMethod.authMethod,
-              options: connectOptions,
-            },
-            signal,
-          );
-    if (connectionCompleted) {
-      await set(runConnectorActionCallback$, descriptor, signal);
-    }
-  });
+      const connectOptions = {
+        connectorLabel: connector.label,
+        connectorIcon: connector.icon,
+        agentId: descriptor.agentId,
+        ...accountOptions,
+      };
+      const connectionCompleted =
+        directConnectMethod.kind === "browser-auth"
+          ? await set(
+              connectConnectorOAuthAuthCode$,
+              descriptor.connectorSlug,
+              directConnectMethod.authMethod,
+              connectOptions,
+              signal,
+            )
+          : await set(
+              connectConnectorNoAuth$,
+              {
+                connectorSlug: descriptor.connectorSlug,
+                authMethod: directConnectMethod.authMethod,
+                options: connectOptions,
+              },
+              signal,
+            );
+      if (connectionCompleted) {
+        await set(runConnectorActionCallback$, descriptor, signal);
+      }
+    }),
+  );
 }
 
 function createCatalogConnectorSignals(
