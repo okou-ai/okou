@@ -23,6 +23,8 @@ SOURCE_KEY = (
 PRINCIPAL = f"arn:aws:iam::{SOURCE_ACCOUNT}:user/vm0-kms-prod"
 VERCEL_PROJECT = "prj_6mw0CgYjECVrJV57VJ47VN03B4UR"
 VERCEL_TEAM = "team_WRqI0kCoX5KcRInRWgZ1nBF0"
+# GitHub keeps this numeric identity stable across owner and repository renames.
+OKOU_REPOSITORY_ID = "1096175506"
 
 
 class BackupError(Exception):
@@ -114,8 +116,10 @@ def production_deployment(token, expected):
 
 
 def main():
+    repository = required_env("GITHUB_REPOSITORY")
     require(
-        required_env("GITHUB_REPOSITORY") == "vm0-ai/vm0", "repository_scope_mismatch"
+        required_env("GITHUB_REPOSITORY_ID") == OKOU_REPOSITORY_ID,
+        "repository_scope_mismatch",
     )
     require(required_env("GITHUB_REF") == "refs/heads/main", "main_branch_required")
     require(
@@ -124,7 +128,7 @@ def main():
     )
     require(
         required_env("GITHUB_WORKFLOW_REF")
-        == "vm0-ai/vm0/.github/workflows/kms-production-backup.yml@refs/heads/main",
+        == f"{repository}/.github/workflows/kms-production-backup.yml@refs/heads/main",
         "workflow_scope_mismatch",
     )
     require(
@@ -190,7 +194,7 @@ def main():
         "invalid_oidc_origin",
     )
     query = dict(urllib.parse.parse_qsl(request_url.query))
-    query["audience"] = "https://github.com/vm0-ai"
+    query["audience"] = "https://github.com/" + repository.partition("/")[0]
     oidc_url = urllib.parse.urlunsplit(
         request_url._replace(query=urllib.parse.urlencode(query))
     )
@@ -218,7 +222,7 @@ def main():
             "sourceKeyArn": SOURCE_KEY,
             "configuration": values,
             "deployment": deployment,
-            "workflow": {"repository": "vm0-ai/vm0", "commit": commit, "runId": run_id},
+            "workflow": {"repository": repository, "commit": commit, "runId": run_id},
         },
         separators=(",", ":"),
     )

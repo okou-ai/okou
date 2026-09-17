@@ -37,6 +37,8 @@ CONFIG_NAMES = {
     "SECRETS_KMS_KEY_ID",
     "AWS_REGION",
 }
+# GitHub keeps this numeric identity stable across owner and repository renames.
+OKOU_REPOSITORY_ID = "1096175506"
 
 
 class MigrationError(Exception):
@@ -105,6 +107,15 @@ def required_env(name):
     value = os.environ.get(name, "")
     require(bool(value), "missing_required_environment")
     return value
+
+
+def github_repository():
+    repository = required_env("GITHUB_REPOSITORY")
+    require(
+        required_env("GITHUB_REPOSITORY_ID") == OKOU_REPOSITORY_ID,
+        "repository_scope_mismatch",
+    )
+    return repository
 
 
 def request_json(url, bearer=None, body=None):
@@ -237,9 +248,11 @@ def backup_configuration():
         required_env("DOPPLER_SERVICE_IDENTITY_ID") == IDENTITY,
         "wrong_production_doppler_identity",
     )
+    repository = github_repository()
+    owner = repository.partition("/")[0]
     token = request_json(
         "https://api.doppler.com/v3/auth/oidc",
-        body={"identity": IDENTITY, "token": oidc("https://github.com/vm0-ai")},
+        body={"identity": IDENTITY, "token": oidc("https://github.com/" + owner)},
     )["token"]
     secrets = request_json(
         "https://api.doppler.com/v3/configs/config/secrets?project=vm0-kms-rollback-32264&config=prd&include_managed_secrets=false",
@@ -773,12 +786,13 @@ def retirement_verification():
     digest = required_env("VERIFICATION_ARTIFACT_SHA256")
     require(run_id.isdigit(), "invalid_verification_run")
     require(re.fullmatch(r"[0-9a-f]{64}", digest), "invalid_verification_digest")
-    base = "https://api.github.com/repos/vm0-ai/okou/actions"
+    repository = github_repository()
+    base = "https://api.github.com/repos/" + repository + "/actions"
     token = required_env("GH_TOKEN")
     run = request_json(base + "/runs/" + run_id, token)
     require(
         str(run["id"]) == run_id
-        and run["repository"]["full_name"] == "vm0-ai/okou"
+        and run["repository"]["full_name"] == repository
         and run["workflow_id"] == 353130414
         and run["path"] == ".github/workflows/kms-production-preflight.yml"
         and run["event"] == "workflow_dispatch"
@@ -811,7 +825,7 @@ def retirement_verification():
         [
             "gh",
             "api",
-            "repos/vm0-ai/okou/actions/artifacts/" + str(artifact["id"]) + "/zip",
+            "repos/" + repository + "/actions/artifacts/" + str(artifact["id"]) + "/zip",
             "--allow-escape-sequences",
         ],
         capture_output=True,
@@ -1131,15 +1145,15 @@ def main():
         "retire-source": "kms-production-retire.yml",
         "source-status": "kms-production-retire.yml",
     }[mode]
+    repository = github_repository()
     require(
-        required_env("GITHUB_REPOSITORY") == "vm0-ai/okou"
-        and required_env("GITHUB_REF") == "refs/heads/main"
+        required_env("GITHUB_REF") == "refs/heads/main"
         and required_env("GITHUB_EVENT_NAME") == "workflow_dispatch",
         "protected_manual_main_required",
     )
     require(
         required_env("GITHUB_WORKFLOW_REF")
-        == "vm0-ai/okou/.github/workflows/" + workflow + "@refs/heads/main",
+        == repository + "/.github/workflows/" + workflow + "@refs/heads/main",
         "workflow_scope_mismatch",
     )
     require(

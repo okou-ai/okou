@@ -55,12 +55,13 @@ class BackupCliTest(unittest.TestCase):
                 "BACKUP_FIXTURE_STATE": str(state_path),
                 "RUNNER_TEMP": str(root),
                 "AWS_SESSION_TOKEN": "",
-                "GITHUB_REPOSITORY": "vm0-ai/vm0",
+                "GITHUB_REPOSITORY": "vm0-ai/okou",
+                "GITHUB_REPOSITORY_ID": "1096175506",
                 "GITHUB_REF": "refs/heads/main",
                 "GITHUB_EVENT_NAME": "workflow_dispatch",
                 "GITHUB_RUN_ID": "12345",
                 "GITHUB_SHA": "a" * 40,
-                "GITHUB_WORKFLOW_REF": "vm0-ai/vm0/.github/workflows/kms-production-backup.yml@refs/heads/main",
+                "GITHUB_WORKFLOW_REF": "vm0-ai/okou/.github/workflows/kms-production-backup.yml@refs/heads/main",
                 "DOPPLER_SERVICE_IDENTITY_ID": "c0c87790-e651-45dd-b7fa-c5ed07bb990f",
                 "ACTIONS_ID_TOKEN_REQUEST_URL": "https://pipelines.actions.githubusercontent.com/oidc?existing=1",
                 "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "github-request-fixture",
@@ -118,6 +119,17 @@ class BackupCliTest(unittest.TestCase):
         )
         self.assertFalse(report["productionConfigurationChanged"])
 
+    def test_renamed_repository_records_new_provenance(self):
+        result, state, _ = self.invoke(
+            overrides={
+                "GITHUB_REPOSITORY": "maxandzoe/okou",
+                "GITHUB_WORKFLOW_REF": "maxandzoe/okou/.github/workflows/kms-production-backup.yml@refs/heads/main",
+            }
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        snapshot = json.loads(state["secrets"]["KMS_BACKUP_JSON"]["raw"])
+        self.assertEqual(snapshot["workflow"]["repository"], "maxandzoe/okou")
+
     def test_wrong_principal_stops_before_backup(self):
         result, state, report = self.invoke("wrong-principal")
         self.assertNotEqual(result.returncode, 0)
@@ -139,6 +151,7 @@ class BackupCliTest(unittest.TestCase):
     def test_unprotected_branch_and_target_key_are_rejected(self):
         for overrides in [
             {"GITHUB_REF": "refs/heads/unprotected"},
+            {"GITHUB_REPOSITORY_ID": "1"},
             {"SECRETS_KMS_KEY_ID": "alias/unexpected"},
             {"DOPPLER_SERVICE_IDENTITY_ID": "development-identity"},
             {"EXPECTED_DEPLOYMENT_ID": "dpl_unexpected"},
