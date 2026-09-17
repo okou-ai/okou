@@ -143,6 +143,13 @@ arriving after the run deletion cannot reinsert those personal records. This
 ordering also protects deployments where the separate erasure-decision bridge
 has not been enabled.
 
+Before taking Agent, Session or Run locks, Clerk lifecycle cleanup acquires the
+existing usage-compaction advisory lock and holds it through run deletion.
+Compaction locks ledger rows before checking Run foreign keys; excluding it
+prevents the reverse lock order caused by deleting a Run while its ledger rows
+remain. Waiting for this advisory lock retains the existing compaction-wait
+policy, outside the lifecycle's 100-millisecond lock timeout.
+
 Clerk lifecycle cleanup allows 20 seconds to acquire its Run `FOR UPDATE`
 locks, exceeding the admitted writer's 15-second transaction limit, including
 uploads for already terminal runs. After acquiring those locks it restores

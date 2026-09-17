@@ -12,6 +12,7 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
+import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
 
 export const AGENT_LIFECYCLE_LOCK_TIMEOUT = "100ms";
 
@@ -22,6 +23,10 @@ export async function deleteClerkAgentLifecycleData(
     | { readonly kind: "user"; readonly userId: string },
 ): Promise<void> {
   const receipt = await db.transaction(async (tx) => {
+    // Compaction locks ledger rows before checking their Run foreign keys.
+    // Serialize before taking Run locks so ON DELETE SET NULL cannot invert
+    // that order. Keep the existing compaction wait outside the 100 ms limit.
+    await lockUsageEventCompaction(tx);
     await tx.execute(
       sql`SELECT set_config('lock_timeout', ${AGENT_LIFECYCLE_LOCK_TIMEOUT}, true)`,
     );

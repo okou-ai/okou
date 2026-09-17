@@ -763,14 +763,15 @@ describe("X daily resource usage webhook", () => {
   );
 
   it.each(["user", "organization"] as const)(
-    "fences old uploads before %s deletion removes billing and retains shared resources",
+    "waits for compaction before %s Run deletion and then fences old uploads",
     async (subjectKind) => {
       const configuredPricing = await pricing();
       const deleted = await createRun();
       const survivor = await createRun();
       const sharedId = resourceId();
       const freshId = resourceId();
-      await accept(submit(deleted, [observation([sharedId])]), [200]);
+      const source = observation([sharedId]);
+      await accept(submit(deleted, [source]), [200]);
       await expect(chargedUnits(deleted, configuredPricing)).resolves.toBe(1);
 
       const callbacks = createWebhookCallbackApi(context);
@@ -787,9 +788,13 @@ describe("X daily resource usage webhook", () => {
         code: "resource_missing",
       });
 
-      // Infrastructure exception: an HTTP caller cannot pause ledger deletion
-      // at its compaction lock. The real webhook still owns all cleanup writes.
-      const gate = await holdUsageEventCompactionLockFixture(context.signal);
+      // Infrastructure exception: HTTP cannot pause compaction between its
+      // source-row lock and the Run KEY SHARE needed by the new rollup's FK.
+      // Lock only this test's API-created source; no historical rows are edited.
+      const gate = await holdUsageEventCompactionLockFixture(context.signal, {
+        idempotencyKey: source.idempotencyKey,
+        runId: deleted.runId,
+      });
       const completion = Promise.allSettled([gate.done]);
       onTestFinished(async () => {
         gate.release();
@@ -805,16 +810,12 @@ describe("X daily resource usage webhook", () => {
         type: subjectKind === "user" ? "user.deleted" : "organization.deleted",
         data: { id: subjectId },
       });
-      await gate.withAcquisitionAttemptTracking(async () => {
-        await callbacks.requestClerkWebhook("{}", {}, [200]);
-      });
-      await gate.acquisitionAttempted;
+      await callbacks.requestClerkWebhook("{}", {}, [200]);
       await expect.poll(gate.waiterCount).toBeGreaterThanOrEqual(1);
 
-      // The ledger still exists behind the gate, but its run is already gone.
-      // Reversing cleanup order lets this old token insert a fresh usage row.
-      await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
-      await accept(submit(deleted, [observation([freshId])]), [404]);
+      // Clerk must wait before owning the Run. Taking it first would make its
+      // SET NULL wait on the source row and block the compactor's FK check.
+      await runs.requestReadRun(deleted.actor, deleted.runId, [200]);
       gate.release();
       const [completed] = await completion;
       if (completed.status === "rejected") {
@@ -822,6 +823,7 @@ describe("X daily resource usage webhook", () => {
       }
       await flushWaitUntilForTest();
 
+      await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
       await accept(submit(deleted, [observation([freshId])]), [404]);
       await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
       await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);

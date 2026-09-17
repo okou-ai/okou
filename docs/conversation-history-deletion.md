@@ -86,8 +86,12 @@ boundary. Checkpoint persistence can retain a blob before promoting the session.
 Candidate cleanup takes storage ownership before releasing candidate references.
 
 Agent deletion retains canonical mutation advisory -> agent -> sessions -> runs,
-with existing NOWAIT and 100 ms behavior. Clerk revalidates agents after canonical
-mutation ownership, then locks sessions and the deduplicated run set in ID order,
+with existing NOWAIT and 100 ms behavior. Clerk first takes the usage-compaction
+advisory lock, before applying the 100 ms timeout or taking parent/run locks.
+This prevents a compactor holding ledger rows from waiting on a Run whose
+deletion is waiting to clear those rows' foreign keys. Clerk revalidates agents
+after canonical mutation ownership, then locks sessions and the deduplicated run
+set in ID order,
 retaining its 100 ms lock timeout for canonical and session ownership. Only its
 run-lock acquisition allows 20 seconds to drain admitted X resource usage
 transactions, whose lifetime is limited to 15 seconds; it restores 100 ms
