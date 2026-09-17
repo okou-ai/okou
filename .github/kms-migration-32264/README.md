@@ -22,9 +22,10 @@ An AWS administrator must provision or reconcile this exact role in account
   trust is restricted to `vm0-ai/okou` and `maxandzoe/okou` jobs in the
   protected `production` environment and the STS audience. Keep that
   environment's protected-branch and human-reviewer rules. Both migration
-  workflow jobs also require `refs/heads/main`. Remove the old organization
-  subject from the live role and this policy after the rename is verified, as
-  tracked in [#35094](https://github.com/vm0-ai/okou/issues/35094).
+  workflow jobs also require `refs/heads/main`. As soon as GitHub confirms the
+  rename, remove the old organization subject from the live role and this
+  policy before post-rename validation, as tracked in
+  [#35094](https://github.com/vm0-ai/okou/issues/35094).
 - Set the role's maximum session duration to 7,200 seconds and attach
   [role-permissions.json](role-permissions.json) as an inline policy. This
   allows decrypt and bidirectional rewrap only on the two production keys, and
